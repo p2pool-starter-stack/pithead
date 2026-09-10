@@ -72,7 +72,7 @@ assert_contains "#2040: the quotes wrap the whole assignment, key included" \
 # systemd expands % specifiers inside unit files, so a literal % has to be doubled or it is
 # rewritten: %H becomes the hostname. An operator-supplied flag or password is where this lands.
 QPCT="$SANDBOX/quadlet-pct-out"
-sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50%% --host %H|' \
+sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50% --host %H|' \
     "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/pct.env"
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/pct.env" "$QPCT" >/dev/null
 qpct_line=$(sed -n 's/^Environment=//p' "$QPCT/p2pool.container")
