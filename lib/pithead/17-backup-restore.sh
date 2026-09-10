@@ -324,10 +324,9 @@ stack_restore() {
     *) error "Not a pithead backup archive (neither openssl-encrypted nor gzip): $archive_source" ;;
     esac
 
-    # Early UX check; the authoritative check runs under the mutation lock before extraction.
     restore_require_stack_stopped
     # Do not parse current config: restore must recover a lost or corrupt config.json.
-    warn "Restore will OVERWRITE config.json, .env, Caddyfile, the Tor data dir, and the dashboard's database from the archive."
+    warn "Restore will OVERWRITE config.json and data from the archive, then regenerate .env and Caddyfile from the validated configuration."
     warn "The stack is stopped; keep it stopped until this restore finishes."
     if [ "$assume_yes" -eq 0 ]; then
         read -r -p "Continue and overwrite these files? (y/N): " CONFIRM || true
@@ -382,14 +381,15 @@ stack_restore() {
     log "Restoring from $archive_source ..."
     restore_commit_stage
 
-    # Now that config.json is back, resolve the Tor data dir from it and fix ownership so the
-    # onion keys load (matching prepare_directories).
+    # Refresh auxiliary generated files and ownership under the mutation lock.
     parse_and_validate_config
+    load_preserved_state
+    resolve_dashboard_host
+    DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env
+    generate_caddyfile
     log "Fixing Tor data ownership (100:101)..."
     sudo chown -R 100:101 "$TOR_DATA_DIR"
-    # The archive is extracted as root, so the restored dashboard DB (and any --with-chains data)
-    # comes back root-owned. The containers run non-root (#255), so hand each data dir back to the
-    # uid its container uses — conditional, so a same-owner archive is a no-op.
+    # Return restored data to the uid used by its container.
     ensure_owner "$MONERO_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$TARI_DIR" "$APP_UID" "$APP_GID"
     ensure_owner "$P2POOL_DIR" "$APP_UID" "$APP_GID"

@@ -53,7 +53,7 @@ jobs:
           # a result to publish, not a reason to skip publishing it. The exit code is carried to
           # the last step instead, so a watcher that could not do its job says so in the artefact
           # a human reads AND fails the run.
-          bash scripts/pin-watch.sh >report.md
+          bash scripts/watch/pin-watch.sh >report.md
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The pin watcher produced no report at all — see the run log." >report.md; rc=1; }
@@ -102,4 +102,4 @@ jobs:
       # be current while its digest has drifted, and that half-done-bump case is this step's job,
       # not the report's. A mismatch or failed lookup fails this step, which fails the run.
       - name: Check third-party image pins against their registries
-        run: bash scripts/resolve-pins.sh
+        run: bash scripts/release/resolve-pins.sh

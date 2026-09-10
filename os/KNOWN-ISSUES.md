@@ -7,7 +7,21 @@ provision, media, rig, fault and reset — and "green" means the full battery pa
 tip being cut, not a dated badge here: the 2026-08 waves each found real product bugs on a
 tip whose previous run had passed. The last fully-green run of the original five phases was
 2026-07-25 (boot 4/4, update 15/15, provision 21/21, install 33/33, fault 11/11, no brick in
-any run). The per-phase assertion list is in
+any run). **The current tip is not green, and is much closer than it was.** A `--phase all` run on
+2026-09-10, against an image built WITH `PITHEAD_REGISTRY` (see #2043 — without it the run cannot
+pass and reports 135 passed / 6 failed), reports **189 passed and 3 failed**:
+
+| failing assertion | cause |
+|---|---|
+| `serial menu did not name Pithead 2.0.0 as slot B current and slot A previous` | #1956 — both menu entries name slot A; #1974 shipped the feature, the slot attribution is wrong |
+| `restore leg: the stack never came up on the restored machine` | #2051 — config and original wallet restored, stack never starts. NOT #2043: the earlier assertion in this same leg now passes, naming five running containers |
+| `faulted setup never reached its credentials handoff` | #2050 — a faulted setup hangs instead of reopening the page |
+
+All four of #2043's zero-container legs now pass, and the A/B updater is sound end to end (install
+to the spare slot, fallback without commit, commit persisting across reboot, operator rollback,
+disk install, keep-reinstall and the rig role). The three that remain are product defects with their
+own issues, each reached only because the legs before them now pass. The
+per-phase assertion list is in
 [the release doc's battery table](../docs/dev/appliance-release.md#the-automated-battery).
 The image ships the ESP and slot A only (636 MB);
 systemd-repart builds slot B and /data on the target's own disk, and `/data` measured
@@ -216,7 +230,7 @@ directory is now one rule, `control_unit_dir`, read by the writer and both reade
 Setup failures keep the config, copy it to `config.json.failed` and re-mint a token; the
 reopened page used to make an operator dig the reason out of the console. It no longer
 does: `pithead` writes the last `[ERROR]` line to `error.txt` and the failed config to
-`last-attempt.json` before reopening, and `wizard.py`/`wizard.mjs` surface both — the
+`last-attempt.json` before reopening, and `wizard/server.py`/`wizard/wizard.mjs` surface both — the
 reason as the page's error text, the config as the retry prefill.
 
 **Fixed — a failed setup no longer costs the machine its configuration (#1059).** It used
@@ -278,9 +292,9 @@ the node count the same way RigForge does, preferring `lscpu`, then the kernel's
 then the socket count, and declares nothing when it reads more than one node. Node count is not
 socket count in either direction: the bench guest reports four sockets and one node.
 
-**Still open on #1103:** whether a co-located miner on a reduced-RAM box mines usefully or thrashes
-is unanswered. Answering it needs synced chains rather than another KVM guest, because the sync gate
-holds the stratum the miner dials.
+**Still open on #1103, now tracked as #2045:** whether a co-located miner on a reduced-RAM box
+mines usefully or thrashes is unanswered. Answering it needs synced chains rather than another KVM
+guest, because the sync gate holds the stratum the miner dials.
 
 **Fixed — the hugepage pool had a second writer, and the ceiling bounded only the first (#1724).**
 The ceiling above is declared to RigForge, so it binds the sizer's write. The miner is a writer too:
@@ -303,8 +317,8 @@ machine's own — it carries that machine's `DEPLOYMENT_COMPLETED=true`. `setup(
 THIS hardware" from "already live", and fatally refused with no tty to ask: `podman ps -a` on
 the live guest showed zero containers, ever. `restore_apply` — the one commit point both restore
 doors share — now clears the carried marker right after landing the archive, before its caller's
-`setup()` runs; every other restored value (onion keys, tokens, `HOST_IP`) still rides through
-untouched, and a full `.env` re-render happens inside `setup()` anyway. The guard itself is
+`setup()` runs. Restore retains validated generated secrets and Tor identity, and derives
+`HOST_IP` and runtime policy from the validated configuration. `setup()` renders `.env` again. The guard itself is
 unchanged and still refuses a headless re-run on a genuinely live box (its own #924 test stays
 green) — `stack_restore` (the admin `./pithead restore` command, for a box already deployed on
 its own hardware) never calls `restore_apply` and keeps its completion marker exactly as before.
@@ -321,6 +335,13 @@ just the restore path would fix nothing restore-specific and leave the identical
 fresh setup. See [Recovering from a backup](../docs/appliance.md#recovering-from-a-backup) for
 the operator-facing contract this restores.
 
+**Fixed — the dashboard OS-update action shipped, and so did the two checks it waited on
+(#976).** `tests/os/run.sh` leg 4 drives the A/B cycle through the dashboard action end to end,
+and the `provision` phase asserts `os_update` is present in `/api/state` — the control renders,
+or the leg fails. Neither has passed: leg 4 stops at "stack never came up", which is #2043 — an
+image built against a registry without its tags, not an OS-update defect. Built and covered is
+not proven.
+
 ## Open
 
 - **Installing to a disk still needs a human (#979).** Pre-seeding (`pithead-token.txt` /
@@ -333,22 +354,51 @@ the operator-facing contract this restores.
   trio closed the sharpest losses: dashboard backup export (#908), restore at setup
   (#909), and the media config channel (#910) — which also carries the settings the
   dashboard never exposes, so "changing these later means reinstalling" no longer holds.
-  What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
-  (#911), fleet descriptor editing (#912), and the CLI remainder on the dashboard (#913).
-- **The dashboard OS-update action is built but not yet battery-proven (#976).** The
-  user-reachable path exists: an OS-update control in the dashboard header drives
-  check → resumable Tor download to `/data` → local verification (signature,
-  `compatible`, downgrade/floor) → slot install → an explicit confirmed reboot, with
-  the boot health gate committing and a persisted verdict banner after. Every verb is
-  host-side through the control channel and refuses off the appliance; the DIY
-  one-click upgrade still refuses on the appliance (a tarball upgrade would silently
-  revert at the next boot). What remains before this line moves to Resolved: the
-  battery's `phase_update` leg 4 (the dashboard-driven A/B cycle, resume, and the
-  refusals) and the `provision` presence check must pass on the KVM bench.
-- **The manual hardware battery has not been run.** Everything above is KVM. Secure Boot,
-  real disks, headless discovery and a genuine power cut are exactly what a VM cannot
-  show — M1-M10 in the release doc must pass on a physical box before an image ships.
+  The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
+  (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
+  (#911) and fleet descriptor editing (#912).
+- **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
+  Boot, real disks, headless discovery and a genuine power cut are exactly what a VM cannot
+  show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an image
+  ships. (M11–M14 were the rig-role steps; #1886 moved their automatable parts into the `rig`
+  phase.) #394's gate list still does not name this battery — the same omission #976's own title
+  records for the OS-update path.
+- **A faulted setup hangs instead of reopening the wizard (#2050).** Measured on the KVM bench
+  2026-09-10 at pithead#2002's head, with the registry override in place so image refs were NOT a
+  factor (the zero-container dump's `comm -23 want have` was empty): the provision phase arms a
+  post-validation fault by moving `docker-compose.yml` aside, the valid submit is accepted,
+  credentials are printed to the console, and then the guest emits NOTHING for the remaining two
+  minutes — last serial line `grep: docker-compose.yml: No such file or directory` at t=44.4s. The
+  wizard neither fails nor republishes its handoff, so `faulted setup never reached its credentials
+  handoff` fails. This is #1955's "dead page" as a live defect. It is version-independent, which is
+  why #2043's `develop` control reproduced it: that control was measuring THIS, not the registry
+  cause below.
+- **The battery's image must be built against a registry that actually has its tags (#2043).**
+  Root-caused: this is the #978 entry below, reached from the battery side. Only the wizard image
+  is baked, so at first boot every other service is a pull of `pithead-<service>:v$(cat VERSION)`
+  — and while VERSION leads the last release, those tags exist nowhere public. An image built
+  with plain `--ssh` keeps the default registry (`TEST_REGISTRY` needs `PITHEAD_REGISTRY` set
+  too), so the wizard submit and `setup` succeed, leg 4 captures a dashboard login, and then no
+  containers ever appear; the media leg waited 25 minutes for zero. `running: 'pithead-wizard '`
+  is the signature — the one baked image up, nothing else. This cause accounts for the four legs
+  whose symptom is a stack that never comes up; it does NOT account for the provision leg above
+  (#2050), which fails with the registry correct. An earlier revision of this entry claimed it did,
+  on the strength of `develop` reproducing it, and that inference was wrong.
+  The harness made this unavoidable, not just likely: the phases rebuild the image themselves via
+  `_build_image`, and the documented recipe is `sudo tests/os/run.sh`, whose `env_reset` drops an
+  exported `PITHEAD_REGISTRY` before the harness sees it — so no invocation of the documented
+  command could produce a provisionable image. `_build_image` now forwards it and the recipe is
+  `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`.
+  `os/build-image.sh` now refuses such a build (`require_pullable_services`) and
+  `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every affected leg.
+  The A/B updater itself is healthy (boot, identity survival, install to the spare slot, commit
+  across reboot, operator rollback, disk install and the rig role all pass). Every leg that
+  A `--phase all` run in a configuration that CAN pass has now been made (2026-09-10, 189/3): the
+  four zero-container legs pass and this cause is cleared. What remains failing is tracked as #1956,
+  #2050 and #2051.
 - **Only the wizard image is baked in (#978).** The rest of the stack still pulls at
   provision time, so the plan's "first boot works offline" property is partial: the setup
   page works without a network, provisioning does not. Baking the full set roughly triples
-  the image and inflates every update bundle — sized deliberately, not forgotten.
+  the image and inflates every update bundle — sized deliberately, not forgotten. This is also
+  why the KVM battery needs `PITHEAD_REGISTRY` (#2043): the consequence of the partial bake is
+  that every battery run depends on a registry that can serve the VERSION being tested.

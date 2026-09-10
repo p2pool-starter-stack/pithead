@@ -13,13 +13,20 @@ generates a list of what exists today (git-ignored — read it locally).
 - The 80% coverage gate is a floor, not a target. Uncovered defensive error-handling is fine;
   uncovered behavior (a migration path, a retention rule, a decision branch) is a gap.
 - Tests are real code. They are linted (`shellcheck`), version-controlled with the change they
-  protect, and listed in the inventory. A CI drift check fails if you add or remove a test without
-  regenerating it.
+  protect, and listed in the inventory. CI reruns the inventory generator and fails if an enumerated suite has no
+  counted assertions; the generated inventory stays untracked.
 
 ## Commands
 
+Run these on Linux. macOS is deprecated as a test platform (2026-09-10) and the shell suite refuses
+to start there: the assertions are written against GNU `sed`/`stat`, BSD tools differ without
+failing loudly, and a `grep` that is a ugrep shim silently matches nothing for a pattern holding a
+non-terminal `$`. A control run on an unmodified `develop` scored 3708 passed / 148 failed, so a
+result from there is not evidence either way. `PITHEAD_UNTRUSTED_MACOS_RUN=1` overrides the refusal
+for portability debugging, and is named for what the result is worth.
+
 ```bash
-make test                 # everything that needs no server/docker (run before every PR)
+make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite
 make test-fakes           # tier-2 contract test (real clients vs fakes)
@@ -29,19 +36,23 @@ make test-mini-stack      # tier-3 docker mini-stack (needs docker)
 make test-integration ARGS="--host user@box --dir pithead --check"   # tier-4 live, non-destructive
 ```
 
+Run the shell and appliance selftests as a non-root user on Linux; root bypasses
+permission-denied fixtures, and BSD utilities differ from their GNU counterparts.
+See [development setup](../../CONTRIBUTING.md#dev-environment) for prerequisites.
+
 ## Where tests live
 
 | You changed… | Write the test here | Tier |
 |---|---|---|
 | Dashboard logic (a decision, metric, `/api/state` field) | `dashboard/tests/**/test_*.py` (pytest) | 1 |
-| Frontend logic (worker sort, formatting) | `dashboard/tests/frontend/*.test.mjs` (`node --test`) | 1 |
+| Frontend logic (worker sort, formatting) | `dashboard/tests/frontend/<feature>/*.test.mjs` (`node --test`) | 1 |
 | A client that parses a daemon (monerod RPC, Tari gRPC) | `tests/integration/fakes/test_contract.py` (+ extend the fakes) | 2 |
-| The control plane (sync-gate #35, failover #31) | `dashboard/tests/service/test_data_service.py` (+ a `mini-stack` scenario) | 1 + 3 |
-| `pithead` CLI behavior | `tests/stack/run.sh` | 1 |
-| A compose **security/hardening** invariant (caps, `no-new-privileges`, no secret in a healthcheck, socket-proxy scope) | the #90 section of `tests/stack/test_compose.sh` | 1 |
+| The control plane (sync-gate #35, failover #31) | `dashboard/tests/service/test_data_service_*.py` (+ a `mini-stack` scenario) | 1 + 3 |
+| `pithead` CLI behavior | Matching feature suite under `tests/stack/`, loaded by `run.sh` | 1 |
+| A compose **security/hardening** invariant (caps, `no-new-privileges`, no secret in a healthcheck, socket-proxy scope) | the #90 section of `tests/stack/standalone/test_compose.sh` | 1 |
 | A new `config.json` axis | one row in `tests/integration/scenarios.sh` | 4 |
 | A failure mode needing real containers | `run.sh` `--fault-injection` and/or a `mini-stack` scenario | 4 / 3 |
-| The integration harness's own logic | `tests/integration/selftest.sh` | — |
+| The integration harness's own logic | Matching `tests/integration/selftest/selftest-*.sh` | — |
 
 ## Recipes
 
@@ -92,7 +103,7 @@ dashboard's look, render the real frontend in a real browser against a canned `/
 payload — no docker, no stack. The fixture half lives in the repo:
 `tests/frontend/fixtures/_gen_state.py` writes `state.json`, a real `build_state()` payload (the
 exact contract the client renders). Regenerate it whenever the payload contract changes — a
-drift guard in `tests/web/test_views.py` reruns the generator and fails on any structural
+drift guard in `tests/web/views/test_views.py` reruns the generator and fails on any structural
 difference from the checked-in fixture, down to nested keys. Then serve the real app around it:
 
 ```bash
@@ -132,7 +143,7 @@ structurally cannot.
   for seeing what already exists before you add a test.
 - Secrets: never print tokens, creds, or onions. The harness redacts artifacts and hashes secrets
   on the box. If you add a secret-bearing field to `config.reference.json`,
-  `tests/integration/selftest-redact.sh` fails until you classify it — either `redact()` covers it,
+  `tests/integration/selftest/selftest-redact.sh` fails until you classify it — either `redact()` covers it,
   or the file records why it is safe to keep. An array you add is classified as an array, whether
   or not the reference populates it.
 

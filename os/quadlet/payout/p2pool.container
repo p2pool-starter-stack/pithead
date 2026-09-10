@@ -7,7 +7,7 @@ ContainerName=p2pool
 Image=ghcr.io/p2pool-starter-stack/pithead-p2pool:v1.14.0
 Network=mining.network
 IP=172.28.0.28
-Environment=P2POOL_FLAGS=--mini
+Environment="P2POOL_FLAGS=--mini"
 Exec=--no-log-file --host 172.28.0.26 --rpc-port 18081 --rpc-login rendered-node-user:rendered-node-password --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://172.28.0.27:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats
 Volume=/opt/pithead/data/p2pool:/home/ubuntu
 Volume=/opt/pithead/data/p2pool/stats:/stats

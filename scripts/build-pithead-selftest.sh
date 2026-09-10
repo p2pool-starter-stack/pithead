@@ -317,7 +317,7 @@ self_test() {
     rm "$clone/repo/pithead"
     rc=0
     local release_out
-    release_out=$(grep -F 'log "Building the generated pithead CLI"' "$clone/repo/scripts/release.sh") || rc=$?
+    release_out=$(grep -F 'log "Building the generated pithead CLI"' "$clone/repo/scripts/release/preflight.sh") || rc=$?
     [ "$rc" -ne 0 ] || bash "$clone/repo/scripts/build-pithead.sh" >/dev/null 2>&1 || rc=$?
     [ "$rc" -ne 0 ] || [ -x "$clone/repo/pithead" ] || rc=1
     _case "the release preflight builds the missing CLI, including for a dry run" 0 "$rc"
@@ -326,8 +326,8 @@ self_test() {
     *) _case "the release plan names its CLI build step" 0 1 ;;
     esac
     local build_line files_line
-    build_line=$(grep -n 'Building the generated pithead CLI' "$clone/repo/scripts/release.sh" | tail -1 | cut -d: -f1)
-    files_line=$(grep -n '\[ -f VERSION \]' "$clone/repo/scripts/release.sh" | cut -d: -f1)
+    build_line=$(grep -n 'Building the generated pithead CLI' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1)
+    files_line=$(grep -n '\[ -f VERSION \]' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1)
     rc=0
     [ -n "$build_line" ] && [ "$build_line" -lt "$files_line" ] || rc=1
     _case "release preflight builds the CLI before reading bundle inputs" 0 "$rc"

@@ -190,7 +190,7 @@ tests/integration/run.sh --host miner@10.0.0.5 --scenario remote-main-secure-tar
 # Cover the OPPOSITE prune mode. The box mines one mode against its live chain; the other is
 # skipped unless you supply a chain for it (it's otherwise covered by the fake mini-stack). A
 # pruned box supplies a full chain; a full box supplies a pruned one (build one with
-# tests/integration/build-pruned-chain.sh). See docs/dev/release-server.md → prune-axis recipe.
+# tests/integration/tools/build-pruned-chain.sh). See docs/dev/release-server.md → prune-axis recipe.
 tests/integration/run.sh --host miner@10.0.0.5 --full-data-dir /srv/monero-full
 
 # One combined heavy gate: --dir is the running old release; the candidate stays separate.
@@ -386,7 +386,7 @@ The rig phases are gated on a borrowed miner rather than on the mode: the releas
 `targeted`, so keeping the write paths matrix-only left them out of the gate that decides whether a
 release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/1364)). `--keep` leaves it deployed for
 inspection (skips the restore). Requires SSH access to the test bench and the miner; see the
-[testbench README](../../tests/integration/testbench-README.md).
+[testbench README](../../tests/integration/tools/testbench-README.md).
 
 ---
 
@@ -788,7 +788,7 @@ reader unable to tell "checked and clean" from "never ran" — the distinction t
 make.
 
 Every skip leaves through `it_skip_scenario`, `it_skip_phase` or `it_skip_leg`
-(`tests/integration/skip-accounting.sh`). Plain `it_warn` stays for warnings that are not a
+(`tests/integration/lib/skip-accounting.sh`). Plain `it_warn` stays for warnings that are not a
 dropped check.
 
 ### Only one of the three classes is a gap
@@ -824,7 +824,7 @@ tree unnoticed.
 
 ## The self-test (CI)
 
-`tests/integration/selftest.sh` exercises the harness's pure logic with no server: config
+`tests/integration/selftest/selftest.sh` exercises the harness's pure logic with no server: config
 rendering and value typing, expectation derivation (profile gating), secret redaction, the
 SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on every PR (the
 `shell` job) and via `make test-integration-selftest`, so the harness itself is held to the

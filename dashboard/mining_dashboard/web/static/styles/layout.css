@@ -1,0 +1,180 @@
+/* Layout & Grid */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}
+.grid {
+  margin-bottom: 20px;
+}
+/* Column-based packing (#991, reopened): a static card order can't stay height-aware across every
+ * combination of conditionally-rendered cards (XvB disabled, no earnings yet, Tari off, ...) — a
+ * fixed sequence is only optimal for the subset of cards visible when it was tuned, and degrades
+ * back to row-shaped trailing gaps for every other subset. CSS multi-column packs whatever cards
+ * are actually visible tightly, for any subset. The trade the issue accepted: reading order is
+ * column-major within the section, not row-major. column-width (not column-count) mirrors the old
+ * auto-fit/minmax(350px, 1fr) responsiveness — the browser fits as many ~350px columns as the
+ * container allows. Only the Your-Stack/Wider-Pool grids get this (the plain `.grid` above still
+ * wraps the single-card Chart/Workers rows, which must stay full width, not column-width).
+ * Your Stack and Wider Pool are each their OWN `.grid-columns` container (#991: an earlier version
+ * shared one container and pulled the label between them out with `column-span: all` — Safari
+ * clips/slices the first card after a spanning element at the column boundary; Chromium doesn't
+ * reproduce it. Two independent containers sidestep the spanner entirely instead of chasing the
+ * engine bug), with the section label a plain heading in normal flow above each one. */
+.grid-columns {
+  columns: 350px;
+  column-gap: 20px;
+}
+/* Section label above a packed grid (#159): the grid itself has no visual grouping, so this marks
+ * the "mine" -> "the world" transition the layout comment describes. A plain block heading in
+ * normal flow (#991: was `column-span: all` inside a single shared container — see above).
+ * Typography matches .est-heading (the other muted section marker in this stylesheet). */
+.grid-section-label {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.grid-columns > .card {
+  /* No explicit width: .card is content-box (no box-sizing rule) and a block-level box (`display:
+   * flex`'s outer display is block) already fills its column at `width: auto` — the browser
+   * solves content-width = column-width - padding - border for auto, but a literal `100%` would
+   * set the CONTENT width to the full column and let padding/border add on top, overflowing the
+   * column by 2 * 20px padding + 2px border. */
+  break-inside: avoid;
+  margin-bottom: 20px;
+}
+
+/* Vertically-stacked cards that aren't in a .grid need their own gap (#505: the Configuration
+ * editor and the Access-log panel otherwise touch with no space between them). */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Brand block (Issue #81): the Pithead mark + wordmark in the header, with the host IP demoted
+ * to a subtitle beneath the name. The host IP (HOST_IP) is arbitrary user input; a long unbroken
+ * value (no hyphens/dots to break at) would otherwise push the header — and the page — wider than
+ * a phone (Issue #83), so overflow-wrap:anywhere lets it break mid-token and wrap instead. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.brand-logo {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.brand-name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.brand-host {
+  font-size: 0.8rem;
+  margin-top: 3px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* Host subtitle is "hostname @ ip" (Issue #119): the @ is a faint connector, not a value, so
+   dim it and give it even breathing room. Hostname and ip stay at the one muted subtitle weight. */
+.brand-host-at {
+  margin: 0 0.4em;
+  opacity: 0.5;
+}
+
+/* Hero KPI band (Issue #81): a prominent strip of the headline numbers under the header. A
+ * responsive auto-fit grid so the cards sit in one row on a wide screen and reflow when narrow;
+ * long tier/mode text wraps inside its card rather than overflowing. */
+.hero-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.hero-kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  text-align: center;
+}
+/* Total Hashrate (always first — heroKpis, logic.mjs) gets an accent cue so the strip reads with
+ * a clear headline instead of six equally-weighted numbers. */
+.hero-band .hero-kpi:first-child {
+  border-top: 2px solid var(--accent);
+}
+.hero-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.hero-label {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+/* Mine cart train (pixel art) under the hero band: purely decorative — the chart above shows
+ * the same data — so it stays short and quiet. The canvas draws at a 2× logical scale; height
+ * matches the renderer's 44-logical-px strip. */
+.minecart-strip {
+  margin: -4px 0 16px 0;
+}
+.minecart-strip canvas {
+  display: block;
+  width: 100%;
+  height: 88px;
+}
+
+/* Typography */
+h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+h3 {
+  margin: 0 0 15px 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.text-muted {
+  color: var(--text-muted);
+}
+.text-accent {
+  color: var(--accent);
+}
+.text-small {
+  font-size: 0.85rem;
+}
+.text-xs {
+  font-size: 0.75rem;
+}
+.font-mono {
+  font-family: monospace;
+}

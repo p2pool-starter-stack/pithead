@@ -2,11 +2,10 @@
 // relative-luminance formula computed directly from the theme tokens dashboard.css declares — not a
 // rendered or measured colour, since these tests run with no DOM. AA for normal text is 4.5:1.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readStylesheet } from "./styles.mjs";
 
-export const DASHBOARD_CSS = readFileSync(
+export const DASHBOARD_CSS = readStylesheet(
   new URL("../../../mining_dashboard/web/static/dashboard.css", import.meta.url),
-  "utf8",
 );
 
 // Dark is the base palette (`:root`); light is the explicit override block. Pull each pair

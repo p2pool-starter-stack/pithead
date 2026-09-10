@@ -23,7 +23,7 @@ phase_install_prefill_submit_leg() { # <target-disk>
     info "pre-fill submit leg (#1846) — the previous machine's answers, submitted as a browser does"
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
-    vm_destroy
+    vm_destroy_or_refuse || return
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \

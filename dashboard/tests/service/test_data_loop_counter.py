@@ -39,7 +39,7 @@ import pytest
 
 import mining_dashboard.service.data_service as ds_mod
 from mining_dashboard.service.payout_sync import run_isolated
-from tests.service.test_data_service import _FakeClientSession, _make_service
+from tests.service._data_service_support import _FakeClientSession, _make_service
 
 # Every collector `run()` touches before it reaches the gated steps, stubbed to something inert.
 # They are here only so the poll gets that far: anything that raises on the way is swallowed by the
@@ -104,6 +104,11 @@ def _service_with_payout_gate_open(payout_side_effect=None):
     svc.tari_wallet_client = None  # keeps the sibling gate shut
     svc._sync_payouts = AsyncMock(side_effect=payout_side_effect)
     svc._sync_prices = AsyncMock()
+    # The appliance enables release checks by default.  This loop harness exercises cadence,
+    # so keep both background checks local rather than reaching GitHub through Tor.
+    svc.update_checker = MagicMock(enabled=False)
+    svc.rigforge_update_checker = MagicMock()
+    svc.rigforge_update_checker.latest_release_cached.return_value = None
     return svc
 
 

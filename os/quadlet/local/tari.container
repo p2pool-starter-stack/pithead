@@ -9,7 +9,7 @@ Network=mining.network
 IP=172.28.0.27
 User=1000:1000
 DNS=127.0.0.1
-Environment=WAIT_FOR_TOR=1 TARI_CLEARNET_SYNC=false
+Environment=WAIT_FOR_TOR=1 "TARI_CLEARNET_SYNC=false"
 Entrypoint=/var/tari/config/entrypoint.sh
 Exec=--disable-splash-screen --non-interactive
 Volume=/opt/pithead/data/tari:/var/tari/node

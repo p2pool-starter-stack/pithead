@@ -385,7 +385,7 @@ HEALTHCHECKS_PING_URL = os.environ.get("HEALTHCHECKS_PING_URL", "").strip()
 # Opt-in (tor.auto_heal in config.json): when true, the dashboard probes Tor clearnet egress (the
 # same generate_204-through-SOCKS probe as the doctor check) and restarts the tor container when
 # exits stay stuck on a failing guard — bounded retries, long cooldown, loud logging (see
-# service/tor_heal.py). Off by default: a tor restart drops every circuit, mining onions included,
+# service/health/tor_heal.py). Off by default: a tor restart drops every circuit, mining onions included,
 # so the stack must not restart its privacy boundary unbidden.
 TOR_AUTO_HEAL = os.environ.get("TOR_AUTO_HEAL", "false").strip().lower() == "true"
 

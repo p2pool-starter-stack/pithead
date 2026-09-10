@@ -14,7 +14,7 @@ entry nobody can check.
 ## Why this is its own module
 
 `annotation_pins.py` reached exactly 400 lines at slice 11, and 400 is the line at which
-`scripts/lint-file-budget.sh` obliges a `docs/dev/file-budget.tsv` row. That file's own docstring
+`scripts/lint/lint-file-budget.sh` obliges a `docs/dev/file-budget.tsv` row. That file's own docstring
 had already named this moment and what to do at it — "if it ever crosses 400 that is the moment to
 re-read the split, not to raise a number" — and slice 12 owed two more readings than would fit.
 
@@ -108,7 +108,7 @@ a plain module rather than a helper inside the test file.
 # the `False` they return mean one thing — "not a literal IP" — and there is no third outcome for
 # an out-of-band value to carry. `-> bool | None` would invent a return the function never makes.
 #
-# The sole production caller agrees, and was read rather than assumed: `web/views.py`'s
+# The sole production caller agrees, and was read rather than assumed: `web/views/views.py`'s
 # `host_display_addr` does `if is_ip_address(host): return None`, i.e. "the configured host is
 # already an address, so show it alone". On False it falls through and tries `detect_host_ipv4()`.
 # A malformed or `None` host takes the False branch, which is correct there for the same reason —
@@ -123,7 +123,7 @@ a plain module rather than a helper inside the test file.
 # them as a pair is the bulk-fill this list refuses: only one of the two Falses is ever an error
 # report at all, and the reason each is honest is a different reason.
 #
-#   `service/clearnet_sync.py:_marker_exists` — its `False` is `os.path.exists`'s own `False`, and
+#   `service/network/clearnet_sync.py:_marker_exists` — its `False` is `os.path.exists`'s own `False`, and
 #     the handler cannot give it a second meaning because the handler cannot be reached.
 #     `genericpath.exists` catches `(OSError, ValueError)` around its `os.stat` and answers False
 #     itself; the only other call in the `try` is `os.path.join`, which raises `TypeError` on bad
@@ -142,7 +142,7 @@ a plain module rather than a helper inside the test file.
 #     bytecode-identical, and deleting it would change what the gate sees in this module (it is the
 #     `except` door row, and losing it would take the module to a single row).
 #
-#   `service/clearnet_sync.py:_write_marker` — the opposite case, which is why it could not share
+#   `service/network/clearnet_sync.py:_write_marker` — the opposite case, which is why it could not share
 #     the reading above. Its `False` is EXCLUSIVELY an error report; there is no "wrote nothing,
 #     correctly" outcome. It is also not a silent one — the handler logs at error level with the
 #     path and the exception before returning — which is what separates it from the collapses #1487
@@ -160,7 +160,7 @@ a plain module rather than a helper inside the test file.
 # holding 2 residue sites in 1 function — not the zero slices 9 and 10 reached. Measured at this
 # head, and printed by `TestTheResidueThePinCannotRuleOn` whether anyone writes it here or not.
 #
-# `service/telegram_commands.py:pause_for_host_approval` returns True only after the poller has
+# `service/notify/telegram_commands.py:pause_for_host_approval` returns True only after the poller has
 # yielded, and False when approval is unavailable or the poller did not yield before the deadline.
 # Its sole production caller treats both False paths identically: it refuses the configuration
 # commit. A third result would add no caller-visible state, and `-> bool | None` would invent one.
@@ -168,16 +168,16 @@ _UNJUDGED_AND_READ = frozenset(
     {
         "client/docker/docker_control.py:_post",
         "config/config.py:local_miner_enabled",
-        "service/healthchecks.py:ping",
-        "service/notify_sinks.py:_post",
-        "service/telegram_commands.py:pause_for_host_approval",
-        "service/telegram_notifier.py:send",
+        "service/notify/healthchecks.py:ping",
+        "service/notify/notify_sinks.py:_post",
+        "service/notify/telegram_commands.py:pause_for_host_approval",
+        "service/notify/telegram_notifier.py:send",
         "helper/utils.py:is_ip_address",
-        "service/egress.py:_sinks_all_private",
-        "service/steering_projection.py:won_round_live",
-        "service/tor_heal.py:_probe_egress",
-        "service/worker_config_store.py:worker_config_change_known",
-        "service/clearnet_sync.py:_marker_exists",
-        "service/clearnet_sync.py:_write_marker",
+        "service/network/egress.py:_sinks_all_private",
+        "service/xvb/steering_projection.py:won_round_live",
+        "service/health/tor_heal.py:_probe_egress",
+        "service/workers/worker_config_store.py:worker_config_change_known",
+        "service/network/clearnet_sync.py:_marker_exists",
+        "service/network/clearnet_sync.py:_write_marker",
     }
 )

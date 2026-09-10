@@ -1,0 +1,240 @@
+# shellcheck shell=bash
+: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
+# Release domain (#1105 Phase 1): release.sh's side-effect-free logic — the semver/image-name
+# helpers, the ingredient manifest, and the bundle-contents/build-mounts checks. The publish side
+# (registry retry, toolchain preflight, smoke resolution, pull-vs-build mode, xattr hygiene) is
+# test-release-publish.sh; signing/refusal/pinned-verifier is test-release-signing.sh and the
+# install-side verifier is test-release-verify.sh. Sourced by tests/stack/run.sh after lib.sh.
+# (Assertions left in run.sh despite sharing a section marker with moved content: the #291
+# firewall-ordering assertions trailing cosign_container_path — tor/network, not release; the XvB
+# tier-threshold drift guard trailing "release.sh pure logic" — dashboard, not release; the
+# xmrig-proxy/tor-entrypoint tests trailing the bundle-hygiene section — unrelated domains; the
+# doctor-side release-verification diagnostic and the control-channel upgrade's own bundle-signature
+# check — doctor/control, by the same run-against-its-own-sandbox reasoning module 4 used for
+# apply --dry-run/symlink-invocation.)
+echo "== unit: release.sh pure logic (#44) =="
+# The release pipeline's side-effect-free helpers (no docker needed). Sourced from the repo root with
+# the positional args cleared (`set --`) so release.sh's own arg-parser doesn't see the test's args;
+# release.sh guards its main() behind a BASH_SOURCE check, so sourcing only defines the functions.
+REL="$ROOT/scripts/release/release.sh"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    is_semver "0.1.0"
+)
+assert_rc "is_semver accepts 0.1.0" "$?" "0"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    is_semver "1.2.3-rc.1"
+)
+assert_rc "is_semver accepts a prerelease" "$?" "0"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    is_semver "1.2"
+)
+assert_rc "is_semver rejects a partial" "$?" "1"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    is_semver "v1.2.3"
+)
+assert_rc "is_semver rejects a leading v" "$?" "1"
+# shellcheck disable=SC1090
+assert_eq "image_for builds the GHCR image name" \
+    "$(
+        cd "$ROOT" || exit
+        set --
+        source "$REL" 2>/dev/null
+        set +eu
+        image_for dashboard
+    )" \
+    "ghcr.io/p2pool-starter-stack/pithead-dashboard"
+# --draft (#44): documented in --help, and --help stops at the comment header (a too-wide sed range
+# used to leak the script body, e.g. `set -euo pipefail`, into the help output).
+assert_contains "release --help documents --draft" "$(bash "$REL" --help 2>&1)" "--draft"
+case "$(bash "$REL" --help 2>&1)" in
+*"set -euo pipefail"*) bad "release --help stops at the comment header" "leaked the script body into --help" ;;
+*) ok "release --help stops at the comment header" ;;
+esac
+# Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
+# runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
+# empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template
+# exactly this way. compose_build_mounts derives the list make_bundle copies.
+# shellcheck disable=SC1090
+BUILD_MOUNTS="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    compose_build_mounts docker-compose.yml
+)"
+assert_contains "bundle ships monerod's config template" "$BUILD_MOUNTS" "./build/monero/bitmonero.conf.template"
+assert_contains "bundle ships the tari config dir" "$BUILD_MOUNTS" "./build/tari"
+# shellcheck disable=SC1090
+bundle_copy_fail="$(
+    (
+        cd "$ROOT" || exit
+        set -- && source "$REL" 2>/dev/null
+        set +eu && WORKDIR="$SANDBOX/bundle-copy-fail" TAG=v9.9.9
+        cp() { return 1; }
+        make_bundle "$WORKDIR/pithead.tar.gz"
+    ) 2>&1
+)"
+bundle_copy_rc=$?
+assert_rc "bundle refuses a failed required-file copy" "$bundle_copy_rc" "1"
+assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail" "failed to copy required runtime files"
+# Build a real bundle and inspect its runtime and operator-doc contents.
+# shellcheck disable=SC1090,SC2034  # dynamic source; TAG/REGISTRY/DRY_RUN are consumed inside make_bundle
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    WORKDIR="$SANDBOX/bundle"
+    mkdir -p "$WORKDIR"
+    TAG=v9.9.9
+    REGISTRY=ghcr.io/test
+    DRY_RUN=0
+    # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
+    # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
+    for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+    make_bundle "$WORKDIR/pithead.tar.gz" >/dev/null 2>&1
+    cp "$WORKDIR/pithead/docker-compose.yml" "$SANDBOX/bundle-compose.yml" 2>/dev/null || true
+    tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
+) >"$SANDBOX/bundle.list" 2>/dev/null
+grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle ships config.minimal.json (basic quick-start config)" || bad "bundle ships config.minimal.json" "absent from the bundle"
+grep -q '^pithead/$' "$SANDBOX/bundle.list" && ok "bundle unpacks to versionless pithead/" || bad "bundle unpacks to pithead/" "top-level dir is not pithead/"
+_bundle_docs=$(sed -n 's|^pithead/docs/||p' "$SANDBOX/bundle.list" | grep -vE '^$|/$' | sort)
+_expected_docs=$(printf '%s\n' configuration.md dashboard.md faq.md getting-started.md hardware.md monitoring.md operations.md privacy.md telegram.md workers.md | sort)
+assert_eq "bundle ships exactly the operator docs, no developer or appliance material" "$_bundle_docs" "$_expected_docs"
+assert_eq "bundled operator docs have no unresolved relative links or images" "$(grep -ERh '](\(\.\.?/|\([[:alnum:]_-]+(\.md|/))|src(set)?="\./' "$SANDBOX/bundle/pithead/docs" 2>/dev/null | wc -l | tr -d ' ')" "0"
+assert_eq "bundle excludes source, test, dashboard and appliance trees" "$(grep -Ec '^pithead/(lib|os|scripts|tests|dashboard|\.github)/' "$SANDBOX/bundle.list" || true)" "0"
+_bundle_unpinned=$(grep -E 'pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):' "$SANDBOX/bundle-compose.yml" 2>/dev/null | grep -cv '@sha256:')
+[ "${_bundle_unpinned:-1}" -eq 0 ] && ok "bundle compose digest-pins all 5 first-party images (#376)" || bad "bundle digest-pins first-party images (#376)" "unpinned lines: ${_bundle_unpinned:-?}"
+if grep -q 'pithead-dashboard:${STACK_VERSION:-dev}@sha256:0000000000000000000000000000000000000000000000000000000000000001' "$SANDBOX/bundle-compose.yml" 2>/dev/null; then
+    ok "digest pin appends only the bare sha256, no double-repo (#376)"
+else
+    bad "digest pin format (#376)" "expected tag@sha256:digest on the dashboard image line"
+fi
+_bm_missing=""
+for _m in $BUILD_MOUNTS; do [ -e "$ROOT/$_m" ] || _bm_missing="$_bm_missing $_m"; done
+assert_eq "every compose ./build runtime mount exists in the tree" "${_bm_missing:-none}" "none"
+assert_eq "bundle build-mounts exclude Dockerfiles" "$(printf '%s\n' "$BUILD_MOUNTS" | grep -c Dockerfile || true)" "0"
+# Target-arch guard: the release MUST build linux/amd64 (the bundled binaries are x86_64; xmrig-proxy
+# has no arm64 build, so the stack can't be arm64). A plain host-arch `docker build` on an arm64 dev box
+# shipped arm64-labelled images that don't run on x86_64 — the v1.0.0 defect. Assert the pipeline builds
+# via buildx (which forces the target arch even on an arm64 host), defaults to amd64, and that smoke
+# rejects a wrong-arch push.
+REL_IMAGES="$ROOT/scripts/release/images.sh"
+REL_SRC="$(cat "$REL" "$REL_IMAGES")"
+assert_contains "release builds with buildx (forces the target arch)" "$REL_SRC" "docker buildx build"
+PLAT_DEF="$(grep -E '^PLATFORMS=' "$REL" | head -1)"
+case "$PLAT_DEF" in
+*linux/amd64*) ok "release targets linux/amd64 (the x86_64 binaries' platform)" ;;
+*) bad "release targets linux/amd64" "PLATFORMS default: $PLAT_DEF" ;;
+esac
+assert_contains "smoke stage verifies the pushed image's target platform" "$REL_SRC" "missing target platform"
+# write_manifest's "- **Version:**" line starts with a dash; without `printf --` it died with
+# "printf: - : invalid option" and broke the whole publish stage. Render it and assert it survives.
+man_out="$SANDBOX/manifest.md"
+# shellcheck disable=SC1090,SC2034  # dynamic source; the globals are consumed inside write_manifest
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    TAG="v9.9.9"
+    STACK_VERSION="9.9.9"
+    GIT_COMMIT="abc1234"
+    BUILD_DATE="now"
+    WORKDIR="$SANDBOX"
+    write_manifest "$man_out"
+) 2>/dev/null
+assert_contains "manifest renders the leading-dash Version line (printf --)" "$(cat "$man_out" 2>/dev/null)" "- **Version:** 9.9.9"
+# #1138's actual deliverable is that the ingredient list names BOTH Tari images. The drift guard
+# below tests pin(), which is a different function — deleting either printf leaves it green while
+# the notes regress to naming one of the two. Assert the rendered manifest, which is the artefact an
+# operator reads. A twin-sync conflict on release.sh is a realistic way to lose one of these lines.
+assert_contains "manifest names the tari NODE pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
+    "- tari node: \`quay.io/tarilabs/minotari_node:"
+assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
+    "- tari console wallet: \`quay.io/tarilabs/minotari_console_wallet:"
+# The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
+# a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
+for svc in p2pool monero xmrig-proxy; do
+    # shellcheck disable=SC1090
+    pv="$(
+        cd "$ROOT" || exit
+        set --
+        source "$REL" 2>/dev/null
+        set +eu
+        pin "$svc"
+    )"
+    if [ -n "$pv" ] && grep -q -- "$pv" "$ROOT/build/$svc/Dockerfile"; then
+        ok "pin $svc resolves to a value in its Dockerfile"
+    else
+        bad "pin $svc resolves to a value in its Dockerfile" "got '$pv'"
+    fi
+done
+# The same drift guard for the pins read out of docker-compose.yml and build/tor, which had none
+# (#1138). pin() emits the EMPTY string when its grep stops matching — a renamed image, a moved tag
+# format — and the release notes then print "- caddy: " with nothing after it. The ingredient list's
+# whole job, silently not done, on the exact surface an operator uses to check what they installed.
+#
+# Each row also names the identifier the pin MUST contain, and that half is the one that matters.
+# "is $pv present in the file it came from" is a TAUTOLOGY for every arm here — pin() extracts a
+# substring of that same file, so any non-empty answer is present by construction, and the check
+# would only ever have caught the empty case. It would NOT have caught the mistake this issue is
+# about: an arm that greps a SIBLING's image (a copy-paste slip when adding tari-wallet next to
+# tari, or a later edit "de-duplicating" two near-identical regexes) resolves fine, matches the
+# file, and reports ok while the release notes name the same image twice.
+# grep -F throughout: these values carry '/' and '.', and a regex match would accept a value that is
+# merely similar to one in the file.
+for row in \
+    "tari|docker-compose.yml|quay.io/tarilabs/minotari_node:" \
+    "tari-wallet|docker-compose.yml|quay.io/tarilabs/minotari_console_wallet:" \
+    "caddy|docker-compose.yml|caddy:" \
+    "socket-proxy|docker-compose.yml|tecnativa/docker-socket-proxy:" \
+    "tor-base|build/tor/Dockerfile|:"; do
+    comp="${row%%|*}"
+    rest="${row#*|}"
+    pin_rel="${rest%%|*}"
+    pin_want="${rest#*|}"
+    pin_src="$ROOT/$pin_rel"
+    # shellcheck disable=SC1090
+    pv="$(
+        cd "$ROOT" || exit
+        set --
+        source "$REL" 2>/dev/null
+        set +eu
+        pin "$comp"
+    )"
+    pin_ok=0
+    if [ -n "$pv" ] && grep -qF -- "$pv" "$pin_src"; then
+        case "$pv" in *"$pin_want"*) pin_ok=1 ;; esac
+    fi
+    if [ "$pin_ok" = 1 ]; then
+        ok "pin $comp resolves to its own image in $pin_rel"
+    else
+        bad "pin $comp resolves to its own image in $pin_rel" "got '$pv', expected to contain '$pin_want'"
+    fi
+done
+# The top-level VERSION file is the single source of truth (#44); the dashboard's Python package
+# metadata must stay in lockstep so a release can't ship two different "stack versions".
+ver_file="$(tr -d ' \t\r\n' <"$ROOT/VERSION")"
+ver_pyproject="$(grep -oE '^version = "[^"]+"' "$ROOT/dashboard/pyproject.toml" | head -1 | cut -d'"' -f2)"
+assert_eq "pyproject.toml version matches VERSION (#44)" "$ver_pyproject" "$ver_file"

@@ -84,6 +84,52 @@ restore_staged_members_safe() {
     done
 }
 
+# An archive may carry generated files for round-trip compatibility, but they are never policy
+# inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
+# trees, validate them as single-line generated values, then use the normal writers to rebuild
+# .env and Caddyfile from the staged, validated config. This runs before any live path is touched.
+restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
+    local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
+    local key value count kind
+    : >"$seed" || return 1
+    while read -r key kind; do
+        if [ "$key" = PROXY_STRATUM_PASSWORD ] && [ "$(jq -r '.p2pool.stratum_password // ""' "$staged_cfg")" != auto ]; then continue; fi
+        count=0
+        [ ! -f "$staged_env" ] || count=$(grep -c "^${key}=" "$staged_env" 2>/dev/null || true)
+        [ "$count" -le 1 ] || return 1
+        [ "$count" -eq 1 ] || continue
+        value=$(env_get_file "$staged_env" "$key")
+        case "$kind" in
+        hex24) [[ "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
+        hex32) [[ "$value" =~ ^[0-9a-f]{32}$ ]] || return 1 ;;
+        optional_hex24) [[ -z "$value" || "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
+        onion) [[ "$value" =~ ^(placeholder|[a-z2-7]{56}\.onion)$ ]] || return 1 ;;
+        client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
+        bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
+        esac
+        printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
+    done <<'EOF'
+PROXY_AUTH_TOKEN hex24
+WALLET_RPC_PASSWORD hex24
+TARI_WALLET_PASSWORD hex32
+PROXY_STRATUM_PASSWORD optional_hex24
+MONERO_ONION_ADDRESS onion
+TARI_ONION_ADDRESS onion
+P2POOL_ONION_ADDRESS onion
+DASHBOARD_ONION_ADDRESS onion
+DASHBOARD_ONION_CLIENT_PUBKEY client
+DASHBOARD_ONION_CLIENT_PRIVKEY client
+DEPLOYMENT_COMPLETED bool
+EOF
+    if ! PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \
+        bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "${ENV_FILE}.dryrun" >/dev/null && mv -f -- "${ENV_FILE}.dryrun" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
+        _ "${BASH_SOURCE[0]}"; then
+        rm -f -- "$seed" "$staged_caddy"
+        return 1
+    fi
+    mv -f -- "$seed" "$staged_env"
+}
+
 restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     local archive="$1" encrypted="$2" pass="$3" names details name unsafe=0
     local staged_cfg staged_env staged_caddy paths_file err="" path trusted match env_path i=0
@@ -138,6 +184,10 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     if [ "$unsafe" -ne 0 ]; then
         restore_discard_stage
         error "Archive contains files or data paths outside this appliance's validated restore set — nothing was restored."
+    fi
+    if ! restore_canonicalize_derived "$staged_cfg" "$staged_env" "$staged_caddy"; then
+        restore_discard_stage
+        error "Archive contains invalid generated identity or secret state — nothing was restored."
     fi
 }
 

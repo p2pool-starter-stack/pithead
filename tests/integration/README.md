@@ -5,17 +5,18 @@ and asserts the stack behaves (issue
 [#54](https://github.com/p2pool-starter-stack/pithead/issues/54)).
 
 ```
-run.sh         entry point — connects (SSH or --local) and runs the matrix (+ lifecycle,
-               cross-version upgrade, fault, and XvB routing phases)
-scenarios.sh   the declarative config matrix (data, not code)
-lib.sh         shared helpers: target I/O, assertions, readiness waiters, redaction
-live-gates.sh  release readiness, cross-version continuity, and real XvB route/restore gates
-live-*-support.sh  private candidate/state, durable supervision, rollback, and XvB helpers
-selftest.sh    pure-logic self-test (no server) — runs in CI on every PR
-fakes/         controllable fake monerod/Tari + a contract test pointing the REAL clients at
-               them (tier 2; runs in CI, no docker)
-mini-stack/    docker overlay running the real dashboard + docker-control vs the fakes, with a
-               scenario runner for hold/release + reject/readmit (tier 3; needs docker)
+run.sh          entry point — connects (SSH or --local) and runs the matrix (+ --lifecycle,
+                --fault-injection, --image-upgrade, --xvb-routing-smoke)
+scenarios.sh    the declarative config matrix (data, not code)
+lib.sh          shared helpers: target I/O, assertions, readiness waiters, redaction
+lib/            sourced live-runner modules (incl. the live-gates.sh upgrade/XvB gates and
+                their live-*-support.sh trust, state-snapshot, and restore helpers)
+selftest/       pure-logic self-tests (no server) — run in CI on every PR
+tools/          operator utilities for preparing and inspecting a test bench
+live-supervisor.sh  runs a destructive gate under systemd so a cancelled CI job cannot kill its
+                rollback; live-supervised-run.sh is the unit it launches
+fakes/          controllable fake monerod/Tari + contract tests against the real clients
+mini-stack/     docker overlay running the real dashboard + docker-control against the fakes
 ```
 
 The live matrix here is tier 4 of the broader plan. See
@@ -30,13 +31,6 @@ make test-integration ARGS="--host miner@10.0.0.5 --dir pithead"
 
 # On the box itself
 ./run.sh --local --dir /home/miner/pithead --lifecycle
-
-# Combined cross-version + real XvB controller gate (old images already running)
-# The signed candidate archive must contain PITHEAD_COMMIT with <new-40-hex-sha>.
-./run.sh --local --dir /srv/pithead/current --workers 2 --safety-backup \
-  --image-upgrade <old-40-hex-sha> <new-40-hex-sha> \
-  --candidate-bundle <candidate.tar.gz> <candidate.sig> <trusted-cosign.pub> \
-  --lifecycle --xvb-routing-smoke
 
 # Just the pure-logic checks (no server)
 make test-integration-selftest

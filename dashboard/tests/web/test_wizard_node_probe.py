@@ -11,8 +11,9 @@ import pytest
 from aiohttp.test_utils import TestClient, TestServer
 from google.protobuf import empty_pb2
 
-from mining_dashboard import wizard, wizard_node_probe
+from mining_dashboard import wizard_node_probe
 from mining_dashboard.client.tari.generated import base_node_pb2, base_node_pb2_grpc
+from mining_dashboard.wizard import server as wizard
 
 
 class _MonerodHandler(BaseHTTPRequestHandler):

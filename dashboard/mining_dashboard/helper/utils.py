@@ -97,7 +97,7 @@ def format_disk_size(used_gb, total_gb):
 def _format_coin(amount, symbol):
     """Magnitude-adaptive coin formatting — 4 decimal places at >= 1, 6 at >= 0.001, 8 below —
     so a small daily estimate isn't truncated to zeros. Mirrors ``formatXmr``/``formatXtm`` in
-    ``web/static/logic.mjs`` so the same estimate reads the same on every surface (#387).
+    ``web/static/app/logic.mjs`` so the same estimate reads the same on every surface (#387).
     Returns "0 <symbol>" for zero and an em dash for non-numeric input."""
     try:
         val = float(amount)

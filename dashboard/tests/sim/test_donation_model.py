@@ -1,7 +1,7 @@
 """
 Closed-loop tests for the production XvB donation controller (Issues #9, #70).
 
-The single-step tests in tests/service/test_algo_service.py can't see how the
+The single-step tests in tests/service/xvb/test_algo_service_*.py can't see how the
 controller behaves over time: the calibration loop only converges as the
 controller's own donations feed back through XvB's windowed averages across many
 cycles. These drive the `mining_dashboard.sim` harness — which wraps the real
@@ -251,7 +251,7 @@ class TestProjectedSteering:
     def _run(self, horizon_s):
         from unittest.mock import patch
 
-        with patch("mining_dashboard.service.algo_service.XVB_PROJECTION_HORIZON_S", horizon_s):
+        with patch("mining_dashboard.service.xvb.algo_service.XVB_PROJECTION_HORIZON_S", horizon_s):
             algo = build_controller()
             controller = make_algo_controller(
                 algo, p2pool_difficulty=DIFFICULTY, stamp_updates=True
@@ -288,7 +288,7 @@ class TestProjectedSteering:
 
         results = {}
         for h in (0, 1200):
-            with patch("mining_dashboard.service.algo_service.XVB_PROJECTION_HORIZON_S", h):
+            with patch("mining_dashboard.service.xvb.algo_service.XVB_PROJECTION_HORIZON_S", h):
                 algo = build_controller()
                 controller = make_algo_controller(
                     algo, p2pool_difficulty=DIFFICULTY, stamp_updates=True

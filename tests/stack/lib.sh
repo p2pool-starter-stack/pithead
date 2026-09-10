@@ -22,6 +22,20 @@
 # shellcheck disable=SC2034  # sourced library: this marker and the fixtures are read by run.sh
 STACK_SUITE=1
 
+# macOS is deprecated as a test platform (#2041): the assertions assume GNU sed/stat, and BSD
+# tools differ without failing loudly. Refuses rather than warns, because a warning still leaves a
+# pass/fail line behind that reads as a result — which is how three reviewers reached wrong
+# verdicts. Evidence and the full reasoning are in #2041. CI is Linux; this never fires there.
+# Keep this BELOW STACK_SUITE=1: a shellcheck directive is file-scoped only while nothing
+# executable precedes it, so moving this up collapses the disable=SC2034 above to one line.
+if [ "$(uname -s)" = "Darwin" ] && [ "${PITHEAD_UNTRUSTED_MACOS_RUN:-0}" != "1" ]; then
+    echo "tests: macOS is not a supported test platform (#2041) — run these on Linux." >&2
+    echo "  A failure here would not be evidence: unmodified develop scores 3708/148 FAILED on macOS," >&2
+    echo "  because the assertions assume GNU sed/stat and BSD tools differ silently." >&2
+    echo "  To run anyway, knowing the result is untrustworthy: PITHEAD_UNTRUSTED_MACOS_RUN=1" >&2
+    exit 1
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STACK="$ROOT/pithead"
 PASS=0

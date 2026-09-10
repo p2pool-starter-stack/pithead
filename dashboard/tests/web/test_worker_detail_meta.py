@@ -27,7 +27,7 @@ Mutation-kill notes, one per guard — each of these was run and seen to red:
 import pytest
 
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.web.worker_detail import build_worker_detail
+from mining_dashboard.web.views.worker_detail import build_worker_detail
 
 # What the rig actually serves once RigForge has recorded a change over the control channel.
 _META = {
@@ -44,7 +44,7 @@ def _detail(monkeypatch, rigforge, *, spooled=None, status="applied"):
     ``status`` is the outcome our history records for that row — the thing that separates a change
     that held from one the rig rolled back out from under us.
     """
-    from mining_dashboard.web import views
+    from mining_dashboard.web.views import views
 
     monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "10.0.0.9"}])
     monkeypatch.setattr(views.config, "DASHBOARD_CONTROL_ENABLED", True)
@@ -197,7 +197,7 @@ class TestConfigOrigin:
         # in our history", and only the first is a claim worth printing. Found by security review:
         # the #530 audit's own lookup is deliberately unscoped, which is correct for #530 and
         # exactly wrong here.
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -235,7 +235,7 @@ class TestConfigOrigin:
         passing for the wrong reason — the window has to still be BOUNDED and the good row has to
         have really fallen out of it, or `here` at 50 would only mean the window grew.
         """
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -270,7 +270,7 @@ class TestConfigOrigin:
         warning the read could in fact support. An exact-id lookup answers it: the id is not in
         this rig's rows at all, and no amount of later history makes that less true.
         """
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -293,7 +293,7 @@ class TestConfigOrigin:
         # The truncation verdict must not swallow the case where we DID find the row. The rig
         # re-stamps the id it reverted, so the id is still matched even on a rig with a full
         # window — and the answer stays `reverted`, not the new "we do not know".
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -324,7 +324,7 @@ class TestConfigOrigin:
         # which is not neutral — it renders as "Last changed from another dashboard". Failing away
         # from `here` was right; landing on an accusation sourced from our own broken database was
         # not. `unread` fails closed without inventing a culprit.
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -354,7 +354,7 @@ class TestConfigOrigin:
         # The second failure path, and the one nobody sees: `if not self._conn` raises nothing and
         # logs nothing. The test above keeps `_conn` SET to reach the `except sqlite3.Error` arm,
         # so it never covers this one — and a fix to only the loud path leaves this one accusing.
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -376,7 +376,7 @@ class TestConfigOrigin:
         # None is the storage layer's signal, not a payload value. `history` is iterated by the
         # client, so leaking the None past this boundary would trade a wrong verdict for a broken
         # page — the fix must not be visible anywhere except the verdict.
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "1.2.3.4"}]
@@ -411,7 +411,7 @@ class TestConfigOrigin:
         assert d["config_origin"] == "here"  # known-wrong; see #1367
 
     def test_a_worker_missing_from_the_snapshot_carries_no_provenance(self, monkeypatch):
-        from mining_dashboard.web import views
+        from mining_dashboard.web.views import views
 
         monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", [])
         monkeypatch.setattr(views.config, "DASHBOARD_CONTROL_ENABLED", True)

@@ -356,7 +356,7 @@ def unannotated_falsy_returns(source: str, where: str) -> list[tuple[str, str, i
         # `_own_nodes` for the same reason `_failure_returns` uses it, and it is the ONE choice
         # here that a measured sweep already got wrong: `ast.walk(function)` descends into nested
         # defs, so the enclosing function absorbs their returns AND they are counted again as
-        # themselves. #1604's table read `web/xvb_views.py` as 12 sites in 6 functions for exactly
+        # themselves. #1604's table read `web/views/xvb_views.py` as 12 sites in 6 functions for exactly
         # that reason — `build_xvb_calc` scored the returns at lines 731 and 767, which belong to
         # the nested `_odds_day` and `_face_value` and to nothing of its own. The truth is 10 in 5.
         for node in _own_nodes(function):

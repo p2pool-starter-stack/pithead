@@ -3,7 +3,7 @@ import logging
 import grpc
 
 from mining_dashboard.config.config import TARI_WALLET_GRPC_ADDRESS
-from mining_dashboard.service.earnings import MICRO_PER_XTM
+from mining_dashboard.service.xvb.earnings import MICRO_PER_XTM
 
 logger = logging.getLogger("TariWalletClient")
 

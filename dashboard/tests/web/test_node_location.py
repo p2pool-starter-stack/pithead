@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 from mining_dashboard.service import metrics as metrics_mod
 from mining_dashboard.service.metrics import SyncMetric
-from mining_dashboard.web.views import build_sync
+from mining_dashboard.web.views.views import build_sync
 
 _SYNCED = SyncMetric(
     percent=100, current=10, target=10, remaining=0, has_target=True, done=True, down=False

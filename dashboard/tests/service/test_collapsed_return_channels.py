@@ -88,8 +88,8 @@ _SIGNED = {
     "service/storage_service.py:get_xvb_standby",
     "service/storage_service.py:get_kv",
     "service/storage_service.py:load_snapshot",
-    "service/worker_config_store.py:get_worker_config_history",
-    "service/worker_config_store.py:get_worker_config_change",
+    "service/workers/worker_config_store.py:get_worker_config_history",
+    "service/workers/worker_config_store.py:get_worker_config_change",
 }
 
 
@@ -107,7 +107,9 @@ class TestTheSignedContractHolds:
         functions the comparison would pass by matching nothing at all, which is the failure this
         whole file argues against. #1409's own fix must be in there by name."""
         assert len(package["signed"]) >= len(_SIGNED)
-        assert "service/worker_config_store.py:get_worker_config_history" in package["signed"]
+        assert (
+            "service/workers/worker_config_store.py:get_worker_config_history" in package["signed"]
+        )
 
     def test_every_signed_function_still_declares_its_out_of_band_failure(self, package):
         """LAW 1. These five were read at source and cleared. Dropping the `| None` from one
@@ -161,7 +163,7 @@ class TestTheResidualIsReportedNotCertified:
 
     def test_the_blind_spot_is_measured_rather_than_described(self, package):
         """The unannotated layer was this gate's real limit and is now EMPTY: #1556's last slice
-        annotated the pair in `service/clearnet_sync.py`. This assertion was written to red on that
+        annotated the pair in `service/network/clearnet_sync.py`. This assertion was written to red on that
         day rather than let the reach grow in silence, so it IS the deliberate look, taken and then
         reversed — and it is stronger than the per-module pins, which cannot see a NEW module."""
         assert package["blind"] == [], f"a failure return went unannotated: {package['blind']}"
@@ -297,8 +299,8 @@ class Store:
         that value drives the `payout_confirmed` alert. A walk that came back empty on the real
         package would be one that never matched anything at all."""
         found = dict(package["collapse"])
-        assert found["service/storage_service.py:get_payouts"] == ["[]"]
-        assert found["service/storage_service.py:add_payouts"] == ["[]"]
+        assert found["service/mining_store.py:get_payouts"] == ["[]"]
+        assert found["service/mining_store.py:add_payouts"] == ["[]"]
 
     def test_a_none_nested_inside_a_parameter_is_not_read_as_an_out_of_band_marker(self):
         """NEGATIVE CONTROL for `_union_members`. `Callable[[], None]` and `dict[str, None]` both

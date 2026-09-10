@@ -22,7 +22,7 @@ import pytest
 from mining_dashboard.client import xmrig_client as xc
 from mining_dashboard.client.xmrig_client import XMRigWorkerClient
 from mining_dashboard.service.data_helpers import _merge_direct_stats
-from mining_dashboard.web.infra_views import build_workers
+from mining_dashboard.web.views.infra_views import build_workers
 
 # A deliberately thin session fake: these tests only need "the probe answered 200" versus "the probe
 # failed". The bounded-read / short-read fakes that matter to the size cap live in

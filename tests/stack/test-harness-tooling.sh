@@ -6,7 +6,7 @@ echo "== unit: lint-docs-voice self-test (#1441) =="
 # An empty `git ls-files '*.md'` enumeration (broken glob, over-matching filter, run outside a
 # checkout) used to read as a clean scan — rc 0 either way. Its --self-test runs the real script
 # end to end in a throwaway repo with no tracked .md files and fails unless it refuses instead.
-bash "$ROOT/scripts/lint-docs-voice.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/lint/lint-docs-voice.sh" --self-test >/dev/null 2>&1
 assert_rc "docs-voice guard self-test passes" "$?" "0"
 
 # The assertion above only proves anything if the script still RECOGNISES --self-test: a revert
@@ -19,7 +19,7 @@ assert_rc "docs-voice guard self-test passes" "$?" "0"
 empty_repo="$SANDBOX/lint-docs-voice-empty"
 mkdir -p "$empty_repo"
 git init -q "$empty_repo" >/dev/null
-out=$(cd "$empty_repo" && bash "$ROOT/scripts/lint-docs-voice.sh" 2>&1) && rc=0 || rc=$?
+out=$(cd "$empty_repo" && bash "$ROOT/scripts/lint/lint-docs-voice.sh" 2>&1) && rc=0 || rc=$?
 assert_rc "docs-voice guard refuses an empty prose-doc enumeration directly" "$rc" "1"
 assert_contains "docs-voice refusal names the empty enumeration" "$out" "prose-doc enumeration returned zero files"
 
@@ -27,7 +27,7 @@ echo "== unit: lint-operator-strings self-test (#755) =="
 # The operator-strings guard's frontend scanner is non-trivial awk (comment-stripping + CSS-hex-colour
 # skip); a silent break would make it stop catching leaks. Its --self-test drives fixtures through the
 # real scanners and fails if a planted #NNN is missed or a hex colour/comment is wrongly flagged.
-bash "$ROOT/scripts/lint-operator-strings.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/lint/lint-operator-strings.sh" --self-test >/dev/null 2>&1
 assert_rc "operator-strings guard self-test passes" "$?" "0"
 
 echo "== unit: pin-watch self-test (#1128) =="
@@ -37,14 +37,14 @@ echo "== unit: pin-watch self-test (#1128) =="
 # useless as the scheduled workflow that lived on a non-default branch and never ran at all. Its
 # --self-test drives the normalisation over the real pin spellings and drives both lookup failure
 # paths, because an upstream lookup that could not run must never read as "current".
-bash "$ROOT/scripts/pin-watch.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
 
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
 # matches what its registry serves for that tag. This is the check that does, and its --self-test
 # drives the exact half-done bump #1137 is about (tag moved, old digest left in the file) red.
-bash "$ROOT/scripts/resolve-pins.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/release/resolve-pins.sh" --self-test >/dev/null 2>&1
 assert_rc "resolve-pins self-test passes" "$?" "0"
 
 echo "== unit: verify-healthcheck-scripts self-test (#1098) =="
@@ -55,7 +55,7 @@ echo "== unit: verify-healthcheck-scripts self-test (#1098) =="
 # parsers (WORKDIR resolution, COPY --from=, multi-source directory COPYs) against fixtures and
 # reproduces the issue's own named mutation end to end: rename the script in a Dockerfile without
 # touching compose, and the check must go red.
-bash "$ROOT/scripts/verify-healthcheck-scripts.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" --self-test >/dev/null 2>&1
 assert_rc "verify-healthcheck-scripts self-test passes" "$?" "0"
 
 echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
@@ -63,14 +63,14 @@ echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
 # Dockerfiles actually agree right now — the same real-tree pass release.sh and CI both get, so a
 # healthcheck rename that forgets the compose side (or vice versa) fails here before it ever
 # reaches an appliance.
-bash "$ROOT/scripts/verify-healthcheck-scripts.sh" >/dev/null 2>&1
+bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" >/dev/null 2>&1
 assert_rc "every real healthcheck script exists where its own Dockerfile promises (#1098)" "$?" "0"
 
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its
 # --self-test drives fixtures through both branches plus the file-present quiet pass.
-bash "$ROOT/scripts/patch-coverage.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/lint/patch-coverage.sh" --self-test >/dev/null 2>&1
 assert_rc "patch-coverage wrapper self-test passes" "$?" "0"
 
 echo "== unit: shipped-image sweep report self-test (#1313) =="
@@ -78,7 +78,7 @@ echo "== unit: shipped-image sweep report self-test (#1313) =="
 # its whole job is refusing to call an image clean when it was never scanned. Every refusal —
 # a missing leg, an unparseable report, an artifact that is a tag rather than a digest — is
 # driven through fixtures here, with no network, no docker and no gh.
-bash "$ROOT/scripts/shipped-image-sweep-report.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/watch/shipped-image-sweep-report.sh" --self-test >/dev/null 2>&1
 assert_rc "shipped-image sweep report self-test passes" "$?" "0"
 
 echo "== unit: #1059 watch-report discrimination =="
@@ -92,6 +92,11 @@ echo "== unit: #1059 watch-report discrimination =="
 # that proves it and it needs no KVM.
 bash "$ROOT/tests/os/failure-evidence.sh" --self-test >/dev/null 2>&1
 assert_rc "#1059 watch-report self-test passes" "$?" "0"
+
+# The #2043 dump: five legs report a zero-container stack and none of them captured anything,
+# so the probe SET is the part that must not rot. Same reasoning as above — no KVM needed.
+bash "$ROOT/tests/os/zero-container-evidence.sh" --self-test >/dev/null 2>&1
+assert_rc "#2043 zero-container evidence self-test passes" "$?" "0"
 
 echo "== unit: #1676 version-aging helper self-test =="
 # tests/os/run.sh's leg 4 must make the guest claim a version OLDER than the bundle it is about to
@@ -112,6 +117,13 @@ echo "== unit: #1936 wizard-state-poll self-test =="
 # proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
+
+bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/appliance-diagnostics-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#1966 appliance diagnostics verdict self-test passes" "$?" "0"
+bash -c 'PITHEAD_OS_VM_DESTROY_SELF_TEST=1 exec bash "$1"' _ "$ROOT/tests/os/kvm-preflight.sh"
+assert_rc "the OS battery refuses a VM that survives teardown" "$?" "0"
 
 echo "== unit: tor healthcheck command-dependency self-test (#1372) =="
 # The #1098 pair above asks whether a healthcheck script EXISTS where its Dockerfile promises. This
@@ -180,15 +192,15 @@ echo "== unit: every run.sh fragment refuses a direct run (#1657) =="
 frag_probe="$SANDBOX/fragment-refusal"
 mkdir -p "$frag_probe"
 frag_bad=""
-for frag in "$ROOT"/tests/stack/test-*.sh; do
+while IFS= read -r frag; do
     frag_out=$(cd "$frag_probe" && bash "$frag" 2>&1) &&
         frag_bad="$frag_bad $(basename "$frag"):exited-0"
     case "$frag_out" in
     *"tests/stack/run.sh"*) ;;
     *) frag_bad="$frag_bad $(basename "$frag"):refusal-does-not-name-run.sh" ;;
     esac
-done
-assert_eq "every tests/stack/test-*.sh refuses a direct run, naming run.sh" "$frag_bad" ""
+done < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
+assert_eq "every tests/stack test fragment refuses a direct run, naming run.sh" "$frag_bad" ""
 # The row above asserts the exit status; this one asserts the consequence that status exists to
 # prevent. They are not the same arm: a guard moved below a fixture-building line would still
 # refuse, and only this row would notice the files it wrote on the way there.
@@ -204,11 +216,11 @@ echo "== unit: verdict-line determinism — no random/measured value in a PASS l
 # only the ✓ line, and the arming row before each check asserts it is there: an empty capture (a
 # domain that died before its PASS line, a renamed label, a FAIL on that row) contains neither
 # value either, and would read as clean without it.
-vd_id_out=$(bash -c 'set -uo pipefail; source "'"$HERE"'/lib.sh" >/dev/null 2>&1; source "'"$HERE"'/test-appliance-identity-boot.sh" 2>&1' | grep "✓.*loadable ed25519 key" | head -1)
+vd_id_out=$(bash -c 'set -uo pipefail; source "'"$HERE"'/lib.sh" >/dev/null 2>&1; source "'"$HERE"'/appliance/test-appliance-identity-boot.sh" 2>&1' | grep "✓.*loadable ed25519 key" | head -1)
 assert_contains "the ed25519-key PASS line was captured at all (arming)" "$vd_id_out" "the generated key is a loadable ed25519 key"
 assert_not_contains "the ed25519-key PASS line carries no fingerprint bytes" "$vd_id_out" "SHA256:"
 
-vd_hb_out=$(bash -c 'set -uo pipefail; source "'"$HERE"'/lib.sh" >/dev/null 2>&1; source "'"$HERE"'/test-appliance-boot.sh" 2>&1' | grep "✓.*does not wait on the heartbeat interval")
+vd_hb_out=$(bash -c 'set -uo pipefail; source "'"$HERE"'/lib.sh" >/dev/null 2>&1; source "'"$HERE"'/appliance/test-appliance-boot.sh" 2>&1' | grep "✓.*does not wait on the heartbeat interval")
 assert_contains "the heartbeat PASS line was captured at all (arming)" "$vd_hb_out" "a fast load does not wait on the heartbeat interval"
 case "$vd_hb_out" in
 *[0-9]s\)*) bad "the heartbeat PASS line carries no measured elapsed value" "$vd_hb_out" ;;
@@ -221,7 +233,7 @@ echo "== unit: scheduled-run watch self-test (#1377) =="
 # making the default branch's CI genuinely fail — so the fixtures here are the only place the
 # failure branch runs at all. They also pin the distinction the watcher exists for: a sweep that
 # FAILED is reported and exits 0 (a finding), while a sweep it could not read exits 1 (UNCHECKED).
-bash "$ROOT/scripts/scheduled-run-watch.sh" --self-test >/dev/null 2>&1
+bash "$ROOT/scripts/watch/scheduled-run-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "scheduled-run watch self-test passes" "$?" "0"
 
 echo "== unit: verdict-line determinism — every PASS label, not two named lines (#1740) =="
@@ -278,7 +290,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
             print f "|" tok
         }
     }
-    ' "$@" | sort -u
+    ' "$@" | LC_ALL=C sort -u
 }
 # Every entry below was read at its call site and is a loop variable over a fixed list, a count
 # derived from the tree, or a value parsed out of a repo file — the same on every run of a given
@@ -352,8 +364,9 @@ test-unit-helpers.sh|t_name
 test-unit-helpers.sh|t_val
 VDEXP
 )"
+mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
 assert_eq "every PASS label that interpolates a value is one the suite has reviewed" \
-    "$(vd_interp_names "$ROOT/tests/stack/lib.sh" "$ROOT"/tests/stack/test-*.sh)" "$vd_expected"
+    "$(vd_interp_names "$ROOT/tests/stack/lib.sh" "${stack_fragments[@]}")" "$vd_expected"
 
 # The row above is an equality over a set, so a sweep that silently stopped matching would report
 # an empty actual against a non-empty expectation and fail loudly — but it would fail naming the

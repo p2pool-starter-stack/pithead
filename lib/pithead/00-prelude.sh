@@ -46,9 +46,10 @@ OS_TYPE="$(uname -s)"
 readonly OS_TYPE
 # PITHEAD_CONFIG_FILE points a single invocation at an alternate candidate config — the control
 # runner (#33) uses it to preview a staged config with `apply --dry-run` without touching the
-# live config.json. Everything else (the .env, generated files) still belongs to this checkout.
+# live config.json. The restore validator likewise points the normal env writer at a private staged
+# file; ordinary commands leave PITHEAD_ENV_FILE unset, so their generated files belong here.
 readonly CONFIG_FILE="${PITHEAD_CONFIG_FILE:-config.json}"
-readonly ENV_FILE=".env"
+readonly ENV_FILE="${PITHEAD_ENV_FILE:-.env}"
 # Canonical closed schema: every known config.json leaf path, shipped beside this script (bundle +
 # checkout root). The #33 control gate uses it to refuse a staged config carrying any path the
 # schema doesn't know — the "unrecognized key renders to no env var, so no porcelain row" smuggling

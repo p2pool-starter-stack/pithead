@@ -5,7 +5,7 @@ other config edit uses, no new write route — pre-validates a proposal's newly-
 This is the dashboard's own defense-in-depth mirror of pithead's ``control_approval_gate`` add-only
 exception (the actual security authority, exercised at commit); these tests prove the mirror is
 WIRED IN to the real request handler, not just correct in isolation (that's
-``tests/service/test_worker_adopt.py``). Each rejection test would pass right through (200/202,
+``tests/service/workers/test_worker_adopt.py``). Each rejection test would pass right through (200/202,
 request spooled) if the guard call in ``handle_control_preview`` were removed or its condition
 inverted — that is the mutation each one kills.
 """

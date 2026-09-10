@@ -1,0 +1,92 @@
+/* View Toggle */
+.view-controls {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 15px;
+}
+.toggle-group {
+  display: inline-flex;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.btn-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+.btn-toggle:hover {
+  color: var(--text);
+  background: rgba(128, 128, 128, 0.15);
+}
+.btn-toggle.active {
+  background: var(--accent-emphasis);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Theme switcher (Issue #43): a small fixed segmented control in the bottom-right that picks
+ * light / auto / dark. Kept visually quiet — muted icons on a subtle pill — with the active
+ * segment raised. The chosen mode is persisted in localStorage and re-applied before the first
+ * paint (see dashboard.js / theme-init.js), so it survives reloads and stack restarts. */
+.theme-switcher {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 50;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.theme-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.theme-seg:hover {
+  color: var(--text);
+}
+.theme-seg.active {
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+.theme-seg svg {
+  display: block;
+}
+
+/* View Modes */
+.card-advanced {
+  display: none !important;
+}
+.card-simple {
+  display: flex !important;
+}
+
+.mode-advanced .card-advanced {
+  display: flex !important;
+}
+.mode-advanced .card-simple {
+  display: none !important;
+}

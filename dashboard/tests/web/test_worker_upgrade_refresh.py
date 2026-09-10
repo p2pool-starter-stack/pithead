@@ -18,8 +18,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mining_dashboard.service import control_service, worker_refresh
+from mining_dashboard.service import control_service
 from mining_dashboard.service.storage_service import StateManager
+from mining_dashboard.service.workers import worker_refresh
 from mining_dashboard.web.server import create_app
 
 CONTROL_HEADERS = {"X-Pithead-Control": "1"}

@@ -1,0 +1,103 @@
+/* Dashboard stylesheet.
+ *
+ * Extracted from the inline <style> block in index.html (Issue #60) so the page can be
+ * served under a CSP without style-src 'unsafe-inline'. All dynamic styling that used to
+ * live in inline style="" attributes is expressed here as classes the server picks
+ * (palette colours, gauges) or set at runtime via the CSSOM in dashboard.js (the gauge
+ * fill %, which can't be a fixed class). Nothing here is templated — it's static CSS. */
+
+/* ---- Theme palettes (Issue #43) -------------------------------------------------------
+ * Three modes, selected by a `data-theme` attribute on <html> — set by theme-init.js before
+ * the first paint and updated by dashboard.js on toggle, persisted in localStorage:
+ *   - "dark"          explicit dark
+ *   - "light"         explicit light
+ *   - "auto" / unset  follow the browser via prefers-color-scheme
+ * Dark is the base (`:root`) so the pre-JS shell — and any stale/unknown value — defaults to
+ * it; the light palette applies for explicit light and for auto/unset under a light system.
+ * Everything downstream is expressed in these variables, so components, the sync gauge and the
+ * Chart.js chart (which reads them via getComputedStyle) all follow the active theme. */
+:root,
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --ok: #238636;
+  --bad: #da3633;
+  --warn: #d29922;
+  --purple: #a371f7;
+  --elevated: #2d333b; /* raised surface (e.g. the active theme segment): lighter than --card */
+  /* The base status colours are GitHub's FILL shades; used as 12px text on dark they fall
+   * under WCAG AA. Split the roles: -emphasis = fill that carries white text, -fg = the
+   * colour as text on --card/--bg. --ok/--bad/--warn/--purple stay for tinted fills. */
+  --accent-emphasis: #1f6feb;
+  --warn-emphasis: #9e6a03;
+  --purple-emphasis: #8957e5;
+  --ok-fg: #3fb950;
+  --bad-fg: #f85149;
+  --purple-fg: #a371f7;
+}
+
+/* Light palette — GitHub Primer light, mirroring the dark set's GitHub-dark origin. Kept in
+ * sync with the auto block below (plain CSS has no way to share one declaration list across a
+ * selector and a media query). */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --card: #f6f8fa;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #59636e;
+  --accent: #0860ca;
+  --ok: #1a7f37;
+  --bad: #cf222e;
+  --warn: #805900;
+  --purple: #8250df;
+  --elevated: #ffffff; /* white raised thumb on the off-white --card track */
+  --accent-emphasis: #0969da;
+  --warn-emphasis: #9a6700;
+  --purple-emphasis: #8250df;
+  --ok-fg: #116329;
+  --bad-fg: #cf222e;
+  --purple-fg: #6639ba;
+}
+
+/* Auto: follow the system, but only when the user hasn't pinned dark or light. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #ffffff;
+    --card: #f6f8fa;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-muted: #59636e;
+    --accent: #0860ca;
+    --ok: #1a7f37;
+    --bad: #cf222e;
+    --warn: #805900;
+    --purple: #8250df;
+    --elevated: #ffffff;
+    --accent-emphasis: #0969da;
+    --warn-emphasis: #9a6700;
+    --purple-emphasis: #8250df;
+    --ok-fg: #116329;
+    --bad-fg: #cf222e;
+    --purple-fg: #6639ba;
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 20px;
+  margin: 0;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+}

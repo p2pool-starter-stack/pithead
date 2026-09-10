@@ -75,7 +75,7 @@ before planning around a smaller number.
 > also dense: `mdb_stat -ef` on an idle copy reports a freelist of 10 pages out of 67,605,667, and
 > `pages_used * 4096` equals the file size exactly. An in-place prune *can* leave reclaimable free
 > pages (LMDB never shrinks its file), and
-> [`compact-chain.sh`](../../tests/integration/compact-chain.sh)
+> [`compact-chain.sh`](../../tests/integration/tools/compact-chain.sh)
 > (`monero-blockchain-prune --copy-pruned-database`) rewrites the DB when it does — but measure the
 > freelist first; this paragraph used to promise compaction down to ~95 GB, which was never
 > measured (#1446).
@@ -146,8 +146,8 @@ cd ~/pithead && ./pithead setup        # deps, .env, Tor, Caddy; then `up`
 
 ```bash
 mkdir -p ~/pithead-testbench/bin
-cp ~/pithead/tests/integration/{build-pruned-chain,compact-chain,system-info}.sh ~/pithead-testbench/
-cp ~/pithead/tests/integration/testbench-README.md ~/pithead-testbench/README.md
+cp ~/pithead/tests/integration/tools/{build-pruned-chain,compact-chain,system-info}.sh ~/pithead-testbench/
+cp ~/pithead/tests/integration/tools/testbench-README.md ~/pithead-testbench/README.md
 # fetch monero-blockchain-prune at the running monerod's version (see build/monero/Dockerfile pins):
 ~/pithead-testbench/system-info.sh > ~/pithead-testbench/system-info.md
 ```

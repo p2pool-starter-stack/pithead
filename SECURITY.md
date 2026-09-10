@@ -48,7 +48,7 @@ The stack's defaults:
   every first-party image to an immutable `@sha256` digest, so a tampered registry can't swap what
   gets pulled, and the bundle itself is fetched over TLS from GitHub Releases. `cosign.pub` is
   committed at the repo root and ships inside the bundle, so a release install has the verifier
-  without a git checkout. `scripts/release.sh` signs each promoted digest and the install bundle
+  without a git checkout. `scripts/release/release.sh` signs each promoted digest and the install bundle
   whenever the signing key is present on the release box; it warns and ships unsigned if the key is
   missing, so check a release's signature rather than assuming it. Releases before v1.18.1 are
   unsigned. Limits: a compromise of the release box itself, which holds the signing key, is outside

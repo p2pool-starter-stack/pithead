@@ -10,7 +10,7 @@
 // `document`, so `node --test` can import this file with no DOM and drive the loop through fakes
 // (#903, tests/frontend/dashboard.test.mjs).
 
-import { App } from "./components.mjs";
+import { App } from "./app/components.mjs";
 import {
   normalizeAvgWindow,
   normalizeSeries,
@@ -18,8 +18,8 @@ import {
   normalizeTheme,
   savePref,
   WORKER_COLUMNS,
-} from "./logic.mjs";
-import { html, render } from "./preact.mjs";
+} from "./app/logic.mjs";
+import { html, render } from "./app/preact.mjs";
 
 export const REFRESH_MS = 30000;
 // Abort a poll that hasn't answered before the next tick would fire. Without this a hung

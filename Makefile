@@ -1,36 +1,40 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-compose test-integration test-integration-selftest test-fakes test-mini-stack lint lint-sh lint-py lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
 
-test: lint test-dashboard test-frontend test-stack test-compose test-integration-selftest test-fakes ## Run everything that doesn't need a server/docker
+test: lint test-dashboard test-frontend test-stack test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
 
 test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (deps from uv.lock); emits coverage.xml
 	cd dashboard && uv run --locked --extra test python -m pytest \
 		--cov=mining_dashboard --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
 test-frontend: pithead ## Frontend logic tests with Node's built-in runner (#632; same invocation as CI)
-	node --test dashboard/tests/frontend/*.test.mjs
+	cd dashboard/tests/frontend && node --test
 
 test-patch-coverage: ## diff-cover (#286) minus its vacuous pass (#1000): >=90% on changed lines (run after test-dashboard)
-	bash scripts/patch-coverage.sh
+	bash scripts/lint/patch-coverage.sh
 
 test-stack: pithead ## pithead shell test suite
 	bash tests/stack/run.sh
-	bash tests/stack/test_data_reset.sh
-	bash tests/stack/test_os_update_recovery.sh
-	bash tests/stack/test_firstboot_journal.sh
-	bash tests/stack/test_appliance_hugepages.sh
+	bash tests/stack/standalone/test_data_reset.sh
+	bash tests/stack/standalone/test_os_update_recovery.sh
+	bash tests/stack/standalone/test_firstboot_journal.sh
+	bash tests/stack/standalone/test_appliance_hugepages.sh
 
 test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
-	bash tests/stack/test_compose.sh
+	bash tests/stack/standalone/test_compose.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
 	# any self-test added later, and a check that never runs reads exactly like one that passed.
-	for t in tests/integration/selftest*.sh; do bash "$$t" || exit 1; done
+	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
+	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
+
+test-tools: ## Bounded-log sanitizer contract (no services or dependencies)
+	bash scripts/lint/test-sanitize-test-log.sh
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
@@ -67,18 +71,11 @@ print-shellcheck-version: ## Print the pinned shellcheck version (ci.yml's insta
 print-shfmt-version: ## Print the pinned shfmt version (ci.yml's installer reads this)
 	@echo $(SHFMT_VERSION)
 
-lint: lint-sh lint-py lint-js lint-yaml lint-md lint-docs-voice lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-proto lint-toml ## Lint/format-check every surface
+lint: lint-sh lint-py lint-js lint-yaml lint-md lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-proto lint-toml ## Lint/format-check every surface
 
-# Two shellcheck invocations, not one, and the split is load-bearing. shellcheck resolves a
-# `# shellcheck source=` directive only when the sourced file is ALSO named on the same command
-# line, and it then inlines that file into the sourcing script's analysis. Listing run.sh beside
-# the 18 files it sources therefore built ONE merged root of ~730 KB costing over 6 GB — which is
-# what got the CI step killed (#1333) and what OOMs local dev (#1206). Peak is the largest single
-# ROOT, not the sum: all 17 domain files plus lib.sh together come to 125 MB, while run.sh alone
-# is ~3.8 GB. Holding run.sh out on its own keeps every cross-file resolution that matters and
-# caps the whole target at that one analysis — which now shrinks with every #1105 module instead
-# of being conserved by the split. The file SET is unchanged: every path below was in the old
-# single invocation, and none is listed twice.
+# Keep tests/stack/run.sh out of the invocation containing its sourced modules.
+# Shellcheck otherwise inlines the entire suite into a single analysis root, which
+# exhausted CI memory (#1333). List every module below so none escapes linting.
 lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ container scripts, release + test scripts
 	@# Refuse a version that is not the pin BEFORE linting anything: a different shellcheck reports
 	@# different findings over identical files, so its verdict is not this gate's (#1679).
@@ -94,34 +91,17 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		[ "$$have" = "$(SHFMT_VERSION)" ] || { \
 			echo "lint-sh: shfmt $${have:-not found} is not the pinned $(SHFMT_VERSION) — its formatting is not this gate's."; \
 			echo "lint-sh: install the pin (see docs/dev/release-server.md) or run the gate in CI."; exit 1; }
-	shellcheck --severity=warning pithead pithead-completion.bash install.sh scripts/*.sh build/*/*.sh dashboard/*.sh \
-		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/test_compose.sh tests/stack/test_data_reset.sh \
-		tests/stack/test_os_update_recovery.sh tests/stack/test_firstboot_journal.sh tests/stack/test_appliance_hugepages.sh \
-		tests/inventory.sh tests/integration/*.sh tests/integration/mini-stack/*.sh \
+	shellcheck --severity=warning pithead pithead-completion.bash install.sh scripts/*.sh scripts/*/*.sh build/*/*.sh dashboard/*.sh \
+		tests/stack/lib.sh tests/stack/test-*.sh tests/stack/*/*.sh \
+		tests/inventory.sh tests/integration/*.sh tests/integration/*/*.sh \
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot \
-		tests/os/*.sh
-# run.sh by itself. os/overlay/pithead-boot used to keep it company on this line, because
-# gate_ready and os_update_rollback_verdict read three globals their caller sets for them and
-# shellcheck reports those as SC2034 unless the reader is named alongside the setter. The #1105
-# appliance-boot cut moved those callers into tests/stack/test-appliance-boot.sh, so run.sh now
-# names neither the script nor the three globals and needs no company; pithead-boot moved up to
-# the invocation that lints the domain files, where its readers now live. Verified both ways:
-# the domain file alone reports the three SC2034, and beside pithead-boot reports none.
-#
-# `lib/pithead/*.sh` is DELIBERATELY absent from the shellcheck lines above, and adding it would
-# make this target worse, not stricter. Those files are the slices `scripts/build-pithead.sh`
-# concatenates into `pithead` (#1105 Phase 2), and `pithead` is the first name on the line above —
-# so shellcheck already reads every one of their lines, in context, which is strictly more than it
-# can learn from the fragments. The `pithead` prerequisite builds the artifact from the slices.
-# Checking them separately would instead re-create the SC2034 pairing problem this
-# comment already describes, one slice boundary at a time, and add an ~12k-line second analysis
-# root to the target that has OOM-killed sessions on this box. shfmt DOES cover them, via the
-# `git ls-files '*.sh'` glob below: format is a per-file property, so it transfers; the semantic
-# checks do not. `lint-pithead-build` checks the concatenation invariants. If you came here to add
-# the slices, that is the argument to beat.
+		tests/os/*.sh tests/os/*/*.sh
+# CLI slices are checked through the generated pithead above: their semantic context
+# depends on concatenation order. Listing them separately duplicates a large analysis
+# and reports false unused-global warnings. shfmt checks every slice independently.
 	shellcheck --severity=warning tests/stack/run.sh
 	@# Three non-.sh files are named outright below, so a dead enumeration still hands shfmt
 	@# three real arguments and exits 0 — 3 files checked of 100, reported as a pass. Guard the
@@ -144,27 +124,31 @@ lint-md: ## markdownlint over all Markdown (config: .markdownlint-cli2.jsonc)
 	npx --yes markdownlint-cli2@0.18.1
 
 lint-docs-voice: ## Fail if banned marketing words appear in prose docs (house voice: docs/dev/STYLE.md)
-	bash scripts/lint-docs-voice.sh --self-test
-	bash scripts/lint-docs-voice.sh
+	bash scripts/lint/lint-docs-voice.sh --self-test
+	bash scripts/lint/lint-docs-voice.sh
+
+lint-path-references: ## Fail if a repo path named in a comment, docstring, doc or `source` does not resolve (#1105, #2005)
+	bash scripts/lint/lint-path-references.sh --self-test
+	bash scripts/lint/lint-path-references.sh
 
 lint-operator-strings: pithead ## Fail if a #NNN issue/PR number or a bare docs/ path leaks into pithead or dashboard operator-facing text (#755, #1024)
-	bash scripts/lint-operator-strings.sh --self-test
-	bash scripts/lint-operator-strings.sh
+	bash scripts/lint/lint-operator-strings.sh --self-test
+	bash scripts/lint/lint-operator-strings.sh
 
 lint-topology: ## Fail if a real-looking IPv6/IPv4/hostname/path/user@host literal leaks into the repo (generic classes only)
-	bash scripts/lint-topology-classes.sh --self-test
-	bash scripts/lint-topology-classes.sh
+	bash scripts/lint/lint-topology-classes.sh --self-test
+	bash scripts/lint/lint-topology-classes.sh
 
 lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, or an existing offender grows past its docs/dev/file-budget.tsv ceiling (#1105 Phase 0)
-	bash scripts/lint-file-budget.sh --self-test
-	bash scripts/lint-file-budget.sh
+	bash scripts/lint/lint-file-budget.sh --self-test
+	bash scripts/lint/lint-file-budget.sh
 
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
 	bash scripts/build-pithead.sh --self-test
 
-lint-trivy-parity: ## Fail if ci.yml's and os-rootfs.yml's trivy-action steps drift from the version scripts/trivyignore-watch.sh scans with (#1290)
-	bash scripts/trivyignore-watch.sh --self-test
-	bash scripts/trivyignore-watch.sh --check-parity
+lint-trivy-parity: ## Fail if ci.yml's and os-rootfs.yml's trivy-action steps drift from the version scripts/watch/trivyignore-watch.sh scans with (#1290)
+	bash scripts/watch/trivyignore-watch.sh --self-test
+	bash scripts/watch/trivyignore-watch.sh --check-parity
 
 lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/proto/buf.yaml)
 	cd dashboard/mining_dashboard/client/tari/proto && \
@@ -182,7 +166,7 @@ lint-toml: ## taplo TOML format check (config: .taplo.toml)
 #   make release ARGS="--dry-run"
 # See docs/dev/releasing.md.
 release: ## Cut a versioned release (build -> stage -> smoke -> promote -> publish). Pass ARGS=...
-	bash scripts/release.sh $(ARGS)
+	bash scripts/release/release.sh $(ARGS)
 
 # Post-publish smoke test (#459) — run ONCE, right after `make release` publishes vX.Y.Z. Real
 # cosign verify of the published bundle + images, and (with ARGS="--upgrade DIR") the real #59
@@ -190,4 +174,4 @@ release: ## Cut a versioned release (build -> stage -> smoke -> promote -> publi
 #   make release-smoke                         # verify the just-published version's signature/bundle
 #   make release-smoke ARGS="--upgrade /srv/code/previous"   # + drive the real #59 upgrade
 release-smoke: ## Post-publish: real cosign verify + real #59 upgrade against the published bundle. Pass ARGS=...
-	bash scripts/release-smoke.sh $(ARGS)
+	bash scripts/release/release-smoke.sh $(ARGS)

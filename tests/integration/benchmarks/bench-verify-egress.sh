@@ -40,8 +40,17 @@ POLLS=4
 INTERVAL=10
 MIN_HITS=2
 APPS="monerod wallet-rpc p2pool tari tari-wallet xmrig-proxy"
+# Tor's own relay count is a POSITIVE CONTROL: in steady state, zero means the sample is suspect
+# (nothing was really running) rather than clean. One caller deliberately breaks that premise —
+# #563 stops the tor container on purpose and still needs the app-side leak verdict — so the
+# control is waivable, explicitly and only by that caller, never silently.
+ALLOW_TOR_DOWN=0
 while [ $# -gt 0 ]; do
     case "$1" in
+    --allow-tor-down)
+        ALLOW_TOR_DOWN=1
+        shift
+        ;;
     --dir)
         DIR="$2"
         shift 2
@@ -156,14 +165,19 @@ for c in $APPS; do
     fi
 done
 tcid=$(cid_of tor)
+tn=0
 if [ -z "$tcid" ] || ! tor_rows="$(public_conns "$tcid")"; then
-    echo "[verify-egress] INCONCLUSIVE — Tor sockets are unreadable." >&2
-    exit 2
+    if [ "$ALLOW_TOR_DOWN" != 1 ]; then
+        echo "[verify-egress] INCONCLUSIVE — Tor sockets are unreadable." >&2
+        exit 2
+    fi
+    echo "  · tor: sockets unreadable — waived by --allow-tor-down; the app verdict below stands"
+else
+    tn=$(printf '%s\n' "$tor_rows" | sed 's/:.*//' | sort -u | grep -c . || true)
 fi
-tn=$(printf '%s\n' "$tor_rows" | sed 's/:.*//' | sort -u | grep -c . || true)
-echo "  · tor: $tn external relay connection(s) (expected > 0 — this is the only container that should reach the internet)"
+[ -z "$tcid" ] || echo "  · tor: $tn external relay connection(s) (expected > 0 — this is the only container that should reach the internet)"
 
-if [ "$observed_apps" -eq 0 ] || [ "$tn" -eq 0 ] || [ "$read_failed" -ne 0 ]; then
+if [ "$observed_apps" -eq 0 ] || { [ "$tn" -eq 0 ] && [ "$ALLOW_TOR_DOWN" != 1 ]; } || [ "$read_failed" -ne 0 ]; then
     echo "[verify-egress] INCONCLUSIVE — no app was observed, Tor has no relay connection, or a required sample was unreadable." >&2
     exit 2
 fi

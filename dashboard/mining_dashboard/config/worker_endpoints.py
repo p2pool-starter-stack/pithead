@@ -152,7 +152,7 @@ def load_energy_config(path):
                        Tari's merge-mined earnings into net profit once both prices are known.
     ``currency``     — display label for all figures (e.g. USD, EUR). Label only — no conversion.
     ``price_feed``   — opt-in (default off): fetch both prices live from CoinGecko over Tor
-                       (``service/price_feed.py``) instead of the static numbers above, which then
+                       (``service/xvb/price_feed.py``) instead of the static numbers above, which then
                        serve as the fallback until the first fetch lands.
     """
     try:

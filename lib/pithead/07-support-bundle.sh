@@ -11,7 +11,7 @@
 # low enough to try starts eating ordinary log tokens. The onion keeps its own shape rule — it is
 # the one value that also appears away from the launch line. The .env half of this bundle has always
 # treated wallets and onions as secrets, so leaving them here shipped one artifact under two
-# policies. Per-form rows and the full derivation: tests/integration/selftest-bundle-redact-log.sh;
+# policies. Per-form rows and the full derivation: tests/integration/selftest/selftest-bundle-redact-log.sh;
 # tests/integration/lib.sh's redact() keys on the same property (#1607) and the two stay in step.
 #
 # THE MONERO ADDRESS IS THE ONE VALUE THAT ALSO NEEDS A SHAPE RULE (#1750). Position is enough for
