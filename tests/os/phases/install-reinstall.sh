@@ -16,7 +16,7 @@ _phase_install_reinstall() {
     }
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
-    vm_destroy
+    vm_destroy_or_refuse || return
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     # shellcheck disable=SC2154  # target_disk is local to phase_install via dynamic scope
@@ -157,7 +157,7 @@ _phase_install_reinstall() {
     ok "planted the old dashboard image ($old_dash_id) and its digest record on the target's /data"
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
-    vm_destroy
+    vm_destroy_or_refuse || return
     info "building the NEWER stick (marker v2 — its dashboard archive differs)"
     img=$(_build_image v2) || {
         bad "v2 stick build failed (/tmp/os-fault-build.log)"
@@ -241,7 +241,7 @@ _phase_install_reinstall() {
         bad "keep-reinstall never powered off"
         return 1
     fi
-    vm_destroy
+    vm_destroy_or_refuse || return
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     # shellcheck disable=SC2154  # target_disk is local to phase_install via dynamic scope

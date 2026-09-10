@@ -18,7 +18,6 @@ check_release_toolchain() {
     fi
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
 }
-
 # --- Release signing (#376, #960) -----------------------------------------------------------------
 #
 # Signing is MANDATORY to publish, because it is mandatory to consume. Once `cosign.pub` is committed
@@ -31,7 +30,6 @@ check_release_toolchain() {
 # It also runs on --dry-run, and only the signing itself is skipped. The check used to sit inside
 # `if [ "$DRY_RUN" -eq 0 ]`, which meant the one rehearsal that exists to catch a mis-configured
 # signing box could only ever print "signing OFF" — the failure state, unconditionally (#1108).
-
 # What the signing environment is missing, one gap per line; empty output means it is complete. Pure
 # given PATH and the environment, so the tests can drive every combination without a release.
 signing_env_gaps() {

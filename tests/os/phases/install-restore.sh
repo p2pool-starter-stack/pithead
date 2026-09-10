@@ -60,21 +60,20 @@ _phase_install_restore() {
     case "$rnames" in
     *dashboard*caddy* | *caddy*dashboard*)
         ok "restore leg: keep-reinstalled machine provisioned — a live stack to back up ($rnames)"
-        # Settle before backing up: `pithead backup` stops the RUNNING containers, but ones
-        # still being created slip past that stop and start mid-tar — "file changed as we read
-        # it" killed the pipeline once. Two identical readings 10s apart means startup is over.
-        local rprev=""
-        rtries=0
-        while [ "$rtries" -lt 30 ]; do
-            [ -n "$rnames" ] && [ "$rnames" = "$rprev" ] && break
-            rprev="$rnames"
-            sleep 10
-            rnames=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-            rtries=$((rtries + 1))
-        done
+        # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
+        # mutation lock through its tor-health wait for minutes after the stack looks live, and a
+        # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
+        if ! provisioning_settled 900; then
+            bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
+            backup_failure_evidence
+            rm -f "$target_disk"
+            return
+        fi
+        ok "restore leg: provisioning finished ($(provisioning_state))"
         ;;
     *)
         bad "restore leg: stack never came up after provisioning (running: '${rnames:-none}')"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         # shellcheck disable=SC2154  # shared through the assembled runner scope
         rm -f "$target_disk"
         return 1
@@ -109,7 +108,7 @@ _phase_install_restore() {
     orig_onion=$(_ssh "grep MONERO_ONION_ADDRESS /data/pithead/.env" | cut -d= -f2)
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
-    vm_destroy
+    vm_destroy_or_refuse || return
 
     local restore_target="/srv/code/bench-vm/pithead-restore-target.img"
     rm -f "$restore_target"
@@ -224,7 +223,7 @@ _phase_install_restore() {
         rm -f "$target_disk" "$restore_archive" "$restore_target"
         return 1
     fi
-    vm_destroy
+    vm_destroy_or_refuse || return
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
@@ -292,6 +291,10 @@ _phase_install_restore() {
         ok "restore leg: $verdict"
     else
         bad "restore leg: $verdict"
+        # The dump belongs HERE and not inside restore_live_state_verdict: that function's stdout
+        # is its message (`verdict=$(...)`), so an _ssh read inside it would be captured as the
+        # verdict text instead of printed.
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         # A stack that never came up won't answer the identity check below either — stop here
         # rather than burn its 600s timeout on a machine already known to be broken.
         case "$rsnames" in
@@ -321,6 +324,6 @@ _phase_install_restore() {
     else
         bad "restore leg: onion identity not restored (.env: $orig_onion -> ${new_onion:-none}, Tor's own hostname: ${tor_hostname:-none})"
     fi
-    phase_install_prefill_submit_leg "$target_disk" # #1846, last: nothing after it needs the disk
+    phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
     rm -f "$target_disk" "$restore_archive" "$restore_target"
 }

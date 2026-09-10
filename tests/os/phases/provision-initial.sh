@@ -122,6 +122,7 @@ _phase_provision_initial() {
         ;;
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
         ;;
@@ -154,7 +155,6 @@ _phase_provision_initial() {
         return 1
     fi
 
-    local pv_user pv_pass
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
@@ -164,7 +164,8 @@ _phase_provision_initial() {
         bad "no os_update in /api/state — the appliance has no reachable OS-update control"
     fi
     phase_provision_control_regressions "$pv_user" "$pv_pass"
-
+    phase_provision_hostname_regressions "$pv_user" "$pv_pass"
+    phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
     # ---- Tor-only egress backstop (#855): the fail-closed firewall must actually DROP -------
     # The whole product is Tor-first; the guarantee is that nothing CAN bypass Tor even if an app is
     # misconfigured, compromised, or dials a raw public IP. On the appliance the engine is podman+netavark,

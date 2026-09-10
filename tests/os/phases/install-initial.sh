@@ -9,7 +9,7 @@ _phase_install_initial() {
         return 1
     }
 
-    vm_destroy
+    vm_destroy_or_refuse || return
     # shellcheck disable=SC2154  # shared through the assembled runner scope
     rm -f "$target_disk"
     cp "$img" "$DISK"
@@ -131,7 +131,7 @@ _phase_install_initial() {
         bad "machine never powered off after the ack"
         return 1
     fi
-    vm_destroy
+    vm_destroy_or_refuse || return
     # Boot from the TARGET alone — the stick is gone, exactly as the instructions tell the user.
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back

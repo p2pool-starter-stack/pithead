@@ -175,7 +175,7 @@ run_rigforge_pools() { # <rig>
         return 0
     fi
     if ! printf '%s' "${IT_RIG_POOLS_PROBE:-}" | jq -e . >/dev/null 2>&1; then
-        it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "got [${IT_RIG_POOLS_PROBE:-}]"
+        it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "the operator-supplied pools probe is malformed"
         return 0
     fi
     orig_pools="$(_worker_detail "$rig" | jq -c '.last_applied.pools // empty' 2>/dev/null)"

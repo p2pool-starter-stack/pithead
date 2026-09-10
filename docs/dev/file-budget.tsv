@@ -54,6 +54,7 @@ tests/integration/fakes/test_contract.py	451
 tests/integration/lib.sh	691
 tests/integration/selftest/selftest-e2e-phases.sh	507
 tests/integration/selftest/selftest.sh	686
+tests/os/appliance-config-approval-leg.sh	414
 tests/os/failure-evidence.sh	567
 tests/stack/appliance/test-appliance-boot.sh	641
 tests/stack/appliance/test-appliance-identity-boot.sh	465
@@ -67,8 +68,6 @@ tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	507
-tests/stack/release/test-release-signing.sh	455
-tests/stack/release/test-release.sh	504
 tests/stack/run.sh	440
 tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462

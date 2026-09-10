@@ -139,6 +139,8 @@ echo "== a non-scalar original round-trips as JSON, not as a mangled string =="
 scenario 'rig_key_mark dash rig1 pools '"'"'[{"url":"real:1","pass":"secret"}]'"'"'' 'exit 1' >/dev/null
 assert_eq "a pools original is restored intact, credential and all (#1002b/#1379)" \
     "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"secret"}]}'
+assert_eq "the pools credential is not printed in the abort log" \
+    "$(grep -c 'pass.*secret' "$SCEN_OUT")" "0"
 
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
@@ -316,8 +318,8 @@ echo "== the operator is TOLD, on stderr, that the rig was left mid-change =="
 # A silent restore is nearly as bad as none: the run's summary counters cannot see it (#1365), so
 # the sentence is the only signal that a borrowed production miner was touched and put back.
 scenario 'rig_key_mark dash rig1 DONATION 5' 'exit 1' >/dev/null
-assert_eq "the unwind names the key, the value and the rig (#1379)" \
-    "$(grep -c "aborted mid-change: restoring DONATION=5 on rig 'rig1'" "$SCEN_OUT")" "1"
+assert_eq "the unwind names the key and rig without printing its value (#1379)" \
+    "$(grep -c "aborted mid-change: restoring DONATION on rig 'rig1'" "$SCEN_OUT")" "1"
 
 echo "== an unknown route is refused loudly rather than POSTed somewhere arbitrary =="
 scenario 'rig_key_mark bogus rig1 DONATION 5' 'exit 1' >/dev/null

@@ -19,6 +19,7 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     *dashboard*caddy* | *caddy*dashboard*) ok "leg 4: stack containers are running" ;;
     *)
         bad "leg 4: stack never came up — running: '${names:-none}'"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return
         ;;
     esac

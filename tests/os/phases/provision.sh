@@ -10,6 +10,11 @@ phase_provision() {
     # The sourced legs use these locals through Bash's dynamic function scope.
     # shellcheck disable=SC2034
     local img token="" jar="" scode="" marker="" tries=0 code=""
+    # pv_user/pv_pass are set by the initial leg and read by the reboot and migration legs,
+    # so they belong to the phase, not to one leg.
+    local pv_user="" pv_pass=""
+    # shellcheck disable=SC2034 # provision_browser_config reads both through dynamic scope.
+    local PROVISION_DASHBOARD_HOST=fixture-box PROVISION_FAKE_APPROVAL=1
     _phase_provision_initial || return
     _phase_provision_reboot || return
     _phase_provision_migration

@@ -79,6 +79,7 @@ phase_reset() {
         ;;
     *)
         bad "stack never came up before the reset — running: '${names:-none}'"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return
         ;;
     esac

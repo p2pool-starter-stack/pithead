@@ -107,7 +107,9 @@ make_bundle() {
     # Unpacks to a versionless "pithead/" dir. Ships only the operator docs needed to run the stack.
     local out="$1" d="$WORKDIR/pithead"
     mkdir -p "$d"
-    cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json cosign.pub "$d/" 2>/dev/null || true
+    cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
+    [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
+    [ ! -e cosign.pub ] || cp cosign.pub "$d/" 2>/dev/null || die "make_bundle: failed to copy cosign.pub."
     mkdir -p "$d/docs"
     local doc docs_url="https://github.com/p2pool-starter-stack/pithead/blob/$TAG"
     for doc in docs/{configuration,dashboard,faq,getting-started,hardware,monitoring,operations,privacy,telegram,workers}.md; do
@@ -140,11 +142,9 @@ make_bundle() {
             die "make_bundle: no promoted digest for $suffix — refusing to ship an un-pinned bundle (#376)."
         # get_digest stores a FULL ref ($repo@sha256:…); we append only the @sha256 part to the
         # existing image line (which already has the repo + tag), so pin by the bare digest.
+        is_digest_ref_for "$digest" "$(image_for "$suffix")" ||
+            die "make_bundle: digest for $suffix is not a lowercase sha256 ref ('$digest') — cannot pin (#376)."
         sha="${digest##*@}"
-        case "$sha" in
-        sha256:*) ;;
-        *) die "make_bundle: digest for $suffix is not a sha256 ref ('$digest') — cannot pin (#376)." ;;
-        esac
         sed -i.bak "s|\(pithead-${suffix}:\${STACK_VERSION:-dev}\)|\1@${sha}|" "$d/docker-compose.yml"
     done
     rm -f "$d/docker-compose.yml.bak"

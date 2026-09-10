@@ -1,139 +1,13 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-signing domain (#1105 Phase 1): verify_release_images' fail-closed image-verification
-# gate, cosign_container_path's host-to-container path mapping, and release.sh's signing/refusal/
-# pinned-verifier-image checks (sign the promoted digests, refuse to publish unsigned, validate
-# the pinned cosign verifier before publish). Sourced by tests/stack/run.sh after lib.sh. (The
-# #291 firewall-ordering assertions trailing cosign_container_path are not here — tor/network, not
-# signing, the documented map trap; they live in test-tor-network.sh. The control-channel upgrade's
-# own bundle-signature check and its trailing control-disabled probe live in test-control-upgrade.sh
-# in full: that section runs the control-run-pending verb against the $C control sandbox, the same
-# run-against-its-own-sandbox reasoning module 4 used for apply --dry-run/symlink-invocation.)
-
-echo "== black-box: verify_release_images fail-closed gate (#376) =="
-# The verification decision itself, against a fake docker on a PINNED PATH ($VRI/bin:/usr/bin:/bin
-# — coreutils stay, so the host can never decide the outcome). Since #1072 the verifier is a
-# container, so the stub is `docker`, not `cosign`: it answers the availability probe, pretends the
-# pinned image is already present, and logs the cosign argv that follows the image ref — which keeps
-# every assertion below reading exactly as it did when cosign was a host binary. A release install
-# is a dir without dashboard/Dockerfile.
-VRI="$SANDBOX/verify376"
-write_fake_docker "$VRI/bin"
-write_unreachable_docker "$VRI/nodocker"
-
-# A deterministic 64-hex digest per image, and a digest-pinned compose (#461) so verify has the same
-# @sha256 bytes to check that a release install's compose would pull (#451). TOR_DG is what the tor
-# assertions expect the tor image to be verified/failed against.
-hex64() { printf "$1%.0s" $(seq 1 64); }
-TOR_DG="sha256:$(hex64 1)"
-write_pinned_compose() { # $1=dir  — one image: line per first-party suffix, each pinned by @sha256
-    local d="$1" n=1 suffix
-    : >"$d/docker-compose.yml"
-    for suffix in tor monero p2pool xmrig-proxy dashboard; do
-        printf '    image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-%s:${STACK_VERSION:-dev}@sha256:%s\n' \
-            "$suffix" "$(hex64 "$n")" >>"$d/docker-compose.yml"
-        n=$((n + 1))
-    done
-}
-write_pinned_compose "$VRI"
-
-# No cosign.pub (an install older than the first signed release): documented fallback — proceed,
-# but say loudly that nothing was verified.
-out="$(PATH="$VRI/bin:/usr/bin:/bin" run_sourced "$VRI" verify_release_images 2>&1)"
-assert_rc "no pubkey -> pull proceeds (documented fallback)" "$?" "0"
-assert_contains "no pubkey -> loud NOT-verified warning" "$out" "NOT be signature-verified"
-
-# cosign.pub present but the verifier cannot run (docker daemon unreachable): FAIL CLOSED — an
-# unavailable verifier must not silently disable verification.
-printf 'fake release public key' >"$VRI/cosign.pub"
-out="$(PATH="$VRI/nodocker:/usr/bin:/bin" run_sourced "$VRI" verify_release_images 2>&1)"
-assert_rc "pubkey without a runnable verifier -> pull aborts" "$?" "1"
-assert_contains "verifier-missing abort names docker, not a host cosign" "$out" "docker is not available"
-
-# Valid signatures (fake cosign exits 0): all 5 images verified with the committed key, no Rekor
-# (--private-infrastructure), against the EXACT @sha256 digest compose pins and pulls (#451 — bound
-# to the same bytes, not the mutable tag).
-: >"$VRI/cosign.log"
-out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" \
-    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
-assert_rc "valid signatures -> pull proceeds" "$?" "0"
-assert_eq "all 5 first-party images verified" "$(grep -c '^\[cosign\] verify ' "$VRI/cosign.log")" "5"
-assert_contains "verify binds to the pinned digest, not the tag (#451)" \
-    "$(cat "$VRI/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/test/pithead-tor@$TOR_DG"
-assert_not_contains "verify never resolves the mutable tag (#451)" "$(cat "$VRI/cosign.log")" "pithead-tor:v9.9.9"
-
-# A signature that does not verify (fake cosign exits 1): FAIL CLOSED. This is the red test for the
-# whole feature — bypass or soften the verification and it goes green-to-broken.
-out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 \
-    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
-assert_rc "bad signature -> pull aborts (fail closed)" "$?" "1"
-assert_contains "bad-signature abort names the pinned image" "$out" "Signature verification FAILED for ghcr.io/test/pithead-tor@$TOR_DG"
-
-# cosign.pub present but the compose is NOT digest-pinned (a pre-#461 or tampered bundle): FAIL
-# CLOSED (#451). Without a digest there's nothing to bind verification to the pulled bytes, so the
-# verify-then-pull window can't be closed — refuse rather than fall back to verifying the tag.
-UNPINNED="$SANDBOX/verify451-unpinned"
-mkdir -p "$UNPINNED"
-printf 'fake release public key' >"$UNPINNED/cosign.pub"
-printf '    image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}\n' >"$UNPINNED/docker-compose.yml"
-: >"$VRI/cosign.log"
-out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" run_sourced "$UNPINNED" verify_release_images 2>&1)"
-assert_rc "un-pinned compose + key -> pull aborts (#451)" "$?" "1"
-assert_contains "un-pinned abort explains the missing digest bind" "$out" "not digest-pinned"
-assert_eq "un-pinned -> cosign never asked to verify a tag" "$(cat "$VRI/cosign.log")" ""
-
-# #557: run_sourced disables errexit (`set +e`, right after sourcing) for every test above, which
-# happens to mask a real bug: the bare `sha="$(compose_pinned_digest ...)"` assignment aborts under
-# pithead's own `set -Eeuo pipefail` BEFORE the crafted error() above ever runs, so a real invocation
-# got a silent abort instead of the "not digest-pinned" diagnostic. Reproduce with errexit left ON —
-# source directly and call the function, no run_sourced/`set +e`.
-# shellcheck disable=SC1090  # dynamic source: the script under test
-out557_vri="$(
-    (
-        cd "$UNPINNED" || exit 1
-        PATH="$VRI/bin:/usr/bin:/bin"
-        source "$STACK" 2>/dev/null
-        verify_release_images
-    ) 2>&1
-)"
-assert_rc "un-pinned + key, real errexit -> still aborts (#557)" "$?" "1"
-assert_contains "un-pinned + key, real errexit -> crafted message still reaches the operator (#557)" \
-    "$out557_vri" "not digest-pinned"
-
-# Source checkout: locally built images are unsigned by design — skipped, silently and completely.
-mkdir -p "$VRI/dashboard"
-touch "$VRI/dashboard/Dockerfile"
-: >"$VRI/cosign.log"
-out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 COSIGN_LOG="$VRI/cosign.log" run_sourced "$VRI" verify_release_images 2>&1)"
-assert_rc "source checkout -> verification skipped" "$?" "0"
-assert_eq "source checkout -> cosign never invoked" "$(cat "$VRI/cosign.log")" ""
-rm -rf "$VRI/build"
-
-echo "== unit: cosign_container_path maps host paths into the verifier's mount (#1072) =="
-# The verifier container sees the install dir at /w, so every file argument has to be renamed into
-# that mount. The refusal case is the one that matters: both callers report a cosign failure as a
-# SIGNATURE failure, so a path this function got wrong would read as a tampered download and burn a
-# genuine release. It must fail rather than emit a path the mount does not cover.
-CCP="$SANDBOX/ccp"
-mkdir -p "$CCP/data/control/staged"
-touch "$CCP/cosign.pub" "$CCP/data/control/staged/.abc.tar.gz"
-assert_eq "file beside pithead -> /w/<name>" \
-    "$(run_sourced "$CCP" cosign_container_path "$CCP/cosign.pub")" "/w/cosign.pub"
-assert_eq "staged bundle -> /w/<relative dirs>/<name>" \
-    "$(run_sourced "$CCP" cosign_container_path "$CCP/data/control/staged/.abc.tar.gz")" \
-    "/w/data/control/staged/.abc.tar.gz"
-# The `current -> pithead-vX.Y.Z` layout: CONTROL_DIR in .env can name the same file through the
-# symlink while the runner's cwd is the physical dir. Canonicalizing both sides is what makes these
-# agree — a plain "${path#$PWD/}" prefix strip silently does not, and would fail closed on prod.
-ln -sfn "$CCP" "$SANDBOX/ccp-current"
-assert_eq "same file reached via the current symlink still resolves" \
-    "$(run_sourced "$CCP" cosign_container_path "$SANDBOX/ccp-current/data/control/staged/.abc.tar.gz")" \
-    "/w/data/control/staged/.abc.tar.gz"
-run_sourced "$CCP" cosign_container_path "$SANDBOX/outside.txt" >/dev/null 2>&1
-assert_rc "a path outside the install dir is refused, not guessed at" "$?" "1"
-run_sourced "$CCP" cosign_container_path "/etc/hosts" >/dev/null 2>&1
-assert_rc "an absolute path elsewhere on the box is refused" "$?" "1"
-
+# Release-SIGNING domain (#1105 Phase 1): the producer side — release.sh signs the promoted
+# digests, refuses to publish unsigned, takes the release box's key defaults, and validates the
+# pinned cosign verifier before publish. The consumer side (verify_release_images and
+# cosign_container_path) is test-release-verify.sh. Sourced by tests/stack/run.sh after lib.sh.
+# (The control-channel upgrade's own bundle-signature check and its trailing control-disabled probe
+# live in test-control-upgrade.sh in full: that section runs the control-run-pending verb against
+# the $C control sandbox, the same run-against-its-own-sandbox reasoning module 4 used for
+# apply --dry-run/symlink-invocation.)
 echo "== unit: release.sh signs the promoted digests (#376) =="
 # sign_images must sign the recorded manifest-LIST digest (repo@sha256:… — never the mutable tag,
 # never a per-arch child) with the box's key and no Rekor upload; the password never reaches argv.
@@ -205,7 +79,8 @@ assert_contains "signing off announces the skip" "$sign_off_out" "skipping image
 assert_contains "bundle signed as a detached blob signature" "$(cat "$SIGN/cosign.log")" \
     "sign-blob --key /release-box/cosign.key --tlog-upload=false --yes --output-signature $SIGN/pithead.tar.gz.sig"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
-assert_contains "the bundle ships cosign.pub (the install-side verifier)" "$(cat "$REL_BUNDLE")" "config.reference.json config.core-keys.json cosign.pub"
+# Its own line, not alongside the config files: a missing key with signing on must fail the bundle.
+assert_contains "the bundle ships cosign.pub (the install-side verifier)" "$(cat "$REL_BUNDLE")" 'cp cosign.pub "$d/"'
 
 echo "== unit: release.sh refuses to publish unsigned (#960/#1108) =="
 # The producer used to treat signing as opt-in while the consumer treats it as mandatory: once
@@ -215,8 +90,10 @@ echo "== unit: release.sh refuses to publish unsigned (#960/#1108) =="
 # never be added afterwards. That is how v1.18.0 shipped unsigned and had to be withdrawn (#960).
 # resolve_signing must therefore ABORT the cut. MUTATION PROOF: change its final die() to warn() and
 # "an unconfigured signing box aborts the cut" goes red (verified — see the PR).
+# Without a committed public key the legacy unsigned path still works, which is the case below it.
 SGN="$SANDBOX/signing960"
 mkdir -p "$SGN/bin" "$SGN/v3" "$SGN/nopub"
+for f in pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json docs build; do ln -s "$ROOT/$f" "$SGN/nopub/$f"; done
 # A cosign that advertises --tlog-upload, the flag both signing calls pass.
 printf '#!/usr/bin/env bash\necho "      --tlog-upload   upload to the transparency log"\nexit 0\n' >"$SGN/bin/cosign"
 # cosign v3 removed that flag: the box passes every other check and then dies at stage 6b, with the
@@ -224,12 +101,22 @@ printf '#!/usr/bin/env bash\necho "      --tlog-upload   upload to the transpare
 printf '#!/usr/bin/env bash\necho "      --yes   skip confirmation"\nexit 0\n' >"$SGN/v3/cosign"
 chmod +x "$SGN/bin/cosign" "$SGN/v3/cosign"
 : >"$SGN/cosign.key"
-
+bundle_without_pub() {
+    # shellcheck disable=SC2034  # consumed by make_bundle from the sourced release script
+    WORKDIR="$SGN/nopub-bundle" TAG=v9.9.9 REGISTRY=ghcr.io/test DRY_RUN=0
+    get_digest() { printf 'ghcr.io/test/pithead-%s@sha256:%064d' "$1" 1; }
+    make_bundle "$SGN/nopub.tar.gz" >/dev/null || return 1
+    [ -s "$SGN/nopub.tar.gz" ] && tar tzf "$SGN/nopub.tar.gz" >"$SGN/nopub.list" || return 1
+    ! grep -qx 'pithead/cosign.pub' "$SGN/nopub.list"
+}
 # One resolve_signing decision, rendered as "rc=N <message> enabled=N". The env arrives as a string
 # because release.sh's option parser needs an empty argv (`set --`), which eats positional args; and
 # COSIGN_ENABLED — the variable that actually drives whether anything gets signed — is reported from
 # an EXIT trap, because die() exits this subshell before a trailing read of it could run.
-signing_decide() { # <cwd> <env-assignments>
+# A third argument asks for an extra action after the decision (`bundle` builds one), so the same
+# fixture can show what a decision DOES and not only what it says.
+signing_decide() { # <cwd> <env-assignments> [action]
+    _action="${3:-}"
     _out="$(
         cd "$1" || exit
         _envs="$2"
@@ -240,11 +127,11 @@ signing_decide() { # <cwd> <env-assignments>
         eval "$_envs"
         trap 'printf " enabled=%s" "${COSIGN_ENABLED:-unset}"' EXIT
         resolve_signing 2>&1
+        [ "$_action" != bundle ] || bundle_without_pub 2>&1
     )"
     printf 'rc=%s %s' "$?" "$_out"
 }
 SGN_OK="PATH=$SGN/bin:\$PATH; COSIGN_KEY=$SGN/cosign.key; COSIGN_PASSWORD=x; UNSIGNED=0; DRY_RUN=0"
-
 sg="$(signing_decide "$ROOT" "$SGN_OK")"
 assert_contains "a complete signing env turns signing ON" "$sg" "rc=0"
 assert_contains "signing ON is what the later stages actually read" "$sg" "enabled=1"
@@ -262,10 +149,13 @@ assert_contains "--unsigned publishes anyway" "$sg" "rc=0"
 assert_contains "--unsigned leaves signing genuinely off" "$sg" "enabled=0"
 assert_contains "--unsigned warns the fleet will refuse this release" "$sg" "REFUSES a release that has none"
 # No committed public key means nothing in the field fails closed — warn and proceed, as before.
-sg="$(signing_decide "$SGN/nopub" "${SGN_OK/COSIGN_KEY=$SGN\/cosign.key/unset COSIGN_KEY}")"
+sg="$(signing_decide "$SGN/nopub" "${SGN_OK/COSIGN_KEY=$SGN\/cosign.key/unset COSIGN_KEY}" bundle)"
 assert_contains "no committed cosign.pub still publishes unsigned" "$sg" "rc=0"
 assert_contains "no committed cosign.pub leaves signing off" "$sg" "enabled=0"
 assert_contains "no committed cosign.pub says installs will not verify" "$sg" "proceed unverified"
+sg="$(signing_decide "$SGN/nopub" "$SGN_OK" bundle)"
+assert_contains "signing enabled without cosign.pub refuses the bundle" "$sg" "rc=1"
+assert_contains "the refusal names the missing public key" "$sg" "signing is enabled but cosign.pub is missing"
 # COSIGN_PASSWORD was never checked before: cosign would prompt for it at stage 6b, after promotion.
 sg="$(signing_decide "$ROOT" "${SGN_OK/COSIGN_PASSWORD=x/unset COSIGN_PASSWORD}")"
 assert_contains "an unset COSIGN_PASSWORD aborts the cut" "$sg" "rc=1"
@@ -290,7 +180,6 @@ assert_contains "a dry run rehearses the real decision, not a fixed OFF (#1108)"
 assert_contains "a dry run reports signing will be ON, not OFF (#1108)" "$sg" "enabled=1"
 sg="$(signing_decide "$ROOT" "${SGN_OK/DRY_RUN=0/DRY_RUN=1}; unset COSIGN_KEY")"
 assert_contains "a dry run on an unconfigured box fails the rehearsal (#1108)" "$sg" "rc=1"
-
 echo "== unit: release.sh takes the release box's key defaults (#77 phase 1, #1115) =="
 # The release box keeps the key and its passphrase at fixed paths under $HOME, so a cut there needs
 # no exports — that convenience is what the appliance lane runs on, and losing it in the twin sync
@@ -304,7 +193,6 @@ DEF="$SANDBOX/signdefaults"
 mkdir -p "$DEF/keydir" "$DEF/nokeydir"
 : >"$DEF/keydir/cosign.key"
 printf 'correct horse\n' >"$DEF/keydir/cosign.passphrase"
-
 signing_defaults() { # <env-assignments> -> "key=<COSIGN_KEY> pass=<value|unset> gaps=<...>"
     (
         _envs="$1" # saved first: release.sh's option parser needs an empty argv, and `set --` eats it
@@ -317,7 +205,6 @@ signing_defaults() { # <env-assignments> -> "key=<COSIGN_KEY> pass=<value|unset>
         printf 'key=%s pass=%s gaps=%s' "${COSIGN_KEY:-}" "${COSIGN_PASSWORD-unset}" "$(signing_env_gaps | tr '\n' ';')"
     )
 }
-
 sd="$(signing_defaults "RELEASE_KEY_DIR=$DEF/keydir; unset COSIGN_KEY; unset COSIGN_PASSWORD")"
 assert_contains "an unset COSIGN_KEY falls back to the release box's key" "$sd" "key=$DEF/keydir/cosign.key"
 assert_contains "the passphrase file satisfies COSIGN_PASSWORD" "$sd" "pass=correct horse"

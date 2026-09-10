@@ -86,8 +86,8 @@ stage_push() {
     for suffix in "${IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         if [ "$DRY_RUN" -eq 1 ]; then
-            set_digest "$suffix" "$repo@sha256:<dry-run>"
-            log "  digest: $repo@sha256:<dry-run>"
+            set_digest "$suffix" "$repo@sha256:$(printf '%064d' 0)"
+            log "  digest: $repo@sha256:$(printf '%064d' 0)"
             continue
         fi
         # #557: plain `digest="$(...)"` aborts under errexit once retries are exhausted, BEFORE this
@@ -131,36 +131,30 @@ smoke_test() {
         warn "Skipping smoke test (--skip-smoke) — the pushed artifacts were NOT re-validated from the registry."
         return 0
     fi
-    # Pull each STAGED image back from the registry (not the local build) and confirm it resolves and
-    # carries the right version label. This validates the bytes that were actually pushed. It does NOT
-    # start a stack — that would collide with this host's live deployment; use RELEASE_SMOKE_CMD or the
-    # #54 harness against the staged tag for a full functional run.
-    local suffix repo got
+    # Validate the captured bytes, never the mutable staging tag.
+    local suffix repo digest got
     for suffix in "${IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
-        log "Verifying $repo:$STAGING_TAG from the registry..."
-        # Pull the TARGET platform explicitly: a plain `docker pull` resolves the build HOST's arch, so
-        # on an arm64 release host an amd64-only image fails with "no matching manifest for linux/arm64".
-        # Docker can still pull (not run) a non-native arch image, which is all the label check needs.
-        run docker pull --quiet --platform "${PLATFORMS%%,*}" "$repo:$STAGING_TAG"
+        digest="$(get_digest "$suffix")"
+        is_digest_ref_for "$digest" "$repo" || die "Smoke: captured digest for $suffix is not a lowercase sha256 ref for $repo ('$digest')."
+        log "Verifying $digest from the registry..."
+        # Pull the target platform explicitly so an arm64 build host can inspect an amd64-only release.
+        run docker pull --quiet --platform "${PLATFORMS%%,*}" "$digest"
         if [ "$DRY_RUN" -eq 0 ]; then
-            got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$repo:$STAGING_TAG" 2>/dev/null || true)"
+            got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$digest" 2>/dev/null || true)"
             [ "$got" = "$STACK_VERSION" ] ||
-                die "Smoke: $repo:$STAGING_TAG reports version '$got', expected '$STACK_VERSION'."
-            # The pushed manifest MUST carry every target platform — a wrong-arch image here means the
-            # build host's arch leaked through (the v1.0.0 bug: an arm64 host produced an arm64-labelled
-            # image that doesn't run on x86_64). Read the raw manifest list and require each $PLATFORMS.
-            # The read retries GHCR's read-after-push lag (#429) so a slow-to-resolve tag doesn't fail smoke.
+                die "Smoke: $digest reports version '$got', expected '$STACK_VERSION'."
+            # Require every target platform in the captured manifest list (#429 retries registry lag).
             local arches raw
-            raw="$(retry_registry_read buildx_inspect "$repo:$STAGING_TAG" --raw)" ||
-                die "Smoke: could not read the pushed manifest for $repo:$STAGING_TAG from the registry (after $REGISTRY_READ_RETRIES tries)."
+            raw="$(retry_registry_read buildx_inspect "$digest" --raw)" ||
+                die "Smoke: could not read the pushed manifest for $digest from the registry (after $REGISTRY_READ_RETRIES tries)."
             arches="$(printf '%s' "$raw" |
                 python3 -c 'import sys,json;d=json.load(sys.stdin);print(" ".join(sorted({m.get("platform",{}).get("os","")+"/"+m["platform"]["architecture"] for m in d.get("manifests",[]) if m.get("platform",{}).get("architecture") not in (None,"unknown")})))' 2>/dev/null || true)"
             local p
             for p in ${PLATFORMS//,/ }; do
-                case " $arches " in *" $p "*) ;; *) die "Smoke: $repo:$STAGING_TAG is missing target platform $p (got: ${arches:-none}). A wrong-arch build leaked through (the v1.0.0 arm64-only bug)." ;; esac
+                case " $arches " in *" $p "*) ;; *) die "Smoke: $digest is missing target platform $p (got: ${arches:-none}). A wrong-arch build leaked through (the v1.0.0 arm64-only bug)." ;; esac
             done
-            log "  $repo:$STAGING_TAG OK ($arches)"
+            log "  $digest OK ($arches)"
         fi
     done
     if [ -n "${RELEASE_SMOKE_CMD:-}" ]; then
@@ -177,15 +171,20 @@ promote() {
     confirm "Promote the smoke-tested digests to $TAG and :latest (publishes user-facing tags)?" ||
         die "Promotion cancelled — nothing user-facing was published."
     ghcr_login
-    local suffix repo digest
+    local suffix repo digest expected got tag_ref
     for suffix in "${IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
-        [ -n "$digest" ] || die "No staged digest for $suffix — run without --resume-promote, or stage first."
+        is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — run without --resume-promote, or stage first."
         log "Promoting $digest -> :$TAG, :latest"
-        # imagetools re-tags at the manifest level (server-side, no pull/rebuild), so the released tag
-        # is the exact digest that was smoke-tested.
         run docker buildx imagetools create --tag "$repo:$TAG" --tag "$repo:latest" "$digest"
+        if [ "$DRY_RUN" -eq 0 ]; then
+            expected="${digest##*@}"
+            for tag_ref in "$repo:$TAG" "$repo:latest"; do
+                got="$(REGISTRY_READ_EXPECT_DIGEST="$expected" manifest_digest "$tag_ref")" || die "Promotion: $tag_ref did not resolve to captured digest $expected."
+                [ "$got" = "$expected" ] || die "Promotion: $tag_ref resolves to $got, expected captured digest $expected."
+            done
+        fi
     done
     ok "Promoted all 5 images to $TAG + latest."
 }
