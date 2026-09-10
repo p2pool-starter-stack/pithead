@@ -10,7 +10,6 @@ bad() {
 }
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 have() { command -v "$1" >/dev/null 2>&1; }
-
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
 # Overwritten by every _ssh call with that call's stderr (empty on success). Not a log — just the
@@ -20,7 +19,6 @@ SSH_ERR="/tmp/pithead-os-ssh.err"
 # A fresh run must not inherit the last run's preserved console: the cleanup copy below is
 # no-clobber (the at-assertion copy is the authoritative one), so clear the slate here.
 rm -f "$SERIAL.failed"
-
 # The wallet every phase submits. It must be checksum-VALID: p2pool refuses a well-formed but
 # checksum-invalid address at startup with a SIGABRT and crash-loops (#829), which killed the
 # provision phase's whole miner chain when the harness used `4` + 94×`A`. Host-side validation
@@ -173,8 +171,17 @@ _build_image() {
     # never matched, and wiring the guard on with it would have failed every build the harness made.
     local expect
     expect="$(git rev-parse HEAD 2>/dev/null || true)"
+    # PITHEAD_REGISTRY/_CA are forwarded rather than inherited-by-luck: the battery runs under
+    # sudo, whose `env_reset` drops them, so the documented recipe has to be
+    # `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`. Without them build-image.sh refuses (#2043)
+    # — and that refusal used to land ONLY in the log below, so the phase reported the useless
+    # "image build failed" and the reason went unread. Surface it where the operator is looking.
     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$1" \
-        os/build-image.sh >/tmp/os-fault-build.log 2>&1 || return 1
+    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" \
+        os/build-image.sh >/tmp/os-fault-build.log 2>&1 || {
+        tail -12 /tmp/os-fault-build.log >&2
+        return 1
+    }
     os/rauc/mkimage.sh --dev >>/tmp/os-fault-build.log 2>&1 || return 1
     # Every image a phase boots gets the static verification first, in --test mode. The check
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
@@ -291,8 +298,12 @@ require_probe_key_matches_image() {
 # so the battery silently drives someone else's guest. This happened with a hand-started
 # diagnostic VM and produced passing legs that proved nothing. Refuse to run rather than report.
 require_clean_bench() {
-    local strays
-    strays=$(virsh list --name 2>/dev/null | grep -E '^pithead-' | grep -v "^${VM}$" || true)
+    local guests strays
+    guests=$(virsh list --name 2>/dev/null) || {
+        echo "refusing to run: libvirt could not enumerate the bench." >&2
+        exit 2
+    }
+    strays=$(printf '%s\n' "$guests" | grep -E '^pithead-' | grep -v "^${VM}$" || true)
     [ -z "$strays" ] || {
         echo "refusing to run: other pithead VMs are on the bench and can steal the lease:" >&2
         echo "$strays" >&2
@@ -300,30 +311,23 @@ require_clean_bench() {
         exit 2
     }
 }
-
-vm_destroy() {
-    virsh destroy "$VM" >/dev/null 2>&1 || true
-    virsh undefine "$VM" --nvram >/dev/null 2>&1 || true
-}
-
 cleanup() {
-    # Preserve the console on failure. It is deleted with everything else on a green run, which
-    # meant the one artefact that explains a boot failure was destroyed by the failure itself.
+    local approval_cleanup_rc=0
+    declare -F approval_fixture_cleanup >/dev/null && approval_fixture_cleanup || approval_cleanup_rc=$?
+    # Preserve the console on failure; an at-assertion no-clobber copy remains authoritative.
     if [ "$FAIL" -gt 0 ] && [ -s "$SERIAL" ] && [ ! -f "$SERIAL.failed" ]; then
-        # No-clobber: an assertion that copied the console AT the failure got it before later
-        # boots truncated $SERIAL — this end-of-phase copy would replace it with the wrong boot.
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
     if [ "$KEEP" -eq 1 ]; then
         info "left VM '$VM' and $DISK in place (--keep)"
+        [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
         return
     fi
-    vm_destroy
-    rm -f "$DISK" "$SERIAL" "$SSH_ERR"
+    vm_destroy && rm -f "$DISK" "$SERIAL" "$SSH_ERR" || approval_cleanup_rc=1
+    [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"
 }
 trap cleanup EXIT
-
 # Wait until the serial log matches a pattern, or time out. $1 pattern, $2 seconds.
 wait_serial() {
     local pat="$1" deadline=$(($(date +%s) + ${2:-180}))

@@ -1,7 +1,5 @@
 # shellcheck shell=bash
-#
 # Shared library for the Pithead integration test harness (tests/integration/).
-#
 # This file is *sourced*, never executed. It defines pure helpers (config rendering,
 # expectation derivation, redaction) plus thin I/O wrappers (run a command on the target,
 # poll for readiness) that the runner and the self-test build on. Keeping the pure logic
@@ -10,6 +8,8 @@
 # Target model: every command runs *on the box* — either over SSH or, with --local, directly.
 # Reads (dashboard JSON, pithead status) therefore behave identically in both modes, and we
 # never depend on the runner being able to resolve the box's dashboard hostname.
+# shellcheck source=tests/integration/lib/parent-lock.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.

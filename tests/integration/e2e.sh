@@ -31,10 +31,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/lib/rig-supply.sh" || exit $?
+source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" || exit $?
-
+# shellcheck source=tests/integration/lib/detached-harness.sh
+source "$HERE/lib/detached-harness.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -96,7 +98,7 @@ OPTIONS:
   -h, --help        this help
 
 ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
-  RIG_HOST, RIG_NAME, IT_RIG_TOKEN, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION
+  RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION
 
 EXAMPLES:
   tests/integration/e2e.sh claude/my-feature                 # targeted (the default), borrow the miner
@@ -167,7 +169,7 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
 # NOTE (testbench README): avoid literal shell parens '()' in remote command strings — they break the
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
-on_bench() { ssh "${SSH_OPTS[@]}" "$BENCH_HOST" "$1"; }
+on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
 
 # State captured for the restore trap.
@@ -197,9 +199,14 @@ restore_all() {
         warn "  Re-run without --keep, or restore by hand: canonical=$CANONICAL_DIR, miner cfg backup=$MINER_CFG_BACKUP"
         return
     fi
+    drain_harness_or_refuse
+    parent_lock_checkpoint restore || {
+        warn "Refusing an unreserved restore; preserve $MINER_CFG_BACKUP and repair the bench by hand."
+        exit 1
+    }
+    parent_lock_miner_restore || die "Refusing an unreserved miner restore; preserve $MINER_CFG_BACKUP."
     echo ""
     log "Restoring everything to the pre-run state…"
-
     # 1. Miner: put its original pool config back and nudge xmrig to reconnect.
     if [ -n "$MINER_CFG_BACKUP" ]; then
         step "restoring $MINER_HOST xmrig config from $MINER_CFG_BACKUP"
@@ -208,9 +215,9 @@ restore_all() {
         # candidates where the newest is not necessarily the true pre-borrow state. The backup is
         # only safe to delete once the bytes are demonstrably back in place, and the proof runs in
         # the SAME remote call so a dropped ssh cannot land between proving and deleting.
-        # Deliberately NOT gated on miner_reload: that function ends `|| true` and `return 0`, so it
-        # cannot fail — gating on it would delete the backup whatever happened, and it is also why
-        # the `warn` arm it used to guard was unreachable.
+        # Deliberately NOT gated on miner_reload: restoring and proving the config bytes is still
+        # required if every reload mechanism fails. The caller keeps the backup until that byte
+        # proof succeeds; miner_reload's status only gates forward test progress.
         if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
             miner_reload
             ok "$MINER_HOST repointed to its original pool(s); backup pruned"
@@ -329,11 +336,10 @@ wait_synced() { # <timeout_s>
 }
 
 # Nudge the miner's xmrig to reload its (rewritten) config. xmrig watches its config file and
-# reloads on change; the systemctl/SIGHUP fallbacks cover builds that don't. Whichever works, we
-# verify by polling the test bench for the worker — so the exact mechanism doesn't matter.
+# reloads on change; the systemctl/SIGHUP fallbacks cover builds that don't. At least one must work;
+# forward paths then poll the test bench for the worker, so the exact mechanism doesn't matter.
 miner_reload() {
-    on_miner "sudo -n systemctl restart xmrig >/dev/null 2>&1 || systemctl --user restart xmrig >/dev/null 2>&1 || pkill -HUP -x xmrig >/dev/null 2>&1 || true"
-    return 0
+    on_miner "sudo -n systemctl restart xmrig >/dev/null 2>&1 || systemctl --user restart xmrig >/dev/null 2>&1 || pkill -HUP -x xmrig >/dev/null 2>&1"
 }
 
 # Poll the test bench's dashboard for at least <n> workers connected.
@@ -358,6 +364,7 @@ preflight() {
     log "Preflight"
     [ -n "$BENCH_HOST" ] || die "Set BENCH_HOST to your test-bench SSH host (env BENCH_HOST or --bench)."
     [ "$BORROW_MINER" != "1" ] || [ -n "$MINER_HOST" ] || die "Set MINER_HOST to a miner to borrow, or pass --no-miner."
+    parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
     on_bench "test -x '$CANONICAL_DIR/pithead'" || die "No pithead at $CANONICAL_DIR on $BENCH_HOST."
@@ -418,13 +425,12 @@ preflight() {
         # until this process dies. rigforge's gates on the same rig refuse (exit 75, holder named)
         # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is
         # touched. The kernel releases the lock on exit, AFTER the EXIT-trap restore has run.
-        rig_lock_remote pithead "e2e.sh loaner-borrow" "" "$MINER_HOST" "${SSH_OPTS[@]}"
-        ok "rig lock held on $MINER_HOST (loaner) for the life of this run"
+        parent_lock_miner_borrow || die "Miner lock is not continuous."
     fi
 }
-
 # --- Phase 1: provision the dedicated e2e checkout + check out the branch ---
 provision() {
+    parent_lock_checkpoint provision || die "Parent-held bench lock was lost before provision."
     log "Provisioning the dedicated e2e checkout ($E2E_DIR) on $BENCH_HOST"
     # Clone from the local canonical checkout (fast, no network) the first time, then point origin
     # at GitHub so we can fetch arbitrary branches.
@@ -557,30 +563,13 @@ borrow_miner() {
     MINER_CFG_BACKUP="$MINER_XMRIG_CONFIG.e2e-orig.$(on_miner 'date +%Y%m%d-%H%M%S')"
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
-    # Point the rig at the bench: inject a bench pool if the config has none (clone pool[0] so
-    # user/pass/keepalive carry over, override url→bench and force plain stratum), then reorder so the
-    # bench pool is primary and the rest stay as failover. Non-destructive, fully reversible from the
-    # backup above. ponytail: hardcodes :3333 (the seeded canonical stratum_port default, which the bench runs).
-    # The injected entry is tagged "rig-id": "pithead-e2e" (#1178) — a documented per-pool xmrig key,
-    # ignored for pool selection — which is what the restore path's belt-and-braces check keys on.
-    on_miner "
-        jq --arg b '$BENCH_HOST' '
-            (if any(.pools[]?; .url | ascii_downcase | contains(\$b)) then .
-             else .pools = ([ (.pools[0]) + {url: (\$b + \":3333\"), tls: false, daemon: false, \"rig-id\": \"pithead-e2e\"} ] + .pools) end)
-            | .pools |= ([.[] | select(.url | ascii_downcase | contains(\$b))] + [.[] | select(.url | ascii_downcase | contains(\$b) | not)])' \
-            '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' \
-        && mv '$MINER_XMRIG_CONFIG.e2e.tmp' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG'
-    " || die "Failed to repoint the miner config."
-    local primary
-    primary="$(on_miner "jq -r '.pools[0].url' '$MINER_XMRIG_CONFIG'")"
-    [ -n "$primary" ] && step "miner primary pool is now: $primary"
-    case "$primary" in *"$BENCH_HOST"*) ;; *) warn "primary pool ($primary) doesn't look like the test bench — does the miner config have a test-bench pool?" ;; esac
-    miner_reload
+    repoint_miner || die "Failed to repoint the miner config."
     wait_workers "$WORKERS" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
 }
 
 # --- Phase 4: deploy the branch ---------------------------------------------
 deploy_branch() {
+    parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
     # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
     # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
     # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before
@@ -603,7 +592,10 @@ deploy_branch() {
 
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
-    local phases
+    local phases rearm_id rearm_request rearm_ack
+    rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
+    rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
     case "$MODE" in
     check) phases="--check" ;;
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
@@ -624,37 +616,45 @@ run_harness() {
     phases="$phases $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     step "phases: $phases  (workers=$WORKERS)"
-
-    # Push a tiny runner that captures the harness exit code into a done-marker, then nohup it.
-    local runner
+    local runner rollback_b64 pools_b64
     runner="$(mktemp)"
     cat >"$runner" <<'RUNNER'
 #!/usr/bin/env bash
 set -uo pipefail
-dir="$1"; workers="$2"; shift 2
+state="$1"; dir="$2"; workers="$3"; rearm_request="$4"; rearm_ack="$5"; rearm_id="$6"; shift 6
+start=$(awk '{print $22}' "/proc/$$/stat") || exit 1
+printf 'running %s %s\n' "$$" "$start" >"$state.tmp" && mv "$state.tmp" "$state"
 mkdir -p "$dir/results"
-bash "$dir/tests/integration/run.sh" --local --dir "$dir" --workers "$workers" "$@" \
+IT_BORROW_REARM_REQUEST="$rearm_request" IT_BORROW_REARM_ACK="$rearm_ack" IT_BORROW_REARM_TOKEN="$rearm_id" \
+    bash "$dir/tests/integration/run.sh" --local --dir "$dir" --workers "$workers" "$@" \
     > "$dir/results/e2e-harness.log" 2>&1
 echo $? > "$dir/results/e2e-harness.done"
 RUNNER
     on_bench "cat > '$E2E_DIR/.e2e-run.sh' && chmod +x '$E2E_DIR/.e2e-run.sh'" <"$runner"
     rm -f "$runner"
-
-    # For non-check modes, run the safe readiness + current-state assertions inline first (fast,
-    # gives early signal), then the destructive phases detached.
+    # Run safe readiness/current-state assertions inline first, then destructive phases detached.
     if [ "$MODE" != "check" ]; then
-        on_bench "cd '$E2E_DIR' && bash tests/integration/run.sh --local --dir '$E2E_DIR' --readiness --check $no_mining" ||
+        printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" | on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --readiness --check $no_mining" ||
             warn "readiness/check reported issues (see above) — continuing to the destructive phases"
     fi
-
-    printf '%s' "$IT_RIG_TOKEN" | on_bench "IFS= read -r t; rm -f '$E2E_DIR/results/e2e-harness.done'; cd '$E2E_DIR' && IT_RIG_TOKEN=\"\$t\" nohup ./.e2e-run.sh '$E2E_DIR' '$WORKERS' $phases >/dev/null 2>&1 & echo launched" ||
-        die "Failed to launch the harness."
+    rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
+    pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
+    harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
+    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.
     local rc="" waited=0
     while :; do
+        if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
+            step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
+            repoint_miner || die "Failed to reapply the borrowed-pool fixture."
+            wait_workers "$WORKERS" 180 || die "Borrowed miner did not reconnect after pool re-arm."
+            printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || die "Failed to acknowledge the borrowed-pool fixture."
+        fi
         if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
             rc="$(on_bench "cat '$E2E_DIR/results/e2e-harness.done'")"
+            harness_finished || die "Detached harness identity changed before it stopped."
             break
         fi
         sleep 20

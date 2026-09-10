@@ -35,7 +35,21 @@ wizard_state_poll() { # <ip> <jar> <jq-filter>
     WIZ_STATE_WHY="http=${http:-none} curl=$crc after ${tries}x5s body=$(printf '%s' "$raw" | head -c 60 | tr -c '[:print:]' '?')"
     return 1
 }
-
+provision_browser_config() { # <served-config>
+    printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg h "${PROVISION_DASHBOARD_HOST:-}" \
+        --argjson fake_approval "${PROVISION_FAKE_APPROVAL:-0}" \
+        '.monero.wallet_address = $m | .monero.mode = "local" | .tari.wallet_address = $t |
+         .tari.mode = "local" | .p2pool.pool = "mini" | .local_miner.enabled = true |
+         if $h != "" then .dashboard.host = $h else . end |
+         if $fake_approval == 1 then
+           if (.telegram.bot_token // "") == "" and (.telegram.chat_id // "") == "" and ((.telegram.control.allowed_ids // []) | length) == 0
+           then .telegram += {bot_token:"os1966-fake-token", chat_id:"-1001966"} |
+                .telegram.control += {allowed_ids:[1966], confirm_timeout:5}
+           elif .telegram.bot_token == "os1966-fake-token" and .telegram.chat_id == "-1001966" and .telegram.control.allowed_ids == [1966] then .
+           else error("refusing to replace existing Telegram credentials")
+           end
+         else . end'
+}
 provision_browser_submit() { # <ip> <jar> [field=value]...
     local ip="$1" jar="$2" cfg extra=()
     shift 2
@@ -46,22 +60,18 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
     }
     # The four answers the Both role gives on the page, on the page's own paths (wizard.mjs
     # FIELDS: monero.wallet_address, tari.wallet_address, p2pool.pool, local_miner.enabled).
-    cfg=$(printf '%s' "$WIZ_STATE" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
-        '.monero.wallet_address = $m | .monero.mode = "local" | .tari.wallet_address = $t |
-         .tari.mode = "local" | .p2pool.pool = "mini" | .local_miner.enabled = true') || {
+    cfg=$(provision_browser_config "$WIZ_STATE") || {
         printf 'jq-failed'
         return 1
     }
     curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" "${extra[@]}" \
         "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null
 }
-
 # The page's own error line, for a red that names the refusal instead of a timeout. Empty when
 # the page shows none (or cannot be reached).
 provision_page_error() { # <ip> <jar>
     curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
 }
-
 node_preflight_state_retained() { # <submit-response-json> <wizard-state-json> <expected-wallet>
     printf '%s' "$1" | jq -e '
         .error == "The node name did not resolve to an address." and
@@ -71,7 +81,6 @@ node_preflight_state_retained() { # <submit-response-json> <wizard-state-json> <
             .stage == "setup" and .config.monero.wallet_address == $m and
             .config.tari.remote.host == "unreachable.invalid"' >/dev/null
 }
-
 # This refusal is separate from later setup failure recovery: the protocol preflight stays on the
 # form, retains safe answers, and publishes the exact failed Tari row. The caller then submits the
 # corrected local choice; a post-validation setup fault has its own leg once that product seam lands.
@@ -94,7 +103,6 @@ provision_node_preflight_retention() { # <ip> <authenticated-cookie-jar>
         return 1
     fi
 }
-
 setup_failure_state_retained() { # <wizard-state-json> <expected-wallet>
     printf '%s' "$1" | jq -e --arg m "$2" '
         .stage == "setup" and (.error | type == "string" and length > 0) and
@@ -128,6 +136,7 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
     if [ "$tries" -ge 24 ]; then
         restore_setup_fault || bad "post-validation fault cleanup failed after handoff timeout"
         bad "faulted setup never reached its credentials handoff"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return 1
     fi
     if ! curl -fsSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null; then
@@ -170,20 +179,17 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         return 1
     fi
 }
-
 # POST a control request and follow its result through dashboard restarts.
 dashboard_curl() {
     local auth="${DASH_USER}:${DASH_PASS}"
     case "$auth" in *$'\n'* | *$'\r'*) return 1 ;; esac
     auth=${auth//\\/\\\\}
     auth=${auth//\"/\\\"}
-    printf 'user = "%s"\n' "$auth" | curl --config - "$@"
+    curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
-
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
-    out=$(dashboard_curl -sSk -m 8 -H 'Content-Type: application/json' \
-        -H 'X-Pithead-Control: 1' --data "$body" "https://$ip/api/control/$route" 2>/dev/null)
+    out=$(dashboard_control_post "$route" "$body") || return
     rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -204,7 +210,6 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     done
     return 1
 }
-
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
@@ -213,7 +218,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     }
 
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.energy.cost_per_kwh = 0.17')
-    preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
+    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     if printf '%s' "$preview" | jq -e '.status == "previewed" and .destructive == false and any(.changes[]; .flag == "INFO")' >/dev/null; then
         ok "post-provision benign setting previews as an ordinary committable change"
     else
@@ -230,7 +235,6 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         bad "post-provision benign setting did not land"
         return
     fi
-
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || return
     old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
     case "$old" in *[!0-9]* | "" | ?????*)
@@ -244,7 +248,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     fi
     [ "$old" -lt 1024 ] && peers=$((old + 1)) || peers=$((old - 1))
     proposed=$(printf '%s' "$live" | jq -c --argjson peers "$peers" '.monero.out_peers = $peers')
-    preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
+    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     if printf '%s' "$preview" | jq -e '.status == "previewed" and .destructive == true and any(.changes[]; .flag == "CONFIRM")' >/dev/null; then
         ok "post-provision disruptive setting previews behind typed approval"
     else
@@ -259,7 +263,7 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         bad "post-provision disruptive apply crossed the approval gate without APPLY"
         return
     fi
-    preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
+    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     rid=$(printf '%s' "$preview" | jq -r '.id')
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')")
     if printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null &&
@@ -270,26 +274,14 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         bad "post-provision approved setting did not land"
         return
     fi
-
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
         jq -c --argjson old "$old" '.monero.out_peers = $old')
-    preview=$(dashboard_control_request preview "$(jq -nc --argjson config "$proposed" '{config:$config}')")
+    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     rid=$(printf '%s' "$preview" | jq -r '.id')
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')")
     printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || bad "post-provision approved-setting cleanup failed"
 
-    result=$(dashboard_control_request diag-doctor '{}')
-    if printf '%s' "$result" | jq -e '.status == "applied" and (.doctor.checks | type == "array")' >/dev/null; then
-        ok "doctor completes through the dashboard control runner"
-    else
-        bad "doctor did not return a report through the control runner"
-    fi
-    result=$(dashboard_control_request diag-logs '{"container":"dashboard","lines":20}')
-    if printf '%s' "$result" | jq -e '.status == "applied" and .container == "dashboard" and (has("lines") or has("note"))' >/dev/null; then
-        ok "dashboard log tail completes through the control runner"
-    else
-        bad "dashboard log tail did not return through the control runner"
-    fi
+    phase_provision_diagnostics_regressions "$DASH_USER" "$DASH_PASS"
 
     result=$(dashboard_control_request backup '{}' 360)
     rid=$(printf '%s' "$result" | jq -r '.id // ""')
@@ -317,7 +309,6 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     *) bad "stack/dashboard did not recover after backup (running: ${names:-none}; HTTP ${code:-none})" ;;
     esac
 }
-
 _recovery_self_test() {
     local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}'
     local state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
@@ -330,6 +321,12 @@ _recovery_self_test() {
     ! setup_failure_state_retained "${failed/\"setup\"/\"failed\"}" wallet || return 1
     ! setup_failure_state_retained "${failed/Required Compose file is missing./}" wallet || return 1
     ! setup_failure_state_retained "${failed/\"wallet\"/\"lost\"}" wallet || return 1
+    local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box PROVISION_FAKE_APPROVAL=1 cfg
+    cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":"","control":{"allowed_ids":[]}}}') || return 1
+    printf '%s' "$cfg" | jq -e '.dashboard.host == "fixture-box" and .telegram.bot_token == "os1966-fake-token" and
+        .telegram.chat_id == "-1001966" and .telegram.control.allowed_ids == [1966] and .telegram.enabled != true' >/dev/null || return 1
+    provision_browser_config "$cfg" >/dev/null || return 1
+    ! provision_browser_config '{"telegram":{"bot_token":"operator-secret","chat_id":"-1","control":{"allowed_ids":[1]}}}' >/dev/null 2>&1 || return 1
     echo "provision-browser-submit self-test: preflight/setup retention and failure controls passed"
 }
 
@@ -392,9 +389,12 @@ _wsp_self_test() {
     fi
     printf '#1936 wizard-state-poll self-test passed\n'
 }
-
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     set -uo pipefail # what tests/os/run.sh runs the helpers under
-    _wsp_self_test && _recovery_self_test
+    # shellcheck source=tests/os/appliance-config-approval-leg.sh
+    . "$(cd "$(dirname "$0")" && pwd)/appliance-config-approval-leg.sh"
+    # shellcheck source=tests/integration/lib/mergemine-probe.sh
+    . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
+    _wsp_self_test && _recovery_self_test && _approval_self_test
     exit $?
 fi

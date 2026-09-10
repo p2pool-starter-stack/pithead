@@ -93,6 +93,11 @@ echo "== unit: #1059 watch-report discrimination =="
 bash "$ROOT/tests/os/failure-evidence.sh" --self-test >/dev/null 2>&1
 assert_rc "#1059 watch-report self-test passes" "$?" "0"
 
+# The #2043 dump: five legs report a zero-container stack and none of them captured anything,
+# so the probe SET is the part that must not rot. Same reasoning as above — no KVM needed.
+bash "$ROOT/tests/os/zero-container-evidence.sh" --self-test >/dev/null 2>&1
+assert_rc "#2043 zero-container evidence self-test passes" "$?" "0"
+
 echo "== unit: #1676 version-aging helper self-test =="
 # tests/os/run.sh's leg 4 must make the guest claim a version OLDER than the bundle it is about to
 # install, and every minor release-prep tip is x.y.0 — the shape the helper used to refuse, which
@@ -112,6 +117,13 @@ echo "== unit: #1936 wizard-state-poll self-test =="
 # proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
+
+bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
+bash "$ROOT/tests/os/appliance-diagnostics-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#1966 appliance diagnostics verdict self-test passes" "$?" "0"
+bash -c 'PITHEAD_OS_VM_DESTROY_SELF_TEST=1 exec bash "$1"' _ "$ROOT/tests/os/kvm-preflight.sh"
+assert_rc "the OS battery refuses a VM that survives teardown" "$?" "0"
 
 echo "== unit: tor healthcheck command-dependency self-test (#1372) =="
 # The #1098 pair above asks whether a healthcheck script EXISTS where its Dockerfile promises. This

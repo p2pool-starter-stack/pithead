@@ -156,6 +156,9 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         step() { :; }
         warn() { :; }
         ok() { :; }
+        drain_harness_or_refuse() { :; }
+        parent_lock_checkpoint() { :; }
+        parent_lock_miner_restore() { :; }
         control_units_verdict() { echo on-target; }
         wait_bench_healthy() { return 0; }
         verify_restore_proof() { return 0; }

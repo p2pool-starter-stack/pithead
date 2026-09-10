@@ -69,6 +69,8 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
         step() { :; }
         warn() { :; }
         ok() { :; }
+        harness_prepare() { HARNESS_STATE=/test/state; }
+        harness_finished() { :; }
         die() {
             echo "DIE: $*" >&2
             exit 1
@@ -79,12 +81,12 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
             # launch FIRST — reversing these two makes every phase assertion pass vacuously.
             *nohup*)
                 printf '%s' "$1" >"$LAUNCH_FILE"
-                # The launch is the one on_bench call e2e.sh pipes the token into (#1378).
                 cat >"$STDIN_FILE"
+                echo 4242
                 ;;
-            # rig_supply's proof dial. Succeeds here; the unreachable-rig path is driven separately
-            # by rc_of below, which is where the exit-code contract is asserted.
+            # rig_supply's proof dial; the unreachable-rig path is driven separately by rc_of.
             *curl*Authorization*) return 0 ;;
+            *borrow-rearm.request*) return 1 ;;
             *e2e-harness.done*)
                 # `test -f <done>` (the poll) and `cat <done>` (the exit code) share this substring;
                 # answering 0 to both ends the loop on its first pass with a clean harness result.
@@ -118,7 +120,7 @@ stdin_of() { # <mode> <borrow> [token] -> what e2e.sh piped into the launch call
 
 compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh would launch run.sh with
     # Everything between the runner's positional args and the trailing redirect is the phase list.
-    launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
+    launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
 }
 
 has_phase() { # <phase-list> <flag> -> "yes" | "no"
@@ -184,25 +186,16 @@ assert_eq "targeted passes --rig-control-port so e2e.sh and run.sh cannot dial d
     "$(has_phase "$TARGETED" --rig-control-port)" "yes"
 
 echo "== an UNSUPPLIED rig still gets the phase — a gap must not become a dropped phase (#1378) =="
-# Driving with an empty token takes rig_supply's no-token branch. The phase must still be requested:
-# its dashboard-side legs are real coverage, and silently dropping it is the #1364 defect returning.
 UNSUPPLIED="$(compose_phases targeted 1 "")"
-assert_eq "no token => the write phase is STILL requested" \
-    "$(has_phase "$UNSUPPLIED" --rigforge-control)" "yes"
-assert_eq "no token => nothing is piped to the launch" \
-    "$(stdin_of targeted 1 "")" ""
+assert_eq "no token => the write phase is STILL requested" "$(has_phase "$UNSUPPLIED" --rigforge-control)" "yes"
+assert_eq "no token => nothing is piped to the launch" "$(stdin_of targeted 1 "")" ""
 
 echo "== the token never lands in the detached runner's argv (#1378) =="
-# /proc/PID/cmdline is world-readable and the nohup'd runner lives for the whole run, so the token
-# travels on stdin and arrives as an ENVIRONMENT entry (/proc/PID/environ is owner-only). run.sh
-# already puts it in a short-lived bench-side curl argv via rx(); a long-lived one is the new risk.
+# The long-lived runner takes credentials through stdin/environment, never world-readable argv.
 LAUNCH="$(launch_of targeted 1)"
-assert_eq "the launch command does NOT contain the token" \
-    "$(contains "$LAUNCH" "s3cr3t-tok3n")" "no"
-assert_eq "the launch passes the token as an environment entry, not an argument" \
-    "$(contains "$LAUNCH" 'IT_RIG_TOKEN="$t" nohup')" "yes"
-assert_eq "the token is what e2e.sh pipes to the launch call" \
-    "$(stdin_of targeted 1)" "s3cr3t-tok3n"
+assert_eq "the launch command does NOT contain the token" "$(contains "$LAUNCH" "s3cr3t-tok3n")" "no"
+assert_eq "the launch passes the token as an environment entry, not an argument" "$(contains "$LAUNCH" 'IT_RIG_TOKEN="$t"')" "yes"
+assert_eq "the token is what e2e.sh pipes to the launch call" "$(stdin_of targeted 1)" "s3cr3t-tok3n"
 
 echo "== rig_supply's rc-0 contract, which e2e.sh's && chain depends on (#1378) =="
 # e2e.sh appends the phase flags with `... && rig_supply && phases=...`. A rig_supply that returned

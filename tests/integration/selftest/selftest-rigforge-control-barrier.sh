@@ -50,9 +50,26 @@ assert_eq "failed nested read returns nonzero to main" "$rc" "1"
 assert_eq "failed nested read performs no later rig write" "$([ -e "$TMP/write-called" ] && echo yes || echo no)" "no"
 assert_eq "a failed baseline write prevents apply from validating stale config" "$APPLIES" "1"
 assert_eq "nested read and failed cleanup are both visible" "$IT_FAIL" "2"
+early_ok=$([ "$rc" -eq 1 ] && [ ! -e "$TMP/write-called" ] && [ "$APPLIES" -eq 1 ] && [ "$IT_FAIL" -eq 2 ] && echo 1 || echo 0)
+
+echo "== a late RigForge assertion blocks later destructive phases =="
+IT_FAIL=0 RUN_RIGFORGE=0 RIGFORGE_BOOTSTRAP_VERSION=""
+BASELINE_CONFIG='{"dashboard":{"control":{"enabled":false}},"workers":{"api_port":8080,"list":[{"name":"rig1","host":"rig"}]}}'
+api_state() { printf '%s' '{"workers":[{"name":"rig1","api_ok":true,"rigforge":{"version":"1.17.2","stats":[]}}]}'; }
+push_config() { return 0; }
+_worker_detail() { printf '%s' '{"editable":true,"control_enabled":true}'; }
+run_rigforge_writable_keys() { it_fail "forced late RigForge failure" "control"; }
+run_rigforge_pools() { :; }
+run_rigforge_reverse() { :; }
+run_rigforge_rollback() { :; }
+run_rigforge_upgrade() { :; }
+capture_artifacts() { :; }
+run_rigforge_control >/dev/null 2>&1
+late_rc=$?
+assert_eq "a late RigForge assertion returns nonzero to main" "$late_rc" "1"
 
 MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
 assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" '[ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]'
 printf '\nselftest-rigforge-control-barrier: PASS\n'
-# Two failures above are the deliberate product-counter stimulus, not selftest failures.
-[ "$rc" -eq 1 ] && [ ! -e "$TMP/write-called" ] && [ "$APPLIES" -eq 1 ] && [ "$IT_FAIL" -eq 2 ]
+# The forced failures above are product-counter stimuli, not selftest failures.
+[ "$early_ok" = 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]

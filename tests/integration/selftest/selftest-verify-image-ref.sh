@@ -66,10 +66,14 @@ check() { # <name> <root> <dockerfile> <want-rc>
 mkdockerfile "$TMP/Dockerfile" "$PIN"
 mkroot "$TMP/match" "$PIN"
 mkroot "$TMP/stale" "$OLD"
+mkroot "$TMP/mutable" main
 mkroot "$TMP/empty" ""
 mkroot "$TMP/norecord"
 
 check "the recorded ref IS the pin -> pass" "$TMP/match" "$TMP/Dockerfile" 0
+PITHEAD_RIGFORGE_REF="$OLD" check "an explicit immutable test ref replaces the release pin" "$TMP/stale" "$TMP/Dockerfile" 0
+PITHEAD_RIGFORGE_REF="$OLD" check "the test ref still rejects a different baked tree" "$TMP/match" "$TMP/Dockerfile" 1
+PITHEAD_RIGFORGE_REF=main check "a mutable verifier override is refused" "$TMP/mutable" "$TMP/Dockerfile" 1
 # The case the old assertion could not see, and the reason this issue exists.
 check "a stale recorded ref -> FAIL" "$TMP/stale" "$TMP/Dockerfile" 1
 check "a present but empty ref -> FAIL" "$TMP/empty" "$TMP/Dockerfile" 1

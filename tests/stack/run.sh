@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-#
 # Dependency-free test suite for pithead (no bats required).
 # Mixes unit tests (sourcing pithead and calling its functions) with black-box CLI tests
 # (running a sandboxed copy of pithead with docker/sudo stubbed out). Run: tests/stack/run.sh
-#
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +20,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain
 # shellcheck source=tests/stack/control/test-control-upgrade-lock.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade-lock.sh" && domain_ran test-control-upgrade-lock.sh "$_d0" "$?" || domain_ran test-control-upgrade-lock.sh "$_d0" "$?"
 
+# shellcheck source=tests/stack/release/test-release-verify.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/release/test-release-verify.sh" && domain_ran test-release-verify.sh "$_d0" "$?" || domain_ran test-release-verify.sh "$_d0" "$?"
 # shellcheck source=tests/stack/release/test-release-signing.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain_ran test-release-signing.sh "$_d0" "$?" || domain_ran test-release-signing.sh "$_d0" "$?"
 
@@ -46,6 +46,8 @@ assert_rc "test-dashboard-onion.sh does not depend on run.sh's source order (#13
 
 # shellcheck source=tests/stack/release/test-release.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/release/test-release.sh" && domain_ran test-release.sh "$_d0" "$?" || domain_ran test-release.sh "$_d0" "$?"
+# shellcheck source=tests/stack/release/test-release-publish.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain_ran test-release-publish.sh "$_d0" "$?" || domain_ran test-release-publish.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
@@ -127,11 +129,9 @@ assert_eq "xmrig-proxy entrypoint: TLS on but keypair incomplete appends nothing
     "$(xp_tls_argv true "$XPTLS")" "[-b][0.0.0.0:3333]"
 rm -rf "$XPTLS"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
 

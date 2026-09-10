@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Tier-4 appliance harness (#77 phase 2): boot the pithead-os image in KVM and prove the
-# properties only real firmware + a real A/B updater can show — EFI boot, the first-boot wizard
-# window, and the update/commit/rollback cycle that is the phase-2 exit criterion. This is the
-# os-image sibling of tests/integration/run.sh; it needs a Linux host with KVM + libvirt + the
-# built image, so it runs on the bench, not in CI.
+# Tier-4 appliance harness (#77 phase 2): boot the pithead-os image in KVM and prove EFI boot,
+# first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
+# harness and needs a Linux host with KVM + libvirt.
 #
 #   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|all]
 #
@@ -39,12 +37,13 @@
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
 # --keep leaves the VM + disks for inspection.
 set -uo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
+# shellcheck source=tests/os/zero-container-evidence.sh
+. "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/kvm-preflight.sh
 . "$SCRIPT_DIR/kvm-preflight.sh"
 # shellcheck source=tests/os/journal-boot-verdict.sh
@@ -53,12 +52,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/restore-live-state-verdict.sh"
 # shellcheck source=tests/os/reinstall-prefill-verdict.sh
 . "$SCRIPT_DIR/reinstall-prefill-verdict.sh"
+# shellcheck source=tests/os/provisioning-settled.sh
+. "$SCRIPT_DIR/provisioning-settled.sh"
 # shellcheck source=tests/os/data-floor-fallback-leg.sh
 . "$SCRIPT_DIR/data-floor-fallback-leg.sh"
 # shellcheck source=tests/os/aged-version.sh
 . "$SCRIPT_DIR/aged-version.sh"
 # shellcheck source=tests/os/provision-browser-submit.sh
 . "$SCRIPT_DIR/provision-browser-submit.sh"
+# shellcheck source=tests/os/appliance-hostname-leg.sh
+. "$SCRIPT_DIR/appliance-hostname-leg.sh"
+# shellcheck source=tests/os/appliance-diagnostics-leg.sh
+. "$SCRIPT_DIR/appliance-diagnostics-leg.sh"
+# shellcheck source=tests/os/appliance-config-approval-leg.sh
+. "$SCRIPT_DIR/appliance-config-approval-leg.sh"
+# shellcheck source=tests/integration/lib/mergemine-probe.sh
+. "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
@@ -70,7 +79,6 @@ PHASE="all"
 VM="pithead-os-test"
 DISK="/srv/code/bench-vm/pithead-os-test.img"
 SERIAL="/tmp/pithead-os-serial.log"
-
 while [ $# -gt 0 ]; do
     case "$1" in
     --image)

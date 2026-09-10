@@ -343,11 +343,13 @@ assert_eq "and the absent-record skip does not claim a credential problem" \
 
 STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
 
-export IT_RIG_POOLS_PROBE='not json'
+export IT_RIG_POOLS_PROBE='not-json-fixturesecret42'
 reset_applies
 counts="$(quietly run_rigforge_pools rig1)"
 assert_eq "a malformed probe reds rather than being POSTed at a rig" "${counts#*,}" "1"
 assert_eq "and nothing is POSTed" "$(applies | grep -c .)" "0"
+assert_eq "and its credential-shaped input is not copied into the error log" \
+    "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
 unset IT_RIG_POOLS_PROBE
 
 echo ""

@@ -96,6 +96,7 @@ phase_media() {
     *dashboard*caddy* | *caddy*dashboard*) ok "provisioned via ESP pre-seed, stack up ($ip)" ;;
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return
         ;;
     esac

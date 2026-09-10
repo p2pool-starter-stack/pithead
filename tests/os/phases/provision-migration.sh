@@ -55,6 +55,8 @@ _phase_provision_migration() {
     done
     if [ "$released" = 1 ]; then
         ok "the migrating slot committed and released the chain services"
+        # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
+        assert_appliance_hostname_identity fixture-next "A/B update" "$pv_user" "$pv_pass"
     else
         bad "the migrating slot never reached the post-commit release — the hold deadlocked the gate it was built not to"
         return 1

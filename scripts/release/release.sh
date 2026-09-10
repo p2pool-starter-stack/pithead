@@ -169,9 +169,10 @@ REGISTRY_READ_BACKOFF="${PITHEAD_REGISTRY_READ_BACKOFF:-3}"
 buildx_inspect() { docker buildx imagetools inspect "$@"; }
 
 retry_registry_read() {
-    local attempt=1 out
+    local attempt=1 out expected_digest="${REGISTRY_READ_EXPECT_DIGEST:-}"
     while :; do
-        if out="$("$@" 2>/dev/null)" && [ -n "$out" ]; then
+        if out="$("$@" 2>/dev/null)" && [ -n "$out" ] &&
+            { [ -z "$expected_digest" ] || grep -Fxq "Digest: $expected_digest" <<<"$out"; }; then
             printf '%s' "$out"
             return 0
         fi
@@ -181,12 +182,15 @@ retry_registry_read() {
         attempt=$((attempt + 1))
     done
 }
+# Parse and validate the manifest-list digest that promotion re-tags.
+manifest_digest() {
+    local digest
+    digest="$(retry_registry_read buildx_inspect "$1" | awk '/^Digest:/{print $2; exit}')" || return 1
+    [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    printf '%s' "$digest"
+}
 
-# The manifest-LIST (index) digest of a pushed tag — the sha that spans every built platform, which
-# promote re-tags by digest. NOTE: `imagetools inspect --format '{{.Manifest.Digest}}'` does NOT work
-# for a buildx OCI index (it renders the whole descriptor block, not the digest), so parse the human
-# `Digest:` line instead. Verified equal to `imagetools inspect --raw | shasum -a 256`.
-manifest_digest() { retry_registry_read buildx_inspect "$1" | awk '/^Digest:/{print $2; exit}'; }
+is_digest_ref_for() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] && [ "${1%@*}" = "$2" ]; }
 
 # Resolve a single upstream component pin on demand (the "ingredients" each release bundles).
 pin() {
@@ -241,8 +245,8 @@ main() {
         test_gate
         build_images
         stage_push
-        smoke_test
     fi
+    smoke_test
     promote
     sign_images # #376 — signs the digests promote re-tagged; --resume-promote reaches this too
     publish

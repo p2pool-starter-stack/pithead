@@ -2,7 +2,7 @@
 : "${OS_RUN_SUITE:?source via the suite runner}"
 phase_boot() {
     info "phase: boot"
-    vm_destroy
+    vm_destroy_or_refuse || return
     cp "$IMAGE" "$DISK"
     # 16 GiB guest: the appliance reserves 6 GiB of hugepages at boot (RandomX), so a smaller VM
     # leaves too little for the stack — and the plan sizes appliance RAM to the compose caps anyway.
@@ -118,7 +118,7 @@ phase_boot() {
 
 # Boot a raw appliance disk under OVMF and return once it has a lease. Sets the global `ip`.
 _vm_boot_disk() {
-    vm_destroy
+    vm_destroy_or_refuse || return
     cp "$1" "$DISK"
     qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
     : >"$SERIAL"

@@ -31,6 +31,8 @@ source "$HERE/lib/rig-key-ledger.sh" || exit $? # must precede any module that m
 source "$HERE/lib/rigforge-writable-keys.sh" || exit $?
 # shellcheck source=tests/integration/lib/rigforge-upgrade.sh
 source "$HERE/lib/rigforge-upgrade.sh" || exit $?
+# shellcheck source=tests/integration/lib/borrow-rearm.sh
+source "$HERE/lib/borrow-rearm.sh" || exit $?
 # shellcheck source=tests/integration/lib/zmq-probe.sh
 source "$HERE/lib/zmq-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
@@ -114,7 +116,9 @@ main() {
     elif [ "$CHECK_ONLY" = "1" ]; then
         lock_suite="run.sh --check" lock_shared="shared"
     fi
-    if [ "$IT_MODE" = "local" ]; then
+    if [ -n "${RIG_LOCK_PARENT_ACTOR:-}" ] || [ -n "${RIG_LOCK_PARENT_NONCE:-}" ]; then
+        rig_lock_parent_use || exit 1
+    elif [ "$IT_MODE" = "local" ]; then
         rig_lock pithead "$lock_suite" "$lock_shared"
     else
         rig_lock_remote pithead "$lock_suite" "$lock_shared" "$IT_SSH_DEST" "${IT_SSH_OPTS[@]}"
@@ -158,6 +162,7 @@ main() {
     local rig_control_ok=1
     if [ "$RUN_RIGFORGE_CONTROL" = "1" ]; then
         run_rigforge_control || rig_control_ok=0
+        [ "$rig_control_ok" = 1 ] && wait_borrow_rearm || rig_control_ok=0
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
