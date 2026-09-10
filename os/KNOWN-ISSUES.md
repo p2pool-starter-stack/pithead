@@ -9,8 +9,7 @@ tip whose previous run had passed. The last fully-green run of the original five
 2026-07-25 (boot 4/4, update 15/15, provision 21/21, install 33/33, fault 11/11, no brick in
 any run). **The current tip is not green.** A `--phase all` run reports 135 passed and 6
 failed, five of them one defect: the stack never comes up after provisioning, on `develop`
-as well as on the branch it was found against (#2043). Every leg below that asserts on a
-running stack should be read against that, not against a badge. The per-phase assertion list is in
+as well as on the branch it was found against (#2043). The per-phase assertion list is in
 [the release doc's battery table](../docs/dev/appliance-release.md#the-automated-battery).
 The image ships the ESP and slot A only (636 MB);
 systemd-repart builds slot B and /data on the target's own disk, and `/data` measured
@@ -324,18 +323,11 @@ just the restore path would fix nothing restore-specific and leave the identical
 fresh setup. See [Recovering from a backup](../docs/appliance.md#recovering-from-a-backup) for
 the operator-facing contract this restores.
 
-**Fixed — the dashboard OS-update action is built and its battery legs exist (#976).** The
-user-reachable path is an OS-update control in the dashboard header driving check → resumable
-Tor download to `/data` → local verification (signature, `compatible`, downgrade/floor) → slot
-install → an explicit confirmed reboot, with the boot health gate committing and a persisted
-verdict banner after. Every verb is host-side through the control channel and refuses off the
-appliance; the DIY one-click upgrade still refuses on the appliance, because a tarball upgrade
-would silently revert at the next boot. Both checks this entry used to wait on are written:
-`tests/os/run.sh` leg 4 drives the same A/B cycle through the dashboard action end to end, and
-the `provision` phase asserts `os_update` is present in `/api/state` — the control renders, or
-the leg fails. What those legs have not yet done is pass: leg 4 currently stops at "stack never
-came up", which is #2043's defect and not an OS-update one. Built and covered is not proven;
-see the Open section.
+**Fixed — the dashboard OS-update action shipped, and so did the two checks it waited on
+(#976).** `tests/os/run.sh` leg 4 drives the A/B cycle through the dashboard action end to end,
+and the `provision` phase asserts `os_update` is present in `/api/state` — the control renders,
+or the leg fails. Neither has passed: leg 4 stops at "stack never came up", which is #2043's
+defect and not an OS-update one. Built and covered is not proven.
 
 ## Open
 
