@@ -304,10 +304,12 @@ see this: the harness disables Secure Boot because our GRUB is unsigned.*
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
 the machine stays reachable by name after the monitor is unplugged.
 
-Note what this case does **not** prove: the install is not headless today, because the token
-exists only on the console. A monitor (or serial line) is required at least once. Pre-seeding
-the token or a whole config from the stick's FAT partition is the fix, and it is not built —
-see KNOWN-ISSUES.
+Note what this case does **not** prove: it walks the non-preseeded path, where the token exists
+only on the console, so a monitor (or serial line) is required at least once. Pre-seeding the
+token or a whole config from the stick's FAT partition **is** built — `pithead-token.txt` /
+`pithead-config.json` on the ESP, read by `lib/pithead/10-installer-preseed.sh` and carried onto
+the target by `os/installer/pithead-install`, with the `install` and `media` phases covering it.
+What is still unbuilt is choosing the target disk headlessly — see KNOWN-ISSUES (#979).
 
 KVM analog: `--phase install` automates the mechanics of M3 and M5 (inventory, guards,
 copy completeness, target boot, and reinstall preserving `/data`). The manual cases remain
