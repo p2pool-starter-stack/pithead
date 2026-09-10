@@ -54,7 +54,8 @@ for f in $NODE_FILES; do n_node=$((n_node + $(node_tests "$f" | count))); done
 # instead of splitting into two nonexistent ones and reporting phantom drift.
 n_stack=0
 while IFS= read -r f; do n_stack=$((n_stack + $(sh_sections "$f" | count))); done < <(find tests/stack -type f -name '*.sh' ! -path '*/fixtures/*' | sort)
-# Every tests/integration/selftest/*.sh, not just selftest.sh. Makefile and ci.yml both glob these,
+# Every tests/integration/selftest/*.sh, not just selftest.sh. The Makefile globs these and CI
+# runs the target that does (shell.yml since #2048),
 # so all of them are run and linted, while counting the one filename published a third of the
 # sections and hid the rest (#1388). The self-tests grew from one file to five and the singular
 # name never followed. Same enumerate-vs-glob shape the stack aggregate above was fixed for; the

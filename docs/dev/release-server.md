@@ -104,10 +104,10 @@ owner-only, the dashboard is bound to localhost, and the backup/rollback net is 
 `node`/`npx`, and `uv`/`uvx`. A reimaged box loses these, so the release preflight
 ([#426](https://github.com/p2pool-starter-stack/pithead/issues/426)) stops early and names the
 missing tool rather than dying mid-gate. Restore them with the same pinned versions CI uses
-([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)) — apt's `shellcheck`/`shfmt` are older
+([`.github/workflows/shell.yml`](../../.github/workflows/shell.yml)) — apt's `shellcheck`/`shfmt` are older
 and reformat differently, so a version skew would fail `make lint` on the box for diffs the merge
 gate never saw. Both pins live in the `Makefile` — `SHELLCHECK_VERSION` and `SHFMT_VERSION` — and
-each is what `ci.yml` installs and what `make lint-sh` refuses to run without;
+each is what `shell.yml` installs and what `make lint-sh` refuses to run without;
 `make -s print-shellcheck-version` and `make -s print-shfmt-version` print them, and the block below
 calls those commands rather than copying what they print, so it cannot go stale against the pins.
 One wrinkle worth knowing when you check by hand: `shfmt --version` prints a leading `v` on the
