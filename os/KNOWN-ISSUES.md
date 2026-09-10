@@ -8,9 +8,10 @@ tip being cut, not a dated badge here: the 2026-08 waves each found real product
 tip whose previous run had passed. The last fully-green run of the original five phases was
 2026-07-25 (boot 4/4, update 15/15, provision 21/21, install 33/33, fault 11/11, no brick in
 any run). **The current tip is not green.** A `--phase all` run reports 135 passed and 6
-failed, five of them one cause: the image under test was built without `PITHEAD_REGISTRY`, so it
+failed. Four are a build-configuration cause: the image was built without `PITHEAD_REGISTRY`, so it
 asked the public registry for an unreleased `v$(cat VERSION)` and came up with zero containers
-(#2043 — a build-configuration defect, not an appliance one). The
+(#2043). The fifth is a product defect — a faulted setup HANGS instead of reopening the page
+(#2050) — and it is the only one of the five that #2043 actually controlled against `develop`. The
 per-phase assertion list is in
 [the release doc's battery table](../docs/dev/appliance-release.md#the-automated-battery).
 The image ships the ESP and slot A only (636 MB);
@@ -353,6 +354,16 @@ not proven.
   ships. (M11–M14 were the rig-role steps; #1886 moved their automatable parts into the `rig`
   phase.) #394's gate list still does not name this battery — the same omission #976's own title
   records for the OS-update path.
+- **A faulted setup hangs instead of reopening the wizard (#2050).** Measured on the KVM bench
+  2026-09-10 at pithead#2002's head, with the registry override in place so image refs were NOT a
+  factor (the zero-container dump's `comm -23 want have` was empty): the provision phase arms a
+  post-validation fault by moving `docker-compose.yml` aside, the valid submit is accepted,
+  credentials are printed to the console, and then the guest emits NOTHING for the remaining two
+  minutes — last serial line `grep: docker-compose.yml: No such file or directory` at t=44.4s. The
+  wizard neither fails nor republishes its handoff, so `faulted setup never reached its credentials
+  handoff` fails. This is #1955's "dead page" as a live defect. It is version-independent, which is
+  why #2043's `develop` control reproduced it: that control was measuring THIS, not the registry
+  cause below.
 - **The battery's image must be built against a registry that actually has its tags (#2043).**
   Root-caused: this is the #978 entry below, reached from the battery side. Only the wizard image
   is baked, so at first boot every other service is a pull of `pithead-<service>:v$(cat VERSION)`
@@ -360,8 +371,15 @@ not proven.
   with plain `--ssh` keeps the default registry (`TEST_REGISTRY` needs `PITHEAD_REGISTRY` set
   too), so the wizard submit and `setup` succeed, leg 4 captures a dashboard login, and then no
   containers ever appear; the media leg waited 25 minutes for zero. `running: 'pithead-wizard '`
-  is the signature — the one baked image up, nothing else. The `develop` control failed
-  identically because `develop` carries the same VERSION, not because the appliance regressed.
+  is the signature — the one baked image up, nothing else. This cause accounts for the four legs
+  whose symptom is a stack that never comes up; it does NOT account for the provision leg above
+  (#2050), which fails with the registry correct. An earlier revision of this entry claimed it did,
+  on the strength of `develop` reproducing it, and that inference was wrong.
+  The harness made this unavoidable, not just likely: the phases rebuild the image themselves via
+  `_build_image`, and the documented recipe is `sudo tests/os/run.sh`, whose `env_reset` drops an
+  exported `PITHEAD_REGISTRY` before the harness sees it — so no invocation of the documented
+  command could produce a provisionable image. `_build_image` now forwards it and the recipe is
+  `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`.
   `os/build-image.sh` now refuses such a build (`require_pullable_services`) and
   `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every affected leg.
   The A/B updater itself is healthy (boot, identity survival, install to the spare slot, commit
