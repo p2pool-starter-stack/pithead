@@ -120,6 +120,39 @@ stage_compose() { # <version-tag> <stage-dir>  -> prints the COMPOSE_SOURCE line
     cat "$dir/COMPOSE_SOURCE" || return 1
 }
 
+# A bench build that leaves the DEFAULT registry in place will ask it for
+# pithead-<service>:$STACK_VERSION at first boot. Only the wizard's image is baked (below), so
+# every other service is a pull — and an UNRELEASED version has no such tags anywhere public.
+# The appliance then provisions, publishes its dashboard credentials, and comes up with ZERO
+# containers; five battery legs report that and take up to 25 minutes each to do it (#2043).
+#
+# The refs are the same ones verify_release_images checks, and the same five the bench publishes
+# to a local registry before a battery. Refuse here, in seconds, naming the remedy — the failure
+# is in the BUILD's configuration, not in the appliance, and the battery cannot tell the
+# difference from the inside.
+#
+# An unreachable registry refuses too, and correctly: an appliance built against a registry this
+# host cannot read is an appliance that cannot pull either.
+require_pullable_services() { # <registry> <stack-version>
+    local registry="$1" version="$2" svc missing=""
+    for svc in tor monero p2pool xmrig-proxy dashboard; do
+        docker manifest inspect "${registry}/pithead-${svc}:${version}" >/dev/null 2>&1 ||
+            missing="${missing} pithead-${svc}:${version}"
+    done
+    [ -z "$missing" ] && return 0
+    {
+        echo "build-image: refusing a bench build whose services could not be resolved."
+        echo "  ${registry} cannot serve:${missing}"
+        echo "  VERSION is ${version#v} and only the wizard image is baked, so every other service"
+        echo "  is a pull at first boot. This image would provision and then run ZERO containers,"
+        echo "  and the battery would spend up to 25 minutes per leg discovering it (#2043)."
+        echo "  Publish the five first-party images to a registry this host and the guest can both"
+        echo "  reach, then rebuild with PITHEAD_REGISTRY=<host:port> (and PITHEAD_REGISTRY_CA=<ca.crt>"
+        echo "  when that registry is TLS). See tests/os/README.md."
+    } >&2
+    return 1
+}
+
 # Test seam: `PITHEAD_BUILD_IMAGE_TEST=1 source os/build-image.sh [args...]` parses args and
 # defines apt_fetch_failure_hint and stage_compose above, then returns here instead of touching
 # docker — lets tests/stack exercise flag parsing, the remedy hint and the staging without a build.
@@ -164,6 +197,9 @@ if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
     else
         echo "==> debug build: the image will provision from $TEST_REGISTRY (insecure for podman)"
     fi
+fi
+if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
+    require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"

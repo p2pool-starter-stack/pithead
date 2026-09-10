@@ -12,10 +12,27 @@ It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 
 ```bash
 sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
-os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
+# Publish the five first-party images under the tag the appliance will ask for, then point the
+# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS.
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+    os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img
 sudo tests/os/run.sh --image os/rauc/build/system.img
 ```
+
+`PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
+case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every
+other service is a PULL of `pithead-<service>:v$(cat VERSION)` — tags that exist nowhere public
+until that version ships. Without the override the appliance provisions, publishes its dashboard
+credentials, and then runs ZERO containers; the legs that wait for a stack each take up to 25
+minutes to report it, and nothing in the battery's own output says the image was built wrong
+(#2043). `build-image.sh` now resolves those five refs up front and refuses a bench build that
+cannot pull them, so this is a fast error rather than a slow mystery — and
+`tests/os/zero-container-evidence.sh` dumps the guest's image lists at every such leg, where
+`comm -23 want have` separates a missing ref from a refusal with every ref present.
+
+Keep the registry host, port and CA path out of this repo: they are bench topology. The working
+values live in the private bench notes.
 
 Do not override `HOME` under `sudo`: the runner intentionally reads
 `/root/.ssh/pithead-os-test`. An image built with the invoking user's key looks like an SSH

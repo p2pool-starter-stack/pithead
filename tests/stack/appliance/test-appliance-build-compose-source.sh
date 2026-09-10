@@ -334,6 +334,48 @@ echo "== wiring: the build stages, the Dockerfile copies, verify-image compares 
 # The three scripts cannot be run together at this tier; what CAN be proven is that each end
 # speaks the other's path — the shape #1064's guard failed on when the two ends disagreed.
 CS_BI="$(cat "$ROOT/os/build-image.sh")"
+
+echo "== unit: build-image refuses a bench build whose services cannot be pulled (#2043) =="
+# The defect this guards: only the wizard image is baked, so every other service is a pull at
+# first boot. An UNRELEASED VERSION has no published tags, so the appliance provisions, publishes
+# its credentials, and then runs ZERO containers — which five battery legs report, each taking up
+# to 25 minutes. The bench's answer is to publish the five images to a local registry and build
+# with PITHEAD_REGISTRY; this guard is what makes forgetting that a fast refusal instead.
+#
+# Driven through build-image.sh's own test seam with a stubbed `docker manifest inspect`, so no
+# network, no registry and no image are needed. The stub is the fixture: a run where it reports
+# everything present MUST be silent, or a green here would prove only that nothing was looked at.
+rp_run() { # <present-refs-space-separated> -> "<stderr>" then rc=N
+    (
+        # Captured BEFORE `set --`, which build-image.sh needs (it parses $@) and which would
+        # otherwise wipe this function's own argument.
+        RP_PRESENT=" $1 "
+        export PITHEAD_BUILD_IMAGE_TEST=1
+        set --
+        # shellcheck source=os/build-image.sh
+        source "$ROOT/os/build-image.sh"
+        set +e
+        docker() { # only `manifest inspect <ref>` is reached
+            case "$RP_PRESENT" in *" $3 "*) return 0 ;; *) return 1 ;; esac
+        }
+        require_pullable_services reg.test v9.9.9
+        echo "rc=$?"
+    ) 2>&1
+}
+rp_all="reg.test/pithead-tor:v9.9.9 reg.test/pithead-monero:v9.9.9 reg.test/pithead-p2pool:v9.9.9 reg.test/pithead-xmrig-proxy:v9.9.9 reg.test/pithead-dashboard:v9.9.9"
+rp_out="$(rp_run "$rp_all")"
+assert_contains "a registry holding all five services is accepted" "$rp_out" "rc=0"
+assert_eq "  and accepting says nothing — the fixture really does resolve refs" "$(printf '%s' "$rp_out" | grep -c 'refusing a bench build')" "0"
+# One missing ref is the whole defect: the stack comes up partial-to-empty either way.
+rp_out="$(rp_run "${rp_all% reg.test/pithead-dashboard:v9.9.9}")"
+assert_contains "a single unresolvable service refuses the build" "$rp_out" "rc=1"
+assert_contains "  the refusal names the ref that could not be served" "$rp_out" "pithead-dashboard:v9.9.9"
+assert_contains "  and names the remedy, not just the symptom" "$rp_out" "PITHEAD_REGISTRY=<host:port>"
+rp_out="$(rp_run "")"
+assert_contains "an unreachable registry refuses too" "$rp_out" "rc=1"
+assert_contains "  naming every service it could not resolve" "$rp_out" "pithead-tor:v9.9.9"
+# The guard is worthless if nothing calls it on the path that can hit the defect.
+assert_contains "the bench path with no test registry actually calls the guard" "$CS_BI" 'require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1'
 CS_DF="$(cat "$ROOT/os/rootfs/Dockerfile")"
 CS_VI="$(cat "$ROOT/tests/os/verify-image.sh")"
 assert_contains "build-image stages into os/build/stage from STACK_VERSION" "$CS_BI" 'COMPOSE_SOURCE="$(stage_compose "$STACK_VERSION" os/build/stage)" || exit 1'
