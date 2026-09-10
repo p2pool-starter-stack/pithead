@@ -204,7 +204,8 @@ assert_contains "signing off announces the skip" "$sign_off_out" "skipping image
 assert_contains "bundle signed as a detached blob signature" "$(cat "$SIGN/cosign.log")" \
     "sign-blob --key /release-box/cosign.key --tlog-upload=false --yes --output-signature $SIGN/pithead.tar.gz.sig"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
-assert_contains "the bundle ships cosign.pub (the install-side verifier)" "$(cat "$REL_BUNDLE")" "config.reference.json config.core-keys.json cosign.pub"
+# Its own line, not alongside the config files: a missing key with signing on must fail the bundle.
+assert_contains "the bundle ships cosign.pub (the install-side verifier)" "$(cat "$REL_BUNDLE")" 'cp cosign.pub "$d/"'
 
 echo "== unit: release.sh refuses to publish unsigned (#960/#1108) =="
 # Once cosign.pub is committed every upgrade requires the detached signature, so an unconfigured

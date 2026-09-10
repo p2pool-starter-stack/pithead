@@ -241,7 +241,7 @@ wizard_ref_rc "example.invalid/app@sha256:$(printf 'A%.0s' {1..64})"
 assert_rc "uppercase wizard digests are refused" "$?" "1"
 
 echo "== unit: release smoke and promotion keep one immutable digest chain =="
-REL="$ROOT/scripts/release.sh"
+REL="$ROOT/scripts/release/release.sh"
 CHAIN="$SANDBOX/release-digest-chain"
 mkdir -p "$CHAIN"
 CHAIN_DIGEST="sha256:$(printf '%064d' 7)"
