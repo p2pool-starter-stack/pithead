@@ -5,7 +5,7 @@ import json
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from mining_dashboard import wizard
+from mining_dashboard.wizard import server as wizard
 from mining_dashboard.wizard_config import prepare_config
 
 REFERENCE = {

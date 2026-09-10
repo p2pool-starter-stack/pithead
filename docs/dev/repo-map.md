@@ -1,36 +1,121 @@
 # Repo map
 
-Where each subsystem lives, why it lives there, and its entry points — for a human landing on
-the repo page and for an agent re-deriving the layout every session. When this map and the tree
-disagree, the tree is right; fix the map (see [`STYLE.md`](STYLE.md) § Accuracy).
+Find the feature first, then its matching tests. The root holds the product's
+published entry points and conventional project files; implementation details live
+under the directories below.
 
-## Subsystems
+```text
+pithead/
+├── lib/pithead/           ordered source slices for the generated CLI
+├── dashboard/
+│   ├── mining_dashboard/ Python application and browser assets
+│   └── tests/            Python and frontend tests, grouped like the source
+├── os/                   bootable appliance, installer, and host services
+├── build/                container build contexts for stack daemons
+├── tests/
+│   ├── stack/            CLI unit suites, grouped by feature
+│   ├── integration/      live harness, selftests, fakes, and tools
+│   └── os/               appliance harness and phase modules
+├── scripts/
+│   ├── lint/             repository gates and their selftests
+│   ├── release/          release preparation, publication, and verification
+│   └── watch/            scheduled dependency and security checks
+├── docs/                 operator guides
+│   ├── dev/              contributor guides and architecture contracts
+│   ├── images/           documentation images
+│   └── research/         historical studies and supporting records
+└── .github/              CI, templates, and ownership
+```
 
-| Area | What it is | Why it lives there | Entry points |
-|---|---|---|---|
-| **CLI** | The `pithead` bash script: renders `.env`/config from `config.json`, then drives Docker Compose. It is a git-ignored build product: `scripts/build-pithead.sh` concatenates the numbered `lib/pithead/` slices in **`LC_ALL=C` name order**. Plain `make` builds it for a source checkout; the release and appliance builders build it before copying it. `make lint-pithead-build` checks the join and the two semantic ordering traps byte concatenation cannot catch: a repeated `readonly` name or a bare `trap` target defined too late (#1463). Concatenation rather than a runtime `source` keeps the distributed CLI self-contained. | Generated at the root because source checkouts run it there and both distribution channels copy it from there. The generated file is never committed; `lib/` stays out of release bundles. | `pithead` (generated), `lib/pithead/*.sh` (sources), `scripts/build-pithead.sh`, `pithead-completion.bash` (tab-completion) |
-| **Dashboard app** | The Python + Preact web app: live operational view, the XvB switching engine, the opt-in control channel, its own `pyproject.toml`/lockfile and test suite. | `dashboard/` at the repo root — moved out of `build/dashboard/` in #1106 so the largest codebase in the repo isn't filed under a directory that means "container build context" everywhere else (`build/monero/`, `build/tor/`, ...: a Dockerfile, entrypoint, healthcheck, three to five files each). | `dashboard/mining_dashboard/main.py` (entry), `dashboard/mining_dashboard/web/views.py` (routes), `dashboard/README.md` (dev setup) |
-| **Compose stack config** | The service graph (eleven services, nine on a default install) and the tunable config schema. | Root — release-bundle files the CLI reads by fixed name. | `docker-compose.yml`, `config.reference.json` (every key, documented), `config.minimal.json` / `config.core-keys.json` |
-| **Appliance image** | Pithead OS: the bootable image build (rootfs, RAUC A/B slots, the first-boot wizard, Quadlet units, the disk installer). | `os/` — the appliance's own top-level tree, on `develop` with everything else since the twin branch was retired on 2026-09-06. | `os/build-image.sh` (image build), `os/rootfs/` (rootfs + Dockerfile), `os/installer/`, `os/README.md`, `os/KNOWN-ISSUES.md` |
-| **Release tooling** | Cutting a release (build → stage → smoke → promote → publish, cosign signing), and the lint/verification scripts `make lint`/`make test` shell out to. | `scripts/` — operational scripts, not part of any shipped image or the CLI itself. | `scripts/release.sh`, `scripts/release-smoke.sh`, `scripts/lint-*.sh`, `scripts/patch-coverage.sh` |
-| **Tests — tier 1 (unit)** | Decision logic & field mapping with the daemons stubbed: `pithead`'s own logic and the dashboard's. | `tests/stack/` (shell) and `dashboard/tests/` (pytest) — see [`testing-strategy.md`](testing-strategy.md) for the four-tier model this repo holds to. | `tests/stack/run.sh` has been split by domain (#1105 Phase 1): each `test-*.sh` file beside it holds one domain's assertions, `lib.sh` is the shared harness, and `run.sh` itself (down from 13,967 lines) now sources every domain plus the handful of small checks that were never split out. #1252's review comment holds the original boundary map the split cut along; the standalone `test_*.sh` files are separately-invoked suites, not split domains. Each domain's `source` stanza is guarded (#1400): a file that fails to load before its first assertion contributes no assertions, and the suite reds naming it rather than skipping the domain and still exiting 0. `dashboard/tests/{service,web,client,frontend,...}/test_*.py` and `*.test.mjs` are one file per module, except where a module's own tests outgrew the file budget and were split by domain in their own right: `storage_service.py`'s tests are five files — `test_storage_service.py` (core tables) beside `test_storage_schema.py`, `test_storage_xvb.py`, `test_storage_telemetry.py` and `test_storage_worker.py`, cut on table domain in #1105 Phase 3. The subject module itself is now three: #1105 ruled it not split, because multi-table atomic writes need the one DB-handle class, and #1369 narrowed that ruling for a mixin, which keeps that class — `telemetry_store.py` holds the append-only telemetry accessors and `worker_config_store.py` the `worker_config` table's, and `StateManager` inherits both, so there is still one handle, one lock and one transaction scope. The narrowing's condition travels with it: `dashboard/tests/service/test_mixin_atomicity.py` asserts mechanically that no method which moved to a mixin calls one that stayed behind while the DB lock or a transaction is held, so a later cut cannot regress the property quietly. Not every `.py` under `dashboard/tests/` is a test: `dashboard/tests/service/annotation_gate.py` is a plain module holding the #1487 return-channel classifier, shared by `test_collapsed_return_channels.py` (which argues the rule and carries its controls) and `test_annotation_coverage.py` (#1556's per-module annotation pins), and `dashboard/tests/service/annotation_pins.py` and `dashboard/tests/service/annotation_readings.py` are two more plain modules holding that pin's data — the pinned modules and their anchors in the first, the read exceptions and their readings in the second — split out because it is the part a slice grows while the file holding the laws carries a file-budget ceiling that only ever goes down; the readings split off again at #1556's last slice, when the first of the two reached the 400-line target at which the budget gate obliges a ceiling. Shared test machinery has to live in a non-test module here, because `--import-mode=importlib` with no `__init__.py` means one test file cannot import another by name; the spelling is `from tests.service.<name> import ...`, which resolves because pytest runs with `dashboard/` on `sys.path`. |
-| **Tests — tier 2 (contract)** | The real Monero/Tari clients against controllable fake daemons — proves the clients parse real wire formats. | `tests/integration/fakes/` | `tests/integration/fakes/test_contract.py`, `test_contract_freshness.py` (vendored fixtures vs the producer at the baked pin), `fake_monerod.py`, `fake_tari.py`, `contract/v1/` (RigForge's own wire fixtures, vendored) |
-| **Tests — tier 3 (mini-stack)** | The real dashboard + docker-control proxy against fake daemons, real containers — proves the control plane end-to-end (sync hold/release, node-down reject/readmit). | `tests/integration/mini-stack/` | `run-mini-stack.sh`, `docker-compose.fake.yml` |
-| **Tests — tier 4 (live matrix)** | What only reality proves: real sync, real TLS, real Tor onions, fault injection — against a real box. For the appliance, the KVM/hardware battery for a flashed image. | `tests/integration/` (Compose lane) and `tests/os/` (appliance lane) | `tests/integration/run.sh`, `tests/integration/scenarios.sh`; `tests/os/run.sh`, `tests/os/verify-image.sh` |
-| **Docs (operator-facing)** | Guides for running, configuring, and operating the stack. | `docs/` | Index: [`docs/README.md`](../README.md) |
-| **Docs (contributor-facing)** | Dev workflow, testing strategy, release runbooks, architecture decisions. | `docs/dev/` — kept beside the operator docs rather than a separate top-level tree, since both audiences browse from the same `docs/README.md` index. | [`STYLE.md`](STYLE.md), [`testing-strategy.md`](testing-strategy.md), [`testing-guide.md`](testing-guide.md), [`releasing.md`](releasing.md) |
-| **Branding / screenshots** | The logo and dashboard screenshots the README and `docs/dashboard.md` embed. | `docs/images/` — moved out of a free-floating root `images/` in #1106, alongside the docs it illustrates. Not to be confused with `os/rootfs/images/`, the unrelated appliance wizard-image build artifact. | `docs/images/launch/README.md` (asset inventory) |
-| **CI / automation** | The repo's checks: lint, unit tests, image builds + CVE scans, the appliance rootfs build, dependency/pin watching. | `.github/workflows/`, `.github/dependabot.yml` | `ci.yml` (per-PR), `os-rootfs.yml` (appliance rootfs build + weekly CVE sweep), `integration-mini-stack.yml`, `pin-watch.yml`, `release-gate.yml` — see [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § One integration branch for why scheduled automation must live on the default branch |
-| **Root: release-bundle files** | Copied into release bundles and appliance images by an explicit runtime allowlist. `pithead` is generated immediately before either consumer copies it; its `lib/pithead/` sources stay out. The Compose bundle also carries a small allowlist of top-level operator guides, never `docs/dev/`, tests, appliance code, research, or screenshots. `install.sh` is the odd one out: not bundled, but downloaded straight from a published raw-GitHub URL (`curl \| sh`), so *its* path is a public contract instead. | Root paths remain stable for the CLI; each distribution copies only what it runs or its user operates. | generated `pithead`, `pithead-completion.bash`, `docker-compose.yml`, `config.*.json`, `cosign.pub`, `VERSION`, operator `docs/*.md`, `install.sh` |
-| **Root: GitHub-convention files** | Files GitHub (and contributors) expect to find at a fixed path. | Root, by convention — `README.md`, `LICENSE`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` all render specially when GitHub finds them at the repo root; issue/PR templates and `CODEOWNERS` are the ones GitHub instead expects under `.github/`. The operator's #1106 decision scoped root tidying to three moves (dashboard, images, the appliance check), not the issue body's fuller "move these into `.github/`" proposal, so these stay put. | `README.md`, `LICENSE`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/` |
-| **Root: lint/format configs** | Per-tool config for yamllint, markdownlint, taplo, biome, ruff, gitleaks, hadolint, trivy, lychee. | Root — each tool discovers its config by walking up from the working directory, so relocating one means passing an explicit flag on **every** invocation everywhere it runs (`make`, pre-commit, CI); a live gate silently running with defaults reads exactly like a cleaner repo (#1106). | `.yamllint`, `.markdownlint-cli2.jsonc`, `.taplo.toml`, `biome.json`, `ruff.toml`, `.gitleaks.toml`, `.hadolint.yaml`, `.trivyignore`, `.lycheeignore` |
-| **Root: genuinely fixed** | `.gitignore`, `.editorconfig`, `.pre-commit-config.yaml`. | Root, with no flag-based workaround at all (unlike the row above): `.editorconfig` only applies to files at or below where it sits, and the root *is* the top; `.pre-commit-config.yaml`'s hooks run from wherever `git` considers the repo root, full stop. | `.gitignore`, `.editorconfig`, `.pre-commit-config.yaml` |
+## Product entry points
 
-## Not covered here
+| Area | Start here | Change and verify |
+|---|---|---|
+| CLI | `lib/pithead/`, `scripts/build-pithead.sh` | Edit slices; `make` builds the ignored root `pithead`. `make test-stack` tests it. |
+| Dashboard | `dashboard/mining_dashboard/main.py`, `dashboard/README.md` | Python services and HTTP routes; `make test-dashboard`. |
+| Browser UI | `dashboard/mining_dashboard/web/static/dashboard.js` | Feature modules and styles below; `make test-frontend`. |
+| Compose | `docker-compose.yml`, `config.reference.json` | Runtime service graph and configuration contract; `make test-compose`. |
+| Containers | `build/<daemon>/` | Dockerfiles, entrypoints, and healthchecks; CI builds the images. |
+| Appliance | `os/README.md`, `os/build-image.sh` | Rootfs, RAUC slots, installer, and host services; `tests/os/run.sh`. |
+| Release | `scripts/release/release.sh`, [release guide](releasing.md) | Stage, verify, promote, and publish; `make release ARGS="--dry-run"` previews the plan. |
 
-Config *values* (every `config.json` key): [`docs/configuration.md`](../configuration.md). What
-each test tier proves and where a new test goes: [`testing-strategy.md`](testing-strategy.md) /
-[`testing-guide.md`](testing-guide.md). Release mechanics: [`releasing.md`](releasing.md). The
-service graph and privacy model: [`docs/architecture.md`](../architecture.md).
+The CLI is concatenated in `LC_ALL=C` filename order, keeping the distributed
+executable self-contained. Do not nest or reorder `lib/pithead/` slices without
+checking that contract. `make lint-pithead-build` checks assembly and ordering
+guards. Sources are excluded from release bundles.
 
-Wizard host/page file publication and input snapshots share `lib/pithead/11a-wizard-spool.sh`; the protocol is documented in [appliance-wizard.md](appliance-wizard.md#host-and-page-spool-files).
+## Dashboard feature folders
+
+Python code is rooted at `dashboard/mining_dashboard/`; its tests are rooted at
+`dashboard/tests/`.
+
+| Source | Responsibility | Tests |
+|---|---|---|
+| `client/` | Daemon and external-service clients | `tests/client/` |
+| `config/` | Configuration parsing and validation | `tests/config/` |
+| `service/` | Polling, persistence, and shared application orchestration | `tests/service/` |
+| `service/health/` | Service health and diagnostics | `tests/service/health/` |
+| `service/network/` | Network routing and egress | `tests/service/network/` |
+| `service/notify/` | Alerts and notification channels | `tests/service/notify/` |
+| `service/workers/` | Worker state and control | `tests/service/workers/` |
+| `service/xvb/` | XvB switching, calculations, and outcomes | `tests/service/xvb/` |
+| `web/views/` | HTTP views and response construction | `tests/web/views/` |
+| `web/server.py` | HTTP application setup and route registration | `tests/web/` |
+| `wizard/server.py`, `wizard/form.py` | Appliance wizard server, form translation, and install handoff | `tests/web/test_wizard*.py` |
+
+Keep polling order, database locks, and transaction scopes intact when extracting
+helpers. The storage mixins share `StateManager`'s connection and lock; the
+atomicity and annotation tests in `tests/service/` check those boundaries.
+
+`python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
+the package's `__main__.py` delegates to its server.
+
+Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
+`config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
+`tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and
+`fixtures/` provide shared test inputs and rendering support. Node discovers the
+nested tests through `make test-frontend`.
+
+`dashboard.css` imports the ordered files in `styles/`; wizard styles stay in
+`wizard/`. `vendor/` contains third-party browser libraries and their provenance.
+Keep local code out of `vendor/`.
+
+## Shell suites and tools
+
+| Directory | How it runs |
+|---|---|
+| `tests/stack/` | `run.sh` loads the shared harness and an explicit ordered list of feature suites. Missing or failed sources fail the run. |
+| `tests/stack/{appliance,control,dashboard,doctor,lifecycle,release,secrets}/` | Feature assertions loaded by the stack runner; retain shared setup and cleanup order. |
+| `tests/stack/standalone/` | Independent suites invoked by Make and CI, including Compose validation. |
+| `tests/integration/lib/` | Sourced helpers and phase functions for `tests/integration/run.sh`. |
+| `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
+| `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
+| `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
+| `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
+| `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
+| `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
+
+The harness entry points retain their command-line interfaces. Live integration
+and appliance runs require a reserved host; local selftests do not start a VM.
+Use `scripts/sanitize-test-log.sh` for bounded build and serial-log excerpts, as
+described in the [AI workflow](ai-workflow.md).
+
+## What stays at the root
+
+- Runtime contracts: generated `pithead`, `pithead-completion.bash`,
+  `docker-compose.yml`, `config.*.json`, `cosign.pub`, and `VERSION`.
+- The public bootstrap script, `install.sh`, whose URL is a published interface.
+- GitHub and contributor entry points: `README.md`, `CONTRIBUTING.md`, `LICENSE`,
+  `SECURITY.md`, and `CODE_OF_CONDUCT.md`.
+- Shared agent guidance: `AI_RULES.md`, with relative symlinks from `AGENTS.md`,
+  `CLAUDE.md`, and `.cursorrules`.
+- Tool-discovered configuration such as `.editorconfig`, `ruff.toml`,
+  `biome.json`, and `.pre-commit-config.yaml`.
+
+Release bundles and appliance images use explicit file lists. Moving a source
+file does not authorize adding development tools or private evidence to an image.
+
+For test tiers and placement, read [testing strategy](testing-strategy.md) and
+[testing guide](testing-guide.md). For configuration values, read
+[configuration](../configuration.md). The wizard spool-file protocol is in
+[appliance wizard](appliance-wizard.md#host-and-page-spool-files).

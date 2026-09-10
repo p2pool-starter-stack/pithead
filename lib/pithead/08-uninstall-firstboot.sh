@@ -15,7 +15,10 @@ stack_uninstall() {
     detect_os
     # The keep-list is read from .env BEFORE it is removed.
     local data_dirs
-    data_dirs=$(grep -E '^(MONERO|TARI|P2POOL|DASHBOARD|TOR)_DATA_DIR=' .env | cut -d= -f2- | sort -u | tr '\n' ' ')
+    data_dirs=$(for arg in MONERO TARI P2POOL DASHBOARD TOR; do
+        env_get_file .env "${arg}_DATA_DIR"
+        printf '\n'
+    done | sort -u | tr '\n' ' ')
     warn "DESTRUCTIVE: stops the stack, removes its containers and images, and deletes the rendered .env and Caddyfile."
     log "Kept (yours): config.json, backups/, and the data dirs: ${data_dirs:-none recorded}"
     if [ "$yes" -ne 1 ]; then

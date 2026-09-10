@@ -408,7 +408,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
     set -uo pipefail
     # shellcheck source=tests/os/provision-browser-submit.sh
     . "$(cd "$(dirname "$0")" && pwd)/provision-browser-submit.sh"
-    # shellcheck source=tests/integration/mergemine-probe.sh
-    . "$(cd "$(dirname "$0")/../integration" && pwd)/mergemine-probe.sh"
+    # shellcheck source=tests/integration/lib/mergemine-probe.sh
+    . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
     _approval_self_test
 fi

@@ -24,7 +24,7 @@ dashboard, no Linux to set up.
 
 | Requirement | Recommendation |
 |---|---|
-| Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions and macOS may work but aren't supported. |
+| Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
 | Disk | A pruned Monero node needs ~100 GB and a full one ~270 GB, plus ~150 GB for the Tari node (its chain is the biggest single consumer). Plan for ~330 GB (pruned) or ~530 GB (full) of SSD minimum. Both chains grow ~100+ GB/year, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |

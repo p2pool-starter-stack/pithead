@@ -12,11 +12,11 @@ Mutation-kill notes: swapping ``worker.get("ip")`` for the descriptor's ``host``
 import pytest
 
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.web.worker_detail import build_worker_detail
+from mining_dashboard.web.views.worker_detail import build_worker_detail
 
 
 def _detail(monkeypatch, name, workers=None, descriptors=None):
-    from mining_dashboard.web import views
+    from mining_dashboard.web.views import views
 
     monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", descriptors or [])
     monkeypatch.setattr(views.config, "DASHBOARD_CONTROL_ENABLED", True)

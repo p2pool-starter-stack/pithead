@@ -2,7 +2,7 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Accepted false positives"
 regexTarget = "line"
 # Archived third-party source pages in the research record (checksummed, reviewed on archive):
@@ -26,3 +26,25 @@ regexes = [
   # Fixed all-digit control-token fixture used by the worker adoption and derived-read tests.
   '''0123456789abcdef0123456789abcdef''',
 ]
+
+# Restore tests need generated-shape values so the allowlist validator exercises its real branches.
+# Exempt only these complete fixture lines in the exact test files that construct those archives.
+[[allowlists]]
+description = "Synthetic generated proxy-token restore fixtures"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^tests/stack/(appliance/test-appliance-setup|lifecycle/lock-wiring|test-backup|test-cli-restore-hardening|test-wizard-setup)\.sh$''',
+]
+regexes = [
+  '''PROXY_AUTH_TOKEN=(0123456789abcdef01234567|abcdef0123456789abcdef01)[ \t\r\n]*\z''',
+]
+
+[[allowlists]]
+description = "Synthetic stale dashboard-hash restore fixtures"
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^tests/stack/(appliance/test-appliance-setup|test-cli-restore-hardening)\.sh$''',
+]
+regexes = ['''DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==[ \t\r\n]*\z''']

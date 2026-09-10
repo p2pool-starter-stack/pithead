@@ -22,7 +22,7 @@ import json
 import time
 
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.web.worker_detail import build_worker_detail
+from mining_dashboard.web.views.worker_detail import build_worker_detail
 
 _PASSWORD = "s3cret-pool-password"
 _FINGERPRINT = "aa:bb:cc:dd"
@@ -30,7 +30,7 @@ _FINGERPRINT = "aa:bb:cc:dd"
 
 def _seed_and_build(monkeypatch, *, ts=None):
     """A rig whose one applied change carried a pool password, as an older build stored it."""
-    from mining_dashboard.web import views
+    from mining_dashboard.web.views import views
 
     monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "r1"}])
     monkeypatch.setattr(views.config, "DASHBOARD_CONTROL_ENABLED", True)

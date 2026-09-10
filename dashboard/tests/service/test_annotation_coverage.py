@@ -40,7 +40,7 @@ disturb and a new function cannot slip past: **no failure return in this module 
 Adding an unannotated one to a pinned module goes red, which is the point and is also the cost, and
 it is a cost paid by exactly the modules someone has already done the work on.
 
-`service/worker_config_store.py` is pinned for a reason that predates #1556: it was fully annotated
+`service/workers/worker_config_store.py` is pinned for a reason that predates #1556: it was fully annotated
 already, and two of its three signed functions were pinned by `_SIGNED` while `note_worker_revision`
 was not. That gap was in the tree at the base of this branch, not introduced by any slice.
 
@@ -128,8 +128,8 @@ def _shortfall(structure: Collection[str], floor: int) -> int:
 # it may never fall BELOW and a slice leaves them true. Keeping them tight as the population grows
 # is a convention and not a law — the reporting test prints the slack so it cannot drift unseen.
 _FLOORS: dict[str, tuple[Collection[str], int]] = {
-    "PINNED": (PINNED, 33),
-    "_ANCHORS": (_ANCHORS, 33),
+    "PINNED": (PINNED, 35),
+    "_ANCHORS": (_ANCHORS, 35),
     "_UNJUDGED_AND_READ": (_UNJUDGED_AND_READ, 13),
 }
 
@@ -307,15 +307,15 @@ class Client:
         seeded = dict(package)
         seeded["unjudged"] = [
             *package["unjudged"],
-            ("service/worker_config_store.py:some_new_helper", ["False"]),
+            ("service/workers/worker_config_store.py:some_new_helper", ["False"]),
         ]
-        module = "service/worker_config_store.py"
+        module = "service/workers/worker_config_store.py"
         assert _unsigned_unjudged_under(module, seeded) == {f"{module}:some_new_helper"}
         assert _unsigned_unjudged_under(module, package) == set()
 
     def test_the_prefix_match_does_not_span_module_names(self, package):
         """`startswith(f"{module}:")` carries the delimiter deliberately. Without it
-        `service/worker_config_store.py` would also claim any module whose path extends it, and the
+        `service/workers/worker_config_store.py` would also claim any module whose path extends it, and the
         pin would silently cover files nobody read. Nothing wears that shape today; this is here so
         it cannot start to quietly."""
         assert _rows_under("client/xvb_client", package) == []
@@ -333,13 +333,13 @@ class TestThePinSetOnlyGrows:
     **The three are not equally exposed, and #1614 over-generalises from `PINNED`.** Measured, one
     removal per structure, against a control-0 of 125 passed:
 
-    - `PINNED` — dropping `web/xvb_views.py` reds this law and #1639's equality guard (2 failed,
+    - `PINNED` — dropping `web/views/xvb_views.py` reds this law and #1639's equality guard (2 failed,
       120 passed; the missing three are that module's own law-1, law-2 and walk-guard cases, which
       vanished with it rather than failing). This is the hole the issue describes, and it was real.
     - `_ANCHORS` — dropping the same module's entry ALSO reds
-      `test_a_pinned_module_is_actually_in_the_walk[web/xvb_views.py]`, which subscripts `_ANCHORS`
+      `test_a_pinned_module_is_actually_in_the_walk[web/views/xvb_views.py]`, which subscripts `_ANCHORS`
       by a module still in `PINNED` and raises `KeyError` (3 failed, 122 passed).
-    - `_UNJUDGED_AND_READ` — dropping `service/clearnet_sync.py:_write_marker` ALSO reds law 2 for
+    - `_UNJUDGED_AND_READ` — dropping `service/network/clearnet_sync.py:_write_marker` ALSO reds law 2 for
       that module, which stops excusing a function still scoring `unjudged` (2 failed, 123 passed).
 
     So on the two sibling structures this is defence in depth and not the sole catcher — **for the
@@ -517,11 +517,11 @@ def read_window(request):
         six verdicts, because the return is through neither door. That is why every law in this
         file is silent about these sites, and why the count has to exist at all."""
         assert "-> " not in self._UNANNOTATED  # arming readback: the annotation really is absent
-        found = unannotated_falsy_returns(self._UNANNOTATED, "web/charts.py")
+        found = unannotated_falsy_returns(self._UNANNOTATED, "web/views/charts.py")
         assert [(name, literal) for name, literal, _ in found] == [
-            ("web/charts.py:read_window", "None")
+            ("web/views/charts.py:read_window", "None")
         ]
-        verdicts = classify(self._UNANNOTATED, "web/charts.py")
+        verdicts = classify(self._UNANNOTATED, "web/views/charts.py")
         assert all(rows == [] for rows in verdicts.values()), verdicts
 
     def test_it_drops_the_same_function_once_it_declares_a_return_type(self):
@@ -530,7 +530,7 @@ def read_window(request):
         apart, and every annotated function it swept in would be a function the gate already
         rules on, reported as a place the gate cannot reach."""
         assert self._ANNOTATED == self._UNANNOTATED.replace("(request)", "(request) -> str | None")
-        assert unannotated_falsy_returns(self._ANNOTATED, "web/charts.py") == []
+        assert unannotated_falsy_returns(self._ANNOTATED, "web/views/charts.py") == []
 
     def test_it_does_not_count_a_truthy_return_from_an_unannotated_function(self):
         """NARROWNESS CONTROL, and the near-miss that separates this count from "every return in an
@@ -538,7 +538,7 @@ def read_window(request):
         so a sweep that dropped the falsy half would report a number in the hundreds and mean
         nothing by it."""
         assert self._TRUTHY == self._UNANNOTATED.replace("return None", 'return "1h"')
-        assert unannotated_falsy_returns(self._TRUTHY, "web/charts.py") == []
+        assert unannotated_falsy_returns(self._TRUTHY, "web/views/charts.py") == []
 
     def test_the_empty_string_is_counted_here_and_is_still_invisible_to_the_gate(self):
         """`""` is the one shape this sweep adds to the set `_collapsed_literal` tracks, and the
@@ -546,7 +546,7 @@ def read_window(request):
         that leaves out a falsy shape flatters its own number; it stays out of the gate's set
         because that set feeds verdicts quoted with a sha, and widening it would move them."""
         unannotated = 'def render(rows):\n    if not rows:\n        return ""\n    return rows[0]\n'
-        found = unannotated_falsy_returns(unannotated, "web/charts.py")
+        found = unannotated_falsy_returns(unannotated, "web/views/charts.py")
         assert [literal for _, literal, _ in found] == ['""']
         collapsing = (
             "class Store:\n"
@@ -562,7 +562,7 @@ def read_window(request):
     def test_a_nested_def_is_counted_against_itself(self):
         """A nested def is its own function with its own contract, so its returns are never the
         parent's — and this is the control for a defect that HAS happened rather than a
-        hypothetical. `web/xvb_views.py` is the case: `build_xvb_calc` holds `_odds_day` and
+        hypothetical. `web/views/xvb_views.py` is the case: `build_xvb_calc` holds `_odds_day` and
         `_face_value`, and a sweep using `ast.walk(function)` scored their returns at lines 731 and
         767 against `build_xvb_calc`, which holds no residue return of its own, while still
         counting them as themselves. That double count is the whole of #1604's 12-sites-in-6-
@@ -575,5 +575,5 @@ def read_window(request):
             "        return agg['n']\n"
             "    return _odds(rows)\n"
         )
-        found = unannotated_falsy_returns(seeded, "web/xvb_views.py")
-        assert [name for name, _, _ in found] == ["web/xvb_views.py:_odds"]
+        found = unannotated_falsy_returns(seeded, "web/views/xvb_views.py")
+        assert [name for name, _, _ in found] == ["web/views/xvb_views.py:_odds"]

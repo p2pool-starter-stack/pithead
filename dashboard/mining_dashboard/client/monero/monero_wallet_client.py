@@ -9,7 +9,7 @@ from mining_dashboard.config.config import (
     WALLET_RPC_USERNAME,
 )
 from mining_dashboard.helper.http import bounded_request
-from mining_dashboard.service.earnings import ATOMIC_PER_XMR
+from mining_dashboard.service.xvb.earnings import ATOMIC_PER_XMR
 
 logger = logging.getLogger("MoneroWalletClient")
 

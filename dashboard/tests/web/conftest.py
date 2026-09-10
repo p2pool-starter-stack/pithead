@@ -1,6 +1,6 @@
-"""Shared builders for the ``dashboard/tests/web/`` view-layer tests (#1459).
+"""Shared builders for the ``tests/web/`` view-layer tests (#1459).
 
-Until now ``tests/web/test_views.py``, ``test_xvb_views.py``, ``test_infra_views.py`` and
+Until now ``tests/web/views/test_views.py``, ``test_xvb_views.py``, ``test_infra_views.py`` and
 ``test_series_views.py`` each carried its own copy of these builders. That was deliberate: the
 #1105 cuts proved themselves by moving test bodies verbatim, and converting the builders to
 fixtures would have rewritten every call site inside the same change. The cuts are finished, so
@@ -14,11 +14,11 @@ themselves, so every call site reads exactly as it did before and only the test 
 
 Deliberately NOT consolidated — the name is shared, the code is not:
 
-* ``tests/service/test_telegram_commands.py`` defines a ``_metrics`` that is byte-identical to
+* ``tests/service/notify/_telegram_commands_support.py`` defines a ``_metrics`` that is byte-identical to
   this one, but its ``_BASE`` differs (``current_tier``/``target_tier`` are ``"Donor"`` there,
   not ``"Donor (1.00 kH/s+)"``, and it closes over a ``_SYNCED`` of its own). Same source, a
   different object — and it is under ``tests/service/`` anyway, out of this conftest's reach.
-* ``tests/web/test_prometheus.py`` and ``tests/web/test_node_location.py`` keep their own
+* ``tests/web/views/test_prometheus.py`` and ``tests/web/test_node_location.py`` keep their own
   ``_metrics``/``_sync``; both bodies differ. They sit under this conftest and are unaffected,
   because a fixture reaches a test only through a parameter and neither module declares one.
 * ``tests/service/test_metrics.py`` keeps its own ``_state_mgr``/``_data`` pair. Its per-module
@@ -34,7 +34,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mining_dashboard.service.metrics import Metrics, SyncMetric
-from mining_dashboard.web.series_views import _mode_palette, build_hashrate
+from mining_dashboard.web.views.series_views import _mode_palette, build_hashrate
 
 _SYNC_DONE = SyncMetric(
     percent=100, current=10, target=10, remaining=0, has_target=True, done=True, down=False

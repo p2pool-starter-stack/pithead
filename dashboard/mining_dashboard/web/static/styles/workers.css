@@ -1,0 +1,48 @@
+/* Worker Inspect (#185): a native <dialog> opened from a worker name in the Workers Alive table.
+ * Shows the rig's live telemetry, a writable-config editor, and the change history. showModal()
+ * gives Escape-to-close and focus trapping for free; ::backdrop replaces the old overlay div. */
+.worker-name-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.worker-name-link:hover {
+  color: var(--text);
+}
+.worker-inspect {
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  margin: 5vh auto;
+}
+.worker-inspect::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+.worker-edit {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: monospace;
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  resize: vertical;
+}
+.worker-history {
+  width: 100%;
+  border-collapse: collapse;
+}
+.worker-history th,
+.worker-history td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}

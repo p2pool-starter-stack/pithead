@@ -11,11 +11,11 @@ from mining_dashboard.config.config import (
     PROXY_AUTH_TOKEN,
     PROXY_HOST,
 )
-from mining_dashboard.service.algo_service import AlgoService
 from mining_dashboard.service.data_service import DataService
+from mining_dashboard.service.notify.telegram_commands import TelegramCommandBot
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.service.telegram_commands import TelegramCommandBot
-from mining_dashboard.service.xvb_standby import XvbStandbyPuller
+from mining_dashboard.service.xvb.algo_service import AlgoService
+from mining_dashboard.service.xvb.xvb_standby import XvbStandbyPuller
 from mining_dashboard.web.server import create_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

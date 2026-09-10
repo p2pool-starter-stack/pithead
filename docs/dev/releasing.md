@@ -2,7 +2,7 @@
 
 How Pithead is versioned and released
 ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)). The pipeline is
-implemented as [`scripts/release.sh`](../../scripts/release.sh). Run it from the build/test
+implemented as [`scripts/release/release.sh`](../../scripts/release/release.sh). Run it from the build/test
 server with `make release` (preview a run with `make release ARGS="--dry-run"`).
 
 ## One product, one version
@@ -45,7 +45,7 @@ of each product release, not independent releases:
   ships re-tested.
 
 Noticing that a bump is available is a separate job from making one, and nothing did it until
-`scripts/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
+`scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
 against the component's latest upstream release, and keeps one tracking issue up to date. It
 reports and never bumps: a Tari or `monerod` minor can carry a one-time data migration, which is
 work to schedule rather than a pull request to merge. Dependabot covers the base images it can see
@@ -418,7 +418,7 @@ Two features can't be tested before merge, because both need a *published* relea
 [#376](https://github.com/p2pool-starter-stack/pithead/issues/376) cosign verification and the
 [#59](https://github.com/p2pool-starter-stack/pithead/issues/59) one-click upgrade. The tier-4 matrix
 tests a branch, not a published artifact, so the pre-merge tests only ever see a fake cosign. Right
-after `make release` publishes, run [`scripts/release-smoke.sh`](../../scripts/release-smoke.sh) once to
+after `make release` publishes, run [`scripts/release/release-smoke.sh`](../../scripts/release/release-smoke.sh) once to
 verify the real thing:
 
 ```bash
@@ -503,7 +503,7 @@ What exists today:
 - ✅ The dashboard version badge ([#58](https://github.com/p2pool-starter-stack/pithead/issues/58)):
   `VERSION` + git build-args baked into the dashboard image (env + OCI labels); shows `vX.Y.Z` on
   releases and `dev · branch @ hash` otherwise.
-- ✅ The release pipeline, [`scripts/release.sh`](../../scripts/release.sh) (`make release`).
+- ✅ The release pipeline, [`scripts/release/release.sh`](../../scripts/release/release.sh) (`make release`).
   Implements the full preflight → test gate (`make test` + the #54 matrix, blocking) → build (OCI
   labels + `PITHEAD_RELEASE=1`) → stage to `:vX.Y.Z-rc.N` → smoke-verify the pushed images →
   promote-by-digest to `:vX.Y.Z` + `:latest` → publish the GitHub Release. It generates the
@@ -532,5 +532,5 @@ What exists today:
 
 > NOTE: before the first real release, choose the first published version. Set `VERSION` (the
 > `pyproject.toml` metadata follows it, enforced by the drift-guard test) and confirm the GHCR image
-> namespace (`scripts/release.sh` defaults to `ghcr.io/p2pool-starter-stack/pithead-*`; override with
+> namespace (`scripts/release/release.sh` defaults to `ghcr.io/p2pool-starter-stack/pithead-*`; override with
 > `PITHEAD_REGISTRY` / `PITHEAD_IMAGE_PREFIX`).

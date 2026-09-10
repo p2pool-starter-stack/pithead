@@ -392,8 +392,8 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     set -uo pipefail # what tests/os/run.sh runs the helpers under
     # shellcheck source=tests/os/appliance-config-approval-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/appliance-config-approval-leg.sh"
-    # shellcheck source=tests/integration/mergemine-probe.sh
-    . "$(cd "$(dirname "$0")/../integration" && pwd)/mergemine-probe.sh"
+    # shellcheck source=tests/integration/lib/mergemine-probe.sh
+    . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
     _wsp_self_test && _recovery_self_test && _approval_self_test
     exit $?
 fi

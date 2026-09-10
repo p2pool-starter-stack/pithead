@@ -1,0 +1,230 @@
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+th {
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  text-transform: uppercase;
+}
+th.sorted {
+  color: var(--text);
+}
+/* Sortable headers (#671): the sort control is a real <button>, so it is keyboard-operable.
+ * It absorbs the th padding and inherits the th typography — the whole cell stays the click
+ * target and the header looks unchanged. */
+th:has(.th-sort-btn) {
+  padding: 0;
+}
+.th-sort-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.sort-arrow {
+  font-size: 0.6rem;
+}
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* Standardized estimate tables: the one Day/Month/Year shape every earnings tab uses.
+ * Builds on the generic table/th/td rules above (borders, muted uppercase headers) and only
+ * overrides typography and alignment: numeric columns right-aligned with tabular figures so
+ * the shared-precision rows line up, label column flush left, digits never break mid-number
+ * (the .est-scroll wrapper pans instead on narrow screens). */
+.est-table {
+  margin-bottom: 12px;
+}
+.est-table th {
+  font-size: 0.7rem;
+  text-align: right;
+  padding: 4px 0 4px 12px;
+}
+.est-table tbody th,
+.est-table thead th:first-child {
+  text-align: left;
+  padding-left: 0;
+}
+.est-table td {
+  text-align: right;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 5px 0 5px 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.est-table tr:last-child th {
+  border-bottom: none; /* match the generic tr:last-child td rule for the row-label column */
+}
+.est-scroll {
+  overflow-x: auto;
+}
+/* Log navigation (#823): the Security cards' shared filter row — the chart-controls preset
+ * idiom plus native date inputs and a search box, left-aligned to read as part of its card. */
+.log-controls {
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+.log-controls input[type="date"],
+.log-controls input[type="search"] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}
+.log-controls input[type="search"] {
+  flex: 1;
+  min-width: 110px;
+}
+
+/* Expected-vs-actual card (#808/#817): three labelled rows, not a shared-precision numeric
+ * grid — values wrap instead of panning (this card must never scroll in either view) and the
+ * table fills the card. table-layout fixed, because in auto layout a cell's min-content width
+ * ignores overflow-wrap break opportunities (WebKit) and the table overflows anyway. */
+.eva-table {
+  width: 100%;
+  table-layout: fixed;
+}
+.eva-table thead th:first-child {
+  width: 26%; /* the row-label column; the two value columns split the rest */
+}
+.eva-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.est-heading {
+  margin: 14px 0 6px 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Pool-wide proxy share totals under the Workers table (Issue #82). */
+.proxy-totals {
+  margin-top: 12px;
+}
+
+/* First-run empty state in the Workers card (#385): shown until the proxy has ever reported a
+ * worker, pointing the operator at the one action left — connecting a rig. */
+.workers-empty {
+  padding: 24px 12px;
+  text-align: center;
+}
+/* The wins log is capped at 20 rows of data, but even a dozen rows made the XvB card the tallest
+ * thing on the page. Under the CSS grid this section used before #991, that stretched every
+ * neighbour in its row with trailing white space (#817's align-items:start stopped the stretch,
+ * not the row height). Under the column packing #991 replaced it with, a card can't split across
+ * a column break (break-inside: avoid), so an uncapped log would instead set a floor under the
+ * whole section's height. Cap the list at roughly six rows and scroll the rest either way. */
+.raffle-wins-list {
+  max-height: 120px;
+  overflow-y: auto;
+}
+.workers-empty code {
+  font-family: monospace;
+}
+
+/* Horizontal-scroll wrapper for the workers table (Issue #83): the table can be wider than a
+ * phone viewport (eight columns, incl. accepted/rejected per #82), so it lives in this wrapper
+ * that scrolls sideways within its card instead of stretching the whole page. Cells stay on one
+ * line so columns don't collapse; harmless on desktop, where the table fits and no scrollbar
+ * appears. */
+.table-scroll {
+  overflow-x: auto;
+}
+.table-scroll th,
+.table-scroll td {
+  white-space: nowrap;
+}
+/* Numeric columns (1m / 10m / Accepted / Rejected — WORKER_COLUMNS indices 3-6, logic.mjs)
+ * right-align with tabular figures, the same treatment as .est-table td, so the digits line up
+ * instead of ragging left like the text columns beside them. */
+.table-scroll th:nth-child(4),
+.table-scroll th:nth-child(5),
+.table-scroll th:nth-child(6),
+.table-scroll th:nth-child(7),
+.table-scroll td:nth-child(4),
+.table-scroll td:nth-child(5),
+.table-scroll td:nth-child(6),
+.table-scroll td:nth-child(7) {
+  text-align: right;
+}
+.table-scroll td:nth-child(4),
+.table-scroll td:nth-child(5),
+.table-scroll td:nth-child(6),
+.table-scroll td:nth-child(7) {
+  font-variant-numeric: tabular-nums;
+}
+/* Row hover (Workers Alive): a quiet raised-surface cue that a row is under the pointer. */
+.table-scroll tbody tr:hover td {
+  background: var(--elevated);
+}
+/* An offline row's status-bad class colours the whole <tr> (color is inherited down every td) —
+ * that read as eight cells of red text. Reset the row to normal text colour and let only the name
+ * cell (which already carries the worker name + status context) carry the ok/bad tint. */
+.table-scroll tbody tr.status-ok > td,
+.table-scroll tbody tr.status-bad > td {
+  color: var(--text);
+}
+.table-scroll tbody tr.status-ok > td:first-child {
+  color: var(--ok-fg);
+}
+.table-scroll tbody tr.status-bad > td:first-child {
+  color: var(--bad-fg);
+}
+/* On the hovered (--elevated) surface even the -fg tints fall short of AA; the row is
+ * highlighted, so the name cell can drop its tint while the pointer is on it. The :hover
+ * in each selector outranks the tint rules above. */
+.table-scroll tbody tr:hover td,
+.table-scroll tbody tr.status-ok:hover > td:first-child,
+.table-scroll tbody tr.status-bad:hover > td:first-child {
+  color: var(--text);
+}
+
+/* The audit trail's title + its hour/day/month grouping select (#530), side by side. */
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.card-header-row h3 {
+  margin: 0;
+}
+
+/* Log pager (#823 follow-up): match count, rows-per-page select, prev/next — the grouping
+ * dropdown's replacement now that presets/dates/search own the time navigation. */
+.log-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.log-pager select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+}

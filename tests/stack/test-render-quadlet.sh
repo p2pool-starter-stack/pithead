@@ -44,9 +44,43 @@ assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.con
 # notification and XVB surface the appliance does not, so equality would be red by design. The
 # first row is the parse's own control: a broken awk yields an empty set and a vacuous pass.
 compose_dash_keys=$(awk '/^  dashboard:/{f=1;next} f&&/^  [a-z]/{f=0} f' "$ROOT/docker-compose.yml" | sed -nE 's/^ +- ([A-Z_]+)=.*/\1/p' | grep '^DASHBOARD_' | sort -u)
-quadlet_dash_keys=$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container" | tr ' ' '\n' | sed -E 's/=.*//' | grep '^DASHBOARD_' | sort -u)
+# Read the KEY out of each quoted assignment rather than splitting the line on spaces: since
+# \#2040 every value is emitted as "KEY=VALUE", and a value may itself hold a space, so a
+# space-split no longer yields one token per assignment.
+quadlet_dash_keys=$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container" | grep -oE '"DASHBOARD_[A-Za-z0-9_]+=' | sed -E 's/^"//; s/=$//' | sort -u)
 assert_eq "compose parse sees the dashboard service's own keys (control)" "$(printf '%s\n' "$compose_dash_keys" | grep -c '^DASHBOARD_CONTROL_ENABLED$')" "1"
 assert_eq "every DASHBOARD_* key compose gives the dashboard is on the quadlet unit (#1896)" "$(comm -23 <(printf '%s\n' "$compose_dash_keys") <(printf '%s\n' "$quadlet_dash_keys") | tr '\n' ' ')" ""
+# systemd.exec reads Environment= as a SPACE-separated list of KEY=VALUE, so an unquoted value
+# holding a space ends its assignment and systemd drops the remainder as malformed — silently: the
+# unit starts and the container simply runs without the flags it was configured with (#2040).
+# P2POOL_FLAGS is the value that shows it, being a flags string that legitimately holds spaces.
+QFLAGS="$SANDBOX/quadlet-flags-out"
+sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--mini --socks5-proxy-type tor|' \
+    "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/flags.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/flags.env" "$QFLAGS" >/dev/null
+qflags_line=$(sed -n 's/^Environment=//p' "$QFLAGS/p2pool.container")
+# Arming: without a genuinely multi-token value in the .env the row below passes on a value that
+# never had a space in it, which is the shape this whole test exists to catch.
+assert_eq "#2040 arming: the rendered value really carries three tokens" \
+    "$(grep -c '^P2POOL_FLAGS=--mini --socks5-proxy-type tor$' "$SANDBOX/flags.env")" "1"
+assert_eq "#2040: a P2POOL_FLAGS holding spaces renders ONE quoted assignment, not three" \
+    "$qflags_line" '"P2POOL_FLAGS=--mini --socks5-proxy-type tor"'
+# The counter-control: systemd only strips quotes it sees, so the assignment has to be quoted as a
+# WHOLE — Environment=P2POOL_FLAGS="--mini ..." would leave the trailing tokens loose again.
+assert_contains "#2040: the quotes wrap the whole assignment, key included" \
+    "$qflags_line" '"P2POOL_FLAGS='
+# systemd expands % specifiers inside unit files, so a literal % has to be doubled or it is
+# rewritten: %H becomes the hostname. An operator-supplied flag or password is where this lands.
+QPCT="$SANDBOX/quadlet-pct-out"
+sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50% --host %H|' \
+    "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/pct.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/pct.env" "$QPCT" >/dev/null
+qpct_line=$(sed -n 's/^Environment=//p' "$QPCT/p2pool.container")
+assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifier" \
+    "$(grep -c '^P2POOL_FLAGS=--x 50% --host %H$' "$SANDBOX/pct.env")" "1"
+assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
+    "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
+
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"
 run_sourced "$SANDBOX" render_quadlet_units "$ROOT/os/quadlet/local/fixture.env" "$QLOCAL" >/dev/null

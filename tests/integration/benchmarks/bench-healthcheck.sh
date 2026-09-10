@@ -31,6 +31,8 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     --min-khs)
+        # Legacy argument is accepted but no longer participates in the verdict.
+        # shellcheck disable=SC2034
         MIN_KHS="$2"
         shift 2
         ;; # accepted for compat; hashrate is display-only (see below)

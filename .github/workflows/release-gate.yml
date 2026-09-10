@@ -8,7 +8,7 @@ name: Release gate (self-hosted, manual dispatch only)
 # `push: [main]` trigger behind an `if:` that no repo variable ever set, so every merge to main
 # recorded a *skipped* run — and a skipped job is green/neutral, so `main` displayed a passing
 # release gate that had never once executed. The gating that is real happens elsewhere and is named
-# in docs/dev/releasing.md § Which gates are automated: `scripts/release.sh` stage 2 runs `make test`
+# in docs/dev/releasing.md § Which gates are automated: `scripts/release/release.sh` stage 2 runs `make test`
 # and the #54 live matrix at cut time and aborts on failure, plus the operator-run bench e2e.
 #
 # To make this automatic, a self-hosted runner has to exist first: register the release server with

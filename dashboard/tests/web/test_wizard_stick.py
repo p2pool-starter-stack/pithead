@@ -15,7 +15,7 @@ import pytest
 from aiohttp import FormData
 from aiohttp.test_utils import TestClient, TestServer
 
-from mining_dashboard import wizard
+from mining_dashboard.wizard import server as wizard
 
 RIG = {"role": "rig", "rig_pool": "10.0.0.5:3333"}
 

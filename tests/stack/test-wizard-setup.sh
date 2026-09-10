@@ -236,10 +236,10 @@ exec "$@"
 SUDOEOF
 chmod +x "$RT/bin/sudo"
 cat >"$RT/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
-P2POOL_ONION_ADDRESS=p2pa.onion
-PROXY_AUTH_TOKEN=RTTOKEN
+MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
+TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
+P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
+PROXY_AUTH_TOKEN=0123456789abcdef01234567
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node

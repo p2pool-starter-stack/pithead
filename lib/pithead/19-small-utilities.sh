@@ -1,13 +1,54 @@
 # --- Small Utilities ---
 
+# Render a value for Compose's dotenv parser. Keep ordinary values unquoted so routine renders do
+# not churn; double-quote and escape only values whose bytes Compose would otherwise interpret.
+dotenv_render_value() {
+    local value="$1"
+    case "$value" in
+    *'$'* | *'"'* | *"'"* | *\\* | [[:space:]]* | *[[:space:]] | *[[:space:]]#* | \
+        *$'\t'* | *$'\n'* | *$'\r'*)
+        value=${value//\\/\\\\}
+        value=${value//\"/\\\"}
+        value=${value//\$/\$\$}
+        value=${value//$'\n'/\\n}
+        value=${value//$'\r'/\\r}
+        value=${value//$'\t'/\\t}
+        printf '"%s"' "$value"
+        ;;
+    *) printf '%s' "$value" ;;
+    esac
+}
+
+# Decode the double-quoted subset emitted above. Unquoted values retain the historical raw read.
+dotenv_decode_value() {
+    local value="$1" out="" char
+    if [[ "$value" == \"*\" ]]; then
+        value=${value:1:${#value}-2}
+        while [ -n "$value" ]; do
+            char=${value:0:1}
+            value=${value:1}
+            if [ "$char" = "\\" ] && [ -n "$value" ]; then
+                char=${value:0:1}
+                value=${value:1}
+                case "$char" in n) char=$'\n' ;; r) char=$'\r' ;; t) char=$'\t' ;; esac
+            elif [ "$char" = '$' ] && [[ "$value" == '$'* ]]; then
+                value=${value:1}
+            fi
+            out+="$char"
+        done
+        value="$out"
+    fi
+    printf '%s' "$value"
+}
+
 # Read a single KEY=value from an env file (value may contain '=').
 # Tolerant of a missing key / missing file under `set -e` + `pipefail`.
 env_get_file() {
     local file="$1" key="$2" line
     [ -f "$file" ] || return 0
     line=$(grep -E "^$key=" "$file" 2>/dev/null) || true
-    line=${line%%$'\n'*}     # first matching line
-    printf '%s' "${line#*=}" # value after the first '='
+    line=${line%%$'\n'*}             # first matching line
+    dotenv_decode_value "${line#*=}" # value after the first '='
 }
 
 env_get() { env_get_file "$ENV_FILE" "$1"; }
@@ -133,6 +174,8 @@ assert_safe_dir() {
     esac
 }
 
+# The Darwin arm here is DEPRECATED and untested (#2041): macOS is no longer a test platform, so
+# nothing exercises it. Left working rather than deleted; do not build on it.
 safe_sed() {
     local pattern="$1"
     local file="$2"

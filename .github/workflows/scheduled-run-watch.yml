@@ -92,7 +92,7 @@ jobs:
           set -uo pipefail
           # The rc is carried to the last step rather than failing here, so a watch that could not
           # do its job still publishes the fact that it could not — and still fails the run.
-          bash scripts/scheduled-run-watch.sh watch >report.md
+          bash scripts/watch/scheduled-run-watch.sh watch >report.md
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The scheduled-run watch produced no report at all — see the run log." >report.md; rc=1; }
@@ -106,7 +106,7 @@ jobs:
           # The title is the upsert key and it lives in the script, so there is exactly one
           # spelling of it anywhere. A second spelling here would file a second issue on the very
           # next run and then keep both stale.
-          TITLE="$(bash scripts/scheduled-run-watch.sh --title)"
+          TITLE="$(bash scripts/watch/scheduled-run-watch.sh --title)"
           body=$(cat report.md)
           # Exact title match over the open list, NOT `--search`: the search index lags issue
           # creation by minutes, so a search-based dedup files a second issue on the next run.

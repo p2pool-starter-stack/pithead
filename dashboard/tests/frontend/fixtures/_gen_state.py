@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import mining_dashboard.web.header as header
-import mining_dashboard.web.views as views
+from mining_dashboard.web.views import header, views
 
 # Pin everything machine- or time-dependent so the fixture regenerates identically on any box.
 # build_state stamps last_update via time.localtime(time.time()) and the chart x-axis is
@@ -130,7 +129,7 @@ def main():
         "update": {"available": True, "latest": "v9.9.9", "url": "https://example/releases/v9.9.9"},
     }
     state = views.build_state(data, _state_mgr(), "all")
-    # Optional output path so the drift guard (tests/web/test_views.py) can regenerate to a temp
+    # Optional output path so the drift guard (tests/web/views/test_views.py) can regenerate to a temp
     # file and diff the shape without clobbering the checked-in fixture. This script patches
     # time.time process-wide, so callers run it as a subprocess, never import it.
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("state.json")

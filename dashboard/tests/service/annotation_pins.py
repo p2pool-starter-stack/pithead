@@ -54,7 +54,7 @@ moved the data, which is the failure the pin comment below records happening twi
 # its failure returns has been annotated and read. Which slice took which module is in #1556 and in
 # git, not here. Measured at this tip: **33 of the 33 modules that hold a failure return at all**,
 # and **`blind` is EMPTY package-wide**. Slice 12 took the last two, both in
-# `service/clearnet_sync.py` and both through the `except` door — the handle-guard population
+# `service/network/clearnet_sync.py` and both through the `except` door — the handle-guard population
 # closed at slice 8. That last clause is a measurement and not a reading the walk could not
 # contradict: `guard` is a door the walk still reports 31 times package-wide.
 #
@@ -153,13 +153,13 @@ moved the data, which is the failure the pin comment below records happening twi
 # returns and zero yields, where `-> None` is simply honest. BOTH of these return a VALUE, so
 # each had to be read on its own terms and they landed in DIFFERENT verdicts. That split is the point of the slice: one `signed`, one `unjudged`, ZERO
 # `procedure`. `helper/utils.py` is the SECOND module to hold both verdicts at once, not the first
-# — `service/worker_config_store.py` already did. That was measured here rather than asserted,
+# — `service/workers/worker_config_store.py` already did. That was measured here rather than asserted,
 # because the first draft of this sentence said "first" and the measurement refuted it.
 #
 #   `detect_host_ipv4` -> `str | None` is a true `signed`, and the annotation invents nothing: the
 #     docstring ALREADY declared the contract in prose — "Returns ``None`` when it can't be
 #     determined (e.g. no default route), so callers fall back to showing the hostname alone" — and
-#     its sole production caller, `web/views.py:host_display_addr`, acts on exactly that. `None` is
+#     its sole production caller, `web/views/views.py:host_display_addr`, acts on exactly that. `None` is
 #     the out-of-band answer, distinguishable from every success value, which is what `signed`
 #     means. The annotation moves a promise the code already kept into the signature.
 #
@@ -223,7 +223,7 @@ moved the data, which is the failure the pin comment below records happening twi
 # together because disclosing only the new one is what #1604 was. `classify` reads `signed` off the
 # FAILURE returns ALONE and cannot see a SUCCESS return that is a CALL producing the same marker.
 # Measured over all 31: `_safe_reply_for` (`reply_for` answers `None` on 3 of its 15 returns),
-# `client/xvb_client.py:get_stats` (`_parse_html`, 2), `service/price_feed.py:fetch`
+# `client/xvb_client.py:get_stats` (`_parse_html`, 2), `service/xvb/price_feed.py:fetch`
 # (`parse_prices`, 2). Each type is the true one and stays; that a caller can tell the failure from
 # the quiet success is NOT claimed — seeing that needs the callee's returns, a whole-package
 # inference this walk deliberately does not make.
@@ -264,7 +264,7 @@ moved the data, which is the failure the pin comment below records happening twi
 # So the claim is scoped to the instrument that makes it — no unannotated failure return **that
 # this gate can see**. A pin is coverage of a mechanism, never a certificate about a package.
 #
-# Slice 12 is `service/clearnet_sync.py`, and it is the LAST one. At its head `classify` returns an
+# Slice 12 is `service/network/clearnet_sync.py`, and it is the LAST one. At its head `classify` returns an
 # EMPTY `blind` list over the whole package, which is the state #1556 was opened to reach: every
 # failure return the gate's two doors can see now declares a type. Its two functions are
 # `_marker_exists` and `_write_marker` — both class methods, both through the `except` door, both
@@ -308,29 +308,31 @@ PINNED = (
     "config/config.py",
     "config/worker_endpoints.py",
     "helper/utils.py",
-    "service/healthchecks.py",
-    "service/notify_sinks.py",
-    "service/telegram_notifier.py",
-    "service/alert_service.py",
+    "service/notify/healthchecks.py",
+    "service/notify/notify_sinks.py",
+    "service/notify/telegram_notifier.py",
+    "service/notify/alert_service.py",
     "service/audit_service.py",
-    "service/clearnet_sync.py",
+    "service/network/clearnet_sync.py",
     "service/control_service.py",
     "service/data_helpers.py",
-    "service/egress.py",
-    "service/price_feed.py",
-    "service/steering_projection.py",
+    "service/network/egress.py",
+    "service/xvb/price_feed.py",
+    "service/xvb/steering_projection.py",
     "service/storage_service.py",
-    "service/telegram_commands.py",
+    "service/mining_store.py",
+    "service/storage_schema.py",
+    "service/notify/telegram_commands.py",
     "service/telemetry_store.py",
-    "service/tor_heal.py",
-    "service/update_checker.py",
-    "service/worker_config_store.py",
-    "service/xvb_standby.py",
-    "web/charts.py",
-    "web/infra_views.py",
+    "service/health/tor_heal.py",
+    "service/health/update_checker.py",
+    "service/workers/worker_config_store.py",
+    "service/xvb/xvb_standby.py",
+    "web/views/charts.py",
+    "web/views/infra_views.py",
     "web/server.py",
-    "web/views.py",
-    "web/xvb_views.py",
+    "web/views/views.py",
+    "web/views/xvb_views.py",
 )
 
 # One function per pinned module, as the vacuity anchor. Law 1's own guard uses this shape: a
@@ -362,27 +364,29 @@ _ANCHORS = {
     "config/config.py": "config/config.py:local_miner_enabled",
     "config/worker_endpoints.py": "config/worker_endpoints.py:load_worker_endpoints",
     "helper/utils.py": "helper/utils.py:detect_host_ipv4",
-    "service/healthchecks.py": "service/healthchecks.py:ping",
-    "service/notify_sinks.py": "service/notify_sinks.py:_post",
-    "service/telegram_notifier.py": "service/telegram_notifier.py:send",
-    "service/alert_service.py": "service/alert_service.py:process",
+    "service/notify/healthchecks.py": "service/notify/healthchecks.py:ping",
+    "service/notify/notify_sinks.py": "service/notify/notify_sinks.py:_post",
+    "service/notify/telegram_notifier.py": "service/notify/telegram_notifier.py:send",
+    "service/notify/alert_service.py": "service/notify/alert_service.py:process",
     "service/audit_service.py": "service/audit_service.py:_tail_json_lines",
-    "service/clearnet_sync.py": "service/clearnet_sync.py:_write_marker",
+    "service/network/clearnet_sync.py": "service/network/clearnet_sync.py:_write_marker",
     "service/control_service.py": "service/control_service.py:result",
     "service/data_helpers.py": "service/data_helpers.py:_read_host_config",
-    "service/egress.py": "service/egress.py:_sinks_all_private",
-    "service/price_feed.py": "service/price_feed.py:parse_prices",
-    "service/xvb_standby.py": "service/xvb_standby.py:parse_standby",
-    "service/steering_projection.py": "service/steering_projection.py:won_round_live",
-    "service/storage_service.py": "service/storage_service.py:add_block",
-    "service/telegram_commands.py": "service/telegram_commands.py:_dispatch_control",
+    "service/network/egress.py": "service/network/egress.py:_sinks_all_private",
+    "service/xvb/price_feed.py": "service/xvb/price_feed.py:parse_prices",
+    "service/xvb/xvb_standby.py": "service/xvb/xvb_standby.py:parse_standby",
+    "service/xvb/steering_projection.py": "service/xvb/steering_projection.py:won_round_live",
+    "service/storage_service.py": "service/storage_service.py:get_kv",
+    "service/mining_store.py": "service/mining_store.py:add_block",
+    "service/storage_schema.py": "service/storage_schema.py:_prune_quarantined",
+    "service/notify/telegram_commands.py": "service/notify/telegram_commands.py:_dispatch_control",
     "service/telemetry_store.py": "service/telemetry_store.py:add_xvb_history",
-    "service/tor_heal.py": "service/tor_heal.py:_probe_egress",
-    "service/update_checker.py": "service/update_checker.py:latest_release",
-    "service/worker_config_store.py": "service/worker_config_store.py:note_worker_revision",
-    "web/charts.py": "web/charts.py:parse_window",
-    "web/infra_views.py": "web/infra_views.py:_ip_to_sort_int",
+    "service/health/tor_heal.py": "service/health/tor_heal.py:_probe_egress",
+    "service/health/update_checker.py": "service/health/update_checker.py:latest_release",
+    "service/workers/worker_config_store.py": "service/workers/worker_config_store.py:note_worker_revision",
+    "web/views/charts.py": "web/views/charts.py:parse_window",
+    "web/views/infra_views.py": "web/views/infra_views.py:_ip_to_sort_int",
     "web/server.py": "web/server.py:_finalize_worker_upgrade",
-    "web/views.py": "web/views.py:read_os_update_state",
-    "web/xvb_views.py": "web/xvb_views.py:recent_wallet_change",
+    "web/views/views.py": "web/views/views.py:read_os_update_state",
+    "web/views/xvb_views.py": "web/views/xvb_views.py:recent_wallet_change",
 }

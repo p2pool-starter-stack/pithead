@@ -371,7 +371,7 @@ newest: cosign v3 satisfies the check and then fails the verification. See
   stayed invisible to `pithead status` and the container-health alert. Each new probe checks
   actual readiness, not just that the process exists, using only tooling its own image ships.
 - **The XvB winners-feed archiver ships as an operator tool (#906).**
-  `scripts/xvb-winners-archive.sh` snapshots the public winners feed daily (Tor-routed, atomic
+  `scripts/watch/xvb-winners-archive.sh` snapshots the public winners feed daily (Tor-routed, atomic
   writes, about 90 KB/day) for recalibrating the measured delivery band over time. `operations.md`
   documents what it collects and a crontab line that points at a directory outside the
   version-numbered install path — a version-dir default would have lost every snapshot on the
@@ -1290,7 +1290,7 @@ plus the applied cuts from a whole-repo over-engineering audit.
 - **Four friendly-error branches were unreachable under `errexit` (#557).** A plain
   `var="$(cmd)"` assignment aborts the script before the crafted diagnostic on the next line can
   run. Fixed in `verify_release_images` (the "#451 not digest-pinned" abort), both digest reads in
-  `scripts/release.sh` (`stage_push` and the `--resume-promote` recovery path — the fourth site,
+  `scripts/release/release.sh` (`stage_push` and the `--resume-promote` recovery path — the fourth site,
   found in review), and `reset-dashboard`'s final `compose_up_checked` call (the #180
   subnet-collision explanation). The new tests deliberately keep `errexit` ON — the suite's usual
   `set +e` harness was masking exactly this bug class.
@@ -1880,7 +1880,7 @@ its published artifacts were removed. 1.6.1 carries every 1.6.0 change plus the 
   `shellcheck: not found` mid-gate. Preflight now verifies the tools the test gate needs are on PATH
   and fails fast, naming the missing tool and pointing at the provisioning steps in
   `docs/dev/release-server.md`, before anything is built.
-- **`tests/integration/build-pruned-chain.sh`** no longer defaults `SRC_DIR` to a maintainer's
+- **`tests/integration/tools/build-pruned-chain.sh`** no longer defaults `SRC_DIR` to a maintainer's
   personal path (baked in under the pre-rename repo name); it's now a required variable with a clear
   error (#373).
 
@@ -2427,7 +2427,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   silently offline. Set `dashboard.check_for_updates: false` to opt out. Documented in
   `docs/configuration.md` + `docs/privacy.md`.
 
-- **Release pipeline — `scripts/release.sh` (`make release`)** (#44). A single entry point, run from
+- **Release pipeline — `scripts/release/release.sh` (`make release`)** (#44). A single entry point, run from
   the private build/test server, that cuts a versioned release end to end: preflight (clean tree,
   SemVer from `VERSION`, tag-not-already-released, resolve the component pins) → **blocking test gate**
   (`make test` + the #54 live integration matrix) → build the 5 first-party images with OCI labels +
@@ -2567,7 +2567,7 @@ cd pithead && cp config.json.template config.json   # set your Monero + Tari pay
   - A developer testing guide (`docs/dev/testing-guide.md`): per-change recipes, conventions, and
     the calibration gotchas learned on real hardware.
   - Regression guards for past bugs/security fixes: extended the #90 hardening section of
-    `tests/stack/test_compose.sh` with per-service least-privilege checks for the Docker socket
+    `tests/stack/standalone/test_compose.sh` with per-service least-privilege checks for the Docker socket
     proxies (the read proxy can't POST; the control proxy is start/stop-only; both mount the
     socket read-only) and the Tari `[m]inotari` self-match guard — alongside the existing
     no-new-privileges / cap_drop / credential-free-healthcheck assertions. Plus a

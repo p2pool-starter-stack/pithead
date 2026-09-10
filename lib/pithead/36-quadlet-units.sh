@@ -12,6 +12,20 @@ render_quadlet_units() {
     mkdir -p "$outdir"
 
     _qenv() { env_get_file "$envf" "$1"; }
+    # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
+    # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
+    # rots. Quotes wrap the WHOLE assignment (Environment="A=1 2" B=3); \ and " are escaped, and
+    # % is DOUBLED because systemd expands specifiers in unit files — a password holding %H would
+    # otherwise become the hostname. `$` is deliberately NOT escaped: ${VAR} expands in ExecStart,
+    # never in an Environment value. $2 is the .env key when it differs (TZ <- DASHBOARD_TZ).
+    _qenvq() {
+        local v
+        v=$(env_get_file "$envf" "${2:-$1}")
+        v=${v//\\/\\\\}
+        v=${v//\"/\\\"}
+        v=${v//%/%%}
+        printf '"%s=%s"' "$1" "$v"
+    }
 
     # Every emitted unit has run on the bench (render-then-prove): the remote set in the #78
     # spike, the local-node units 2026-07-24, and the payout-wallet units the same day (real
@@ -44,7 +58,7 @@ ContainerName=tor
 Image=$reg/pithead-tor:$ver
 Network=mining.network
 IP=$prefix.25
-Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$profiles DASHBOARD_ONION_ENABLED=$(_qenv DASHBOARD_ONION_ENABLED) DASHBOARD_ONION_CLIENT_AUTH=$(_qenv DASHBOARD_ONION_CLIENT_AUTH)
+Environment=NETWORK_PREFIX=$prefix COMPOSE_PROFILES=$profiles $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH)
 Volume=$(_qenv TOR_DATA_DIR):/var/lib/tor
 Tmpfs=/tmp:size=64m,mode=1777
 ReadOnly=true
@@ -78,7 +92,7 @@ ContainerName=monerod
 Image=$reg/pithead-monero:$ver
 Network=mining.network
 IP=$prefix.26
-Environment=MONERO_NODE_USERNAME=$(_qenv MONERO_NODE_USERNAME) MONERO_NODE_PASSWORD=$(_qenv MONERO_NODE_PASSWORD) MONERO_ONION_ADDRESS=$(_qenv MONERO_ONION_ADDRESS) MONERO_PRUNE=$(_qenv MONERO_PRUNE) MONERO_CLEARNET_SYNC=$(_qenv MONERO_CLEARNET_SYNC) MONERO_PREP_THREADS=$(_qenv MONERO_PREP_THREADS) MONERO_OUT_PEERS=$(_qenv MONERO_OUT_PEERS) NETWORK_PREFIX=$prefix
+Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_ONION_ADDRESS) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq MONERO_PREP_THREADS) $(_qenvq MONERO_OUT_PEERS) NETWORK_PREFIX=$prefix
 Volume=$(_qenv MONERO_DATA_DIR):/home/ubuntu/.bitmonero
 Volume=/dev/hugepages:/dev/hugepages
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/monero/bitmonero.conf.template:/home/ubuntu/bitmonero.conf.template:ro
@@ -118,7 +132,7 @@ Network=mining.network
 IP=$prefix.27
 User=1000:1000
 DNS=127.0.0.1
-Environment=WAIT_FOR_TOR=1 TARI_CLEARNET_SYNC=$(_qenv TARI_CLEARNET_SYNC)
+Environment=WAIT_FOR_TOR=1 $(_qenvq TARI_CLEARNET_SYNC)
 Entrypoint=/var/tari/config/entrypoint.sh
 Exec=--disable-splash-screen --non-interactive
 Volume=$(_qenv TARI_DATA_DIR):/var/tari/node
@@ -158,7 +172,7 @@ Image=$reg/pithead-monero:$ver
 Network=mining.network
 IP=$prefix.30
 Entrypoint=/usr/local/bin/wallet-entrypoint.sh
-Environment=MONERO_NODE_USERNAME=$(_qenv MONERO_NODE_USERNAME) MONERO_NODE_PASSWORD=$(_qenv MONERO_NODE_PASSWORD) MONERO_NODE_HOST=$prefix.26 MONERO_RPC_PORT=18081 WALLET_RPC_USERNAME=wallet WALLET_RPC_PASSWORD=$(_qenv WALLET_RPC_PASSWORD) MONERO_WALLET_ADDRESS=$(_qenv MONERO_WALLET_ADDRESS) MONERO_VIEW_KEY=$(_qenv MONERO_VIEW_KEY) PAYOUT_SCAN_HEIGHT=$(_qenv PAYOUT_SCAN_HEIGHT)
+Environment=$(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) MONERO_NODE_HOST=$prefix.26 MONERO_RPC_PORT=18081 WALLET_RPC_USERNAME=wallet $(_qenvq WALLET_RPC_PASSWORD) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq MONERO_VIEW_KEY) $(_qenvq PAYOUT_SCAN_HEIGHT)
 Volume=pithead-wallet-data:/home/ubuntu/wallets
 Tmpfs=/tmp:size=16m,mode=1777
 PublishPort=127.0.0.1:18082:18082
@@ -194,7 +208,7 @@ Network=mining.network
 IP=$prefix.31
 User=1000:1000
 Entrypoint=/wallet-config/entrypoint.sh
-Environment=TARI_BASE_NODE_GRPC_ADDRESS=$(_qenv TARI_GRPC_ADDRESS) TARI_WALLET_BIRTHDAY=$(_qenv TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/home/ubuntu/wallet
+Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/home/ubuntu/wallet
 Volume=pithead-tari-wallet-data:/home/ubuntu/wallet
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari-wallet:/wallet-config:ro
 Volume=$(_qenv TARI_WALLET_SECRET_FILE):/run/secrets/tari_wallet_secret:ro
@@ -229,7 +243,7 @@ ContainerName=p2pool
 Image=$reg/pithead-p2pool:$ver
 Network=mining.network
 IP=$prefix.28
-Environment=P2POOL_FLAGS=$(_qenv P2POOL_FLAGS)
+Environment=$(_qenvq P2POOL_FLAGS)
 Exec=--no-log-file --host $(_qenv MONERO_NODE_HOST) --rpc-port $(_qenv MONERO_RPC_PORT) --rpc-login $(_qenv MONERO_NODE_USERNAME):$(_qenv MONERO_NODE_PASSWORD) --zmq-port $(_qenv MONERO_ZMQ_PORT) --wallet $(_qenv MONERO_WALLET_ADDRESS) --merge-mine tari://$(_qenv TARI_GRPC_ADDRESS) $(_qenv TARI_WALLET_ADDRESS) --onion-address $(_qenv P2POOL_ONION_ADDRESS) --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:$(_qenv P2POOL_PORT) --data-api /stats
 Volume=$(_qenv P2POOL_DATA_DIR):/home/ubuntu
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/stats
@@ -264,7 +278,7 @@ ContainerName=xmrig-proxy
 Image=$reg/pithead-xmrig-proxy:$ver
 Network=mining.network
 IP=$prefix.29
-Environment=PROXY_API_PORT=$(_qenv PROXY_API_PORT) PROXY_AUTH_TOKEN=$(_qenv PROXY_AUTH_TOKEN) PROXY_STRATUM_PASSWORD=$(_qenv PROXY_STRATUM_PASSWORD) PROXY_STRATUM_TLS=$(_qenv PROXY_STRATUM_TLS) PROXY_DONATE_LEVEL=$(_qenv PROXY_DONATE_LEVEL)
+Environment=$(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) $(_qenvq PROXY_STRATUM_PASSWORD) $(_qenvq PROXY_STRATUM_TLS) $(_qenvq PROXY_DONATE_LEVEL)
 Exec=-o $(_qenv P2POOL_URL) -u $(_qenv MONERO_WALLET_ADDRESS) -b 0.0.0.0:$(_qenv STRATUM_PORT) -m simple --coin monero --verbose --http-host 0.0.0.0 --http-port $(_qenv PROXY_API_PORT) --http-access-token $(_qenv PROXY_AUTH_TOKEN) --http-no-restricted --donate-level $(_qenv PROXY_DONATE_LEVEL)
 Volume=$(_qenv PROXY_TLS_DIR):/tls:ro
 Tmpfs=/tmp:size=64m,mode=1777
@@ -352,7 +366,7 @@ EOF
     # emitted conditionally so the payout-off unit stays byte-identical to the proven fixtures.
     local payout_env=""
     case ",$profiles," in
-    *,payout_confirm,*) payout_env=" PAYOUT_CONFIRM_ENABLED=true MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc WALLET_RPC_USERNAME=wallet WALLET_RPC_PASSWORD=$(_qenv WALLET_RPC_PASSWORD)" ;;
+    *,payout_confirm,*) payout_env=" PAYOUT_CONFIRM_ENABLED=true MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc WALLET_RPC_USERNAME=wallet $(_qenvq WALLET_RPC_PASSWORD)" ;;
     esac
     case ",$profiles," in
     *,tari_payout_confirm,*) payout_env="$payout_env TARI_PAYOUT_CONFIRM_ENABLED=true TARI_WALLET_GRPC_ADDRESS=127.0.0.1:18143" ;;
@@ -367,7 +381,7 @@ Description=pithead dashboard
 ContainerName=dashboard
 Image=$reg/pithead-dashboard:$ver
 Network=host
-Environment=HOST_IP=$(_qenv HOST_IP) TZ=$(_qenv DASHBOARD_TZ) MONERO_NODE_HOST=$(_qenv MONERO_NODE_HOST) MONERO_NODE_USERNAME=$(_qenv MONERO_NODE_USERNAME) MONERO_NODE_PASSWORD=$(_qenv MONERO_NODE_PASSWORD) MONERO_PRUNE=$(_qenv MONERO_PRUNE) MONERO_CLEARNET_SYNC=$(_qenv MONERO_CLEARNET_SYNC) TARI_CLEARNET_SYNC=$(_qenv TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state TOR_EGRESS_FIREWALL=$(_qenv TOR_EGRESS_FIREWALL) TOR_AUTO_HEAL=$(_qenv TOR_AUTO_HEAL) P2POOL_CLEARNET=$(_qenv P2POOL_CLEARNET) P2POOL_URL=$(_qenv P2POOL_URL) MONERO_WALLET_ADDRESS=$(_qenv MONERO_WALLET_ADDRESS) STRATUM_PORT=$(_qenv STRATUM_PORT) TARI_REQUIRED=$(_qenv TARI_REQUIRED) TARI_GRPC_ADDRESS=$(_qenv TARI_GRPC_ADDRESS) XVB_ENABLED=$(_qenv XVB_ENABLED) XVB_TOR_ENABLED=$(_qenv XVB_TOR_ENABLED) XVB_DONATION_LEVEL=$(_qenv XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 PROXY_API_PORT=$(_qenv PROXY_API_PORT) PROXY_AUTH_TOKEN=$(_qenv PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} DASHBOARD_CHECK_UPDATES=$(_qenv DASHBOARD_CHECK_UPDATES) DASHBOARD_CONTROL_ENABLED=$(_qenv DASHBOARD_CONTROL_ENABLED) DASHBOARD_FAIL_CLOSED=$(_qenv DASHBOARD_FAIL_CLOSED) DASHBOARD_ONION_ENABLED=$(_qenv DASHBOARD_ONION_ENABLED) DASHBOARD_ONION_ADDRESS=$(_qenv DASHBOARD_ONION_ADDRESS) DASHBOARD_ONION_CLIENT_AUTH=$(_qenv DASHBOARD_ONION_CLIENT_AUTH) TELEGRAM_ENABLED=$(_qenv TELEGRAM_ENABLED)
+Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/app/stats:ro
 Volume=$(_qenv DASHBOARD_DATA_DIR):/data
 Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state

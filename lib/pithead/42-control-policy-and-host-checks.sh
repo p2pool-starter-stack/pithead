@@ -207,7 +207,7 @@ _ipv6_is_sensitive() {
 # guess. Prints one deduplicated IP per line; a non-zero exit (including a 5s timeout) means
 # resolution failed, which the caller treats as FAIL CLOSED — an unresolved name can never be
 # proven safe. This is the one seam a test replaces: point $PATH at a directory carrying a fake
-# `getent` ahead of the real one (see tests/stack/test-control-add-only-ssrf.sh) to supply canned
+# `getent` ahead of the real one (see tests/stack/control/test-control-add-only-ssrf.sh) to supply canned
 # answers without needing real DNS.
 _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u

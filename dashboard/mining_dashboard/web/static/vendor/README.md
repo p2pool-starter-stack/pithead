@@ -14,7 +14,7 @@ with no bare imports and no `eval`/`new Function`, so they load and run under th
 | `hammer.min.js`     | hammerjs | 2.0.8 | MIT | <https://unpkg.com/hammerjs@2.0.8/hammer.min.js> |
 
 These licenses are also recorded in the repo-root `THIRD_PARTY_LICENSES.md`. `chart.umd.min.js`
-lives one directory up (in `static/`, not `vendor/`); listed here so the attribution is complete.
+lives at `static/vendor/chart.umd.min.js` alongside the other vendored libraries.
 
 `chartjs-plugin-zoom` is a UMD bundle (like `chart.umd.min.js`), loaded as a classic `<script>`
 after Chart.js; it exposes the global `ChartZoom` and is registered explicitly via

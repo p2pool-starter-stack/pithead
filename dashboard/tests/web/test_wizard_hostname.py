@@ -5,8 +5,8 @@ import json
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from mining_dashboard import wizard
-from mining_dashboard.wizard_form import build_config
+from mining_dashboard.wizard import server as wizard
+from mining_dashboard.wizard.form import build_config
 
 
 @pytest.fixture

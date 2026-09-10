@@ -4,6 +4,8 @@ The workflow for contributing bug fixes, docs changes, and features.
 
 ## Before you start
 
+- Use the [repo map](docs/dev/repo-map.md) to find a feature and its tests.
+  The [AI workflow](docs/dev/ai-workflow.md) adds scope, log, and handoff rules for agents.
 - Open an issue before writing code for anything beyond a small fix. Discuss the approach
   there first.
 - Check the [open issues](https://github.com/p2pool-starter-stack/pithead/issues) for existing
@@ -30,6 +32,12 @@ The root `pithead` executable is generated and git-ignored. Plain `make` builds 
 numbered `lib/pithead/*.sh` sources; the test targets also build it when needed. Edit the slices,
 not the generated file.
 
+The full shell and appliance selftest suite expects **Linux and a non-root user**, as in
+CI. It uses GNU utilities and tests permission failures that root would bypass. Install
+Bash, Git, Make, jq, Node, Python 3, e2fsprogs, and the shellcheck/shfmt versions pinned in
+`Makefile`. On macOS or Windows, run these suites in a Linux VM, container, or WSL;
+the dashboard and frontend unit suites can run on the host.
+
 ## Development workflow
 
 1. Fork the repo and create a branch off `develop` (the integration branch; `main` holds released
@@ -47,6 +55,9 @@ not the generated file.
    - **lint** — every file surface gets a linter/formatter check (`make lint` runs them all; run one
      with `make lint-<surface>`): `lint-sh` (shellcheck + shfmt), `lint-py` (ruff), `lint-js` (Biome),
      `lint-yaml` (yamllint), `lint-md` (markdownlint), `lint-docs-voice` (banned-word check),
+     `lint-path-references` (every repo path named in a comment, docstring or doc has to resolve — a
+     reorganization moves the target and leaves the pointer, and nothing else here notices; deliberate
+     absences go in the script's own `allowed_absent()` with a reason, never a per-file exemption),
      `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text, and
      no bare `docs/` paths in `pithead` operator text — release bundles carry a curated operator-doc
      subset, not arbitrary repo paths, so point at `$DOCS_URL/docs/<file>.md#anchor` instead; comments
@@ -60,7 +71,7 @@ not the generated file.
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
      checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE
-     gate's two trivy-action steps and `scripts/trivyignore-watch.sh` must name one trivy engine
+     gate's two trivy-action steps and `scripts/watch/trivyignore-watch.sh` must name one trivy engine
      version — issue #1290), `lint-proto` (buf),
      `lint-toml` (taplo). The
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
@@ -78,6 +89,7 @@ not the generated file.
    - **test-stack** — the `pithead` shell test suite.
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's own pure logic.
+   - **test-tools** — bounded build-log sanitization, without running a build.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
 
    Bigger, infra-dependent suites run separately: `make test-mini-stack` (tier-3 docker) and

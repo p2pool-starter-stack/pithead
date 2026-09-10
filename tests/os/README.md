@@ -5,6 +5,8 @@ firmware and a real A/B updater can prove. The compose/CLI stack is covered by t
 tiers ([`docs/dev/testing-strategy.md`](../../docs/dev/testing-strategy.md)); this harness
 covers what the flashed image adds — EFI boot, the first-boot wizard window, install-to-disk,
 the rig role, and the update → commit → rollback cycle that is the phase-2 exit criterion.
+The stable `run.sh` entry point loads shared helpers from `lib/` and phase implementations from
+`phases/`; `selftest-run-modules.sh` checks the complete load order without starting a VM.
 
 It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 

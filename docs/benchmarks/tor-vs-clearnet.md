@@ -7,7 +7,7 @@ where, and how we decided.
 > on `mini`. The cost is propagation latency (uncle/late shares), not rejects, and **Tor stays the
 > default**. Full per-arm results and the committed raw data are in [Results](#results). The methodology
 > and decision rule below were fixed **before** the run (pre-registration); the run executed on the
-> [test bench](../../tests/integration/testbench-README.md).
+> [test bench](../../tests/integration/tools/testbench-README.md).
 
 ## The question
 

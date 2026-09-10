@@ -200,6 +200,11 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         rm -rf "$tmp"
         return 0
     fi
+    if ! restore_canonicalize_derived "$staged_cfg" "$tree$PWD/$ENV_FILE" "$tree$PWD/Caddyfile"; then
+        rm -rf "$tmp"
+        printf 'archive contains invalid generated identity or secret state' >"$errf"
+        return 1
+    fi
     # Apply only the accepted files/data trees. Do not copy staging's ancestor directories
     # onto /: their metadata is not part of the backup contract.
     local item source dest copy_failed=0
@@ -235,9 +240,9 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
     # "live" — a carried true fires that guard's exact fatal, no-tty refusal, and setup never
     # runs: prepare_directories, render_env, provision_tor never fire, no container starts. A
     # just-restored box has NOT completed deployment on this hardware — clear the marker so the
-    # caller's setup() actually provisions it. Every other restored .env value (the real onion
-    # addresses, tokens, HOST_IP) is exactly what a re-provision must reuse, so only this one
-    # line is touched; a full re-render happens anyway inside setup(). Scoped to THIS commit
+    # caller's setup() actually provisions it. The staged canonicalizer has already retained only
+    # validated generated secrets and Tor identity while deriving host and policy from config;
+    # this path changes its one hardware-specific lifecycle value. Scoped to THIS commit
     # path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
     # deployed on its own hardware) has its own separate extraction and never calls restore_apply,
     # so a live box's restore keeps its completion marker exactly as it should.

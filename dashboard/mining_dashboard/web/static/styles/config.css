@@ -1,0 +1,147 @@
+/* ---- Configuration view (#33) ----------------------------------------------------------
+ * The config editor: sectioned form fields, an inline field warning for high-consequence
+ * keys, and the preview/confirm modal listing the same change rows `pithead apply` prints
+ * (DEST rows styled as warnings). Sections regroup around a pinned core group + collapsible
+ * natural sections (#529) — collapsed <details>, the same pattern as .egress-details above. */
+.config-section h3 {
+  margin-top: 0;
+  text-transform: capitalize;
+}
+.config-section > summary {
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-bottom: 8px;
+}
+.config-section-core {
+  border-color: var(--accent);
+}
+/* Nested sub-group within a section (#612) — telegram.events, the notification sinks,
+ * healthchecks — same collapsed-<details> pattern as .config-section, one level deeper. */
+.config-subsection {
+  margin: 10px 0 10px 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.config-subsection > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+.config-field {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 2fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.config-field-name {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.config-field input,
+.config-field select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  font-size: 0.85rem;
+  min-width: 0;
+}
+.config-field input:focus,
+.config-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Host-only field (#613): greyed and read-only up front instead of edit-then-reject. */
+.config-field input:disabled,
+.config-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.config-field-warning {
+  grid-column: 1 / -1;
+  color: var(--warn);
+  font-size: 0.8rem;
+}
+.config-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin: 15px 0;
+}
+.config-actions .btn-toggle,
+.config-modal-actions .btn-toggle {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.config-actions .btn-toggle:disabled,
+.config-modal-actions .btn-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.config-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.config-modal {
+  max-width: 640px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.config-preview-list {
+  padding-left: 1.2rem;
+}
+.config-preview-list li {
+  margin-bottom: 6px;
+}
+.config-preview-dest {
+  color: var(--warn);
+}
+.config-confirm-type {
+  display: block;
+  margin: 12px 0;
+  color: var(--warn);
+}
+.config-confirm-type input {
+  display: block;
+  margin-top: 6px;
+  background: var(--bg);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+}
+.config-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.config-error-tail {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+/* Backup emergency kit (#908): the one-time passphrase reveal — same box recipe as
+ * .config-error-tail, larger and breaking mid-word so a long alnum passphrase never overflows. */
+.kit-passphrase {
+  font-size: 1rem;
+  word-break: break-all;
+  margin: 8px 0;
+}

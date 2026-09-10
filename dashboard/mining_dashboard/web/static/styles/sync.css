@@ -1,0 +1,84 @@
+/* --- Sync View Styles --- */
+.loader-container {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 20px auto;
+}
+.progress-wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  /* --p is set at runtime by dashboard.js from the data-percent attribute. */
+  background: conic-gradient(var(--ok) var(--p), var(--border) 0deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.progress-wheel::before {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--card);
+}
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--text);
+  z-index: 10;
+}
+.status-text {
+  font-size: 1.1em;
+  margin-top: 15px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.header-placeholder {
+  text-align: center;
+  margin: 40px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+}
+
+/* ---- Responsive / mobile (Issue #83) --------------------------------------------------
+ * The desktop layout above is fluid down to tablet widths via the sections' column packing, but
+ * a few fixed sizes break or overflow on phones: the header is a fixed two-up row, the disk bar
+ * is a hard 150px, and the body padding is a roomy 20px. These overrides take over at phone
+ * widths — tighter padding, a stacked header, and a full-width disk bar. Card stacking needs no
+ * override: a phone viewport fits exactly one ~350px column, so the packed sections are already
+ * single-column. The workers table is handled separately by .table-scroll above. One breakpoint
+ * is enough: above it the column packing already reflows cleanly. */
+@media (max-width: 640px) {
+  body {
+    padding: 12px;
+  }
+
+  /* Stack the header: the host/telemetry block sits above the hashrate readout, both
+       left-aligned, and each inner row may wrap rather than overflow. */
+  .header {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .header .text-right {
+    text-align: left;
+  }
+  .header .items-center {
+    flex-wrap: wrap;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  /* Let the disk bar fill the row (dropping to its own line when the label wraps) instead of
+       holding a fixed 150px next to the disk label. */
+  .disk-bar {
+    width: 100%;
+  }
+}
