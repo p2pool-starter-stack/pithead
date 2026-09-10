@@ -136,6 +136,7 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
     if [ "$tries" -ge 24 ]; then
         restore_setup_fault || bad "post-validation fault cleanup failed after handoff timeout"
         bad "faulted setup never reached its credentials handoff"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return 1
     fi
     if ! curl -fsSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null; then

@@ -93,6 +93,11 @@ echo "== unit: #1059 watch-report discrimination =="
 bash "$ROOT/tests/os/failure-evidence.sh" --self-test >/dev/null 2>&1
 assert_rc "#1059 watch-report self-test passes" "$?" "0"
 
+# The #2043 dump: five legs report a zero-container stack and none of them captured anything,
+# so the probe SET is the part that must not rot. Same reasoning as above — no KVM needed.
+bash "$ROOT/tests/os/zero-container-evidence.sh" --self-test >/dev/null 2>&1
+assert_rc "#2043 zero-container evidence self-test passes" "$?" "0"
+
 echo "== unit: #1676 version-aging helper self-test =="
 # tests/os/run.sh's leg 4 must make the guest claim a version OLDER than the bundle it is about to
 # install, and every minor release-prep tip is x.y.0 — the shape the helper used to refuse, which

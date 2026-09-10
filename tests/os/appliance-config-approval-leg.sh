@@ -397,7 +397,7 @@ _approval_self_test() {
     _approval_preview_lifecycle_self_test || f=$((f + 1))
     _approval_fixture_cleanup_self_test || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
-    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/run.sh" || f=$((f + 1))
+    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1

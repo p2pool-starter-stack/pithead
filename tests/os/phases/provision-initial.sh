@@ -122,6 +122,7 @@ _phase_provision_initial() {
         ;;
     *)
         bad "stack never came up within 25m — running: '${names:-none}'"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
         ;;
