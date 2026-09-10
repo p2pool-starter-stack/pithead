@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Fail if a repo path named in prose — a comment, a docstring, a doc — does not resolve (#1105).
+# Fail if a repo path this tree names — in prose or in a `source` — does not resolve (#1105/#2005).
 #
 # A 587-file reorganization moves the targets and leaves the pointers. Sixteen comments named
 # pre-move paths after the #1105 cuts, one of them in production source, and every other gate was
 # green: nothing in this repo checks that a path a human typed into a comment still exists. That is
 # the invariant a move breaks by construction, so it gets a gate rather than a review pass.
 #
-# Scope is deliberately prose, not code. A `source`/`import` of a missing file already fails loudly
-# at run time; a comment pointing at a file that no longer exists fails silently, forever, and is
-# read as fact by the next person.
+# Part 1 scans prose. Part 2 scans `source`/`.` targets, added after #2005 moved two files out from
+# under references this gate could not see: the original scope excluded code on the reasoning that
+# a `source` of a missing file fails loudly at run time. Both of those failed silently instead.
 set -euo pipefail
 
 # --- self-test: a path linter that finds nothing looks identical whether the tree is clean or the
 # pattern stopped matching, so this proves the detector FIRES before any run is read as a pass. It
 # runs the real script end to end in a throwaway repo rather than asserting on an extracted
-# function — nothing here would call a function-only fix broken. Three legs: it catches a dead
-# reference, it does NOT catch a live one (narrowness — a linter that reds on everything is as
-# useless as one that reds on nothing), and an empty enumeration is refused rather than passed.
+# function — nothing here would call a function-only fix broken. Six legs: prose, then code, each
+# proved to catch a dead reference and to leave a live one alone (narrowness — a linter that reds
+# on everything is as useless as one that reds on nothing), and an empty enumeration is refused.
 if [ "${1:-}" = "--self-test" ]; then
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
@@ -54,7 +54,41 @@ if [ "${1:-}" = "--self-test" ]; then
     (cd "$tmp/repo" && git add -A)
     leg "a live reference is NOT caught" 0 "every named repo path resolves"
 
-    # Leg 3: an empty enumeration is a broken filter, not a clean tree.
+    # Legs 3-4 seed the CODE scan, which the prose fixtures above cannot reach: a `source` line is
+    # not prose. The fixture is a runner and the fragment it sources, because that is the shape the
+    # scan is most likely to get wrong — the fragment's $HERE is the RUNNER's directory, so
+    # `$HERE/<dir>/<file>` beside the runner resolves and the same expression read against the
+    # fragment's own directory does not. Leg 4 asserts the CHECKED COUNT, not just rc 0: a fixture
+    # whose expression silently failed to resolve would be skipped, and would pass on rc alone.
+    src="source"
+    here='"$HERE'
+    mkdir -p "$tmp/repo/lib" "$tmp/repo/probe-bench"
+    printf 'HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n%s %s/lib/frag%s"\n' \
+        "$src" "$here" "$sfx" >"$tmp/repo/runner$sfx"
+    echo ':' >"$tmp/repo/probe-bench/measure$sfx"
+
+    # Leg 3: a dead path in CODE must be caught — the prose scan cannot see this line at all.
+    printf '%s %s/probe-gone/measure%s"\n' "$src" "$here" "$sfx" >"$tmp/repo/lib/frag$sfx"
+    (cd "$tmp/repo" && git add -A)
+    leg "a dead code path is caught" 1 "sources probe-gone/measure$sfx"
+
+    # Leg 4: the same fragment, repointed at the file that IS beside the runner. Resolving $HERE
+    # against the fragment's own lib/ would red here, which is how every fragment in tests/
+    # integration/lib and tests/os/phases would red.
+    printf '%s %s/probe-bench/measure%s"\n' "$src" "$here" "$sfx" >"$tmp/repo/lib/frag$sfx"
+    (cd "$tmp/repo" && git add -A)
+    leg "a sourcer-relative fragment reference is NOT caught" 0 "code paths: 2 source targets"
+
+    # Leg 5: two sources on ONE line — the shape that hid a live gap. tests/stack/test-harness-
+    # tooling.sh:207 sources lib.sh and an appliance module from a single `bash -c`, and a `sed`
+    # capture takes the LAST match, so the FIRST reference was never checked. The dead path here is
+    # the first one deliberately; with a per-line capture this leg reads green off the second.
+    printf '%s %s/probe-gone/first%s" >/dev/null; %s %s/probe-bench/measure%s"\n' \
+        "$src" "$here" "$sfx" "$src" "$here" "$sfx" >"$tmp/repo/lib/frag$sfx"
+    (cd "$tmp/repo" && git add -A)
+    leg "the FIRST of two sources on one line is caught" 1 "sources probe-gone/first$sfx"
+
+    # Leg 6: an empty enumeration is a broken filter, not a clean tree.
     git init -q "$tmp/empty" && mv "$tmp/repo" "$tmp/repo.bak" && mv "$tmp/empty" "$tmp/repo"
     leg "an empty enumeration is refused" 1 "returned zero files"
 
@@ -132,10 +166,18 @@ for f in $files; do
         sed -E "s/:[^:]*[^A-Za-z0-9\/._-]($root\/)/:\1/")
 done
 
+# The code scan lives in its own file: two independent behaviours, and this one was over the
+# 400-line target with it inline. It is sourced, not run, because it shares allowed_absent() and
+# reports into the same $rc — and its own `source` line below is a live case for what it checks.
+# shellcheck source=scripts/lint/lint-path-references-code.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lint-path-references-code.sh"
+
 if [ "$rc" -ne 0 ]; then
     echo "" >&2
-    echo "A comment naming a file that moved is worse than no comment. Repoint it, or — if the" >&2
-    echo "absence is deliberate — add it to allowed_absent() above WITH THE REASON." >&2
+    echo "A comment naming a file that moved is worse than no comment; a source of one is a" >&2
+    echo "silent no-op. Repoint it, or — if the absence is deliberate — add it to allowed_absent()" >&2
+    echo "above WITH THE REASON." >&2
     exit 1
 fi
 echo "path references: every named repo path resolves"
+echo "code paths: $code_checked source targets resolved and checked, $code_skipped expressions skipped as not statically resolvable"
