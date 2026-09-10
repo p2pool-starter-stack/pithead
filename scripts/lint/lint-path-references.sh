@@ -14,7 +14,7 @@ set -euo pipefail
 # --- self-test: a path linter that finds nothing looks identical whether the tree is clean or the
 # pattern stopped matching, so this proves the detector FIRES before any run is read as a pass. It
 # runs the real script end to end in a throwaway repo rather than asserting on an extracted
-# function — nothing here would call a function-only fix broken. Five legs: prose, then code, each
+# function — nothing here would call a function-only fix broken. Six legs: prose, then code, each
 # proved to catch a dead reference and to leave a live one alone (narrowness — a linter that reds
 # on everything is as useless as one that reds on nothing), and an empty enumeration is refused.
 if [ "${1:-}" = "--self-test" ]; then
@@ -79,7 +79,16 @@ if [ "${1:-}" = "--self-test" ]; then
     (cd "$tmp/repo" && git add -A)
     leg "a sourcer-relative fragment reference is NOT caught" 0 "code paths: 2 source targets"
 
-    # Leg 5: an empty enumeration is a broken filter, not a clean tree.
+    # Leg 5: two sources on ONE line — the shape that hid a live gap. tests/stack/test-harness-
+    # tooling.sh:207 sources lib.sh and an appliance module from a single `bash -c`, and a `sed`
+    # capture takes the LAST match, so the FIRST reference was never checked. The dead path here is
+    # the first one deliberately; with a per-line capture this leg reads green off the second.
+    printf '%s %s/probe-gone/first%s" >/dev/null; %s %s/probe-bench/measure%s"\n' \
+        "$src" "$here" "$sfx" "$src" "$here" "$sfx" >"$tmp/repo/lib/frag$sfx"
+    (cd "$tmp/repo" && git add -A)
+    leg "the FIRST of two sources on one line is caught" 1 "sources probe-gone/first$sfx"
+
+    # Leg 6: an empty enumeration is a broken filter, not a clean tree.
     git init -q "$tmp/empty" && mv "$tmp/repo" "$tmp/repo.bak" && mv "$tmp/empty" "$tmp/repo"
     leg "an empty enumeration is refused" 1 "returned zero files"
 
@@ -157,236 +166,11 @@ for f in $files; do
         sed -E "s/:[^:]*[^A-Za-z0-9\/._-]($root\/)/:\1/")
 done
 
-# ---------------------------------------------------------------------------
-# Part 2: paths named in CODE, in `source`/`.` position (#2005).
-#
-# Part 1 is prose-only on the reasoning that a `source` of a missing file fails loudly at run
-# time. #2005 disproved that twice. `. "$(cd "$(dirname "$0")/../integration" && pwd)/<probe>.sh"`
-# kept a `# shellcheck source=` comment that WAS repointed, so the prose scan read green while the
-# executable path still named the pre-move directory. And `REL="$ROOT/scripts/<script>.sh"` the
-# prose scan cannot see at all — the `/` before `scripts` is a path character, so the word boundary
-# it needs is not there — which turned every later `source "$REL" 2>/dev/null` into a silent no-op
-# that surfaced ten CI files away as `not found`.
-#
-# Only expressions that resolve STATICALLY are checked; the rest are skipped AND COUNTED. Guessing
-# at `$SANDBOX` or `$mutant` would be a false positive, and a blind spot nobody can watch growing
-# is the failure this gate exists to prevent, so the skip count is printed on every run.
-#
-# The rule that decides the false-positive rate: a sourced fragment inherits its SOURCER's $HERE
-# and $SCRIPT_DIR, not its own directory. tests/integration/lib/run-scenario.sh's
-# "$HERE/benchmarks/..." is correct precisely because run.sh sourced it — resolving $HERE against
-# the fragment's own lib/ reds on 7 references here, measured. Anchors therefore propagate along
-# `source` edges BOTH ways (a script also inherits what the lib fragment it sources defines, which
-# is how tests/stack/* get $ROOT from lib.sh), own outranks inherited, and a name arriving with two
-# values is unresolvable, not guessed at.
-
-# Its own refusal: an empty list leaves the greps below with no file arguments, reading stdin.
-sh_files=$(git ls-files '*.sh')
-if [ -z "$sh_files" ]; then
-    echo "path refs: the shell-file enumeration returned zero files, refusing a vacuous pass." >&2
-    exit 1
-fi
-
-# A `source`/`.` command word whose argument starts like a path. Requiring `"`, `$` or `/` next is
-# what keeps a sentence-ending period in prose and a jq filter's `.` from parsing as a source.
-src_re='(^|[^A-Za-z0-9_./"-])(source|\.)[[:space:]]+["$/]'
-# An assignment that could be an anchor: built from the script's own location, from the repo root,
-# or from another variable. Anything else cannot name a repo path without already being one.
-asg_re='^[[:space:]]*(export +|local +)?[A-Za-z_][A-Za-z0-9_]*=("?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/|[^=]*(BASH_SOURCE|\$0|rev-parse --show-toplevel))'
-
-# Collapse the shell idioms for "where am I" to literal segments plus `$VAR`. Run over the whole
-# stream at once: a `sed` per expression costs more than the rest of this gate put together. The
-# last two rules cut the expression out of its command line — after, never before, the
-# `$( … && pwd)` collapse, whose body has spaces of its own.
-reduce_stream() {
-    sed -E \
-        -e 's/["'"'"']//g' \
-        -e 's/\$\(readlink [^)]*(BASH_SOURCE|\$0)[^)]*\)/@SELF@/g' \
-        -e 's/\$\(dirname[^)]*(BASH_SOURCE|@SELF@|\$0)[^)]*\)/@SELFDIR@/g' \
-        -e 's/\$\{BASH_SOURCE\[0\]%\/\*\}/@SELFDIR@/g' \
-        -e 's/\$\{[A-Za-z_][A-Za-z0-9_]*:-([^{}]*)\}/\1/g' \
-        -e 's/\$\(([A-Za-z_]+= )?cd (-[A-Za-z-]+ )*([^\&]*[^\& ]) *\&\& *pwd[^)]*\)/\3/g' \
-        -e 's/\$\(git rev-parse --show-toplevel[^)]*\)/@ROOT@/g' \
-        -e 's/[[:space:]].*$//' \
-        -e 's/[;)}&|]+$//'
-}
-
-# asg_rows: file<TAB>line<TAB>var<TAB>reduced-rhs.  src_rows: file<TAB>line<TAB>reduced-target.
-asg_raw=$(grep -nHE "$asg_re" -- $sh_files 2>/dev/null |
-    sed -E 's/^([^:]+):([0-9]+):[[:space:]]*(export +|local +)?([A-Za-z_][A-Za-z0-9_]*)=/\1\t\2\t\4\t/' || true)
-src_raw=$(grep -nHE "$src_re" -- $sh_files 2>/dev/null |
-    grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' |
-    sed -E 's/^([^:]+):([0-9]+):(.*[^A-Za-z0-9_./"-])?(source|\.)[[:space:]]+/\1\t\2\t/' || true)
-asg_rows=$(paste <(printf '%s' "$asg_raw" | cut -f1-3) <(printf '%s' "$asg_raw" | cut -f4- | reduce_stream))
-src_rows=$(paste <(printf '%s' "$src_raw" | cut -f1-2) <(printf '%s' "$src_raw" | cut -f3- | reduce_stream))
-
-# Bindings live in shell variables, not a table on disk: lookups run inside three nested loops, and
-# a `grep` apiece put this gate's runtime in the tens of seconds. `own` outranks `inh`; a second,
-# different value marks the name ambiguous, and ambiguous reads as unresolvable, never as either.
-# The sentinels avoid `@`: `@unset@` beside a variable name reads as a user@host to lint-topology.
-# Two files whose names mangle to one key merge their bindings, which can only widen ambiguity.
-dollar='$'
-tab=$(printf '\t')
-bvars=""
-bkey() {
-    REPLY="b_${1}_${2}__${3}"
-    REPLY=${REPLY//[^A-Za-z0-9_]/_}
-}
-bset() {
-    local k cur
-    bkey "$1" "$2" "$3"
-    k=$REPLY
-    eval "cur=\${$k-!unset!}"
-    if [ "$cur" = "!unset!" ]; then
-        eval "$k=\$4"
-        case " $bvars " in *" $3 "*) ;; *) bvars="$bvars $3" ;; esac
-    elif [ "$cur" != "$4" ]; then
-        eval "$k=!amb!"
-    fi
-}
-bget() { # bget own|any <file> <var> -> REPLY; rc 1 when unset or ambiguous
-    local k cur t
-    for t in own inh; do
-        [ "$1" = any ] || [ "$1" = "$t" ] || continue
-        bkey "$t" "$2" "$3"
-        k=$REPLY
-        eval "cur=\${$k-!unset!}"
-        [ "$cur" = "!unset!" ] && continue
-        [ "$cur" = "!amb!" ] && return 1
-        REPLY=$cur
-        return 0
-    done
-    return 1
-}
-
-norm() { # collapse . and .. -> REPLY; rc 1 if the path climbs out of the repo
-    local out="" seg IFS=/
-    for seg in $1; do
-        case "$seg" in
-        '' | .) ;;
-        ..)
-            [ -n "$out" ] || return 1
-            case "$out" in */*) out=${out%/*} ;; *) out="" ;; esac
-            ;;
-        *) out="${out:+$out/}$seg" ;;
-        esac
-    done
-    REPLY=$out
-    return 0
-}
-
-resolve() { # resolve <file> <reduced-expr> -> REPLY (repo-relative); rc 1 = not statically resolvable
-    local f=$1 e=$2 d v pre post
-    d=${f%/*}
-    [ "$d" = "$f" ] && d=""
-    e=${e//@SELFDIR@/${d:-.}}
-    e=${e//@ROOT@/.}
-    # Substitute the ONE occurrence just parsed, by position. A replace-all of `$ROOT` would also
-    # rewrite the inside of a later `$ROOTDIR`, and a corrupted path resolves to a false positive.
-    for _ in 1 2 3 4; do
-        case "$e" in *"$dollar"*) ;; *) break ;; esac
-        pre=${e%%"$dollar"*}
-        post=${e#*"$dollar"}
-        post=${post#\{}
-        v=${post%%[!A-Za-z0-9_]*}
-        [ -n "$v" ] || return 1
-        post=${post#"$v"}
-        post=${post#\}}
-        bget any "$f" "$v" || return 1
-        e=$pre$REPLY$post
-    done
-    # A leftover variable, command substitution, printf placeholder, marker or glob/regex
-    # metacharacter is a guess waiting to happen — tests/inventory.sh greps for its own source
-    # lines with a pattern that reads just like one. No tracked path here holds any of these
-    # characters, so none costs a real reference. An absolute path is not ours to check either.
-    case "$e" in
-    *"$dollar"* | /* | '' | *'@'* | *'`'* | *'('* | *'%'* | *'*'* | *'?'* | *'+'* | *'['* | *']'* | *'\'*) return 1 ;;
-    esac
-    norm "$e"
-}
-
-row3() {
-    f=${1%%"$tab"*}
-    REPLY=${1#*"$tab"}
-    ln=${REPLY%%"$tab"*}
-    expr=${REPLY#*"$tab"}
-}
-bind_pass() {
-    local row f ln var expr
-    while IFS= read -r row; do
-        [ -n "$row" ] || continue
-        row3 "$row"
-        var=${expr%%"$tab"*}
-        expr=${expr#*"$tab"}
-        resolve "$f" "$expr" || continue
-        bset own "$f" "$var" "${REPLY:-.}"
-    done <<<"$asg_rows"
-}
-edge_pass() {
-    local row f ln expr
-    edges=""
-    while IFS= read -r row; do
-        [ -n "$row" ] || continue
-        row3 "$row"
-        resolve "$f" "$expr" || continue
-        # `if`, not a trailing `&&`: an AND-list that ends false is this loop body's exit status,
-        # which becomes the function's, which under `set -e` kills the run with no output at all.
-        if [ -f "$REPLY" ]; then edges="$edges$f$tab$REPLY"$'\n'; fi
-    done <<<"$src_rows"
-}
-inherit_pass() { # anchors cross a `source` edge in both directions; own always wins
-    local edge a b v val
-    while IFS= read -r edge; do
-        [ -n "$edge" ] || continue
-        a=${edge%%"$tab"*}
-        b=${edge#*"$tab"}
-        for v in $bvars; do
-            if bget any "$a" "$v"; then
-                val=$REPLY
-                bget own "$b" "$v" || bset inh "$b" "$v" "$val"
-            fi
-            if bget any "$b" "$v"; then
-                val=$REPLY
-                bget own "$a" "$v" || bset inh "$a" "$v" "$val"
-            fi
-        done
-    done <<<"$edges"
-}
-# Two relaxation rounds: one is not enough and three buy nothing — measured, not guessed.
-# tests/stack/lifecycle/appliance-lock.sh reaches $ROOT three `source` hops from lib.sh via run.sh,
-# and it is the reference round 2 recovers; the skip set is byte-identical at 2 rounds and at 12,
-# where the table itself settles, and each further round costs ~4s. A deeper chain would
-# under-resolve into a SKIP, never a false positive — the counter below is where that shows.
-bind_pass
-edge_pass
-inherit_pass
-bind_pass
-edge_pass
-inherit_pass
-bind_pass
-
-code_checked=0
-code_skipped=0
-while IFS= read -r row; do
-    [ -n "$row" ] || continue
-    row3 "$row"
-    if ! resolve "$f" "$expr"; then
-        code_skipped=$((code_skipped + 1))
-        continue
-    fi
-    p=$REPLY
-    # A resolved path with no directory is a repo-root name — `pithead`, which `make` generates and
-    # .gitignore hides. Present or absent says nothing about a move, so it is a skip, not a pass.
-    if [ "${p%%/*}" = "$p" ]; then
-        code_skipped=$((code_skipped + 1))
-        continue
-    fi
-    code_checked=$((code_checked + 1))
-    [ -e "$p" ] && continue
-    allowed_absent "$p" && continue
-    echo "$f:$ln sources $p, which does not exist" >&2
-    rc=1
-done <<<"$src_rows"
+# The code scan lives in its own file: two independent behaviours, and this one was over the
+# 400-line target with it inline. It is sourced, not run, because it shares allowed_absent() and
+# reports into the same $rc — and its own `source` line below is a live case for what it checks.
+# shellcheck source=scripts/lint/lint-path-references-code.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lint-path-references-code.sh"
 
 if [ "$rc" -ne 0 ]; then
     echo "" >&2
