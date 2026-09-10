@@ -127,7 +127,7 @@ lint-docs-voice: ## Fail if banned marketing words appear in prose docs (house v
 	bash scripts/lint/lint-docs-voice.sh --self-test
 	bash scripts/lint/lint-docs-voice.sh
 
-lint-path-references: ## Fail if a repo path named in a comment, docstring or doc does not resolve (#1105)
+lint-path-references: ## Fail if a repo path named in a comment, docstring, doc or `source` does not resolve (#1105, #2005)
 	bash scripts/lint/lint-path-references.sh --self-test
 	bash scripts/lint/lint-path-references.sh
 
