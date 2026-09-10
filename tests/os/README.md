@@ -17,8 +17,11 @@ sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
 PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
     os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img
-sudo tests/os/run.sh --image os/rauc/build/system.img
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+    tests/os/run.sh --image os/rauc/build/system.img
 ```
+
+`sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases rebuild the image themselves via `_build_image`, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
 
 `PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
 case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every

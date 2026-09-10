@@ -247,7 +247,8 @@ Then the tiered battery, lowest tier first — the same rule as
 [`testing-strategy.md`](testing-strategy.md):
 
 ```bash
-sudo tests/os/run.sh --phase boot --image os/rauc/build/system.img
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+    tests/os/run.sh --phase boot --image os/rauc/build/system.img
 ```
 
 `--phase update` and `--phase fault` build their own v1/v2 images and need no `--image`.

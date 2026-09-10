@@ -171,8 +171,17 @@ _build_image() {
     # never matched, and wiring the guard on with it would have failed every build the harness made.
     local expect
     expect="$(git rev-parse HEAD 2>/dev/null || true)"
+    # PITHEAD_REGISTRY/_CA are forwarded rather than inherited-by-luck: the battery runs under
+    # sudo, whose `env_reset` drops them, so the documented recipe has to be
+    # `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`. Without them build-image.sh refuses (#2043)
+    # — and that refusal used to land ONLY in the log below, so the phase reported the useless
+    # "image build failed" and the reason went unread. Surface it where the operator is looking.
     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$1" \
-        os/build-image.sh >/tmp/os-fault-build.log 2>&1 || return 1
+    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" \
+        os/build-image.sh >/tmp/os-fault-build.log 2>&1 || {
+        tail -12 /tmp/os-fault-build.log >&2
+        return 1
+    }
     os/rauc/mkimage.sh --dev >>/tmp/os-fault-build.log 2>&1 || return 1
     # Every image a phase boots gets the static verification first, in --test mode. The check
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three

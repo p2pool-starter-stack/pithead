@@ -266,7 +266,8 @@ make test-integration ARGS="--host user@box --dir pithead --lifecycle --fault-in
 # then runs ZERO containers (#2043). build-image.sh refuses such a build; see tests/os/README.md.
 PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh
 os/rauc/mkimage.sh --dev
-sudo tests/os/run.sh --image os/rauc/build/system.img
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+    tests/os/run.sh --image os/rauc/build/system.img  # sudo's env_reset drops exported vars
 ```
 
 ## Production-readiness posture
