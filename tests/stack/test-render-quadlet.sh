@@ -69,6 +69,17 @@ assert_eq "#2040: a P2POOL_FLAGS holding spaces renders ONE quoted assignment, n
 # WHOLE — Environment=P2POOL_FLAGS="--mini ..." would leave the trailing tokens loose again.
 assert_contains "#2040: the quotes wrap the whole assignment, key included" \
     "$qflags_line" '"P2POOL_FLAGS='
+# systemd expands % specifiers inside unit files, so a literal % has to be doubled or it is
+# rewritten: %H becomes the hostname. An operator-supplied flag or password is where this lands.
+QPCT="$SANDBOX/quadlet-pct-out"
+sed -E 's|^P2POOL_FLAGS=.*|P2POOL_FLAGS=--x 50%% --host %H|' \
+    "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/pct.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/pct.env" "$QPCT" >/dev/null
+qpct_line=$(sed -n 's/^Environment=//p' "$QPCT/p2pool.container")
+assert_eq "#2040 arming: the fixture really carries a literal % and a %H specifier" \
+    "$(grep -c '^P2POOL_FLAGS=--x 50% --host %H$' "$SANDBOX/pct.env")" "1"
+assert_eq "#2040: literal % is doubled so systemd does not expand %H to the hostname" \
+    "$qpct_line" '"P2POOL_FLAGS=--x 50%% --host %%H"'
 
 # The local-node variant (bench-proven 2026-07-24): profiles on, 11 files, node units included.
 QLOCAL="$SANDBOX/quadlet-local-out"

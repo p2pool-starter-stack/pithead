@@ -12,18 +12,18 @@ render_quadlet_units() {
     mkdir -p "$outdir"
 
     _qenv() { env_get_file "$envf" "$1"; }
-    # systemd.exec reads Environment= as a SPACE-separated list of KEY=VALUE, so a value holding a
-    # space ends its assignment and the rest is dropped as malformed — silently: the unit starts,
-    # the container just runs without it (#2040). Every .env value is emitted through here rather
-    # than by a per-key judgement about which ones "look token-shaped", because that list is the
-    # thing that rots. The quotes wrap the WHOLE assignment (Environment="A=1 2" B=3), and \ and "
-    # are escaped since systemd honours both inside them. $2 is the .env key when it differs from
-    # the variable the container reads (TZ <- DASHBOARD_TZ).
+    # systemd.exec space-splits Environment=, so a value holding a space silently loses its tail
+    # (#2040). Every .env value goes through here, not a per-key "looks token-shaped" list, which
+    # rots. Quotes wrap the WHOLE assignment (Environment="A=1 2" B=3); \ and " are escaped, and
+    # % is DOUBLED because systemd expands specifiers in unit files — a password holding %H would
+    # otherwise become the hostname. `$` is deliberately NOT escaped: ${VAR} expands in ExecStart,
+    # never in an Environment value. $2 is the .env key when it differs (TZ <- DASHBOARD_TZ).
     _qenvq() {
         local v
         v=$(env_get_file "$envf" "${2:-$1}")
         v=${v//\\/\\\\}
         v=${v//\"/\\\"}
+        v=${v//%/%%}
         printf '"%s=%s"' "$1" "$v"
     }
 
