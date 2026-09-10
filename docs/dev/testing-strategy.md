@@ -260,8 +260,12 @@ make test                 # tiers 1 + 2 (+ harness self-test) — every-PR, no d
 make test-fakes           # tier 2 contract test on its own
 make test-mini-stack      # tier 3 — needs docker
 make test-integration ARGS="--host user@box --dir pithead --lifecycle --fault-injection"  # tier 4
-# tier 4, appliance channel (KVM bench):
-os/build-image.sh --ssh && os/rauc/mkimage.sh --dev
+# tier 4, appliance channel (KVM bench). PITHEAD_REGISTRY is NOT optional while VERSION is
+# unreleased: only the wizard image is baked, so every other service is pulled as
+# pithead-<service>:v$(cat VERSION) at first boot, and without it the appliance provisions and
+# then runs ZERO containers (#2043). build-image.sh refuses such a build; see tests/os/README.md.
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh
+os/rauc/mkimage.sh --dev
 sudo tests/os/run.sh --image os/rauc/build/system.img
 ```
 

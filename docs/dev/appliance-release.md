@@ -156,8 +156,17 @@ Everything runs from the repo root on a Linux box with docker, KVM and libvirt. 
 bench is the KVM-capable build box; a laptop cannot run this (`/dev/kvm` is required).
 
 ```bash
-os/build-image.sh --ssh && sudo os/rauc/mkimage.sh --dev
+# PITHEAD_REGISTRY is not optional while VERSION is unreleased — see the note below.
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh &&
+    sudo os/rauc/mkimage.sh --dev
 ```
+
+**A dev image pulls its services; only the wizard image is baked.** At first boot the appliance
+pulls `pithead-<service>:v$(cat VERSION)` for all five first-party services, and while VERSION
+leads the last release those tags exist nowhere public. Build without `PITHEAD_REGISTRY` and the
+appliance provisions, publishes dashboard credentials, and then runs ZERO containers — five
+battery legs report it and each waits up to 25 minutes (#2043). `build-image.sh` refuses such a
+build; publish the five images to a registry the builder and the guest can both reach first.
 
 **A dev image ships the last release's compose file, not the tree's.** Every `image:` in
 `docker-compose.yml` is pinned by `STACK_VERSION`, and the appliance derives that from its baked
