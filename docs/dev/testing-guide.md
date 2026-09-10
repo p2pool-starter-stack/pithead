@@ -18,6 +18,13 @@ generates a list of what exists today (git-ignored — read it locally).
 
 ## Commands
 
+Run these on Linux. macOS is deprecated as a test platform (2026-09-10) and the shell suite refuses
+to start there: the assertions are written against GNU `sed`/`stat`, BSD tools differ without
+failing loudly, and a `grep` that is a ugrep shim silently matches nothing for a pattern holding a
+non-terminal `$`. A control run on an unmodified `develop` failed 43+ assertions on a Mac, so a
+result from there is not evidence either way. `PITHEAD_UNTRUSTED_MACOS_RUN=1` overrides the refusal
+for portability debugging, and is named for what the result is worth.
+
 ```bash
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate

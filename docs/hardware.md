@@ -179,8 +179,9 @@ e.g. to keep the Monero blockchain on a separate SSD. See
 
 ### Operating system & dependencies
 
-- Ubuntu Server 24.04 LTS is the officially supported platform. macOS and other Linux distros may
-  work but aren't officially supported.
+- Ubuntu Server 24.04 LTS is the officially supported platform. Other Linux distros may work but
+  aren't officially supported. macOS is deprecated as of 2026-09-10: the installer refuses it, the
+  test suite refuses to run on it, and the remaining Darwin code paths are untested.
 - The kernel/HugePages tuning is Linux-only. On Linux, making HugePages persistent edits GRUB and
   needs a reboot (you're prompted first, and can skip with `--skip-optimize`).
 - Required software: Docker Engine, Docker Compose v2, `jq`, and `openssl`. On Ubuntu, `./pithead

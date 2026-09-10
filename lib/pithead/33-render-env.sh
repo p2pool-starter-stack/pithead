@@ -301,7 +301,7 @@ render_env() {
     else
         tari_mem_limit=$(jq -r '.tari.mem_limit // "auto"' "$CONFIG_FILE")
         case "$tari_mem_limit" in
-        "" | auto)
+        "" | auto) # the Darwin sysctl arm below is DEPRECATED and untested (#2041)
             huge_mb=0
             if [ "$OS_TYPE" == "Darwin" ]; then
                 ram_mb=$(($(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1048576))
