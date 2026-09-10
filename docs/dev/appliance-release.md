@@ -450,7 +450,7 @@ one version and one GitHub Release.
    be byte-identical to the tree, the
    shipped compose file must be byte-identical to the source its own `COMPOSE_SOURCE` stamp names
    (the tree at a cut; the staged tag's commit in a dev build), and the baked container archive
-   is unpacked to confirm it carries this tree's `wizard.py`.
+   is unpacked to confirm it carries this tree's `wizard/server.py`.
 
    All of that exists because a release build once shipped a dashboard two commits stale — the
    release clone was pulling from an intermediate clone rather than origin, so `git pull`

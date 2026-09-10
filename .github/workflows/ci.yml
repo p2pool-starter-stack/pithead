@@ -147,7 +147,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit on purpose (#1290) — the action's default engine moves whenever the action is
-          # bumped, and scripts/trivyignore-watch.sh's verdicts only mean something when it scans
+          # bumped, and scripts/watch/trivyignore-watch.sh's verdicts only mean something when it scans
           # with the engine the gate runs. `make lint-trivy-parity` holds the two to one value.
           version: v0.74.0
           image-ref: pithead-${{ matrix.service }}:ci
@@ -286,7 +286,7 @@ jobs:
           # NOT `set -e`: an incomplete sweep is a result to publish, not a reason to publish
           # nothing. The script names the images it could not check and exits 1; the rc is
           # carried to the last step so the run still fails loudly.
-          bash scripts/shipped-image-sweep-report.sh shipped-sweep >report.md
+          bash scripts/watch/shipped-image-sweep-report.sh shipped-sweep >report.md
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The shipped-image sweep produced no report at all — see the run log." >report.md; rc=1; }
@@ -300,7 +300,7 @@ jobs:
           # The title is the upsert key and it lives in the script, so there is exactly one
           # spelling of it anywhere. A second spelling here would file a second issue on the very
           # next run and then keep both stale.
-          TITLE="$(bash scripts/shipped-image-sweep-report.sh --title)"
+          TITLE="$(bash scripts/watch/shipped-image-sweep-report.sh --title)"
           body=$(cat report.md)
           # Exact title match over the open list, NOT `--search`: the search index lags issue
           # creation by minutes, so a search-based dedup files a second issue on the next run.
@@ -446,19 +446,19 @@ jobs:
       - name: Run real-image data-reset suite
         # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
         # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
-        run: bash tests/stack/test_data_reset.sh
+        run: bash tests/stack/standalone/test_data_reset.sh
       - name: Run OS-update recovery suite
         # #1050 dead-end states re-arm and report; standalone suite wired here because the shell-tests job runs each
         # standalone file explicitly (Makefile test-stack alone never runs in CI).
-        run: bash tests/stack/test_os_update_recovery.sh
+        run: bash tests/stack/standalone/test_os_update_recovery.sh
       - name: Run first-boot journal suite
         # #1030 journal persistence across interrupts; standalone suite wired here because the shell-tests job runs each
         # standalone file explicitly (Makefile test-stack alone never runs in CI).
-        run: bash tests/stack/test_firstboot_journal.sh
+        run: bash tests/stack/standalone/test_firstboot_journal.sh
       - name: Run appliance hugepages suite
         # #1103 co-location refusal on the reduced tier; standalone suite wired here because the shell-tests job runs each
         # standalone file explicitly (Makefile test-stack alone never runs in CI).
-        run: bash tests/stack/test_appliance_hugepages.sh
+        run: bash tests/stack/standalone/test_appliance_hugepages.sh
       - name: Test-inventory drift check
         # The inventory generator is grep-based; it exits non-zero when any suite it
         # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
@@ -469,9 +469,9 @@ jobs:
         # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
         # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
         # server and runs as a gated/manual release gate (#54), not on every PR.
-        run: |
-          # Globbed, not enumerated: an enumerated list silently omits any self-test added later.
-          for t in tests/integration/selftest*.sh; do bash "$t"; done
+        run: make test-integration-selftest
+      - name: Run repository tooling checks
+        run: make test-tools
 
   compose:
     name: Compose config + security hardening
@@ -510,4 +510,4 @@ jobs:
           echo "$UV_INSTALL_DIR" >> "$GITHUB_PATH"
       - name: Lint docs voice, operator strings, topology classes, file budget, pithead build/trivy parity, then JS/CSS (Biome), YAML, Markdown, proto (buf), TOML (taplo)
         # Single source of truth: the Makefile targets. REPO-LOCAL GATES FIRST (#1746): local checks run before network-backed surface linters.
-        run: make lint-docs-voice lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-js lint-yaml lint-md lint-proto lint-toml
+        run: make lint-docs-voice lint-path-references lint-operator-strings lint-topology lint-file-budget lint-pithead-build lint-trivy-parity lint-js lint-yaml lint-md lint-proto lint-toml

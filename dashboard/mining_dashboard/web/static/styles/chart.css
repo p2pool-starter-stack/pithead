@@ -1,0 +1,114 @@
+/* Chart Controls */
+.chart-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 15px;
+}
+.btn-range {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+  color: var(--text-muted);
+  transition: all 0.2s;
+  /* All range-look controls are <button>s now (#657) — carry the button resets here. */
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.btn-range:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+/* Accent, not --ok: --ok is the app-wide "healthy" signal (status-ok, badge-ok, the sync
+ * gauge) — reusing it for "this range/window is selected" collided with that meaning. Accent
+ * matches .btn-toggle.active, the sibling Simple/Advanced control. */
+.btn-range.active {
+  background-color: var(--accent-emphasis);
+  color: #fff;
+  border-color: var(--accent-emphasis);
+}
+.btn-reset {
+  margin-left: 8px;
+}
+/* "Range:" / "Avg:" prefixes (chart.mjs): full text colour, not text-muted, so the two control
+ * rows read as separate labelled groups instead of blurring into one muted line. */
+.chart-control-label {
+  color: var(--text);
+}
+
+/* Series show/hide toggles (Issue #47): a quiet legend; click a chip to toggle that series.
+ * A hidden series is dimmed + struck through. Swatch colours track the theme palette. */
+.chart-legend {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    opacity 0.15s;
+}
+.legend-item:hover {
+  color: var(--text);
+}
+/* Hidden series: dim only the swatch — a whole-chip fade dropped the still-clickable
+ * label below AA in both themes. The line-through already says "off". */
+.legend-item.off {
+  text-decoration: line-through;
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: none;
+}
+.legend-item.off .legend-dot {
+  opacity: 0.45;
+}
+.dot-p2pool {
+  background: var(--accent);
+}
+.dot-xvb {
+  background: var(--purple);
+}
+.dot-shares {
+  background: var(--bad);
+}
+.dot-events {
+  /* Half loss (warn), half recovery (ok) — the diamond markers carry both colours. */
+  background: linear-gradient(90deg, var(--warn) 50%, var(--ok) 50%);
+}
+.dot-raffle {
+  background: var(--warn);
+}
+.dot-payouts {
+  /* A round gold-green coin — confirmed on-chain payout, distinct from the square/star markers. */
+  background: var(--ok);
+  border-radius: 50%;
+}
+.dot-xvb-donation {
+  /* Dashed purple, matching the XvB donation-% overlay line. */
+  background: repeating-linear-gradient(90deg, var(--purple) 0 3px, transparent 3px 6px);
+}

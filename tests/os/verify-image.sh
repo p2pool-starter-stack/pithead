@@ -269,7 +269,7 @@ fi
 # above, and behaved like the previous build on a bench. The stamp catches a stale TREE; these
 # catch a stale ARTIFACT — the program and the baked container image are compared against the
 # very files this checkout holds. Skipped when run outside the repo.
-if [ -f ./pithead ] && [ -f dashboard/mining_dashboard/wizard.py ]; then
+if [ -f ./pithead ] && [ -d dashboard/mining_dashboard ]; then
     echo "==> the artifact matches the tree it was built from"
     chk "shipped pithead is the tree's pithead" 'cmp -s "$ROOT/opt/pithead/pithead" ./pithead'
     # The compose file is staged from the STACK_VERSION tag when that tag exists (#1215), so the
@@ -283,39 +283,10 @@ if [ -f ./pithead ] && [ -f dashboard/mining_dashboard/wizard.py ]; then
     # The wizard is the part that shipped stale, and it lives inside a container archive rather
     # than on the filesystem — so it needs unpacking to be compared at all. That opacity is
     # precisely why nobody noticed.
+    # shellcheck disable=SC2034  # read inside chk's eval'd comparison
     WIZ_ARCHIVE=$(ls "$ROOT"/opt/pithead/images/*.tar.gz 2>/dev/null | head -1)
-    WIZ_TMP=$(mktemp -d)
-    WIZ_SHIPPED=""
-    # #1935: this check reddened once in a battery, re-passed on the same image, and the log could not
-    # say which step produced no file — so each step names itself, and a mismatch prints cmp's verdict.
-    WIZ_WHY="no *.tar.gz under opt/pithead/images"
-    if [ -n "$WIZ_ARCHIVE" ]; then
-        if tar -xzf "$WIZ_ARCHIVE" -C "$WIZ_TMP" 2>"$WIZ_TMP/untar.err"; then
-            WIZ_WHY="no layer lists mining_dashboard/wizard.py"
-            for layer in "$WIZ_TMP"/blobs/sha256/* "$WIZ_TMP"/*/layer.tar; do
-                [ -f "$layer" ] || continue
-                # sed, not grep -m1: an early exit would SIGPIPE tar and, under pipefail, skip the layer.
-                member=$(tar -tf "$layer" 2>/dev/null | grep 'mining_dashboard/wizard\.py$' | sed -n '1p')
-                [ -n "$member" ] || continue
-                if tar -xOf "$layer" "$member" >"$WIZ_TMP/shipped-wizard.py" 2>"$WIZ_TMP/extract.err"; then
-                    # shellcheck disable=SC2034  # read inside chk's eval'd condition below
-                    WIZ_SHIPPED="$WIZ_TMP/shipped-wizard.py"
-                    break
-                fi
-                WIZ_WHY="tar -xOf $member from $(basename "$layer" | cut -c1-12) failed: $(head -c 120 "$WIZ_TMP/extract.err" | tr -c '[:print:]' '?')"
-            done
-        else
-            WIZ_WHY="tar -xzf $(basename "$WIZ_ARCHIVE") failed: $(head -c 120 "$WIZ_TMP/untar.err" | tr -c '[:print:]' '?')"
-        fi
-    fi
-    chk "the baked wizard image contains the tree's wizard.py" \
-        '[ -n "$WIZ_SHIPPED" ] && cmp -s "$WIZ_SHIPPED" dashboard/mining_dashboard/wizard.py'
-    if [ -z "$WIZ_SHIPPED" ]; then
-        echo "     · wizard.py was not extracted: $WIZ_WHY"
-    elif ! cmp -s "$WIZ_SHIPPED" dashboard/mining_dashboard/wizard.py; then
-        echo "     · shipped wizard.py differs from the tree's: $(cmp "$WIZ_SHIPPED" dashboard/mining_dashboard/wizard.py 2>&1 | head -1)"
-    fi
-    rm -rf "$WIZ_TMP"
+    chk "the baked wizard image contains the tree's wizard server" \
+        'wizard_server_matches "$WIZ_ARCHIVE" dashboard/mining_dashboard/wizard/server.py'
 else
     skip "the artifact matches the tree it was built from" "not run from the repo root"
 fi

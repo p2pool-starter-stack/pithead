@@ -1,0 +1,144 @@
+/* Utilities */
+.flex {
+  display: flex;
+}
+.items-center {
+  align-items: center;
+}
+/* #817: the Worker Inspect header always used this class, but it was never defined — the flex
+ * row packed left and the ✕ close button sat beside the title instead of the top-right corner. */
+.justify-between {
+  justify-content: space-between;
+}
+.text-center {
+  text-align: center;
+}
+.text-right {
+  text-align: right;
+}
+.mb-1 {
+  margin-bottom: 0.25rem;
+}
+.mt-xs {
+  margin-top: 2px;
+}
+.mt-1 {
+  margin-top: 5px;
+}
+.mt-2 {
+  margin-top: 10px;
+}
+.mr-1 {
+  margin-right: 5px;
+}
+.mr-2 {
+  margin-right: 0.5rem;
+}
+.ml-2 {
+  margin-left: 10px;
+}
+.mx-1 {
+  margin-left: 5px;
+  margin-right: 5px;
+}
+
+/* Pool/mode palette. The server picks one of these classes (see series_views._mode_palette)
+ * instead of emitting an inline style="color:#..." — keeps the CSP free of
+ * style-src 'unsafe-inline' and makes #43 (theming) a stylesheet change. The hexes match
+ * the --ok/--purple/--accent/--text-muted variables they replace. */
+.c-ok {
+  color: var(--ok-fg);
+}
+.c-purple {
+  color: var(--purple-fg);
+}
+.c-accent {
+  color: var(--accent);
+}
+.c-muted {
+  color: var(--text-muted);
+}
+.bg-ok {
+  background-color: var(--ok);
+}
+.bg-purple {
+  background-color: var(--purple);
+}
+.bg-accent {
+  background-color: var(--accent);
+}
+
+/* Misc component sizing previously carried as inline styles. */
+.disk-bar {
+  width: 150px;
+}
+.chart-wrap {
+  position: relative;
+  flex-grow: 1;
+  min-height: 300px;
+  width: 100%;
+  overflow: hidden;
+}
+.check-inline {
+  font-size: 1.2em;
+}
+.check-big {
+  font-size: 3.5em;
+  line-height: 1;
+}
+
+/* --- App states --- */
+/* The Preact app renders SyncView or DashboardView itself, so neither needs a default
+ * display rule. These cover the pre-data shell and a lost connection. */
+.loading {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 60px 20px;
+  font-size: 1.1rem;
+}
+/* One-time Simple-view pointer to the Advanced-only calculators (#425). */
+.advanced-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 15px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.advanced-hint .btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.advanced-hint-dismiss {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.advanced-hint-dismiss:hover {
+  color: var(--text);
+}
+
+.disconnected-banner {
+  background: var(--bad);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  text-align: center;
+  font-size: 0.85rem;
+}

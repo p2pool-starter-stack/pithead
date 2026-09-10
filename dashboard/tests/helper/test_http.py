@@ -248,11 +248,11 @@ class TestWiringDriftGuard:
         """Every external fetch module goes via bounded_get — any direct requests.<verb>( is drift."""
         pkg = Path(__file__).resolve().parents[2] / "mining_dashboard"
         external = [
-            pkg / "service" / "update_checker.py",
-            pkg / "service" / "price_feed.py",
+            pkg / "service" / "health" / "update_checker.py",
+            pkg / "service" / "xvb" / "price_feed.py",
             pkg / "client" / "xvb_client.py",
-            pkg / "service" / "tor_heal.py",
-            pkg / "service" / "healthchecks.py",
+            pkg / "service" / "health" / "tor_heal.py",
+            pkg / "service" / "notify" / "healthchecks.py",
         ]
         direct_call = re.compile(r"requests\.(get|post|put|delete|head|request)\(")
         for mod in external:
@@ -268,7 +268,7 @@ class TestWiringDriftGuard:
         answerCallbackQuery) keep their own contract — tiny echo bodies of caller-authored
         payloads — so only GETs are drift here."""
         pkg = Path(__file__).resolve().parents[2] / "mining_dashboard"
-        src = (pkg / "service" / "telegram_commands.py").read_text()
+        src = (pkg / "service" / "notify" / "telegram_commands.py").read_text()
         hit = re.search(r"requests\.(get|head|request)\(", src)
         assert hit is None, f"telegram_commands.py: unbounded {hit.group() if hit else ''}"
         assert "bounded_get(" in src

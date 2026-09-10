@@ -5,7 +5,7 @@
 # This file is *sourced*, never executed. It defines pure helpers (config rendering,
 # expectation derivation, redaction) plus thin I/O wrappers (run a command on the target,
 # poll for readiness) that the runner and the self-test build on. Keeping the pure logic
-# here lets tests/integration/selftest.sh exercise it without a real server.
+# here lets tests/integration/selftest/selftest.sh exercise it without a real server.
 #
 # Target model: every command runs *on the box* — either over SSH or, with --local, directly.
 # Reads (dashboard JSON, pithead status) therefore behave identically in both modes, and we
@@ -46,12 +46,12 @@ redact() {
 # --- Assertions -------------------------------------------------------------
 # Counters are global so the runner can total them across scenarios. The skip buckets and the
 # three helpers that move them live next door; sourced here so anything that has lib.sh has them.
-# Fail CLOSED: sourced as a bare name this resolves to "lib.sh/skip-accounting.sh", and a
-# harness that merely warns would then miscount every skip in silence — the exact defect below.
-# shellcheck source=tests/integration/skip-accounting.sh
-source "${BASH_SOURCE[0]%/*}/skip-accounting.sh" ||
+# Fail CLOSED: resolve the helper from this file's directory; a harness that merely warns would
+# miscount every skip in silence.
+# shellcheck source=tests/integration/lib/skip-accounting.sh
+source "${BASH_SOURCE[0]%/*}/lib/skip-accounting.sh" ||
     {
-        echo "lib.sh: skip-accounting.sh must sit beside it (source lib.sh by a path, not a bare name)" >&2
+        echo "lib.sh: lib/skip-accounting.sh is required (source lib.sh by a path, not a bare name)" >&2
         exit 1
     }
 IT_PASS=0

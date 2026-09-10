@@ -1,23 +1,14 @@
+# ruff: noqa: F401
+
 import asyncio
 import logging
-import os
 import time
-import uuid
 
 from aiohttp import ClientSession
 
-from mining_dashboard.client.docker.docker_control import DockerControl
-from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClient
 from mining_dashboard.client.tari.tari_client import TariClient
-from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient
 from mining_dashboard.client.xmrig_client import (
     XMRigWorkerClient,
-    parse_worker_control_status,
-)
-from mining_dashboard.client.xvb_client import (
-    REG_INVALID,
-    REG_NOT_ELIGIBLE,
-    REG_OK,
 )
 from mining_dashboard.collector.containers import get_container_health
 from mining_dashboard.collector.logs import get_monero_sync_status
@@ -37,30 +28,19 @@ from mining_dashboard.collector.system import (
 )
 from mining_dashboard.config import config
 from mining_dashboard.config.config import (
-    CHECK_FOR_UPDATES,
-    CLEARNET_STATE_DIR,
-    DASHBOARD_ENERGY,
     DASHBOARD_FAIL_CLOSED,
     ENABLE_XVB,
-    GITHUB_RELEASES_API,
     GITHUB_RIGFORGE_RELEASES_API,
-    HASHRATE_DROP_MINUTES,
-    HASHRATE_DROP_THRESHOLD_PCT,
     HOST_IP,
     MONERO_CLEARNET_SYNC,
     MONERO_WALLET_ADDRESS,
-    NODE_STALE_AFTER_SEC,
     PAYOUT_CONFIRM_ENABLED,
     REJECT_WORKERS_CONTAINER,
     SYNC_GATE_CONTAINERS,
     TARI_CLEARNET_SYNC,
     TARI_PAYOUT_CONFIRM_ENABLED,
     TARI_REQUIRED,
-    TOR_SOCKS_PROXY,
-    UPDATE_CHECK_INTERVAL,
     UPDATE_INTERVAL,
-    WORKER_FALLOFF_SEC,
-    XVB_REGISTER_INTERVAL_S,
     low_ram_floor_gb,
     monero_is_local,
     tari_is_local,
@@ -71,71 +51,40 @@ from mining_dashboard.helper.utils import (
     pplns_block_time,
     shares_in_pplns_window,
 )
-from mining_dashboard.service import audit_service, payout_sync, worker_change_audit
-from mining_dashboard.service.alert_service import AlertService
-from mining_dashboard.service.clearnet_sync import ClearnetSyncSupervisor
-from mining_dashboard.service.control_service import (
-    env_key_config_paths,
+from mining_dashboard.service import audit_service, payout_sync
+from mining_dashboard.service.data_audit import (
+    _RIG_EDIT_CAP_PER_HOUR,
+    _RIG_EDIT_WINDOW_SEC,
+    DataAuditMixin,
 )
+from mining_dashboard.service.data_gates import DataGateMixin
 from mining_dashboard.service.data_helpers import (
     _SHARE_STAT_KEYS,
-    _XVB_WIN_FRESH_S,
-    WorkerLifecycle,
     _aggregate_hashrate,
     _aggregate_window_hashrates,
-    _diff_config_keys,
-    _iso_now,
     _merge_direct_stats,
     _merge_proxy_summary,
     _normalize_proxy_workers,
-    _parse_audit_ts,
-    _read_host_config,
     _shares_to_record,
     _summary_deltas,
-    _xvb_winners_gate_sec,
 )
-from mining_dashboard.service.degradation import DegradationMonitor
-from mining_dashboard.service.healthchecks import HealthchecksClient
+from mining_dashboard.service.data_setup import DataSetupMixin
+from mining_dashboard.service.data_xvb_sync import (
+    _XVB_REGISTER_FAIL_ALERT,
+    DataXvbSyncMixin,
+)
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
-from mining_dashboard.service.node_health import NodeHealthMonitor
-from mining_dashboard.service.price_feed import CoinGeckoClient, PriceFeed
-from mining_dashboard.service.telegram_commands import format_daily_summary
-from mining_dashboard.service.tor_heal import TorEgressHealer
-from mining_dashboard.service.update_checker import GitHubReleaseClient, UpdateChecker
+from mining_dashboard.service.notify.telegram_commands import format_daily_summary
 
 logger = logging.getLogger("DataService")
 
 
-# Consecutive XvB-registration failures (while never yet registered) before we raise the dashboard
-# "registration failing" warning (#263). A couple of transient blips during the normal first-share
-# window shouldn't alarm; a configured-but-refusing endpoint should. At one attempt per 10th poll
-# (~5 min) this is ~15 min of sustained failure.
-_XVB_REGISTER_FAIL_ALERT = 3
-
-# v1.7 telemetry backbone (#196 Wave-0) capture cadences. All wall-clock gated (`time.time() -
-# last >= N`), NOT `iteration_count % k` — the latter silently changes cadence if UPDATE_INTERVAL
-# is ever reconfigured.
-_XVB_HISTORY_CAPTURE_SEC = 300  # ~5 min
-_HOURLY_CAPTURE_SEC = 3600  # disk_growth + network_history
-_WORKER_HISTORY_CAPTURE_SEC = 300  # ~5 min
+# Wall-clock cadences stay with the core poll loop that applies them.
+_HOURLY_CAPTURE_SEC = 3600
+_WORKER_HISTORY_CAPTURE_SEC = 300
 
 
-# Per-worker flood cap on NEW out-of-band audit rows (#724). The enriched worker feed is
-# unauthenticated LAN input, so a rogue device presenting as a worker can report a fresh random
-# change_id every poll — each a distinct, permanent audit_events row (#530's deterministic id only
-# collapses REPEATS of one change_id, never distinct ones). At most _RIG_EDIT_CAP_PER_HOUR genuine
-# rows per worker per rolling hour; beyond that, rows are dropped and a single rate-limited marker
-# is recorded + logged. A real fleet edits a rig a handful of times an hour at most, so a
-# legitimate cadence never trips it — only a flood does.
-# ONE budget covers BOTH detections on this feed: rig-edit (#530) and revision-drift (#1551).
-# revision has the identical property — the store's dedup collapses an UNCHANGED revision and does
-# nothing about one that changes every poll — so a second window would just double what one
-# untrusted source can make permanent. See service/worker_change_audit.py.
-_RIG_EDIT_CAP_PER_HOUR = 12
-_RIG_EDIT_WINDOW_SEC = 3600
-
-
-class DataService:
+class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixin):
     """
     Core service responsible for aggregating mining statistics from various sources
     (Local collectors, XMRig Proxy, Tari Node, etc.) and maintaining the application state.
@@ -143,515 +92,7 @@ class DataService:
 
     _last_monero_sync = None  # last real {percent,current,target} — held across RPC blips
 
-    def __init__(self, state_manager, proxy_client, xvb_client):
-        self.state_manager = state_manager
-        self.proxy_client = proxy_client
-        self.xvb_client = xvb_client
-        # Per-worker connection tracking for true uptime (#169) + stale-row fall-off (#182).
-        self._lifecycle = WorkerLifecycle(WORKER_FALLOFF_SEC)
-        # New-release check (#224): off unless dashboard.check_for_updates is set. Routed over the
-        # bridge Tor SOCKS (reusing TOR_SOCKS_PROXY) so it can't reveal the host IP to GitHub.
-        self.update_checker = UpdateChecker(
-            GitHubReleaseClient(GITHUB_RELEASES_API, TOR_SOCKS_PROXY),
-            (os.environ.get("PITHEAD_VERSION") or "").strip(),
-            enabled=CHECK_FOR_UPDATES,
-            interval=UPDATE_CHECK_INTERVAL,
-        )
-        # RigForge latest-release check (#596): the same flag, throttle and Tor route, pointed at
-        # the RigForge repo. ONE fleet-wide fetch — the per-worker "rig is behind" verdict is
-        # derived at the render seam from each rig's live reported version, never stored (#664).
-        self.rigforge_update_checker = UpdateChecker(
-            GitHubReleaseClient(GITHUB_RIGFORGE_RELEASES_API, TOR_SOCKS_PROXY),
-            None,
-            enabled=CHECK_FOR_UPDATES,
-            interval=UPDATE_CHECK_INTERVAL,
-        )
-        # Live XMR/XTM price feed (#520's auto half): off unless dashboard.energy.price_feed is
-        # set. Same Tor SOCKS route as the update check — CoinGecko only ever sees a Tor exit.
-        self.price_feed = PriceFeed(
-            CoinGeckoClient(DASHBOARD_ENERGY["currency"], TOR_SOCKS_PROXY),
-            enabled=DASHBOARD_ENERGY["price_feed"],
-        )
-        # Share-health delta baseline (#116): the previous poll's cumulative proxy /summary
-        # totals; None until the first poll seeds it (and again after a counter reset).
-        self._last_share_totals = None
-        # v1.7 telemetry backbone (#196 Wave-0) capture-cadence state — see the _*_CAPTURE_SEC
-        # constants above. `_last_blocks_found` baselines the cumulative pool blocks_found
-        # counter (reused via `_shares_to_record`, same re-baseline-on-restart contract as
-        # shares); the `_last_*` wall-clock stamps start at 0.0 so each series captures on its
-        # first eligible poll.
-        self._last_blocks_found = None
-        self._last_xvb_history_write = 0.0
-        self._last_hourly_capture = 0.0
-        self._last_worker_capture = 0.0
-        # Out-of-band audit watcher (#530): the last config.json snapshot this poll loop read
-        # (None until the first poll baselines it — never diff against nothing, same "re-baseline,
-        # never backfill" contract as every other watcher here) and the wall-clock of that read, so
-        # a later change can be checked against control.log entries that landed AFTER it.
-        self._last_host_config = None
-        self._last_host_check = 0.0
-        # (worker, change_id) pairs already recorded as a rig-edit this run, so a rig that keeps
-        # reporting the same terminal change_id in its /status mirror every poll is flagged ONCE,
-        # not on every ~30s cycle. In-memory only: the deterministic audit-row id below is what
-        # actually bounds the table across restarts (INSERT OR IGNORE); this just skips the
-        # redundant DB work in the steady state. Bounded by the count of distinct real rig edits.
-        self._flagged_rig_changes = set()
-        # Per-worker fixed-window flood cap on NEW rig-edit rows (#724): {worker: (window_start,
-        # count)}. Distinct change_ids clear #530's deterministic-id dedup, so a rogue rig can
-        # spam a permanent audit row every poll; this bounds them to _RIG_EDIT_CAP_PER_HOUR per
-        # worker per hour. In-memory like _flagged_rig_changes — a restart resets the window, which
-        # at worst grants one extra window's budget, still bounded per wall-hour.
-        # A device rotating the worker NAME each poll used to sidestep this per-worker cap; the
-        # map is bounded to a fixed number of live names since #1695 (worker_change_audit.
-        # admit_worker). The broader unauth-feed vector this was once deferred to is still #235.
-        self._rig_edit_window = {}
-        # Wall-clock of the first name that ceiling refused in the current saturation episode, None
-        # while a slot is free. Gives the refusal ONE marker per episode the way first_over does per
-        # worker, and is cleared the moment a new name is admitted again.
-        self._rig_edit_names_over = None
-        # XvB raffle-winners mirror: wall-clock of the last successful winners-file read. Starts
-        # at 0.0 so the first eligible poll reads it; NOT stamped on a failed fetch, so a failure
-        # retries on the next 10th poll instead of waiting out the 30-min gate.
-        self._last_xvb_winners_sync = 0.0
-        # XvB raffle auto-registration (#263): wall-clock of the last successful register() call,
-        # None until the wallet is first entered. Drives the daily re-register cadence below.
-        self._xvb_last_registered = None
-        # Consecutive transient register() failures while never-yet-registered (drives the "failing"
-        # badge), and a latch that stops retrying once the endpoint calls the wallet invalid — a
-        # permanent error that won't fix itself on retry (#263).
-        self._xvb_register_failures = 0
-        self._xvb_invalid_wallet = False
-
-        self.latest_data = {
-            "workers": [],
-            "proxy_summary": {},
-            "total_live_h15": 0,
-            "total_live_h10": 0,
-            "pool": {"p2p": {}, "pool": {}},
-            "network": {},
-            "system": {},
-            "tari": {},
-            "stratum": {},
-            "monero_sync": {},
-            "tari_sync": {},
-            "global_sync": False,
-            "tari_syncing_passive": False,
-            "workers_rejected": False,
-            "miner_released": False,
-            "miner_held": False,
-            "fail_closed_held": False,
-            "timestamp": 0,
-        }
-
-        # Node-down detection + optional worker rejection (Issue #31).
-        self.docker_control = DockerControl()
-        self.monero_health = NodeHealthMonitor()
-        self.tari_health = NodeHealthMonitor()
-        # Peer-loss staleness (#972): the same debounce machine, fed monerod's own
-        # `synchronized` flag instead of reachability. "Ever synchronized" plays the ever-up
-        # guard, so a node mid-initial-sync (synchronized false for days) never alarms; only a
-        # node that WAS in sync and stayed out for NODE_STALE_AFTER_SEC trips `down` (= stale).
-        self.monero_sync_stale = NodeHealthMonitor(down_after=NODE_STALE_AFTER_SEC)
-
-        # Healthchecks.io dead-man's switch (Issue #79). Disabled by default — when off this is
-        # a no-op. When on, each cycle pings a unique URL; the alert fires externally on the
-        # *absence* of a ping, so it survives a host death the in-stack notifier can't report.
-        self.healthchecks = HealthchecksClient.from_config()
-
-        # Auto-transition a clearnet initial-sync node back to Tor once it's synced (#234). Reuses
-        # the same docker control proxy as the #31 failover (start/stop only). on_transition surfaces
-        # the event into the snapshot so the UI/status can reflect "switched back to Tor".
-        self.clearnet_supervisor = ClearnetSyncSupervisor(
-            CLEARNET_STATE_DIR,
-            self.docker_control,
-            on_transition=self._on_clearnet_transition,
-        )
-        # Per-chain "currently exposed on clearnet" flags, surfaced in the snapshot for the UI/banner.
-        self.clearnet_sync_state = {"monero": False, "tari": False, "active": False}
-
-        # Notifications-only Telegram alerter (Issue #121). Consumes the loop's existing edges
-        # (node down/recovered, sync gate open) plus a debounced per-worker presence tracker.
-        # Disabled unless telegram.enabled + bot_token + chat_id are configured, so this is a
-        # cheap no-op for the default stack. The payout-wallet tripwire baseline (#375) is backed
-        # by the SQLite kv_store, not AlertService memory — `apply` recreates this container, and
-        # an in-memory baseline would silently re-seed to a tampered wallet.
-        self.alert_service = AlertService(
-            kv_get=self.state_manager.get_kv, kv_set=self.state_manager.set_kv
-        )
-        # On-chain payout confirmation (#381): a view-only wallet-rpc client, polled on the slow
-        # cadence below. Only constructed when the feature is on (view key set on a local node);
-        # off, this stays None and no payout polling ever runs.
-        self.wallet_client = MoneroWalletClient() if PAYOUT_CONFIRM_ENABLED else None
-        # Tari on-chain payout confirmation (#462): a view-only console-wallet gRPC client, polled on
-        # the same slow cadence. Only constructed when the Tari feature is on (tari view key set on a
-        # local Tari node); off, this stays None and no Tari payout polling ever runs.
-        self.tari_wallet_client = TariWalletClient() if TARI_PAYOUT_CONFIRM_ENABLED else None
-        # Tor guard self-heal (#424), opt-in via tor.auto_heal — a no-op (no probes, no
-        # restarts) unless enabled. Reuses the #31 docker-control proxy (start/stop only)
-        # to restart tor when clearnet egress is stuck on a failing guard; the recovery
-        # note rides the Telegram notifier, which works again exactly when the heal worked.
-        self.tor_healer = TorEgressHealer(
-            self.docker_control, notify=self.alert_service.tor_heal_alert
-        )
-        # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
-        # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
-        # even with Telegram off; a loss also drives a hashrate_loss alert.
-        self.degradation = DegradationMonitor(
-            threshold_frac=HASHRATE_DROP_THRESHOLD_PCT / 100,
-            sustained_sec=HASHRATE_DROP_MINUTES * 60,
-        )
-        # True while we've stopped the proxy to reject workers. Persisted in the snapshot so
-        # a dashboard restart mid-outage still readmits workers once the node recovers.
-        self.workers_rejected = False
-
-        # Hold the miner (p2pool + xmrig-proxy) until the required chain(s) finish syncing
-        # (Issue #35). One-way latch: `miner_released` flips True the first time the gate is
-        # satisfied, and we never re-hold after that (a later node blip is #31's job, which
-        # stops only xmrig-proxy so p2pool keeps its sidechain position). Persisted so a
-        # restart mid-sync keeps holding, and a restart after release doesn't re-stop a
-        # running, mining stack. `miner_held` is transient UI/log state, not persisted.
-        self.miner_released = False
-        self.miner_held = False
-
-        # Opt-in fail-closed miner hold on an UNRECOVERABLE health failure (#490), dashboard.
-        # fail_closed, default false — see `_apply_fail_closed_gate`. Transient like `miner_held`,
-        # not persisted: a restart re-derives it from the current health signals.
-        self.fail_closed_held = False
-
-        # Restore persistent state from DB to prevent empty dashboard on service restart
-        loaded_snapshot = self.state_manager.load_snapshot()
-        if loaded_snapshot and isinstance(loaded_snapshot, dict):
-            # Derived state must not outlive its inputs across a restart (#664): `update` is a
-            # pure function of (running version, latest tag), and the running version may have
-            # JUST changed — the very upgrade the restored badge advertised. The checker
-            # recomputes it on its own cadence; never resurrect the pre-upgrade banner.
-            loaded_snapshot.pop("update", None)
-            # Same rule for the fleet-wide RigForge release (#596): with the flag now off, a
-            # restored `rigforge_release` would keep serving stale per-worker badges until the
-            # first poll cycle. The checker re-fetches on its cadence; drop it on restore.
-            loaded_snapshot.pop("rigforge_release", None)
-            for worker in loaded_snapshot.get("workers", []):
-                rigforge = worker.get("rigforge") or {}
-                if rigforge and "generated_at" not in rigforge:
-                    rigforge["stale"] = True
-            self.latest_data.update(loaded_snapshot)
-            self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
-            self.miner_released = bool(self.latest_data.get("miner_released", False))
-
-    async def _apply_worker_rejection(self, monero_down):
-        """
-        Reject workers (stop the proxy) when monerod is DOWN so miners fail over to their
-        backup pools; readmit them (start the proxy) once monerod is confirmed healthy again.
-
-        monerod is required to mine, so a monerod outage always rejects. Tari never rejects
-        workers (Issue #897): it's merge-mining gravy, and p2pool keeps mining Monero through
-        a Tari-only outage, so stopping the proxy over Tari alone traded partial revenue for
-        none. `TARI_REQUIRED` (dashboard.tari_required) still gates the initial-sync hold and
-        the full-screen sync view (see `_apply_sync_gate`); a Tari outage still surfaces
-        through the Tari panel and alerts. Only acts on transitions (tracked by
-        `workers_rejected`), and Docker treats a repeat stop/start as already-done (HTTP 304),
-        so it's safe every cycle.
-        """
-        if monero_down and not self.workers_rejected:
-            logger.warning(
-                f"Required node unreachable — stopping {REJECT_WORKERS_CONTAINER} so workers "
-                f"fail over to their backup pools."
-            )
-            if await self.docker_control.stop(REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = True
-            return
-
-        # Readmit once monerod is confirmed healthy (not merely 'not down'), so a dashboard
-        # restart mid-outage doesn't bring workers back to a stack that can't mine. Tari can no
-        # longer be the reason workers were rejected, so its health plays no part in readmission.
-        recovered = self.monero_health.healthy
-        if self.workers_rejected and recovered:
-            logger.info(
-                f"Required nodes recovered — starting {REJECT_WORKERS_CONTAINER} to readmit workers."
-            )
-            if await self.docker_control.start(REJECT_WORKERS_CONTAINER):
-                self.workers_rejected = False
-
-    async def _stop_gate_containers(self, quiet):
-        """Stop every ``SYNC_GATE_CONTAINERS`` container; shared by the #35 sync gate and the
-        #490 fail-closed gate, the two holds that stop the same container set."""
-        for container in SYNC_GATE_CONTAINERS:
-            await self.docker_control.stop(container, quiet=quiet)
-
-    async def _start_gate_containers(self):
-        """Start every ``SYNC_GATE_CONTAINERS`` container; True only if every start succeeded."""
-        ok = True
-        for container in SYNC_GATE_CONTAINERS:
-            ok = (await self.docker_control.start(container)) and ok
-        return ok
-
-    async def _apply_sync_gate(self, gate_satisfied):
-        """
-        Hold p2pool + xmrig-proxy stopped until the required chain(s) have fully synced once,
-        then start them (Issue #35). Keeps p2pool from flooding Tari's logs with merge-mining
-        junk during the long initial sync, when it can't usefully mine anyway.
-
-        `gate_satisfied` is True once monerod is synced AND Tari is synced-or-non-blocking — so
-        a non-blocking Tari (dashboard.tari_required:false) releases the miner as soon as
-        monerod is ready and lets Tari finish in the background.
-
-        One-way latch: once released we never re-hold, so this can't fight #31 (a transient
-        node-down later stops only xmrig-proxy and keeps p2pool on the sidechain — that's #31's
-        job, gated behind `miner_released` by the caller). While holding we re-assert the stop
-        every cycle (quietly), so a `docker compose up` mid-sync — which would restart the held
-        containers — is undone within a cycle.
-
-        `gate_satisfied` must be derived from the *raw* per-node sync signals (RPC/gRPC), not
-        the network-height UI override: that override is fed by p2pool's own stats file, so
-        while p2pool is held it would read 0 and falsely report Monero as syncing forever.
-        """
-        if self.miner_released:
-            return
-
-        if gate_satisfied:
-            if await self._start_gate_containers():
-                self.miner_released = True
-                self.miner_held = False
-                logger.info(
-                    f"Required chain(s) synced — starting {', '.join(SYNC_GATE_CONTAINERS)}; mining can begin."
-                )
-            # On a partial-start failure leave the latch closed so the next cycle retries.
-            return
-
-        # Still syncing: keep the miner held. Log the human-facing notice only on the first
-        # cycle of a hold; the per-cycle re-assert stops are quiet to avoid flooding the log.
-        await self._stop_gate_containers(quiet=self.miner_held)
-        if not self.miner_held:
-            self.miner_held = True
-            logger.info(
-                f"Required chain(s) still syncing — holding {', '.join(SYNC_GATE_CONTAINERS)} "
-                f"until synced."
-            )
-
-    async def _apply_fail_closed_gate(self, unrecoverable):
-        """
-        Opt-in (`dashboard.fail_closed`, default False) miner hold on an UNRECOVERABLE health
-        failure (#490) — reuses the #35 sync gate's own mechanism (stop/start
-        ``SYNC_GATE_CONTAINERS`` through ``docker_control``) rather than a new hold path.
-
-        "Unrecoverable" is scoped narrowly by the caller to genuine, non-transient failures: a DB
-        whose auto-heal rebuild itself failed (``StateManager.is_db_unrecoverable``), or the
-        dashboard container itself crash-looping / stuck unhealthy past the #337 debounce
-        (``AlertService.containers.is_confirmed_bad("dashboard")`` — a debounce-CONFIRMED verdict,
-        never a first-sighting seed). A transient write blip, a slow query, a single failed
-        external fetch, or a container merely reported unhealthy on one poll is never
-        "unrecoverable" — those already alert (#131/#337) and must never gate; a false positive
-        here idles the fleet and costs revenue.
-
-        Unlike the sync gate's one-way latch, this re-checks every cycle and releases once
-        ``unrecoverable`` clears — the failures it watches (disk full, a crash-looping container)
-        are the kind an operator fixes without a full stack restart, and the miner should resume
-        on its own once they do. Only engages once the sync gate has actually released the miner;
-        holding before that is already #35's job.
-
-        Default False is alert-only: `dashboard.fail_closed` off means these same signals keep
-        alerting (unchanged) but this method is a no-op, so a cosmetic dashboard fault never idles
-        the fleet — the mining datapath (xmrig-proxy -> p2pool -> monerod) is independent of the
-        dashboard by design.
-        """
-        if not DASHBOARD_FAIL_CLOSED or not self.miner_released:
-            return
-
-        if unrecoverable:
-            await self._stop_gate_containers(quiet=self.fail_closed_held)
-            if not self.fail_closed_held:
-                self.fail_closed_held = True
-                logger.error(
-                    f"Unrecoverable health failure with dashboard.fail_closed enabled — holding "
-                    f"{', '.join(SYNC_GATE_CONTAINERS)} until it clears."
-                )
-            return
-
-        if self.fail_closed_held and await self._start_gate_containers():
-            self.fail_closed_held = False
-            logger.info(
-                f"Unrecoverable health failure cleared — starting "
-                f"{', '.join(SYNC_GATE_CONTAINERS)}; mining can resume."
-            )
-        # On a partial-start failure stay held so the next cycle retries.
-
-    async def _sync_xvb_stats(self):
-        """
-        Fetch XvB's reported averages (avg_1h/avg_24h/fail_count) over Tor and persist them.
-
-        A failed fetch (Tor timeout, 5xx) returns None — we write NOTHING in that case, leaving the
-        last-good values AND ``last_update`` frozen. That frozen ``last_update`` is exactly what the
-        controller and dashboard read to detect a stale feed and stop steering off a dead number
-        (#311). So "no write on failure" is a correctness precondition, not just an optimisation —
-        if this ever started stamping on failure, the staleness guard would silently never trigger.
-
-        The caller already gated on ENABLE_XVB + the 10th-iteration throttle.
-        """
-        real_xvb_stats = await asyncio.to_thread(self.xvb_client.get_stats)
-        if not real_xvb_stats:
-            return  # fetch failed — keep the last reading + last_update frozen so #311 can detect it
-        await asyncio.to_thread(self.state_manager.update_xvb_stats, **real_xvb_stats)
-        logger.info(f"External Sync: XvB Stats Updated (1h={real_xvb_stats['avg_1h']:.0f} H/s)")
-
-        # v1.7 telemetry backbone (#196 Wave-0): persist the XvB scalars as a time series, wall-
-        # clock gated to ~5 min so a change to UPDATE_INTERVAL (which also throttles how often
-        # this method is even called) can't silently change the capture cadence.
-        now = time.time()
-        if now - self._last_xvb_history_write >= _XVB_HISTORY_CAPTURE_SEC:
-            xvb = await asyncio.to_thread(self.state_manager.get_xvb_stats)
-            await asyncio.to_thread(
-                self.state_manager.add_xvb_history,
-                now,
-                avg_1h=xvb.get("avg_1h", 0.0),
-                avg_24h=xvb.get("avg_24h", 0.0),
-                fail_count=xvb.get("fail_count", 0),
-                donation_fraction=xvb.get("donation_fraction", 0.0),
-                mode=xvb.get("current_mode", ""),
-            )
-            self._last_xvb_history_write = now
-
-    async def _sync_xvb_reward_estimates(self):
-        """
-        Fetch XvB's published per-tier expected rewards over Tor and cache them (#118).
-
-        Same "no write on failure" contract as ``_sync_xvb_stats``: a failed/unparseable fetch
-        returns None, we write NOTHING, and the cached ``last_update`` stays frozen so the dashboard
-        detects a stale feed (``xvb_stats_are_stale``) and shows "estimate unavailable" rather than a
-        stale-implied-fresh number. Runs off the main data loop (to_thread), on the same 10th-poll
-        throttle as the stats sync, so a slow xmrvsbeast.com never blocks live metrics.
-        """
-        estimates = await asyncio.to_thread(self.xvb_client.get_reward_estimates)
-        if not estimates:
-            return  # fetch failed / unparseable — keep the last-good estimates + last_update frozen
-        await asyncio.to_thread(self.state_manager.set_xvb_reward_estimates, estimates)
-        logger.info(f"External Sync: XvB Reward Estimates Updated ({len(estimates)} tiers)")
-
-    async def _sync_xvb_winners(self):
-        """
-        Mirror XvB's public raffle-winners file into the ``raffle_wins`` table.
-
-        This is the only place raffle WINS are visible — the stats endpoint reports only
-        fail_count — so the dashboard reads XvB's published winners log, keeps our wallet's rows
-        (matched by XvB's masked form), and persists them idempotently. Each genuinely NEW win
-        (add_raffle_wins' insert contract) is announced once in the dashboard log; the chart and
-        the XvB card read the table.
-
-        Same "no write on failure" contract as the other XvB syncs: a failed fetch returns None,
-        nothing is written, and the gate is NOT stamped so the next 10th poll retries.
-
-        The gate is adaptive (#892): ``_xvb_winners_gate_sec`` picks the fast cadence while a
-        won round is plausibly live or at stake, the 30-min baseline otherwise.
-        """
-        now = time.time()
-        xvb = self.state_manager.get_xvb_stats()
-        recent_wins = await asyncio.to_thread(
-            self.state_manager.get_raffle_wins, now - _XVB_WIN_FRESH_S
-        )
-        gate = _xvb_winners_gate_sec(
-            xvb.get("avg_1h", 0) or 0,
-            xvb.get("avg_24h", 0) or 0,
-            self.state_manager.get_tiers(),
-            max((w.get("ts", 0) or 0 for w in recent_wins), default=0.0),
-            now,
-        )
-        if now - self._last_xvb_winners_sync < gate:
-            return
-        result = await asyncio.to_thread(self.xvb_client.get_recent_wins)
-        if result is None:
-            return  # fetch failed — retry next eligible poll; don't stamp the gate
-        self._last_xvb_winners_sync = now
-        # Same fetched body, second parse (#866/#872): the all-rounds aggregate that makes win
-        # odds and realized-reward figures computable. Written only when it parsed to something,
-        # so a format change degrades to stale (detectable) rather than an empty-implied-fresh.
-        if (result.get("round_stats") or {}).get("types"):
-            await asyncio.to_thread(self.state_manager.set_xvb_round_stats, result["round_stats"])
-        new_wins = await asyncio.to_thread(self.state_manager.add_raffle_wins, result["wins"])
-        for win in new_wins:
-            logger.info(
-                f"XvB raffle WIN: {win['tier']} round won at "
-                f"{format_hashrate(win['hashrate'])} credited (height {win['height']}) 🎉"
-            )
-            # One Telegram/webhook alert per genuinely new win — add_raffle_wins' idempotent
-            # insert contract is what makes this fire-once, same as payout_confirmed.
-            await self.alert_service.raffle_win_alert(win["tier"], win["hashrate"])
-
-    async def _maybe_register_xvb(self, shares, p2pool_stats):
-        """
-        Auto-enter the wallet into the XvB raffle once it's eligible (#263).
-
-        Mining to the XvB pool doesn't enter a wallet — it must be registered against the operator's
-        endpoint, which only takes effect once the wallet has a share in the P2Pool PPLNS window. So
-        we gate on a PPLNS share existing (same window math as the dashboard/algo) and skip silently
-        until then, retrying on the next poll. After the first success we re-register on a daily
-        cadence (XVB_REGISTER_INTERVAL_S): registration is idempotent, and re-running picks up the
-        operator's newer security-token behaviour and re-enters a long-offline miner cleanly.
-
-        The caller already gated on ENABLE_XVB + the 10th-iteration throttle. Edge cases are handled
-        from the endpoint's real contract (see XvbClient.register): "already registered" is the
-        idempotent steady state (success); an invalid wallet is permanent (latch + warn, stop
-        retrying); transient errors escalate to a "failing" badge only after a few attempts.
-        register() routes over Tor.
-        """
-        # Nothing to do if registration is disabled (XVB_SUBMIT_URL off) or the wallet was already
-        # rejected as permanently invalid — both are terminal for this process, skip quietly.
-        if not self.xvb_client.submit_url or self._xvb_invalid_wallet:
-            return
-
-        # PPLNS-share check — mirrors metrics/algo: a share counts if it's within pplns_window
-        # blocks (30s/block on Nano, else 10s) of now.
-        pool_type = p2pool_stats.get("p2p", {}).get("type", "Main")
-        pplns_window = p2pool_stats.get("pool", {}).get("pplns_window", DEFAULT_PPLNS_WINDOW)
-        block_time = pplns_block_time(pool_type)
-        if shares_in_pplns_window(shares, pplns_window, block_time) == 0:
-            return  # no eligible share yet — the endpoint would no-op, so don't call it
-
-        now = time.time()
-        if self._xvb_last_registered is not None and (
-            now - self._xvb_last_registered < XVB_REGISTER_INTERVAL_S
-        ):
-            return  # already registered recently; next re-register isn't due yet
-
-        status = await asyncio.to_thread(self.xvb_client.register)
-
-        if status == REG_OK:
-            # Fresh registration OR the idempotent "already registered" steady state — either way the
-            # wallet is in the raffle. Stamp it and clear the transient-failure counter.
-            self._xvb_last_registered = now
-            self._xvb_register_failures = 0
-            await asyncio.to_thread(
-                self.state_manager.update_xvb_stats,
-                registered_at=now,
-                registration_state="registered",
-            )
-            logger.info("External Sync: Registered wallet with XvB raffle ✓")
-        elif status == REG_INVALID:
-            # Permanent: the endpoint won't accept this wallet, and it won't change on retry. Latch
-            # off, warn once, and surface it — don't hammer the endpoint every poll.
-            self._xvb_invalid_wallet = True
-            logger.warning(
-                "XvB registration rejected MONERO_WALLET_ADDRESS as invalid — auto-registration "
-                "disabled. The XvB raffle needs a standard primary Monero address (4…). (#263)"
-            )
-            await asyncio.to_thread(
-                self.state_manager.update_xvb_stats, registration_state="invalid"
-            )
-        elif status == REG_NOT_ELIGIBLE:
-            # The share we see locally hasn't propagated to XvB yet — not a failure, just retry next
-            # poll. Don't count it toward the "failing" escalation.
-            return
-        else:
-            # Transient (network / 5xx / unrecognised). register() already logged specifics. Only
-            # escalate to a dashboard warning once it's *persistently* failing AND we've never
-            # succeeded — a blip while the first share propagates shouldn't alarm. (A failed daily
-            # re-register after a prior success keeps the "registered ✓"; we're still entered.)
-            self._xvb_register_failures += 1
-            if (
-                self._xvb_last_registered is None
-                and self._xvb_register_failures >= _XVB_REGISTER_FAIL_ALERT
-            ):
-                await asyncio.to_thread(
-                    self.state_manager.update_xvb_stats, registration_state="failing"
-                )
+    # On a partial-start failure stay held so the next cycle retries.
 
     async def _sync_prices(self):
         """Refresh the live XMR/XTM prices (#520) into ``latest_data["prices"]`` — a no-op with the
@@ -671,239 +112,6 @@ class DataService:
         """Tari on-chain payout confirmation (#462) — the sibling of ``_sync_payouts``, same shape
         and same reason for staying here while its body lives in ``payout_sync``."""
         await payout_sync.sync_tari(self.state_manager, self.tari_wallet_client, self.alert_service)
-
-    async def _record_audit_event(self, source, actor, action, status, keys, event_id=None):
-        """Write one out-of-band audit row (#530), through the SAME sanitizer #33's own audit
-        trail is served through (``audit_service._clean``) — defense in depth: ``actor``/``keys``
-        here are already schema-shaped (a validated worker name, dotted config-key paths), but
-        every field the Security panel serves gets the identical whitelist treatment regardless of
-        source — the row ``id`` included, since #1561.
-
-        ``event_id`` lets a caller supply a DETERMINISTIC row id so ``INSERT OR IGNORE`` collapses
-        repeat reports of the SAME event to one row (rig-edit: a rig re-reports its last change_id
-        every poll); ``clean_event_id`` bounds it HERE, at the sink, not at each caller. A host-edit
-        passes None — a distinct event each time, so the random id is right there."""
-        await asyncio.to_thread(
-            self.state_manager.add_audit_event,
-            id=audit_service.clean_event_id(event_id) or f"{source}-{uuid.uuid4()}",
-            ts=_iso_now(),
-            source=audit_service._clean(source, 16),
-            actor=audit_service._clean(actor, 64),
-            action=audit_service._clean(action, 16),
-            status=audit_service._clean(status, 32),
-            keys=audit_service._clean(keys, 400),
-        )
-
-    async def _watch_host_config(self):
-        """Out-of-band HOST-EDIT detection (#530): config.json changed without a matching
-        control-channel commit.
-
-        Reads the same pre-masked copy the control channel itself prefills from
-        (``config.HOST_CONFIG_PATH``, #440 — already secret-free) each poll and diffs it against
-        the previous poll's snapshot. A changed key is "explained" — and stays quiet — only when
-        the #33 audit trail shows a ``commit``/``applied`` entry that both landed AFTER the last
-        time this watcher looked AND actually touched that key (the entry's env-var names are
-        bridged to config paths via ``env_key_config_paths``). Correlating by key, not merely by
-        time, is what stops a legit dashboard commit of key A from swallowing a concurrent
-        host-side hand-edit of key B. Any changed key no fresh commit covers (a hand-edit, a
-        `pithead apply` run outside the dashboard) is recorded as a ``host-edit`` audit row naming
-        the unexplained keys. First poll only baselines (no control
-        log exists yet to compare against, and every other watcher in this loop shares that
-        never-backfill contract). No-op with the control channel off — there is neither a masked
-        config mount nor an audit trail to compare against."""
-        if not config.DASHBOARD_CONTROL_ENABLED:
-            return
-        current = await asyncio.to_thread(_read_host_config)
-        if current is None:
-            return  # mount not ready yet — quiet no-op, the next poll retries
-        now = time.time()
-        if self._last_host_config is None:
-            self._last_host_config, self._last_host_check = current, now
-            return
-        changed_keys = _diff_config_keys(self._last_host_config, current)
-        if changed_keys:
-            # The audit log's ts is whole-second (_iso_now/control_audit both write
-            # "%Y-%m-%dT%H:%M:%SZ"), while `_last_host_check` is a sub-second time.time() — a
-            # commit landed in the SAME wall-clock second as the baseline poll would otherwise
-            # floor below it and be missed. One second of grace absorbs that truncation.
-            # ponytail: ≤1s correlation window — a control-channel commit up to 1s before the last
-            # poll could "explain" (suppress) an unrelated hand-edit detected in this poll. The
-            # honest ceiling of a timestamp correlation; tighten to id-based ("commits seen since
-            # last poll") only if a real false-negative shows up. Pinned by
-            # test_explained_window_is_at_most_one_second.
-            since = self._last_host_check - 1
-            # Correlate BY KEY, not just by time: a commit only "explains" the keys it actually
-            # touched. Fold every fresh commit's env-var names into the config paths they cover
-            # (env_key_config_paths bridges the audit log's env names to config.json paths), then
-            # record only the changed keys NO recent commit covers — the genuine out-of-band edits
-            # this watcher exists to catch. A concurrent dashboard commit of key A + a host
-            # hand-edit of key B no longer swallows B.
-            explained_paths = set()
-            for e in audit_service.recent_changes():
-                if (
-                    e.get("action") in ("commit", "commit-confirmed", "commit-approved")
-                    and e.get("status") == "applied"
-                    and (ts := _parse_audit_ts(e.get("ts"))) is not None
-                    and ts >= since
-                ):
-                    for env_key in (e.get("keys") or "").split():
-                        explained_paths.update(env_key_config_paths(env_key))
-            # ponytail: env-var granularity — a var fed by >1 config path (e.g. P2POOL_FLAGS <-
-            # p2pool.pool + p2pool.clearnet) explains ALL its paths, so a commit touching one could
-            # still suppress a concurrent hand-edit of its sibling. Inherent to a name-only audit
-            # log; fix only if per-path audit keys ever land.
-            unexplained = [
-                k
-                for k in changed_keys
-                if not any(k == p or k.startswith(p + ".") for p in explained_paths)
-            ]
-            if unexplained:
-                await self._record_audit_event(
-                    "host-edit", "", "host-edit", "detected", " ".join(unexplained)
-                )
-        self._last_host_config, self._last_host_check = current, now
-
-    async def _mirror_control_audit(self):
-        """Copy the #33 control.log's recent entries into the durable ``audit_events`` table
-        (#530), so the Security panel's time-grouped view can drill deeper than the log's own
-        trimmed tail. ``audit_service.recent_changes()`` output is already sanitized (it's the SAME
-        read the panel used before this table existed); ``add_audit_event``'s ``INSERT OR IGNORE``
-        on the log's own ``id`` makes re-mirroring the same tail every poll a no-op. Entries with no
-        id (a handful of pre-auth "invalid"/"refused" rows, #33) are skipped — they're visible only
-        while still in the log tail, same as before this feature."""
-        if not config.DASHBOARD_CONTROL_ENABLED:
-            return
-        # The log reader returns newest first, but preview and terminal commit share an id. Replay
-        # oldest first so the terminal outcome is the row left in durable history, not the preview
-        # that happened to be mirrored first.
-        for e in reversed(audit_service.recent_changes()):
-            if not e.get("id"):
-                continue
-            await asyncio.to_thread(
-                self.state_manager.add_audit_event,
-                id=e["id"],
-                ts=e.get("ts", ""),
-                source="control",
-                actor=e.get("actor", ""),
-                action=e.get("action", ""),
-                status=e.get("status", ""),
-                keys=e.get("keys", ""),
-            )
-
-    def _rig_edit_within_cap(self, worker, now):
-        """Per-worker fixed-window cap on NEW rig-edit audit rows (#724). Counts this rig-edit
-        against the worker's current hour window and returns ``(allowed, first_over)``: ``allowed``
-        is True while the worker is under ``_RIG_EDIT_CAP_PER_HOUR`` this window; ``first_over`` is
-        True only on the single call that tips it over, so the caller logs + records the
-        rate-limited marker exactly once per window rather than every poll. A handful of real edits
-        an hour never trips it; a rig spamming distinct change_ids does.
-
-        A name this map has never admitted goes through ``worker_change_audit.admit_worker`` first
-        (#1695), which bounds the device-chosen name space; a refusal returns here with the same
-        ``(allowed, first_over)`` shape, so both callers stay unchanged and the marker for it is
-        written by the same ``record_cap_marker`` the per-worker case uses."""
-        admitted, first_names_over = worker_change_audit.admit_worker(
-            self, worker, now, _RIG_EDIT_WINDOW_SEC
-        )
-        if not admitted:
-            return False, first_names_over
-        start, count = self._rig_edit_window.get(worker, (now, 0))
-        if now - start >= _RIG_EDIT_WINDOW_SEC:
-            start, count = now, 0
-        # Load-bearing OUTSIDE this module: worker_change_audit.record_cap_marker reads a
-        # worker's ABSENCE from this map as the #1695 names-ceiling refusal, so this
-        # unconditional write is what makes a #724 per-worker trip present. Make it conditional
-        # and every per-worker trip silently writes the names-ceiling marker instead.
-        self._rig_edit_window[worker] = (start, count + 1)
-        return count < _RIG_EDIT_CAP_PER_HOUR, count == _RIG_EDIT_CAP_PER_HOUR
-
-    async def _reconcile_worker_config(self, workers, worker_results):
-        """Catch up any still-``accepted`` #185 worker-config history row whose change_id the rig
-        now reports terminal (#579), and flag an out-of-band RIG-EDIT (#530).
-
-        A rollback slower than the host runner's 20s status-poll deadline (#517/#543) is honestly
-        recorded ``accepted`` and never revisited — this rides THIS poll's already-fetched enriched
-        bodies (``worker_results``, positionally aligned with ``workers`` and with the worker probes
-        in ``run()``), so there's no new dial and no host-runner change. A plain-xmrig rig, a rig
-        still mid-change, or an unreachable/offline rig (``{}``) all parse to ``None`` via
-        ``parse_worker_control_status`` and are a quiet no-op.
-
-        A TERMINAL report whose ``change_id`` this dashboard never spooled (``worker_config`` has no
-        row for it — checked via ``worker_config_change_known``) is a change the RIG applied on its
-        own: reconciling it would be a silent no-op anyway (the ``WHERE status='accepted'`` UPDATE
-        matches nothing), so instead it's recorded as a ``rig-edit`` audit row naming the worker.
-        RigForge's ``/status`` mirror carries only the outcome of a change, not a per-key diff, so
-        unlike host-edit's ``keys`` this can only name the change_id — a real limitation, not an
-        oversight; see the #530 PR notes.
-
-        Each worker's revision is also checked for drift here (#1551), before the control-status
-        guard below, because a rig can serve a moved ``revision`` with no terminal outcome beside
-        it and that is the case nothing else can see; it shares this method's flood cap.
-
-        A rig keeps reporting its last terminal change_id every poll, so this fires ONCE per
-        (worker, change_id): an in-memory guard skips the redundant work in the steady state, and
-        the audit row's deterministic id makes the write itself idempotent even across a restart
-        (when the guard is empty but a repeat report must still not duplicate the row). Both matter
-        — the id is the correctness bound (a rogue rig can't flood the permanent table with repeats
-        of one bogus change_id), the guard is the optimisation.
-
-        DISTINCT change_ids each clear that dedup, though, so a rogue rig on the unauthenticated
-        feed can still write one permanent row per poll (#724). ``_rig_edit_within_cap`` bounds NEW
-        out-of-band rows to ``_RIG_EDIT_CAP_PER_HOUR`` per worker per hour — rig-edit and
-        revision-drift share the one budget; beyond that the row is dropped, but never silently: a
-        single ``rate-limited`` marker naming which detection tipped it is logged and recorded so
-        the flood stays visible in the Security panel. host-edit rows are unaffected (a different,
-        non-attacker-controlled path)."""
-        for w, extra_stats in zip(workers, worker_results, strict=False):
-            await worker_change_audit.note_revision_drift(
-                self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR
-            )
-            ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
-            if not ctrl:
-                continue
-            known = await asyncio.to_thread(
-                self.state_manager.worker_config_change_known, ctrl["change_id"]
-            )
-            if known:
-                await asyncio.to_thread(
-                    self.state_manager.reconcile_worker_config_status,
-                    ctrl["change_id"],
-                    ctrl["status"],
-                    ctrl["reason"],
-                )
-            else:
-                worker = w.get("name", "")
-                guard_key = (worker, ctrl["change_id"])
-                if guard_key in self._flagged_rig_changes:
-                    continue
-                allowed, first_over = self._rig_edit_within_cap(worker, time.time())
-                if not allowed:
-                    # Over cap this window — drop the row, and don't add to the guard set, so its
-                    # size stays bounded by what we actually record rather than by the flood. The
-                    # marker itself is shared with revision-drift (#1551): one budget, one marker.
-                    if first_over:
-                        await worker_change_audit.record_cap_marker(
-                            self, worker, _RIG_EDIT_CAP_PER_HOUR, "rig-edit"
-                        )
-                    continue
-                self._flagged_rig_changes.add(guard_key)
-                await self._record_audit_event(
-                    "rig-edit",
-                    worker,
-                    "rig-edit",
-                    ctrl["status"],
-                    f"change_id={ctrl['change_id']}",
-                    event_id=audit_service.build_event_id("rig-edit", worker, ctrl["change_id"]),
-                )
-
-    def _on_clearnet_transition(self, name, ok):
-        """Called by the supervisor after a clearnet→Tor flip attempt (#234)."""
-        if ok:
-            logger.info("%s returned to Tor after its clearnet initial sync (#234).", name)
-        else:
-            logger.warning(
-                "%s clearnet→Tor switch did not complete this cycle — will retry (#234).", name
-            )
 
     async def run(self):
         """

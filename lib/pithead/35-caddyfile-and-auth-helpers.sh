@@ -48,7 +48,8 @@ caddy_hash_password_b64() {
     printf '%s' "$hash" | openssl base64 -A
 }
 
-generate_caddyfile() {
+generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
+    local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
     # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit
     # `actor` for control-channel requests. header_up SETS the header, so a client-supplied
     # X-Auth-User can never spoof it; with auth off the placeholder renders empty.
@@ -243,9 +244,9 @@ $(_bind_line)
 "
     fi
 
-    : >"Caddyfile"
-    [ -n "$global_block" ] && printf '%s' "$global_block" >>"Caddyfile"
-    [ -n "$redirect_block" ] && printf '%s' "$redirect_block" >>"Caddyfile"
+    : >"$target"
+    [ -n "$global_block" ] && printf '%s' "$global_block" >>"$target"
+    [ -n "$redirect_block" ] && printf '%s' "$redirect_block" >>"$target"
     # The appliance hands its ONE certificate to Caddy — the same file the setup page served, so
     # the operator's trust decision survives the handoff. Without this the wizard's cert is
     # replaced by Caddy's own at the exact moment provisioning succeeds, and the browser that
@@ -266,7 +267,7 @@ $(_bind_line)
         # minted for no longer matches, and reuses the operator's already-trusted certificate
         # otherwise.
         tlsd=$(appliance_tls_dir)
-        appliance_mint_cert >/dev/null 2>&1 || true
+        [ "$mint_appliance_cert" != true ] || appliance_mint_cert >/dev/null 2>&1 || true
         if [ -s "$tlsd/wizard.crt" ] && [ -s "$tlsd/wizard.key" ]; then
             tls_line="    tls /pithead-tls/wizard.crt /pithead-tls/wizard.key"
         else
@@ -275,7 +276,7 @@ $(_bind_line)
     fi
     if [ "$DASHBOARD_SECURE" == "true" ]; then
         log "Generating Caddyfile for automatic HTTPS ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"Caddyfile"
+        cat <<EOF >>"$target"
 $(_site_addresses https) {
 $tls_line
 $(_bind_line)
@@ -288,7 +289,7 @@ $logblk
 EOF
     else
         log "Generating Caddyfile for HTTP ($site_hosts$port_suffix)$([ -n "$auth" ] && echo ' with login')..."
-        cat <<EOF >>"Caddyfile"
+        cat <<EOF >>"$target"
 $(_site_addresses http) {
 $(_bind_line)
 $auth
@@ -310,7 +311,7 @@ EOF
             error "Refusing to render the dashboard onion vhost without a login: dashboard.onion.enabled is on but no auth hash is set."
         fi
         log "Adding onion vhost for the dashboard (${NETWORK_PREFIX}.1, login required)..."
-        cat <<EOF >>"Caddyfile"
+        cat <<EOF >>"$target"
 
 http://${NETWORK_PREFIX}.1 {
 $(_onion_bind_line)
@@ -331,7 +332,7 @@ EOF
         # the capture step lands the real address, so HTTPS appears in that same run (#546).
         if [ -n "${DASHBOARD_ONION:-}" ] && [ "${DASHBOARD_ONION:-}" != "placeholder" ]; then
             log "Adding HTTPS onion vhost (self-signed cert for the .onion)..."
-            cat <<EOF >>"Caddyfile"
+            cat <<EOF >>"$target"
 
 https://${DASHBOARD_ONION} {
     tls internal

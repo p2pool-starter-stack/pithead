@@ -85,10 +85,10 @@ Maintenance:
                               -y, --yes        skip the confirmation prompts (low free space,
                                                and stopping a running stack).
   restore [-y|--yes] <archive>
-                            Restore config.json, .env, Caddyfile, the Tor data dir, and the
-                            dashboard's database from a backup archive (prompts before
-                            overwriting; fixes Tor ownership). Detects encrypted (.enc) vs
-                            plaintext archives by content — old backups restore unchanged.
+                            Restore validated config, generated secrets, Tor identity, and
+                            dashboard data; regenerate .env and Caddyfile from the config.
+                            Prompts before overwriting and fixes Tor ownership. Detects
+                            encrypted (.enc) vs plaintext archives by content.
                             Asks for the passphrase (or reads PITHEAD_BACKUP_PASSPHRASE) and
                             fails before touching anything if it's wrong.
                               -y, --yes        restore without the confirmation prompt.

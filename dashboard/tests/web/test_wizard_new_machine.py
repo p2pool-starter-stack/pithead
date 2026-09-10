@@ -18,7 +18,7 @@ import json
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from mining_dashboard import wizard
+from mining_dashboard.wizard import server as wizard
 
 # The host's published reference, trimmed to what these read. `tari.mode` is "local" here because
 # that is what config.reference.json says: a config that omits the key means local, which is what

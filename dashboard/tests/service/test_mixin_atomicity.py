@@ -30,7 +30,12 @@ import pytest
 
 _SERVICE = Path(__file__).resolve().parents[2] / "mining_dashboard" / "service"
 _SUBJECT = _SERVICE / "storage_service.py"
-_MIXIN_FILES = ("telemetry_store.py", "worker_config_store.py")
+_MIXIN_FILES = (
+    "mining_store.py",
+    "storage_schema.py",
+    "telemetry_store.py",
+    "workers/worker_config_store.py",
+)
 
 # Holding either of these is what makes a call "spanning": `_db_lock` serializes DB access and
 # `_conn` used as a context manager IS the transaction. A call made while one is held runs inside
@@ -204,7 +209,7 @@ class TestTheSplitHoldsItsAtomicityProperty:
         assert {"state", "table_health", "_lock"} <= state
         # The callee the controls below lean on has to be a real retained method, not an invented
         # name that would make them pass by matching nothing.
-        assert "_db_error" in retained
+        assert "get_kv" in retained
 
     def test_no_moved_method_calls_a_retained_one_under_the_db_guard(self, split):
         """Q1 — the ruling's actual test."""
@@ -242,7 +247,7 @@ class SeededMixin:
     def write_row_and_report_inside(self):
         with self._db_lock:
             self._conn.execute("INSERT INTO t VALUES (1)")
-            self._db_error("seeded", None)
+            self.get_kv("seeded")
 """
 
     _OUTSIDE = """
@@ -252,7 +257,7 @@ class SeededMixin:
             with self._db_lock:
                 self._conn.execute("INSERT INTO t VALUES (1)")
         except Exception as e:
-            self._db_error("seeded", e)
+            self.get_kv("seeded")
 """
 
     def test_the_checker_flags_a_moved_method_calling_a_retained_one_inside_the_guard(self, split):
@@ -262,8 +267,8 @@ class SeededMixin:
         seeded = _methods(self._INSIDE)["write_row_and_report_inside"]
         # Arming readback: the seed is a control only if it is really there, in that shape.
         assert "with self._db_lock:" in self._INSIDE
-        assert self._INSIDE.index("self._db_error") > self._INSIDE.index("with self._db_lock:")
-        assert _guarded_calls(seeded, retained) == ["_db_error"]
+        assert self._INSIDE.index("self.get_kv") > self._INSIDE.index("with self._db_lock:")
+        assert _guarded_calls(seeded, retained) == ["get_kv"]
 
     def test_the_same_retained_call_after_the_guard_closes_is_not_flagged(self, split):
         """NEGATIVE CONTROL. This is the shape every real moved method has — the error path runs
@@ -271,17 +276,17 @@ class SeededMixin:
         would report the real split as unsafe, and its clean result would prove nothing."""
         retained, _, _ = split
         seeded = _methods(self._OUTSIDE)["write_row_then_report"]
-        assert "self._db_error" in self._OUTSIDE  # same call, same names, only the position moved
+        assert "self.get_kv" in self._OUTSIDE  # same call, same names, only the position moved
         assert _guarded_calls(seeded, retained) == []
 
     def test_the_walk_finds_the_guarded_calls_that_really_are_in_the_subject(self, split):
         """Corroboration on REAL source, not a synthetic string: `_recover_corrupt_db` calls
-        `_prune_quarantined` and `_apply_schema` inside `with self._db_lock:`. All three are
-        retained, so these are not findings — Q1 is about moved methods — but a walk that came
-        back empty here would be one that never matched anything on this file at all."""
-        retained, _, _ = split
+        `_prune_quarantined` and `_apply_schema` inside `with self._db_lock:`. The caller remains
+        on the concrete class while those schema helpers moved, which is the permitted direction;
+        this check proves the walk still sees guarded calls in the real source."""
+        _, moved, _ = split
         subject = _methods(_SUBJECT.read_text())
-        assert _guarded_calls(subject["_recover_corrupt_db"], retained) == [
+        assert _guarded_calls(subject["_recover_corrupt_db"], set(moved)) == [
             "_apply_schema",
             "_prune_quarantined",
         ]

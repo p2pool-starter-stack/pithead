@@ -53,15 +53,15 @@ for f in $NODE_FILES; do n_node=$((n_node + $(node_tests "$f" | count))); done
 # directly, never via a word-split string, so a filename containing a space stays one path
 # instead of splitting into two nonexistent ones and reporting phantom drift.
 n_stack=0
-for f in tests/stack/*.sh; do n_stack=$((n_stack + $(sh_sections "$f" | count))); done
-# Every tests/integration/selftest*.sh, not just selftest.sh. Makefile and ci.yml both glob these,
+while IFS= read -r f; do n_stack=$((n_stack + $(sh_sections "$f" | count))); done < <(find tests/stack -type f -name '*.sh' ! -path '*/fixtures/*' | sort)
+# Every tests/integration/selftest/*.sh, not just selftest.sh. Makefile and ci.yml both glob these,
 # so all of them are run and linted, while counting the one filename published a third of the
 # sections and hid the rest (#1388). The self-tests grew from one file to five and the singular
 # name never followed. Same enumerate-vs-glob shape the stack aggregate above was fixed for; the
 # tell is a gate line naming paths one by one beside a sibling line that globs. The glob is
 # iterated directly rather than through a word-split string, for the reason given above it.
 n_selftest=0
-for f in tests/integration/selftest*.sh; do n_selftest=$((n_selftest + $(sh_sections "$f" | count))); done
+for f in tests/integration/selftest/*.sh; do n_selftest=$((n_selftest + $(sh_sections "$f" | count))); done
 n_scen=$(awk -F'\t' 'NF>1{print $1}' <(sed -n '/scenario_matrix() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '\t') | count)
 n_axes=$(grep -cE '=' <(sed -n '/axis_coverage() {/,/^EOF/p' tests/integration/scenarios.sh | grep -E '^[a-z].*='))
 n_mini=$(grep -cE 'log "scenario [0-9]' tests/integration/mini-stack/run-mini-stack.sh)
@@ -98,15 +98,15 @@ done
 #   lib.sh                        — a library of fixtures and helpers; it holds no assertions
 #   test_compose.sh               — its cases are jq filters over docker-compose.yml, not sections
 #   test-control-add-only-ssrf.sh — split out of a run.sh section whose header stayed behind
-SECTIONLESS="lib.sh test_compose.sh test-control-add-only-ssrf.sh"
-for f in tests/stack/*.sh; do
+SECTIONLESS="standalone/test_compose.sh control/test-control-add-only-ssrf.sh test-lifecycle.sh"
+while IFS= read -r f; do
     case " $SECTIONLESS " in *" ${f#tests/stack/} "*) continue ;; esac
     if [ "$(sh_sections "$f" | count)" -eq 0 ]; then
         echo "inventory drift: $f has no '== section ==' header — it moved, was renamed, or" \
             "changed shape; fix the file, or add it to SECTIONLESS with a reason" >&2
         exit 1
     fi
-done
+done < <(find tests/stack -type f -name 'test*.sh' | sort)
 
 # The same per-FILE check for the harness self-tests, and it is the half the aggregate above cannot
 # do. Now that n_selftest globs, one self-test dropping to zero sections hides inside a comfortably
@@ -114,7 +114,7 @@ done
 # single file. Every self-test carries headers today, so there is no SECTIONLESS counterpart here;
 # if one ever legitimately has none, give it one rather than adding an exception, since these files
 # exist to be enumerated.
-for f in tests/integration/selftest*.sh; do
+for f in tests/integration/selftest/*.sh; do
     if [ "$(sh_sections "$f" | count)" -eq 0 ]; then
         echo "inventory drift: $f has no '== section ==' header — it moved, was renamed, or" \
             "changed shape; fix the file, or fold it into a sibling self-test" >&2
@@ -146,136 +146,46 @@ done
 # copy of a gate this dense drifts, and the drifted copy is the one nobody is reading at the
 # moment it goes quiet. Arguments: the sourcer, its directory, a space-separated list of GLOB
 # PATTERNS for files in it the sourcer is not expected to source, and the floor checked below.
-check_source_agreement() {
-    local sourcer="$1" dir="$2" unsourced="$3" min_expected="$4"
-    local SOURCED EXPECTED MISSING f base want pat skipped n_missing n_expected unsourced_pats
-    SOURCED=$(grep -oE '^[^#]*source "\$HERE/[A-Za-z0-9_.-]+\.sh"' "$sourcer" |
-        sed -E 's|^.*source "\$HERE/||; s|"$||')
-    # The domain files the sourcer is expected to source: every $dir/*.sh but the sourcer itself
-    # and whatever $unsourced excludes. Hoisted above both directions because the floor below
-    # needs its size, and both loops need its membership.
-    # `read -ra` splits on IFS but does NOT glob-expand, which a bare `for pat in $unsourced`
-    # would: an unquoted `selftest*.sh` there is matched against the CWD before `case` sees it.
-    IFS=' ' read -ra unsourced_pats <<<"$unsourced"
-    EXPECTED=""
-    for f in "$dir"/*.sh; do
-        base="${f##*/}"
-        if [ "$base" = "${sourcer##*/}" ]; then continue; fi # the sourcer itself
-        # Matched pattern by pattern, not against one space-delimited haystack, so an entry may be
-        # a glob: an exact-name list of tests/integration/'s selftests would be a standing drift
-        # hazard. The five tests/stack/ entries carry no metacharacter and match exactly as before.
-        skipped=""
-        for pat in "${unsourced_pats[@]}"; do
-            # shellcheck disable=SC2254  # glob matching is the point: these entries ARE patterns
-            case "$base" in $pat)
-                skipped=1
-                break
-                ;;
-            esac
-        done
-        if [ -n "$skipped" ]; then continue; fi
-        EXPECTED="${EXPECTED}${base}"$'\n'
-    done
-
-    # Direction 1 (#1336) — every file the sourcer claims to source must exist. Catches a domain
-    # file deleted or renamed out from under a live `source` line.
-    while read -r want; do
-        # A here-string over an empty SOURCED yields ONE blank line, not zero, so without this the
-        # loop would test "$dir/" and report a garbled name for a pattern that matched nothing.
-        if [ -z "$want" ]; then continue; fi
-        if [ ! -f "$dir/$want" ]; then
-            echo "inventory drift: $sourcer sources $dir/$want, which does not exist — the file" \
-                "was moved or renamed and the suite would still pass, silently skipping it" >&2
-            exit 1
-        fi
-    done <<<"$SOURCED"
-
-    # Direction 2 (#1357) — every domain file on disk must be sourced. The loop above can only
-    # examine the `source` lines that are PRESENT, so a line deleted while its file stays on disk
-    # is never looked at; the per-file section gate then finds the orphaned file with its headers
-    # intact and passes it. Nothing else asks the question in this direction.
-    #
-    # This is a FLOOR, not an emptiness test, and it collects rather than exiting on the first
-    # offender (#1420). It used to be guarded by `[ -z "$SOURCED" ]`, on the reasoning that the
-    # pattern going quiet must not read as "all present" — and that guard failed open on a real
-    # 24-of-25 breakage, because lib.sh's stanza is bare by design and kept matching. A fallback
-    # condition of "the set is empty" is defeated by a single survivor. Comparing the two sets
-    # makes one survivor as loud as none. Exiting on the first offender was the other half: it
-    # named one file, alphabetically first, for a 24-file regression, and the reader sizes the
-    # problem from that message.
-    MISSING=""
-    # `IFS=` is load-bearing: `read -r` into a single variable strips leading and trailing IFS
-    # whitespace, so a file on disk whose name STARTS with a space, sourced by nothing, would be
-    # stripped to its bare name — which IS in SOURCED — and silently accepted. A mid-name space
-    # was caught either way, which is what made this invisible. Direction 1's identical construct
-    # above needs no such fix: SOURCED comes from a character class that cannot emit a space.
-    while IFS= read -r base; do
-        if [ -z "$base" ]; then continue; fi
-        # Matched between newlines, not spaces: a filename containing a space would survive the
-        # glob above (it is iterated directly) only to be split apart by a space-delimited lookup.
-        case $'\n'"$SOURCED"$'\n' in *$'\n'"$base"$'\n'*) continue ;; esac
-        MISSING="${MISSING}${base}"$'\n'
-    done <<<"$EXPECTED"
-    n_missing=$(printf '%s' "$MISSING" | count)
-    n_expected=$(printf '%s' "$EXPECTED" | count)
-    # Collapsing together is itself drift, and it is the ONE case the set difference above cannot
-    # see. If every expected domain file and every stanza disappear TOGETHER — a botched revert of
-    # the #1105 split — then SOURCED and EXPECTED shrink at the same time, MISSING stays empty,
-    # and the comparison is vacuously satisfied no matter how far they fall. The floor is not just
-    # an emptiness test: #1429 showed that landing on 1-and-1 rather than 0-and-0 is exactly as
-    # vacuous, because lib.sh's bare stanza (it is in neither directory's exclusions, so it counts
-    # as expected, and it IS sourced) survives every deletion and keeps satisfying both directions
-    # at that single entry. A set-difference guard cannot tell "everything agrees because nothing
-    # is missing" from "everything agrees because there is nothing left to disagree about" — the
-    # fallback has to come from outside the two sets it compares. Each floor is deliberately
-    # generous — comfortably below today's count for its own pair — so an ordinary rename, split,
-    # or retirement of a file or two never needs to touch it, precisely so that when it DOES fire,
-    # it means the domain layer collapsed, not that someone forgot to bump a number. Raise one
-    # when the true count grows enough to make that margin thin; never lower one to make a real
-    # drop pass, and give a reason in the commit if you do either.
-    if [ "$n_expected" -lt "$min_expected" ]; then
-        echo "inventory drift: only $n_expected domain files in $dir are expected to be sourced" \
-            "(floor is $min_expected) — the domain layer may have collapsed while a shared" \
-            "survivor (e.g. lib.sh) kept $sourcer's stanzas and the files on disk agreeing with" \
-            "each other; restore the missing files and stanzas, or lower the floor for this pair" \
-            "in tests/inventory.sh with a reason" >&2
+check_source_set() { # <sourcer> <expected-list> <minimum>
+    local sourcer="$1" expected="$2" minimum="$3" base actual missing path
+    base=${sourcer%/*}
+    actual=$(grep -oE '^[^#]*source "\$HERE/[A-Za-z0-9_./-]+\.sh"' "$sourcer" |
+        sed -E 's|^.*source "\$HERE/||; s|"$||' | sort -u)
+    if [ "$(printf '%s\n' "$expected" | grep -c .)" -lt "$minimum" ]; then
+        echo "inventory drift: expected source set for $sourcer fell below $minimum" >&2
         exit 1
     fi
-    if [ "$n_missing" -gt 0 ]; then
-        echo "inventory drift: $n_missing of $n_expected domain files in $dir are not sourced by" \
-            "$sourcer — a 'source' line was deleted, or, the closer this count runs to" \
-            "$n_expected, the pattern above stopped matching. Either way the suite would still" \
-            "pass, silently skipping every section in these files. Restore the line, fix the" \
-            "pattern, or add the file to this pair's exclusions with a reason:" >&2
-        printf '%s' "$MISSING" | sed 's/^/  /' >&2
+    missing=""
+    while IFS= read -r path; do
+        [ -z "$path" ] && continue
+        [ -f "$base/$path" ] || missing="${missing}${base}/${path}"$'\n'
+    done <<<"$actual"
+    [ -z "$missing" ] || {
+        printf 'inventory drift: %s sources missing files:\n%s' "$sourcer" "$missing" >&2
+        exit 1
+    }
+    if [ "$actual" != "$expected" ]; then
+        echo "inventory drift: source set disagrees for $sourcer" >&2
+        diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") >&2 || true
         exit 1
     fi
 }
 
-# tests/stack/ — the excluded five are not sourced by run.sh by design: each is invoked as its own
-# CI step and fails there. Floor 20, comfortably below the 54 counted at #1429.
-check_source_agreement tests/stack/run.sh tests/stack \
-    "test_appliance_hugepages.sh test_compose.sh test_data_reset.sh \
-    test_firstboot_journal.sh test_os_update_recovery.sh" 20
+stack_expected=$(
+    printf '%s\n' lib.sh
+    find tests/stack -type f -name 'test-*.sh' -print | sed 's|^tests/stack/||'
+)
+stack_expected=$(printf '%s\n' "$stack_expected" | sort)
+check_source_set tests/stack/run.sh "$stack_expected" 50
 
-# tests/integration/ (#1595) — run.sh sources eight domain files by the identical `$HERE/` shape,
-# six of them hyphen-named with no standalone CI step of their own, and until now nothing checked
-# either direction for any of them (the measured before/after is on #1595). The exclusions:
-#   selftest*.sh          harness self-tests, run by their own target and gated per-file above;
-#                         a glob because this lane adds one routinely (see the note in the loop).
-#   e2e.sh                the release-gate driver — it sources run.sh's directory, not vice versa.
-#   restore-proof.sh
-#   rig-supply.sh         sourced by e2e.sh, not by run.sh.
-#   skip-accounting.sh    sourced by lib.sh, by a `${BASH_SOURCE[0]%/*}` path with its own
-#                         fail-closed guard (lib.sh:49-55), so run.sh reaches it transitively.
-#   build-pruned-chain.sh
-#   compact-chain.sh
-#   system-info.sh        box-side operator scripts, run by hand on the bench; not harness domains.
-# Floor 5 against the 8 expected today — the same "generous, but a collapse to a lone survivor
-# still fires" margin the stack pair carries, sized for a set an order of magnitude smaller.
-check_source_agreement tests/integration/run.sh tests/integration \
-    "selftest*.sh e2e.sh restore-proof.sh rig-supply.sh skip-accounting.sh \
-    build-pruned-chain.sh compact-chain.sh system-info.sh" 5
+integration_expected=$(
+    printf '%s\n' lib.sh scenarios.sh
+    find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
+        ! -name rig-supply.sh ! -name restore-proof.sh ! -name skip-accounting.sh -print |
+        sed 's|^tests/integration/||'
+)
+integration_expected=$(printf '%s\n' "$integration_expected" | sort)
+check_source_set tests/integration/run.sh "$integration_expected" 15
 
 # --- emit -----------------------------------------------------------------
 cat <<EOF
@@ -327,21 +237,21 @@ cat <<EOF
 
 ### \`pithead\` shell suite (tests/stack/) — ${n_stack} sections
 EOF
-for f in tests/stack/*.sh; do
+while IFS= read -r f; do
     n=$(sh_sections "$f" | count)
     if [ "$n" -eq 0 ]; then continue; fi
     printf '\n#### %s — %s\n' "${f#tests/stack/}" "$n"
     sh_sections "$f" | bullets
-done
+done < <(find tests/stack -type f -name '*.sh' ! -path '*/fixtures/*' | sort)
 
 cat <<EOF
 
-### Compose validation + hardening (tests/stack/test_compose.sh)
+### Compose validation + hardening (tests/stack/standalone/test_compose.sh)
 - docker-compose.yml \`\${VAR}\` interpolation resolves against a representative .env
 - #90 hardening invariants: no-new-privileges / cap_drop / read-only roots, credential-free
   healthchecks, least-privilege Docker socket proxies, and the pinned \`pithead\` project name
 
-### Real-image data-reset repair (tests/stack/test_data_reset.sh)
+### Real-image data-reset repair (tests/stack/standalone/test_data_reset.sh)
 - #1062 on a REAL ext4 image with the system's own e2fsprogs: the superblock-magic damage the
   battery injects is repaired with its payload intact — never reformatted — and a destroyed
   image still reaches the reformat escape
@@ -381,15 +291,15 @@ cat <<EOF
 
 ### Per-scenario assertions (tests/integration/run.sh)
 EOF
-grep -hoE '(assert_[a-z_]+|it_pass) "[^"]+"' tests/integration/run.sh |
+grep -hoE '(assert_[a-z_]+|it_pass) "[^"]+"' tests/integration/run.sh tests/integration/lib/run-*.sh |
     sed -E 's/^(assert_[a-z_]+|it_pass) "//; s/"$//' |
     grep -vE '^\$[A-Za-z_]+$' | sort -u | bullets
 
 cat <<EOF
 
-### Harness self-test (tests/integration/selftest*.sh) — ${n_selftest} sections
+### Harness self-test (tests/integration/selftest/*.sh) — ${n_selftest} sections
 EOF
-for f in tests/integration/selftest*.sh; do sh_sections "$f"; done | bullets
+for f in tests/integration/selftest/*.sh; do sh_sections "$f"; done | bullets
 
 cat <<EOF
 

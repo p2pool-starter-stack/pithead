@@ -190,10 +190,10 @@ exec "$@"
 EOF
 chmod +x "$BK/bin/docker" "$BK/bin/sudo"
 cat >"$BK/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
-P2POOL_ONION_ADDRESS=p2pa.onion
-PROXY_AUTH_TOKEN=BKTOKEN
+MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
+TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
+P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
+PROXY_AUTH_TOKEN=0123456789abcdef01234567
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
@@ -235,7 +235,7 @@ rm -f "$BK/data/tor/hs_ed25519_secret_key"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)"
 rc=$?
 assert_rc "restore exits 0" "$rc" "0"
-assert_eq "restore brings back the Caddyfile" "$(cat "$BK/Caddyfile")" "CADDY-ORIG"
+assert_contains "restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_eq "restore brings back the dashboard db" "$(cat "$BK/data/dashboard/dashboard.db")" "DBDATA-ORIG"
 assert_eq "restore brings back the onion key" "$(cat "$BK/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-ORIG"
 
@@ -301,14 +301,14 @@ rc=$?
 assert_contains "wrong passphrase names the cause" "$out" "rong passphrase"
 assert_eq "wrong passphrase leaves live files untouched" "$(cat "$BK/Caddyfile")" "CADDY-LIVE"
 
-# 4) Right passphrase, via the prompt this time: full round-trip (archive was taken while the
-# files held their -ORIG values, so restore must bring those back over the corrupted ones).
+# 4) Right passphrase, via the prompt this time: data and identity round-trip, while generated
+# runtime files are rebuilt from the validated configuration.
 printf 'CORRUPTED\n' >"$BK/data/dashboard/dashboard.db"
 rm -f "$BK/data/tor/hs_ed25519_secret_key"
 out="$(cd "$BK" && printf 'hunter2\n' | PATH="$BK/bin:$PATH" ./pithead restore -y "$enc_archive" 2>&1)"
 rc=$?
 assert_rc "encrypted restore exits 0" "$rc" "0"
-assert_eq "encrypted restore brings back the Caddyfile" "$(cat "$BK/Caddyfile")" "CADDY-ORIG"
+assert_contains "encrypted restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_eq "encrypted restore brings back the dashboard db" "$(cat "$BK/data/dashboard/dashboard.db")" "DBDATA-ORIG"
 assert_eq "encrypted restore brings back the onion key" "$(cat "$BK/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-ORIG"
 
@@ -351,7 +351,7 @@ printf 'CORRUPTED\n' >"$BK/Caddyfile"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$plain_archive" 2>&1)"
 rc=$?
 assert_rc "plaintext archive still restores" "$rc" "0"
-assert_eq "plaintext restore brings back the Caddyfile" "$(cat "$BK/Caddyfile")" "CADDY-ORIG"
+assert_contains "plaintext restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 rm -f "$BK"/backups/pithead-backup-*
 
 # 6b) Truncated plaintext archive (#549): mirrors the encrypted-branch tamper/truncation check

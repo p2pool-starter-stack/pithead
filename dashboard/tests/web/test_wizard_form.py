@@ -13,8 +13,8 @@ Every test here therefore checks BOTH that turning a switch on writes the key an
 it alone does not.
 """
 
-from mining_dashboard import wizard
-from mining_dashboard.wizard_form import build_config
+from mining_dashboard.wizard import server as wizard
+from mining_dashboard.wizard.form import build_config
 
 # The two wallets are always present; every switch below is an addition to this.
 BASE = {"monero_wallet": "4" + "A" * 94, "tari_wallet": "t"}

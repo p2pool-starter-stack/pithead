@@ -18,7 +18,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
 | `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, the served dashboard certificate actually covers every name Caddy answers on and isn't within 30 days of expiring (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
 | `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack for a clean copy, then restarts it). `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
-| `./pithead restore <archive>` | Restore those files from a backup archive, encrypted or plaintext (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
+| `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
 | `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
@@ -353,7 +353,7 @@ it, and the dashboard logs a warning.
 
 ## Archiving the XvB winners feed
 
-`scripts/xvb-winners-archive.sh` saves a dated snapshot of the public XvB winners feed
+`scripts/watch/xvb-winners-archive.sh` saves a dated snapshot of the public XvB winners feed
 (`https://xmrvsbeast.com/p2pool/winners_recent_full_pub.txt`) — the full round schedule with
 per-round prize hashrates and qualifier counts — before the feed's ~45-day rolling window drops
 the oldest rounds. The fetch runs inside the dashboard container, so it rides the stack's Tor
@@ -371,7 +371,7 @@ Run it daily from cron on the deploy box, and give it an archive directory **out
 version directories:
 
 ```
-10 0 * * * $HOME/mining/current/scripts/xvb-winners-archive.sh $HOME/mining/xvb-winners-archive
+10 0 * * * $HOME/mining/current/scripts/watch/xvb-winners-archive.sh $HOME/mining/xvb-winners-archive
 ```
 
 Snapshots land there as `winners-YYYYMMDD.txt` (UTC date). The directory argument matters:
@@ -584,9 +584,10 @@ unchanged, no flag needed. A wrong passphrase, or a corrupt or truncated archive
 fails before anything on disk is touched. `restore` also refuses unless Compose confirms that all
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
-before committing them. `--yes` skips the overwrite prompt, not these checks. It puts the files back, fixes
-Tor key ownership so the onion address returns unchanged, and restores hashrate history and
-dashboard settings.
+before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
+only validated generated secrets and Tor identity are retained from the archived environment.
+`--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
+onion address returns unchanged, and restores hashrate history and dashboard settings.
 
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from. On a machine laid out differently (another user, another install

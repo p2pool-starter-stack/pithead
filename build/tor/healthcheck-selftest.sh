@@ -2,7 +2,7 @@
 #
 # Does build/tor/healthcheck.sh still run on nothing but the commands its own image ships?
 #
-# The #1098 guard (scripts/verify-healthcheck-scripts.sh) asks whether a healthcheck script EXISTS
+# The #1098 guard (scripts/lint/verify-healthcheck-scripts.sh) asks whether a healthcheck script EXISTS
 # where its Dockerfile promises. This asks the other half of the same contract: whether that script
 # can still RUN there. #1372 is the case that made the gap visible — build/tor/Dockerfile installed
 # `xxd` by name purely for healthcheck.sh's one call site, which bought vim's CVE stream for a

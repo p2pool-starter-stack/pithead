@@ -1,10 +1,10 @@
 """Tests for the pure helpers behind the DataService poll loop (#1105 Phase 3, cut D5).
 
-The 14 classes here moved 1:1 and byte-identical out of ``tests/service/test_data_service.py``
-when their subjects moved into ``mining_dashboard/service/data_helpers.py``.
+The 14 classes here moved 1:1 and byte-identical out of the DataService suite — then a single
+module, since split into ``tests/service/test_data_service_*.py`` — when their subjects moved
+into ``mining_dashboard/service/data_helpers.py``.
 
-``_totals`` used to be defined here, a DUPLICATE of the builder in
-``tests/service/test_data_service.py``.  Duplicating shared module-level test builders into each
+``_totals`` used to be defined here, a DUPLICATE of the builder in that same suite.  Duplicating shared module-level test builders into each
 new test module was the standing ruling while the #1105 cuts were in flight, because those cuts
 proved themselves by moving test bodies verbatim and real pytest fixtures would have rewritten the
 call sites inside the same change.  The cuts are finished, so #1541 moved both copies into

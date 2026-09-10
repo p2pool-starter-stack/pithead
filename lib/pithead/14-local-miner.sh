@@ -315,7 +315,7 @@ rig_coordinator_ip() {
     host=${host#\[}
     host=${host%\]}
     [ -n "$host" ] || return 0
-    getent ahostsv4 "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+(\.[0-9]+){3}$/ { print $1; exit }'
+    getent ahostsv4 "$host" 2>/dev/null | awk '$1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print $1; exit }'
 }
 
 # RigForge's config for a rig, derived from rig.json exactly the way the Both role's is derived

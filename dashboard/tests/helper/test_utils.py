@@ -140,7 +140,7 @@ class TestFormatDiskSize:
 
 
 class TestFormatXmr:
-    """#387: mirrors formatXmr in web/static/logic.mjs so dashboard and Telegram agree."""
+    """#387: mirrors formatXmr in web/static/app/logic.mjs so dashboard and Telegram agree."""
 
     def test_precision_scales_with_magnitude(self):
         assert format_xmr(2.5) == "2.5000 XMR"  # >= 1 -> 4 dp
@@ -155,7 +155,7 @@ class TestFormatXmr:
 
 
 class TestFormatXtm:
-    """#387: the Tari sibling — mirrors formatXtm in web/static/logic.mjs, so a confirmed Tari
+    """#387: the Tari sibling — mirrors formatXtm in web/static/app/logic.mjs, so a confirmed Tari
     total (#787) reads identically in the bot and on the dashboard card."""
 
     def test_precision_scales_with_magnitude(self):

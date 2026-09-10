@@ -1,0 +1,139 @@
+/* Component Health & egress-posture panel (#170). */
+.c-bad {
+  color: var(--bad-fg);
+}
+.egress-summary {
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.egress-component {
+  margin-bottom: 0.5rem;
+}
+.egress-name {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.egress-conns {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+}
+.egress-conn {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.85em;
+  padding: 0.1rem 0;
+}
+.egress-route {
+  flex: 0 0 7.5em;
+  font-weight: 600;
+}
+.egress-to {
+  color: var(--text-muted);
+}
+.egress-note {
+  font-style: italic;
+}
+
+/* Stack topology panel (#170). */
+.topo-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.8em;
+  margin-bottom: 0.4rem;
+}
+.topo-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-muted);
+}
+.topo-sw {
+  width: 0.8em;
+  height: 0.8em;
+  border-radius: 2px;
+  display: inline-block;
+}
+.topo-toggle {
+  margin-left: auto;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: inherit;
+  cursor: pointer;
+}
+.topo-toggle:hover {
+  border-color: var(--accent);
+}
+.topo-svg {
+  width: 100%;
+  height: auto;
+}
+.topo-zone {
+  fill: var(--text-muted);
+  font-size: 10px;
+  text-anchor: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.topo-node rect {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.topo-node text {
+  fill: var(--text);
+  font-size: 11px;
+}
+/* Tor hub: tint the fill with the same green as its stroke (instead of the flat --bg every other
+ * node uses) so the trust anchor reads as a distinct zone at a glance, not just a thicker border. */
+.topo-hub rect {
+  fill: var(--ok);
+  fill-opacity: 0.12;
+  stroke: var(--ok);
+  stroke-width: 1.5;
+}
+/* Host-zone nodes (xmrig-proxy/caddy/dashboard/p2pool/monerod/tari/docker): a faint accent tint —
+ * "this stack" — same zone-tint treatment as the Tor hub above. Excludes .topo-hub (tor) and
+ * .topo-ext (lan/internet, which stay the deliberately hollow/dashed "external" look below). */
+.topo-node:not(.topo-hub):not(.topo-ext) rect {
+  fill: var(--accent);
+  fill-opacity: 0.06;
+}
+.topo-ext rect {
+  fill: transparent;
+  stroke-dasharray: 3 2;
+}
+.topo-ext text {
+  fill: var(--text-muted);
+}
+/* Marching ants on active, non-muted edges (Tor/clearnet — never the grey local/inactive routes):
+ * a moving dash pattern reads as "live traffic" versus the static routes. Dashes alone (no motion)
+ * render for prefers-reduced-motion, so the distinction still exists without the animation. */
+.topo-edge-ants {
+  stroke-dasharray: 6 4;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .topo-edge-ants {
+    animation: topo-ants-dash 0.8s linear infinite;
+  }
+}
+@keyframes topo-ants-dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}
+/* The per-component egress list, demoted to an expandable drawer under the topology map. */
+.egress-details {
+  margin-top: 0.6rem;
+  font-size: 0.9em;
+}
+.egress-details > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}

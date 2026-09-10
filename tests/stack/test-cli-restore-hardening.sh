@@ -17,6 +17,12 @@ cr_archive() {
 }
 cr_archive "$CR_ARCHIVE"
 
+# Staging derives files privately: it must not refresh the live wallet sidecar before commit.
+printf 'LIVE-WALLET-SIDECAR\n' >"$BK/data/tari-wallet-secret.env"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" run_sourced "$BK" eval 'RESTORE_STAGE_DIR=$(mktemp -d); trap restore_discard_stage EXIT; restore_stage_archive "$CR_ARCHIVE" 0 ""' 2>&1)"
+assert_rc "restore stages derived files successfully" "$?" 0
+assert_eq "staging leaves the live wallet sidecar untouched" "$(cat "$BK/data/tari-wallet-secret.env")" LIVE-WALLET-SIDECAR
+
 cat >"$BK/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
@@ -98,5 +104,60 @@ assert_eq "restored Caddyfile is owner-only" "$(file_mode "$BK/Caddyfile")" 600
 assert_eq "restored config belongs to the invoking operator" "$(file_uid "$BK/config.json")" "$(id -u)"
 assert_eq "restored onion key is owner-only" "$(file_mode "$BK/data/tor/hs_ed25519_secret_key")" 600
 assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/dashboard.db")" 600
+
+# Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
+# stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
+# secrets still round-trip.
+jq '.p2pool.stratum_password = "fixture.literal-pass"' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
+cat >"$ROOTS/${BK#/}/.env" <<'EOF'
+PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
+WALLET_RPC_PASSWORD=111111111111111111111111
+TARI_WALLET_PASSWORD=22222222222222222222222222222222
+PROXY_STRATUM_PASSWORD=fixture.literal-pass
+MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
+TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
+P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
+DASHBOARD_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion
+DASHBOARD_ONION_CLIENT_PUBKEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+DASHBOARD_ONION_CLIENT_PRIVKEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+ARCHIVE_ONLY_VALUE=stale-generated-setting
+DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==
+DASHBOARD_AUTH_PW_FP=stale-fingerprint
+DEPLOYMENT_COMPLETED=true
+EOF
+printf 'STALE-GENERATED-CADDY\n' >"$ROOTS/${BK#/}/Caddyfile"
+cr_archive "$CR/stale-derived.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/stale-derived.tar.gz" 2>&1)"
+assert_rc "restore accepts valid config while discarding archive-derived policy" "$?" 0
+assert_eq "restore derives literal stratum password from config" "$(sed -n 's/^PROXY_STRATUM_PASSWORD=//p' "$BK/.env")" fixture.literal-pass
+assert_eq "administrative restore retains deployment status" "$(sed -n 's/^DEPLOYMENT_COMPLETED=//p' "$BK/.env")" true
+assert_eq "restore preserves the generated proxy secret" "$(sed -n 's/^PROXY_AUTH_TOKEN=//p' "$BK/.env")" abcdef0123456789abcdef01
+assert_eq "restore preserves the wallet database secret" "$(sed -n 's/^TARI_WALLET_PASSWORD=//p' "$BK/.env")" 22222222222222222222222222222222
+assert_eq "restore preserves the Tor onion identity" "$(sed -n 's/^MONERO_ONION_ADDRESS=//p' "$BK/.env")" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
+assert_eq "restore preserves onion client-auth identity" "$(sed -n 's/^DASHBOARD_ONION_CLIENT_PRIVKEY=//p' "$BK/.env")" BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+assert_not_contains "restore drops unrecognized archive env policy" "$(cat "$BK/.env")" ARCHIVE_ONLY_VALUE
+assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" ""
+assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
+assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
+
+printf 'LIVE-ENV\n' >"$BK/.env"
+printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
+cat >>"$ROOTS/${BK#/}/.env" <<'EOF'
+PROXY_AUTH_TOKEN=111111111111111111111111
+EOF
+cr_archive "$CR/duplicate-preserved.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/duplicate-preserved.tar.gz" 2>&1)"
+assert_rc "restore rejects duplicate preserved-secret keys" "$?" 1
+assert_contains "duplicate preserved-secret refusal names invalid state" "$out" "invalid generated identity or secret state"
+assert_eq "duplicate preserved-secret refusal leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "duplicate preserved-secret refusal leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+
+grep -v '^PROXY_AUTH_TOKEN=' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp"
+printf 'PROXY_AUTH_TOKEN=not-generated\n' >>"$ROOTS/${BK#/}/.env.tmp"
+mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/malformed-preserved.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-preserved.tar.gz" 2>&1)"
+assert_rc "restore rejects malformed preserved-secret values" "$?" 1
+assert_eq "malformed preserved-secret refusal leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 unset -f cr_archive
 unset CR ROOTS CR_ARCHIVE out

@@ -331,7 +331,7 @@ covered by the fake mini-stack ([integration-testing](integration-testing.md)) p
 compose/config tests, which need no real chain. Supply the opposite-mode chain only to exercise
 it end-to-end, and build it on fast storage:
 
-- Pruned chain next to a full one? [`build-pruned-chain.sh`](../../tests/integration/build-pruned-chain.sh)
+- Pruned chain next to a full one? [`build-pruned-chain.sh`](../../tests/integration/tools/build-pruned-chain.sh)
   copies the LMDB consistently (brief monerod stop, then immediate restart) and prunes the copy,
   leaving the canonical chain untouched. Fetch `monero-blockchain-prune` at the same version as
   the running monerod and verify it against the hash the image pins (`build/monero/Dockerfile`
@@ -353,7 +353,7 @@ tests/integration/run.sh --host you@server --dir pithead --readiness
 > is 10 pages out of 67,605,667, so there is nothing to reclaim (#1446). To reclaim it where there
 > is, you must rewrite the DB with
 > `monero-blockchain-prune` (see
-> [`compact-chain.sh`](../../tests/integration/compact-chain.sh)). It's slow (it copies every block
+> [`compact-chain.sh`](../../tests/integration/tools/compact-chain.sh)). It's slow (it copies every block
 > over hours), though it reads through a snapshot so monerod keeps mining.
 >
 > **The tool is copy-then-swap, so it does not leave the swap to you.** It renames
@@ -433,7 +433,7 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   don't share the runner with private repos.
 - Least privilege. A dedicated unprivileged user; the stack already runs least-privilege
   containers (`no-new-privileges`, `cap_drop`, read-only roots, scoped Docker socket proxies,
-  regression-guarded in `tests/stack/test_compose.sh`).
+  regression-guarded in `tests/stack/standalone/test_compose.sh`).
 - Reproducible, clean baseline. The matrix reuses the synced chains and never mutates the
   canonical copies (config-only changes, snapshot/restore for the prune axis), restores the
   original `config.json` at the end, and `--safety-backup` takes a `pithead backup` first and

@@ -28,7 +28,7 @@
 # - irun() is defined and unset within the moved block; it does not escape this file.
 # - This domain never touches $V, seed_env(), $C or the results dir, and writes no ambient .env or
 #   Caddyfile, so it needs no sandbox self-arm and carries neither coupling rule.
-REL="$ROOT/scripts/release.sh"
+REL="$ROOT/scripts/release/release.sh"
 
 echo "== unit: install.sh host gate (#77 phase 1) =="
 # The installer hard-fails on the platforms the stack cannot run on, before any download.

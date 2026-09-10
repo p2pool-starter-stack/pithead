@@ -16,7 +16,7 @@ drift on a rig running exactly what we applied.
 import pytest
 
 from mining_dashboard.service.control_service import SECRET_SENTINEL
-from mining_dashboard.web.worker_detail import (
+from mining_dashboard.web.views.worker_detail import (
     _comparable,
     _has_unsettled_apply,
     config_drift,
@@ -186,8 +186,8 @@ class TestThroughTheWholePayload:
     @staticmethod
     def _detail(monkeypatch, rig_config, *, applied=None, status="applied"):
         from mining_dashboard.service.storage_service import StateManager
-        from mining_dashboard.web import views
-        from mining_dashboard.web.worker_detail import build_worker_detail
+        from mining_dashboard.web.views import views
+        from mining_dashboard.web.views.worker_detail import build_worker_detail
 
         # setattr on the shared ``config`` module object, never on ``views`` itself — a rebinding
         # in views' own globals would patch the wrong module the moment anything here moves.
@@ -251,8 +251,8 @@ class TestRevisionDriftReachesThePayload:
     def _detail(monkeypatch, revisions, current):
         """Poll the store once per entry in ``revisions``, then build the payload at ``current``."""
         from mining_dashboard.service.storage_service import StateManager
-        from mining_dashboard.web import views
-        from mining_dashboard.web.worker_detail import build_worker_detail
+        from mining_dashboard.web.views import views
+        from mining_dashboard.web.views.worker_detail import build_worker_detail
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "10.0.0.9"}]
@@ -286,8 +286,8 @@ class TestRevisionDriftReachesThePayload:
 
     def test_a_rig_with_no_config_meta_publishes_silence(self, monkeypatch):
         from mining_dashboard.service.storage_service import StateManager
-        from mining_dashboard.web import views
-        from mining_dashboard.web.worker_detail import build_worker_detail
+        from mining_dashboard.web.views import views
+        from mining_dashboard.web.views.worker_detail import build_worker_detail
 
         monkeypatch.setattr(
             views.config, "DASHBOARD_WORKERS", [{"name": "rig1", "host": "10.0.0.9"}]

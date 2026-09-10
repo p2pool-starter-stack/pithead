@@ -438,7 +438,7 @@ def build_controller(donation_level="vip", *, gain=None, reserve_factor=None, ti
     optional tuning overrides, for simulation. Returns the service so callers can
     inspect/seed its state; wrap it with `make_algo_controller` to drive a run."""
     # Imported lazily so this module stays importable without the full service graph.
-    from mining_dashboard.service.algo_service import AlgoService
+    from mining_dashboard.service.xvb.algo_service import AlgoService
 
     algo = AlgoService(_FixedTiers(tiers), proxy_client=None, data_service=None)
     algo.donation_level = donation_level

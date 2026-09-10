@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mining_dashboard.service import telegram_commands
+from mining_dashboard.service.notify import telegram_commands
 
 
 @pytest.mark.asyncio

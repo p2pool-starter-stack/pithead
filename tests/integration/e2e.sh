@@ -21,19 +21,19 @@
 # one at a time, not two stacks. That's why borrow→test→restore is a code/image swap, not a re-sync.
 #
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
-# See tests/integration/testbench-README.md and docs/dev/integration-testing.md.
+# See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
 
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
 # shellcheck source=tests/integration/lib.sh
-source "$HERE/lib.sh"
-# shellcheck source=tests/integration/rig-supply.sh
-source "$HERE/rig-supply.sh"
+source "$HERE/lib.sh" || exit $?
+# shellcheck source=tests/integration/lib/rig-supply.sh
+source "$HERE/lib/rig-supply.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
-# shellcheck source=tests/integration/restore-proof.sh
-source "$HERE/restore-proof.sh"
+# shellcheck source=tests/integration/lib/restore-proof.sh
+source "$HERE/lib/restore-proof.sh" || exit $?
 
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"

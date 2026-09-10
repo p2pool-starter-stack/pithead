@@ -50,9 +50,9 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 #                                    v0.38.0; cosign's own main is still v0.38.0.
 #   golang.org/x/crypto    v0.55.0   CVE-2026-56854 (CRITICAL). COMPOSE ONLY: compose reaches v0.54.0
 #                                    indirectly; cosign's x/mod raise already seats v0.55.0 (#1649).
-#   google.golang.org/grpc v1.83.1   CVE-2026-84304 (HIGH), both binaries. The #1153 raise to
-#                                    v1.82.1 (GHSA-hrxh-6v49-42gf) aged into it: a raise is an
-#                                    unwatched pin — #1655.
+#   google.golang.org/grpc v1.83.2   CVE-2026-84445 (HIGH), both binaries. Third trip down this
+#                                    ladder: #1153's v1.82.1 (GHSA-hrxh-6v49-42gf) aged into
+#                                    CVE-2026-84304, whose v1.83.1 aged into this. #1655.
 #
 # WHAT A RAISE ACTUALLY MOVES: `go get X@v Y@v` upgrades the whole closure minimum-version
 # selection needs to satisfy X and Y, not just X and Y — here compose moves 4 modules and cosign 9
@@ -64,8 +64,8 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
 # left two other HIGH findings standing.
-ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.1"
-ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.1"
+ARG COMPOSE_GO_RAISES="golang.org/x/mod@v0.40.0 golang.org/x/crypto@v0.55.0 google.golang.org/grpc@v1.83.2"
+ARG COSIGN_GO_RAISES="golang.org/x/mod@v0.40.0 google.golang.org/grpc@v1.83.2"
 ENV CGO_ENABLED=0
 
 # Blobless clone then detach to the commit: the tag is only a convenience for the version string.
@@ -74,7 +74,7 @@ ENV CGO_ENABLED=0
 # to sit next to each other. `${COMPOSE_VERSION}` is only an ldflag, `${COMPOSE_COMMIT}` is what is
 # actually built, so bumping the version alone rebuilds the OLD code and stamps the NEW version on
 # it — and every downstream check agrees it worked: the build succeeds, `docker-compose version`
-# prints the new number, and scripts/pin-watch.sh reads the VERSION ARG and reports the component
+# prints the new number, and scripts/watch/pin-watch.sh reads the VERSION ARG and reports the component
 # current for ever. Nothing else in the tree reads `${COMPOSE_COMMIT}` at all. The clone is blobless
 # but not shallow, so the tag objects are present and this costs nothing.
 RUN git clone --filter=blob:none --no-checkout https://github.com/docker/compose /src/compose \

@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 from mining_dashboard.service.storage_service import StateManager
-from mining_dashboard.web.infra_views import build_workers
-from mining_dashboard.web.worker_detail import build_worker_detail
+from mining_dashboard.web.views.infra_views import build_workers
+from mining_dashboard.web.views.worker_detail import build_worker_detail
 
 
 def _worker(rigforge):
@@ -28,7 +28,7 @@ def test_proxy_online_wins_over_fresh_agent_miner_down():
 
 
 def test_worker_inspect_also_keeps_proxy_online_authoritative(monkeypatch):
-    from mining_dashboard.web import views
+    from mining_dashboard.web.views import views
 
     monkeypatch.setattr(views.config, "DASHBOARD_WORKERS", [])
     state = StateManager(db_path=":memory:")

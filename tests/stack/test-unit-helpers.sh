@@ -115,6 +115,12 @@ printf 'A=1\nB=two\nPROXY_AUTH_TOKEN=keep=me\n' >"$SANDBOX/old.env"
 printf 'A=1\nB=three\nC=4\nPROXY_AUTH_TOKEN=keep=me\n' >"$SANDBOX/new.env"
 assert_eq "env_get_file reads value" "$(run_sourced "$SANDBOX" env_get_file "$SANDBOX/old.env" B)" "two"
 assert_eq "env_get_file value with =" "$(run_sourced "$SANDBOX" env_get_file "$SANDBOX/old.env" PROXY_AUTH_TOKEN)" "keep=me"
+literal=$' single\'quote "double" \\path\\ $HOME\t# text\nnext '
+rendered="$(run_sourced "$SANDBOX" dotenv_render_value "$literal")"
+printf 'LITERAL=%s\nORDINARY=plain-value\n' "$rendered" >"$SANDBOX/literal.env"
+assert_eq "dotenv literal round-trip" "$(run_sourced "$SANDBOX" env_get_file "$SANDBOX/literal.env" LITERAL)" "$literal"
+assert_eq "dotenv ordinary value stays unquoted" \
+    "$(run_sourced "$SANDBOX" dotenv_render_value '--mini --flag')" "--mini --flag"
 changed="$(run_sourced "$SANDBOX" env_changed_keys "$SANDBOX/old.env" "$SANDBOX/new.env" | sort | tr '\n' ' ')"
 assert_eq "env_changed_keys finds B and C" "$changed" "B C "
 

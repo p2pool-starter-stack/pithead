@@ -6,7 +6,7 @@ name: Trivyignore mute watch
 #
 # Why this exists at all: the weekly CVE sweep (#833) scans WITH `.trivyignore` applied, so a
 # muted finding is invisible to it by construction — a mute that outlives its finding rots
-# silently. scripts/trivyignore-watch.sh rebuilds every covered image exactly the way the gate
+# silently. scripts/watch/trivyignore-watch.sh rebuilds every covered image exactly the way the gate
 # does, scans them with NO ignore file, and names an ID obsolete only when it is absent from ALL
 # of them (a per-image check confidently deletes live mutes — the trap in the script header).
 #
@@ -47,7 +47,7 @@ jobs:
           # NOT `set -e`: a broken run is a result to publish, not a reason to skip publishing
           # it. The script itself refuses to name anything obsolete off an incomplete run and
           # exits 1; the exit code is carried to the last step so the run still fails loudly.
-          bash scripts/trivyignore-watch.sh >report.md
+          bash scripts/watch/trivyignore-watch.sh >report.md
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
           [ -s report.md ] || { echo "The mute watch produced no report at all — see the run log." >report.md; rc=1; }

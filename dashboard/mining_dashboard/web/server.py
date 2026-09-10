@@ -10,20 +10,17 @@ from aiohttp import web
 from mining_dashboard.client.rigforge_freshness import feed_stale
 from mining_dashboard.client.xmrig_client import strip_sentinel_credentials
 from mining_dashboard.config import config
-from mining_dashboard.service import audit_service, control_service, worker_adopt, worker_refresh
+from mining_dashboard.service import audit_service, control_service
+from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
-from mining_dashboard.service.update_checker import parse_semver
-from mining_dashboard.web import diagnostics_views, download_views
+from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope
-from mining_dashboard.web.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
-from mining_dashboard.web.prometheus import render_prometheus
-from mining_dashboard.web.views import (
-    build_state,
-    canonical_window,
-    get_shell_html,
-    parse_window,
-)
-from mining_dashboard.web.worker_detail import build_worker_detail
+from mining_dashboard.web.views import diagnostics_views, download_views
+from mining_dashboard.web.views.charts import canonical_window, parse_window
+from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
+from mining_dashboard.web.views.prometheus import render_prometheus
+from mining_dashboard.web.views.views import build_state, get_shell_html
+from mining_dashboard.web.views.worker_detail import build_worker_detail
 
 logger = logging.getLogger("WebServer")
 

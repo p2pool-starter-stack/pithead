@@ -22,3 +22,11 @@ data_reset_repair_tools_present() { # <image-root> — 0 iff both tools are exec
     { [ -x "$root/usr/sbin/e2fsck" ] || [ -x "$root/sbin/e2fsck" ]; } &&
         { [ -x "$root/usr/sbin/mkfs.ext4" ] || [ -x "$root/sbin/mkfs.ext4" ]; }
 }
+
+# Compare the final exact wizard implementation in a single-image `docker save` archive. The Python
+# helper streams archive members without extracting paths and applies declared layers in order.
+wizard_server_matches() { # <container-archive> <expected-server.py>
+    local helper_dir
+    helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    python3 "$helper_dir/check-wizard-archive.py" "$1" "$2"
+}
