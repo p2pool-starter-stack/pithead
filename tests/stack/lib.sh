@@ -11,7 +11,7 @@
 
 # macOS is deprecated as a test platform (#2041), and this refuses rather than warns because a
 # warning still leaves a pass/fail line behind that reads as a result. A failure here is not
-# evidence: a control run of this suite on an UNMODIFIED develop failed 43+ assertions on a Mac.
+# evidence: a control run of this suite on an UNMODIFIED develop scored 3708 passed / 148 FAILED
 # The assertions are written against GNU sed/stat semantics, and BSD tools do not fail loudly on
 # the difference — they produce wrong output that surfaces as an unrelated assertion elsewhere.
 # A `grep` that is a ugrep shim compounds it: a pattern with a non-terminal $ matches nothing at
@@ -21,7 +21,7 @@
 # that the result is not to be trusted. CI is Linux, so this never fires there.
 if [ "$(uname -s)" = "Darwin" ] && [ "${PITHEAD_UNTRUSTED_MACOS_RUN:-0}" != "1" ]; then
     echo "tests: macOS is not a supported test platform (#2041) — run these on Linux." >&2
-    echo "  A failure here would not be evidence: an unmodified develop fails 43+ assertions on macOS," >&2
+    echo "  A failure here would not be evidence: unmodified develop scores 3708/148 FAILED on macOS," >&2
     echo "  because the assertions assume GNU sed/stat and BSD tools differ silently." >&2
     echo "  To run anyway, knowing the result is untrustworthy: PITHEAD_UNTRUSTED_MACOS_RUN=1" >&2
     exit 1
