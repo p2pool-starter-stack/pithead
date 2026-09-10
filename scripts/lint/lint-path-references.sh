@@ -223,6 +223,7 @@ src_rows=$(paste <(printf '%s' "$src_raw" | cut -f1-2) <(printf '%s' "$src_raw" 
 # Bindings live in shell variables, not a table on disk: lookups run inside three nested loops, and
 # a `grep` apiece put this gate's runtime in the tens of seconds. `own` outranks `inh`; a second,
 # different value marks the name ambiguous, and ambiguous reads as unresolvable, never as either.
+# The sentinels avoid `@`: `@unset@` beside a variable name reads as a user@host to lint-topology.
 # Two files whose names mangle to one key merge their bindings, which can only widen ambiguity.
 dollar='$'
 tab=$(printf '\t')
@@ -235,12 +236,12 @@ bset() {
     local k cur
     bkey "$1" "$2" "$3"
     k=$REPLY
-    eval "cur=\${$k-@unset@}"
-    if [ "$cur" = "@unset@" ]; then
+    eval "cur=\${$k-!unset!}"
+    if [ "$cur" = "!unset!" ]; then
         eval "$k=\$4"
         case " $bvars " in *" $3 "*) ;; *) bvars="$bvars $3" ;; esac
     elif [ "$cur" != "$4" ]; then
-        eval "$k=@amb@"
+        eval "$k=!amb!"
     fi
 }
 bget() { # bget own|any <file> <var> -> REPLY; rc 1 when unset or ambiguous
@@ -249,9 +250,9 @@ bget() { # bget own|any <file> <var> -> REPLY; rc 1 when unset or ambiguous
         [ "$1" = any ] || [ "$1" = "$t" ] || continue
         bkey "$t" "$2" "$3"
         k=$REPLY
-        eval "cur=\${$k-@unset@}"
-        [ "$cur" = "@unset@" ] && continue
-        [ "$cur" = "@amb@" ] && return 1
+        eval "cur=\${$k-!unset!}"
+        [ "$cur" = "!unset!" ] && continue
+        [ "$cur" = "!amb!" ] && return 1
         REPLY=$cur
         return 0
     done
