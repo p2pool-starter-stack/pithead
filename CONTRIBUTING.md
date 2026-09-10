@@ -55,9 +55,11 @@ the dashboard and frontend unit suites can run on the host.
    - **lint** — every file surface gets a linter/formatter check (`make lint` runs them all; run one
      with `make lint-<surface>`): `lint-sh` (shellcheck + shfmt), `lint-py` (ruff), `lint-js` (Biome),
      `lint-yaml` (yamllint), `lint-md` (markdownlint), `lint-docs-voice` (banned-word check),
-     `lint-path-references` (every repo path named in a comment, docstring or doc has to resolve — a
-     reorganization moves the target and leaves the pointer, and nothing else here notices; deliberate
-     absences go in the script's own `allowed_absent()` with a reason, never a per-file exemption),
+     `lint-path-references` (every repo path named in a comment, docstring or doc has to resolve, and
+     so does every statically resolvable `source` target — a reorganization moves the target and leaves
+     the pointer, and nothing else here notices; the run prints how many `source` expressions it could
+     not resolve statically, so that blind spot stays visible; deliberate absences go in the script's
+     own `allowed_absent()` with a reason, never a per-file exemption),
      `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text, and
      no bare `docs/` paths in `pithead` operator text — release bundles carry a curated operator-doc
      subset, not arbitrary repo paths, so point at `$DOCS_URL/docs/<file>.md#anchor` instead; comments
