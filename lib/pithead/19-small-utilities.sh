@@ -174,6 +174,8 @@ assert_safe_dir() {
     esac
 }
 
+# The Darwin arm here is DEPRECATED and untested (#2041): macOS is no longer a test platform, so
+# nothing exercises it. Left working rather than deleted; do not build on it.
 safe_sed() {
     local pattern="$1"
     local file="$2"

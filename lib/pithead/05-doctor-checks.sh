@@ -124,7 +124,7 @@ check_local_miner_hugepages_blocked() {
 }
 
 # True (rc 0) when the host CPU advertises AVX2 — RandomX wants it, but it's performance-only,
-# not fatal. Linux reads /proc/cpuinfo; macOS reads sysctl's machdep CPU features.
+# not fatal. Linux reads /proc/cpuinfo; the macOS sysctl arm is DEPRECATED and untested (#2041).
 cpu_has_avx2() {
     if [ "$OS_TYPE" == "Darwin" ]; then
         sysctl -a 2>/dev/null | grep "machdep.cpu" | grep -q "AVX2"
