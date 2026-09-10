@@ -9,16 +9,10 @@
 # Mechanical move only: this is the SAME code that used to sit at the top of run.sh, moved
 # here verbatim so run.sh can source it. No behaviour changed.
 
-# macOS is deprecated as a test platform (#2041), and this refuses rather than warns because a
-# warning still leaves a pass/fail line behind that reads as a result. A failure here is not
-# evidence: a control run of this suite on an UNMODIFIED develop scored 3708 passed / 148 FAILED
-# The assertions are written against GNU sed/stat semantics, and BSD tools do not fail loudly on
-# the difference — they produce wrong output that surfaces as an unrelated assertion elsewhere.
-# A `grep` that is a ugrep shim compounds it: a pattern with a non-terminal $ matches nothing at
-# all, silently. Two automated reviewers have already reversed correct verdicts on macOS runs.
-#
-# The escape hatch exists for someone deliberately debugging portability, and says in its own name
-# that the result is not to be trusted. CI is Linux, so this never fires there.
+# macOS is deprecated as a test platform (#2041): the assertions assume GNU sed/stat, and BSD
+# tools differ without failing loudly. Refuses rather than warns, because a warning still leaves a
+# pass/fail line behind that reads as a result — which is how three reviewers reached wrong
+# verdicts. Evidence and the full reasoning are in #2041. CI is Linux; this never fires there.
 if [ "$(uname -s)" = "Darwin" ] && [ "${PITHEAD_UNTRUSTED_MACOS_RUN:-0}" != "1" ]; then
     echo "tests: macOS is not a supported test platform (#2041) — run these on Linux." >&2
     echo "  A failure here would not be evidence: unmodified develop scores 3708/148 FAILED on macOS," >&2
