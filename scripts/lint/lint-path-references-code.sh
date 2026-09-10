@@ -209,11 +209,14 @@ inherit_pass() { # anchors cross a `source` edge in both directions; own always 
         done
     done <<<"$edges"
 }
-# Two relaxation rounds: one is not enough and three buy nothing — measured, not guessed.
+# Two relaxation rounds: one is not enough, and deeper is not free — measured, not guessed.
 # tests/stack/lifecycle/appliance-lock.sh reaches $ROOT three `source` hops from lib.sh via run.sh,
-# and it is the reference round 2 recovers; the skip set is byte-identical at 2 rounds and at 12,
-# where the table itself settles, and each further round costs ~4s. A deeper chain would
-# under-resolve into a SKIP, never a false positive — the counter below is where that shows.
+# and it is the reference round 2 recovers: 1 round checks 362, 2 check 363, both clean.
+# Do NOT raise this on the reasoning that a deeper pass only costs time. Anchors bind by NAME, so
+# a function-local scratch name travels like any other, and depth is what lets it arrive: at 8
+# rounds run-matrix.sh's `local f="$OUT_DIR/manifest.txt"` reaches appliance-config-approval-leg.sh
+# line 87, where $f is a `for` variable over runtime appliance paths, and the gate reds on a path
+# that is not a source target at all. Raise it only with a measured skip-set diff.
 bind_pass
 edge_pass
 inherit_pass
