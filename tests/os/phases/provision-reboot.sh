@@ -56,6 +56,7 @@ _phase_provision_reboot() {
         bad "dashboard never answered after the reboot (last: $code)"
         return 1
     }
+    # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
     assert_appliance_hostname_identity fixture-next "unaided reboot" "$pv_user" "$pv_pass"
     # No unit may be quietly broken (#792 sat visible in --failed for two RCs, unasserted).
     local failed_units
@@ -163,6 +164,7 @@ _phase_provision_reboot() {
     else
         ok "commit gate REFUSES a slot whose monerod is down — left uncommitted, A/B fallback stays armed"
     fi
+    # shellcheck disable=SC2154 # pv_user/pv_pass are set by the initial leg (phase-level locals).
     phase_provision_failed_doctor_regression "$pv_user" "$pv_pass"
     _ssh "podman start monerod >/dev/null 2>&1" || true
     unset -f _gate
