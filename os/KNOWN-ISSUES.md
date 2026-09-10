@@ -7,11 +7,20 @@ provision, media, rig, fault and reset — and "green" means the full battery pa
 tip being cut, not a dated badge here: the 2026-08 waves each found real product bugs on a
 tip whose previous run had passed. The last fully-green run of the original five phases was
 2026-07-25 (boot 4/4, update 15/15, provision 21/21, install 33/33, fault 11/11, no brick in
-any run). **The current tip is not green.** A `--phase all` run reports 135 passed and 6
-failed. Four are a build-configuration cause: the image was built without `PITHEAD_REGISTRY`, so it
-asked the public registry for an unreleased `v$(cat VERSION)` and came up with zero containers
-(#2043). The fifth is a product defect — a faulted setup HANGS instead of reopening the page
-(#2050) — and it is the only one of the five that #2043 actually controlled against `develop`. The
+any run). **The current tip is not green, and is much closer than it was.** A `--phase all` run on
+2026-09-10, against an image built WITH `PITHEAD_REGISTRY` (see #2043 — without it the run cannot
+pass and reports 135 passed / 6 failed), reports **189 passed and 3 failed**:
+
+| failing assertion | cause |
+|---|---|
+| `serial menu did not name Pithead 2.0.0 as slot B current and slot A previous` | #1956 — both menu entries name slot A; #1974 shipped the feature, the slot attribution is wrong |
+| `restore leg: the stack never came up on the restored machine` | #2051 — config and original wallet restored, stack never starts. NOT #2043: the earlier assertion in this same leg now passes, naming five running containers |
+| `faulted setup never reached its credentials handoff` | #2050 — a faulted setup hangs instead of reopening the page |
+
+All four of #2043's zero-container legs now pass, and the A/B updater is sound end to end (install
+to the spare slot, fallback without commit, commit persisting across reboot, operator rollback,
+disk install, keep-reinstall and the rig role). The three that remain are product defects with their
+own issues, each reached only because the legs before them now pass. The
 per-phase assertion list is in
 [the release doc's battery table](../docs/dev/appliance-release.md#the-automated-battery).
 The image ships the ESP and slot A only (636 MB);
@@ -384,8 +393,9 @@ not proven.
   `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every affected leg.
   The A/B updater itself is healthy (boot, identity survival, install to the spare slot, commit
   across reboot, operator rollback, disk install and the rig role all pass). Every leg that
-  asserts on a running stack nevertheless remains UNPROVEN rather than passing: no battery run
-  has yet been made in a configuration that could pass one.
+  A `--phase all` run in a configuration that CAN pass has now been made (2026-09-10, 189/3): the
+  four zero-container legs pass and this cause is cleared. What remains failing is tracked as #1956,
+  #2050 and #2051.
 - **Only the wizard image is baked in (#978).** The rest of the stack still pulls at
   provision time, so the plan's "first boot works offline" property is partial: the setup
   page works without a network, provisioning does not. Baking the full set roughly triples

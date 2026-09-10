@@ -73,6 +73,7 @@ _phase_install_restore() {
         ;;
     *)
         bad "restore leg: stack never came up after provisioning (running: '${rnames:-none}')"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         # shellcheck disable=SC2154  # shared through the assembled runner scope
         rm -f "$target_disk"
         return 1
@@ -290,6 +291,10 @@ _phase_install_restore() {
         ok "restore leg: $verdict"
     else
         bad "restore leg: $verdict"
+        # The dump belongs HERE and not inside restore_live_state_verdict: that function's stdout
+        # is its message (`verdict=$(...)`), so an _ssh read inside it would be captured as the
+        # verdict text instead of printed.
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         # A stack that never came up won't answer the identity check below either — stop here
         # rather than burn its 600s timeout on a machine already known to be broken.
         case "$rsnames" in
