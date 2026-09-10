@@ -8,8 +8,8 @@ tip being cut, not a dated badge here: the 2026-08 waves each found real product
 tip whose previous run had passed. The last fully-green run of the original five phases was
 2026-07-25 (boot 4/4, update 15/15, provision 21/21, install 33/33, fault 11/11, no brick in
 any run). **The current tip is not green.** A `--phase all` run reports 135 passed and 6
-failed, five of them one defect: the stack never comes up after provisioning, on `develop`
-as well as on the branch it was found against (#2043). The per-phase assertion list is in
+failed, five of them one defect: the stack never comes up after provisioning (#2043). The
+per-phase assertion list is in
 [the release doc's battery table](../docs/dev/appliance-release.md#the-automated-battery).
 The image ships the ESP and slot A only (636 MB);
 systemd-repart builds slot B and /data on the target's own disk, and `/data` measured
@@ -352,11 +352,13 @@ defect and not an OS-update one. Built and covered is not proven.
   records for the OS-update path.
 - **The appliance does not currently complete provisioning under KVM (#2043).** The wizard
   submit and `setup` succeed — leg 4 captures a dashboard login — and then no containers ever
-  appear; the media leg waited 25 minutes for zero containers. It reproduces on `develop`, so
-  it is not a branch artefact, and the A/B updater itself is healthy (boot, identity survival,
-  install to the spare slot, commit across reboot, operator rollback and the rig role all
-  pass). Until this is root-caused, every leg that asserts on a running stack is unproven
-  rather than passing.
+  appear; the media leg waited 25 minutes for zero containers. The `provision` leg was
+  controlled against `develop` and fails there identically, so it is not a branch artefact —
+  but #2043 states its own limit and this entry keeps it: one leg was controlled, not five.
+  The other four share the symptom and probably the cause. The A/B updater itself is healthy
+  (boot, identity survival, install to the spare slot, commit across reboot, operator rollback,
+  disk install and the rig role all pass). Until this is root-caused, every leg that asserts on
+  a running stack is unproven rather than passing.
 - **Only the wizard image is baked in (#978).** The rest of the stack still pulls at
   provision time, so the plan's "first boot works offline" property is partial: the setup
   page works without a network, provisioning does not. Baking the full set roughly triples
