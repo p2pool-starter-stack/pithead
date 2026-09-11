@@ -3,7 +3,6 @@
 #
 #   scripts/install-test-tools.sh          build anything missing, then verify everything
 #   scripts/install-test-tools.sh --check  verify only; build nothing. rc 1 if something is missing
-#   scripts/install-test-tools.sh --force  rebuild even if the image is already present
 #   scripts/install-test-tools.sh --self-test
 #
 # These are IMAGES, not apt packages, and that is the whole point. An apt install on a bench is
@@ -26,7 +25,6 @@ ENGINE="${NETWATCH_ENGINE:-docker}"
 MODE=install
 case "${1:-}" in
 --check) MODE=check ;;
---force) MODE=force ;;
 --self-test) MODE=selftest ;;
 "") ;;
 *)
@@ -40,7 +38,7 @@ esac
 test_tool_images() {
     printf '%s\t%s\t%s\n' \
         'pithead-netwatch:test' 'tests/netwatch' '--version' \
-        'pithead-tor-client:test' 'tests/integration/tor-client' ''
+        'pithead-tor-client:test' 'tests/integration/tor-client' '--version'
 }
 
 PASS=0 FAIL=0
@@ -61,9 +59,9 @@ if [ "$MODE" = selftest ]; then
         printf 'expected at least 2 image rows, got %s\n' "$n" >&2
         f=1
     }
-    while IFS=$'\t' read -r tag ctx _; do
-        [ -n "$tag" ] && [ -n "$ctx" ] || {
-            printf 'malformed row: [%s][%s]\n' "$tag" "$ctx" >&2
+    while IFS=$'\t' read -r tag ctx smoke; do
+        [ -n "$tag" ] && [ -n "$ctx" ] && [ -n "$smoke" ] || {
+            printf 'row without a tag, context or SMOKE command: [%s][%s][%s]\n' "$tag" "$ctx" "$smoke" >&2
             f=1
         }
         [ -f "$ROOT/$ctx/Dockerfile" ] || {
@@ -105,7 +103,7 @@ while IFS=$'\t' read -r tag ctx smoke; do
         [ "$have" = 1 ] && ok "$tag present" || bad "$tag MISSING — run scripts/install-test-tools.sh"
         continue
     fi
-    if [ "$have" = 0 ] || [ "$MODE" = force ]; then
+    if [ "$have" = 0 ]; then
         printf '  building %s from %s …\n' "$tag" "$ctx"
         if ! "$ENGINE" build -q -t "$tag" "$ROOT/$ctx" >/dev/null 2>"/tmp/netwatch-build.$$"; then
             bad "$tag FAILED to build: $(head -c 200 "/tmp/netwatch-build.$$" 2>/dev/null)"
@@ -114,15 +112,13 @@ while IFS=$'\t' read -r tag ctx smoke; do
         fi
         rm -f "/tmp/netwatch-build.$$"
     fi
-    # The smoke run. A build that parsed is not a tool that answers.
-    if [ -n "$smoke" ]; then
-        if out=$("$ENGINE" run --rm "$tag" $smoke 2>&1 | head -n1); then
-            ok "$tag works — $out"
-        else
-            bad "$tag built but its tool does not answer: $(printf '%s' "$out" | head -c 160)"
-        fi
+    # The smoke run. A build that parsed is not a tool that answers. Every row declares one, so
+    # there is no "built, unverified" state to report — that state is what this exists to remove.
+    # shellcheck disable=SC2086 # $smoke is a deliberate word-split argv, not a path
+    if out=$("$ENGINE" run --rm "$tag" $smoke 2>&1 | head -n1); then
+        ok "$tag works — $out"
     else
-        ok "$tag built (no smoke command declared)"
+        bad "$tag built but its tool does not answer: $(printf '%s' "$out" | head -c 160)"
     fi
 done < <(test_tool_images)
 

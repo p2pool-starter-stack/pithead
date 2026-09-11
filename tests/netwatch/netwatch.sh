@@ -28,7 +28,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/netwatch/netwatch-classify.sh
 . "$HERE/netwatch-classify.sh"
 
-NETWATCH_IMAGE="${NETWATCH_IMAGE:-pithead-netwatch:test}"
+NETWATCH_IMAGE=pithead-netwatch:test
 ENGINE="${NETWATCH_ENGINE:-docker}"
 
 _die() {
