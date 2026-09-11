@@ -35,9 +35,10 @@ the machine itself, which no container supplies on macOS or Windows.
 ```bash
 make test-container       # all of the below in the pinned Linux image (any host with Docker)
 make test-container ARGS="make test-mini-stack"   # tier 3 in the image (host daemon via the socket)
-# Tier 4's live driver runs in the image too: it carries an ssh client and the runner mounts your
-# ~/.ssh read-only, so the harness reaches the reserved box the same way it would from the host.
-make test-container ARGS="make test-integration ARGS='--host user@box --dir pithead --check'"
+# Tier 4's live driver runs in the image too. It carries an ssh client, and `--ssh` mounts your
+# ~/.ssh read-only so the harness reaches the reserved box. Opt-in on purpose: no other tier needs
+# the keys, and a mounted ~/.ssh is readable by anything the tiers execute.
+make test-container ARGS="--ssh make test-integration ARGS='--host user@box --dir pithead --check'"
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite

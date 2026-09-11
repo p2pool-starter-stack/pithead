@@ -4,6 +4,7 @@
 #   scripts/test-container.sh                 # make test
 #   scripts/test-container.sh make test-stack # any target, or any command
 #   scripts/test-container.sh --build         # force an image rebuild first
+#   scripts/test-container.sh --ssh <cmd>     # also mount ~/.ssh (tier 4 only)
 #
 # Why this exists: #2041 made the shell suite refuse on macOS, because a failure there is not
 # evidence — unmodified develop scored 3708 passed / 148 failed, and a shimmed `grep` returned 0
@@ -14,6 +15,10 @@
 set -uo pipefail
 
 IMAGE=pithead-test-runner:local
+# A named volume so uv and npx download once per machine rather than once per run. It PERSISTS
+# across runs, which is the point and also the caveat: anything a compromised test dependency
+# writes to $HOME (an .npmrc, a poisoned cache) outlives the run that wrote it. `docker volume rm
+# pithead-test-home` is the reset.
 HOME_VOLUME=pithead-test-home
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 ENGINE="${PITHEAD_TEST_ENGINE:-docker}"
@@ -83,10 +88,20 @@ if [ "${vm_bytes:-0}" -gt 0 ] && [ "$vm_bytes" -lt $((LINT_PEAK_GIB * 1024 * 102
 fi
 
 BUILD=0
-[ "${1:-}" = "--build" ] && {
-    BUILD=1
-    shift
-}
+WANT_SSH=0
+while :; do
+    case "${1:-}" in
+    --build)
+        BUILD=1
+        shift
+        ;;
+    --ssh)
+        WANT_SSH=1
+        shift
+        ;;
+    *) break ;;
+    esac
+done
 
 # Build when asked, or when the image is not there yet. Not on every run: the layers are stable and
 # a rebuild on each invocation is the difference between a 20-second loop and a 4-minute one.
@@ -113,13 +128,16 @@ MOUNTS=(-v "$ROOT:$ROOT" -w "$ROOT")
 GIT_COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
 needs_git_mount "$ROOT" "$GIT_COMMON" && MOUNTS+=(-v "$GIT_COMMON:$GIT_COMMON")
 
-# Tier 4's live matrix ssh-es to the bench, so the caller's ssh config and keys have to reach the
-# driver. Read-only, and only when the directory exists. This is a real credential exposure and
-# worth naming: anything running in this container can read those keys. It adds no new trust
-# boundary in practice — the Docker socket below is already host-root-equivalent — but a reader
-# should see the decision rather than find it. Agent forwarding is not used because it is empty on
-# a host whose keys live in files, which is the case this has to work on.
-[ -d "$HOME/.ssh" ] && MOUNTS+=(-v "$HOME/.ssh:/home/pithead/.ssh:ro")
+# Tier 4's live matrix ssh-es to a reserved box, so with --ssh the caller's keys reach the driver.
+# OPT-IN, because this is a real credential exposure and the earlier "it adds no new trust boundary,
+# the socket is already host-root-equivalent" was self-serving: pivoting through the socket means
+# deliberately starting a privileged container, while a mounted ~/.ssh is one `cat` by any
+# dependency the test tiers execute. Those are not the same reachability. Every other tier needs no
+# ssh at all, so they no longer get the keys. Agent forwarding is not the answer here — it is empty
+# on a host whose keys live in files, which is the case this has to work on.
+if [ "$WANT_SSH" -eq 1 ]; then
+    [ -d "$HOME/.ssh" ] && MOUNTS+=(-v "$HOME/.ssh:/home/pithead/.ssh:ro")
+fi
 
 # The socket is 0660 and the container user is deliberately not root, so the run needs the socket's
 # GROUP — and which group that is differs by host, which is the part that bites. Docker Desktop
@@ -130,9 +148,10 @@ needs_git_mount "$ROOT" "$GIT_COMMON" && MOUNTS+=(-v "$GIT_COMMON:$GIT_COMMON")
 # numeric gid is the one the container sees, and a gid the container has no use for is inert. This
 # grants nothing the mount has not — reaching the host daemon is host-root-equivalent by itself.
 SOCK=/var/run/docker.sock
-SOCK_GIDS=(0)
+SOCK_GIDS=()
 if [ -S "$SOCK" ]; then
     MOUNTS+=(-v "$SOCK:$SOCK")
+    SOCK_GIDS+=(0)
     sock_gid="$(stat -c %g "$SOCK" 2>/dev/null || stat -f %g "$SOCK" 2>/dev/null || true)"
     [ -n "$sock_gid" ] && [ "$sock_gid" != 0 ] && SOCK_GIDS+=("$sock_gid")
 fi
@@ -147,7 +166,7 @@ RUN=(--rm --user "$(id -u):$(id -g)"
 -e "PITHEAD_TEST_HOST=$HOST_ALIAS"
 -v "$HOME_VOLUME:/home/pithead"
 "${MOUNTS[@]}")
-for g in "${SOCK_GIDS[@]}"; do RUN+=(--group-add "$g"); done
+for g in ${SOCK_GIDS[@]+"${SOCK_GIDS[@]}"}; do RUN+=(--group-add "$g"); done
 [ -t 0 ] && [ -t 1 ] && RUN+=(-it)
 
 [ "$#" -eq 0 ] && set -- make test

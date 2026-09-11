@@ -45,6 +45,10 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
 # docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
 # shell out to docker. The daemon is the HOST's, reached through the mounted socket.
+# The two keyrings below are fetched over TLS with no fingerprint pin — the method each vendor
+# documents, and weaker than the byte-exact sha256 pins this file uses for shellcheck and shfmt.
+# Named rather than hidden: it is trust-on-first-use against download.docker.com and
+# cli.github.com, and it is the least-pinned thing in this image.
 # buildx is NOT optional here, and the failure it prevents is not obvious: without the plugin,
 # `docker compose build` falls back to the classic builder, which rejects the
 # `RUN --mount=type=cache` in dashboard/Dockerfile. Tier 3 dies at "docker compose build failed"
