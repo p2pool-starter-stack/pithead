@@ -121,22 +121,33 @@ needs_git_mount "$ROOT" "$GIT_COMMON" && MOUNTS+=(-v "$GIT_COMMON:$GIT_COMMON")
 # a host whose keys live in files, which is the case this has to work on.
 [ -d "$HOME/.ssh" ] && MOUNTS+=(-v "$HOME/.ssh:/home/pithead/.ssh:ro")
 
-# The socket is root:root 0660 and the container user is deliberately not root, which is what the
-# --group-add 0 below is for. gid 0 grants nothing this mount has not: reaching the host daemon is
-# host-root-equivalent on its own.
+# The socket is 0660 and the container user is deliberately not root, so the run needs the socket's
+# GROUP — and which group that is differs by host, which is the part that bites. Docker Desktop
+# presents it as root:root inside the container, so gid 0 is the answer there; a native Linux
+# daemon owns it root:docker (988 on the bench), where gid 0 grants exactly NOTHING and every tier
+# that shells out to docker dies on "permission denied ... unix:///var/run/docker.sock". Measured
+# on both, because the macOS answer alone looks complete and is not. Pass both: on Linux the host's
+# numeric gid is the one the container sees, and a gid the container has no use for is inert. This
+# grants nothing the mount has not — reaching the host daemon is host-root-equivalent by itself.
 SOCK=/var/run/docker.sock
-[ -S "$SOCK" ] && MOUNTS+=(-v "$SOCK:$SOCK")
+SOCK_GIDS=(0)
+if [ -S "$SOCK" ]; then
+    MOUNTS+=(-v "$SOCK:$SOCK")
+    sock_gid="$(stat -c %g "$SOCK" 2>/dev/null || stat -f %g "$SOCK" 2>/dev/null || true)"
+    [ -n "$sock_gid" ] && [ "$sock_gid" != 0 ] && SOCK_GIDS+=("$sock_gid")
+fi
 
 # Anything the suite reaches on a HOST-published port needs an address that means the host from
 # inside this container — its own 127.0.0.1 does not. host.docker.internal is native on Docker
 # Desktop and synthesised by --add-host on Linux, so one spelling covers every host. Tier 3's
 # fakes are the case in tree today; the same knob points a suite at a daemon on another machine.
 HOST_ALIAS="${PITHEAD_TEST_HOST:-host.docker.internal}"
-RUN=(--rm --user "$(id -u):$(id -g)" --group-add 0
+RUN=(--rm --user "$(id -u):$(id -g)"
 --add-host "host.docker.internal:host-gateway"
 -e "PITHEAD_TEST_HOST=$HOST_ALIAS"
 -v "$HOME_VOLUME:/home/pithead"
 "${MOUNTS[@]}")
+for g in "${SOCK_GIDS[@]}"; do RUN+=(--group-add "$g"); done
 [ -t 0 ] && [ -t 1 ] && RUN+=(-it)
 
 [ "$#" -eq 0 ] && set -- make test
