@@ -409,7 +409,7 @@ and `--list` prints it).
 | `dashboard.secure` | `true` (Caddy TLS) / `false` | Caddy config / scheme |
 | `dashboard.tari_required` | `true` (blocking) / `false` | sync-gate behavior ([#35](https://github.com/p2pool-starter-stack/pithead/issues/35)/[#51](https://github.com/p2pool-starter-stack/pithead/issues/51)) |
 | `network.subnet` | default `172.28.0.0/24` / a moved `/24` | the docker bridge prefix every static IP, Tor's rendered torrc, monerod's proxy IP, and the SSRF CIDR key off ([#180](https://github.com/p2pool-starter-stack/pithead/issues/180)/[#201](https://github.com/p2pool-starter-stack/pithead/issues/201)) — runs via `--subnet` (a move needs a full down/up, not a hot apply) |
-| `tari.mode` | `local` / `remote` | profile gating, onion gating, the sync gate against a remote target — the [#103](https://github.com/p2pool-starter-stack/pithead/issues/103) GO verdict's operating mode, needs `--remote-tari-host` |
+| `tari.mode` | `local` / `remote` / `off` | profile gating, onion gating, the sync gate against a remote target — the [#103](https://github.com/p2pool-starter-stack/pithead/issues/103) GO verdict's operating mode; `remote` needs `--remote-tari-host`, while `off` ([#1855](https://github.com/p2pool-starter-stack/pithead/issues/1855)) needs nothing to point at and proves a machine that declined Tari still mines Monero |
 | `p2pool.stratum_tls` | `false` / `true` | a live TLS handshake on the published stratum port, and that the served certificate matches the fingerprint rigs are told to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)) |
 | `network.tor_egress_firewall` | `true` (default) / `false` | the kernel actually acts on the rules, both directions: on the default a direct clearnet dial from a `mining_net` container is DROPPED while the same container still reaches clearnet through Tor's SOCKS; on the opt-out that dial SUCCEEDS and no rule is installed. Neither is inferable from the rendered or installed ruleset ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)) |
 | `monero.view_key` / `tari.view_key` | unset (default) / a real key | payout-confirmation wallet-rpc / tari-wallet wiring ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)) — needs `IT_MONERO_VIEW_KEY` (env; the box's own real Monero view key), optionally paired with `IT_TARI_VIEW_KEY` + `IT_TARI_SPEND_PUBLIC_KEY` |
@@ -417,8 +417,10 @@ and `--list` prints it).
 ### What each scenario asserts
 
 - Expected containers up, unexpected absent. Every service for that config is running and
-  healthy; in `remote` mode there is no `monerod` (and, independently, no `tari` when
-  `tari.mode=remote`); `wallet-rpc`/`tari-wallet` appear only when their view key is set.
+  healthy; in `remote` mode there is no `monerod` (and, independently, no `tari` whenever
+  `tari.mode` is anything but `local` — `remote` OR `off`, since the bundled node is gated on
+  `local`, not on the absence of `remote`); `wallet-rpc`/`tari-wallet` appear only when their
+  view key is set.
   Presence is decided by `service_present`, which matches a compose service name as a whole
   line and never as a substring ([#1478](https://github.com/p2pool-starter-stack/pithead/issues/1478)).
   That distinction is load-bearing: `tari` is a prefix of `tari-wallet`, so a substring match
