@@ -307,19 +307,56 @@ assert_running_state() {
         assert_eq "live-served cert fingerprint matches the one rigs are told to pin (#261/#942)" "$served_fp" "$announced_fp"
     fi
 
-    # 8d. Firewall opt-out actually opens the path (#270/#942) — the mirror of the fail-closed
-    # default that assert_egress_posture/fault_firewall_rollback prove elsewhere: no rule
-    # installed is necessary but not sufficient, so dial a real clearnet IP DIRECTLY from a
-    # mining_net container (bypassing its own --socks5 config) with wget (already present in every
-    # first-party image for the build-time binary download — no new tool). Read the CONNECT-phase
-    # line, not the HTTP result — a 403/redirect still proves the TCP handshake got through, while
-    # a DROPped SYN would just hang to wget's own timeout instead.
-    if [ "$mode" = "local" ] && [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ]; then
-        assert_eq "no pithead-tagged firewall rule installed when opted out (#270/#942)" \
-            "$(rx "sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress")" "0"
-        local dial
-        dial="$(rx "docker exec xmrig-proxy wget -T 8 -t 1 -O /dev/null http://1.1.1.1/ 2>&1")"
-        assert_contains "clearnet dial SUCCEEDS with the firewall opted out (#270/#942)" "$dial" "connected."
+    # 8d. The Tor-egress firewall, BOTH directions (#270/#2059). Every other firewall leg in this
+    # suite checks STATE, never EFFECT: assert_egress_posture samples /proc/net/tcp for connections
+    # the apps CHOSE to make (a fail-open box whose apps are all correctly Tor-configured prints a
+    # clean ✓ — it is structurally blind to an unenforced firewall), verify_tor_egress_firewall
+    # compares the INSTALLED ruleset to the applier's own render, and fault_firewall_rollback only
+    # covers an insert failure. Until #2059 the sole real dial was the opt-out one below, asserting
+    # the path OPENS — so this suite proved "the opt-out opens it" and never once proved "the
+    # default closes it". Both halves now run, each on the row where it is the expected outcome.
+    if [ "$mode" = "local" ]; then
+        if [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ]; then
+            # OFF — no rule installed is necessary but not sufficient, so dial a real clearnet IP
+            # DIRECTLY from a mining_net container (bypassing its own --socks5 config) with wget
+            # (already present in every first-party image for the build-time binary download — no
+            # new tool). Read the CONNECT-phase line, not the HTTP result — a 403/redirect still
+            # proves the TCP handshake got through, while a DROPped SYN would just hang to wget's
+            # own timeout instead.
+            assert_eq "no pithead-tagged firewall rule installed when opted out (#270/#942)" \
+                "$(rx "sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress")" "0"
+            local dial
+            dial="$(rx "docker exec xmrig-proxy wget -T 8 -t 1 -O /dev/null http://1.1.1.1/ 2>&1")"
+            assert_contains "clearnet dial SUCCEEDS with the firewall opted out (#270/#942)" "$dial" "connected."
+        else
+            # ON (the default) — the same dial must be DROPPED. This is the Docker/DOCKER-USER
+            # twin of the appliance leg in tests/os/appliance-egress-leg.sh, which caught the
+            # netavark backend shipping fail-open (#2059) precisely because no state check can see
+            # that: rules can be installed, canonical and in a chain no forwarded packet traverses.
+            #
+            # monerod, not xmrig-proxy, because the pair needs a WITHIN-ROW control and only a
+            # SOCKS-capable client can supply it: monerod's image carries curl, xmrig-proxy's
+            # carries GNU wget, which cannot speak SOCKS. Without that control a DROP and a bench
+            # with no route to the internet are the same observation, and the assertion would pass
+            # for the wrong reason on a disconnected box. monerod is guaranteed present here —
+            # `mode` is local, which is what puts it in the compose profile.
+            local tor_socks
+            tor_socks="$(env_on_box NETWORK_PREFIX)"
+            [ -n "$tor_socks" ] || tor_socks="172.28.0"
+            tor_socks="$tor_socks.25:9050"
+            if rx "docker exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" >/dev/null 2>&1; then
+                it_fail "clearnet dial is DROPPED with the firewall on (#270/#2059)" \
+                    "monerod reached 1.1.1.1 directly — the firewall is installed but NOT enforced (fail-open)"
+            else
+                it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
+            fi
+            if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
+                it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
+            else
+                it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
+                    "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
+            fi
+        fi
     fi
 
     # 8e. Payout confirmation is live (#381/#462/#942) — the flagship feature's live leg. A real
