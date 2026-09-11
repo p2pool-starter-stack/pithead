@@ -105,25 +105,9 @@ def _make_bot(tor_proxy="socks5h://tor:9050"):
     )
 
 
-def _control_bot(monkeypatch, allowed=("7",), latest_data=None, **over):
-    monkeypatch.setattr(tc, "build_metrics", lambda d, sm: _metrics(**over))
-    sm = SimpleNamespace(is_db_healthy=lambda: True)
-    ds = SimpleNamespace(latest_data=latest_data or {}, state_manager=sm)
-    return tc.TelegramCommandBot(
-        ds,
-        enabled=True,
-        bot_token="tok",
-        chat_id="42",
-        host_label="",
-        control_enabled=True,
-        allowed_ids=allowed,
-        confirm_timeout=60,
-    )
-
-
 class _Transport:
-    """Records every Telegram POST and returns an OK response, so the real _send / _send_confirm /
-    _answer_callback run. ``token`` pulls the confirm token straight out of the sent inline button."""
+    """Records every Telegram POST and returns an OK response, so the real _send runs. Used to
+    assert the bot stays SILENT on input it must ignore, which an outright stub could not see."""
 
     def __init__(self):
         self.posts = []
@@ -135,16 +119,6 @@ class _Transport:
 
         monkeypatch.setattr(tc.requests, "post", fake_post)
         return self
-
-    @property
-    def token(self):
-        for _url, body in self.posts:
-            markup = body.get("reply_markup") or {}
-            for row in markup.get("inline_keyboard", []):
-                for btn in row:
-                    if str(btn.get("callback_data", "")).startswith("confirm:"):
-                        return btn["callback_data"][len("confirm:") :]
-        return None
 
     def texts(self):
         return [b.get("text", "") for _u, b in self.posts if "text" in b]

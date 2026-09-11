@@ -65,7 +65,7 @@ def build_app() -> web.Application:
         if "state_manager" in app:
             app["state_manager"].close()
 
-    app = create_app(state_manager, data_service.latest_data, telegram_bot=telegram_bot)
+    app = create_app(state_manager, data_service.latest_data)
     app["state_manager"] = state_manager
     app.on_startup.append(start_background_tasks)
     app.on_cleanup.append(cleanup_background_tasks)

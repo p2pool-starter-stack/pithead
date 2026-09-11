@@ -367,8 +367,12 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
 # string only SELECTS between these two hardcoded commands; nothing from the request is ever
 # interpolated into a command, and `apply` here carries no config change (the default-deny config
 # allowlist is only relevant to a config-editing commit, not a re-apply of the source of truth).
-# Access control + the deny-on-timeout confirmation are enforced dashboard-side before the intent is
-# ever spooled; this side records the actor and outcome in the same tamper-evidence audit log.
+# Since #2076 removed the Telegram control commands, NOTHING produces a restart/apply intent: the
+# dashboard never submits either verb. The dispatch is kept because it is where "a spool writer
+# cannot run an arbitrary host command" is proven and tested (tests/stack/control/
+# test-control-lifecycle-verbs.sh), and because the spool already accepts the far more powerful
+# `commit`, so removing these two buys no boundary. This side records the actor and outcome in the
+# same tamper-evidence audit log.
 control_lifecycle() { # <verb: restart|apply> <id> <actor> <control-dir>
     local verb="$1" id="$2" actor="$3" cdir="$4" rc=0
     local logf="$cdir/staged/.$id.log"

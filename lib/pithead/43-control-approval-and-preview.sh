@@ -32,7 +32,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     #
     # Every descriptor change is sensitive: an append introduces a new remote host and access token,
     # while repointing, deleting, or reordering changes an existing trust relationship. Adoption may
-    # still pre-fill the descriptor, but committing it needs the same second identity (#1959).
+    # still pre-fill the descriptor, but committing it is classified sensitive (#1959) — which
+    # since #2076 means the typed confirmation envelope, not a second identity.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         (.workers.list // []) == ($live[0].workers.list // [])
         ' "$staged" >/dev/null 2>&1; then
@@ -55,7 +56,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # NO env var, so it emits zero porcelain rows and slips past the allowlist below — yet the
     # commit's `cp "$staged" "$CONFIG_FILE"` would still persist it. So refuse any staged path that
     # isn't in the canonical schema (config.reference.json). Numeric path components are dropped so a
-    # populated known scalar array (notifications.webhooks, telegram.control.allowed_ids) collapses
+    # populated known scalar array (notifications.webhooks) collapses
     # onto its schema-listed key instead of false-rejecting, while a smuggled OBJECT inside such an
     # array still surfaces its unknown sub-key. Both worker-descriptor shapes are exempt: their
     # per-rig object elements aren't enumerated in the reference and the array is already fully
@@ -101,7 +102,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     [ "$worker_sensitive" -eq 1 ] && approval_required=1
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
     # Electricity price feeds are remote control inputs, unlike the local display currency and
-    # fixed-price values beside them. They need the same second identity even though dashboard.energy
+    # fixed-price values beside them. They join the same sensitive class even though dashboard.energy
     # is config.json-only and therefore has no porcelain row.
     if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
         approval_required=1
@@ -160,7 +161,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         fi
         touch "${staged}.confirmed" 2>/dev/null || true
     fi
-    # The host-side Telegram verifier writes ${staged}.approved with its bound approval record.
     # Reachability probe (#1888) — the compensating control the confirm tier rests on for these keys
     # (42-): the typed token is friction, but a chain cannot be parked on a node that is not there.
     # Host-side, on the STAGED config, through the same preflight the wizard uses; nothing is
@@ -175,16 +175,16 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
             return 1
         fi
     fi
-    # Ask for the second identity only after every host-only perimeter, typed-confirmation, and
-    # endpoint-reachability check has passed. Invalid requests never consume the prompt budget.
+    # Typed payout confirmation, checked only after every host-only perimeter, typed-confirmation,
+    # and endpoint-reachability check has passed.
     if [ "$approval_required" -eq 1 ]; then
-        local approver
-        if ! approver=$(control_validate_approval "$staged" "$id" "$actor" "$approval" "$porcelain" "$cdir"); then
-            [ -n "$approver" ] && printf '%s' "$approver"
+        local reason
+        if ! reason=$(control_validate_approval "$staged" "$actor" "$approval" "$porcelain"); then
+            [ -n "$reason" ] && printf '%s' "$reason"
             return 1
         fi
     fi
-    # Approved: echo the changed key NAMES so the commit's audit entry can record WHAT changed
+    # Permitted: echo the changed key NAMES so the commit's audit entry can record WHAT changed
     # (#349) without a third dry-run. Names only, never values. dashboard.energy (#504) is
     # config.json-only, so it never appears in the env porcelain — include the changed
     # dashboard.energy.* paths directly, else an energy-only commit would audit no key.
@@ -284,7 +284,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                    else . end)),
                ts: (now | floor)}')
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
-            result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"workers.list",msg:"Worker descriptors (hosts and access tokens) changed — Telegram approval is required."}] | .approval_required = true')
+            result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"workers.list",msg:"Worker descriptors (hosts and access tokens) changed — confirm to proceed."}] | .approval_required = true')
         fi
         # #504: dashboard.energy is config.json-only (never rendered to .env), so an energy-only
         # edit produces no porcelain row. Surface it as a normal committable INFO change so the UI
@@ -362,7 +362,7 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
-        rm -f "$staged" "${staged}.confirmed" "${staged}.approved"
+        rm -f "$staged" "${staged}.confirmed"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
         return 0
     fi
@@ -371,15 +371,13 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     # when a typed confirmation carried an in-scope CONFIRM row past the perimeter. The distinct
     # `commit-confirmed` action separates a dashboard-confirmed disruptive apply from an ordinary
     # (INFO-only) dashboard commit in the tamper-evidence log. Host-CLI applies never reach this log.
+    # `approver` is retained as an audit FIELD so the log schema does not change under readers that
+    # already parse it (and so historical `commit-approved` rows stay comparable), but nothing writes
+    # it any more: the Telegram verifier was its only writer (#2076). It stays empty by construction.
     local audit_action="commit" approver=""
     if [ -f "${staged}.confirmed" ]; then
         audit_action="commit-confirmed"
         rm -f "${staged}.confirmed"
-    fi
-    if [ -f "${staged}.approved" ]; then
-        audit_action="commit-approved"
-        approver=$(jq -r '.approver // empty' "${staged}.approved" 2>/dev/null)
-        rm -f "${staged}.approved"
     fi
     # Keep a pre-change backup; on failure it is named in the result and left in place. The
     # `apply -y` below re-renders the pre-masked prefill copy (#440), so the dashboard's editor
@@ -397,5 +395,5 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$audit_action" "failed" "$audit_keys" "$approver"
     fi
-    rm -f "$staged" "$logf" "${staged}.confirmed" "${staged}.approved"
+    rm -f "$staged" "$logf" "${staged}.confirmed"
 }

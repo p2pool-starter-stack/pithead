@@ -84,8 +84,8 @@ gate_try "$C/cand.json"
 assert_eq "stratum-password disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the stratum password" "$(jq -r '.p2pool.stratum_password' "$C/config.json")" "s3cretpw"
 
-# Repoint the Telegram bot (token change is an INFO row; the bot is the future #338 approval
-# channel, so an attacker must not swap it) — refused.
+# Repoint the Telegram bot (token change is an INFO row; the bot is the operator's ALARM channel,
+# so an attacker must not swap it — #2076 took its write surface, not that job) — refused.
 jq '.telegram.bot_token="654321:evil-XYZ_abc"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "telegram bot_token repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -121,12 +121,12 @@ gate_try "$C/cand.json"
 assert_eq "healthchecks ping-url repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps healthchecks unset" "$(jq -r '.healthchecks.ping_url // "unset"' "$C/config.json")" "unset"
 # The #719 perimeter, named explicitly: disabling the Tor egress firewall would let containers dial
-# clearnet. Commit WITH a valid APPLY token to prove typed confirmation alone does not satisfy the
-# separate host-verified approval gate.
+# clearnet. Commit WITH a valid APPLY token to prove the typed APPLY alone does not satisfy the
+# separate sensitive-change envelope the gate asks for after it (a Telegram tap until #2076).
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "tor-egress-firewall disable commit is refused even with the APPLY token" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tor-egress refusal still requires host-verified approval after APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "Telegram approval"
+assert_contains "tor-egress refusal still requires the confirmation envelope after APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json keeps the tor egress firewall unset (defaults on)" "$(jq -r '.network.tor_egress_firewall // "unset"' "$C/config.json")" "unset"
 # Setting a Monero view key (the #381 payout-confirm secret) reveals every incoming amount — a
 # secret, host-only, never confirm-gated. Commit WITH a valid APPLY token: the perimeter gate must
@@ -179,7 +179,7 @@ assert_eq "workers.list REMOVAL of an existing entry is refused" "$(jq -r '.stat
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "workers.list append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "safe worker append names the approval gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "Telegram approval"
+assert_contains "safe worker append names the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a
@@ -213,7 +213,7 @@ unset -f assert_new_worker_host_refused
 jq '.workers.list += [{name:"rig3",host:"10.0.0.50",control_port:8082,token:"tok_rig3"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "ordinary LAN append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "ordinary LAN append reaches the approval gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "Telegram approval"
+assert_contains "ordinary LAN append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json does not gain the unapproved ordinary-LAN rig" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # #893 round 5: an independent review found the battery above was still a STRING classifier under
@@ -284,7 +284,7 @@ printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append reaches the approval gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "Telegram approval"
+assert_contains "LAN hostname append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system
@@ -389,7 +389,7 @@ assert_contains "commit request smuggling a destructive flag is rejected" "$(jq 
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "commit after result-file tampering is still refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "Telegram approval"
+assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json keeps the untampered bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
 
 # Sensitive keys PRESENT but UNCHANGED must not trip the gate: a plain pool-tier change on the

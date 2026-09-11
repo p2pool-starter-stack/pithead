@@ -179,9 +179,7 @@ async def handle_control_commit(request):
     try:
         body = await request.json()
         actor = request.headers.get("X-Auth-User", "")
-        approval, pending = await approval_envelope(request, body, actor)
-        if pending is not None:
-            return pending
+        approval = approval_envelope(body)
         rid = control_service.submit(
             "commit",
             actor=actor,
@@ -574,12 +572,11 @@ async def _cancel_bg_tasks(app):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def create_app(state_manager, latest_data_ref, telegram_bot=None):
+def create_app(state_manager, latest_data_ref):
     """Factory to create the web app instance."""
     app = web.Application(middlewares=[security_headers_middleware])
     app["state_manager"] = state_manager
     app["latest_data"] = latest_data_ref
-    app["telegram_bot"] = telegram_bot
     # Fire-and-forget recorder tasks (worker-upgrade, #1014) — tracked so they can't be
     # garbage-collected mid-flight and so shutdown can cancel any still in progress.
     app["_bg_tasks"] = set()

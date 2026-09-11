@@ -210,13 +210,6 @@ render_env() {
     tg_token=$(jq -r '.telegram.bot_token // empty' "$CONFIG_FILE")
     tg_chat=$(jq -r '.telegram.chat_id // empty' "$CONFIG_FILE")
     tg_commands=$(jq -r 'if .telegram.commands.enabled != null then .telegram.commands.enabled | tostring else "false" end' "$CONFIG_FILE")
-    # Two-way control commands (#338): /restart, /apply from the bot, through the #33 host channel.
-    # Default off; gated to specific operator Telegram user ids (numbers → comma list) and validated
-    # above (needs dashboard.control + telegram.commands). confirm_timeout is the deny-on-timeout window.
-    local tg_control tg_control_ids tg_control_confirm
-    tg_control=$(jq -r 'if .telegram.control.enabled != null then .telegram.control.enabled | tostring else "false" end' "$CONFIG_FILE")
-    tg_control_ids=$(jq -r '(.telegram.control.allowed_ids // []) | map(tostring) | join(",")' "$CONFIG_FILE")
-    tg_control_confirm=$(jq -r '.telegram.control.confirm_timeout // 60' "$CONFIG_FILE")
     # One toggle per event, defaulting to true when the key is absent.
     tg_event() { jq -r --arg k "$1" 'if .telegram.events[$k] != null then .telegram.events[$k] | tostring else "true" end' "$CONFIG_FILE"; }
     local tg_ev_node_down tg_ev_node_recovered tg_ev_worker_offline tg_ev_worker_recovered
@@ -406,9 +399,6 @@ TELEGRAM_ENABLED=$(dotenv_render_value "$tg_enabled")
 TELEGRAM_BOT_TOKEN=$(dotenv_render_value "$tg_token")
 TELEGRAM_CHAT_ID=$(dotenv_render_value "$tg_chat")
 TELEGRAM_COMMANDS_ENABLED=$(dotenv_render_value "$tg_commands")
-TELEGRAM_CONTROL_ENABLED=$(dotenv_render_value "$tg_control")
-TELEGRAM_CONTROL_ALLOWED_IDS=$(dotenv_render_value "$tg_control_ids")
-TELEGRAM_CONTROL_CONFIRM_S=$(dotenv_render_value "$tg_control_confirm")
 TELEGRAM_EVENT_NODE_DOWN=$(dotenv_render_value "$tg_ev_node_down")
 TELEGRAM_EVENT_NODE_RECOVERED=$(dotenv_render_value "$tg_ev_node_recovered")
 TELEGRAM_EVENT_WORKER_OFFLINE=$(dotenv_render_value "$tg_ev_worker_offline")

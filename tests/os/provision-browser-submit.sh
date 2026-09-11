@@ -35,20 +35,14 @@ wizard_state_poll() { # <ip> <jar> <jq-filter>
     WIZ_STATE_WHY="http=${http:-none} curl=$crc after ${tries}x5s body=$(printf '%s' "$raw" | head -c 60 | tr -c '[:print:]' '?')"
     return 1
 }
+# #2076: the fake Telegram credentials this used to seed (PROVISION_FAKE_APPROVAL) are gone with
+# the approval round-trip. Seeding them now would also FAIL the commit gate's closed-schema guard,
+# since `telegram.control` is no longer a path in config.reference.json.
 provision_browser_config() { # <served-config>
     printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg h "${PROVISION_DASHBOARD_HOST:-}" \
-        --argjson fake_approval "${PROVISION_FAKE_APPROVAL:-0}" \
         '.monero.wallet_address = $m | .monero.mode = "local" | .tari.wallet_address = $t |
          .tari.mode = "local" | .p2pool.pool = "mini" | .local_miner.enabled = true |
-         if $h != "" then .dashboard.host = $h else . end |
-         if $fake_approval == 1 then
-           if (.telegram.bot_token // "") == "" and (.telegram.chat_id // "") == "" and ((.telegram.control.allowed_ids // []) | length) == 0
-           then .telegram += {bot_token:"os1966-fake-token", chat_id:"-1001966"} |
-                .telegram.control += {allowed_ids:[1966], confirm_timeout:5}
-           elif .telegram.bot_token == "os1966-fake-token" and .telegram.chat_id == "-1001966" and .telegram.control.allowed_ids == [1966] then .
-           else error("refusing to replace existing Telegram credentials")
-           end
-         else . end'
+         if $h != "" then .dashboard.host = $h else . end'
 }
 provision_browser_submit() { # <ip> <jar> [field=value]...
     local ip="$1" jar="$2" cfg extra=()
@@ -256,12 +250,16 @@ _recovery_self_test() {
     ! node_preflight_state_retained "${response/\"dns\"/\"protocol\"}" "$state" wallet || return 1
     ! node_preflight_state_retained "$response" "${state/\"setup\"/\"failed\"}" wallet || return 1
     ! node_preflight_state_retained "$response" "${state/\"wallet\"/\"lost\"}" wallet || return 1
-    local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box PROVISION_FAKE_APPROVAL=1 cfg
-    cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":"","control":{"allowed_ids":[]}}}') || return 1
-    printf '%s' "$cfg" | jq -e '.dashboard.host == "fixture-box" and .telegram.bot_token == "os1966-fake-token" and
-        .telegram.chat_id == "-1001966" and .telegram.control.allowed_ids == [1966] and .telegram.enabled != true' >/dev/null || return 1
-    provision_browser_config "$cfg" >/dev/null || return 1
-    ! provision_browser_config '{"telegram":{"bot_token":"operator-secret","chat_id":"-1","control":{"allowed_ids":[1]}}}' >/dev/null 2>&1 || return 1
+    local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box cfg
+    cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":""}}') || return 1
+    # #2076: the shaper seeds wallets, mode and host and touches NOTHING under .telegram — an empty
+    # bot_token must come back empty rather than seeded with a fake approval identity.
+    printf '%s' "$cfg" | jq -e '.dashboard.host == "fixture-box" and .monero.wallet_address == "wallet" and
+        .telegram.bot_token == "" and (.telegram | has("control") | not)' >/dev/null || return 1
+    # Idempotent, and it never invents Telegram state on a config that already carries some.
+    [ "$(provision_browser_config "$cfg")" = "$cfg" ] || return 1
+    printf '%s' "$(provision_browser_config '{"telegram":{"bot_token":"operator-secret","chat_id":"-1"}}')" |
+        jq -e '.telegram.bot_token == "operator-secret"' >/dev/null || return 1
     # The control-runner payload (#2060): a rejected apply, a runner that answered nothing, and a
     # body that is not JSON must each write a sentence only they write.
     case "$(control_result_payload '{"status":"rejected","error":"type APPLY","id":"r1"}')" in
