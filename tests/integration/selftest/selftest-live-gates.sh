@@ -226,7 +226,7 @@ fw_arm() { # <rules the stub reports installed...> -> rc of verify_tor_egress_fi
             'case "$1 $2" in' \
             '  "iptables -C") shift 2; case "$1" in FORWARD) exit 0;; esac' \
             '     spec="$*"; grep -Fqx -- "$spec" "$INSTALLED" && exit 0 || exit 1 ;;' \
-            '  "iptables -S") grep -c . "$INSTALLED" >/dev/null; sed "s|^|-A DOCKER-USER |" "$INSTALLED"; exit 0 ;;' \
+            '  "iptables -S") sed "s|^DOCKER-USER |-A DOCKER-USER |" "$INSTALLED"; exit 0 ;;' \
             'esac' \
             'exit 0' >"$td/sudo" && chmod +x "$td/sudo"
         export PATH="$td:$PATH" INSTALLED="$td/installed"
