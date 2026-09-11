@@ -38,7 +38,10 @@ cannot pull them, so this is a fast error rather than a slow mystery — and
 them read: a bundle build failed, and the assertion names `/tmp/os-fault-bundle.log` instead of
 printing it. The build runs on the host, so the evidence outlives the guest — which is exactly why
 the omission was expensive (#2060). A missing log, an empty one and a failing build each get their
-own sentence, because "nothing to show" and "nothing went wrong" are different facts.
+own sentence, because "nothing to show" and "nothing went wrong" are different facts. It is also the
+first thing to put build-log lines on the battery's stdout, so `PITHEAD_REGISTRY` and
+`PITHEAD_REGISTRY_CA` are masked out of the tail from the environment — the failing image ref
+survives, because which ref failed is the diagnostic and the bench host is not.
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.

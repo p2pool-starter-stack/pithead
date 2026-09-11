@@ -173,7 +173,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
-    [ -n "$live" ] || return
+    # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
+    # JSON carrying 0.17, so it cannot be empty here. The `case` below is the real guard on the
+    # value, and it reports rather than returning silently.
     old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
     case "$old" in *[!0-9]* | "" | ?????*)
         bad "post-provision approved setting returned an unsafe current value"

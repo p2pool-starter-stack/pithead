@@ -59,6 +59,14 @@ hostname_mdns_evidence() { # <label>
     # shellcheck disable=SC2034
     local SSH_TIMEOUT=30
     printf '     --- mDNS evidence (#2060) ---\n'
+    # Reachability first, host-side. Every fallback below runs on the GUEST, so a dead transport
+    # skips all of them and five probes print five blank fields — identical to a live guest that
+    # answered empty. That is the defect this whole change exists to remove, one level up.
+    if ! _ssh true; then
+        printf '     the guest did not answer, so no mDNS evidence could be read (ssh: %s)\n' \
+            "$(tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | tail -1)"
+        return 0
+    fi
     printf '     getent ahostsv4: %s\n' "$(_ssh "getent ahostsv4 '$1.local' 2>&1 | head -4" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
     printf '     global v4 addresses: %s\n' "$(_ssh 'ip -4 -o addr show scope global' 2>/dev/null | tr -d '\r' | sed 's/  */ /g' | cut -d' ' -f2,4 | tr '\n' ' ')"
     printf '     default route: %s\n' "$(_ssh 'ip -4 route show default' 2>/dev/null | tr -d '\r' | tr '\n' ';')"
@@ -145,6 +153,22 @@ _hostname_self_test() {
     case "$payload" in *'cert=DNS:fixture-box.local+IP:192.0.2.10'*) ;; *) f=$((f + 1)) ;; esac
     payload=$(hostname_identity_payload fixture-box 192.0.2.10 "" "" "" "" "" "")
     case "$payload" in *'kernel=empty'*'cert=empty'*'avahi=empty'*'mdns=empty'*) ;; *) f=$((f + 1)) ;; esac
+    # A guest that is GONE and a guest that answered EMPTY must not print the same evidence. They
+    # did: the per-probe fallbacks all run on the guest, so a dead transport skipped every one and
+    # both cases printed five blank fields. Both directions are asserted, since only the pair
+    # proves discrimination — either sentence alone can be produced by a stuck instrument.
+    local dead alive
+    # shellcheck disable=SC2317  # called through the shim below
+    _ssh() { return 255; }
+    dead=$(hostname_mdns_evidence fixture-box)
+    # shellcheck disable=SC2317
+    _ssh() { return 0; }
+    alive=$(hostname_mdns_evidence fixture-box)
+    unset -f _ssh
+    case "$dead" in *'the guest did not answer'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *'the guest did not answer'*) f=$((f + 1)) ;; esac
+    case "$alive" in *'address records'*) ;; *) f=$((f + 1)) ;; esac
+    [ "$dead" != "$alive" ] || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
