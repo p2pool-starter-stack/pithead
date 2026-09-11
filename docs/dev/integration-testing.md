@@ -411,7 +411,7 @@ and `--list` prints it).
 | `network.subnet` | default `172.28.0.0/24` / a moved `/24` | the docker bridge prefix every static IP, Tor's rendered torrc, monerod's proxy IP, and the SSRF CIDR key off ([#180](https://github.com/p2pool-starter-stack/pithead/issues/180)/[#201](https://github.com/p2pool-starter-stack/pithead/issues/201)) — runs via `--subnet` (a move needs a full down/up, not a hot apply) |
 | `tari.mode` | `local` / `remote` | profile gating, onion gating, the sync gate against a remote target — the [#103](https://github.com/p2pool-starter-stack/pithead/issues/103) GO verdict's operating mode, needs `--remote-tari-host` |
 | `p2pool.stratum_tls` | `false` / `true` | a live TLS handshake on the published stratum port, and that the served certificate matches the fingerprint rigs are told to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)) |
-| `network.tor_egress_firewall` | `true` (default) / `false` | the opt-out actually opens a direct clearnet dial from a `mining_net` container, not just that no rule got installed ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)) |
+| `network.tor_egress_firewall` | `true` (default) / `false` | the kernel actually acts on the rules, both directions: on the default a direct clearnet dial from a `mining_net` container is DROPPED while the same container still reaches clearnet through Tor's SOCKS; on the opt-out that dial SUCCEEDS and no rule is installed. Neither is inferable from the rendered or installed ruleset ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)) |
 | `monero.view_key` / `tari.view_key` | unset (default) / a real key | payout-confirmation wallet-rpc / tari-wallet wiring ([#381](https://github.com/p2pool-starter-stack/pithead/issues/381)/[#462](https://github.com/p2pool-starter-stack/pithead/issues/462)) — needs `IT_MONERO_VIEW_KEY` (env; the box's own real Monero view key), optionally paired with `IT_TARI_VIEW_KEY` + `IT_TARI_SPEND_PUBLIC_KEY` |
 
 ### What each scenario asserts
@@ -510,10 +510,20 @@ and `--list` prints it).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
   stratum port succeeds, and the served certificate's fingerprint matches the one
   `announce_stratum_tls` tells rigs to pin ([#261](https://github.com/p2pool-starter-stack/pithead/issues/261)).
-- Firewall opt-out actually opens the path (`network.tor_egress_firewall=false` row only). No
-  `pithead-tor-egress`-tagged rule is installed, and a direct clearnet dial from a `mining_net`
-  container succeeds — the mirror of the fail-closed default `assert_egress_posture` proves
-  elsewhere ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)).
+- The Tor-egress firewall is enforced, both directions
+  ([#270](https://github.com/p2pool-starter-stack/pithead/issues/270)/[#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
+  Each row dials a real clearnet IP directly from a `mining_net` container, bypassing the app's own
+  SOCKS config, and asserts the outcome its config calls for. With the firewall **on** (the default)
+  the dial must be DROPPED, and the same container must still reach clearnet *through* Tor's SOCKS —
+  that second dial is the within-row control, without which a DROP and a bench with no route to the
+  internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
+  SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
+  checks state, not effect: `assert_egress_posture` samples the connections the apps *chose* to
+  make, so it reads clean on a fail-open box whose apps are all correctly Tor-configured, and
+  `verify_tor_egress_firewall` compares the installed ruleset to the applier's own render. Rules can
+  be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
+  appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
+  podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
 - Payout confirmation is live (the view-key row only). `PAYOUT_CONFIRM_ENABLED`/
   `TARI_PAYOUT_CONFIRM_ENABLED` in `.env` match the config, and the dashboard's own
   `earnings.confirmed.enabled`/`earnings.tari_confirmed.enabled` flags read `true`

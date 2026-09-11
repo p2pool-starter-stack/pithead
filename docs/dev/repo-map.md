@@ -92,6 +92,7 @@ Keep local code out of `vendor/`.
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement). Each carries a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh`, so its logic is provable without a KVM. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
 

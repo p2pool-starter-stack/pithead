@@ -66,6 +66,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-diagnostics-leg.sh"
 # shellcheck source=tests/os/appliance-config-approval-leg.sh
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
+# shellcheck source=tests/os/appliance-egress-leg.sh
+. "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
