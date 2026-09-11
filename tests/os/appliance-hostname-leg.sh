@@ -52,6 +52,14 @@ hostname_identity_payload() { # <label> <ip> <kernel> <env-host> <state-host> <c
 # registered on, not the address. Avahi's own journal lines are the only place that pair appears
 # ("Registering new address record for <addr> on <iface>.IPv4"), and the image ships no
 # avahi-utils, so nothing here needs a package the appliance does not have.
+# `ip -4 -o addr show scope global` -> "<iface> <addr>/<len> " pairs, one line. This is the field
+# the whole dump exists for: it is what turns `mdns=10.89.0.1` into "10.89.0.1 is on podman1", and
+# it answers that WITHOUT the journal, so a boot whose avahi lines have rotated still says which
+# interface owns the address. Extracted only so it can be driven against canned `ip` output — the
+# harness host is not always Linux, and an unnoticed change to the field layout would leave the
+# dump printing nothing useful on the one row that needs it.
+_addr_iface_map() { tr -d '\r' | sed 's/  */ /g' | cut -d' ' -f2,4 | tr '\n' ' '; }
+
 hostname_mdns_evidence() { # <label>
     # _ssh's own default ceiling is 5400s. A row that already failed must not be able to spend
     # ninety minutes per probe collecting the evidence for its own failure. _ssh reads this
@@ -68,13 +76,16 @@ hostname_mdns_evidence() { # <label>
         return 0
     fi
     printf '     getent ahostsv4: %s\n' "$(_ssh "getent ahostsv4 '$1.local' 2>&1 | head -4" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
-    printf '     global v4 addresses: %s\n' "$(_ssh 'ip -4 -o addr show scope global' 2>/dev/null | tr -d '\r' | sed 's/  */ /g' | cut -d' ' -f2,4 | tr '\n' ' ')"
+    printf '     global v4 addresses: %s\n' "$(_ssh 'ip -4 -o addr show scope global' 2>/dev/null | _addr_iface_map)"
     printf '     default route: %s\n' "$(_ssh 'ip -4 route show default' 2>/dev/null | tr -d '\r' | tr '\n' ';')"
     printf '     avahi interface config: %s\n' "$(_ssh "grep -E '^[[:space:]]*(allow|deny)-interfaces|^[[:space:]]*use-ipv[46]' /etc/avahi/avahi-daemon.conf || echo 'no interface line — every interface'" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
     printf '     avahi address records (address and interface, newest last):\n'
-    # `grep .` turns an empty match into a sentence. Without it, "no lines matched" and "the guest
-    # did not answer" both print as silence under the header, and the second is not evidence.
-    _ssh "journalctl -u avahi-daemon.service -b --no-pager 2>/dev/null | grep -aE 'address record|relevant interface|Withdrawing' | tail -n 20 | grep . || echo 'no avahi address-record lines in this boot journal (or the guest did not answer)'" 2>/dev/null |
+    # `grep .` turns an empty match into a sentence. With the reachability probe above, this
+    # fallback now has exactly ONE meaning left — the guest answered and the journal has no such
+    # lines — so it must not offer the transport as an alternative it has already ruled out.
+    # The dump does not depend on this: `getent` above gives the ADDRESS and `ip -4 -o addr` gives
+    # the interface it belongs to, which is the pair the row needs. The journal only corroborates.
+    _ssh "journalctl -u avahi-daemon.service -b --no-pager 2>/dev/null | grep -aE 'address record|relevant interface|Withdrawing' | tail -n 20 | grep . || echo 'no avahi address-record lines in this boot journal — the probe above proved the guest answers, so this is the journal, not the transport; read the address-to-interface mapping instead'" 2>/dev/null |
         tr -d '\r' | sed 's/^/     | /'
 }
 
@@ -161,14 +172,41 @@ _hostname_self_test() {
     # shellcheck disable=SC2317  # called through the shim below
     _ssh() { return 255; }
     dead=$(hostname_mdns_evidence fixture-box)
+    # The live shim answers the `ip` probe with real `ip -4 -o addr` output, so this asserts the
+    # dump's OWN line, not just the helper. A control that drives the helper alone is blind to
+    # PLACEMENT: dropping `| _addr_iface_map` from the dump left such a control fully green.
     # shellcheck disable=SC2317
-    _ssh() { return 0; }
+    _ssh() {
+        case "$*" in
+        *'ip -4 -o addr'*) printf '%s\n' \
+            '3: podman1    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman1\       valid_lft forever' ;;
+        *getent*) printf '10.89.0.1 STREAM fixture-box.local\n' ;;
+        esac
+    }
     alive=$(hostname_mdns_evidence fixture-box)
+    # The issue asks for two things: what Avahi RESOLVED and WHICH INTERFACE it is on. Assert both
+    # halves off the dump's own lines — emptying either one left every other control green.
+    case "$alive" in *'getent ahostsv4: 10.89.0.1 STREAM fixture-box.local'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *'global v4 addresses: podman1 10.89.0.1/24'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *valid_lft*) f=$((f + 1)) ;; esac
     unset -f _ssh
+    # The address-to-interface map, against real `ip -4 -o addr` output. #2060's two observed mDNS
+    # answers must each come back named with the interface that owns them — that pairing is the
+    # whole point of the dump, and it is the one thing a fix by interface cannot be written without.
+    local ipout
+    ipout=$(printf '%s\n' \
+        '2: enp1s0    inet 192.168.1.50/24 brd 192.168.1.255 scope global dynamic enp1s0\       valid_lft 84559sec' \
+        '3: podman1    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman1\       valid_lft forever' \
+        '4: cni-podman0    inet 172.28.0.1/16 brd 172.28.255.255 scope global cni-podman0\       valid_lft forever' |
+        _addr_iface_map)
+    case "$ipout" in *'podman1 10.89.0.1/24'*) ;; *) f=$((f + 1)) ;; esac
+    case "$ipout" in *'cni-podman0 172.28.0.1/16'*) ;; *) f=$((f + 1)) ;; esac
+    case "$ipout" in *'enp1s0 192.168.1.50/24'*) ;; *) f=$((f + 1)) ;; esac
+    # and it must not drag the trailing junk in, or the line becomes unreadable at three interfaces
+    case "$ipout" in *valid_lft* | *brd*) f=$((f + 1)) ;; esac
     case "$dead" in *'the guest did not answer'*) ;; *) f=$((f + 1)) ;; esac
     case "$alive" in *'the guest did not answer'*) f=$((f + 1)) ;; esac
     case "$alive" in *'address records'*) ;; *) f=$((f + 1)) ;; esac
-    [ "$dead" != "$alive" ] || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
