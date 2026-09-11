@@ -43,12 +43,19 @@ restore_state_snapshots() {
         journal+="${journal:+$'\n'}$source"$'\t'"$replacement"$'\t'"$old"
     done <<<"$UPGRADE_STATE_SNAPSHOTS"
     while IFS=$'\t' read -r source replacement old; do
+        # Record the entry BEFORE attempting the swap, never after. The swap can fail in the middle:
+        # `mv source old` succeeds, `mv replacement source` fails, and the inner recovery
+        # `mv old source` fails too — leaving the live path ABSENT and the only copy of the original
+        # data at $old. Recording afterwards means that entry is missing from the very list
+        # rollback_restored_state walks, so the one mount that actually needs undoing is the one
+        # nothing undoes. Recording first can only over-describe, and rollback_restored_state
+        # distinguishes "never swapped" from "swapped" by looking at the box.
+        UPGRADE_STATE_OLD_DIRS="$source"$'\t'"$old${UPGRADE_STATE_OLD_DIRS:+$'\n'$UPGRADE_STATE_OLD_DIRS}"
         rx "sudo -n mv -- $(quote_arg "$source") $(quote_arg "$old") && { sudo -n mv -- $(quote_arg "$replacement") $(quote_arg "$source") || { sudo -n mv -- $(quote_arg "$old") $(quote_arg "$source"); false; }; }" || {
             rollback_restored_state
             cleanup_restore_replacements "$journal"
             return 1
         }
-        UPGRADE_STATE_OLD_DIRS="$source"$'\t'"$old${UPGRADE_STATE_OLD_DIRS:+$'\n'$UPGRADE_STATE_OLD_DIRS}"
     done <<<"$journal"
 }
 
@@ -59,13 +66,28 @@ cleanup_restore_replacements() { # <source/replacement/old TSV>
     done <<<"$1"
 }
 
+# Undo the swaps restore_state_snapshots recorded. Entries are recorded before their swap is
+# attempted, so an entry may describe a swap that never happened ($old absent, live path intact) —
+# that is a clean no-op, not a failure. An entry with $old absent AND the live path absent is the
+# genuinely broken case and must stay loud: the data is somewhere the caller has to be told about.
 rollback_restored_state() {
     local source old failed=0 replacement nonce
     nonce="$$-$(date +%s)"
     while IFS=$'\t' read -r source old; do
         [ -z "$old" ] || {
             replacement="$source.pithead-failed-$nonce"
-            rx "test -d $(quote_arg "$old") && test ! -e $(quote_arg "$replacement") && sudo -n mv -- $(quote_arg "$source") $(quote_arg "$replacement") && { sudo -n mv -- $(quote_arg "$old") $(quote_arg "$source") || { sudo -n mv -- $(quote_arg "$replacement") $(quote_arg "$source"); false; }; } && sudo -n rm -rf -- $(quote_arg "$replacement")" || failed=1
+            rx "if test -d $(quote_arg "$old"); then
+                    test ! -e $(quote_arg "$replacement") || exit 1
+                    if test -e $(quote_arg "$source"); then sudo -n mv -- $(quote_arg "$source") $(quote_arg "$replacement") || exit 1; fi
+                    if sudo -n mv -- $(quote_arg "$old") $(quote_arg "$source"); then
+                        test ! -e $(quote_arg "$replacement") || sudo -n rm -rf -- $(quote_arg "$replacement")
+                    else
+                        test ! -e $(quote_arg "$replacement") || sudo -n mv -- $(quote_arg "$replacement") $(quote_arg "$source")
+                        exit 1
+                    fi
+                else
+                    test -e $(quote_arg "$source")
+                fi" || failed=1
         }
     done <<<"${UPGRADE_STATE_OLD_DIRS:-}"
     [ "$failed" != 0 ] || UPGRADE_STATE_OLD_DIRS=""

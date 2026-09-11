@@ -79,8 +79,19 @@ jobs:
             echo "Release gate must be dispatched on refs/heads/$DEFAULT_BRANCH, not $GITHUB_REF." >&2
             exit 1
           fi
+          # An unset allowlist makes the subject ",," — which the pattern ",<actor>," matches when
+          # the actor is empty. Require both to be non-empty first, so a missing repository variable
+          # is a refusal, never a pass.
+          if [ -z "${RELEASE_GATE_ACTORS:-}" ]; then
+            echo "RELEASE_GATE_ACTORS is not configured; set the repository variable before dispatching." >&2
+            exit 1
+          fi
           for actor in "$GITHUB_ACTOR" "$TRIGGERING_ACTOR"; do
-            case ",${RELEASE_GATE_ACTORS:-}," in
+            if [ -z "$actor" ]; then
+              echo "Refusing a dispatch whose actor could not be resolved." >&2
+              exit 1
+            fi
+            case ",$RELEASE_GATE_ACTORS," in
               *,"$actor",*) ;;
               *) echo "Actor $actor is not in the repository-configured RELEASE_GATE_ACTORS allowlist." >&2; exit 1 ;;
             esac

@@ -67,6 +67,43 @@ else
     it_fail "an nth-snapshot copy failure performs no source swaps"
 fi
 
+# The mid-swap gap: `mv source old` lands, `mv replacement source` fails, and the inner recovery
+# `mv old source` fails too — so the live path is GONE and the only copy is at $old. The entry has
+# to be on the rollback list for that to be undoable, which is why it is recorded BEFORE the swap.
+# The fixture lets the recovery move succeed on its SECOND attempt, so a run that never recorded
+# the entry leaves src2 absent, and one that did puts it back.
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    mkdir "$td/bin" "$td/src1" "$td/src2" "$td/.pithead-live-src1-n" "$td/.pithead-live-src2-n"
+    printf candidate >"$td/src1/value"
+    printf candidate >"$td/src2/value"
+    printf baseline >"$td/.pithead-live-src1-n/value"
+    printf baseline >"$td/.pithead-live-src2-n/value"
+    printf '%s\n' '#!/bin/sh' '[ "$1" != -n ] || shift' 'exec "$@"' >"$td/bin/sudo"
+    printf '%s\n' '#!/bin/sh' 'shift 3' 'exec /bin/cp -R "$1" "$2"' >"$td/bin/cp"
+    printf '%s\n' '#!/bin/sh' \
+        'src="$2"; dst="$3"' \
+        'case "$dst" in */src2)' \
+        '  case "$src" in' \
+        '    *.pithead-restore-*) exit 1 ;;' \
+        '    *.pithead-old-*) if [ ! -f "$RECOVER_ONCE" ]; then : >"$RECOVER_ONCE"; exit 1; fi ;;' \
+        '  esac ;;' \
+        'esac' \
+        'exec /bin/mv "$@"' >"$td/bin/mv"
+    chmod +x "$td/bin/"*
+    export PATH="$td/bin:$PATH" RECOVER_ONCE="$td/recover-once"
+    rx() { bash -c "$1"; }
+    UPGRADE_STATE_SNAPSHOTS="$td/src1"$'\t'"$td/.pithead-live-src1-n"$'\n'"$td/src2"$'\t'"$td/.pithead-live-src2-n"
+    UPGRADE_STATE_OLD_DIRS=""
+    ! restore_state_snapshots &&
+        [ "$(cat "$td/src2/value" 2>/dev/null)" = candidate ] &&
+        [ "$(cat "$td/src1/value" 2>/dev/null)" = candidate ]
+); then
+    it_pass "a swap whose own recovery fails is still rolled back (the live path comes back)"
+else
+    it_fail "a swap whose own recovery fails is still rolled back (the live path comes back)"
+fi
+
 if (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
     printf '%s\n' '#!/bin/sh' \
@@ -161,15 +198,19 @@ tor_down_fixture() { # <extra flags...> -> rc, output on stdout
     rm -rf "$td"
     return "$rc"
 }
-if out="$(tor_down_fixture)"; [ "$?" = 2 ] && [[ "$out" == *INCONCLUSIVE* ]]; then
+out="$(tor_down_fixture)"
+strict_rc=$?
+if [ "$strict_rc" = 2 ] && [[ "$out" == *INCONCLUSIVE* ]]; then
     it_pass "a stopped Tor is INCONCLUSIVE by default (the positive control still holds)"
 else
-    it_fail "a stopped Tor is INCONCLUSIVE by default (the positive control still holds)"
+    it_fail "a stopped Tor is INCONCLUSIVE by default (the positive control still holds)" "rc=$strict_rc"
 fi
-if out="$(tor_down_fixture --allow-tor-down)"; [ "$?" = 0 ] && [[ "$out" != *INCONCLUSIVE* ]]; then
+out="$(tor_down_fixture --allow-tor-down)"
+waived_rc=$?
+if [ "$waived_rc" = 0 ] && [[ "$out" != *INCONCLUSIVE* ]]; then
     it_pass "--allow-tor-down waives ONLY that control and still grades the apps (#563)"
 else
-    it_fail "--allow-tor-down waives ONLY that control and still grades the apps (#563)"
+    it_fail "--allow-tor-down waives ONLY that control and still grades the apps (#563)" "rc=$waived_rc"
 fi
 
 echo "== image-upgrade continuity verdicts =="

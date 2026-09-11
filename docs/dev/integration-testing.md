@@ -144,7 +144,7 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    and keep the trusted `cosign.pub` outside that candidate. The signed archive must contain
    `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. The repository does not currently
    provide a candidate-only producer; that is an explicit operational prerequisite, not something
-   `scripts/release.sh` can safely do before promotion. The harness snapshots all three inputs,
+   `scripts/release/release.sh` can safely do before promotion. The harness snapshots all three inputs,
    rejects unsafe archive members, authenticates the whole digest-pinned Compose manifest through
    the signed bundle, and additionally verifies the five unique Pithead-built image signatures
    and exact OCI revisions against the external key before staging a byte. Third-party images are

@@ -88,6 +88,7 @@ preflight() {
     # destructive gates roll back against per-category wallet/proxy/dashboard/RPC/onion
     # fingerprints, so capture them up front whenever a rollback net is armed.
     if [ "$SAFETY_BACKUP" = 1 ]; then
+        # shellcheck disable=SC2034 # read by run-safety.sh:safety_restore_exact and live-xvb-support.sh
         BASELINE_EXACT_SECRET_FP="$(upgrade_secret_fingerprints)" || {
             it_err "Could not fingerprint every wallet/proxy/dashboard/RPC/onion secret category."
             exit 1
