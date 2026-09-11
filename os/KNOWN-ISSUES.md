@@ -34,6 +34,13 @@ failures are what those newly-reachable rows found.
 The eight are **pre-existing, not regressions**: a control run with the setup-failure leg skipped
 entirely — no failed `setup` anywhere in the guest's history — produces the identical set.
 
+Every #2060 row above now carries its own payload, which is the step the issue asks for before any
+fix. The three mDNS rows print all six identity fields (want beside got) and then what Avahi
+published and on which interface, read from the guest's own journal — the discriminator, since the
+address moved between runs and the interface did not. The control-runner pair prints the result the
+runner returned and the value read back. The bundle row prints the tail of the build log the row
+used to only name. None of these rows needs a `--keep` guest to be read any more.
+
 All four of #2043's zero-container legs pass, and the A/B updater is sound end to end (install
 to the spare slot, fallback without commit, commit persisting across reboot, operator rollback,
 disk install, keep-reinstall and the rig role). The

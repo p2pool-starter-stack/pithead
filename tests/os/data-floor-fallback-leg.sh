@@ -92,7 +92,8 @@ phase_provision_floor_fallback_leg() { # $1 = the migration leg's data_migration
     fi
     ok "floor before the failing update: $floor0"
     bundle=$(_build_bundle_stamped vfail "$vfail" "$vfail") || {
-        bad "the $vfail migration bundle build failed (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence
+        bad "the $vfail migration bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
         return
     }
     ok "built a data_migration bundle stamped $vfail (floor $vfail): $(basename "$bundle")"

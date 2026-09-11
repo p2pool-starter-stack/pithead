@@ -34,6 +34,12 @@ cannot pull them, so this is a fast error rather than a slow mystery — and
 `tests/os/zero-container-evidence.sh` dumps the guest's image lists at every such leg, where
 `comm -23 want have` separates a missing ref from a refusal with every ref present.
 
+`tests/os/bundle-build-evidence.sh` is the same idea for the other row five legs report and none of
+them read: a bundle build failed, and the assertion names `/tmp/os-fault-bundle.log` instead of
+printing it. The build runs on the host, so the evidence outlives the guest — which is exactly why
+the omission was expensive (#2060). A missing log, an empty one and a failing build each get their
+own sentence, because "nothing to show" and "nothing went wrong" are different facts.
+
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
 

@@ -134,6 +134,20 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     done
     return 1
 }
+# The control runner's own answer, bounded, for a row whose evidence IS that answer (#2060).
+# The #1966 rows reported a verdict and nothing else, so a red could not be read without a --keep
+# guest. An empty result is its own sentence: `dashboard_control_request` returns nothing both
+# when the POST was refused and when the request never left pending before its deadline, and a
+# row that printed the same thing for that as for a rejected apply would hide the difference.
+control_result_payload() { # <result-json>
+    [ -n "$1" ] || {
+        printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        return 0
+    }
+    printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
+        printf 'unparseable result: %.200s' "$1"
+}
+
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
@@ -151,15 +165,15 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     fi
     rid=$(printf '%s' "$preview" | jq -r '.id')
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id}')")
+    live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null)
     if printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null &&
-        dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
-        jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
+        printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
         ok "post-provision benign setting applies through the dashboard control runner"
     else
-        bad "post-provision benign setting did not land"
+        bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
-    live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || return
+    [ -n "$live" ] || return
     old=$(printf '%s' "$live" | jq -r '.monero.out_peers // 48')
     case "$old" in *[!0-9]* | "" | ?????*)
         bad "post-provision approved setting returned an unsafe current value"
@@ -190,12 +204,12 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     rid=$(printf '%s' "$preview" | jq -r '.id')
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')")
+    live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null)
     if printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null &&
-        dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
-        jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
+        printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
         ok "post-provision disruptive setting applies with typed approval"
     else
-        bad "post-provision approved setting did not land"
+        bad "post-provision approved setting did not land ($(control_result_payload "$result"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
         return
     fi
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
@@ -246,7 +260,16 @@ _recovery_self_test() {
         .telegram.chat_id == "-1001966" and .telegram.control.allowed_ids == [1966] and .telegram.enabled != true' >/dev/null || return 1
     provision_browser_config "$cfg" >/dev/null || return 1
     ! provision_browser_config '{"telegram":{"bot_token":"operator-secret","chat_id":"-1","control":{"allowed_ids":[1]}}}' >/dev/null 2>&1 || return 1
-    echo "provision-browser-submit self-test: preflight retention and submit-shaping controls passed"
+    # The control-runner payload (#2060): a rejected apply, a runner that answered nothing, and a
+    # body that is not JSON must each write a sentence only they write.
+    case "$(control_result_payload '{"status":"rejected","error":"type APPLY","id":"r1"}')" in
+    'status=rejected error=type APPLY id=r1') ;;
+    *) return 1 ;;
+    esac
+    case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
+    echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"
 }
 
 # --- self-test (#1936) -----------------------------------------------------------------------

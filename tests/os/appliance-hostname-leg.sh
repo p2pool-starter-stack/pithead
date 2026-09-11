@@ -36,6 +36,40 @@ hostname_identity_verdict() { # <label> <ip> <kernel> <env-host> <state-host> <c
     printf 'ready'
 }
 
+# Every field the verdict short-circuits past, want beside got, so a failed row names all six
+# rather than only the first one to disagree (#2060). The certificate SANs are squeezed onto the
+# single line; an unread field reads `empty`, never as a gap in the line.
+hostname_identity_payload() { # <label> <ip> <kernel> <env-host> <state-host> <cert-san> <avahi-state> <mdns-ip>
+    printf 'want kernel=%s env=%s state=%s cert=DNS:%s+IP:%s avahi=active mdns=%s | got kernel=%s env=%s state=%s cert=%s avahi=%s mdns=%s' \
+        "$1" "$1.local" "$1.local" "$1.local" "$2" "$2" \
+        "${3:-empty}" "${4:-empty}" "${5:-empty}" \
+        "$(printf '%s' "${6:-empty}" | tr -s '[:space:]' ' ')" "${7:-empty}" "${8:-empty}"
+}
+
+# What Avahi published and WHERE, read from the guest at the moment the row fails (#2060). The
+# mDNS answers seen so far — 10.89.0.1 in one run, 172.28.0.1 in the next — are container-bridge
+# addresses that move between runs, so the discriminator is the interface each address record was
+# registered on, not the address. Avahi's own journal lines are the only place that pair appears
+# ("Registering new address record for <addr> on <iface>.IPv4"), and the image ships no
+# avahi-utils, so nothing here needs a package the appliance does not have.
+hostname_mdns_evidence() { # <label>
+    # _ssh's own default ceiling is 5400s. A row that already failed must not be able to spend
+    # ninety minutes per probe collecting the evidence for its own failure. _ssh reads this
+    # through Bash's dynamic scope.
+    # shellcheck disable=SC2034
+    local SSH_TIMEOUT=30
+    printf '     --- mDNS evidence (#2060) ---\n'
+    printf '     getent ahostsv4: %s\n' "$(_ssh "getent ahostsv4 '$1.local' 2>&1 | head -4" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     global v4 addresses: %s\n' "$(_ssh 'ip -4 -o addr show scope global' 2>/dev/null | tr -d '\r' | sed 's/  */ /g' | cut -d' ' -f2,4 | tr '\n' ' ')"
+    printf '     default route: %s\n' "$(_ssh 'ip -4 route show default' 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     avahi interface config: %s\n' "$(_ssh "grep -E '^[[:space:]]*(allow|deny)-interfaces|^[[:space:]]*use-ipv[46]' /etc/avahi/avahi-daemon.conf || echo 'no interface line — every interface'" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     avahi address records (address and interface, newest last):\n'
+    # `grep .` turns an empty match into a sentence. Without it, "no lines matched" and "the guest
+    # did not answer" both print as silence under the header, and the second is not evidence.
+    _ssh "journalctl -u avahi-daemon.service -b --no-pager 2>/dev/null | grep -aE 'address record|relevant interface|Withdrawing' | tail -n 20 | grep . || echo 'no avahi address-record lines in this boot journal (or the guest did not answer)'" 2>/dev/null |
+        tr -d '\r' | sed 's/^/     | /'
+}
+
 hostname_runtime_snapshot() { # <label>; one stable, comparable line
     local label="$1" kernel env_host state_host sans avahi mdns stamp
     kernel=$(_ssh 'hostname' 2>/dev/null | tr -d '\r')
@@ -64,7 +98,8 @@ assert_appliance_hostname_identity() { # <label> <context> <dashboard-user> <das
         tries=$((tries + 1))
         sleep 5
     done
-    bad "$context identity did not converge (${verdict:-unknown})"
+    hostname_mdns_evidence "$label"
+    bad "$context identity did not converge (${verdict:-unknown}) — $(hostname_identity_payload "$label" "$ip" "$kernel" "$env_host" "$state_host" "$sans" "$avahi" "$mdns"); mDNS evidence above"
     return 1
 }
 
@@ -100,6 +135,16 @@ _hostname_self_test() {
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local 'DNS:fixture-box.local.evil, IP Address:192.0.2.100' active 192.0.2.10 >/dev/null && f=$((f + 1))
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" inactive 192.0.2.10 >/dev/null && f=$((f + 1))
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" active 192.0.2.11 >/dev/null && f=$((f + 1))
+    # The payload the failing rows now carry. A verdict names ONE field; #2060's three rows needed
+    # all of them, so assert both sides of the pair the verdict short-circuited on, and that an
+    # unread field prints `empty` rather than collapsing the line.
+    local payload
+    payload=$(hostname_identity_payload fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" active 10.89.0.1)
+    case "$payload" in *'mdns=192.0.2.10'*) ;; *) f=$((f + 1)) ;; esac
+    case "$payload" in *'mdns=10.89.0.1'*) ;; *) f=$((f + 1)) ;; esac
+    case "$payload" in *'cert=DNS:fixture-box.local+IP:192.0.2.10'*) ;; *) f=$((f + 1)) ;; esac
+    payload=$(hostname_identity_payload fixture-box 192.0.2.10 "" "" "" "" "" "")
+    case "$payload" in *'kernel=empty'*'cert=empty'*'avahi=empty'*'mdns=empty'*) ;; *) f=$((f + 1)) ;; esac
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
