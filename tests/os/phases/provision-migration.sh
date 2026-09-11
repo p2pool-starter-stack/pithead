@@ -10,7 +10,8 @@ _phase_provision_migration() {
     info "migration leg — build a data_migration bundle, install via os-update, boot it"
     local mig_bundle
     mig_bundle=$(PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$(tr -d ' \n' <VERSION)" _build_bundle vmig) || {
-        bad "migration bundle build failed (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence
+        bad "migration bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
         return 1
     }
     _stage_bundle "$mig_bundle" || {

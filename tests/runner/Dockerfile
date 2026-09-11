@@ -1,0 +1,165 @@
+# The Linux toolchain `make test` assumes, as an image (#2078).
+#
+# This exists so a contributor on macOS or Windows can run tiers 1-3 and get the verdict CI gets.
+# #2041 made the shell suite REFUSE on Darwin, because the assertions are written against GNU
+# sed/stat and BSD tools differ without failing loudly — and because a host `grep` that is a ugrep
+# shim silently matched nothing for a pattern holding a non-terminal `$`, which three reviewers
+# read as evidence. A fallback cannot fix that class: the binary has the right name, the right
+# flags, exit code 0, and the wrong answer. Only a known userland can.
+#
+# Same argument scripts/install-test-tools.sh makes for the bench's tool images, one level up:
+# pinned images are visible to Dependabot and Trivy, host installs are not.
+#
+# Nothing here reaches a user. The release bundle (scripts/release/bundle.sh) and the appliance
+# image (os/rootfs/Dockerfile) are strict allowlists of named paths, and no tests/ path can enter
+# either — tests/stack/release asserts that rather than trusting it.
+#
+# Node is the awkward pin (CI runs 20, Debian ships 18), so the base solves it. Python is uv's
+# job: dashboard/.python-version pins 3.11 and uv fetches it on first run.
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+
+# The versions come from the Makefile — it is the one place either is written (#1679, #1688) — and
+# are passed in by scripts/test-container.sh via `make -s print-*-version`. The sha256s are tied to
+# one tarball each, so bumping a version without its sha fails the build loudly instead of pulling
+# something unverified. That is the same property ci.yml and shell.yml rely on for their copies.
+ARG SHELLCHECK_VERSION
+ARG SHFMT_VERSION
+# Per-arch, because an image that skips the check on the host it actually runs on verifies
+# nothing. The amd64 pair is byte-identical to the values shell.yml records; the arm64 pair was
+# established the same way, from the upstream release.
+ARG SHFMT_SHA256_amd64=fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+ARG SHFMT_SHA256_arm64=32d92acaa5cd8abb29fc49dac123dc412442d5713967819d8af2c29f1b3857c7
+ARG SHELLCHECK_SHA256_x86_64=8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588
+
+# e2fsprogs: the shell suite builds loopback filesystems for the data-reset and hugepages fixtures.
+# openssh-client: tier 4's live matrix drives a REMOTE box (`run.sh --host`), so the driver needs
+# an ssh client even though nothing else here does.
+# python3: a SYSTEM interpreter on PATH, which uv does not provide — its Python belongs to the
+# project. The address-validation suites shell out to `python3` for Monero's keccak checksum and
+# Tari's DammSum, and WITHOUT it they do not error: they degrade to shape-only and report
+# 'unchecked'/'primary'. That is the largest cluster of the 60 failures this image's missing tools
+# produced between them — not separately attributed, because no controlled one-tool-at-a-time run
+# was made. CONTRIBUTING lists Python 3 as a host requirement for exactly this reason.
+# xxd: build/tor/healthcheck-selftest.sh builds an isolated PATH by symlinking each command the
+# tor image ships. A missing one does not skip — `command -v` yields empty, `ln` makes a link to
+# nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
+# docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
+# shell out to docker. The daemon is the HOST's, reached through the mounted socket.
+# sudo: ONE fixture needs real root — tests/stack/appliance/test-appliance-wizard-spool.sh builds a
+# genuine root/page UID boundary with setpriv and refuses to count itself as passed without it
+# (`bad ... "not run"`, #2086). It is a deliberate widening and worth naming rather than slipping
+# in: this container is already handed the host's Docker socket, which is host-root-equivalent by
+# itself (`docker run -v /:/host --privileged` is one command away), so NOPASSWD root INSIDE the
+# container grants strictly less than it already holds. The default user stays non-root, so the
+# permission-denied fixtures that root would silently bypass are untouched.
+# jq is deliberately NOT in this list — it is pinned from upstream below; see that block for why.
+# The two keyrings below are fetched over TLS with no fingerprint pin — the method each vendor
+# documents, and weaker than the byte-exact sha256 pins this file uses for shellcheck and shfmt.
+# Named rather than hidden: it is trust-on-first-use against download.docker.com and
+# cli.github.com, and it is the least-pinned thing in this image.
+# buildx is NOT optional here, and the failure it prevents is not obvious: without the plugin,
+# `docker compose build` falls back to the classic builder, which rejects the
+# `RUN --mount=type=cache` in dashboard/Dockerfile. Tier 3 dies at "docker compose build failed"
+# with nothing pointing at the real cause. Measured, not guessed (#2078).
+# hadolint ignore=DL3008,DL3009
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg make \
+    openssh-client python3 sudo xxd \
+    procps tar xz-utils \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
+    > /etc/apt/sources.list.d/docker.list \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
+    && chmod a+r /etc/apt/keyrings/githubcli.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    docker-ce-cli docker-compose-plugin docker-buildx-plugin gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# shellcheck + shfmt: direct upstream releases with a sha256 check, the same way shell.yml installs
+# them. `make lint-sh` refuses any version that is not the pin, so a drifted image reds loudly.
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+    amd64) sc_arch=x86_64;  sh_sha="$SHFMT_SHA256_amd64"; sc_sha="$SHELLCHECK_SHA256_x86_64" ;; \
+    arm64) sc_arch=aarch64; sh_sha="$SHFMT_SHA256_arm64"; sc_sha="$SHELLCHECK_SHA256_aarch64" ;; \
+    *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/shfmt "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${arch}" \
+    && echo "${sh_sha}  /tmp/shfmt" | sha256sum -c - \
+    && install -m 0755 /tmp/shfmt /usr/local/bin/shfmt \
+    && curl -fsSL -o /tmp/sc.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${sc_arch}.tar.xz" \
+    && echo "${sc_sha}  /tmp/sc.tar.xz" | sha256sum -c - \
+    && tar -xJf /tmp/sc.tar.xz -C /tmp \
+    && install -m 0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck \
+    && rm -rf /tmp/shfmt /tmp/sc.tar.xz "/tmp/shellcheck-v${SHELLCHECK_VERSION}"
+
+# jq, pinned the same way and for the same reason the image exists (#2086). Debian bookworm's is
+# 1.6; ubuntu-24.04 — what CI runs — has 1.7.1, and the two disagree on a value the suite asserts:
+#   echo '{"height": 100.0}' | jq '.height|tostring'   ->  1.6: 100     1.7: "100.0"
+# 1.7 preserves the number literal. `integral JSON floats do not pass as integer heights` turns on
+# exactly that, and read `expected [protocol], got [ok]` under 1.6 — a tool version silently
+# changing a verdict, which is the failure class this image exists to remove. No Makefile variable
+# to read: unlike shellcheck and shfmt, no gate enforces a jq version, and CI's copy is whatever
+# ubuntu-24.04 preinstalls, so the version is written here against that.
+ARG JQ_VERSION=1.7.1
+# sha256s from the release's own sha256sum.txt, per arch — a version bumped without its hash fails
+# the build loudly rather than installing something unverified.
+ARG JQ_SHA256_amd64=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
+ARG JQ_SHA256_arm64=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+    amd64) jq_sha="$JQ_SHA256_amd64" ;; \
+    arm64) jq_sha="$JQ_SHA256_arm64" ;; \
+    *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/jq "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-${arch}" \
+    && echo "${jq_sha}  /tmp/jq" | sha256sum -c - \
+    && install -m 0755 /tmp/jq /usr/local/bin/jq \
+    && rm -f /tmp/jq
+
+# uv, pinned to the digest ci.yml installs (#2078: one uv, one lock, both sides). 0.10.10 carried
+# two fixable HIGH CVEs in its own vendored Rust deps (quinn-proto GHSA-4w2j-m93h-cj5j,
+# rustls-webpki GHSA-82j2-j2ch-gfr8) — measured on this exact digest, clean on this one (#2084).
+COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /uvx /usr/local/bin/
+
+# The suite expects a NON-ROOT user: several fixtures assert permission-denied, and root bypasses
+# every one of them — they would pass while proving nothing. UID/GID come from the invoking host so
+# files written into the mounted repo keep the caller's ownership on Linux too, not just on the
+# Docker Desktop file-sharing layer. The group may already exist (macOS gid 20 is `dialout` here),
+# which is why the groupadd is allowed to fail.
+ARG PITHEAD_UID=1000
+ARG PITHEAD_GID=1000
+# The `|| true` covers the expected collision (macOS gid 20 is `dialout` here), but it would also
+# swallow an unexpected failure, so the outcome is ASSERTED rather than assumed: the build fails
+# here if the home directory does not end up owned by the uid the container will run as.
+RUN groupadd -g "$PITHEAD_GID" pithead 2>/dev/null || true; \
+    useradd -u "$PITHEAD_UID" -g "$PITHEAD_GID" -m -d /home/pithead -s /bin/bash pithead 2>/dev/null || true; \
+    mkdir -p /home/pithead && chown -R "$PITHEAD_UID:$PITHEAD_GID" /home/pithead \
+    && [ "$(stat -c %u /home/pithead)" = "$PITHEAD_UID" ] \
+    && [ "$(stat -c %g /home/pithead)" = "$PITHEAD_GID" ]
+# The sudo grant, keyed to the UID rather than the name: the useradd above is allowed to fail on a
+# collision, so on a host
+# whose uid already exists in the base image there is no user called `pithead` and a name-keyed rule
+# would be inert — sudo would refuse and the fixture would still report `not run`, which is the
+# exact silent-wrong-verdict shape this image exists to remove.
+RUN printf '#%s ALL=(ALL) NOPASSWD: ALL\n' "$PITHEAD_UID" > /etc/sudoers.d/pithead \
+    && chmod 0440 /etc/sudoers.d/pithead \
+    && visudo -cf /etc/sudoers.d/pithead
+USER $PITHEAD_UID:$PITHEAD_GID
+ENV HOME=/home/pithead
+# npx and uvx download on first use, exactly as they do in CI. The runner script keeps HOME on a
+# named volume so that cost is paid once per machine rather than once per run.
+# The uv cache lives on the named volume and the project on the bind mount — different
+# filesystems, so hardlinking cannot work and uv warns on every run. Copy is the honest mode.
+# A UTF-8 locale, or grep calls the generated `pithead` a BINARY file and prints "binary file
+# matches" instead of the line. The release-pin assertion greps that file for a cosign digest and
+# reads the refusal as an absent pin. Nothing errors; the check just stops seeing text.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV UV_LINK_MODE=copy
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+CMD ["make", "test"]

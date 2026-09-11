@@ -106,7 +106,11 @@ resolve_signing() {
 # character, every test still green.
 
 # The pin, read from `pithead` the same way pin() reads the component versions out of the Dockerfiles.
-cosign_image_pin() { grep -oE '^readonly COSIGN_IMAGE="[^"]+"' pithead | head -1 | cut -d'"' -f2; }
+# -a because `pithead` is a file this repo GENERATES and knows to be text, and grep's binary
+# heuristic is filesystem-dependent: over Docker Desktop's macOS file sharing it calls this exact
+# file binary and prints nothing, so the pin comes back EMPTY rather than wrong (#2078). An empty
+# pin in a signing preflight is the worst shape of failure this function has.
+cosign_image_pin() { grep -a -oE '^readonly COSIGN_IMAGE="[^"]+"' pithead | head -1 | cut -d'"' -f2; }
 
 # One verify-blob through the pinned container, mirroring pithead's cosign_run: a single read-only
 # mount at /w with every path relative to it, and HOME=/tmp so cosign does not warn about a TUF cache

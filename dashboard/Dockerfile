@@ -38,7 +38,7 @@ COPY mining_dashboard/ ./mining_dashboard/
 # here (and in test) but never into production.
 # ==========================================================================
 FROM base AS build
-COPY --from=ghcr.io/astral-sh/uv:0.10.10@sha256:cbe0a44ba994e327b8fe7ed72beef1aaa7d2c4c795fd406d1dbf328bacb2f1c5 /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /bin/
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked
 
 # ==========================================================================
