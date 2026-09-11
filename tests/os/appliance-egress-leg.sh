@@ -175,7 +175,7 @@ _egress_self_test() {
         OS_RUN_SUITE=1 ran=0
         # shellcheck source=tests/os/phases/provision-initial.sh
         . "$caller" # an unreachable caller fails here, which is the same verdict
-        _provision_initial_body() { return 7; }
+        _phase_provision_initial_body() { return 7; }
         phase_provision_egress_backstop() { ran=1; }
         _phase_provision_initial
         got=$?

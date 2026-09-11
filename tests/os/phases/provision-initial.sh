@@ -10,12 +10,12 @@
 # is preserved, so an abort still stops the reboot and migration legs exactly as before.
 _phase_provision_initial() {
     local rc=0
-    _provision_initial_body || rc=$?
+    _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
     return "$rc"
 }
 
-_provision_initial_body() {
+_phase_provision_initial_body() {
     info "phase: provision (wizard HTTP submit -> setup -> stack containers up)"
 
     img=$(_build_image v1) || {
