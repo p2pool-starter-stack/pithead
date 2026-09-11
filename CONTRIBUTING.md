@@ -34,8 +34,10 @@ not the generated file.
 
 The full shell and appliance selftest suite expects **Linux and a non-root user**, as in
 CI. It uses GNU utilities and tests permission failures that root would bypass. On Linux,
-install Bash, Git, Make, jq, Node, Python 3, e2fsprogs, and the shellcheck/shfmt versions
-pinned in `Makefile`.
+install Bash, Git, Make, jq, Node, Python 3, e2fsprogs, gh, xxd, and the shellcheck/shfmt
+versions pinned in `Makefile`, and run under a UTF-8 locale. A missing one of those last four
+does not error — it changes a verdict; see
+[what each tier needs](docs/dev/testing-strategy.md#what-each-tier-needs-from-its-host).
 
 On macOS or Windows, run it in the image instead — it carries that toolchain at the pinned
 versions and needs nothing on the host but Docker:
