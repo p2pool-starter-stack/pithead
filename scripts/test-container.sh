@@ -14,8 +14,8 @@
 # NOT a CI change. Every GitHub-hosted job is already ubuntu-latest; this is the local loop.
 set -uo pipefail
 
-IMAGE="${PITHEAD_TEST_IMAGE:-pithead-test-runner:local}"
-HOME_VOLUME="${PITHEAD_TEST_HOME_VOLUME:-pithead-test-home}"
+IMAGE=pithead-test-runner:local
+HOME_VOLUME=pithead-test-home
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 ENGINE="${PITHEAD_TEST_ENGINE:-docker}"
 
