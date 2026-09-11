@@ -70,6 +70,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
+# shellcheck source=tests/os/setup-failure-recovery-leg.sh
+. "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"

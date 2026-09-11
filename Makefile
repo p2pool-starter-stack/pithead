@@ -97,7 +97,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		os/installer/pithead-install os/build-image.sh os/rauc/*.sh os/overlay/pithead-sync \
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
-		os/overlay/pithead-journal-persist os/overlay/pithead-boot \
+		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-version \
 		tests/os/*.sh tests/os/*/*.sh
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis

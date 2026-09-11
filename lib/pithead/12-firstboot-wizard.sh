@@ -389,7 +389,7 @@ firstboot_wizard() {
                     printf '%s' "$post_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
                     rm -f "$PWD/config.json" "$spool/install-request"
-                    warn "The machine's own defaults collide with this configuration: $post_err"
+                    warn "The configuration this machine assembled did not pass validation: $post_err"
                     sleep 2
                     continue
                 fi

@@ -37,7 +37,12 @@ record_installed() { # <bundle-version>; RAUC has already put the target first i
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 case "${1:-}" in
-record-booted) record_booted ;;
+# Never fails the unit. This ran inside pithead-boot with `|| echo`, and a boot-menu label is not
+# worth a red unit on a machine that is otherwise fine — an image built with no updater has no
+# `rauc.slot=` to read, and the next update or boot repairs a write that could not land. The
+# journal still says so, and the battery asserts `systemctl --failed` is empty (#792).
+record-booted) record_booted ||
+    echo "pithead-boot-version: could not refresh the booted slot's version label" >&2 ;;
 record-installed) record_installed "${2:-}" ;;
 *)
     echo "usage: pithead-boot-version record-booted | record-installed VERSION" >&2

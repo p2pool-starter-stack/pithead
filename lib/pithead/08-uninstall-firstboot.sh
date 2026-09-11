@@ -122,6 +122,14 @@ record_machine_role() { # <pithead|both|rig>
 #
 # rc 0 = a copy was kept, 1 = it could not be.
 wizard_keep_failed_config() {
+    # #2050: setup sets DEPLOYMENT_COMPLETED=true a third of the way in, so a failure past that
+    # point leaves the marker on a machine that is NOT deployed and setup's is_deployed guard
+    # (#924) refuses every retry headless — the reopened page was unusable. Same clear, same
+    # reason, as restore_apply makes on a carried .env (#1239): one marker, two doors.
+    if [ -f "$PWD/$ENV_FILE" ]; then
+        safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$PWD/$ENV_FILE" ||
+            warn "Could not clear the deployment marker — a retry from the setup page will refuse as already provisioned."
+    fi
     if install -m 600 "$PWD/config.json" "$PWD/config.json.failed" 2>/dev/null; then
         [ -f "$PWD/machine-role" ] || rm -f "$PWD/config.json"
         return 0

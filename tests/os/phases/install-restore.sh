@@ -260,6 +260,19 @@ _phase_install_restore() {
     else
         bad "restore leg: restored machine's config does not carry the original wallet"
     fi
+    # #2051: the source machine asserts this (above), the RESTORED machine never did — so "the
+    # stack never came up" could not tell a provisioning that never finished from one that
+    # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
+    # #2043 dump below carries ConditionResult for that half.
+    local rswait=900
+    if provisioning_settled 900; then
+        ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
+    else
+        bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
+        # Still activating after 900 s means containers are not coming, and a second 900 s here
+        # would spend half an hour re-measuring a symptom whose cause the row above just named.
+        rswait=0
+    fi
     # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
     # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
     # the stack never came back up on the restored config. So wait for the stack to actually come
@@ -270,10 +283,13 @@ _phase_install_restore() {
     # The verdict (restore_live_state_verdict) is fixture-tested at tier 1 (tests/stack/run.sh).
     local rsnames="" live_wallet="" verdict
     local rsdeadline
-    rsdeadline=$(($(date +%s) + 900))
-    while [ "$(date +%s)" -lt "$rsdeadline" ]; do
+    # Read at least ONCE whatever the budget is: with rswait 0 a head-tested loop would never run
+    # and the verdict would report `podman ps: 'none'` for a machine nobody asked.
+    rsdeadline=$(($(date +%s) + rswait))
+    while :; do
         rsnames=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
         case "$rsnames" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
+        [ "$(date +%s)" -lt "$rsdeadline" ] || break
         sleep 15
     done
     case "$rsnames" in

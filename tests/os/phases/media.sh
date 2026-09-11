@@ -213,7 +213,11 @@ phase_media() {
     wait_serial "Media configuration channel: cancelled" 90 &&
         ok "removing the media mid-countdown cancels the change, and says so on the console" || {
         [ -f "$SERIAL.failed" ] || [ ! -s "$SERIAL" ] || cp "$SERIAL" "$SERIAL.failed" 2>/dev/null
-        bad "no cancellation confirmation on the console within 90 s of the pull — the channel's last line: '$(tr -d '\r' 2>/dev/null <"$SERIAL" | grep -o 'Media configuration channel: .*' | tail -1)'; console kept at $SERIAL.failed"
+        # #1793: the guard above keeps nothing when the console is empty, so ask the KEPT FILE —
+        # repeating the guard would still lie about a cp that failed.
+        local kept="console kept at $SERIAL.failed"
+        [ -s "$SERIAL.failed" ] || kept="the guest produced no console output, so none was kept"
+        bad "no cancellation confirmation on the console within 90 s of the pull — the channel's last line: '$(tr -d '\r' 2>/dev/null <"$SERIAL" | grep -o 'Media configuration channel: .*' | tail -1)'; $kept"
     }
     _wait_ssh 180 || {
         bad "guest never came back after the cancelled change"

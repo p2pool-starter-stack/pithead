@@ -350,3 +350,45 @@ assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+
+echo "== unit: a failed wizard setup hands back a machine that can be re-provisioned (#2050) =="
+# setup's second render_env writes DEPLOYMENT_COMPLETED=true about a third of the way in — long
+# before provision_control_runner, generate_caddyfile or the `up` that finishes it. Every failure
+# past that point left the marker standing on a machine that is NOT deployed, so the retry
+# wizard_keep_failed_config exists to enable could never run: setup's own is_deployed guard
+# refuses headless with "Already provisioned … run from a terminal" (#924), and the reopened page
+# died on that same refusal however the operator corrected their answers. Same marker, same
+# reason, and the same clear restore_apply already makes on the carried-.env door (#1239).
+WKFD="$SANDBOX/wizard-failed-deploy"
+wkfd_reset() { # writes a machine-role so the keep takes the KEEP branch, not the re-arm one
+    rm -rf "$WKFD"
+    mkdir -p "$WKFD"
+    cp "$STACK" "$WKFD/pithead"
+    printf '{"submitted":"the operator answers"}\n' >"$WKFD/config.json"
+    printf 'pithead\n' >"$WKFD/machine-role"
+}
+# A SECOND true-valued key beside the marker, so the substitution is pinned to the one it means:
+# a blanket s/true/false/ would also flip DASHBOARD_SECURE and still pass a marker-only assertion
+# while silently downgrading the machine to plain HTTP.
+wkfd_reset
+printf 'DASHBOARD_SECURE=true\nDEPLOYMENT_COMPLETED=true\nHOST_IP=10.0.0.2\n' >"$WKFD/.env"
+run_sourced "$WKFD" wizard_keep_failed_config >/dev/null 2>&1
+assert_rc "the keep still reports success while clearing the marker" "$?" "0"
+# The arming control. rc 0 is also what a fixture that never ran returns from a subshell that died
+# before reaching the function, and every assertion below would then pass or fail for a reason
+# that has nothing to do with the clear. The kept copy is the function's other observable effect,
+# so its presence is what says the body actually executed.
+assert_eq "the fixture armed — the function ran and kept its copy" \
+    "$([ -f "$WKFD/config.json.failed" ] && echo ran)" "ran"
+assert_eq "a failed setup clears the deployment marker so a retry can provision" \
+    "$(grep '^DEPLOYMENT_COMPLETED=' "$WKFD/.env")" "DEPLOYMENT_COMPLETED=false"
+assert_eq "and touches no other key that happens to say true" \
+    "$(grep '^DASHBOARD_SECURE=' "$WKFD/.env")" "DASHBOARD_SECURE=true"
+# The negative half: nothing to clear must also mean nothing to create. An .env conjured here
+# would hold only DEPLOYMENT_COMPLETED=false, which the required-key reads (#1246) treat as a
+# corrupt file rather than the absent one it really is.
+wkfd_reset
+run_sourced "$WKFD" wizard_keep_failed_config >/dev/null 2>&1
+assert_rc "the keep succeeds on a machine that never rendered an .env" "$?" "0"
+assert_eq "no .env is created by the failure path" "$([ -e "$WKFD/.env" ] || echo absent)" "absent"
+rm -rf "$WKFD"
