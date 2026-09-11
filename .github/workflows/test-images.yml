@@ -80,7 +80,22 @@ jobs:
       # the lint gate depends on. The two bench images above are a different class: tiny, and they
       # run where real keys and chain data live. This one ships to no user and no bench.
       # It is still BUILT here, so a broken Dockerfile still reds, and Dependabot still bumps its
-      # base digest. uv's own currency gap is tracked separately as #2084.
+      # base digest.
+      #
+      # The scope was checked rather than assumed, because #2084 was filed believing this skipped
+      # only `usr/local/bin/uv` and `usr/local/bin/uvx` and scanned the rest. It does not — the `if`
+      # below skips the whole image — and the difference matters, because "remove the skip and the
+      # image scans clean" is not reachable. Measured on the built image, fixable HIGH/CRITICAL only
+      # (the gate's own scope), 2026-09-11:
+      #
+      #   debian 12.13 (os-pkgs)   6      usr/bin/gh                   2
+      #   Node.js (base image)    20      docker-buildx                1
+      #   usr/local/bin/shfmt     20      usr/local/bin/uv + uvx       4
+      #
+      # 53 across seven targets, and clearing shfmt's 20 means breaking the version `lint-sh`
+      # refuses to run without. A narrow skip would have to name every one of those targets, which
+      # is this `if` with more lines. uv's own pair went 4 -> 0 in #2084, measured on the digests
+      # directly, since this gate would not have reported it either way.
       - name: Scan image for CVEs (Trivy)
         if: matrix.service != 'test-runner'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

@@ -145,8 +145,8 @@ sudo install -m 0755 "/tmp/shellcheck-v$SC/shellcheck" /usr/local/bin/shellcheck
 sudo curl -fsSL -o /usr/local/bin/shfmt "https://github.com/mvdan/sh/releases/download/v$SF/shfmt_v${SF}_linux_amd64"
 sudo chmod 0755 /usr/local/bin/shfmt
 
-# uv 0.10.10 (pinned installer; brings uvx, and adds ~/.local/bin to PATH)
-curl -LsSf https://astral.sh/uv/0.10.10/install.sh | sh
+# uv 0.12.13 (pinned installer; brings uvx, and adds ~/.local/bin to PATH)
+curl -LsSf https://astral.sh/uv/0.12.13/install.sh | sh
 ```
 
 ### The release signing key
