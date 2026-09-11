@@ -70,8 +70,9 @@ MATRIX:
                          Required with --image-upgrade; all paths must be absolute local files.
   --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
                          controller/proxy/dashboard through one bounded XvB→P2Pool transition,
-                         then restore the original config. Requires --safety-backup, recent PPLNS
-                         shares, and miners.
+                         then restore the original config. Requires --safety-backup, miners, a
+                         recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
+                         the gate moves an existing donor route, it does not turn XvB on for you.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
