@@ -46,6 +46,14 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
 # docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
 # shell out to docker. The daemon is the HOST's, reached through the mounted socket.
+# sudo: ONE fixture needs real root — tests/stack/appliance/test-appliance-wizard-spool.sh builds a
+# genuine root/page UID boundary with setpriv and refuses to count itself as passed without it
+# (`bad ... "not run"`, #2086). It is a deliberate widening and worth naming rather than slipping
+# in: this container is already handed the host's Docker socket, which is host-root-equivalent by
+# itself (`docker run -v /:/host --privileged` is one command away), so NOPASSWD root INSIDE the
+# container grants strictly less than it already holds. The default user stays non-root, so the
+# permission-denied fixtures that root would silently bypass are untouched.
+# jq is deliberately NOT in this list — it is pinned from upstream below; see that block for why.
 # The two keyrings below are fetched over TLS with no fingerprint pin — the method each vendor
 # documents, and weaker than the byte-exact sha256 pins this file uses for shellcheck and shfmt.
 # Named rather than hidden: it is trust-on-first-use against download.docker.com and
@@ -56,8 +64,8 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # with nothing pointing at the real cause. Measured, not guessed (#2078).
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg jq make \
-    openssh-client python3 xxd \
+    bash ca-certificates coreutils curl e2fsprogs findutils git gnupg make \
+    openssh-client python3 sudo xxd \
     procps tar xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
@@ -89,8 +97,34 @@ RUN arch="$(dpkg --print-architecture)" \
     && install -m 0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck \
     && rm -rf /tmp/shfmt /tmp/sc.tar.xz "/tmp/shellcheck-v${SHELLCHECK_VERSION}"
 
-# uv, pinned to the digest ci.yml installs (#2078: one uv, one lock, both sides).
-COPY --from=ghcr.io/astral-sh/uv:0.10.10@sha256:cbe0a44ba994e327b8fe7ed72beef1aaa7d2c4c795fd406d1dbf328bacb2f1c5 /uv /uvx /usr/local/bin/
+# jq, pinned the same way and for the same reason the image exists (#2086). Debian bookworm's is
+# 1.6; ubuntu-24.04 — what CI runs — has 1.7.1, and the two disagree on a value the suite asserts:
+#   echo '{"height": 100.0}' | jq '.height|tostring'   ->  1.6: 100     1.7: "100.0"
+# 1.7 preserves the number literal. `integral JSON floats do not pass as integer heights` turns on
+# exactly that, and read `expected [protocol], got [ok]` under 1.6 — a tool version silently
+# changing a verdict, which is the failure class this image exists to remove. No Makefile variable
+# to read: unlike shellcheck and shfmt, no gate enforces a jq version, and CI's copy is whatever
+# ubuntu-24.04 preinstalls, so the version is written here against that.
+ARG JQ_VERSION=1.7.1
+# sha256s from the release's own sha256sum.txt, per arch — a version bumped without its hash fails
+# the build loudly rather than installing something unverified.
+ARG JQ_SHA256_amd64=5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
+ARG JQ_SHA256_arm64=4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+    amd64) jq_sha="$JQ_SHA256_amd64" ;; \
+    arm64) jq_sha="$JQ_SHA256_arm64" ;; \
+    *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/jq "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/jq-linux-${arch}" \
+    && echo "${jq_sha}  /tmp/jq" | sha256sum -c - \
+    && install -m 0755 /tmp/jq /usr/local/bin/jq \
+    && rm -f /tmp/jq
+
+# uv, pinned to the digest ci.yml installs (#2078: one uv, one lock, both sides). 0.10.10 carried
+# two fixable HIGH CVEs in its own vendored Rust deps (quinn-proto GHSA-4w2j-m93h-cj5j,
+# rustls-webpki GHSA-82j2-j2ch-gfr8) — measured on this exact digest, clean on this one (#2084).
+COPY --from=ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65cc2cf1c9a93b3554012c9c3778cf7b1b5fd3d3096ce9e1226c97e1e6 /uv /uvx /usr/local/bin/
 
 # The suite expects a NON-ROOT user: several fixtures assert permission-denied, and root bypasses
 # every one of them — they would pass while proving nothing. UID/GID come from the invoking host so
@@ -107,6 +141,14 @@ RUN groupadd -g "$PITHEAD_GID" pithead 2>/dev/null || true; \
     mkdir -p /home/pithead && chown -R "$PITHEAD_UID:$PITHEAD_GID" /home/pithead \
     && [ "$(stat -c %u /home/pithead)" = "$PITHEAD_UID" ] \
     && [ "$(stat -c %g /home/pithead)" = "$PITHEAD_GID" ]
+# The sudo grant, keyed to the UID rather than the name: the useradd above is allowed to fail on a
+# collision, so on a host
+# whose uid already exists in the base image there is no user called `pithead` and a name-keyed rule
+# would be inert — sudo would refuse and the fixture would still report `not run`, which is the
+# exact silent-wrong-verdict shape this image exists to remove.
+RUN printf '#%s ALL=(ALL) NOPASSWD: ALL\n' "$PITHEAD_UID" > /etc/sudoers.d/pithead \
+    && chmod 0440 /etc/sudoers.d/pithead \
+    && visudo -cf /etc/sudoers.d/pithead
 USER $PITHEAD_UID:$PITHEAD_GID
 ENV HOME=/home/pithead
 # npx and uvx download on first use, exactly as they do in CI. The runner script keeps HOME on a

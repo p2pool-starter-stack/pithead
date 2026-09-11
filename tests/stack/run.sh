@@ -332,7 +332,7 @@ else
     bad "control: the pre-fix data-dir verdict was NOT caught" "instrument cannot fail; the assertions below prove nothing"
 fi
 
-_dd_line=$(grep -n 'Data dir from .env not found' "$STACK" | head -1)
+_dd_line=$(grep -a -n 'Data dir from .env not found' "$STACK" | head -1)
 if [ -z "$_dd_line" ]; then
     bad "the data-dir verdict is present in the shipped artifact (#1776)" "no line matched -- the message was renamed and the assertions below are vacuous"
 else
