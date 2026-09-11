@@ -16,6 +16,26 @@ approval_audit_verdict() { # <JSONL> <request-id>
         .id == $id and .action == "commit-approved" and .status == "applied" and .approver == "tg-1966")' >/dev/null
 }
 
+# WHICH of the four bindings failed, for the row that reported only that one of them did (#2060).
+# The row's own `if` is a four-way conjunction and prints one red for all four. The three cheap
+# legs are re-derived HERE by calling the same verdicts with the same arguments the caller passed
+# — not by re-spelling their logic, which would leave the copy free to drift from the original.
+# The fourth, live identity, prints its own row above this one and says so rather than guessing.
+approval_bind_payload() { # <result-json> <prompt-text> <audit-jsonl> <request-id> <required-prompt-text>...
+    local result="$1" prompt="$2" audit="$3" rid="$4" apply prompt_v audit_v
+    shift 4
+    apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
+        apply="unparseable: ${result:0:120}"
+    [ -n "$result" ] || apply="no result — the commit never returned"
+    if approval_prompt_verdict "$prompt" "$@"; then prompt_v="bound"; else prompt_v="unbound (want $*; got: ${prompt:-empty})"; fi
+    # stderr suppressed: on a malformed audit `approval_audit_verdict`'s jq writes a parse error,
+    # and the row's own `if` already called it once — a second copy would land mid-payload, where
+    # it reads like a harness crash rather than part of the evidence.
+    if approval_audit_verdict "$audit" "$rid" 2>/dev/null; then audit_v="bound"; else audit_v="unbound (want id=$rid commit-approved/applied/tg-1966; last line: $(printf '%s\n' "$audit" | tail -n 1))"; fi
+    printf 'apply=%s prompt=%.240s audit=%.240s; live identity is the row printed above this one' \
+        "$apply" "$prompt_v" "$audit_v"
+}
+
 tari_endpoint_roundtrip_verdict() { # <p2pool-startup-log> <expected-host:port>
     local plain
     plain=$(printf '%s\n' "$1" | mm_strip_ansi)
@@ -251,3 +271,51 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" && return 1
     return 0
 )
+
+# --- self-test (#2060) -------------------------------------------------------------------------
+#
+# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
+# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+#
+# What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
+# different defects, so a payload that printed one sentence for all four would leave it exactly
+# where it was. Each leg is asserted bound in the good case and named in its own failing case.
+_approval_bind_payload_self_test() {
+    local f=0 rid=r1 prompt='Approve configuration
+HOST_IP: Dashboard hostname: fixture-box → fixture-next'
+    local audit='{"id":"r1","action":"commit-approved","status":"applied","approver":"tg-1966"}'
+    local applied='{"status":"applied"}' out
+    out=$(approval_bind_payload "$applied" "$prompt" "$audit" "$rid" HOST_IP fixture-box fixture-next)
+    case "$out" in 'apply=applied/no error prompt=bound audit=bound;'*) ;; *) f=$((f + 1)) ;; esac
+    # One failing leg at a time: the other two must still read `bound`, or the row cannot say
+    # which of the four actually broke.
+    out=$(approval_bind_payload '{"status":"rejected","error":"Telegram approval required"}' "$prompt" "$audit" "$rid" HOST_IP fixture-box fixture-next)
+    case "$out" in *'apply=rejected/Telegram approval required'*'prompt=bound'*'audit=bound'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(approval_bind_payload "$applied" 'Approve configuration' "$audit" "$rid" HOST_IP fixture-box fixture-next)
+    case "$out" in *'apply=applied'*'prompt=unbound (want HOST_IP fixture-box fixture-next; got: Approve configuration)'*'audit=bound'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(approval_bind_payload "$applied" "$prompt" "${audit//tg-1966/tg-999}" "$rid" HOST_IP fixture-box fixture-next)
+    case "$out" in *'prompt=bound'*'audit=unbound (want id=r1'*'tg-999'*) ;; *) f=$((f + 1)) ;; esac
+    # The empty shapes. A commit that never returned and an empty prompt are how #2060's rows were
+    # produced in the first place; neither may read like a bound leg.
+    out=$(approval_bind_payload '' '' '' "$rid" HOST_IP)
+    case "$out" in *'no result — the commit never returned'*'got: empty'*) ;; *) f=$((f + 1)) ;; esac
+    # `unbound` CONTAINS `bound`, so the absence check has to carry the field prefix or it matches
+    # the very failure it is meant to exclude.
+    case "$out" in *'prompt=bound'* | *'audit=bound'*) f=$((f + 1)) ;; esac
+    out=$(approval_bind_payload '{"status":' "$prompt" "$audit" "$rid" HOST_IP)
+    case "$out" in *'apply=unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
+    # A malformed audit must produce a payload and NOTHING on stderr. The row's own `if` already
+    # emitted any parser complaint; a second copy mid-payload reads like a harness crash.
+    out=$(approval_bind_payload '{"status":"applied"}' "$prompt" 'not json at all' "$rid" HOST_IP 2>&1 >/dev/null)
+    [ -z "$out" ] || f=$((f + 1))
+    [ "$f" -eq 0 ] || {
+        printf 'approval-bind-payload self-test FAILED: %s checks\n' "$f"
+        return 1
+    }
+    printf 'approval-bind-payload self-test passed\n'
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
+    set -uo pipefail
+    _approval_bind_payload_self_test
+fi

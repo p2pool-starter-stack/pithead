@@ -36,6 +36,59 @@ hostname_identity_verdict() { # <label> <ip> <kernel> <env-host> <state-host> <c
     printf 'ready'
 }
 
+# Every field the verdict short-circuits past, want beside got, so a failed row names all six
+# rather than only the first one to disagree (#2060). The certificate SANs are squeezed onto the
+# single line; an unread field reads `empty`, never as a gap in the line.
+hostname_identity_payload() { # <label> <ip> <kernel> <env-host> <state-host> <cert-san> <avahi-state> <mdns-ip>
+    printf 'want kernel=%s env=%s state=%s cert=DNS:%s+IP:%s avahi=active mdns=%s | got kernel=%s env=%s state=%s cert=%s avahi=%s mdns=%s' \
+        "$1" "$1.local" "$1.local" "$1.local" "$2" "$2" \
+        "${3:-empty}" "${4:-empty}" "${5:-empty}" \
+        "$(printf '%s' "${6:-empty}" | tr -s '[:space:]' ' ')" "${7:-empty}" "${8:-empty}"
+}
+
+# What Avahi published and WHERE, read from the guest at the moment the row fails (#2060). The
+# mDNS answers seen so far — 10.89.0.1 in one run, 172.28.0.1 in the next — are container-bridge
+# addresses that move between runs, so the discriminator is the interface each address record was
+# registered on, not the address. Avahi's own journal lines are the only place that pair appears
+# ("Registering new address record for <addr> on <iface>.IPv4"), and the image ships no
+# avahi-utils, so nothing here needs a package the appliance does not have.
+# `ip -4 -o addr show scope global` -> "<iface> <addr>/<len> " pairs, one line. This is the field
+# the whole dump exists for: it is what turns `mdns=10.89.0.1` into "10.89.0.1 is on podman1", and
+# it answers that WITHOUT the journal, so a boot whose avahi lines have rotated still says which
+# interface owns the address. Extracted only so it can be driven against canned `ip` output — the
+# harness host is not always Linux, and an unnoticed change to the field layout would leave the
+# dump printing nothing useful on the one row that needs it.
+_addr_iface_map() { tr -d '\r' | sed 's/  */ /g' | cut -d' ' -f2,4 | tr '\n' ' '; }
+
+hostname_mdns_evidence() { # <label>
+    # _ssh's own default ceiling is 5400s. A row that already failed must not be able to spend
+    # ninety minutes per probe collecting the evidence for its own failure. _ssh reads this
+    # through Bash's dynamic scope.
+    # shellcheck disable=SC2034
+    local SSH_TIMEOUT=30
+    printf '     --- mDNS evidence (#2060) ---\n'
+    # Reachability first, host-side. Every fallback below runs on the GUEST, so a dead transport
+    # skips all of them and five probes print five blank fields — identical to a live guest that
+    # answered empty. That is the defect this whole change exists to remove, one level up.
+    if ! _ssh true; then
+        printf '     the guest did not answer, so no mDNS evidence could be read (ssh: %s)\n' \
+            "$(tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | tail -1)"
+        return 0
+    fi
+    printf '     getent ahostsv4: %s\n' "$(_ssh "getent ahostsv4 '$1.local' 2>&1 | head -4" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     global v4 addresses: %s\n' "$(_ssh 'ip -4 -o addr show scope global' 2>/dev/null | _addr_iface_map)"
+    printf '     default route: %s\n' "$(_ssh 'ip -4 route show default' 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     avahi interface config: %s\n' "$(_ssh "grep -E '^[[:space:]]*(allow|deny)-interfaces|^[[:space:]]*use-ipv[46]' /etc/avahi/avahi-daemon.conf || echo 'no interface line — every interface'" 2>/dev/null | tr -d '\r' | tr '\n' ';')"
+    printf '     avahi address records (address and interface, newest last):\n'
+    # `grep .` turns an empty match into a sentence. With the reachability probe above, this
+    # fallback now has exactly ONE meaning left — the guest answered and the journal has no such
+    # lines — so it must not offer the transport as an alternative it has already ruled out.
+    # The dump does not depend on this: `getent` above gives the ADDRESS and `ip -4 -o addr` gives
+    # the interface it belongs to, which is the pair the row needs. The journal only corroborates.
+    _ssh "journalctl -u avahi-daemon.service -b --no-pager 2>/dev/null | grep -aE 'address record|relevant interface|Withdrawing' | tail -n 20 | grep . || echo 'no avahi address-record lines in this boot journal — the probe above proved the guest answers, so this is the journal, not the transport; read the address-to-interface mapping instead'" 2>/dev/null |
+        tr -d '\r' | sed 's/^/     | /'
+}
+
 hostname_runtime_snapshot() { # <label>; one stable, comparable line
     local label="$1" kernel env_host state_host sans avahi mdns stamp
     kernel=$(_ssh 'hostname' 2>/dev/null | tr -d '\r')
@@ -64,7 +117,8 @@ assert_appliance_hostname_identity() { # <label> <context> <dashboard-user> <das
         tries=$((tries + 1))
         sleep 5
     done
-    bad "$context identity did not converge (${verdict:-unknown})"
+    hostname_mdns_evidence "$label"
+    bad "$context identity did not converge (${verdict:-unknown}) — $(hostname_identity_payload "$label" "$ip" "$kernel" "$env_host" "$state_host" "$sans" "$avahi" "$mdns"); mDNS evidence above"
     return 1
 }
 
@@ -100,6 +154,59 @@ _hostname_self_test() {
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local 'DNS:fixture-box.local.evil, IP Address:192.0.2.100' active 192.0.2.10 >/dev/null && f=$((f + 1))
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" inactive 192.0.2.10 >/dev/null && f=$((f + 1))
     hostname_identity_verdict fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" active 192.0.2.11 >/dev/null && f=$((f + 1))
+    # The payload the failing rows now carry. A verdict names ONE field; #2060's three rows needed
+    # all of them, so assert both sides of the pair the verdict short-circuited on, and that an
+    # unread field prints `empty` rather than collapsing the line.
+    local payload
+    payload=$(hostname_identity_payload fixture-box 192.0.2.10 fixture-box fixture-box.local fixture-box.local "$good" active 10.89.0.1)
+    case "$payload" in *'mdns=192.0.2.10'*) ;; *) f=$((f + 1)) ;; esac
+    case "$payload" in *'mdns=10.89.0.1'*) ;; *) f=$((f + 1)) ;; esac
+    case "$payload" in *'cert=DNS:fixture-box.local+IP:192.0.2.10'*) ;; *) f=$((f + 1)) ;; esac
+    payload=$(hostname_identity_payload fixture-box 192.0.2.10 "" "" "" "" "" "")
+    case "$payload" in *'kernel=empty'*'cert=empty'*'avahi=empty'*'mdns=empty'*) ;; *) f=$((f + 1)) ;; esac
+    # A guest that is GONE and a guest that answered EMPTY must not print the same evidence. They
+    # did: the per-probe fallbacks all run on the guest, so a dead transport skipped every one and
+    # both cases printed five blank fields. Both directions are asserted, since only the pair
+    # proves discrimination — either sentence alone can be produced by a stuck instrument.
+    local dead alive
+    # shellcheck disable=SC2317  # called through the shim below
+    _ssh() { return 255; }
+    dead=$(hostname_mdns_evidence fixture-box)
+    # The live shim answers the `ip` probe with real `ip -4 -o addr` output, so this asserts the
+    # dump's OWN line, not just the helper. A control that drives the helper alone is blind to
+    # PLACEMENT: dropping `| _addr_iface_map` from the dump left such a control fully green.
+    # shellcheck disable=SC2317
+    _ssh() {
+        case "$*" in
+        *'ip -4 -o addr'*) printf '%s\n' \
+            '3: podman1    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman1\       valid_lft forever' ;;
+        *getent*) printf '10.89.0.1 STREAM fixture-box.local\n' ;;
+        esac
+    }
+    alive=$(hostname_mdns_evidence fixture-box)
+    # The issue asks for two things: what Avahi RESOLVED and WHICH INTERFACE it is on. Assert both
+    # halves off the dump's own lines — emptying either one left every other control green.
+    case "$alive" in *'getent ahostsv4: 10.89.0.1 STREAM fixture-box.local'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *'global v4 addresses: podman1 10.89.0.1/24'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *valid_lft*) f=$((f + 1)) ;; esac
+    unset -f _ssh
+    # The address-to-interface map, against real `ip -4 -o addr` output. #2060's two observed mDNS
+    # answers must each come back named with the interface that owns them — that pairing is the
+    # whole point of the dump, and it is the one thing a fix by interface cannot be written without.
+    local ipout
+    ipout=$(printf '%s\n' \
+        '2: enp1s0    inet 192.168.1.50/24 brd 192.168.1.255 scope global dynamic enp1s0\       valid_lft 84559sec' \
+        '3: podman1    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman1\       valid_lft forever' \
+        '4: cni-podman0    inet 172.28.0.1/16 brd 172.28.255.255 scope global cni-podman0\       valid_lft forever' |
+        _addr_iface_map)
+    case "$ipout" in *'podman1 10.89.0.1/24'*) ;; *) f=$((f + 1)) ;; esac
+    case "$ipout" in *'cni-podman0 172.28.0.1/16'*) ;; *) f=$((f + 1)) ;; esac
+    case "$ipout" in *'enp1s0 192.168.1.50/24'*) ;; *) f=$((f + 1)) ;; esac
+    # and it must not drag the trailing junk in, or the line becomes unreadable at three interfaces
+    case "$ipout" in *valid_lft* | *brd*) f=$((f + 1)) ;; esac
+    case "$dead" in *'the guest did not answer'*) ;; *) f=$((f + 1)) ;; esac
+    case "$alive" in *'the guest did not answer'*) f=$((f + 1)) ;; esac
+    case "$alive" in *'address records'*) ;; *) f=$((f + 1)) ;; esac
     [ "$f" -eq 0 ] || {
         printf 'appliance-hostname-leg self-test FAILED: %s checks\n' "$f"
         return 1
