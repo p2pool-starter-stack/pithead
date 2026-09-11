@@ -7,7 +7,7 @@
 #
 # Base pinned by digest (supply-chain policy, #282). Not a release image — built on the bench by the
 # tier-4 harness, never pushed.
-FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # tor: the client daemon. curl: speaks SOCKS5 natively (--socks5-hostname resolves the .onion
 # through Tor). ca-certificates: validate the onion's HTTPS chain when we don't pass -k.
