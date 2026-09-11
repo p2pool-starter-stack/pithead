@@ -42,6 +42,9 @@ updates:
       - "/build/p2pool"
       - "/build/tor"
       - "/build/xmrig-proxy"
+      # The local test-runner image (#2078): a base digest here is as unscanned as any other if
+      # nothing asks. Same reasoning scripts/install-test-tools.sh gives for the bench images.
+      - "/tests/runner"
     schedule:
       interval: "weekly"
     groups:

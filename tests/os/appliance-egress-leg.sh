@@ -42,13 +42,26 @@ egress_diag_probes() { # -> "<label>\t<remote command>" per line
 # next run which half of the fork it is on, not the evidence itself. The full guest is still there
 # under `--keep` for anyone who needs the untruncated ruleset.
 _egress_capture_diagnostics() {
-    local label cmd out
+    local label cmd out ran=0
     info "  egress diagnostics (#2059) — is the table ABSENT, or PRESENT but ineffective?"
+    # `</dev/null` on the _ssh call is load-bearing, not tidiness. `_ssh` runs ssh without -n, and
+    # ssh reads stdin — inside a `while read` loop that stdin is the PROBE LIST, so the first probe
+    # swallowed every remaining row and the loop ended after one line. MEASURED on the 2026-09-11
+    # battery: the row printed `engine:` and nothing else, so the nft-table dump that distinguishes
+    # "table absent" from "table present but ineffective" never ran — the exact question the
+    # diagnostics exist to answer, on the exact run they were built for.
     while IFS=$'\t' read -r label cmd; do
         [ -n "$label" ] || continue
-        out=$(_ssh "$cmd" 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
+        out=$(_ssh "$cmd" </dev/null 2>/dev/null | tr '\n' ' ' | tr -s ' ' | cut -c1-220)
         info "    $label: ${out:-<empty>}"
+        ran=$((ran + 1))
     done < <(egress_diag_probes)
+    # A partial capture is worse than none: it looks like evidence while omitting the half that
+    # decides the fix. Say so rather than letting the reader assume the missing probes came back empty.
+    local want
+    want=$(egress_diag_probes | grep -c .)
+    [ "$ran" -eq "$want" ] ||
+        info "    (INCOMPLETE: $ran of $want probes ran — treat the above as partial evidence)"
 }
 
 # The enforcement leg. Never returns non-zero in a way the caller acts on — it reports through
@@ -161,6 +174,23 @@ _egress_self_test() {
     phase_provision_egress_backstop 1 >/dev/null
     [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 0 ] || {
         printf 'unexercised backstop on an ALREADY-RED phase double-counted (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
+        f=$((f + 1))
+    }
+    unset -f _ssh
+
+    # EVERY probe must run. The self-test missed this once and a real battery paid for it: the stub
+    # below now CONSUMES STDIN, which is what real ssh does and what silently truncated the capture
+    # to a single probe. A stub that does not read stdin cannot reproduce the defect, so it is the
+    # stub — not the assertion — that makes this test real.
+    local ran probes_n
+    _ssh() {
+        cat >/dev/null 2>&1 # ssh drains stdin; that is the whole bug
+        printf 'stub-output\n'
+    }
+    ran=$(_egress_capture_diagnostics 2>&1 | grep -c ': ')
+    probes_n=$(egress_diag_probes | grep -c .)
+    [ "$ran" -eq "$probes_n" ] || {
+        printf 'diagnostics ran %s of %s probes — ssh is eating the probe list again\n' "$ran" "$probes_n" >&2
         f=$((f + 1))
     }
     unset -f _ssh

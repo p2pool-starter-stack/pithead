@@ -1,5 +1,5 @@
 # Pinned by digest (#135) so the ubuntu:24.04 tag can't be silently re-pointed.
-FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+FROM ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
 
 # Define XMRig Proxy version and SHA256 hash for binary verification
 # Refer to https://github.com/xmrig/xmrig-proxy/releases for validation

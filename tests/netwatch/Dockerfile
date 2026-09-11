@@ -12,8 +12,9 @@
 #
 # Base deliberately IDENTICAL to tests/integration/tor-client/Dockerfile: reusing that exact digest
 # means one fewer distinct base for dependabot to track and for trivy to scan, and it is already
-# vetted in this tree.
-FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+# vetted in this tree. As of the 3.24 bump it is also build/tor/Dockerfile's base — three images,
+# one digest.
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # conntrack-tools: `conntrack -E` streams connection EVENTS from the kernel. Event mode rather than
 # `-L` table polling is the whole point — a table snapshot misses any flow that opens and closes
@@ -23,7 +24,10 @@ FROM alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d650
 #
 # tcpdump: not used by the verdict. It is here for the diagnosis step after a red, where the
 # question stops being "did something unexpected leave" and becomes "what was in it".
-RUN apk add --no-cache conntrack-tools tcpdump
+#
+# --upgrade libcrypto3/libssl3: the same #1438 fix build/tor/Dockerfile and tor-client carry, and
+# newly load-bearing on this base — see tor-client's copy for the measurement.
+RUN apk add --no-cache --upgrade libcrypto3 libssl3 conntrack-tools tcpdump
 
 # Runs with --network host and NET_ADMIN/NET_RAW on the bench: conntrack reads the HOST's
 # connection table, which is the vantage point the whole design rests on. No USER drop here, unlike

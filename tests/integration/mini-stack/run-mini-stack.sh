@@ -79,8 +79,16 @@ assert_stays() { # assert_stays <label> <container> <state> <seconds>
 
 # POST a new mode to a fake's /control endpoint with a clear failure label. Host ports are
 # 28081/28152 (namespaced away from a real monerod/dashboard on the same host).
-set_monerod() { ctl "http://127.0.0.1:28081/control" "{\"mode\":\"$1\"}" || c_bad "set monerod $1" "control POST failed"; }
-set_tari() { ctl "http://127.0.0.1:28152/control" "{\"mode\":\"$1\"}" || c_bad "set tari $1" "control POST failed"; }
+#
+# The fakes publish to the DOCKER HOST, so the address depends on where this script runs. Directly
+# on the host that is 127.0.0.1; from inside the test-runner container (#2078) the container's own
+# loopback is a different machine, and every POST here fails with a connection refused that reads
+# like a broken fake. PITHEAD_TEST_HOST is how a caller outside the host namespace says where the
+# host actually is — scripts/test-container.sh sets it, and the same knob points these at a daemon
+# running anywhere else.
+HOST_ADDR="${PITHEAD_TEST_HOST:-127.0.0.1}"
+set_monerod() { ctl "http://$HOST_ADDR:28081/control" "{\"mode\":\"$1\"}" || c_bad "set monerod $1" "control POST failed"; }
+set_tari() { ctl "http://$HOST_ADDR:28152/control" "{\"mode\":\"$1\"}" || c_bad "set tari $1" "control POST failed"; }
 
 # Healthchecks.io e2e (#79): the fake receiver records each ping path to /hc/pings.log. Poll it
 # until an (extended-regex) pattern shows up, proving the REAL dashboard loop fired that request.
