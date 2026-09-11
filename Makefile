@@ -53,7 +53,7 @@ test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 
 # The Linux toolchain as an image (#2078), so a contributor on macOS or Windows gets the verdict CI
 # gets instead of the refusal #2041 installed. Pass any target or command through ARGS:
-#   make test-container ARGS="make test-stack"   /   ARGS=--shell   /   ARGS=--build
+#   make test-container ARGS="make test-stack"   /   ARGS=bash   /   ARGS=--build
 test-container: ## Run the suite in the pinned Linux image (any host with docker)
 	bash scripts/test-container.sh $(ARGS)
 

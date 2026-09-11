@@ -4,7 +4,6 @@
 #   scripts/test-container.sh                 # make test
 #   scripts/test-container.sh make test-stack # any target, or any command
 #   scripts/test-container.sh --build         # force an image rebuild first
-#   scripts/test-container.sh --shell         # interactive shell in the image
 #
 # Why this exists: #2041 made the shell suite refuse on macOS, because a failure there is not
 # evidence — unmodified develop scored 3708 passed / 148 failed, and a shimmed `grep` returned 0
@@ -83,17 +82,10 @@ if [ "${vm_bytes:-0}" -gt 0 ] && [ "$vm_bytes" -lt $((LINT_PEAK_GIB * 1024 * 102
 fi
 
 BUILD=0
-SHELL_MODE=0
-case "${1:-}" in
---build)
+[ "${1:-}" = "--build" ] && {
     BUILD=1
     shift
-    ;;
---shell)
-    SHELL_MODE=1
-    shift
-    ;;
-esac
+}
 
 # Build when asked, or when the image is not there yet. Not on every run: the layers are stable and
 # a rebuild on each invocation is the difference between a 20-second loop and a 4-minute one.
@@ -118,13 +110,8 @@ MOUNTS=(-v "$ROOT:$ROOT" -w "$ROOT")
 # targets lean on `git ls-files`. Without the common dir mounted, every one of them dies on a repo
 # git cannot open. This repo's own workflow is worktree-heavy, so handle it rather than document it.
 GIT_COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-extra_git_mount=""
-needs_git_mount "$ROOT" "$GIT_COMMON" && extra_git_mount="$GIT_COMMON"
-[ -n "$extra_git_mount" ] && MOUNTS+=(-v "$extra_git_mount:$extra_git_mount")
+needs_git_mount "$ROOT" "$GIT_COMMON" && MOUNTS+=(-v "$GIT_COMMON:$GIT_COMMON")
 
-# gid 0 is what makes the mounted socket writable: it is root:root 0660, and the container user is
-# deliberately not root. This grants nothing the socket mount has not already granted — access to
-# the host daemon is host-root-equivalent on its own.
 # Tier 4's live matrix ssh-es to the bench, so the caller's ssh config and keys have to reach the
 # driver. Read-only, and only when the directory exists. This is a real credential exposure and
 # worth naming: anything running in this container can read those keys. It adds no new trust
@@ -133,6 +120,9 @@ needs_git_mount "$ROOT" "$GIT_COMMON" && extra_git_mount="$GIT_COMMON"
 # a host whose keys live in files, which is the case this has to work on.
 [ -d "$HOME/.ssh" ] && MOUNTS+=(-v "$HOME/.ssh:/home/pithead/.ssh:ro")
 
+# The socket is root:root 0660 and the container user is deliberately not root, which is what the
+# --group-add 0 below is for. gid 0 grants nothing this mount has not: reaching the host daemon is
+# host-root-equivalent on its own.
 SOCK=/var/run/docker.sock
 [ -S "$SOCK" ] && MOUNTS+=(-v "$SOCK:$SOCK")
 
@@ -148,11 +138,5 @@ RUN=(--rm --user "$(id -u):$(id -g)" --group-add 0
 "${MOUNTS[@]}")
 [ -t 0 ] && [ -t 1 ] && RUN+=(-it)
 
-if [ "$SHELL_MODE" -eq 1 ]; then
-    exec "$ENGINE" run "${RUN[@]}" "$IMAGE" bash
-fi
-
-if [ "$#" -eq 0 ]; then
-    exec "$ENGINE" run "${RUN[@]}" "$IMAGE" make test
-fi
+[ "$#" -eq 0 ] && set -- make test
 exec "$ENGINE" run "${RUN[@]}" "$IMAGE" "$@"

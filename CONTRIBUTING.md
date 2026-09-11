@@ -45,7 +45,7 @@ versions and needs nothing on the host but Docker:
 ```bash
 make test-container                        # the whole local suite, as CI runs it
 make test-container ARGS="make test-stack" # one target
-make test-container ARGS=--shell           # a shell in the image
+make test-container ARGS="bash"            # a shell in the image
 ```
 
 The shell suite refuses to run directly on macOS and that refusal is correct: the assertions
