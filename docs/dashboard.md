@@ -1029,9 +1029,16 @@ operations. A second, confirm-gated allowlist
 operationally-disruptive-but-recoverable settings — a data-directory move (re-sync), a stratum-port
 change (rigs repoint), a clearnet initial-sync enable (host IP exposed during IBD, auto-reverts),
 enabling Monero pruning, the Monero outbound-peer count (bounded, but the biggest
-steady-state knob on the shared Tor daemon's load), and the remote Monero and Tari **node
-endpoints** ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)) — which commit
-only behind typed `APPLY`. Type-to-confirm is intent friction, not authentication. The approval
+steady-state knob on the shared Tor daemon's load), the remote Monero and Tari **node
+endpoints** ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)), and
+**`tari.mode`** — whether this machine merge-mines at all, and whether the bundled Tari node runs
+([#1929](https://github.com/p2pool-starter-stack/pithead/issues/1929)) — which commit
+only behind typed `APPLY`. Turning Tari off stops the node and the merge-mining and removes the
+container, but leaves the chain on disk, so turning it back on resumes rather than re-syncing.
+Turning it on for a machine that has no `tari.wallet_address` also changes a payout destination,
+which is an approval-class change; a machine set up with Tari on can switch freely.
+`monero.mode` is deliberately not in this class: stopping the chain this stack exists to mine is
+not a recoverable operational tweak. Type-to-confirm is intent friction, not authentication. The approval
 class covers funds, traffic, control, authentication, and sensitive behavior; its host-owned record
 is bound to the preview id, staged digest, and signed-in dashboard actor, requires the existing
 Telegram operator identity, and adds the typed suffix check for payout destinations.
