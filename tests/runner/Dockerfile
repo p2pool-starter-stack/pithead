@@ -35,6 +35,11 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # e2fsprogs: the shell suite builds loopback filesystems for the data-reset and hugepages fixtures.
 # openssh-client: tier 4's live matrix drives a REMOTE box (`run.sh --host`), so the driver needs
 # an ssh client even though nothing else here does.
+# python3: a SYSTEM interpreter on PATH, which uv does not provide — its Python belongs to the
+# project. The address-validation suites shell out to `python3` for Monero's keccak checksum and
+# Tari's DammSum, and WITHOUT it they do not error: they degrade to shape-only and report
+# 'unchecked'/'primary', which is 60 quiet failures that look like a regression. CONTRIBUTING
+# lists Python 3 as a host requirement for exactly this reason.
 # docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
 # shell out to docker. The daemon is the HOST's, reached through the mounted socket.
 # buildx is NOT optional here, and the failure it prevents is not obvious: without the plugin,
@@ -44,7 +49,7 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash ca-certificates coreutils curl e2fsprogs findutils git gnupg jq make \
-    openssh-client \
+    openssh-client python3 \
     procps tar xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
