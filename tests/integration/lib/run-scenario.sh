@@ -8,18 +8,27 @@ assert_scenario() {
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
 }
 
-# Runtime egress posture (#274) — the structural proof of #270, beyond config: poll each app
-# container's LIVE connections and FAIL if any holds a PERSISTENT direct public connection (i.e. it
-# isn't dialing through the Tor SOCKS). Config-level checks miss this — it's what caught the #165
-# stale-image p2pool leak and the #271 Tari direct-dial. Reuses bench-verify-egress.sh (the #256
-# verifier) in its persistent-only mode so post-restart startup transients don't false-positive.
-# Skipped when a clearnet initial sync is active (#183): a node is then intentionally on clearnet.
-assert_egress_posture() {
-    local mc tc prefix out
+# Runtime egress observation (#274), beyond config: poll each bridge app container's LIVE IPv4 TCP
+# connections and FAIL if any holds a PERSISTENT direct public connection (i.e. it isn't dialing
+# through the Tor SOCKS). It observes IPv4 TCP from the bridge networks only — it does NOT capture
+# UDP or host-network processes, so a clean verdict is evidence, not a proof of #270. Config-level
+# checks miss even this — it's what caught the #165 stale-image p2pool leak and the #271 Tari
+# direct-dial. Reuses bench-verify-egress.sh (the #256 verifier) in its persistent-only mode so
+# post-restart startup transients don't false-positive. Skipped only while a clearnet initial sync
+# is genuinely UNFINISHED (#183): a node is then intentionally on clearnet.
+assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness control (#563)
+    local mc tc sdir prefix out waive=""
+    [ "${1:-}" != "tor-down" ] || waive=" --allow-tor-down"
     mc="$(env_on_box MONERO_CLEARNET_SYNC)"
     tc="$(env_on_box TARI_CLEARNET_SYNC)"
-    if [ "$mc" = "true" ] || [ "$tc" = "true" ]; then
-        it_log "   egress: clearnet initial sync active (#183) — skipping the all-Tor egress gate"
+    # The flag alone is not the exemption — it stays `true` in .env long after the sync finished,
+    # which silently retired this gate for the rest of the run. The entrypoints drop a persistent
+    # marker in CLEARNET_STATE_DIR when they are done, so skip only while the marker is ABSENT.
+    sdir="$(env_on_box CLEARNET_STATE_DIR)"
+    [ -n "$sdir" ] || sdir="$IT_REMOTE_DIR/data/clearnet-state"
+    if { [ "$mc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/monero.synced")"; } ||
+        { [ "$tc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/tari.synced")"; }; then
+        it_skip_leg "all-Tor live egress (#274/#270)" "clearnet initial sync is explicitly active" "by-design"
         return 0
     fi
     prefix="$(env_on_box NETWORK_PREFIX)"
@@ -29,10 +38,10 @@ assert_egress_posture() {
     # the remote-relative path — the remote is a full checkout and $HERE is a driver path meaningless there.
     local bench="tests/integration/benchmarks/bench-verify-egress.sh"
     [ "$IT_MODE" = "local" ] && bench="$HERE/benchmarks/bench-verify-egress.sh"
-    out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8 2>&1")"
+    out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
     case "$(egress_verdict "$out")" in
-    ok) it_pass "no clearnet egress — every app dials via Tor (#274/#270)" ;;
-    leak) it_fail "no clearnet egress — every app dials via Tor (#274/#270)" "$(printf '%s' "$out" | grep -E 'LEAK|✗' | head -4)" ;;
+    ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
+    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$(printf '%s' "$out" | grep -E 'LEAK|✗' | head -4)" ;;
     *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
     esac
 }
@@ -45,12 +54,13 @@ assert_egress_posture() {
 #      Reading the live container env (not the compose render) catches a stale-image/partial update
 #      that didn't apply the proxy, exactly like the #152/#173 live xmrig-proxy argv checks. socks5h
 #      (not socks5) means the xmrvsbeast hostname resolves over Tor too — no local DNS leak.
-#   2. assert_egress_posture (run alongside, below) proves NO app container holds a direct clearnet
-#      connection — so the XvB call provably could only have left via Tor.
+#   2. The focused live smoke runs the wallet-bearing client in an internal network whose only peer
+#      is Tor, so the call has no other route out. assert_egress_posture separately observes
+#      sustained direct IPv4 TCP bridge traffic.
 # Skipped when XvB is disabled (nothing dials xmrvsbeast then).
 assert_xvb_over_tor() {
     if [ "$(env_on_box XVB_ENABLED)" != "true" ]; then
-        it_log "   xvb: disabled — skipping the XvB-over-Tor wiring check"
+        it_skip_leg "XvB-over-Tor wiring (#206/#163)" "XvB is disabled in this scenario" "by-design"
         return 0
     fi
     local prefix proxy want
@@ -141,12 +151,17 @@ assert_share_stats_live() {
 # python3 — the SQL uses `?` placeholders throughout so the one-liner needs no embedded single
 # quotes and stays safely bash-single-quotable.
 assert_telemetry_tables_present() {
-    local missing
-    missing="$(rx "docker exec dashboard python3 -c 'import sqlite3;c=sqlite3.connect(\"/data/mining_data.db\");want=[\"blocks\",\"xvb_history\",\"network_history\",\"disk_growth\",\"worker_history\"];have={r[0] for r in c.execute(\"SELECT name FROM sqlite_master WHERE type=? AND name IN (?,?,?,?,?)\",[\"table\"]+want).fetchall()};print(\",\".join(sorted(set(want)-have)))'" 2>/dev/null)"
-    if [ -z "$missing" ]; then
-        it_pass "telemetry backbone tables present after upgrade (#196: blocks/xvb_history/network_history/disk_growth/worker_history)"
+    # "table exists" said nothing about whether an upgrade migrated it correctly, and nothing about
+    # whether the file survived. quick_check proves the DB is not corrupt; the column lists pin the
+    # post-upgrade schema of the five backbone series. These five take no additive migrations (only
+    # `history` and `worker_config` do), so an exact match is the right contract — and any future
+    # column added here SHOULD land in this list deliberately.
+    local verdict
+    verdict="$(rx "docker exec dashboard python3 -c 'import sqlite3;c=sqlite3.connect(\"/data/mining_data.db\");want={\"blocks\":[\"ts\",\"height\",\"difficulty\"],\"xvb_history\":[\"ts\",\"avg_1h\",\"avg_24h\",\"fail_count\",\"donation_fraction\",\"mode\"],\"network_history\":[\"ts\",\"difficulty\",\"height\",\"reward\",\"pool_hashrate\"],\"disk_growth\":[\"ts\",\"monero_db_bytes\",\"disk_used_gb\",\"disk_total_gb\"],\"worker_history\":[\"ts\",\"name\",\"h15\",\"accepted\",\"rejected\"]};bad=[n for n,cols in want.items() if [r[1] for r in c.execute(f\"PRAGMA table_info({n})\")]!=cols];qc=c.execute(\"PRAGMA quick_check\").fetchone()[0];print(\"ok\" if qc==\"ok\" and not bad else (\"quick_check: \"+qc if qc!=\"ok\" else \"schema drift in: \"+\",\".join(sorted(bad))))'" 2>/dev/null)"
+    if [ "$verdict" = "ok" ]; then
+        it_pass "telemetry DB is valid and has the expected post-upgrade schema (#196: blocks/xvb_history/network_history/disk_growth/worker_history)"
     else
-        it_fail "telemetry backbone tables present after upgrade (#196)" "missing: $missing"
+        it_fail "telemetry DB is valid and has the expected post-upgrade schema (#196)" "${verdict:-could not query the telemetry DB in the dashboard container}"
     fi
 }
 
@@ -184,6 +199,13 @@ assert_release_readiness() {
 
     # 1. The whole point of a release server: chains already synced, reused in minutes.
     if monero_caught_up; then it_pass "Monero is synced (chain reusable by the matrix)"; elif [ $? = 1 ]; then it_fail "Monero is synced" "monerod answered: not caught up — the matrix would have to re-sync"; else it_fail "Monero is synced" "monerod could not be asked — unreachable, refused, timed out or rejected; sync state unknown"; fi
+    # Tari is the other chain the matrix reuses; a readiness verdict that only looked at Monero
+    # passed boxes whose merge-mining scenarios would start from an incomplete chain.
+    if [ "$(jq_get "$(api_state)" '.sync.tari.state')" = "done" ]; then
+        it_pass "Tari is synced (chain reusable by the matrix)"
+    else
+        it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
+    fi
     pithead status >/dev/null 2>&1
     assert_rc "stack is healthy (pithead status)" "$?" "0"
 
@@ -239,6 +261,24 @@ assert_release_readiness() {
         it_pass "prune axis: live FS is snapshot-capable ($fstype) — the $opp_label variant can be built cheaply"
     else
         it_warn "prune axis: only $baseline_mode is testable live — no $opp_label chain supplied, so $opp_label scenarios skip (cover that mode via the fake mini-stack, or build one)"
+    fi
+
+    # The prune axis infers CoW from the fstype above, which is a proxy. --image-upgrade does not
+    # get to infer: it takes `cp --reflink=always` snapshots of every writable mount, so the only
+    # honest check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine
+    # release server for everything except that one gate, and saying so here is what stops someone
+    # scheduling a destructive upgrade run that cannot reach its own rollback net.
+    if [ -n "$mdir" ]; then
+        local probe rc
+        probe="$mdir/.itest-reflink-probe-$$"
+        rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy"); mkdir -p $(quote_arg "$probe") && : > $(quote_arg "$probe/f") && cp -a --reflink=always -- $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1
+        rc=$?
+        rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1 || true
+        if [ "$rc" = 0 ]; then
+            it_pass "writable-mount filesystem supports cp --reflink=always (--image-upgrade can snapshot)"
+        else
+            it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade cannot take its rollback snapshots and will refuse; every other phase is unaffected"
+        fi
     fi
 
     # 3. Disk headroom on the live chain FS (room to operate + hold a co-located second chain).

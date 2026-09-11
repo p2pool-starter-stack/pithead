@@ -6,12 +6,15 @@ and asserts the stack behaves (issue
 
 ```
 run.sh          entry point — connects (SSH or --local) and runs the matrix (+ --lifecycle,
-                --fault-injection)
+                --fault-injection, --image-upgrade, --xvb-routing-smoke)
 scenarios.sh    the declarative config matrix (data, not code)
 lib.sh          shared helpers: target I/O, assertions, readiness waiters, redaction
-lib/            sourced live-runner modules
+lib/            sourced live-runner modules (incl. the live-gates.sh upgrade/XvB gates and
+                their live-*-support.sh trust, state-snapshot, and restore helpers)
 selftest/       pure-logic self-tests (no server) — run in CI on every PR
 tools/          operator utilities for preparing and inspecting a test bench
+live-supervisor.sh  runs a destructive gate under systemd so a cancelled CI job cannot kill its
+                rollback; live-supervised-run.sh is the unit it launches
 fakes/          controllable fake monerod/Tari + contract tests against the real clients
 mini-stack/     docker overlay running the real dashboard + docker-control against the fakes
 ```

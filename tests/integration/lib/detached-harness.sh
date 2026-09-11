@@ -48,3 +48,44 @@ harness_finished() {
     done
     HARNESS_DONE=1
 }
+
+# Safe pre-gate for the destructive phases: readiness (is this box fit to be a release server?)
+# then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
+# warned and carried on graded the branch against a bench that was already broken, so a failure
+# here refuses the destructive phases rather than reporting their fallout as a branch regression.
+harness_pregate() { # <no_mining flags>
+    local phase
+    for phase in readiness check; do
+        printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" |
+            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase $1" || {
+            warn "$phase reported issues (see above) — destructive phases refused"
+            return 1
+        }
+    done
+}
+
+# Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,
+# which is what lets drain_harness/harness_finished prove the identity of the process they act on
+# (a bare pid is not enough — pids get reused). `dir` owns the harness source, `target` is the
+# stack it drives; --check points those at different checkouts.
+harness_install_runner() {
+    local runner
+    runner="$(mktemp)" || return 1
+    cat >"$runner" <<'RUNNER'
+#!/usr/bin/env bash
+set -uo pipefail
+state="$1"; dir="$2"; target="$3"; workers="$4"; rearm_request="$5"; rearm_ack="$6"; rearm_id="$7"; shift 7
+start=$(awk '{print $22}' "/proc/$$/stat") || exit 1
+printf 'running %s %s\n' "$$" "$start" >"$state.tmp" && mv "$state.tmp" "$state"
+mkdir -p "$dir/results"
+IT_BORROW_REARM_REQUEST="$rearm_request" IT_BORROW_REARM_ACK="$rearm_ack" IT_BORROW_REARM_TOKEN="$rearm_id" \
+    bash "$dir/tests/integration/run.sh" --local --dir "$target" --workers "$workers" "$@" \
+    > "$dir/results/e2e-harness.log" 2>&1
+echo $? > "$dir/results/e2e-harness.done"
+RUNNER
+    on_bench "cat > '$E2E_DIR/.e2e-run.sh' && chmod +x '$E2E_DIR/.e2e-run.sh'" <"$runner" || {
+        rm -f "$runner"
+        return 1
+    }
+    rm -f "$runner"
+}

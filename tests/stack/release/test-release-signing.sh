@@ -104,6 +104,8 @@ chmod +x "$SGN/bin/cosign" "$SGN/v3/cosign"
 bundle_without_pub() {
     # shellcheck disable=SC2034  # consumed by make_bundle from the sourced release script
     WORKDIR="$SGN/nopub-bundle" TAG=v9.9.9 REGISTRY=ghcr.io/test DRY_RUN=0
+    # shellcheck disable=SC2034  # consumed by make_bundle from the sourced release script
+    GIT_COMMIT=0123456789abcdef0123456789abcdef01234567 # make_bundle records it; preflight sets it for real cuts
     get_digest() { printf 'ghcr.io/test/pithead-%s@sha256:%064d' "$1" 1; }
     make_bundle "$SGN/nopub.tar.gz" >/dev/null || return 1
     [ -s "$SGN/nopub.tar.gz" ] && tar tzf "$SGN/nopub.tar.gz" >"$SGN/nopub.list" || return 1

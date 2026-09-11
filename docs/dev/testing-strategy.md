@@ -311,7 +311,8 @@ Every scenario, at every tier, holds to the same rules.
   poll intervals and the deliberate "stays in state" windows that prove the gate does not act
   prematurely.
 - Isolated and idempotent. Each scenario starts from a known baseline and restores it. The live
-  matrix snapshots `config.json` and reuses (never mutates) the canonical chain dirs; the
+  matrix snapshots `config.json`; real daemons retain read/write chain mounts and may advance them.
+  The image-upgrade gate additionally reflink-snapshots and restores its enumerated persistent mounts. The
   mini-stack tears down with `down -v`.
 - Actionable failures. Per-scenario pass/fail, continue-on-error to collect the whole matrix, and
   artifact capture (redacted logs, `compose ps`, `.env`-minus-secrets, dashboard responses) on
@@ -349,13 +350,17 @@ Not yet covered. The road to full production confidence.
 - Destructive-matrix safety. ✅ `run.sh --safety-backup` takes a real `pithead backup` before the
   destructive scenarios and automatically rolls the box back (down → restore → up) if anything
   fails; the archive is removed on success. So the matrix can run on a precious box with a
-  one-command rollback net.
-- CLI breadth in automation. ✅ `backup`/`restore` are now exercised end-to-end: by
+  one-command config/secret/dashboard rollback net. The image-upgrade gate separately requires
+  CoW snapshots for chain and all other writable-mount recovery.
+- CLI breadth in automation. ✅ `backup`/`restore` are exercised end-to-end: by
   `--safety-backup` and by a `--lifecycle` backup→restore round-trip (assert the pool reverts and
-  secrets survive). `reset-dashboard` and `upgrade` are still only unit-covered (upgrade belongs to
-  the release staging smoke test, since it rebuilds/pulls the bundle under test).
-- Soak / longevity. No multi-hour run asserting no leaks, no log/DB growth runaway, and that the
-  XvB controller converges over a realistic window.
+  secrets survive). The opt-in `--image-upgrade` gate now exercises `upgrade` across declared image
+  revisions and checks authenticated digest manifests, Pithead-image signatures, exact mounts, both
+  captured chain anchors, stable durable row payloads plus volatile-state identity/schema, secrets,
+  workers, mining, and exact old-baseline restoration; its first recorded
+  combined hardware run remains pending. `reset-dashboard` remains unit-covered.
+- Soak / longevity. The bounded `--xvb-routing-smoke` observes one real controller/proxy transition
+  and restore. Multi-hour leak, log/DB growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.
 - Security review. The compose hardening invariants are regression-guarded (the #90 section of
   `tests/stack/standalone/test_compose.sh`: RPC creds never in a healthcheck command,

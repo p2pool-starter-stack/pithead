@@ -194,6 +194,9 @@ restore_all() {
     local rc=$?
     [ "$RESTORED" = "1" ] && return
     RESTORED=1
+    # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
+    # back — and an outer restore would mutate a bench this mode promised only to read.
+    [ "$MODE" = "check" ] && return
     if [ "$KEEP" = "1" ]; then
         warn "--keep set: leaving the branch deployed on $BENCH_HOST and the miner repointed."
         warn "  Re-run without --keep, or restore by hand: canonical=$CANONICAL_DIR, miner cfg backup=$MINER_CFG_BACKUP"
@@ -363,7 +366,7 @@ wait_workers() { # <n> <timeout_s>
 preflight() {
     log "Preflight"
     [ -n "$BENCH_HOST" ] || die "Set BENCH_HOST to your test-bench SSH host (env BENCH_HOST or --bench)."
-    [ "$BORROW_MINER" != "1" ] || [ -n "$MINER_HOST" ] || die "Set MINER_HOST to a miner to borrow, or pass --no-miner."
+    [ "$MODE" = "check" ] || [ "$BORROW_MINER" != "1" ] || [ -n "$MINER_HOST" ] || die "Set MINER_HOST to a miner to borrow, or pass --no-miner."
     parent_lock_checkpoint "the first bench touch" || die "Parent-held bench lock is not continuous."
     on_bench 'echo ok >/dev/null' || die "Cannot SSH to test-bench host '$BENCH_HOST'."
     ok "SSH to $BENCH_HOST"
@@ -416,7 +419,7 @@ preflight() {
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."
         fi
     fi
-    if [ "$BORROW_MINER" = "1" ]; then
+    if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         on_miner 'echo ok >/dev/null' || die "Cannot SSH to miner '$MINER_HOST' (use --no-miner to skip)."
         on_miner "test -f '$MINER_XMRIG_CONFIG'" || die "No xmrig config at $MINER_XMRIG_CONFIG on $MINER_HOST."
         ok "SSH to $MINER_HOST + xmrig config found"
@@ -596,6 +599,10 @@ run_harness() {
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
     rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
+    local target_dir="$E2E_DIR"
+    # --check never deployed the branch, so it must assess the checkout the stack actually runs
+    # from (#454) — pointing it at the undeployed e2e tree would grade the wrong stack.
+    [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
@@ -616,31 +623,17 @@ run_harness() {
     phases="$phases $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     step "phases: $phases  (workers=$WORKERS)"
-    local runner rollback_b64 pools_b64
-    runner="$(mktemp)"
-    cat >"$runner" <<'RUNNER'
-#!/usr/bin/env bash
-set -uo pipefail
-state="$1"; dir="$2"; workers="$3"; rearm_request="$4"; rearm_ack="$5"; rearm_id="$6"; shift 6
-start=$(awk '{print $22}' "/proc/$$/stat") || exit 1
-printf 'running %s %s\n' "$$" "$start" >"$state.tmp" && mv "$state.tmp" "$state"
-mkdir -p "$dir/results"
-IT_BORROW_REARM_REQUEST="$rearm_request" IT_BORROW_REARM_ACK="$rearm_ack" IT_BORROW_REARM_TOKEN="$rearm_id" \
-    bash "$dir/tests/integration/run.sh" --local --dir "$dir" --workers "$workers" "$@" \
-    > "$dir/results/e2e-harness.log" 2>&1
-echo $? > "$dir/results/e2e-harness.done"
-RUNNER
-    on_bench "cat > '$E2E_DIR/.e2e-run.sh' && chmod +x '$E2E_DIR/.e2e-run.sh'" <"$runner"
-    rm -f "$runner"
-    # Run safe readiness/current-state assertions inline first, then destructive phases detached.
+    local rollback_b64 pools_b64
+    harness_install_runner || die "Failed to install the detached harness runner."
+    # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
+    # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" | on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --readiness --check $no_mining" ||
-            warn "readiness/check reported issues (see above) — continuing to the destructive phases"
+        harness_pregate "$no_mining" || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
-    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.
@@ -674,9 +667,12 @@ main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
     preflight
     provision
-    backup_stack
-    borrow_miner
-    deploy_branch
+    # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
+    if [ "$MODE" != "check" ]; then
+        backup_stack
+        borrow_miner
+        deploy_branch
+    fi
     local hrc=0
     run_harness || hrc=$?
     # restore_all runs via the EXIT trap.

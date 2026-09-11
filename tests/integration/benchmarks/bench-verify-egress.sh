@@ -39,8 +39,18 @@ PREFIX="172.28.0"
 POLLS=4
 INTERVAL=10
 MIN_HITS=2
+APPS="monerod wallet-rpc p2pool tari tari-wallet xmrig-proxy"
+# Tor's own relay count is a POSITIVE CONTROL: in steady state, zero means the sample is suspect
+# (nothing was really running) rather than clean. One caller deliberately breaks that premise —
+# #563 stops the tor container on purpose and still needs the app-side leak verdict — so the
+# control is waivable, explicitly and only by that caller, never silently.
+ALLOW_TOR_DOWN=0
 while [ $# -gt 0 ]; do
     case "$1" in
+    --allow-tor-down)
+        ALLOW_TOR_DOWN=1
+        shift
+        ;;
     --dir)
         DIR="$2"
         shift 2
@@ -72,8 +82,6 @@ done
     exit 2
 }
 [ "$MIN_HITS" -le "$POLLS" ] 2>/dev/null || MIN_HITS="$POLLS" # can't need more hits than polls
-APPS="monerod p2pool tari xmrig-proxy"
-
 # Established (st=01) foreign IPv4s for a container that are PUBLIC (skip loopback/private/bridge/
 # link-local — the Tor SOCKS lives in the private 172.16/12 range, so SOCKS-routed traffic is skipped).
 # /proc/net/tcp `rem_address` is little-endian hex "IIIIIIII:PPPP"; decode with bash arithmetic so we
@@ -96,17 +104,32 @@ public_conns() { # <container-id>  → one "ip:port" per established public conn
 cid_of() { (cd "$DIR" && docker compose ps -q "$1" 2>/dev/null | head -n1); }
 
 echo "[verify-egress] arm=$ARM  stack=$DIR  tor-socks=${PREFIX}.25:9050  (polls=$POLLS interval=${INTERVAL}s, persistent>=$MIN_HITS)"
+expected="$(cd "$DIR" && docker compose config --services 2>/dev/null)" || {
+    echo "[verify-egress] INCONCLUSIVE — active compose services are unreadable." >&2
+    exit 2
+}
 
 # Poll POLLS times; per poll record each app's UNIQUE public foreign IPs (drop the churning port). An
 # (app, ip) pair seen in >= MIN_HITS distinct polls is a SUSTAINED connection, not a startup transient.
 samples="$(mktemp)"
 trap 'rm -f "$samples"' EXIT
-p=1
+p=1 read_failed=0 observed_apps=0
 while [ "$p" -le "$POLLS" ]; do
     for c in $APPS; do
+        grep -Fqx "$c" <<<"$expected" || continue
+        observed_apps=$((observed_apps + 1))
         cid=$(cid_of "$c")
-        [ -n "$cid" ] || continue
-        public_conns "$cid" | sed 's/:.*//' | sort -u | sed "s/^/$c /" >>"$samples"
+        if [ -z "$cid" ]; then
+            echo "  ! $c: expected by the active compose profile but not running" >&2
+            read_failed=1
+            continue
+        fi
+        if ! rows="$(public_conns "$cid")"; then
+            echo "  ! $c: could not read live IPv4 TCP sockets (poll $p/$POLLS)" >&2
+            read_failed=1
+            continue
+        fi
+        printf '%s\n' "$rows" | sed '/^$/d; s/:.*//' | sort -u | sed "s/^/$c /" >>"$samples"
     done
     [ "$p" -lt "$POLLS" ] && sleep "$INTERVAL"
     p=$((p + 1))
@@ -116,9 +139,13 @@ persistent=$(sort "$samples" | uniq -c | awk -v m="$MIN_HITS" '$1>=m {print $2" 
 
 fail=0
 for c in $APPS; do
+    if ! grep -Fqx "$c" <<<"$expected"; then
+        echo "  · $c: absent from the active compose profile"
+        continue
+    fi
     cid=$(cid_of "$c")
     [ -n "$cid" ] || {
-        echo "  - $c: not running (skip)"
+        echo "  ! $c: not running (inconclusive)"
         continue
     }
     rows=$(printf '%s\n' "$persistent" | awk -v a="$c" -v P="$POLLS" '$1==a {print $2" ("$3"/"P" polls)"}')
@@ -138,9 +165,22 @@ for c in $APPS; do
     fi
 done
 tcid=$(cid_of tor)
-tn=$(public_conns "$tcid" | sed 's/:.*//' | sort -u | grep -c . || true)
-echo "  · tor: $tn external relay connection(s) (expected > 0 — this is the only container that should reach the internet)"
+tn=0
+if [ -z "$tcid" ] || ! tor_rows="$(public_conns "$tcid")"; then
+    if [ "$ALLOW_TOR_DOWN" != 1 ]; then
+        echo "[verify-egress] INCONCLUSIVE — Tor sockets are unreadable." >&2
+        exit 2
+    fi
+    echo "  · tor: sockets unreadable — waived by --allow-tor-down; the app verdict below stands"
+else
+    tn=$(printf '%s\n' "$tor_rows" | sed 's/:.*//' | sort -u | grep -c . || true)
+fi
+[ -z "$tcid" ] || echo "  · tor: $tn external relay connection(s) (expected > 0 — this is the only container that should reach the internet)"
 
+if [ "$observed_apps" -eq 0 ] || { [ "$tn" -eq 0 ] && [ "$ALLOW_TOR_DOWN" != 1 ]; } || [ "$read_failed" -ne 0 ]; then
+    echo "[verify-egress] INCONCLUSIVE — no app was observed, Tor has no relay connection, or a required sample was unreadable." >&2
+    exit 2
+fi
 if [ "$ARM" = "tor" ] && [ "$fail" -ne 0 ]; then
     echo "[verify-egress] FAIL — persistent clearnet leak(s) above; the 'all-Tor' arm is not clean." >&2
     exit 1

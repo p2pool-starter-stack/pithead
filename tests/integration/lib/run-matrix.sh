@@ -84,6 +84,16 @@ preflight() {
     BASELINE_PRUNE="$(env_on_box MONERO_PRUNE)" # 1 = pruned, 0 = full
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     BASELINE_SECRET_FP="$(secret_fingerprint)"
+    # The coarse fingerprint proves "unchanged"; it cannot say WHICH category moved. The
+    # destructive gates roll back against per-category wallet/proxy/dashboard/RPC/onion
+    # fingerprints, so capture them up front whenever a rollback net is armed.
+    if [ "$SAFETY_BACKUP" = 1 ]; then
+        # shellcheck disable=SC2034 # read by run-safety.sh:safety_restore_exact and live-xvb-support.sh
+        BASELINE_EXACT_SECRET_FP="$(upgrade_secret_fingerprints)" || {
+            it_err "Could not fingerprint every wallet/proxy/dashboard/RPC/onion secret category."
+            exit 1
+        }
+    fi
     if [ -z "$BASELINE_CONFIG" ]; then
         it_err "Could not read baseline config.json from the box."
         exit 1
