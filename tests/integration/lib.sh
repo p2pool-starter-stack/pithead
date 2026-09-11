@@ -233,13 +233,13 @@ expected_services() {
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
 
-# Services that must NOT exist for this config (remote mode -> no bundled node for that chain).
+# Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
 absent_services() {
     local config_json="$1" mmode tmode
     mmode="$(printf '%s' "$config_json" | jq -r '.monero.mode // "local"')"
     tmode="$(printf '%s' "$config_json" | jq -r '.tari.mode // "local"')"
     [ "$mmode" = "remote" ] && printf 'monerod\n'
-    [ "$tmode" = "remote" ] && printf 'tari\n'
+    [ "$tmode" != "local" ] && printf 'tari\n'
     return 0
 }
 

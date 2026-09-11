@@ -48,14 +48,16 @@ echo "== black-box: editable-allowlist commit round-trip, every key (#522) =="
 # Fresh baseline with each tunable at a known value so every row below is a genuine single-key
 # env diff (pool flips P2POOL_FLAGS + P2POOL_PORT, both allowlisted).
 jq -n --arg w "$WALLET" '{
-    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",mem_limit:"4g",prep_blocks_threads:4},
+    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",mem_limit:"4g",prep_blocks_threads:4,prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'",mem_limit:"3g"}, p2pool:{pool:"main"},
     xvb:{enabled:true,donation_level:"donor"}, telegram:{daily_summary_time:"08:00"},
     dashboard:{secure:true,host:"box.lan",tari_required:true,check_for_updates:true,timezone:"UTC",
                hashrate_drop_threshold:50,hashrate_drop_minutes:10,
                auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-roundtrip_key() { # <label> <jq-set> <jq-read> <expected>
+COVERED=""        # env keys an actual round-trip exercised, accumulated by the two helpers below
+roundtrip_key() { # <env-key(s), "/"-separated> <jq-set> <jq-read> <expected>
+    COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
     jq "$2" "$C/config.json" >"$C/cand.json"
     gate_try "$C/cand.json"
     assert_eq "$1 commit applies through the gate" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
@@ -82,5 +84,114 @@ for ev in node_down node_recovered worker_offline worker_recovered worker_joined
     sync_finished disk_space db_unhealthy db_reset xvb_no_share xvb_registration new_release \
     stack_online daily_summary hashrate_low hashrate_loss hugepages low_ram high_reject_rate \
     block_found payout_found payout_confirmed container_unhealthy raffle_win; do
-    roundtrip_key "TELEGRAM_EVENT ${ev}" ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
+    roundtrip_key "TELEGRAM_EVENT_$(printf '%s' "$ev" | tr 'a-z' 'A-Z')" \
+        ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
 done
+
+echo "== black-box: confirm-allowlist commit round-trip behind the typed APPLY (#1929) =="
+# The tier above commits with no token. CONTROL_DASHBOARD_CONFIRM_KEYS is the OTHER committable
+# tier, and until now nothing here proved a single one of its keys actually round-trips — only that
+# a change needing a token is refused without one (test-confirm-approval.sh, one key). A key on an
+# allowlist that no round-trip ever exercises is an allowlist entry nobody has seen work.
+roundtrip_confirm() { # <env-key(s), "/"-separated> <jq-set> <jq-read> <expected>
+    COVERED="$COVERED $(printf '%s' "$1" | tr '/' ' ')"
+    jq "$2" "$C/config.json" >"$C/cand.json"
+    # The token is load-bearing, not decoration: the SAME candidate must be refused without it, or
+    # this row would pass just as happily for a key that had quietly fallen into the free tier.
+    gate_try "$C/cand.json"
+    assert_eq "$1 is refused with no typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+    gate_try "$C/cand.json" APPLY
+    assert_eq "$1 commit applies behind the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+    assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
+}
+env_now() { run_sourced "$C" env_get_file "$C/.env" "$1"; }
+
+# TARI_MODE, the #1929 subject: an operator turns merge-mining off and back on from the dashboard.
+# Asserted on the RENDERED .env rather than config.json alone — config.json is what the gate wrote,
+# the .env is what the containers are actually launched from, and only the second can show that the
+# profile and the sync-gate flag followed the mode.
+assert_eq "baseline renders the bundled Tari node" "$(env_now TARI_MODE)" "local"
+tari_data_before="$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')"
+roundtrip_confirm "TARI_MODE/COMPOSE_PROFILES" '.tari.mode="off"' '.tari.mode' "off"
+assert_eq "off renders TARI_MODE=off" "$(env_now TARI_MODE)" "off"
+assert_not_contains "off drops the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+assert_eq "off releases the sync gate — a machine that declined Tari still mines Monero" "$(env_now TARI_REQUIRED)" "false"
+# The operator's own requirement: turning Tari off must not destroy the chain. Nothing in the
+# commit path may touch the data dir — remove_deactivated_profile_containers removes the CONTAINER.
+assert_eq "off leaves the Tari data dir untouched" "$(ls -A "$C/data/tari" 2>/dev/null | wc -l | tr -d ' ')" "$tari_data_before"
+assert_eq "off leaves tari.data_dir pointing at the same chain" "$(jq -r '.tari.data_dir // "auto"' "$C/config.json")" "auto"
+# ...and back on, the direction that proves this is a switch and not a one-way door.
+roundtrip_confirm "TARI_MODE" '.tari.mode="local"' '.tari.mode' "local"
+assert_eq "back on renders TARI_MODE=local" "$(env_now TARI_MODE)" "local"
+assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PROFILES)" "local_tari"
+
+# The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
+# ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
+roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
+roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
+roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
+roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
+roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
+roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"
+roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
+roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
+# PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
+# TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
+# already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
+# "applies" with no typed APPLY because there is nothing for the confirm gate to see. That is how
+# this row read green while proving nothing; only the no-token half above caught it. ENABLE is also
+# the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
+# so a baseline that does not start pruned cannot exercise this key through the gate.
+roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
+
+echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
+# TOTALITY, derived from the SHIPPED artifact rather than a hand list — a hand list is blind to the
+# key nobody remembered, which is the whole failure mode here. $COVERED records what the helpers
+# above actually RAN, not what this file says it covers, so deleting a row reds this too.
+allow_set() { awk "/^$1='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" | tr -d "\n'" | sed "s/^$1=//;s/  */ /g;s/^ //"; }
+# NAMED EXEMPTIONS with the reason each cannot run at tier 1. The four node-endpoint keys (#1888)
+# are gated on preflight_remote_nodes, a REAL dial at the staged address: the sandbox has no node to
+# answer it, so a round-trip here could only pass by defeating the probe that is the whole
+# compensating control for that tier. They are tier-4 work (tests/integration, tests/os) by nature.
+CONFIRM_TIER1_EXEMPT="MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS"
+uncovered() { # <space-separated key list> -> the keys with no round-trip, minus the exemptions
+    local k out=''
+    for k in $1; do
+        case " $COVERED $CONFIRM_TIER1_EXEMPT " in *" $k "*) ;; *) out="${out:+$out }$k" ;; esac
+    done
+    printf '%s' "$out"
+}
+# A FIRING CONTROL first: a comparison that can only ever print "" is not evidence of coverage. Seed
+# a key that is on no allowlist and therefore in no round-trip, and prove uncovered() names it.
+assert_eq "the totality check can report a missing round-trip" "$(uncovered "XVB_ENABLED NOT_A_REAL_KEY")" "NOT_A_REAL_KEY"
+assert_eq "every CONTROL_DASHBOARD_EDITABLE_KEYS key round-trips" "$(uncovered "$(allow_set CONTROL_DASHBOARD_EDITABLE_KEYS)")" ""
+assert_eq "every CONTROL_DASHBOARD_CONFIRM_KEYS key round-trips (or is exempt by name)" "$(uncovered "$(allow_set CONTROL_DASHBOARD_CONFIRM_KEYS)")" ""
+# ...and the exemption list cannot quietly grow into a way to skip a key: every name on it must be a
+# real confirm key, so an exemption for a key nobody gated reds rather than sitting there unread.
+for k in $CONFIRM_TIER1_EXEMPT; do
+    assert_contains "exempt key $k is a real confirm key" " $(allow_set CONTROL_DASHBOARD_CONFIRM_KEYS) " " $k "
+done
+
+echo "== black-box: the compose-profile token set is closed (#1929) =="
+# WHY THIS GUARD EXISTS. COMPOSE_PROFILES is on the confirm allowlist so that a tari.mode switch
+# commits with a typed APPLY instead of the Telegram tier — but that var is NOT tari's alone. What
+# stops it widening monero's door is describe_change's DEST row on a local_node flip, and what stops
+# a FUTURE profile inheriting the confirm tier for free is nothing at all. So pin the token set: add
+# one and this reddens, forcing the allowlist comment in 42-control-policy-and-host-checks.sh to be
+# re-read rather than inherited.
+#
+# Derived from the SHIPPED artifact, not retyped — a hand list cannot notice a token nobody
+# remembered, which is the whole failure mode.
+profile_tokens() { grep -oE 'profiles="(\$\{profiles:\+\$profiles,\})?[a-z_]+"' "$STACK" | sed 's/.*}//;s/profiles="//;s/"$//' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+# FIRING CONTROL: an extractor that silently stopped matching prints "" and every comparison below
+# would read as a clean, closed set. Prove it found something first.
+_pt="$(profile_tokens)"
+assert_eq "the profile-token extractor still matches render_env" "$(printf '%s' "$_pt" | wc -w | tr -d ' ')" "4"
+assert_eq "COMPOSE_PROFILES carries exactly the four known tokens" "$_pt" "local_node local_tari payout_confirm tari_payout_confirm"
+# ...and the container reaper knows every one of them. A profile whose container nothing removes is
+# #795's defect returning: the profile goes inactive, compose does not count the container an orphan,
+# and it keeps running against a config that says it should be gone.
+reaped_tokens() { grep -oE '== \*,[a-z_]+,\*' "$STACK" | sed 's/.*,\([a-z_]*\),\*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+_rt="$(reaped_tokens)"
+assert_eq "the reaper-token extractor still matches remove_deactivated_profile_containers" "$(printf '%s' "$_rt" | wc -w | tr -d ' ')" "4"
+assert_eq "every renderable profile has a container the reaper removes (#795)" "$_rt" "$_pt"

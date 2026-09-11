@@ -64,13 +64,13 @@ assert_running_state() {
             it_pass "monerod absent in remote mode"
         fi
     fi
-    # tari.mode is an independent axis from monero.mode (#103/#942): the bundled tari container
-    # must be absent whenever it's remote, same as monerod above.
-    if [ "$tmode" = "remote" ]; then
+    # tari.mode is an independent axis from monero.mode (#103/#942) and has THREE values (#1855):
+    # NOT-LOCAL, never "= remote", or an off machine that left its container up passes.
+    if [ "$tmode" != "local" ]; then
         if service_present tari "$running"; then
-            it_fail "tari absent in remote mode (#103/#942)" "tari is running"
+            it_fail "tari absent when tari.mode=$tmode (#103/#942/#1855)" "tari is running"
         else
-            it_pass "tari absent in remote mode (#103/#942)"
+            it_pass "tari absent when tari.mode=$tmode (#103/#942/#1855)"
         fi
     fi
     # 1b. A node's inbound onion follows the node (#103): the LIVE torrc must carry the node's
@@ -88,8 +88,8 @@ assert_running_state() {
         assert_num_ge "Monero inbound onion published in local mode (#103)" "${hs_monero:-0}" 1
     fi
     hs_tari="$(rx "docker exec tor grep -c -F 'HiddenServiceDir /var/lib/tor/tari/' /tmp/torrc 2>/dev/null")"
-    if [ "$tmode" = "remote" ]; then
-        assert_eq "no Tari inbound onion in remote mode (#103/#942)" "${hs_tari:-0}" "0"
+    if [ "$tmode" != "local" ]; then # onion_provisioning mints it for local ONLY (#1855)
+        assert_eq "no Tari inbound onion when tari.mode=$tmode (#103/#942/#1855)" "${hs_tari:-0}" "0"
     else
         assert_num_ge "Tari inbound onion published in local mode (#103)" "${hs_tari:-0}" 1
     fi

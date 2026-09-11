@@ -181,6 +181,9 @@ _phase_provision_initial_body() {
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_hostname_regressions "$pv_user" "$pv_pass"
     phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
+    # Runs AFTER the sensitive leg on purpose: that leg repoints both chains at reserved remote
+    # nodes and restores them, so starting here would race its restore for ownership of tari.mode.
+    phase_provision_tari_mode_switch "$pv_user" "$pv_pass" || bad "tari.mode day-two switching leg aborted before completing required checks"
     # ---- local-miner leg (#796): enable -> xmrig up -> wired to the machine's own stratum ---
     # The submit above asked to mine on the box itself, so the built-in RigForge worker must
     # come up without any hands: setup renders its config, runs its appliance-mode setup, and
