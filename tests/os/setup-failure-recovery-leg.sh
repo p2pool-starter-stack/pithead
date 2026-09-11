@@ -33,6 +33,11 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
     if _ssh "test -s '$live' && test ! -e '$backup' && mv '$live' '$backup' && test -s '$backup' && { echo '# $SETUP_FAULT_MARK'; grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$backup' | head -1 | sed 's/^/# /'; echo 'services: [ not a compose file'; } >'$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
         ok "post-validation setup fault is armed: the Compose file still validates and cannot be started"
     else
+        # The arm moves the real file BEFORE it writes and checks the stub, so a failure after
+        # that mv would leave the guest with no usable Compose file and nothing to put it back.
+        # Restore only over an absent file or our OWN stub — never over a file we did not replace,
+        # which is what a stale backup from an earlier run would otherwise be written onto.
+        _ssh "test -e '$backup' && { test ! -s '$live' || grep -q $SETUP_FAULT_MARK '$live'; } && mv -f '$backup' '$live'" || true
         bad "could not arm the disposable post-validation setup fault"
         return 1
     fi
