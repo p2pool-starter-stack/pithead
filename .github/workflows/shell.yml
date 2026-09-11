@@ -1,0 +1,110 @@
+name: Shell
+
+# Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~215 s) and
+# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~730 s) but the generated
+# CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
+# fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
+# chain, so splitting them is a test-design change, not a YAML one. #2048 has the per-domain table
+# and the coupling map. No `schedule:` here: the Monday CVE sweep stays in ci.yml, which is what
+# every shell job used to gate itself off one `if:` at a time.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# Least privilege (#282): these jobs only read the repo.
+permissions:
+  contents: read
+
+# Cancel superseded PR runs; never cancel push runs on main/develop — they are required checks on
+# the protected branch. #415.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shell:
+    name: Shell tests (pithead suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # run.sh alone is 692-772 s (#2048); the old 25 min covered all three jobs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the generated CLI
+        # run.sh sources the generated root `pithead` (git-ignored). Until #2048 split `lint-sh`
+        # off, the build came in free as that target's prerequisite.
+        run: make pithead
+      - name: Run pithead test suite
+        run: bash tests/stack/run.sh
+
+  shell-standalone:
+    name: Shell tests (standalone suites + tooling)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # ~110 s of the old `shell` job, the first-boot journal suite being 60 s of it (#2048)
+    # Each suite is named outright rather than globbed: standalone/ also holds test_compose.sh,
+    # which belongs to the `compose` job and which sources test_dotenv.sh itself, so a glob would
+    # run both twice. `make test-stack` names the same four and never runs in CI — a suite added
+    # to standalone/ must be wired here as well, or it runs nowhere.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the generated CLI
+        run: make pithead
+      - name: Run real-image data-reset suite
+        # Real ext4 damage against the product's own repair escalation (#1062). Unprivileged —
+        # e2fsprogs on plain files — and it hard-fails rather than skips when CI lacks the tools.
+        run: bash tests/stack/standalone/test_data_reset.sh
+      - name: Run OS-update recovery suite
+        # #1050 dead-end states re-arm and report.
+        run: bash tests/stack/standalone/test_os_update_recovery.sh
+      - name: Run first-boot journal suite
+        # #1030 journal persistence across interrupts.
+        run: bash tests/stack/standalone/test_firstboot_journal.sh
+      - name: Run appliance hugepages suite
+        # #1103 co-location refusal on the reduced tier.
+        run: bash tests/stack/standalone/test_appliance_hugepages.sh
+      - name: Test-inventory drift check
+        # The inventory generator is grep-based; it exits non-zero when any suite it
+        # enumerates counts zero — i.e. a suite moved or changed shape and the inventory
+        # would silently under-count (#981). Output discarded: the generated file is
+        # git-ignored and read on demand via `make test-inventory`.
+        run: bash tests/inventory.sh > /dev/null
+      - name: Run integration harness self-test
+        # Pure-logic checks for the tests/integration/ harness (config rendering, matrix
+        # coverage, redaction). The LIVE matrix (tests/integration/run.sh) needs a real test
+        # server and runs as a gated/manual release gate (#54), not on every PR.
+        run: make test-integration-selftest
+      - name: Run repository tooling checks
+        run: make test-tools
+
+  shell-lint:
+    name: Shell lint (shellcheck + shfmt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # 198-225 s over the four runs measured in #2048
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: "Install shellcheck + shfmt (pinned + sha256-verified, #286)"
+        # Direct upstream-release downloads with a sha256 check (RigForge convention) instead of the
+        # runner's preinstalled shellcheck / apt — reproducible, and immune to the apt-mirror
+        # flakiness of #64. Both versions come from the Makefile — shellcheck's since #1679, shfmt's since #1688.
+        run: |
+          SF=$(make -s print-shfmt-version) # the Makefile is the pin; `make lint-sh` below refuses any other version (#1688)
+          curl -fsSL -o /tmp/shfmt "https://github.com/mvdan/sh/releases/download/v$SF/shfmt_v${SF}_linux_amd64"
+          echo "fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1  /tmp/shfmt" | sha256sum -c -
+          sudo install -m 0755 /tmp/shfmt /usr/local/bin/shfmt
+          SC=$(make -s print-shellcheck-version) # the Makefile is the pin; `make lint-sh` below refuses any other version (#1679)
+          curl -fsSL -o /tmp/sc.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v$SC/shellcheck-v$SC.linux.x86_64.tar.xz"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/sc.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/sc.tar.xz -C /tmp
+          sudo install -m 0755 "/tmp/shellcheck-v$SC/shellcheck" /usr/local/bin/shellcheck
+      - name: Lint pithead, build/* + dashboard/ container scripts, and test scripts (shellcheck + shfmt)
+        # Single source of truth: the Makefile `lint-sh` target (so the file list can't drift
+        # between here and the Makefile). Covers build/*/*.sh and dashboard/*.sh — the entrypoints
+        # + healthchecks that run in every container (#124). Gate on warnings+errors; info-level
+        # style nits vary by shellcheck version.
+        run: make lint-sh

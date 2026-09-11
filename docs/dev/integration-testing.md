@@ -827,8 +827,8 @@ tree unnoticed.
 `tests/integration/selftest/selftest.sh` exercises the harness's pure logic with no server: config
 rendering and value typing, expectation derivation (profile gating), secret redaction, the
 SSH/local exec wrapper, JSON parsing, and matrix axis coverage. It runs in CI on every PR (the
-`shell` job) and via `make test-integration-selftest`, so the harness itself is held to the
-same lint/test standard as the rest of the stack.
+`shell-standalone` job in `.github/workflows/shell.yml`) and via `make test-integration-selftest`,
+so the harness itself is held to the same lint/test standard as the rest of the stack.
 
 Several self-tests sit beside it as standalone files, picked up by the same globbed target.
 `selftest-skip-accounting.sh` is the one that keeps the skip accounting honest: besides checking
