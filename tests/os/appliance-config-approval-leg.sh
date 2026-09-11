@@ -275,7 +275,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         assert_appliance_hostname_identity fixture-next "approved day-two hostname" "$DASH_USER" "$DASH_PASS"; then
         ok "host-generated preview and allow-listed callback bind the approved hostname commit"
     else
-        bad "host-mediated hostname approval did not bind prompt, approver, apply and live identity"
+        bad "host-mediated hostname approval did not bind prompt, approver, apply and live identity ($(approval_bind_payload "$result" "$prompt" "$audit" "$rid" HOST_IP fixture-box fixture-next))"
         return
     fi
 

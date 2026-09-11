@@ -187,7 +187,8 @@ phase_rig() {
     info "update leg — a rig takes a bundle exactly like a coordinator"
     local bundle
     bundle=$(_build_bundle v2) || {
-        bad "v2 bundle build failed (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence
+        bad "v2 bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
         return
     }
     _stage_bundle "$bundle" || {

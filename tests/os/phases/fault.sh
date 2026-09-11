@@ -18,7 +18,8 @@ phase_fault() {
 
     info "building v2 bundle (marker v2)"
     bundle=$(_build_bundle v2) || {
-        bad "v2 bundle build failed (/tmp/os-fault-bundle.log)"
+        bundle_build_evidence
+        bad "v2 bundle build failed — read the build output above (/tmp/os-fault-bundle.log)"
         return
     }
     [ -n "$bundle" ] && [ -f "$bundle" ] || {
