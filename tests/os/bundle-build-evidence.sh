@@ -43,15 +43,23 @@ bundle_build_evidence() { # [log-path]
 #
 # The ref itself survives the mask, because WHICH ref failed is the diagnostic and the host is not.
 # Unset variables mask nothing, so a ghcr.io build is untouched.
+#
+# NO REGEX, and no `sed`. The needle is a literal that arrives from the environment, and putting it
+# in a `s|…|…|` expression made the value's own characters part of the program. Measured, not
+# feared: a `|` ended the substitution early, sed exited with "bad flag in substitute command" and
+# the WHOLE TAIL was dropped — a header with nothing under it, evidence turned back into the
+# silence this file exists to remove. A `\` or a `[` was worse because it was quiet: `reg[1]:5000`
+# is a character class matching `reg1:5000`, so the mask missed the literal and the raw host went
+# out masked-looking but intact. Bash's `${var//"$needle"/…}` takes the needle literally when the
+# pattern is quoted (true back to bash 3.2, which is what macOS still ships), so no character in
+# the value can change what the replacement does.
 _bundle_mask() {
-    local sed_args=()
-    [ -n "${PITHEAD_REGISTRY:-}" ] && sed_args+=(-e "s|$PITHEAD_REGISTRY|<registry>|g")
-    [ -n "${PITHEAD_REGISTRY_CA:-}" ] && sed_args+=(-e "s|$PITHEAD_REGISTRY_CA|<registry-ca>|g")
-    [ "${#sed_args[@]}" -gt 0 ] || {
-        cat
-        return 0
-    }
-    sed "${sed_args[@]}"
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "${PITHEAD_REGISTRY:-}" ] || line=${line//"$PITHEAD_REGISTRY"/'<registry>'}
+        [ -z "${PITHEAD_REGISTRY_CA:-}" ] || line=${line//"$PITHEAD_REGISTRY_CA"/'<registry-ca>'}
+        printf '%s\n' "$line"
+    done
 }
 
 _bundle_build_evidence_self_test() {
@@ -91,6 +99,25 @@ _bundle_build_evidence_self_test() {
     out=$(bundle_build_evidence "$dir/reg.log")
     case "$out" in *bench.invalid:5000/pithead-dashboard:v9*) ;; *) f=$((f + 1)) ;; esac
     case "$out" in *'<registry>'*) f=$((f + 1)) ;; esac
+    # HOSTILE VALUES. A control that only ever sees `bench.invalid:5000` is green by construction
+    # against the defect class that actually bit: the needle comes from the environment, and under
+    # `sed` its own characters became part of the program. `|` dropped the entire tail; `\` and `[`
+    # leaked the raw host while still looking masked. Each value is asserted four ways, because any
+    # one alone can be satisfied by a broken mask — no leak, no lost tail, the mask present, and a
+    # sibling line with no registry in it still there so a mask that ate everything fails too.
+    local reg
+    for reg in 'bench.invalid:5000' 'a|b:5000' 'a&b:5000' 'a\b:5000' 'reg[1]:5000' 'r*g:5000' \
+        'reg?:5000' 'a b:5000' 'a.c:5000'; do
+        {
+            printf 'pull failed: %s/pithead-dashboard:v9\n' "$reg"
+            printf 'unrelated ghcr.io/p2pool-starter-stack line\n'
+        } >"$dir/hostile.log"
+        out=$(PITHEAD_REGISTRY="$reg" bundle_build_evidence "$dir/hostile.log")
+        case "$out" in *"$reg"*) f=$((f + 1)) ;; esac                                    # the raw value leaked
+        case "$out" in *'<registry>/pithead-dashboard:v9'*) ;; *) f=$((f + 1)) ;; esac   # masked, ref kept
+        case "$out" in *'ghcr.io/p2pool-starter-stack line'*) ;; *) f=$((f + 1)) ;; esac # sibling survived
+        case "$out" in *'--- last '*) ;; *) f=$((f + 1)) ;; esac                         # the tail is still there
+    done
     rm -rf "$dir"
     [ "$f" -eq 0 ] || {
         printf 'bundle-build-evidence self-test FAILED: %s checks\n' "$f"
