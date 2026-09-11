@@ -1,0 +1,28 @@
+[Unit]
+Description=Record the booted slot's Pithead version in grubenv for the boot menu
+# The boot menu names each slot by the version it holds (#1956), and grubenv is where GRUB can
+# read that. Two writers keep it honest: `pithead os-update` records the TARGET slot at install
+# time, and every boot repairs its OWN slot here.
+#
+# "Every boot" is why this is its own unit. The repair used to ride pithead-boot.service, which
+# is gated on a PROVISIONED machine (ConditionPathExists=|config.json / |machine-role), so a
+# machine still sitting at its setup page never repaired anything — and a slot filled by plain
+# `rauc install` (recovery, a developer, the KVM battery, anything that is not `pithead
+# os-update`) kept the empty value mkimage seeds. The console then offered
+# "empty (slot B, current)" for a slot that holds a perfectly good system, which is exactly what
+# the tier-4 battery measured. An unprovisioned appliance is where a console operator is most
+# likely to be standing, so the repair must not be behind a provisioned-only condition.
+#
+# RequiresMountsFor pulls in and orders after the generated boot-efi.mount; the mountpoint
+# condition mirrors pithead-boot's /data guard, so an ESP that failed to mount is refused rather
+# than written into the read-only root's empty directory.
+RequiresMountsFor=/boot/efi
+ConditionPathIsMountPoint=/boot/efi
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/pithead-boot-version record-booted
+
+[Install]
+WantedBy=multi-user.target

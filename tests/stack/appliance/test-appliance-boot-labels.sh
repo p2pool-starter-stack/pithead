@@ -39,8 +39,23 @@ assert_contains "the RAUC-primary spare records the installed version" "$(cat "$
 assert_contains "the booted slot repairs its own version metadata" "$(cat "$BL/grubenv")" "A_VERSION=2.0.0"
 assert_contains "the update path records the RAUC-primary target" "$(cat "$ROOT/lib/pithead/15-os-update.sh")" \
     'pithead-boot-version record-installed "$bundle_version"'
-assert_contains "the boot path repairs legacy metadata" "$(cat "$ROOT/os/overlay/pithead-boot")" \
-    "pithead-boot-version record-booted"
+# The repair must run on EVERY boot, which is why it is its own unit rather than a line in
+# pithead-boot: that unit is gated on a PROVISIONED machine, so a slot filled by plain `rauc
+# install` on a machine still at its setup page never got its version recorded and the console
+# offered "empty (slot B, current)" for a good system (#1956, measured on the tier-4 battery).
+# pithead-boot's own conditions are asserted beside it: without that control, "the repair unit
+# has no ConditionPathExists" would also pass on an image where nothing is ever conditional.
+bvu=$(cat "$ROOT/os/overlay/pithead-boot-version.service")
+assert_contains "a dedicated unit repairs the booted slot's version" "$bvu" \
+    "ExecStart=/usr/local/sbin/pithead-boot-version record-booted"
+assert_eq "the repair is not gated on a provisioned machine" "$(grep -c '^ConditionPathExists=' <<<"$bvu")" "0"
+assert_contains "the repair still refuses an unmounted ESP" "$bvu" "ConditionPathIsMountPoint=/boot/efi"
+assert_eq "the control: pithead-boot IS gated on a provisioned machine" \
+    "$(grep -c '^ConditionPathExists=|' "$ROOT/os/overlay/pithead-boot.service")" "2"
+assert_eq "pithead-boot no longer carries the repair" \
+    "$(grep -c 'pithead-boot-version' "$ROOT/os/overlay/pithead-boot")" "0"
+assert_contains "the image enables the repair unit" "$(cat "$ROOT/os/rootfs/Dockerfile")" \
+    "pithead-boot-version.service"
 assert_contains "fresh image metadata names A and clears B" "$(cat "$ROOT/os/rauc/mkimage.sh")" \
     '"A_VERSION=$OS_VERSION" "B_VERSION="'
 assert_contains "install-to-disk names A and keeps a retained B slot honest" "$(cat "$ROOT/os/installer/pithead-install")" \
@@ -87,6 +102,16 @@ assert_eq "verified-empty slot says empty" "$(grub_fixture_titles "$BL/empty" | 
 sed 's/^B_VERSION=.*/B_VERSION=2.0.0/' "$BL/two" >"$BL/same"
 assert_eq "same versions remain distinguishable by slot" "$(grub_fixture_titles "$BL/same" | sed -n 2,3p | tr '\n' '|')" \
     "Pithead 2.0.0 (slot A, current)|Pithead 2.0.0 (slot B, previous)|"
+# The tier-4 failure, as a fixture: RAUC made B primary and committed, but nothing ever recorded
+# B's version, so the entry the machine actually boots reads "empty" instead of naming its
+# version. This is the state a `rauc install` leaves when no boot repairs it.
+sed -e 's/^ORDER=.*/ORDER="B A"/' -e 's/^B_VERSION=.*/B_VERSION=/' "$BL/two" >"$BL/unrecorded"
+assert_eq "an unrecorded primary slot names no version in the entry that boots" \
+    "$(grub_fixture_titles "$BL/unrecorded" | sed -n 1p)" "empty (slot B, current)"
+sed 's/^ORDER=.*/ORDER="B A"/' "$BL/two" >"$BL/committed"
+assert_eq "a recorded primary slot names its version and its letter" \
+    "$(grub_fixture_titles "$BL/committed" | sed -n 1,2p | tr '\n' '|')" \
+    "Pithead 1.20.0 (slot B, current)|Pithead 2.0.0 (slot A, previous)|"
 grep -v '^B_VERSION=' "$BL/two" >"$BL/legacy"
 assert_eq "unset legacy metadata says unknown" "$(grub_fixture_titles "$BL/legacy" | sed -n 3p)" \
     "Pithead version unknown (slot B, previous)"

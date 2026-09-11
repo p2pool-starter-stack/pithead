@@ -12,6 +12,15 @@ chk "legacy-unknown and verified-empty slots stay distinct" 'grep -q "Pithead ve
 chk "no bootloader counters in any title" '! grep "^menuentry" "$GRUBCFG" | grep -qE "OK=|TRY="'
 chk "the menu is visible on the serial console" 'grep -q "^terminal_output console serial$" "$GRUBCFG"'
 chk "the slot-version metadata writer ships executable" '[ -x "$ROOT/usr/local/sbin/pithead-boot-version" ]'
+# shellcheck disable=SC2034  # read inside chk's eval'd conditions
+BVU="$ROOT/etc/systemd/system/pithead-boot-version.service"
+# Every boot repairs its own slot's label, including a machine that has never been provisioned —
+# the one most likely to have a person at its console. Riding pithead-boot.service put the repair
+# behind that unit's provisioned-only conditions, and a slot filled by `rauc install` was offered
+# as "empty (slot B, current)" on the real bench (#1956).
+chk "the slot-version repair unit ships and is enabled" '[ -s "$BVU" ] && [ -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot-version.service" ]'
+chk "it runs on every boot, not only a provisioned one" '! grep -q "^ConditionPathExists=" "$BVU" && grep -q "^ConditionPathIsMountPoint=/boot/efi$" "$BVU" && grep -q "^ExecStart=/usr/local/sbin/pithead-boot-version record-booted$" "$BVU"'
+chk "pithead-boot no longer carries the repair (one writer per boot)" '! grep -q "pithead-boot-version" "$ROOT/usr/local/sbin/pithead-boot"'
 chk "a Set up again entry, carrying the flag on its kernel line" 'grep -q "^menuentry \"Set up again (opens the setup wizard; keeps the saved settings)\"" "$GRUBCFG" && [ "$(grep -c "^ *linux .*pithead.setup=1" "$GRUBCFG")" -eq 1 ]'
 # The entry is the default boot plus one flag: it must follow the slot counting, never pin a slot.
 chk "the setup entry boots the slot the counting chose" 'grep -q "rauc.slot=\$SETUP_SLOT pithead.setup=1" "$GRUBCFG" && grep -q "^set SETUP_SLOT=A$" "$GRUBCFG" && grep -q "SETUP_SLOT=B" "$GRUBCFG"'

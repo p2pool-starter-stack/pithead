@@ -320,7 +320,7 @@ COPY os/overlay/pithead-ssh-host-keys.conf /etc/systemd/system/ssh.service.d/pit
 COPY os/overlay/pithead-ssh-host-keys /usr/local/sbin/pithead-ssh-host-keys
 COPY os/overlay/pithead-machine-id.service /etc/systemd/system/pithead-machine-id.service
 COPY os/overlay/pithead-machine-id /usr/local/sbin/pithead-machine-id
-COPY os/overlay/pithead-journal-persist.service /etc/systemd/system/pithead-journal-persist.service
+COPY os/overlay/pithead-boot-version.service os/overlay/pithead-journal-persist.service /etc/systemd/system/
 COPY os/overlay/pithead-journal-persist /usr/local/sbin/pithead-journal-persist
 RUN mkdir -p /etc/ssh/sshd_config.d \
     && printf 'HostKey /data/ssh/ssh_host_ed25519_key\n' > /etc/ssh/sshd_config.d/pithead-host-keys.conf \
@@ -374,7 +374,7 @@ RUN systemctl enable podman.socket pithead-boot.service pithead-cpu-governor.ser
         systemd-timesyncd systemd-resolved \
         systemd-networkd systemd-networkd-wait-online pithead-sync.service pithead-firstboot.service \
         pithead-data-reset.service pithead-machine-id.service pithead-hugepages.service \
-        pithead-journal-persist.service pithead-setup-again.service \
+        pithead-journal-persist.service pithead-setup-again.service pithead-boot-version.service \
     && systemctl disable ssh
 # systemd-repart.service is static — it is pulled in by sysinit.target, and `systemctl enable` on a
 # static unit is an error that would fail the build. Assert it is present instead.

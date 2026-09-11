@@ -287,8 +287,6 @@ release_held_chain_services() { # cwd /data/pithead -> 0 once `up` succeeds, 1 a
 [ "${BASH_SOURCE[0]}" = "${0}" ] || return 0
 
 cd /data/pithead || exit 1
-/usr/local/sbin/pithead-boot-version record-booted ||
-    echo "pithead-boot: could not refresh the booted slot's version label" >&2
 
 # Role fork (#797): a rig is not a small coordinator, it is a different machine. No compose
 # stack, no nodes, no dashboard — and no container images worth loading, which is why this comes
