@@ -91,8 +91,10 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
    `monero.data_dir` / `tari.data_dir` are the asset the harness reuses.
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
-   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus: it lets the harness
-   snapshot/restore a chain cheaply for the prune axis. It's optional. On plain ext4-on-SSD the
+   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
+   lets the harness snapshot/restore a chain cheaply. It is, however, a hard REQUIREMENT for
+   `--image-upgrade`, which takes `cp --reflink=always` snapshots of every writable mount while
+   the stack is stopped — on a filesystem without reflink that gate refuses to start. On plain ext4-on-SSD the
    matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
 3. Disk headroom: enough for the chains plus a snapshot / second DB (budget ≥ ~150 GiB free
@@ -328,7 +330,9 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus, not a requirement. On a CoW volume the
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a REQUIREMENT for
+the `--image-upgrade` gate, which cannot take its rollback snapshots without `cp --reflink=always`.
+On a CoW volume the
 harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on
 fast storage. A loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the
 wrong trade for an active chain. If your root FS is ext4 on an SSD (the common case) you don't
