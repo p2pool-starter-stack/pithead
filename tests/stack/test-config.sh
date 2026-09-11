@@ -642,7 +642,7 @@ drift_classify_chain() { # <chain> <line-label>
 # is always a plain single-quoted leading-dot literal.
 while IFS= read -r p; do
     drift_add_path "$p"
-done < <(grep -oE "config_bool '\.[A-Za-z0-9_.]+'" "$STACK" | sed -E "s/^config_bool '(.*)'\$/\1/")
+done < <(grep -a -oE "config_bool '\.[A-Za-z0-9_.]+'" "$STACK" | sed -E "s/^config_bool '(.*)'\$/\1/")
 
 # Single-line jq reads against $CONFIG_FILE. Filtered down to genuine simple `config_get`-style
 # reads: this excludes multi-line validator blocks (an unterminated quote leaves an odd '-count on
@@ -675,7 +675,7 @@ while IFS=: read -r lineno text; do
         done < <(grep -oE '\.[A-Za-z_][A-Za-z0-9_.]*(\[[^]]*\])?[[:space:]]+(!=|==)' <<<"$filter" |
             sed -E 's/(\[[^]]*\])?[[:space:]]+(!=|==)$//')
     fi
-done < <(grep -n '"\$CONFIG_FILE"' "$STACK")
+done < <(grep -a -n '"\$CONFIG_FILE"' "$STACK")
 
 REF_PATHS="$(jq -r '[paths | map(select(type=="string")) | join(".")] | unique[]' "$ROOT/config.reference.json")"
 DRIFT_FOUND="$(sort -u <<<"$DRIFT_FOUND")"
