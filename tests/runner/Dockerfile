@@ -40,6 +40,9 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # Tari's DammSum, and WITHOUT it they do not error: they degrade to shape-only and report
 # 'unchecked'/'primary', which is 60 quiet failures that look like a regression. CONTRIBUTING
 # lists Python 3 as a host requirement for exactly this reason.
+# xxd: build/tor/healthcheck-selftest.sh builds an isolated PATH by symlinking each command the
+# tor image ships. A missing one does not skip — `command -v` yields empty, `ln` makes a link to
+# nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
 # docker-cli + compose plugin: test-compose, test-mini-stack, test-netwatch and lint-proto all
 # shell out to docker. The daemon is the HOST's, reached through the mounted socket.
 # buildx is NOT optional here, and the failure it prevents is not obvious: without the plugin,
@@ -49,15 +52,19 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # hadolint ignore=DL3008,DL3009
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash ca-certificates coreutils curl e2fsprogs findutils git gnupg jq make \
-    openssh-client python3 \
+    openssh-client python3 xxd \
     procps tar xz-utils \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
     > /etc/apt/sources.list.d/docker.list \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
+    && chmod a+r /etc/apt/keyrings/githubcli.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends \
-    docker-ce-cli docker-compose-plugin docker-buildx-plugin \
+    docker-ce-cli docker-compose-plugin docker-buildx-plugin gh \
     && rm -rf /var/lib/apt/lists/*
 
 # shellcheck + shfmt: direct upstream releases with a sha256 check, the same way shell.yml installs
@@ -96,6 +103,11 @@ ENV HOME=/home/pithead
 # named volume so that cost is paid once per machine rather than once per run.
 # The uv cache lives on the named volume and the project on the bind mount — different
 # filesystems, so hardlinking cannot work and uv warns on every run. Copy is the honest mode.
+# A UTF-8 locale, or grep calls the generated `pithead` a BINARY file and prints "binary file
+# matches" instead of the line. The release-pin assertion greps that file for a cosign digest and
+# reads the refusal as an absent pin. Nothing errors; the check just stops seeing text.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 ENV UV_LINK_MODE=copy
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 CMD ["make", "test"]
