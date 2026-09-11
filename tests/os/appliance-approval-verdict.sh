@@ -28,7 +28,10 @@ approval_bind_payload() { # <result-json> <prompt-text> <audit-jsonl> <request-i
         apply="unparseable: ${result:0:120}"
     [ -n "$result" ] || apply="no result — the commit never returned"
     if approval_prompt_verdict "$prompt" "$@"; then prompt_v="bound"; else prompt_v="unbound (want $*; got: ${prompt:-empty})"; fi
-    if approval_audit_verdict "$audit" "$rid"; then audit_v="bound"; else audit_v="unbound (want id=$rid commit-approved/applied/tg-1966; last line: $(printf '%s\n' "$audit" | tail -n 1))"; fi
+    # stderr suppressed: on a malformed audit `approval_audit_verdict`'s jq writes a parse error,
+    # and the row's own `if` already called it once — a second copy would land mid-payload, where
+    # it reads like a harness crash rather than part of the evidence.
+    if approval_audit_verdict "$audit" "$rid" 2>/dev/null; then audit_v="bound"; else audit_v="unbound (want id=$rid commit-approved/applied/tg-1966; last line: $(printf '%s\n' "$audit" | tail -n 1))"; fi
     printf 'apply=%s prompt=%.240s audit=%.240s; live identity is the row printed above this one' \
         "$apply" "$prompt_v" "$audit_v"
 }
@@ -301,6 +304,10 @@ HOST_IP: Dashboard hostname: fixture-box → fixture-next'
     case "$out" in *'prompt=bound'* | *'audit=bound'*) f=$((f + 1)) ;; esac
     out=$(approval_bind_payload '{"status":' "$prompt" "$audit" "$rid" HOST_IP)
     case "$out" in *'apply=unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
+    # A malformed audit must produce a payload and NOTHING on stderr. The row's own `if` already
+    # emitted any parser complaint; a second copy mid-payload reads like a harness crash.
+    out=$(approval_bind_payload '{"status":"applied"}' "$prompt" 'not json at all' "$rid" HOST_IP 2>&1 >/dev/null)
+    [ -z "$out" ] || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'approval-bind-payload self-test FAILED: %s checks\n' "$f"
         return 1
