@@ -1,0 +1,76 @@
+name: Test-harness images
+
+# Build and CVE-scan the images the tier-4 benches run (#2059 follow-up). Separate from ci.yml's
+# build-images on purpose, and not only because ci.yml sits at its file-budget ceiling: these are
+# a different class of artifact answering a different question. build-images asks "is what we are
+# about to SHIP carrying a CVE". This asks "is the harness that validates it carrying one" — a
+# bench that handles real keys and real chain data, but whose images reach no user.
+#
+# Nothing here ships. The release bundle (scripts/release/bundle.sh make_bundle) and the appliance
+# image (os/rootfs/Dockerfile) are both strict ALLOWLISTS of named paths, so no tests/ path can
+# enter either, and tests/stack/release asserts that rather than trusting it.
+#
+# Kept deliberately in lockstep with ci.yml's scan step: same pinned action, same engine version,
+# same severity and fixability scope. `make lint-trivy-parity` holds all three workflows to one
+# TRIVY_VERSION (scripts/watch/trivyignore-watch.sh GATE_WORKFLOWS) — a third copy of this step that
+# could drift to a different engine would make trivyignore-watch.sh's verdicts meaningless, which is
+# the whole reason that lint exists.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    # Only when the images or their gate actually change. A scan of bytes that did not move is a
+    # run whose green means nothing, and it is the same green either way.
+    paths:
+      - "tests/netwatch/**"
+      - "tests/integration/tor-client/**"
+      - ".github/workflows/test-images.yml"
+      - ".trivyignore"
+  schedule:
+    # Weekly, on the same cadence as ci.yml's sweep. A base digest does not change under us, but the
+    # CVE database does: an image that scanned clean in March is not clean in September, and nothing
+    # else would ever re-ask. Fires from the DEFAULT branch only (`develop`) — see ci.yml's note.
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test-images:
+    name: Test image (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # one broken harness image must not hide the other
+      matrix:
+        include:
+          - service: netwatch
+            context: tests/netwatch
+          - service: tor-client
+            context: tests/integration/tor-client
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: docker build ./${{ matrix.context }}
+        run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+      - name: Scan image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
+          version: v0.74.0
+          image-ref: pithead-${{ matrix.service }}:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+          # cache: false for the same reason as ci.yml (#1159): the action's DB cache is per-ref and
+          # day-granular, so a branch's first run of the day freezes its database until midnight and
+          # the gate's answer starts depending on when the branch last ran.
+          cache: "false"
