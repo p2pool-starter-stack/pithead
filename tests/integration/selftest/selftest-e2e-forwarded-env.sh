@@ -5,6 +5,10 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
+# run_harness calls harness_pregate / harness_install_runner; source the REAL ones rather than
+# re-spelling them, for the same reason the function itself is extracted and not re-implemented.
+# shellcheck source=tests/integration/lib/detached-harness.sh
+source "$HERE/../lib/detached-harness.sh"
 contains() { case "$1" in *"$2"*) echo yes ;; *) echo no ;; esac }
 HARNESS_SRC="$(sed -n '/^run_harness() {$/,/^}$/p' "$HERE/../e2e.sh")"
 assert_eq "the extraction is the whole run_harness function" \
@@ -19,6 +23,10 @@ capture_launch() { # <rollback> <pools>
     : >"$STDIN_FILE"
     rm -f "$PREPARE_FILE"
     (
+        # Nothing in here may read the SCRIPT's stdin: the on_bench stub's fall-through `cat` would
+        # then block forever on an inherited terminal, and a hang reads as a test that never
+        # finished rather than one that failed. Same guard as selftest-e2e-phases.sh.
+        exec </dev/null
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
         # shellcheck disable=SC2034 # read by the eval'd real run_harness

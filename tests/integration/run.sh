@@ -55,12 +55,19 @@ RUN_HARDENING=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
+RUN_IMAGE_UPGRADE=0
+IMAGE_UPGRADE_FROM_SHA=""
+IMAGE_UPGRADE_TO_SHA=""
+RUN_XVB_ROUTING=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
 RIG_CONTROL_PORT="8082"
 SAFETY_BACKUP=0
 SAFETY_ARCHIVE=""
+SAFETY_RESTORE_FAILED=0
+_SAFETY_RESTORE_ARMED=0
+_SAFETY_FOREIGN_TRAP=""
 KEEP_STATE=0
 EXPECTED_WORKERS=2
 SKIP_MINING_ASSERTS=0
@@ -74,6 +81,7 @@ OUT_DIR="$HERE/results"
 BASELINE_CONFIG=""
 BASELINE_PRUNE=""
 BASELINE_SECRET_FP=""
+BASELINE_EXACT_SECRET_FP=""
 
 INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-cli.sh
@@ -98,6 +106,8 @@ source "$HERE/lib/run-rigforge.sh" || exit $?
 source "$HERE/lib/run-rig-control.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-reverse.sh
 source "$HERE/lib/run-rig-reverse.sh" || exit $?
+# shellcheck source=tests/integration/lib/live-gates.sh
+source "$HERE/lib/live-gates.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -141,7 +151,31 @@ main() {
     fi
 
     # Optional rollback net for the destructive phases that follow.
-    safety_backup
+    if ! safety_backup; then
+        summary
+        return
+    fi
+    [ -z "$SAFETY_ARCHIVE" ] || arm_safety_abort_restore
+
+    # Upgrade first: old images are still running when the harness starts, and every later phase
+    # then exercises the declared candidate image set. Do not mutate further after a failed
+    # upgrade/provenance check; go straight through the existing rollback/restore path.
+    if [ "$RUN_IMAGE_UPGRADE" = "1" ]; then
+        local upgrade_fails_before="$IT_FAIL"
+        run_image_upgrade
+        if [ "$IT_FAIL" -gt "$upgrade_fails_before" ]; then
+            if [ "$_UPGRADE_RESTORE_ARMED" = "1" ]; then
+                restore_upgrade_baseline
+            else
+                safety_rollback_if_failed
+                restore_baseline
+            fi
+            [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
+            safety_cleanup
+            summary
+            return
+        fi
+    fi
 
     local name rest
     if [ -n "$ONLY_SCENARIO" ]; then
@@ -170,14 +204,21 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
 
-    # Failure → roll the box back to the safety backup; success → leave it (restore_baseline
-    # just puts config.json back to where we found it). Then drop the generated archive.
-    safety_rollback_if_failed
-    restore_baseline
+    # An image gate always returns the exact old release and its quiesced writable state. Other runs
+    # roll back only on failure, then put config.json back where it started. Drop the archive only
+    # after verification.
+    if [ "$_UPGRADE_RESTORE_ARMED" = "1" ]; then
+        restore_upgrade_baseline
+    else
+        safety_rollback_if_failed
+        restore_baseline
+    fi
+    [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
     safety_cleanup
     summary
 }

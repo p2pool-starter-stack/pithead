@@ -109,6 +109,7 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     TAG=v9.9.9
     REGISTRY=ghcr.io/test
     DRY_RUN=0
+    GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
     for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
@@ -117,6 +118,11 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
 ) >"$SANDBOX/bundle.list" 2>/dev/null
 grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle ships config.minimal.json (basic quick-start config)" || bad "bundle ships config.minimal.json" "absent from the bundle"
+# The upgrade gate ties a candidate archive to a commit through this file, and refuses the archive
+# without it. A bundle that ships without one is only discovered at gate time, on a reserved box.
+grep -q '^pithead/PITHEAD_COMMIT$' "$SANDBOX/bundle.list" && ok "bundle ships PITHEAD_COMMIT (the --image-upgrade provenance anchor)" || bad "bundle ships PITHEAD_COMMIT" "absent from the bundle"
+assert_eq "PITHEAD_COMMIT holds the full 40-hex commit, not a short one" \
+    "$(cat "$SANDBOX/bundle/pithead/PITHEAD_COMMIT" 2>/dev/null)" "0123456789abcdef0123456789abcdef01234567"
 grep -q '^pithead/$' "$SANDBOX/bundle.list" && ok "bundle unpacks to versionless pithead/" || bad "bundle unpacks to pithead/" "top-level dir is not pithead/"
 _bundle_docs=$(sed -n 's|^pithead/docs/||p' "$SANDBOX/bundle.list" | grep -vE '^$|/$' | sort)
 _expected_docs=$(printf '%s\n' configuration.md dashboard.md faq.md getting-started.md hardware.md monitoring.md operations.md privacy.md telegram.md workers.md | sort)

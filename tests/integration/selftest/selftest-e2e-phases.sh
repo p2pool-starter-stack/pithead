@@ -18,6 +18,8 @@ source "$HERE/../lib.sh"
 # The REAL rig_supply, not a re-spelling of it — same reason run_harness is extracted below (#1378).
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/../lib/rig-supply.sh"
+# shellcheck source=tests/integration/lib/detached-harness.sh  # run_harness's REAL collaborators
+source "$HERE/../lib/detached-harness.sh"
 
 E2E_SRC="$HERE/../e2e.sh"
 RUN_SRC="$HERE/../lib/run-cli.sh"
@@ -57,12 +59,12 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
         # Nothing in here may read the SCRIPT's stdin: an unpiped `cat` in the stub would hang, and
         # a hang reads as a mutation that survived. A pipeline still supplies its own stdin.
         exec </dev/null
-        MODE="$1" BORROW_MINER="$2" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e
+        MODE="$1" BORROW_MINER="$2" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
         SCENARIO="${4:-}" RIGFORGE_BOOTSTRAP_VERSION="${5:-}"
         # rig_supply's inputs (#1378). MINER_HOST is what RIG_HOST defaults to; the token comes off
         # the stubbed on_miner, so the empty-token path is reachable by passing "".
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME="" IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
-        STUB_TOKEN="${3-s3cr3t-tok3n}"
+        STUB_TOKEN="${3-s3cr3t-tok3n}" FAIL_PRECHECK="${6:-}"
         LAUNCH_FILE="$lf" STDIN_FILE="$sf"
         on_miner() { case "$1" in *".NAME"*) printf rig1 ;; *) printf '%s' "$STUB_TOKEN" ;; esac }
         log() { :; }
@@ -84,6 +86,8 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
                 cat >"$STDIN_FILE"
                 echo 4242
                 ;;
+            *"tests/integration/run.sh"*--readiness*) [ "$FAIL_PRECHECK" != readiness ] || return 1 ;;
+            *"tests/integration/run.sh"*" --check"*) [ "$FAIL_PRECHECK" != check ] || return 1 ;;
             # rig_supply's proof dial; the unreachable-rig path is driven separately by rc_of.
             *curl*Authorization*) return 0 ;;
             *borrow-rearm.request*) return 1 ;;
@@ -120,7 +124,7 @@ stdin_of() { # <mode> <borrow> [token] -> what e2e.sh piped into the launch call
 
 compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh would launch run.sh with
     # Everything between the runner's positional args and the trailing redirect is the phase list.
-    launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
+    launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
 }
 
 has_phase() { # <phase-list> <flag> -> "yes" | "no"
@@ -161,6 +165,9 @@ assert_eq "check does NOT request the write phase" \
     "$(has_phase "$CHECK" --rigforge-control)" "no"
 assert_eq "check launches EXACTLY --check — no destructive phase may ever join it" \
     "$(phase_set "$CHECK")" "--check "
+assert_contains "check drives the LIVE checkout, not the undeployed e2e one" "$(launch_of check 0)" "/srv/code/pithead-live"
+assert_eq "a failed readiness read refuses the destructive launch" "$(launch_of targeted 1 '' '' '' readiness)" ""
+assert_eq "a failed live check refuses the destructive launch" "$(launch_of targeted 1 '' '' '' check)" ""
 
 echo "== --no-miner: no rig means no rig phases, and the mining asserts are skipped (#905) =="
 NOMINER="$(compose_phases targeted 0)"

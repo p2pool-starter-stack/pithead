@@ -53,10 +53,18 @@ The safe rule: the keyed server only ever runs code you trust. Concretely:
 
 - Do not trigger tier-4 on `pull_request` (and never on a fork PR). "Require approval" only
   gates starting the run; once it starts, the PR's code still executes on the box.
-- Trigger tier-4 only on trusted code: `workflow_dispatch`, on a ref a maintainer has reviewed.
-  A `push`-to-`main` trigger is no longer an alternative — `main` only moves when a release
-  fast-forwards it at publish time, after this gate should already have run. To E2E a specific
-  fork PR, a maintainer reviews it first, then dispatches the workflow on that ref.
+- Configure a protected `release-server` environment with required maintainers. The workflow
+  must also restrict deployment branches to the protected default branch: that platform check runs
+  before a branch-supplied job can reach the runner. The workflow additionally fails non-default
+  dispatches and checks out the dispatch's immutable SHA, but that in-workflow check is only
+  defense in depth and is not a trust boundary. Without the environment deployment-branch rule,
+  the workflow is unsafe and must not be dispatched. Stage candidate release artifacts
+  separately. Run a pre-merge exact-head gate from the operator shell under the hardware claim/lock
+  protocol, never by executing a PR's workflow on this keyed runner.
+- Set the repository variable `RELEASE_GATE_ACTORS` to a comma-separated maintainer allowlist;
+  both the original dispatch actor and any rerun actor must be listed.
+  Provision `/etc/pithead-release/cosign.pub` as a root-owned, non-symlink copy of the reviewed
+  repository key; the workflow refuses any other trust-root path or content.
 - Register the runner as ephemeral / just-in-time (one job, then auto-removed) in its own runner
   group, isolated from any private repos.
 - Keep the runner least-privilege: a dedicated unprivileged user, the box runs nothing else
@@ -65,8 +73,11 @@ The safe rule: the keyed server only ever runs code you trust. Concretely:
 
 This is how the workflow ships.
 [`.github/workflows/release-gate.yml`](../../.github/workflows/release-gate.yml) runs only on
-`workflow_dispatch`, on a `[self-hosted, pithead-release]` runner, never automatically on a PR
-and never on a push: no runner is registered, and a trigger that arrives before its runner is
+`workflow_dispatch`, behind the protected `release-server` environment on a
+`[self-hosted, pithead-release]` runner. It fails a non-default ref and checks out the immutable
+default-branch dispatch SHA, verifies the actor allowlist and fixed root-owned release key, and
+never accepts a candidate branch or later-moving branch tip. It never runs automatically on a PR
+or push; a trigger that arrives before its runner is
 how `main` ends up wearing a gate that never ran (#1048). Since releases fast-forward `main`
 at publish time, a `push` trigger would also fire *after* the release it was meant to gate —
 any future automation belongs on the ref being cut, not on `main`.
@@ -80,8 +91,10 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
    `monero.data_dir` / `tari.data_dir` are the asset the harness reuses.
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
-   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus: it lets the harness
-   snapshot/restore a chain cheaply for the prune axis. It's optional. On plain ext4-on-SSD the
+   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
+   lets the harness snapshot/restore a chain cheaply. It is, however, a hard REQUIREMENT for
+   `--image-upgrade`, which takes `cp --reflink=always` snapshots of every writable mount while
+   the stack is stopped — on a filesystem without reflink that gate refuses to start. On plain ext4-on-SSD the
    matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
 3. Disk headroom: enough for the chains plus a snapshot / second DB (budget ≥ ~150 GiB free
@@ -317,7 +330,9 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus, not a requirement. On a CoW volume the
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a REQUIREMENT for
+the `--image-upgrade` gate, which cannot take its rollback snapshots without `cp --reflink=always`.
+On a CoW volume the
 harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on
 fast storage. A loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the
 wrong trade for an active chain. If your root FS is ext4 on an SSD (the common case) you don't
@@ -434,23 +449,25 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
 - Least privilege. A dedicated unprivileged user; the stack already runs least-privilege
   containers (`no-new-privileges`, `cap_drop`, read-only roots, scoped Docker socket proxies,
   regression-guarded in `tests/stack/standalone/test_compose.sh`).
-- Reproducible, clean baseline. The matrix reuses the synced chains and never mutates the
-  canonical copies (config-only changes, snapshot/restore for the prune axis), restores the
+- Reproducible, clean baseline. The matrix reuses the synced read/write chains, which may advance
+  normally; it does not replace them during config-only cases. The image-upgrade gate takes
+  private reflink snapshots of every writable mount and restores them, restores the
   original `config.json` at the end, and `--safety-backup` takes a `pithead backup` first and
   rolls the box back (down → restore → up) if anything fails.
 - Build isolation and integrity. Build images in containers with pinned upstream versions and
-  SHA256-verified binaries (the stack already does this); promote releases by digest so the
-  published bundle is bit-for-bit what was validated ([Releasing](releasing.md)).
+  SHA256-verified binaries (the stack already does this). The gate authenticates its private
+  candidate archive and image digests; later publication preserves those image digests but creates
+  a separate release bundle ([Releasing](releasing.md)).
 
 ## How a release is validated end-to-end
 
 1. Every PR → GitHub-hosted runners run tiers 1–3 (the merge gate). Cheap, free, fast.
-2. Pre-release (or on-demand for a reviewed PR) → a maintainer dispatches the release-gate
-   workflow on the dedicated server: `make test` (tiers 1–2 on the trusted box) plus the tier-4
-   live matrix against the real synced nodes (`run.sh --safety-backup`), then per
-   [Releasing](releasing.md) the staging smoke test: pull each staged image back from GHCR and
-   verify its version label and target platforms — no stack is started; a functional run against
-   the staged tag is opt-in via `RELEASE_SMOKE_CMD`.
+2. Pre-release → tiers 1–3 run in normal CI. A maintainer separately dispatches the protected
+   release-gate workflow: every mode runs readiness and `--check`; `matrix`, `xvb`, and `combined`
+   opt into their named destructive legs. Candidate production/signing remains an external private
+   prerequisite. Per [Releasing](releasing.md), the later staging smoke pulls promoted-by-digest
+   images and verifies labels/platforms; a functional staged-tag run is opt-in via
+   `RELEASE_SMOKE_CMD`.
 3. Nothing is tagged or published until that's green, and promotion is by digest, so the version
    users get is the exact bundle the server validated.
 
@@ -460,23 +477,26 @@ What the live tier-4 gate exercises, and what it doesn't, so a release decision 
 open. (The reference box is a pruned Monero node on NVMe; its own snapshot and this table also
 live at `~/pithead-testbench/` on the box, for operators and AI agents.)
 
-Validated live (real synced chains): the config matrix (remote/local node, dashboard
+Historical live coverage (not current exact-head release evidence): the config matrix (remote/local node, dashboard
 secure/insecure, Tari required/optional, RPC LAN access, XvB on/off) applied + asserted; lifecycle
 (restart, secret-preserving `apply`, backup→restore round-trip); node-down failover → recovery;
-release readiness; pruned monerod (the real prod config). Covered without a real chain (tiers
+release readiness; pruned monerod (the real prod config); and recorded no-clearnet evidence during
+the Tor-down fault and recovery path from [#274](https://github.com/p2pool-starter-stack/pithead/issues/274).
+The sustained IPv4 TCP bridge-container observation and running XvB-over-Tor configuration assertion from
+[#206](https://github.com/p2pool-starter-stack/pithead/issues/206) exist in `run.sh`; this change
+fixes the branch e2e precheck so `--check` actually runs them after readiness. Their first exact-head
+record is still pending. Covered without a real chain (tiers
 1–3): client↔daemon contract tests, the fake-daemon mini-stack (incl. full-prune behavior),
 compose hardening, config rendering, dashboard tests.
 
 | Gap (not tested live) | Worth filling before release? |
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
-| Privacy / Tor egress: no clearnet-leak assertions in the live harness (#160) | High. Privacy is a core promise. Add egress checks (no clearnet to XvB stats, p2pool, Tari DNS). |
-| Automated PR gate: the self-hosted runner is manual/opt-in | Medium-high, high-value. Wire the live harness as a required check on `workflow_dispatch`/push-to-`main` only (never fork PRs). |
-| Upgrade / migration across image versions with chain continuity | Medium. Add a scenario: pull new images → `apply` → assert no re-sync + secrets intact. |
-| XvB live routing end-to-end (the raffle optimization) | Medium. Core value-prop but unit/sim-tested today; a periodic live smoke test would help. |
+| Protected pre-release gate: the self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
+| Exact-head steady-state privacy, cross-version upgrade, and XvB route record | Medium. Run `--check`, then the opt-in combined gate on the reserved bench. Upgrade requires private CoW snapshots and proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. The steady-state observation covers active bridge-app IPv4 TCP; it does not attribute the host-network dashboard or capture UDP. The focused candidate-client fetch is kernel-isolated with only Tor as a peer, and the enabled route starts only with hooked DROP rules. No recent share fails the requested XvB gate. |
 | Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence. |
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
-| Fault injection over SSH (currently local-mode only) | Low-Medium. Extend the SIGSTOP/remove cases to the `--host` path. |
+| Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
 
-Recommended before release: the privacy-egress checks and the automated PR gate; then the
-upgrade scenario and an XvB live smoke test. The remainder are nice-to-have.
+Recommended before release: record the new combined upgrade/XvB run and wire the protected
+self-hosted gate when a runner exists. The remaining rows are explicit residual gaps.

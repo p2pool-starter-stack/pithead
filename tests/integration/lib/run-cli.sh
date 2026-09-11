@@ -57,8 +57,22 @@ MATRIX:
                          asserts no clearnet egress leaks while SOCKS is down AND that
                          `doctor` flags the outage loudly (#563), shadows timedatectl for a
                          real clock-drift verdict, and tmpfs-fills the dashboard data dir for
-                         a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; local mode
-                         only. Slow (healthcheck + node-health debounce).
+                         a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
+                         SSH and locally. Slow (healthcheck + node-health debounce).
+  --image-upgrade <old-sha> <new-sha>
+                         run `pithead upgrade` from a private candidate release bundle against
+                         the already-running old images and prove image revision, chain-data and
+                         height continuity, categorized secret fingerprints, workers, and mining
+                         across the change. Both arguments must be exact 40-hex Pithead commits.
+                         DESTRUCTIVE; requires --safety-backup and --local.
+  --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
+                         private candidate bundle, detached signature, and external trust root.
+                         Required with --image-upgrade; all paths must be absolute local files.
+  --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
+                         controller/proxy/dashboard through one bounded XvB→P2Pool transition,
+                         then restore the original config. Requires --safety-backup, miners, a
+                         recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
+                         the gate moves an existing donor route, it does not turn XvB on for you.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -195,6 +209,30 @@ parse_args() {
             RUN_FAULTS=1
             shift
             ;;
+        --image-upgrade)
+            [ "$#" -ge 3 ] || {
+                it_err "--image-upgrade requires <old-sha> <new-sha>."
+                exit 2
+            }
+            RUN_IMAGE_UPGRADE=1
+            IMAGE_UPGRADE_FROM_SHA="${2:-}"
+            IMAGE_UPGRADE_TO_SHA="${3:-}"
+            shift 3
+            ;;
+        --candidate-bundle)
+            [ "$#" -ge 4 ] || {
+                it_err "--candidate-bundle requires <tar.gz> <signature> <trusted-cosign.pub>."
+                exit 2
+            }
+            CANDIDATE_BUNDLE="$2"
+            CANDIDATE_SIGNATURE="$3"
+            TRUSTED_COSIGN_PUB="$4"
+            shift 4
+            ;;
+        --xvb-routing-smoke)
+            RUN_XVB_ROUTING=1
+            shift
+            ;;
         --auth-fail-closed)
             RUN_AUTH_FAIL_CLOSED=1
             shift
@@ -272,6 +310,27 @@ parse_args() {
     }
     if [ -n "$RIGFORGE_BOOTSTRAP_VERSION" ] && [ -z "$RIG_NAME" ]; then
         it_err "--rigforge-bootstrap-version requires --rig-name."
+        exit 2
+    fi
+    if [ "$RUN_IMAGE_UPGRADE" = "1" ]; then
+        valid_full_sha "$IMAGE_UPGRADE_FROM_SHA" && valid_full_sha "$IMAGE_UPGRADE_TO_SHA" || {
+            it_err "--image-upgrade requires two lowercase 40-hex Pithead commits."
+            exit 2
+        }
+        [ "$SAFETY_BACKUP" = "1" ] || {
+            it_err "--image-upgrade requires --safety-backup."
+            exit 2
+        }
+        [ "$IMAGE_UPGRADE_FROM_SHA" != "$IMAGE_UPGRADE_TO_SHA" ] || {
+            it_err "--image-upgrade old and new commits must differ."
+            exit 2
+        }
+    fi
+    validate_live_gate_args
+    # Both gates read mining as their success signal, so silencing those assertions would leave
+    # them asserting nothing that matters.
+    if [ "$SKIP_MINING_ASSERTS" = "1" ] && { [ "$RUN_IMAGE_UPGRADE" = "1" ] || [ "$RUN_XVB_ROUTING" = "1" ]; }; then
+        it_err "--image-upgrade and --xvb-routing-smoke require binding mining assertions; remove --no-mining-asserts."
         exit 2
     fi
 }

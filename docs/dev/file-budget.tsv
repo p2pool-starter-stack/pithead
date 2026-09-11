@@ -52,7 +52,9 @@ scripts/watch/trivyignore-watch.sh	599
 tests/integration/e2e.sh	691
 tests/integration/fakes/test_contract.py	451
 tests/integration/lib.sh	691
+tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/selftest/selftest-e2e-phases.sh	507
+tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest.sh	686
 tests/os/appliance-config-approval-leg.sh	414
 tests/os/failure-evidence.sh	567

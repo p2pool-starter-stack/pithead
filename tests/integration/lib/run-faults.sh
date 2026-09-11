@@ -132,8 +132,10 @@ fault_tor_down() {
     wait_for 30 3 "tor to be stopped" _pred_tor_stopped || true
     assert_eq "tor reported stopped" "$(svc_state_of "$(service_state tor)")" "exited"
 
-    # (a) No clearnet egress leak while the Tor SOCKS is unreachable.
-    assert_egress_posture
+    # (a) No clearnet egress leak while the Tor SOCKS is unreachable. Tor is stopped ON PURPOSE
+    # here, so its own relay-count positive control cannot hold — waive it explicitly, or the
+    # verifier reports INCONCLUSIVE and this privacy check reads as tooling breakage forever.
+    assert_egress_posture tor-down
 
     # (b) doctor must FLAG the outage loudly, not pass silently.
     local doc rc

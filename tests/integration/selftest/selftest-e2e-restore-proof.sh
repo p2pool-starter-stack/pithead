@@ -148,7 +148,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
     # cannot follow into.
     (
         exec </dev/null
-        RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
+        MODE="${2:-targeted}" RESTORED=0 KEEP=0 MINER_CFG_BACKUP="" RESTORE_DIR=/srv/code/baseline
         E2E_DIR=/srv/code/pithead-e2e BENCH_HOST=bench SAFETY_ARCHIVE=""
         RESTORE_PROOF_FAILED=0 CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE=""
         BASELINE_IMAGES="" BRANCH_IMAGES="" SRC_CHECKOUT="$1" CMD_FILE="$cf"
@@ -284,6 +284,10 @@ assert_num_ge "M2 (branch image graded 'rebuilt') is killed" \
 # M3 — unanchor census_get, so one service name resolves off another's line.
 assert_num_ge "M3 (unanchored census_get) is killed" \
     "$(mutate_and_count_fails 's|sed -n "s/\^\$2=//p"|sed -n "s/.*$2=//p"|')" 1
+
+# --check deploys nothing and borrows nothing, so restore_all has nothing to put back — and an
+# outer restore would mutate a bench this mode promised only to read.
+assert_eq "restore_all is a no-op in --check mode" "$(drive_restore no check)" ""
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
