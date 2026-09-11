@@ -44,8 +44,9 @@ bundle_build_evidence() { # [log-path]
 # The ref itself survives the mask, because WHICH ref failed is the diagnostic and the host is not.
 # Unset variables mask nothing, so a ghcr.io build is untouched.
 #
-# NO REGEX, and no `sed`. The needle is a literal that arrives from the environment, and putting it
-# in a `s|…|…|` expression made the value's own characters part of the program. Measured, not
+# NO REGEX HERE — the `sed` on the indent line above is a fixed program with no input interpolated
+# into it, which is the whole difference. The needle is a literal that arrives from the environment,
+# and putting it in a `s|…|…|` expression made the value's own characters part of the program. Measured, not
 # feared: a `|` ended the substitution early, sed exited with "bad flag in substitute command" and
 # the WHOLE TAIL was dropped — a header with nothing under it, evidence turned back into the
 # silence this file exists to remove. A `\` or a `[` was worse because it was quiet: `reg[1]:5000`
