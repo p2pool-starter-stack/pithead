@@ -33,12 +33,16 @@ case "${1:-}" in
     ;;
 esac
 
-# image-tag <TAB> build-context <TAB> smoke command run INSIDE the image
-# The smoke command is the point of the row: it is what turns "built" into "works".
+# image-tag <TAB> build-context <TAB> smoke shell command run INSIDE the image
+# The smoke command is the point of the row: it is what turns "built" into "works". It runs under
+# `--entrypoint sh -c`, deliberately: an image's ENTRYPOINT may be a task script that demands real
+# arguments (tor-client's probe.sh requires ONION_ADDR and exits non-zero without it), and asking it
+# to self-report a version would fail on a perfectly good image. What we want to know is whether the
+# TOOLS are in there and runnable, which is a question the entrypoint should not get a vote on.
 test_tool_images() {
     printf '%s\t%s\t%s\n' \
-        'pithead-netwatch:test' 'tests/netwatch' '--version' \
-        'pithead-tor-client:test' 'tests/integration/tor-client' '--version'
+        'pithead-netwatch:test' 'tests/netwatch' 'conntrack --version && tcpdump --version' \
+        'pithead-tor-client:test' 'tests/integration/tor-client' 'tor --version && curl --version'
 }
 
 PASS=0 FAIL=0
@@ -114,8 +118,7 @@ while IFS=$'\t' read -r tag ctx smoke; do
     fi
     # The smoke run. A build that parsed is not a tool that answers. Every row declares one, so
     # there is no "built, unverified" state to report — that state is what this exists to remove.
-    # shellcheck disable=SC2086 # $smoke is a deliberate word-split argv, not a path
-    if out=$("$ENGINE" run --rm "$tag" $smoke 2>&1 | head -n1); then
+    if out=$("$ENGINE" run --rm --entrypoint sh "$tag" -c "$smoke" 2>&1 | head -n1); then
         ok "$tag works — $out"
     else
         bad "$tag built but its tool does not answer: $(printf '%s' "$out" | head -c 160)"
