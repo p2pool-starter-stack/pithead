@@ -165,3 +165,38 @@ else
 fi
 rm -rf "$WSS"
 unset WSS SNAP
+
+# Lives in this domain rather than test-appliance-setup.sh, which owns the restore-at-setup
+# contract: that file sits on the 400-line target and tests/stack/run.sh is on its own ceiling, so
+# a new domain file cannot be registered. This domain already reaches into restore_apply's
+# neighbourhood (the spool reader's limits above), which makes it the closest registered home.
+echo "== unit: a restore onto a machine with no data/ yet (#2051) =="
+# The condition the #1239 fixture removes. That one does `mkdir -p "$RT/data/tor"
+# "$RT/data/dashboard"` before driving the restore, so the destinations always exist and the apply
+# loop's `mv -T` always has a parent to move into. A real fresh disk has none: prepare_directories
+# runs inside setup(), which both restore doors call AFTER the restore. On the bench the first tree
+# item failed ENOENT, the apply returned early with config.json and .env ALREADY written, and the
+# machine came up refusing setup as already provisioned with zero containers.
+FR="$(cd "$SANDBOX" && pwd -P)/restore-fresh-machine"
+mkdir -p "$FR/data/tor"
+cp "$STACK" "$FR/pithead"
+# Self-contained: this domain builds its own config rather than borrowing another's sandbox, so a
+# standalone run of it proves the same thing the suite run does.
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$FR/config.json"
+printf 'DEPLOYMENT_COMPLETED=true\nDASHBOARD_SECURE=true\nHOST_IP=box.lan\n' >"$FR/.env"
+printf 'CADDY-ORIG\n' >"$FR/Caddyfile"
+printf 'ONION-KEY-ORIG' >"$FR/data/tor/hostname"
+tar -czf "$FR/fresh.tar.gz" -C / "${FR#/}/config.json" "${FR#/}/.env" "${FR#/}/Caddyfile" "${FR#/}/data/tor"
+# THE CONDITION: no data/ at all, exactly as a freshly installed disk presents it.
+rm -rf "$FR/data"
+assert_eq "the fixture really is a fresh machine — no data/ to move into" \
+    "$([ -e "$FR/data" ] || echo absent)" "absent"
+run_sourced "$FR" restore_apply "$FR/fresh.tar.gz" '' "$FR/restore-error"
+assert_rc "a restore onto a machine with no data/ succeeds" "$?" "0"
+assert_eq "the archive's Tor identity lands under the created parent" \
+    "$(cat "$FR/data/tor/hostname" 2>/dev/null)" "ONION-KEY-ORIG"
+# The consequence that actually stranded the machine: the clear sits past the apply, so an apply
+# that returned early left the carried marker standing and setup() refused headless (#924).
+assert_eq "and the carried deployment marker is cleared, so setup can provision here" \
+    "$(grep '^DEPLOYMENT_COMPLETED=' "$FR/.env")" "DEPLOYMENT_COMPLETED=false"
+rm -rf "$FR"
