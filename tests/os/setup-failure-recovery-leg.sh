@@ -12,13 +12,26 @@ setup_failure_state_retained() { # <wizard-state-json> <expected-wallet>
         .stage == "setup" and (.error | type == "string" and length > 0) and
         .config.monero.wallet_address == $m and .config.tari.mode == "local"' >/dev/null
 }
-restore_setup_fault() { _ssh "mv /run/pithead-os-1966-docker-compose.yml /data/pithead/docker-compose.yml &&
-    test -s /data/pithead/docker-compose.yml && test ! -e /run/pithead-os-1966-docker-compose.yml"; }
+# THE ARMING, and why it is a stub rather than an absence (#2050). All three of the wizard's
+# validations reach caddy_hash_password_b64, which greps the pinned caddy ref straight out of
+# docker-compose.yml. Removing the file therefore faults parse_and_validate_config — which has its
+# own recovery (the page reopens carrying the validator's message) and never calls setup at all.
+# The bench measured exactly that and read it as a hang: the harness sat out its 24x5s poll for a
+# credentials handoff that the validator path correctly never publishes, while the machine was
+# sitting on a reopened form. So the stub keeps the caddy line verbatim and makes everything after
+# it unparseable: validation passes unchanged, the handoff is published, and the first
+# `docker compose` that must actually READ the file — the `up` inside setup's stack_up, well past
+# the render_env that writes DEPLOYMENT_COMPLETED — refuses. That is a post-validation setup
+# failure, which is what this leg is named for.
+SETUP_FAULT_MARK=PITHEAD_OS_2050_STUB
+restore_setup_fault() { _ssh "mv -f /run/pithead-os-1966-docker-compose.yml /data/pithead/docker-compose.yml &&
+    test -s /data/pithead/docker-compose.yml && test ! -e /run/pithead-os-1966-docker-compose.yml &&
+    ! grep -q $SETUP_FAULT_MARK /data/pithead/docker-compose.yml"; }
 provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-token>
     local ip="$1" jar="$2" old_token="$3" handoff="" state code new_token="" tries=0
     local live=/data/pithead/docker-compose.yml backup=/run/pithead-os-1966-docker-compose.yml
-    if _ssh "test -s '$live' && test ! -e '$backup' && mv '$live' '$backup' && test ! -e '$live' && test -s '$backup'"; then
-        ok "post-validation setup fault is armed with the required Compose file absent"
+    if _ssh "test -s '$live' && test ! -e '$backup' && mv '$live' '$backup' && test -s '$backup' && { echo '# $SETUP_FAULT_MARK'; grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$backup' | head -1 | sed 's/^/# /'; echo 'services: [ not a compose file'; } >'$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
+        ok "post-validation setup fault is armed: the Compose file still validates and cannot be started"
     else
         bad "could not arm the disposable post-validation setup fault"
         return 1
@@ -48,7 +61,7 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         bad "faulted setup credentials could not be acknowledged"
         return 1
     fi
-    if ! _ssh "for i in \$(seq 60); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && test ! -e '$live' && exit 0; sleep 5; done; exit 1"; then
+    if ! _ssh "for i in \$(seq 60); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live' && exit 0; sleep 5; done; exit 1"; then
         restore_setup_fault || bad "post-validation fault cleanup failed after setup timeout"
         bad "the armed host setup fault never returned a recorded failure"
         return 1
