@@ -615,7 +615,42 @@ if [ "$checked" -eq 0 ]; then
 elif [ "$missing" -eq 0 ] && [ "$DRIFT_BAD" -eq 0 ]; then
     ok "every extracted config-read path ($checked total) exists in config.reference.json"
 fi
-unset DRIFT_FOUND REF_PATHS DRIFT_BAD
+# THE INVERSE ROW (#1929 follow-up), and the one that closes a standing gap rather than a defect.
+# control_approval_gate's default-deny works on RENDERED ENV KEYS, so a config path that renders
+# NONE emits no porcelain row and that pass cannot see it at all. Two blocks are legitimately in
+# that class and the gate handles each BY NAME (workers.list, dashboard.energy); its own comment
+# says a THIRD added later "MUST add its own line", which is a rule no instrument enforced. This
+# does: a reference path no read site covers must be one of the named blocks.
+#
+# Scalars plus scalar-ARRAY blocks. Intermediate container nodes (`p2pool`, `telegram`) are never
+# read whole and are not settings, so enumerating them would report 30 false positives and train
+# whoever reads this to add exemptions.
+CONFIG_ONLY_NAMED="_docs dashboard.energy workers.list" # _docs is a docs blob, not configuration
+unseen_config_paths() {                                 # <newline-separated paths> -> those no read site and no named block covers
+    local leaf probe hit n out=""
+    while IFS= read -r leaf; do
+        [ -n "$leaf" ] || continue
+        probe="$leaf" hit=0
+        while :; do
+            grep -qxF "$probe" <<<"$DRIFT_FOUND" && { hit=1 && break; }
+            case "$probe" in *.*) probe="${probe%.*}" ;; *) break ;; esac
+        done
+        for n in $CONFIG_ONLY_NAMED; do case "$leaf" in "$n" | "$n".*) hit=1 ;; esac done
+        [ "$hit" -eq 0 ] && out="${out:+$out }$leaf"
+    done <<<"$1"
+    printf '%s' "$out"
+}
+# FIRING CONTROL FIRST. This row reports "" both when every path is covered and when the ancestor
+# walk is broken, and the second reads exactly like the first. Seed a path no read site can cover.
+assert_eq "the unseen-path walk can report an uncovered path" \
+    "$(unseen_config_paths "not.a.real.config.path")" "not.a.real.config.path"
+# ...and the NEAR MISS that keeps it narrow: a leaf under a named block must NOT be reported, or
+# the row would pass by flagging the very blocks the gate already handles.
+assert_eq "a named config.json-only leaf is not reported" \
+    "$(unseen_config_paths "dashboard.energy.currency")" ""
+assert_eq "every config path outside the named config.json-only set renders an env key (#1929)" \
+    "$(unseen_config_paths "$(jq -r '[(paths(scalars), (paths as $p | select(getpath($p) | type == "array") | $p)) | map(select(type == "string")) | join(".")] | unique[]' "$ROOT/config.reference.json")")" ""
+unset DRIFT_FOUND REF_PATHS DRIFT_BAD CONFIG_ONLY_NAMED
 
 echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
 # The core-key shortlist (#529's binding Wave-0 decision) is the ONE shared artifact between the
