@@ -142,9 +142,12 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
 6. Cross-version upgrade: leave the old signed release running at `--dir`. Supply an independently
    prepared private `pithead.tar.gz` and detached signature without a public release or `latest` tag,
    and keep the trusted `cosign.pub` outside that candidate. The signed archive must contain
-   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. The repository does not currently
-   provide a candidate-only producer; that is an explicit operational prerequisite, not something
-   `scripts/release/release.sh` can safely do before promotion. The harness snapshots all three inputs,
+   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit — which `make_bundle` does not
+   write yet, so no bundle satisfies this today. There is no standalone candidate producer, but
+   `release.sh`'s `publish` stage already builds and signs exactly these artifacts (`make_bundle`
+   then `sign_bundle`) BEFORE its confirmation prompt and before any tag, push or GitHub release.
+   That is the natural place to run this gate: at that point the promoted images carry their real
+   `org.opencontainers.image.revision`, the bundle is digest-pinned, and nothing has shipped. The harness snapshots all three inputs,
    rejects unsafe archive members, authenticates the whole digest-pinned Compose manifest through
    the signed bundle, and additionally verifies the five unique Pithead-built image signatures
    and exact OCI revisions against the external key before staging a byte. Third-party images are
