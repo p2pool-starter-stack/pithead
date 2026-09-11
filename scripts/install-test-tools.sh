@@ -118,10 +118,15 @@ while IFS=$'\t' read -r tag ctx smoke; do
     fi
     # The smoke run. A build that parsed is not a tool that answers. Every row declares one, so
     # there is no "built, unverified" state to report — that state is what this exists to remove.
-    if out=$("$ENGINE" run --rm --entrypoint sh "$tag" -c "$smoke" 2>&1 | head -n1); then
-        ok "$tag works — $out"
+    # NOT piped into `head` here. This file runs under `set -o pipefail`, and `head -n1` closes the
+    # pipe after the first line — the container then takes SIGPIPE, and pipefail reports the whole
+    # pipeline as failed for an image whose tool answered perfectly. Measured: conntrack v1.4.8 and
+    # tor 0.4.9.12 both printed their versions and both scored FAIL. Test the CONTAINER's rc, then
+    # trim the text for display.
+    if out=$("$ENGINE" run --rm --entrypoint sh "$tag" -c "$smoke" 2>&1); then
+        ok "$tag works — $(printf '%s' "$out" | head -n1)"
     else
-        bad "$tag built but its tool does not answer: $(printf '%s' "$out" | head -c 160)"
+        bad "$tag built but its tool does not answer: $(printf '%s' "$out" | tr '\n' ' ' | head -c 160)"
     fi
 done < <(test_tool_images)
 
