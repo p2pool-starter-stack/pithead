@@ -33,10 +33,23 @@ numbered `lib/pithead/*.sh` sources; the test targets also build it when needed.
 not the generated file.
 
 The full shell and appliance selftest suite expects **Linux and a non-root user**, as in
-CI. It uses GNU utilities and tests permission failures that root would bypass. Install
-Bash, Git, Make, jq, Node, Python 3, e2fsprogs, and the shellcheck/shfmt versions pinned in
-`Makefile`. On macOS or Windows, run these suites in a Linux VM, container, or WSL;
-the dashboard and frontend unit suites can run on the host.
+CI. It uses GNU utilities and tests permission failures that root would bypass. On Linux,
+install Bash, Git, Make, jq, Node, Python 3, e2fsprogs, and the shellcheck/shfmt versions
+pinned in `Makefile`.
+
+On macOS or Windows, run it in the image instead — it carries that toolchain at the pinned
+versions and needs nothing on the host but Docker:
+
+```bash
+make test-container                        # the whole local suite, as CI runs it
+make test-container ARGS="make test-stack" # one target
+make test-container ARGS=--shell           # a shell in the image
+```
+
+The shell suite refuses to run directly on macOS and that refusal is correct: the assertions
+are written against GNU `sed`/`stat`, BSD tools differ without failing loudly, and an
+unmodified `develop` scores 3708 passed / 148 failed there. The container is how you get a
+verdict that means something. The dashboard and frontend unit suites still run fine on the host.
 
 ## Development workflow
 

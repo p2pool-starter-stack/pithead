@@ -254,6 +254,36 @@ no VM needed, run on every image build.
 | Data-reset repair escalation against REAL damage (#1062): a genuine ext4 image, the same two-byte superblock-magic wipe the battery injects, and the system's own `fsck`/`e2fsck`/`mke2fs` — a repairable image is repaired with its payload intact and never reformatted; a destroyed one still reaches the reformat escape. Only `mount` is stubbed, and its verdict is `e2fsck -fn` on the image itself, never a counter. The stubbed decision-tree block in `tests/stack/appliance/test-appliance-reset.sh` proves marker precedence and escalation order (#1086); this suite proves the repair | `tests/stack/standalone/test_data_reset.sh` | 1 ✅ |
 | Factory reset returns a machine with a fresh identity (machine-id, SSH host key, container store) and records the wipe on the ESP; a wedged `/data` — the superblock corrupted on the real partition — is REPAIRED, not erased: the sentinel planted before the corruption survives and the wipe log does not grow (#1062/#1087) | battery `--phase reset` | 4 ✅ |
 
+## What each tier needs from its host
+
+Measured on a macOS host driving the container (#2078), not inferred. "Container" means
+`make test-container`, which runs the tier in `tests/runner/Dockerfile` against the host's Docker
+daemon. A tier that needs something the container cannot supply says so.
+
+| Tier | Needs on the host | Runs in the container? |
+|---|---|---|
+| 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. No Docker, any OS. | Yes |
+| 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
+| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root.** Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Also `bash`, `jq`, `e2fsprogs`. | Yes — the container is how a non-Linux host runs this at all |
+| 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
+| 2 — fakes contract | `uv` only. Docker-free by design. | Yes |
+| 3 — mini-stack | Docker, Compose v2, **and buildx**. Without the buildx plugin Compose falls back to the classic builder, which rejects the `RUN --mount=type=cache` in `dashboard/Dockerfile`, and the tier dies at `docker compose build failed` with nothing naming the cause. The driver must also reach the fakes' host-published ports — from inside a container that is `PITHEAD_TEST_HOST`, not `127.0.0.1`. | Yes |
+| 4 — live matrix | `ssh` (or `--local`), plus a **reserved, provisioned, already-synced stack** to point at. The harness applies configs and recreates containers, so it owns that box for the run even though it only reads the chain dirs. | The driver does. The box is external either way — the container removes a toolchain dependency, not the hardware reservation. |
+| 4 — appliance battery | **Native Linux with KVM and libvirt**, hugepages, root, a built image, and a reachable registry for bench builds (#2043). | **No.** No container supplies `/dev/kvm` on macOS or Windows. This tier stays on the Linux bench. |
+| `lint` (runs inside `make test`) | The exact pins or nothing: shellcheck 0.11.0 and shfmt 3.13.1 (the gate refuses any other version), `uv` for ruff, Node/`npx` for Biome, markdownlint and taplo, Docker for `buf`, and `git` — most gates enumerate through `git ls-files`. | Yes |
+
+Two host-level constraints apply to the container itself:
+
+- **Memory — at least 6 GiB for the engine.** `lint-sh` is the memory peak of the whole suite
+  (#1206). Measured against a 3.8 GiB Docker Desktop VM: shellcheck reached 3.45 GiB RSS and the
+  kernel OOM-killed it (`Out of memory: Killed process (shellcheck)`, `make` rc 137). The symptom
+  is a bare `Killed` after the shellcheck line, naming neither memory nor the file it was on, so
+  raise the allocation before running the full `make test` in the container. Every other target
+  measured here fits comfortably; `test-container` warns when the engine is below the bar.
+- **The Docker socket.** Tiers 1 (netwatch), 3, `test-compose` and `lint-proto` all shell out to
+  Docker, so the container is given the host's socket. That is host-root-equivalent access by
+  itself; it is the same trust the tiers already need when run directly on the host.
+
 ## Running each tier
 
 ```bash

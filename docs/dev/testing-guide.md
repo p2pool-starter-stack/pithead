@@ -18,14 +18,26 @@ generates a list of what exists today (git-ignored — read it locally).
 
 ## Commands
 
-Run these on Linux. macOS is deprecated as a test platform (2026-09-10) and the shell suite refuses
-to start there: the assertions are written against GNU `sed`/`stat`, BSD tools differ without
-failing loudly, and a `grep` that is a ugrep shim silently matches nothing for a pattern holding a
-non-terminal `$`. A control run on an unmodified `develop` scored 3708 passed / 148 failed, so a
-result from there is not evidence either way. `PITHEAD_UNTRUSTED_MACOS_RUN=1` overrides the refusal
-for portability debugging, and is named for what the result is worth.
+Run these on Linux, or in the container on any host. macOS is deprecated as a test platform
+(2026-09-10) and the shell suite refuses to start there: the assertions are written against GNU
+`sed`/`stat`, BSD tools differ without failing loudly, and a `grep` that is a ugrep shim silently
+matches nothing for a pattern holding a non-terminal `$`. A control run on an unmodified `develop`
+scored 3708 passed / 148 failed, so a result from there is not evidence either way.
+`PITHEAD_UNTRUSTED_MACOS_RUN=1` overrides the refusal for portability debugging, and is named for
+what the result is worth.
+
+`make test-container` is the answer to that refusal rather than a way around it: it runs the same
+targets in `tests/runner/Dockerfile`, a pinned Debian image carrying the toolchain at the versions
+the `Makefile` pins, as a non-root user. It needs Docker on the host and nothing else, so the
+verdict is the one CI reaches. Tier 4's appliance battery stays out — it needs KVM and libvirt on
+the machine itself, which no container supplies on macOS or Windows.
 
 ```bash
+make test-container       # all of the below in the pinned Linux image (any host with Docker)
+make test-container ARGS="make test-mini-stack"   # tier 3 in the image (host daemon via the socket)
+# Tier 4's live driver runs in the image too: it carries an ssh client and the runner mounts your
+# ~/.ssh read-only, so the harness reaches the reserved box the same way it would from the host.
+make test-container ARGS="make test-integration ARGS='--host user@box --dir pithead --check'"
 make test                 # local gates; needs Docker, but no live test server
 make test-dashboard       # dashboard pytest + 80% coverage gate
 make test-stack           # pithead shell suite

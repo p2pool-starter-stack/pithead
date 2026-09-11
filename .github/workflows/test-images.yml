@@ -25,6 +25,7 @@ on:
     paths:
       - "tests/netwatch/**"
       - "tests/integration/tor-client/**"
+      - "tests/runner/**"
       - ".github/workflows/test-images.yml"
       - ".trivyignore"
   schedule:
@@ -53,12 +54,21 @@ jobs:
             context: tests/netwatch
           - service: tor-client
             context: tests/integration/tor-client
+          # The local test-runner image (#2078). It reaches no user and no bench, but it is where a
+          # contributor's verdict comes from, so it rots the same way and gets the same gate.
+          # Its two versions come from the Makefile (#1679, #1688) — read, never retyped, exactly
+          # as shell.yml installs them.
+          - service: test-runner
+            context: tests/runner
+            build_args: >-
+              --build-arg SHELLCHECK_VERSION=$(make -s print-shellcheck-version)
+              --build-arg SHFMT_VERSION=$(make -s print-shfmt-version)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: docker build ./${{ matrix.context }}
-        run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
+        run: docker build ${{ matrix.build_args }} -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       - name: Scan image for CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

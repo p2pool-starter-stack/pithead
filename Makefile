@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -50,6 +50,12 @@ test-fakes: ## Fake-daemon contract test — real dashboard clients vs controlla
 
 test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+
+# The Linux toolchain as an image (#2078), so a contributor on macOS or Windows gets the verdict CI
+# gets instead of the refusal #2041 installed. Pass any target or command through ARGS:
+#   make test-container ARGS="make test-stack"   /   ARGS=--shell   /   ARGS=--build
+test-container: ## Run the suite in the pinned Linux image (any host with docker)
+	bash scripts/test-container.sh $(ARGS)
 
 test-inventory: ## Write the test coverage inventory to docs/dev/test-inventory.md (generated, git-ignored)
 	bash tests/inventory.sh > docs/dev/test-inventory.md
