@@ -213,6 +213,54 @@ else
     it_fail "--allow-tor-down waives ONLY that control and still grades the apps (#563)" "rc=$waived_rc"
 fi
 
+# The Tor-egress verifier gates whether the gate will start containers at all, so a version that
+# cannot fail is as bad as one that cannot pass. `iptables -C` answers with iptables' own rule
+# equality; these arms drive a stubbed iptables so both directions are pinned. Arm 1 is the control
+# that the fixture itself can pass — without it, arms 2-4 are green for the wrong reason.
+fw_arm() { # <rules the stub reports installed...> -> rc of verify_tor_egress_firewall
+    (
+        td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+        printf '%s\n' "$@" >"$td/installed"
+        printf '%s\n' '#!/bin/sh' \
+            '[ "$1" != -n ] || shift' \
+            'case "$1 $2" in' \
+            '  "iptables -C") shift 2; case "$1" in FORWARD) exit 0;; esac' \
+            '     spec="$*"; grep -Fqx -- "$spec" "$INSTALLED" && exit 0 || exit 1 ;;' \
+            '  "iptables -S") grep -c . "$INSTALLED" >/dev/null; sed "s|^|-A DOCKER-USER |" "$INSTALLED"; exit 0 ;;' \
+            'esac' \
+            'exit 0' >"$td/sudo" && chmod +x "$td/sudo"
+        export PATH="$td:$PATH" INSTALLED="$td/installed"
+        env_get() { case "$1" in NETWORK_SUBNET) echo 172.28.0.0/24 ;; NETWORK_PREFIX) echo 172.28.0 ;; esac }
+        container_engine() { echo docker; }
+        # The real one lives in pithead (lib/pithead/02-tor-egress.sh); the selftest does not source
+        # the CLI, so mirror its output. Kept byte-identical to that function's printf list.
+        tor_egress_rules() {
+            printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-s $2 -j ACCEPT" \
+                "-s $1 -d 10.0.0.0/8 -j ACCEPT" "-s $1 -d 172.16.0.0/12 -j ACCEPT" \
+                "-s $1 -d 192.168.0.0/16 -j ACCEPT" "-s $1 -d 100.64.0.0/10 -j ACCEPT" "-s $1 -j DROP"
+        }
+        # shellcheck disable=SC2034 # read by the eval'd verifier, which shellcheck cannot follow into
+        TOR_EGRESS_TAG=pithead-tor-egress
+        eval "$(firewall_verifier_script)"
+        verify_tor_egress_firewall
+    )
+}
+# The exact specs the applier installs, in order.
+FW_OK=()
+while IFS= read -r r; do FW_OK+=("DOCKER-USER -m comment --comment pithead-tor-egress $r"); done < <(
+    printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-s 172.28.0.25 -j ACCEPT" \
+        "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" \
+        "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" \
+        "-s 172.28.0.0/24 -j DROP"
+)
+fw_arm "${FW_OK[@]}" && it_pass "egress firewall verifier ACCEPTS the canonical ruleset (control: the fixture can pass)" ||
+    it_fail "egress firewall verifier ACCEPTS the canonical ruleset (control: the fixture can pass)"
+fw_arm "${FW_OK[@]:0:6}" && it_fail "a missing canonical rule is refused" || it_pass "a missing canonical rule is refused"
+fw_arm "${FW_OK[@]}" "DOCKER-USER -m comment --comment pithead-tor-egress -s 10.9.9.9 -j ACCEPT" &&
+    it_fail "a stray extra tagged rule is refused" || it_pass "a stray extra tagged rule is refused"
+fw_arm "${FW_OK[@]:6:1}" "${FW_OK[@]:0:6}" && it_fail "the subnet DROP ahead of the ACCEPTs is refused" ||
+    it_pass "the subnet DROP ahead of the ACCEPTs is refused"
+
 echo "== image-upgrade continuity verdicts =="
 OLD_SHA=0123456789abcdef0123456789abcdef01234567
 valid_full_sha "$OLD_SHA" && it_pass "full commit accepted" || it_fail "full commit accepted"
@@ -318,7 +366,7 @@ else
 fi
 
 if (
-    restore_calls=0 foreign_called=0 SAFETY_ARCHIVE=archive
+    restore_calls=0 foreign_called=0 SAFETY_ARCHIVE=archive SAFETY_RESTORE_FAILED=0
     safety_restore_exact() {
         restore_calls=$((restore_calls + 1))
         _SAFETY_RESTORE_ARMED=0
@@ -333,6 +381,49 @@ if (
     it_pass "run-level abort restores the safety archive and composes the lock trap"
 else
     it_fail "run-level abort restores the safety archive and composes the lock trap"
+fi
+
+# A rollback's FIRST act is `pithead down`. These two arms pin what happens when the rest of it
+# then fails — measured on a real box, where the stack was left stopped and the exit trap stopped
+# it a second time after the in-run restore had already put it back.
+if (
+    downs=0 ups=0
+    SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 BASELINE_CONFIG='{}' BASELINE_EXACT_SECRET_FP=fp
+    pithead() {
+        case "$1" in down) downs=$((downs + 1)) ;; up) ups=$((ups + 1)) ;; restore) return 1 ;; esac
+        return 0
+    }
+    strict_pithead() { return 0; }
+    wait_status_ok() { return 0; }
+    rx() { printf '{}'; }
+    upgrade_secret_fingerprints() { printf fp; }
+    it_log() { :; }
+    safety_restore_exact
+    rc=$?
+    [ "$rc" -ne 0 ] && [ "$downs" -eq 1 ] && [ "$ups" -eq 1 ]
+); then
+    it_pass "a FAILED rollback still brings the stack back up rather than leaving it stopped"
+else
+    it_fail "a FAILED rollback still brings the stack back up rather than leaving it stopped"
+fi
+
+if (
+    restore_calls=0 foreign_called=0
+    # A restore already failed this run, so the exit trap must NOT run a second `pithead down`.
+    _SAFETY_RESTORE_ARMED=1 SAFETY_RESTORE_FAILED=1 SAFETY_ARCHIVE=/tmp/a.tar.gz _SAFETY_FOREIGN_TRAP=""
+    safety_restore_exact() { restore_calls=$((restore_calls + 1)); }
+    it_warn() { :; }
+    trap 'foreign_called=1' EXIT
+    arm_safety_abort_restore
+    SAFETY_RESTORE_FAILED=1
+    safety_abort_restore
+    _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP=""
+    trap - EXIT
+    [ "$restore_calls" -eq 0 ] && [ "$foreign_called" -eq 1 ]
+); then
+    it_pass "the exit trap does NOT retry a rollback that already failed (and still chains the prior trap)"
+else
+    it_fail "the exit trap does NOT retry a rollback that already failed (and still chains the prior trap)"
 fi
 
 if (

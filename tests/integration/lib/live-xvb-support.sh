@@ -36,10 +36,25 @@ verify_tor_egress_firewall() {
         actual=$(sudo -n nft list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null | tr -d '[:space:]' | sed 's/priorityfilter-5/priority-5/') || return 1
     else
         sudo -n iptables -C FORWARD -j DOCKER-USER >/dev/null 2>&1 || return 1
-        expected=""
-        while IFS= read -r rule; do expected+="-A DOCKER-USER -m comment --comment $TOR_EGRESS_TAG $rule\n"; done < <(tor_egress_rules "$subnet" "$tor_ip")
-        actual=$(sudo -n iptables -S DOCKER-USER 2>/dev/null | sed 's/"//g; s/RELATED,ESTABLISHED/ESTABLISHED,RELATED/' | grep -F -- "--comment $TOR_EGRESS_TAG") || return 1
-        expected=$(printf '%b' "$expected")
+        # Ask iptables whether each canonical rule is installed, with `-C` and the SAME spec
+        # apply_tor_egress_iptables uses. Do NOT diff `iptables -S` output: it re-prints a rule in
+        # its own canonical form — `-m comment` moves after the `-s`/`-d` selectors and a bare host
+        # becomes `/32` — so a literal string compare can never match on a correctly configured
+        # Docker host. That is not a normalisation to reimplement; `-C` already IS iptables'
+        # equality, and reusing the applier's spec keeps the two from drifting apart.
+        local want=0
+        while IFS= read -r rule; do
+            want=$((want + 1))
+            # shellcheck disable=SC2086  # intentional word-splitting of the rule body, as in the applier
+            sudo -n iptables -C DOCKER-USER -m comment --comment "$TOR_EGRESS_TAG" $rule >/dev/null 2>&1 || return 1
+        done < <(tor_egress_rules "$subnet" "$tor_ip")
+        [ "$want" -gt 0 ] || return 1
+        # Presence is not enough: a stray extra tagged rule, or the subnet-wide DROP sitting ahead
+        # of the ACCEPTs, would both pass the checks above and both change what actually egresses.
+        actual=$(sudo -n iptables -S DOCKER-USER 2>/dev/null | grep -F -- "--comment $TOR_EGRESS_TAG") || return 1
+        [ "$(printf '%s\n' "$actual" | grep -c .)" = "$want" ] || return 1
+        printf '%s\n' "$actual" | tail -n1 | grep -q -- '-j DROP' || return 1
+        return 0
     fi
     [ "$actual" = "$expected" ]
 }

@@ -57,6 +57,13 @@ safety_restore_exact() {
         [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ] ||
         [ "$(upgrade_secret_fingerprints)" != "$BASELINE_EXACT_SECRET_FP" ]; then
         SAFETY_RESTORE_FAILED=1
+        # This function's FIRST act is `pithead down`. A rollback that then fails has stopped the
+        # stack and, without this, returns leaving it stopped — strictly worse than never having
+        # tried, because the box mines nothing until a human notices. Put the containers back with
+        # a plain `up`: the run is already marked unverified and the archive already retained, so
+        # this is about not abandoning the box, not about claiming the restore worked.
+        pithead up >/dev/null 2>&1 || true
+        wait_status_ok 240 || true
         return 1
     fi
     it_log "rollback complete — exact config and wallet/proxy/dashboard/RPC/onion baseline verified."
@@ -80,9 +87,18 @@ safety_rollback_if_failed() {
 # — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
-    if [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
+    # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
+    # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
+    # so the restore is attempted.
+    if [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
+    elif [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
+        # A restore already failed this run. Retrying it here would repeat its opening `pithead
+        # down` and fail the same way, so the run would END with the stack stopped even after the
+        # in-run restore had put it back. One attempt, then hand the box to a human with the
+        # archive still on it.
+        it_warn "a rollback already failed this run — not retrying at exit; archive retained at ${SAFETY_ARCHIVE:-<none>}"
     fi
     [ -z "$_SAFETY_FOREIGN_TRAP" ] || eval "$_SAFETY_FOREIGN_TRAP"
     [ "$restore_failed" = 0 ] || exit 1
