@@ -1,11 +1,11 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
 
-test: lint test-dashboard test-frontend test-stack test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
+test: lint test-dashboard test-frontend test-stack test-netwatch test-compose test-integration-selftest test-tools test-fakes ## Local checks (Docker required; no live test host)
 
 test-dashboard: pithead ## Dashboard unit/component tests with coverage gate (deps from uv.lock); emits coverage.xml
 	cd dashboard && uv run --locked --extra test python -m pytest \
@@ -23,6 +23,15 @@ test-stack: pithead ## pithead shell test suite
 	bash tests/stack/standalone/test_os_update_recovery.sh
 	bash tests/stack/standalone/test_firstboot_journal.sh
 	bash tests/stack/standalone/test_appliance_hugepages.sh
+
+test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-tool coverage guard (no bench, no network)
+	@# Tier 1 on purpose. The capture needs a bench; the JUDGEMENT does not, and the judgement is
+	@# where a network audit goes wrong — a classifier that silently admits what it does not
+	@# recognise reports a clean run on a leaking box. Driven against seeded flows instead.
+	bash tests/netwatch/netwatch-selftest.sh
+	@# And that the test-harness images stay tracked by dependabot + the CI CVE scan. Without this
+	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
+	bash scripts/install-test-tools.sh --self-test
 
 test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
 	bash tests/stack/standalone/test_compose.sh
@@ -98,7 +107,7 @@ lint-sh: pithead ## shellcheck + shfmt over the CLI, build/* + dashboard/ contai
 		os/overlay/pithead-data-reset os/overlay/pithead-mount-generator os/overlay/pithead-ssh-host-keys \
 		os/overlay/pithead-machine-id os/overlay/pithead-media-config os/overlay/pithead-hugepages \
 		os/overlay/pithead-journal-persist os/overlay/pithead-boot os/overlay/pithead-boot-version \
-		tests/os/*.sh tests/os/*/*.sh
+		tests/os/*.sh tests/os/*/*.sh tests/netwatch/*.sh
 # CLI slices are checked through the generated pithead above: their semantic context
 # depends on concatenation order. Listing them separately duplicates a large analysis
 # and reports false unused-global warnings. shfmt checks every slice independently.
