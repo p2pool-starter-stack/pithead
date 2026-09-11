@@ -278,7 +278,7 @@ failure class the image exists to remove:
 
 | Absent | Symptom |
 |---|---|
-| `python3` (system, on PATH — `uv`'s is project-scoped and does not count) | 55 address assertions degrade to shape-only and report `unchecked`/`primary`. The tell is a test that *passes*: `monero_address_type: python3 unusable => shape-only primary`. |
+| `python3` (system, on PATH — `uv`'s is project-scoped and does not count) | The address suites degrade to shape-only and report `unchecked`/`primary` — the largest cluster of the 60 failures these four produced between them. The tell is a test that *passes*: `monero_address_type: python3 unusable => shape-only primary`. |
 | `gh` | `release-smoke.sh` exits at source time, so `upgraded_install_dir` is never defined and the #1068 assertions read an empty path. |
 | `xxd` | `build/tor/healthcheck-selftest.sh` symlinks each command the tor image ships; `command -v` yields empty, `ln` links to nothing, and the PATH-isolation case returns the wrong verdict (#1372). |
 | A UTF-8 locale | `grep` calls the generated `pithead` a binary file and prints `binary file matches` instead of the line, so the #1084 cosign-pin assertion reads a live pin as absent. |

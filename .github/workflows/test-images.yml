@@ -52,8 +52,10 @@ jobs:
         include:
           - service: netwatch
             context: tests/netwatch
+            build_args: ""
           - service: tor-client
             context: tests/integration/tor-client
+            build_args: ""
           # The local test-runner image (#2078). It reaches no user and no bench, but it is where a
           # contributor's verdict comes from, so it rots the same way and gets the same gate.
           # Its two versions come from the Makefile (#1679, #1688) — read, never retyped, exactly

@@ -38,8 +38,9 @@ ARG SHELLCHECK_SHA256_aarch64=12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e2
 # python3: a SYSTEM interpreter on PATH, which uv does not provide — its Python belongs to the
 # project. The address-validation suites shell out to `python3` for Monero's keccak checksum and
 # Tari's DammSum, and WITHOUT it they do not error: they degrade to shape-only and report
-# 'unchecked'/'primary', which is 60 quiet failures that look like a regression. CONTRIBUTING
-# lists Python 3 as a host requirement for exactly this reason.
+# 'unchecked'/'primary'. That is the largest cluster of the 60 failures this image's missing tools
+# produced between them — not separately attributed, because no controlled one-tool-at-a-time run
+# was made. CONTRIBUTING lists Python 3 as a host requirement for exactly this reason.
 # xxd: build/tor/healthcheck-selftest.sh builds an isolated PATH by symlinking each command the
 # tor image ships. A missing one does not skip — `command -v` yields empty, `ln` makes a link to
 # nothing, and the case that should prove PATH isolation reports the wrong verdict instead.
@@ -98,9 +99,14 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.10@sha256:cbe0a44ba994e327b8fe7ed72beef1aa
 # which is why the groupadd is allowed to fail.
 ARG PITHEAD_UID=1000
 ARG PITHEAD_GID=1000
+# The `|| true` covers the expected collision (macOS gid 20 is `dialout` here), but it would also
+# swallow an unexpected failure, so the outcome is ASSERTED rather than assumed: the build fails
+# here if the home directory does not end up owned by the uid the container will run as.
 RUN groupadd -g "$PITHEAD_GID" pithead 2>/dev/null || true; \
     useradd -u "$PITHEAD_UID" -g "$PITHEAD_GID" -m -d /home/pithead -s /bin/bash pithead 2>/dev/null || true; \
-    mkdir -p /home/pithead && chown -R "$PITHEAD_UID:$PITHEAD_GID" /home/pithead
+    mkdir -p /home/pithead && chown -R "$PITHEAD_UID:$PITHEAD_GID" /home/pithead \
+    && [ "$(stat -c %u /home/pithead)" = "$PITHEAD_UID" ] \
+    && [ "$(stat -c %g /home/pithead)" = "$PITHEAD_GID" ]
 USER $PITHEAD_UID:$PITHEAD_GID
 ENV HOME=/home/pithead
 # npx and uvx download on first use, exactly as they do in CI. The runner script keeps HOME on a
