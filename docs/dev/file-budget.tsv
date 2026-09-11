@@ -53,6 +53,7 @@ tests/integration/e2e.sh	691
 tests/integration/fakes/test_contract.py	451
 tests/integration/lib.sh	691
 tests/integration/lib/live-upgrade-support.sh	413
+tests/integration/lib/run-state.sh	403
 tests/integration/selftest/selftest-e2e-phases.sh	507
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest.sh	686
