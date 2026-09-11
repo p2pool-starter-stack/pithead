@@ -139,13 +139,12 @@ _egress_self_test() {
             f=$((f + 1))
         }
     done
-    # A row without a command silently probes nothing and prints "<empty>" forever.
-    while IFS=$'\t' read -r label cmd; do
-        [ -n "$label" ] && [ -n "$cmd" ] || {
-            printf 'malformed probe row: [%s]\n' "$label" >&2
-            f=$((f + 1))
-        }
-    done <<<"$probes"
+    # printf cycles its format, so ADDING a probe label without its command silently mis-shifts
+    # every pair after it and leaves the last row commandless — probing nothing, forever.
+    [ "$(grep -c "$(printf '\t.')" <<<"$probes")" = "$(grep -c . <<<"$probes")" ] || {
+        printf 'a probe row carries no command — the label/command pairs are mis-shifted\n' >&2
+        f=$((f + 1))
+    }
 
     # The #2059 fix itself: an UNEXERCISED backstop must read RED on a green phase and must not
     # double-count on an already-red one. Driven, not grepped — a source check would pass on a
@@ -170,26 +169,21 @@ _egress_self_test() {
     # and the body's rc still propagates (so an abort keeps stopping the reboot/migration legs).
     # Driven through the real caller with both halves stubbed — a source grep would still pass on a
     # wrapper that called the leg and then swallowed the rc, or that was never called at all.
-    local caller ran=0 got=0
+    local caller
     caller="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh"
-    if [ -r "$caller" ]; then
-        (
-            OS_RUN_SUITE=1
-            # shellcheck source=tests/os/phases/provision-initial.sh
-            . "$caller"
-            _provision_initial_body() { return 7; }
-            phase_provision_egress_backstop() { ran=1; }
-            _phase_provision_initial
-            got=$?
-            [ "$ran" = 1 ] && [ "$got" = 7 ]
-        ) || {
-            printf 'the egress backstop is not wired to run past a provision-body abort (or the rc no longer propagates)\n' >&2
-            f=$((f + 1))
-        }
-    else
-        printf 'cannot reach %s to check the backstop is wired\n' "$caller" >&2
+    (
+        OS_RUN_SUITE=1 ran=0
+        # shellcheck source=tests/os/phases/provision-initial.sh
+        . "$caller" # an unreachable caller fails here, which is the same verdict
+        _provision_initial_body() { return 7; }
+        phase_provision_egress_backstop() { ran=1; }
+        _phase_provision_initial
+        got=$?
+        [ "$ran" = 1 ] && [ "$got" = 7 ]
+    ) 2>/dev/null || {
+        printf 'the egress backstop is not wired to run past a provision-body abort (or the rc no longer propagates)\n' >&2
         f=$((f + 1))
-    fi
+    }
 
     if [ "$f" -ne 0 ]; then
         printf 'appliance-egress-leg self-test FAILED: %s checks\n' "$f"
