@@ -182,7 +182,13 @@ echo "== black-box: the compose-profile token set is closed (#1929) =="
 #
 # Derived from the SHIPPED artifact, not retyped — a hand list cannot notice a token nobody
 # remembered, which is the whole failure mode.
-profile_tokens() { grep -oE 'profiles="(\$\{profiles:\+\$profiles,\})?[a-z_]+"' "$STACK" | sed 's/.*}//;s/profiles="//;s/"$//' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+#
+# `grep -a` is NOT decoration (#2086). The built pithead trips grep's binary heuristic on some
+# filesystems — Docker Desktop's file sharing is one — and grep then prints "binary file matches"
+# instead of the matches, so the extractor returns NOTHING and the equality row below compares ""
+# to "" and passes. That is precisely what happened on the first Linux run of this file, and only
+# the two COUNT rows caught it; the set-equality row was green by construction.
+profile_tokens() { grep -a -oE 'profiles="(\$\{profiles:\+\$profiles,\})?[a-z_]+"' "$STACK" | sed 's/.*}//;s/profiles="//;s/"$//' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
 # FIRING CONTROL: an extractor that silently stopped matching prints "" and every comparison below
 # would read as a clean, closed set. Prove it found something first.
 _pt="$(profile_tokens)"
@@ -191,7 +197,7 @@ assert_eq "COMPOSE_PROFILES carries exactly the four known tokens" "$_pt" "local
 # ...and the container reaper knows every one of them. A profile whose container nothing removes is
 # #795's defect returning: the profile goes inactive, compose does not count the container an orphan,
 # and it keeps running against a config that says it should be gone.
-reaped_tokens() { grep -oE '== \*,[a-z_]+,\*' "$STACK" | sed 's/.*,\([a-z_]*\),\*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
+reaped_tokens() { grep -a -oE '== \*,[a-z_]+,\*' "$STACK" | sed 's/.*,\([a-z_]*\),\*/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//'; }
 _rt="$(reaped_tokens)"
 assert_eq "the reaper-token extractor still matches remove_deactivated_profile_containers" "$(printf '%s' "$_rt" | wc -w | tr -d ' ')" "4"
 assert_eq "every renderable profile has a container the reaper removes (#795)" "$_rt" "$_pt"
