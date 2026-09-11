@@ -66,7 +66,7 @@ IGNOREFILE="$ROOT/.trivyignore"
 
 # The two CVE-gate workflows whose trivy-action steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
-GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml"
+GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml"
 
 # The ONE source of truth for the scanning engine (#1290) — the parity contract is in the header.
 # Digest-pinned (repo convention, #135/#373) rather than `:latest`, so a run today and a run next

@@ -91,7 +91,26 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
-  # `tests/integration/tor-client/Dockerfile` is covered by NO entry, and that is DELIBERATE,
-  # recorded here so it is an omission on purpose rather than by accident: it is test scaffolding
-  # that is never shipped or flashed, so a stale base there costs a rebuild, not a CVE in a user's
-  # hands.
+  # Test-harness images. POLICY CHANGED (#2059 follow-up): these used to be covered by no entry at
+  # all, on the reasoning that test scaffolding is never shipped or flashed, so a stale base costs a
+  # rebuild rather than a CVE in a user's hands. That is still true of the CONSEQUENCE, and it is
+  # still why nothing under tests/ reaches a release bundle or a flashed image — both are strict
+  # allowlists of named paths. It is no longer why we skip the updates. The bench these images run
+  # on handles real keys and real chain data, and a repo that keeps its shipped surfaces current
+  # while letting its test surfaces rot is not actually easier to reason about — it just has two
+  # rules instead of one. So: track them.
+  #
+  # And track them MORE aggressively than the shipped surfaces, not less. The docker/rootfs entries
+  # above pin themselves to digest + patch because a base major/minor there is a deliberate
+  # migration with compose flags and config compatibility riding on it. Nothing rides on these: a
+  # bump that breaks one costs a rebuild on a bench, which is exactly the cheapness the old comment
+  # named. So no `ignore:` block — take majors and minors too, and keep the tooling modern.
+  - package-ecosystem: "docker"
+    directories:
+      - "/tests/netwatch"
+      - "/tests/integration/tor-client"
+    schedule:
+      interval: "weekly"
+    groups:
+      test-harness:
+        patterns: ["*"]
