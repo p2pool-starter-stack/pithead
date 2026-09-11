@@ -285,12 +285,14 @@ failure class the image exists to remove:
 
 Two host-level constraints apply to the container itself:
 
-- **Memory — at least 6 GiB for the engine.** `lint-sh` is the memory peak of the whole suite
-  (#1206). Measured against a 3.8 GiB Docker Desktop VM: shellcheck reached 3.45 GiB RSS and the
-  kernel OOM-killed it (`Out of memory: Killed process (shellcheck)`, `make` rc 137). The symptom
-  is a bare `Killed` after the shellcheck line, naming neither memory nor the file it was on, so
-  raise the allocation before running the full `make test` in the container. Every other target
-  measured here fits comfortably; `test-container` warns when the engine is below the bar.
+- **Memory — at least 8 GiB for the engine.** `lint-sh` is the memory peak of the whole suite
+  (#1206), and the figure is easy to under-read. Against a 3.8 GiB Docker Desktop VM, shellcheck
+  reached 3.45 GiB RSS and the kernel OOM-killed it (`Out of memory: Killed process (shellcheck)`,
+  `make` rc 137) — that 3.45 is a *ceiling imposed by the kill*, not the requirement. Given room on
+  a 31 GiB Linux host it passes and peaks at **7.20 GiB**. The symptom of a shortfall is a bare
+  `Killed` after the shellcheck line, naming neither memory nor a file, so raise the allocation
+  before running the full `make test` in the container. Every other target measured here fits
+  comfortably; `test-container` warns when the engine is below the bar.
 - **The Docker socket.** Tiers 1 (netwatch), 3, `test-compose` and `lint-proto` all shell out to
   Docker, so the container is given the host's socket. That is host-root-equivalent access by
   itself; it is the same trust the tiers already need when run directly on the host.

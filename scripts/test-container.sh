@@ -67,14 +67,15 @@ command -v "$ENGINE" >/dev/null 2>&1 || {
 }
 
 # `lint-sh` is the memory peak of the whole suite (#1206) and it dies as a bare "Killed" with
-# rc 137 — no message, nothing naming memory, the shellcheck line just stops. Measured here:
-# 3.45 GiB RSS before the kernel OOM-killed it against a 3.8 GiB Docker VM. Warn rather than
-# refuse: most targets need a fraction of this, and blocking test-fakes over lint's ceiling would
-# be its own kind of wrong.
-LINT_PEAK_GIB=6
+# rc 137 — no message, nothing naming memory, the shellcheck line just stops. Two measurements:
+# against a 3.8 GiB engine shellcheck reached 3.45 GiB and was OOM-killed; given room, it PASSES
+# and peaks at 7.20 GiB. So the bar is 8, not the 6 a partial reading first suggested. Warn rather
+# than refuse: every other target needs a fraction of this, and blocking test-fakes over lint's
+# ceiling would be its own kind of wrong.
+LINT_PEAK_GIB=8
 vm_bytes="$($ENGINE info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
 if [ "${vm_bytes:-0}" -gt 0 ] && [ "$vm_bytes" -lt $((LINT_PEAK_GIB * 1024 * 1024 * 1024)) ]; then
-    printf 'test-container: the engine has %.1f GiB; lint-sh peaked at 3.45 GiB and was OOM-killed below 3.8.\n' \
+    printf 'test-container: the engine has %.1f GiB; lint-sh peaks at 7.20 GiB given room, and is OOM-killed below 3.8.\n' \
         "$(awk -v b="$vm_bytes" 'BEGIN{print b/1073741824}')" >&2
     echo "  Targets other than lint run fine. For the full \`make test\`, raise the VM's memory to" >&2
     echo "  ${LINT_PEAK_GIB} GiB or more (Docker Desktop: Settings > Resources > Memory)." >&2
