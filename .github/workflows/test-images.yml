@@ -82,7 +82,7 @@ jobs:
       # It is still BUILT here, so a broken Dockerfile still reds, and Dependabot still bumps its
       # base digest. uv's own currency gap is tracked separately as #2084.
       - name: Scan image for CVEs (Trivy)
-        if: matrix.service != 'test-runner' 
+        if: matrix.service != 'test-runner'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
