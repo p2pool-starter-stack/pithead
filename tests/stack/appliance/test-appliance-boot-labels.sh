@@ -62,6 +62,24 @@ assert_contains "install-to-disk names A and keeps a retained B slot honest" "$(
     '"A_VERSION=$os_version" "B_VERSION=$b_version"'
 assert_contains "a preserved-layout reinstall treats uninspected B as unknown" "$(cat "$ROOT/os/installer/pithead-install")" \
     'pithead-with-data" ] && b_version="unknown"'
+# The repair is now its own unit, and the battery asserts `systemctl --failed` is empty (#792) —
+# so a boot with nothing to record must exit 0, not red a machine that is otherwise fine. An image
+# built with no updater has no `rauc.slot=` on its cmdline and is exactly that case. Driven through
+# the CLI dispatch, not record_booted, because the tolerance lives there.
+printf 'quiet console=ttyS0\n' >"$BL/no-slot-cmdline"
+(
+    PATH="$BL/bin:$PATH" PITHEAD_GRUBENV="$BL/grubenv" PITHEAD_CMDLINE="$BL/no-slot-cmdline" \
+        PITHEAD_VERSION_FILE="$BL/VERSION" bash "$ROOT/os/overlay/pithead-boot-version" record-booted
+) >/dev/null 2>&1
+assert_rc "a boot with no slot to record does not fail its unit" "$?" "0"
+# The control: with a slot on the cmdline the same dispatch really does write, so the row above
+# cannot be earned by a dispatch that does nothing at all.
+(
+    PATH="$BL/bin:$PATH" PITHEAD_GRUBENV="$BL/grubenv" PITHEAD_CMDLINE="$BL/cmdline" \
+        PITHEAD_VERSION_FILE="$BL/VERSION" bash "$ROOT/os/overlay/pithead-boot-version" record-booted
+) >/dev/null 2>&1
+assert_contains "…and the same dispatch still records a real A/B boot" "$(cat "$BL/grubenv")" "A_VERSION=2.0.0"
+
 before=$(cat "$BL/grubenv")
 (
     PATH="$BL/bin:$PATH" PITHEAD_GRUBENV="$BL/grubenv" PITHEAD_CMDLINE="$BL/cmdline" \
