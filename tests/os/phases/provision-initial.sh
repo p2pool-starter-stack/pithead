@@ -1,6 +1,21 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# The provision leg proper, plus the one assertion that must survive its aborts.
+#
+# #2059: the Tor-only egress ENFORCEMENT backstop used to be the last ~55 lines of the body below,
+# downstream of a dozen `return 1` aborts on unrelated liveness legs. Every battery to date aborted
+# upstream of it, so the repo's only proof that the kernel enforces Tor-only egress never ran —
+# silently, while the battery reported on everything it did reach, and a fail-open appliance shipped
+# green. It now runs on EVERY path and says out loud when it could not be exercised. The body's rc
+# is preserved, so an abort still stops the reboot and migration legs exactly as before.
 _phase_provision_initial() {
+    local rc=0
+    _provision_initial_body || rc=$?
+    phase_provision_egress_backstop "$rc"
+    return "$rc"
+}
+
+_provision_initial_body() {
     info "phase: provision (wizard HTTP submit -> setup -> stack containers up)"
 
     img=$(_build_image v1) || {
@@ -166,61 +181,6 @@ _phase_provision_initial() {
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_hostname_regressions "$pv_user" "$pv_pass"
     phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
-    # ---- Tor-only egress backstop (#855): the fail-closed firewall must actually DROP -------
-    # The whole product is Tor-first; the guarantee is that nothing CAN bypass Tor even if an app is
-    # misconfigured, compromised, or dials a raw public IP. On the appliance the engine is podman+netavark,
-    # and the old DOCKER-USER rules land in a chain no forwarded packet traverses — the firewall was fail-OPEN
-    # while doctor and the boot log called it enforced. This leg dials clearnet FROM a mining-net container by
-    # raw IP and asserts the drop. It is the check whose absence let a leaking appliance ship green: it FAILS
-    # against the orphaned-chain code and PASSES once the nft table is installed. monerod sits on mining_net
-    # (172.28.0.x) and syncs regardless of the mining hold, so it is the honest origin for the dial. monerod's
-    # baked archive is the largest and loads last — dashboard+caddy answering (above) does not mean monerod
-    # exists yet. A `podman exec` against a missing container fails exactly like a missing curl binary, which
-    # used to blame the wrong thing (#887). Wait for it first.
-    local monerod_deadline=$(($(date +%s) + 300)) monerod_present=0
-    while [ "$(date +%s)" -lt "$monerod_deadline" ]; do
-        case "$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null)" in
-        *monerod*)
-            monerod_present=1
-            break
-            ;;
-        esac
-        sleep 5
-    done
-    if [ "$monerod_present" -ne 1 ]; then
-        bad "monerod container never came up — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
-    elif _ssh "podman exec monerod sh -c 'command -v curl' >/dev/null 2>&1"; then
-        # NEGATIVE — a direct clearnet dial by IP must be DROPPED (curl times out, non-zero).
-        if _ssh "podman exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null; then
-            bad "clearnet egress is FAIL-OPEN — monerod reached 1.1.1.1 directly, bypassing Tor (the firewall is not enforced)"
-        else
-            ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced"
-        fi
-        # POSITIVE — the SAME container still reaches clearnet THROUGH Tor's SOCKS, proving the
-        # drop spares Tor and intra-subnet traffic (real mining keeps working). Tor's default
-        # SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
-        if _ssh "podman exec monerod curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
-            ok "egress through Tor's SOCKS still works — the drop did not break real mining"
-        else
-            bad "the mining container can no longer reach clearnet even through Tor — the firewall is too tight"
-        fi
-        # IPv6 backstop (#858): mining_net is IPv4-only by design, so monerod has no global v6 and
-        # this leg self-skips on the stock appliance. If mining_net ever gains a v6 subnet, the
-        # container CAN originate v6 clearnet — assert that dial is DROPPED too (the fail-open the
-        # v4-only rules left behind). Guarded on the container actually holding a global v6 address.
-        if _ssh "podman exec monerod sh -c 'ip -6 addr show scope global 2>/dev/null | grep -q inet6'" 2>/dev/null; then
-            if _ssh "podman exec monerod curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null; then
-                bad "IPv6 clearnet egress is FAIL-OPEN — monerod reached a v6 address directly, bypassing Tor"
-            else
-                ok "direct IPv6 clearnet dial from a mining container is dropped — the v6 backstop holds"
-            fi
-        else
-            ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
-        fi
-    else
-        bad "curl missing from the monerod image — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
-    fi
-
     # ---- local-miner leg (#796): enable -> xmrig up -> wired to the machine's own stratum ---
     # The submit above asked to mine on the box itself, so the built-in RigForge worker must
     # come up without any hands: setup renders its config, runs its appliance-mode setup, and
