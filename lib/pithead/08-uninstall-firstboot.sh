@@ -122,16 +122,10 @@ record_machine_role() { # <pithead|both|rig>
 #
 # rc 0 = a copy was kept, 1 = it could not be.
 wizard_keep_failed_config() {
-    # #2050: setup writes DEPLOYMENT_COMPLETED=true into .env at its SECOND render_env, roughly a
-    # third of the way in — long before provision_control_runner, generate_caddyfile or the `up`
-    # that finishes it. So every failure past that point left the marker standing on a machine
-    # that is NOT deployed, and the retry this function exists to enable could never run: setup's
-    # is_deployed guard (#924) refuses headless with "Already provisioned … run from a terminal",
-    # so the reopened page accepted a corrected configuration and died on the same refusal every
-    # time. The machine handed back to the wizard has not completed deployment here, for exactly
-    # the reason restore_apply clears the same value off a carried .env (#1239) — one marker, two
-    # doors into the same headless setup(). Cleared BEFORE the copy's success is reported, because
-    # a kept config nobody can re-provision is not a recovery.
+    # #2050: setup sets DEPLOYMENT_COMPLETED=true a third of the way in, so a failure past that
+    # point leaves the marker on a machine that is NOT deployed and setup's is_deployed guard
+    # (#924) refuses every retry headless — the reopened page was unusable. Same clear, same
+    # reason, as restore_apply makes on a carried .env (#1239): one marker, two doors.
     if [ -f "$PWD/$ENV_FILE" ]; then
         safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$PWD/$ENV_FILE" ||
             warn "Could not clear the deployment marker — a retry from the setup page will refuse as already provisioned."
