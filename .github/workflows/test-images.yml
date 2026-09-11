@@ -53,9 +53,11 @@ jobs:
           - service: netwatch
             context: tests/netwatch
             build_args: ""
+            skip_files: ""
           - service: tor-client
             context: tests/integration/tor-client
             build_args: ""
+            skip_files: ""
           # The local test-runner image (#2078). It reaches no user and no bench, but it is where a
           # contributor's verdict comes from, so it rots the same way and gets the same gate.
           # Its two versions come from the Makefile (#1679, #1688) — read, never retyped, exactly
@@ -65,6 +67,14 @@ jobs:
             build_args: >-
               --build-arg SHELLCHECK_VERSION=$(make -s print-shellcheck-version)
               --build-arg SHFMT_VERSION=$(make -s print-shfmt-version)
+            # The uv binaries are skipped, and ONLY those two paths. They carry this repo's pinned
+            # uv 0.10.10 — the same one ci.yml installs and dashboard/Dockerfile copies — so a
+            # finding in them is the repo's uv pin, not this image, and no change here can clear it
+            # without putting the container on a different uv than CI, which defeats the point of
+            # the image (tracked as #2084). dashboard/Dockerfile never shows them because its production stage drops
+            # uv; this image must keep it to run the tiers. The rest of the image is scanned
+            # normally, and a repo-wide uv bump removes the need for this line.
+            skip_files: "usr/local/bin/uv,usr/local/bin/uvx"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,6 +87,7 @@ jobs:
           # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
           version: v0.74.0
           image-ref: pithead-${{ matrix.service }}:ci
+          skip-files: ${{ matrix.skip_files }}
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
