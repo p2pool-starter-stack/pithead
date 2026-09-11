@@ -260,6 +260,17 @@ _phase_install_restore() {
     else
         bad "restore leg: restored machine's config does not carry the original wallet"
     fi
+    # #2051: the source machine asserts its provisioning settled (above); the RESTORED machine
+    # never did, so "the stack never came up" arrived with no way to tell a provisioning that
+    # never finished from one that finished and started nothing — opposite causes, one red. This
+    # row is that fork, and it reuses the same helper rather than adding a second notion of
+    # finished. A unit systemd SKIPPED on a condition also reads `inactive` here; the #2043 dump
+    # at the failure below carries ConditionResult for that half.
+    if provisioning_settled 900; then
+        ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
+    else
+        bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
+    fi
     # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
     # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
     # the stack never came back up on the restored config. So wait for the stack to actually come

@@ -31,9 +31,12 @@ stack_never_up_evidence() {
           echo '-- what compose resolves --'; head -20 /tmp/2043-want
           echo '-- what podman has --'; head -30 /tmp/2043-have
           echo '-- substitution inputs --'
-          grep -hE '^(PITHEAD_REGISTRY|STACK_VERSION|COMPOSE_PROFILES|COMPOSE_FILE)=' .env 2>/dev/null
+          grep -hE '^(PITHEAD_REGISTRY|STACK_VERSION|COMPOSE_PROFILES|COMPOSE_FILE|DEPLOYMENT_COMPLETED)=' .env 2>/dev/null
           echo '-- registry the provisioning units see (the drop-in, not /etc/environment) --'
           systemctl show -p Environment pithead-boot.service pithead-firstboot.service 2>/dev/null
+          echo '-- did the provisioning units RUN? (ConditionResult=no = skipped, never ran) --'
+          systemctl show -p ConditionResult -p Result -p ExecMainStatus -p ActiveState \
+              pithead-boot.service pithead-firstboot.service 2>/dev/null
           echo '-- why up refused --'
           journalctl -u pithead-boot -u pithead-firstboot --no-pager -n 40 2>/dev/null |
               grep -viE 'password|token|secret|cosign.key'
@@ -76,6 +79,17 @@ _zc_self_test() {
     _zc_case "it reads the registry the UNITS see, not /etc/environment" "systemctl show -p Environment"
     _zc_case "it shows exited containers, not just running ones" "podman ps -a"
     _zc_case "it captures why up refused" "journalctl -u pithead-boot"
+    # #2051: a restored machine gets its config back and starts nothing. Two causes read
+    # identically in `podman ps` and in `systemctl --failed` — a unit that RAN and whose compose
+    # refused, and a unit systemd SKIPPED on a condition (inactive, not failed, absent from
+    # --failed entirely). ConditionResult tells them apart. DEPLOYMENT_COMPLETED is the other
+    # half: a carried true is the one value that makes setup() refuse headless without running
+    # (#1239, #2050), and it is the difference between "provisioning never started" and
+    # "provisioning ran and the stack would not".
+    # The needle names the PROBE, not the label: a bare "ConditionResult" also matches the echo
+    # that introduces it, so deleting the systemctl line left this row green (measured).
+    _zc_case "it says whether the provisioning units ran or were skipped" "show -p ConditionResult"
+    _zc_case "it reads the marker that decides whether setup() runs at all" "DEPLOYMENT_COMPLETED"
     _zc_case "it keeps credentials out of the dump" "grep -viE 'password|token|secret"
     if grep -q '^     | -- containers' "$out"; then
         printf 'ok: the dump is prefixed so it reads inside the battery output\n'
