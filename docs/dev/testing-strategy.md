@@ -265,7 +265,7 @@ daemon. A tier that needs something the container cannot supply says so.
 |---|---|---|
 | 1 — dashboard pytest | `uv` only; it fetches the CPython pinned by `dashboard/.python-version`. No Docker, any OS. | Yes |
 | 1 — frontend `node --test` | Node 20. No Docker, any OS. | Yes |
-| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq`, `e2fsprogs`, a system `python3` on PATH, `gh`, `xxd`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Every one of those four last items fails *quietly* when absent — see the note below. | Yes — the container is how a non-Linux host runs this at all |
+| 1 — shell suite (`tests/stack/`) | **Linux, GNU coreutils, non-root**, and a longer tool list than it looks: `bash`, `jq` **1.7 or newer**, `e2fsprogs`, a system `python3` on PATH, `gh`, `xxd`, `sudo`, and a **UTF-8 locale**. Refuses on Darwin (#2041); root bypasses the permission-denied fixtures. Every one of those four last items fails *quietly* when absent — see the note below. | Yes — the container is how a non-Linux host runs this at all |
 | 1 — netwatch selftest | Docker: it builds the pinned harness images and asks each tool for its version. | Yes (host daemon via the socket) |
 | 2 — fakes contract | `uv` only. Docker-free by design. | Yes |
 | 3 — mini-stack | Docker, Compose v2, **and buildx**. Without the buildx plugin Compose falls back to the classic builder, which rejects the `RUN --mount=type=cache` in `dashboard/Dockerfile`, and the tier dies at `docker compose build failed` with nothing naming the cause. The driver must also reach the fakes' host-published ports — from inside a container that is `PITHEAD_TEST_HOST`, not `127.0.0.1`. | Yes |
@@ -283,6 +283,8 @@ failure class the image exists to remove:
 | `gh` | `release-smoke.sh` exits at source time, so `upgraded_install_dir` is never defined and the #1068 assertions read an empty path. |
 | `xxd` | `build/tor/healthcheck-selftest.sh` symlinks each command the tor image ships; `command -v` yields empty, `ln` links to nothing, and the PATH-isolation case returns the wrong verdict (#1372). |
 | A UTF-8 locale | `grep` calls the generated `pithead` a binary file and prints `binary file matches` instead of the line, so the #1084 cosign-pin assertion reads a live pin as absent. |
+| `jq` **1.6** (present, wrong version — Debian bookworm's) | 1.7 preserves number literals and 1.6 does not: `echo '{"height": 100.0}' \| jq '.height\|tostring'` renders `100` under 1.6 and `"100.0"` under 1.7. `integral JSON floats do not pass as integer heights` reads `expected [protocol], got [ok]` (#2086). The container pins 1.7.1 — what ubuntu-24.04 runs — by sha256 for this reason. |
+| `sudo` | `tests/stack/appliance/test-appliance-wizard-spool.sh` builds a real root/page UID boundary with `setpriv`. It refuses to count itself as passed without both (`real root/page boundary requires sudo and setpriv` -> `not run`), which is the honest shape — but the tier is incomplete until the host supplies them. The container does; see `tests/runner/Dockerfile` for why that is a smaller grant than the Docker socket it already holds. |
 
 Two host-level constraints apply to the container itself:
 
