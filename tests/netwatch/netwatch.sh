@@ -90,10 +90,26 @@ EOF
 
     "$ENGINE" rm -f pithead-netwatch >/dev/null 2>&1
     # --network host + NET_ADMIN: conntrack must read the HOST's table, not a container's.
+    #
+    # Writes to a MOUNTED FILE, not to stdout for `docker logs` to hold. A battery runs 90 minutes
+    # and a busy mining box emits events continuously; the docker log driver is a buffer with its
+    # own rotation and truncation policy, so relying on it would make the recording's completeness a
+    # property of the log driver's configuration on whichever bench happened to run it. Silent
+    # truncation is the worst failure available here — it does not error, it just returns fewer
+    # flows, and fewer flows is exactly what a clean verdict looks like.
     "$ENGINE" run -d --name pithead-netwatch --network host \
         --cap-add NET_ADMIN --cap-add NET_RAW \
-        "$NETWATCH_IMAGE" -E -o extended >"$out/container.id" 2>"$out/start.err" ||
+        -v "$out:/out" --entrypoint sh \
+        "$NETWATCH_IMAGE" -c 'exec conntrack -E -o extended >/out/raw.log 2>/out/capture.err' \
+        >"$out/container.id" 2>"$out/start.err" ||
         _die "could not start the recorder: $(head -c 300 "$out/start.err" 2>/dev/null)"
+    # Prove it is actually RECORDING, not merely created. A container that exits immediately (a bad
+    # capability, a missing kernel module) leaves an empty raw.log, and an empty recording is
+    # indistinguishable from a quiet network at verify time — which is the one failure this whole
+    # tool must never have.
+    sleep 2
+    [ "$("$ENGINE" inspect -f '{{.State.Running}}' pithead-netwatch 2>/dev/null)" = true ] ||
+        _die "the recorder exited immediately: $(head -c 300 "$out/capture.err" 2>/dev/null)"
     printf 'netwatch: recording to %s (vantage=%s box=%s)\n' "$out" "${vantage:-?}" "${box:-?}"
 }
 
@@ -106,9 +122,15 @@ _cmd_stop() {
         esac
     done
     [ -n "$out" ] || _die "stop needs --out DIR"
-    "$ENGINE" logs pithead-netwatch >"$out/raw.log" 2>/dev/null ||
-        _die "could not read the recorder's output — was it started?"
+    # The recorder must still have been ALIVE. If it died mid-battery, raw.log holds however much
+    # it managed before dying and the verdict would be drawn over a window that silently ended
+    # early — a partial recording reported as a complete one.
+    local was_running
+    was_running="$("$ENGINE" inspect -f '{{.State.Running}}' pithead-netwatch 2>/dev/null)"
     "$ENGINE" rm -f pithead-netwatch >/dev/null 2>&1
+    [ -f "$out/raw.log" ] || _die "no recording at $out/raw.log — was start run?"
+    [ "$was_running" = true ] ||
+        _die "the recorder was NOT running at stop — the recording is partial and its window unknown: $(head -c 200 "$out/capture.err" 2>/dev/null)"
     netwatch_normalize <"$out/raw.log" >"$out/flows.tsv"
     printf 'NW_STOPPED=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$out/meta.env"
     printf 'netwatch: %s raw events -> %s unique flows\n' \
