@@ -132,7 +132,7 @@ wizard_keep_failed_config() {
     # the reason restore_apply clears the same value off a carried .env (#1239) — one marker, two
     # doors into the same headless setup(). Cleared BEFORE the copy's success is reported, because
     # a kept config nobody can re-provision is not a recovery.
-    if [ -f "$PWD/$ENV_FILE" ] && grep -q '^DEPLOYMENT_COMPLETED=true' "$PWD/$ENV_FILE"; then
+    if [ -f "$PWD/$ENV_FILE" ]; then
         safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$PWD/$ENV_FILE" ||
             warn "Could not clear the deployment marker — a retry from the setup page will refuse as already provisioned."
     fi
