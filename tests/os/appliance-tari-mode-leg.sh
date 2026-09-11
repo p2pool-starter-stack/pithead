@@ -52,7 +52,6 @@ tari_mode_commit() { # <proposed-config-json> -> prints the commit result
     preview=$(dashboard_control_request preview "$(dashboard_config_body "$1")") || return 1
     rid=$(printf '%s' "$preview" | jq -r '.id // ""')
     [ -n "$rid" ] || return 1
-    printf '%s' "$preview" >/dev/null
     dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')" 420
 }
 

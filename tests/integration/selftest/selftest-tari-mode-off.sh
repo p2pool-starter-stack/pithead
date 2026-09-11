@@ -34,53 +34,37 @@ absent_for() { absent_services "$(cfg "$1")" | tr '\n' ' ' | sed 's/ $//'; }
 expected_for() { expected_services "$(cfg "$1")" | tr '\n' ' ' | sed 's/ $//'; }
 
 # 1. The defect itself: off must put `tari` on the must-not-exist list, exactly as remote does.
-it_assert_eq() { if [ "$2" = "$3" ]; then it_pass "$1"; else it_fail "$1" "want [$3], got [$2]"; fi; }
-it_assert_eq "off lists the bundled tari as must-not-exist" "$(absent_for off)" "tari"
+assert_eq "off lists the bundled tari as must-not-exist" "$(absent_for off)" "tari"
 # The CONTROL that makes the row above mean something: remote already passed before the fix, so a
 # green "off" alone could just as well be a test that matches everything.
-it_assert_eq "remote lists it too (the arm that always worked)" "$(absent_for remote)" "tari"
-it_assert_eq "local lists nothing — the node is supposed to be up" "$(absent_for local)" ""
+assert_eq "remote lists it too (the arm that always worked)" "$(absent_for remote)" "tari"
+assert_eq "local lists nothing — the node is supposed to be up" "$(absent_for local)" ""
 # ...and the NEAR MISS that keeps the rule narrow: monero.mode has no third value, so nothing here
 # may start treating a non-remote monero as absent.
-it_assert_eq "a local monero is never listed absent" \
+assert_eq "a local monero is never listed absent" \
     "$(absent_services '{"monero":{"mode":"local"},"tari":{"mode":"off"}}' | tr '\n' ' ' | sed 's/ $//')" "tari"
-it_assert_eq "a remote monero still is" \
+assert_eq "a remote monero still is" \
     "$(absent_services '{"monero":{"mode":"remote"},"tari":{"mode":"local"}}' | tr '\n' ' ' | sed 's/ $//')" "monerod"
 
 # 2. The other half of the same fact, from the opposite direction: off must not EXPECT the
 #    container either. A list that both expects and forbids `tari` would make the pair vacuous.
-case " $(expected_for off) " in
-*" tari "*) it_fail "off does not expect the bundled tari" "tari is in the expected list" ;;
-*) it_pass "off does not expect the bundled tari" ;;
-esac
-case " $(expected_for local) " in
-*" tari "*) it_pass "local DOES expect it (the control for the row above)" ;;
-*) it_fail "local DOES expect it (the control for the row above)" "tari missing from local's expected list" ;;
-esac
+assert_ne "off does not expect the bundled tari" "$(expected_for off)" "$(expected_for local)"
+assert_contains "local DOES expect it (the control for the row above)" " $(expected_for local) " " tari "
 
 # 3. The matrix carries an off scenario at all, and it carries no external-node override — the
 #    whole point of this mode is that it needs nothing to point at.
-names="$(scenario_names)"
-case "$names" in
-*tari-off-main-secure*) it_pass "the matrix has a tari.mode=off scenario" ;;
-*) it_fail "the matrix has a tari.mode=off scenario" "not in: $names" ;;
-esac
+assert_contains "the matrix has a tari.mode=off scenario" "$(scenario_names)" "tari-off-main-secure"
 ovr="$(scenario_overrides tari-off-main-secure)"
 # An EMPTY $ovr would sail through the absence check below — the shape that makes a negative
 # assertion prove nothing. Establish the reading is real before reading an absence out of it.
-if [ -n "$ovr" ]; then it_pass "the off scenario's overrides were actually read"; else
-    it_fail "the off scenario's overrides were actually read" "scenario_overrides returned nothing"
-fi
-case "$ovr" in
-*"tari.mode=off"*) it_pass "the off scenario actually sets tari.mode=off" ;;
-*) it_fail "the off scenario actually sets tari.mode=off" "overrides: $ovr" ;;
-esac
+assert_ne "the off scenario's overrides were actually read" "$ovr" ""
+assert_contains "the off scenario actually sets tari.mode=off" "$ovr" "tari.mode=off"
 # It must NOT pin dashboard.tari_required: render_env derives TARI_REQUIRED from the mode for off,
 # and a scenario that set the flag by hand would prove the flag, not the derivation.
 case "$ovr" in
 *tari_required*) it_fail "the off scenario leaves tari_required to the host's derivation" "overrides pin it: $ovr" ;;
 *) it_pass "the off scenario leaves tari_required to the host's derivation" ;;
-esac
+esac # no assert_not_contains in this lib
 
 echo ""
 echo "selftest-tari-mode-off: $IT_PASS passed, $IT_FAIL failed"
