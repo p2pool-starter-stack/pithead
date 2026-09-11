@@ -374,6 +374,12 @@ wkfd_reset
 printf 'DASHBOARD_SECURE=true\nDEPLOYMENT_COMPLETED=true\nHOST_IP=10.0.0.2\n' >"$WKFD/.env"
 run_sourced "$WKFD" wizard_keep_failed_config >/dev/null 2>&1
 assert_rc "the keep still reports success while clearing the marker" "$?" "0"
+# The arming control. rc 0 is also what a fixture that never ran returns from a subshell that died
+# before reaching the function, and every assertion below would then pass or fail for a reason
+# that has nothing to do with the clear. The kept copy is the function's other observable effect,
+# so its presence is what says the body actually executed.
+assert_eq "the fixture armed — the function ran and kept its copy" \
+    "$([ -f "$WKFD/config.json.failed" ] && echo ran)" "ran"
 assert_eq "a failed setup clears the deployment marker so a retry can provision" \
     "$(grep '^DEPLOYMENT_COMPLETED=' "$WKFD/.env")" "DEPLOYMENT_COMPLETED=false"
 assert_eq "and touches no other key that happens to say true" \

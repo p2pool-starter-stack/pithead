@@ -97,7 +97,6 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
     fi
 }
 
-
 # --- self-test ---------------------------------------------------------------------------------
 #
 # The retention verdict, and one control per field it reads: a stage that is not `setup`, an empty
