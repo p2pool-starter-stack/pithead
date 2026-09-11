@@ -315,6 +315,9 @@ run_xvb_routing_smoke() {
         XVB_FEED_TS_BEFORE="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
         [[ "$XVB_FEED_TS_BEFORE" =~ ^[0-9]+$ ]] || XVB_FEED_TS_BEFORE=0
         arm_xvb_abort_restore
+        # `donor` is the lowest tier (1,000 H/s); the box's own configured level is deliberately
+        # NOT used. The gate needs one real routing transition, and the smallest tier that produces
+        # one keeps the window short and the run bounded. The baseline config is restored after.
         if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq '.xvb.enabled=true | .xvb.tor=true | .network.tor_egress_firewall=true | .xvb.donation_level="donor"')" ||
             ! strict_pithead apply -y 2>&1 | redact >"$OUT_DIR/xvb-routing-enable.apply.log" || ! strict_firewall_installed || ! wait_status_ok 240; then
             it_fail "enable XvB donor routing with Tor fail-closed" "see $OUT_DIR/xvb-routing-enable.apply.log"
