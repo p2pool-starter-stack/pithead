@@ -13,9 +13,9 @@ pass and reports 135 passed / 6 failed), reports **189 passed and 3 failed**:
 
 | failing assertion | cause |
 |---|---|
-| `serial menu did not name Pithead 2.0.0 as slot B current and slot A previous` | #1956 — both menu entries name slot A; #1974 shipped the feature, the slot attribution is wrong |
-| `restore leg: the stack never came up on the restored machine` | #2051 — config and original wallet restored, stack never starts. NOT #2043: the earlier assertion in this same leg now passes, naming five running containers |
-| `faulted setup never reached its credentials handoff` | #2050 — a faulted setup hangs instead of reopening the page |
+| `serial menu did not name Pithead 2.0.0 as slot B current and slot A previous` | #1956 — the slot attribution is right; B_VERSION was never written, so the entry read `empty (slot B, current)`. The boot repair was gated behind pithead-boot.service's provisioned-only conditions and the update phase's guest is never provisioned. Fixed on this branch; unverified until the next run |
+| `restore leg: the stack never came up on the restored machine` | #2051 — config and original wallet restored, stack never starts. NOT #2043: the earlier assertion in this same leg now passes, naming five running containers. **Still unexplained**; two probes were added so the next run names the cause |
+| `faulted setup never reached its credentials handoff` | #2050 — the harness armed the fault where the VALIDATOR reads the Compose file, so setup was never reached and the handoff correctly never came. Re-armed. A separate, real retry-blocking defect was found and fixed alongside it |
 
 All four of #2043's zero-container legs now pass, and the A/B updater is sound end to end (install
 to the spare slot, fallback without commit, commit persisting across reboot, operator rollback,
@@ -363,16 +363,27 @@ not proven.
   ships. (M11–M14 were the rig-role steps; #1886 moved their automatable parts into the `rig`
   phase.) #394's gate list still does not name this battery — the same omission #976's own title
   records for the OS-update path.
-- **A faulted setup hangs instead of reopening the wizard (#2050).** Measured on the KVM bench
-  2026-09-10 at pithead#2002's head, with the registry override in place so image refs were NOT a
-  factor (the zero-container dump's `comm -23 want have` was empty): the provision phase arms a
-  post-validation fault by moving `docker-compose.yml` aside, the valid submit is accepted,
-  credentials are printed to the console, and then the guest emits NOTHING for the remaining two
-  minutes — last serial line `grep: docker-compose.yml: No such file or directory` at t=44.4s. The
-  wizard neither fails nor republishes its handoff, so `faulted setup never reached its credentials
-  handoff` fails. This is #1955's "dead page" as a live defect. It is version-independent, which is
-  why #2043's `develop` control reproduced it: that control was measuring THIS, not the registry
-  cause below.
+- **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
+  Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
+  so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The
+  provision phase armed a "post-validation" fault by moving `docker-compose.yml` aside; the guest
+  then emitted nothing further and `faulted setup never reached its credentials handoff` failed.
+  The machine was not hung. All three of the wizard's validations reach
+  `caddy_hash_password_b64`, which greps the pinned caddy ref straight out of
+  `docker-compose.yml`, so removing that file faults `parse_and_validate_config` — which has its
+  own recovery, publishes the error and the answers to the page, and never calls `setup`. That
+  path correctly publishes no credentials handoff, and the harness polled 24x5s for one. The
+  issue's own evidence settles which branch ran: the spool's `error.txt` held raw validator
+  output with no `[ERROR]` prefix, and only the validator branch writes that. The fault is now a
+  stub that keeps the caddy line and is unparseable after it, so validation passes and the `up`
+  inside `setup` refuses.
+  Behind it was a genuine defect, and it is #1955's dead page: `setup()` writes
+  `DEPLOYMENT_COMPLETED=true` at its second `render_env`, a third of the way in, so any failure
+  past that point left the marker on a machine that is not deployed. The reopened page then
+  accepted a corrected configuration and died on `setup()`'s own is_deployed refusal ("Already
+  provisioned … run from a terminal", #924) every time. `wizard_keep_failed_config` now clears it,
+  the same edit `restore_apply` already makes on the carried-.env door (#1239). Both fixed on this
+  branch; unverified until the next run.
 - **The battery's image must be built against a registry that actually has its tags (#2043).**
   Root-caused: this is the #978 entry below, reached from the battery side. Only the wizard image
   is baked, so at first boot every other service is a pull of `pithead-<service>:v$(cat VERSION)`
