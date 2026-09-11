@@ -108,6 +108,13 @@ make_bundle() {
     local out="$1" d="$WORKDIR/pithead"
     mkdir -p "$d"
     cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
+    # The bundle's own provenance anchor: the exact commit these bytes were cut from. The tier-4
+    # --image-upgrade gate reads it to tie a candidate archive to a commit, and the promoted images
+    # carry the same value in org.opencontainers.image.revision — so the two must agree or the
+    # upgrade is not the one we think it is. Refuse a short or absent sha HERE rather than ship a
+    # bundle that only fails much later, at the gate, on a box someone reserved to run it.
+    [[ "${GIT_COMMIT:-}" =~ ^[0-9a-f]{40}$ ]] || die "make_bundle: GIT_COMMIT must be a full 40-hex commit, got '${GIT_COMMIT:-<unset>}'."
+    printf '%s\n' "$GIT_COMMIT" >"$d/PITHEAD_COMMIT" || die "make_bundle: failed to write PITHEAD_COMMIT."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
     [ ! -e cosign.pub ] || cp cosign.pub "$d/" 2>/dev/null || die "make_bundle: failed to copy cosign.pub."
     mkdir -p "$d/docs"
