@@ -84,3 +84,75 @@ for ev in node_down node_recovered worker_offline worker_recovered worker_joined
     block_found payout_found payout_confirmed container_unhealthy raffle_win; do
     roundtrip_key "TELEGRAM_EVENT ${ev}" ".telegram.events.${ev}=false" ".telegram.events.${ev}" "false"
 done
+
+# --- the other half of this file's subject: what the gate can SEE -------------------------------
+#
+# Everything above proves an ALLOWLISTED key commits. This proves the gate is not blind to a key
+# that is NOT allowlisted, which is the same perimeter from the other side.
+#
+# THE RULE, learned the hard way. An EMPTY describe_change message means "this is not an
+# operator-visible change": apply_dry_run drops the row before printing it, in porcelain mode too,
+# and the porcelain is all control_approval_gate reads — default-deny's `bad` count, the
+# DEST/CONFIRM typed-APPLY check and approval_required all come from that text. For a provisioned
+# or fixed internal (DASHBOARD_ONION_ADDRESS, the wallet-rpc constants) that is correct and
+# load-bearing: those move on renders the operator did not ask for, and emitting them would make
+# `bad` non-zero on ordinary commits and refuse every one of them.
+#
+# So the rule is not "always emit". It is: NEVER give an empty message to a key an operator can
+# SET. `tari.spend_public_key` was the one that did — its message was empty because it normally
+# co-changes with the Tari view key, but it is settable on its own, and then it rendered a real env
+# value that no row described. Staged alone it crossed the whole perimeter with no typed token and
+# no approval, and it is not even validated: 28-parse-and-validate-config.sh checks its shape only
+# inside `if [ -n "$TARI_VIEW_KEY" ]`.
+SILENT_SPEND="$(printf 'c%.0s' $(seq 64))" # 64 hex — a well-formed Tari PUBLIC spend key
+
+echo "== black-box: a settable key is never invisible to the approval gate (#1929 follow-up) =="
+# Baseline with NO tari view key, so the spend key is the lone key the candidate moves and the
+# parser never looks at it.
+jq -n --arg w "$WALLET" '{
+    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
+    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
+    dashboard:{secure:true,host:"box.lan",
+               auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_eq "baseline has no tari view key, so the spend key is unvalidated and alone" "$(jq -r '.tari.view_key // "unset"' "$C/config.json")" "unset"
+
+jq --arg k "$SILENT_SPEND" '.tari.spend_public_key=$k' "$C/config.json" >"$C/silent.json"
+porc() { (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" PITHEAD_CONFIG_FILE="$1" ./pithead apply --dry-run --porcelain 2>/dev/null); }
+# THE ARMING CONTROL FIRST, and it is not ceremony: an earlier draft of this probe ran against a
+# sandbox whose apply had silently failed, so EVERY scenario read "no rows" and the whole section
+# would have passed while measuring nothing. Prove a known-noisy change is seen before reading an
+# absence anywhere below.
+assert_eq "the probe sees an ordinary change (arming)" "$(jq '.p2pool.pool="nano"' "$C/config.json" >"$C/arm.json" && porc "$C/arm.json" | awk -F'\t' 'NF' | wc -l | tr -d ' ')" "2"
+# The fix: the settable key now produces a row. Before it, this printed nothing at all.
+assert_contains "the settable spend key is emitted as a porcelain row" "$(porc "$C/silent.json")" "TARI_SPEND_PUBLIC_KEY"
+assert_eq "and it is the ONLY key the candidate moves" "$(porc "$C/silent.json" | awk -F'\t' 'NF' | wc -l | tr -d ' ')" "1"
+# Non-EMPTY message, because control_telegram_approve builds the operator's prompt with
+# `select(.message != "")` — an empty one would ask someone to approve an unnamed change.
+_silent_msg="$(porc "$C/silent.json" | awk -F'\t' 'NF{print $3}')"
+if [ -n "$_silent_msg" ]; then
+    ok "the emitted row carries a message the approval prompt can show"
+else
+    bad "the emitted row carries a message the approval prompt can show" "third field is empty"
+fi
+
+# THE HOLE ITSELF. TARI_SPEND_PUBLIC_KEY is on no allowlist, so the row makes `bad` non-zero, which
+# sets approval_required; the sandbox has no Telegram identity, so the gate refuses. Before the fix
+# this returned "applied" and the value landed in config.json.
+gate_try "$C/silent.json"
+assert_eq "a lone settable-key change is REFUSED" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "and it did not reach config.json" "$(jq -r '.tari.spend_public_key // "absent"' "$C/config.json")" "absent"
+gate_try "$C/silent.json" APPLY
+assert_eq "the typed APPLY does not buy it either" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "still absent from config.json after the tokened attempt" "$(jq -r '.tari.spend_public_key // "absent"' "$C/config.json")" "absent"
+
+# THE CONTROL THAT KEEPS THOSE HONEST: the gate is not simply refusing everything now.
+jq '.xvb.enabled=false' "$C/config.json" >"$C/benign.json"
+gate_try "$C/benign.json"
+assert_eq "an ordinary allowlisted change still commits" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+
+# THE RULE, stated where it can fail: a settable key must never carry an empty message. The
+# siblings SHOULD stay silent — they are fixed internals no config path can move — so asserting
+# both directions keeps the rule narrow instead of "emit everything", which refuses every commit.
+assert_contains "the settable spend key has a describe_change message" "$(run_sourced "$C" describe_change TARI_SPEND_PUBLIC_KEY "" "$SILENT_SPEND")" "spend key"
+assert_eq "its fixed-internal siblings stay silent" "$(run_sourced "$C" describe_change TARI_WALLET_GRPC_ADDRESS a b | tr -d '\t')" "INFO"

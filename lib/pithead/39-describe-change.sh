@@ -417,8 +417,8 @@ describe_change() {
         msg="Tari payout wallet birthday: $old → $new (days since the Unix epoch) — only affects a first-time wallet creation."
         ;;
     TARI_SPEND_PUBLIC_KEY | TARI_WALLET_GRPC_ADDRESS | TARI_WALLET_SECRET_FILE)
-        # Public/fixed internal values that co-change with the Tari view key toggle; keep to one line.
-        msg=""
+        # The last two are fixed internals that co-change with the view-key toggle and stay silent. The FIRST is OPERATOR-SETTABLE (tari.spend_public_key) and must never be: an empty message never reaches the porcelain (40-apply-and-render.sh drops the row), which is all control_approval_gate reads — so a silent settable key commits with no typed token and no approval. It is a PUBLIC key, safe to echo.
+        if [ "$key" = TARI_SPEND_PUBLIC_KEY ]; then msg="Tari payout confirmation spend key: ${old:-unset} → ${new:-unset}."; else msg=""; fi
         ;;
     *)
         msg="$key: $old → $new."
