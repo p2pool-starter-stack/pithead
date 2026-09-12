@@ -312,19 +312,18 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # run-invariant today.
 #   * COUNT THE WRAPPERS, NOT THE ROWS. The first pass said "eight wrappers, 55 calls" because it
 #     counted ROWS: a row is <file>|<index>, so test-config.sh|2 collapses three wrappers and
-#     test-rig-worker.sh|3 collapses three more. Eleven and 73 are the numbers the imperative below
-#     is about; auditing eight misses three. The verdict held at the wider scope, the sentence
-#     supporting it did not.
+#     test-rig-worker.sh|3 three more. Eleven and 73 are the numbers the imperative below is about;
+#     auditing eight misses three. The verdict held at the wider scope, its supporting sentence did not.
 #   * `lib.sh|1` is not a call site at all — it is assert_eq/assert_contains/assert_not_contains/
-#     assert_rc forwarding their own <label> parameter to ok(). Every label in the suite funnels
-#     through it, so it is listed for completeness and says nothing about any one domain.
+#     assert_rc forwarding their <label> to ok(); every label funnels through it, so it is listed
+#     for completeness and says nothing about any one domain.
 # WHAT THIS ROW STILL DOES NOT PROVE: it pins the SET of interpolating labels, not the VALUES. A new
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
 # The special-parameter class has no live site beyond $@ — no label in tests/stack uses $* or $#.
-# They are seeded anyway, below, so all three characters have a control that can fail rather than
-# two branches that pass by construction.
+# They are seeded below anyway, so all three characters have a control that can fail rather than two
+# branches that pass by construction.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -347,6 +346,7 @@ test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
 test-control-editable-allowlist.sh|1
+test-control-editable-allowlist.sh|k
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label

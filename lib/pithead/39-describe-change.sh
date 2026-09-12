@@ -18,31 +18,31 @@ describe_change() {
         esac
         ;;
     COMPOSE_PROFILES)
-        # #552: COMPOSE_PROFILES also carries payout_confirm/tari_payout_confirm (#381/#462) and
-        # local_tari (#103), so an empty-vs-non-empty check misreads those toggles as a node switch.
-        # Decide by presence of the local_node / local_tari tokens instead — only a real flip of
-        # either token is a node switch (DEST). Monero is checked first; a same-apply flip of BOTH
-        # nodes is rare and either message alone is enough to make the change obvious.
-        local old_local=false new_local=false old_tari_local=false new_tari_local=false
+        # #552: this also carries payout_confirm/tari_payout_confirm (#381/#462) and local_tari
+        # (#103), so empty-vs-non-empty misreads those toggles as a node switch — decide by the
+        # local_node TOKEN. local_tari moved to TARI_MODE (#1929): a token is all this key can see.
+        local old_local=false new_local=false
         case ",$old," in *,local_node,*) old_local=true ;; esac
         case ",$new," in *,local_node,*) new_local=true ;; esac
-        case ",$old," in *,local_tari,*) old_tari_local=true ;; esac
-        case ",$new," in *,local_tari,*) new_tari_local=true ;; esac
         if [ "$old_local" = false ] && [ "$new_local" = true ]; then
             flag=DEST
             msg="Switching to a LOCAL Monero node — monerod will start and SYNC the blockchain (large download / disk use)."
         elif [ "$old_local" = true ] && [ "$new_local" = false ]; then
             flag=DEST
             msg="Switching to a REMOTE Monero node — the local monerod container will be STOPPED and removed (its on-disk data is kept)."
-        elif [ "$old_tari_local" = false ] && [ "$new_tari_local" = true ]; then
-            flag=DEST
-            msg="Switching to a LOCAL Tari node — the tari container will start and SYNC the chain (large download / disk use)."
-        elif [ "$old_tari_local" = true ] && [ "$new_tari_local" = false ]; then
-            flag=DEST
-            msg="Switching to a REMOTE Tari node — the local tari container will be STOPPED and removed (its on-disk data is kept)."
         else
-            msg="Payout confirmation profile changed ($old → $new)."
+            msg="Compose profiles: $old → $new." # a payout-confirm toggle, or local_tari's token
         fi
+        ;;
+    TARI_MODE)
+        # The Tari half of the row above, where the MODE is legible (#1929). CONFIRM not DEST on
+        # #1888's reasoning: the container stops, its chain data is KEPT, the same route reverses it.
+        flag=CONFIRM
+        case "$new" in
+        off) msg="Tari merge-mining OFF ($old → off) — p2pool stops merge-mining and any local tari container is stopped and removed. Its chain data on disk is KEPT, so turning Tari back on resumes instead of re-syncing." ;;
+        local) msg="Tari merge-mining ON, local node ($old → local) — the tari container starts and SYNCs the chain (large download / disk use) unless its data dir already holds one." ;;
+        *) msg="Tari merge-mining ON, external node ($old → remote) — p2pool merge-mines against the node at tari.remote; no tari container runs on this host." ;;
+        esac
         ;;
     MONERO_WALLET_ADDRESS)
         flag=DEST

@@ -25,7 +25,10 @@ export function isSecretSentinel(v) {
 // Fixed-choice fields; everything else renders from its JSON type.
 const FIELD_OPTIONS = {
   "monero.mode": ["local", "remote"],
-  "tari.mode": ["local", "remote"],
+  // Mirrors the host parser's own enum (28-parse-and-validate-config.sh), "off" included
+  // (#1855/#1929) — an off machine must see its real state, not a select matching none of its
+  // options. Drift-guarded by configlogic.test.mjs against that validator's `case` arm.
+  "tari.mode": ["local", "remote", "off"],
   "p2pool.pool": ["main", "mini", "nano"],
   "workers.api_auth": ["none", "name", "token"],
   "xvb.donation_level": ["auto", "donor", "vip", "whale", "mega"],

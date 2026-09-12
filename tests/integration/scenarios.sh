@@ -18,7 +18,7 @@
 #   dashboard.tari_required .. true (blocking) | false (non-blocking)
 #   monero/tari.clearnet_initial_sync (#183) .. true (clearnet IBD) | false (Tor, the default)
 #   network.subnet (#180/#201) .. default 172.28.0.0/24 | a moved /24 (e.g. 10.84.0.0/24)
-#   tari.mode ................ local | remote (#103)
+#   tari.mode ................ local | remote (#103) | off (#1855 — declines merge-mining)
 #   p2pool.stratum_tls ........ false | true (#261)
 #   network.tor_egress_firewall .. true (default) | false (#270)
 #   payout confirmation ...... unset (default) | monero.view_key (+ optional tari pair, #381/#462)
@@ -64,6 +64,12 @@ local-pruned-main-clearnet-sync	monero.mode=local monero.prune=true monero.clear
 remote-main-secure-tari	monero.mode=remote p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-subnet	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.subnet=10.84.0.0/24
 remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true tari.mode=remote
+# The third tari.mode (#1855/#1929). Needs no external node and no extra global — that is the
+# point: nothing Tari runs and nothing merge-mines, so this is the one scenario that proves a
+# machine which DECLINED Tari still mines Monero. dashboard.tari_required is left at the default
+# on purpose: render_env forces TARI_REQUIRED=false from the mode, and asserting that here is
+# what catches a regression that would hold the sync gate shut forever on an off machine.
+tari-off-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true tari.mode=off
 local-pruned-main-stratum-tls	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true p2pool.stratum_tls=true
 local-pruned-main-firewall-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.tor_egress_firewall=false
 local-pruned-main-payout-confirm	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true payout_confirm=env

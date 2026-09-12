@@ -12,6 +12,12 @@ _phase_provision_initial() {
     local rc=0
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
+    # Same placement and the same reason as the backstop above (#2059), learned the same way: this
+    # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
+    # known mDNS failures left the dashboard unreadable — so it reported its own precondition
+    # failure as if day-two tari switching were broken. Out here it runs on every path and, when
+    # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
+    phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
     return "$rc"
 }
 
