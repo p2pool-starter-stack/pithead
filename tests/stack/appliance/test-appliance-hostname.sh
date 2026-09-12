@@ -132,3 +132,85 @@ assert_contains "failed apply keeps old hostname" "$(hn_run appliance garden-box
 assert_eq "dry-run does not call hostname or Avahi" "$(hn_run appliance garden-box dry)" 'kernel=old-name calls=0'
 assert_eq "Docker apply with external DNS preserves host" "$(hn_run docker example.test apply)" 'kernel=old-name calls=0'
 unset HN
+
+echo "== unit: mDNS is published on this machine's NICs, never on a container bridge (#2060) =="
+MD="$SANDBOX/mdns"
+mkdir -p "$MD"
+
+# Real `ip` output from the guest the issue was measured on: one LAN NIC and the engine's two
+# bridges, the second of which owns 172.28.0.1 — one of the two addresses <name>.local wrongly
+# resolved to. `ip link ... type bridge` is what tells them apart, so the stub answers both forms.
+md_run() { # <operation> [conf-body-mode]
+    (
+        cd "$MD" || exit 1
+        # shellcheck source=pithead
+        source "$STACK"
+        set -e
+        : >calls
+        local op="$1" conf_mode="${2:-shipped}"
+        is_appliance() { return 0; }
+        log() { :; }
+        warn() { printf 'warn\n' >>calls; }
+        ip() {
+            case "$*" in
+            *'type bridge'*)
+                printf '3: podman1: <BROADCAST,MULTICAST,UP> mtu 1500 state UP\n'
+                printf '4: podman2: <BROADCAST,MULTICAST,UP> mtu 1500 state UP\n'
+                ;;
+            *'-4 -o addr'*)
+                printf '2: enp1s0    inet 192.168.1.50/24 brd 192.168.1.255 scope global dynamic enp1s0\\       valid_lft 84559sec\n'
+                printf '3: podman1    inet 10.89.0.1/24 brd 10.89.0.255 scope global podman1\\       valid_lft forever\n'
+                printf '4: podman2    inet 172.28.0.1/24 brd 172.28.0.255 scope global podman2\\       valid_lft forever\n'
+                ;;
+            esac
+        }
+        case "$conf_mode" in
+        shipped) printf '[server]\n#allow-interfaces=eth0\nuse-ipv6=no\n' >avahi.conf ;;
+        noline) printf '[server]\nuse-ipv6=no\n' >avahi.conf ;;
+        missing) rm -f avahi.conf ;;
+        esac
+        PITHEAD_AVAHI_CONF="$PWD/avahi.conf"
+        ensure_etc_overlay() { printf 'overlay\n' >>calls; }
+        sudo_sed() { sed -i.bak "$1" "$2" && rm -f "$2.bak"; }
+        case "$op" in
+        list) appliance_mdns_interfaces ;;
+        noip)
+            ip() { :; }
+            printf '[%s]\n' "$(appliance_mdns_interfaces)"
+            ;;
+        write)
+            appliance_reconcile_mdns_interfaces && printf 'changed\n' || printf 'unchanged\n'
+            grep '^allow-interfaces=' avahi.conf 2>/dev/null || echo 'no allow-interfaces line'
+            ;;
+        twice)
+            appliance_reconcile_mdns_interfaces >/dev/null 2>&1 || true
+            appliance_reconcile_mdns_interfaces && printf 'changed\n' || printf 'unchanged\n'
+            ;;
+        reconcile)
+            DASHBOARD_HOST=auto PITHEAD_DRY_RUN=0
+            hostname() { printf 'pithead'; }
+            sudo() { printf '%s\n' "$*" >>calls; }
+            reconcile_appliance_hostname
+            printf 'calls=%s\n' "$(tr '\n' ' ' <calls)"
+            ;;
+        esac
+    )
+}
+
+assert_eq "only the LAN NIC is published, both bridges dropped" "$(md_run list)" 'enp1s0'
+assert_eq "no addressed NIC yet means no interface policy at all" "$(md_run noip)" '[]'
+assert_eq "the shipped commented line is rewritten in place" "$(md_run write)" 'changed
+allow-interfaces=enp1s0'
+assert_eq "an unchanged policy does not refresh the daemon" "$(md_run twice)" 'unchanged'
+# The read-back control: strip the line the sed matches and the rewrite becomes a no-op. Without
+# it the function returned "changed" on a file it had not touched, and the caller restarted Avahi
+# onto an unrestricted config believing the opposite.
+assert_eq "a config with no allow-interfaces line reports no change" "$(md_run write noline)" 'unchanged
+no allow-interfaces line'
+assert_eq "no avahi config at all is left alone" "$(md_run write missing)" 'unchanged
+no allow-interfaces line'
+# The wiring the defect needed: an appliance on the default "auto" name has no label to reconcile
+# and was returning before Avahi was ever touched, so it kept announcing itself on the bridges.
+assert_eq "an auto-named appliance still refreshes Avahi" "$(md_run reconcile)" \
+    'calls=overlay systemctl try-restart avahi-daemon.service '
+unset MD
