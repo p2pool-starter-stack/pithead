@@ -278,6 +278,11 @@ _approval_self_test() {
     tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://node.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' || f=$((f + 1))
     tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://old.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' && f=$((f + 1))
     _control_request_transport_self_test || f=$((f + 1))
+    # Called from HERE, not from _approval_bind_payload_self_test: that one is also driven
+    # standalone by tests/os/selftest-row-payloads.sh, which sources this verdict file WITHOUT
+    # provision-browser-submit.sh — so `dashboard_control_request` does not exist there and the
+    # check dies as a missing command rather than a verdict.
+    _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))

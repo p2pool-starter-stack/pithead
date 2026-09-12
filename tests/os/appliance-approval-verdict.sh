@@ -175,7 +175,6 @@ _approval_bind_payload_self_test() {
     local audit='{"id":"r1","action":"commit-confirmed","status":"applied","approver":""}'
     local applied='{"status":"applied"}'
     _control_post_timeout_self_test || f=$((f + 1))
-    _control_request_lost_response_self_test || f=$((f + 1))
     out=$(approval_bind_payload "$applied" "$audit" "$rid")
     case "$out" in 'apply=applied/no error audit=bound;'*) ;; *) f=$((f + 1)) ;; esac
     # One failing leg at a time: the other must still read `bound`, or the row cannot say which broke.
