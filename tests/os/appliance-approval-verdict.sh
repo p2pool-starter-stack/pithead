@@ -72,6 +72,55 @@ _control_request_transport_self_test() (
     return 0
 )
 
+# A POST that DIES in flight is not a request that never happened (#2060). The apply a confirmed
+# commit triggers recreates containers, restarting the dashboard underneath its own request: on the
+# bench the runner's answer reached disk (`commit-confirmed -> applied`, a result document with
+# {"status":"applied"}) while the caller reported "the commit never returned". The caller sent the
+# id, so it can still poll — and the two halves are asserted together, because a fallback that also
+# fires when the server ANSWERED a refusal would turn every rejection into a full deadline of
+# polling, which is the opposite failure and just as expensive on a 2.5-hour battery.
+_control_request_lost_response_self_test() (
+    local body ip=fixture result polls
+    body='{"id":"rid-7","confirm":"APPLY"}'
+    # A file, not a variable: every poll happens inside a command substitution, so a counter
+    # incremented in the shim would be discarded with that subshell and read 0 however many times
+    # it ran — a control that cannot fail.
+    polls=$(mktemp)
+    # The POST always dies; the result poll answers, exactly as the guest's disk did.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            return 52
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A body with no id of its own has nothing to fall back to and must still fail fast.
+    dashboard_curl() {
+        cat >/dev/null
+        return 52
+    }
+    dashboard_control_request diag-doctor '{}' 30 >/dev/null 2>&1 && return 1
+    # And a server that ANSWERED without an id refused: fail fast, do not poll the deadline out.
+    dashboard_curl() {
+        cat >/dev/null
+        printf '{"error":"Missing X-Pithead-Control header."}'
+    }
+    local began ended
+    began=$(date +%s)
+    dashboard_control_request commit "$body" 30 >/dev/null 2>&1 && return 1
+    ended=$(date +%s)
+    [ "$((ended - began))" -lt 5 ] || return 1
+)
+
 _runtime_epoch_self_test() (
     local count_file ip=fixture n
     count_file=$(mktemp)
@@ -97,6 +146,22 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     return 0
 )
 
+# The one invariant behind #2060's control rows: the POST must outlast the window the dashboard
+# itself waits before handing back a pollable id. Both numbers are read from their own sources — a
+# literal repeated here would keep passing after either side moved, which is exactly how an 8s cap
+# survived beside a 30s server wait and a 420s outer deadline.
+_control_post_timeout_self_test() (
+    local here cap window
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    cap=$(awk '/^dashboard_control_post\(\)/, /^}/' "$here/appliance-config-approval-leg.sh" |
+        sed -n 's/.* -m \([0-9][0-9]*\) .*/\1/p')
+    window=$(sed -n 's/^CONTROL_WAIT_S *= *float(os.environ.get("CONTROL_WAIT_S", *\([0-9][0-9.]*\))).*/\1/p' \
+        "$here/../../dashboard/mining_dashboard/config/config.py")
+    # Either read coming back empty means the shape it keys on moved; that is a failure, not a pass.
+    [ -n "$cap" ] && [ -n "$window" ] || return 1
+    awk -v c="$cap" -v w="$window" 'BEGIN { exit !(c > w) }'
+)
+
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
 # Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
@@ -109,6 +174,7 @@ _approval_bind_payload_self_test() {
     local f=0 rid=r1 out
     local audit='{"id":"r1","action":"commit-confirmed","status":"applied","approver":""}'
     local applied='{"status":"applied"}'
+    _control_post_timeout_self_test || f=$((f + 1))
     out=$(approval_bind_payload "$applied" "$audit" "$rid")
     case "$out" in 'apply=applied/no error audit=bound;'*) ;; *) f=$((f + 1)) ;; esac
     # One failing leg at a time: the other must still read `bound`, or the row cannot say which broke.
