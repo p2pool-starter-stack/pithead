@@ -38,6 +38,19 @@ if [ "$(uname -s)" = "Darwin" ] && [ "${PITHEAD_UNTRUSTED_MACOS_RUN:-0}" != "1" 
     exit 1
 fi
 
+# The operator's PITHEAD_* knobs must not reach the assertions (#1922). Scripts the suite SOURCES read
+# them at source time -- release.sh:52-53 sets REGISTRY/IMAGE_PREFIX before any function runs -- so a
+# test that asserts a default was really asserting whatever the caller exported. That made release.sh's
+# own blocking `make test` gate red exactly when release.sh was used the way its PITHEAD_REGISTRY knob
+# documents: a LAN-registry RC cut. Derived from the live environment rather than a hand-kept list, so a
+# knob added to release.sh tomorrow is scrubbed without touching this line. A test that WANTS a knob set
+# assigns it in its own subshell, which still works. PITHEAD_UNTRUSTED_MACOS_RUN is kept: it is the
+# operator's answer to the refusal above, and run.sh re-sources this file in nested `bash` (#1330).
+for _knob in $(compgen -e -X '!PITHEAD_*'); do
+    [ "$_knob" = PITHEAD_UNTRUSTED_MACOS_RUN ] || unset "$_knob"
+done
+unset _knob
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STACK="$ROOT/pithead"
 PASS=0

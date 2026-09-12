@@ -63,6 +63,39 @@ assert_eq "image_for builds the GHCR image name" \
         image_for dashboard
     )" \
     "ghcr.io/p2pool-starter-stack/pithead-dashboard"
+# Firing control for the assertion above (#1922). On a clean shell that assertion is green whether or
+# not the suite scrubs the operator's knobs, so by itself it cannot see the bug it exists to catch:
+# release.sh reads REGISTRY and IMAGE_PREFIX at SOURCE time, so `make test` invoked from the shell that
+# cuts a LAN-registry release used to redden it -- release.sh's own gate, red exactly when release.sh
+# is driven as documented. A separate `bash` process is the only real isolation (#1330): a `( ... )`
+# subshell inherits THIS process's variable table, already scrubbed by lib.sh, and would pass on the
+# unfixed tree. Both knobs are set because unsetting only PITHEAD_REGISTRY leaves PITHEAD_IMAGE_PREFIX
+# reddening the identical line.
+# shellcheck disable=SC2016  # the inner script is deliberately unexpanded; paths arrive as $1/$2
+assert_eq "the operator's PITHEAD_* knobs do not reach the assertions (#1922)" \
+    "$(PITHEAD_REGISTRY=reg.invalid:5000/ops PITHEAD_IMAGE_PREFIX=ops- bash -c '
+        r="$1" rel="$2"   # named BEFORE `set --`, which clears the positionals
+        source "$r/tests/stack/lib.sh" >/dev/null 2>&1 || exit
+        cd "$r" || exit
+        set --
+        source "$rel" 2>/dev/null
+        set +eu
+        image_for dashboard
+    ' _ "$ROOT" "$REL")" \
+    "ghcr.io/p2pool-starter-stack/pithead-dashboard"
+# The other half of release.sh:52 -- the knob is a documented feature, and the scrub above must not be
+# "fixed" one day by hardcoding the default. This fails if a set PITHEAD_REGISTRY stops being honoured.
+# shellcheck disable=SC1090
+assert_eq "image_for honours a set PITHEAD_REGISTRY" \
+    "$(
+        cd "$ROOT" || exit
+        set --
+        export PITHEAD_REGISTRY=reg.invalid:5000/ops
+        source "$REL" 2>/dev/null
+        set +eu
+        image_for dashboard
+    )" \
+    "reg.invalid:5000/ops/pithead-dashboard"
 # --draft (#44): documented in --help, and --help stops at the comment header (a too-wide sed range
 # used to leak the script body, e.g. `set -euo pipefail`, into the help output).
 assert_contains "release --help documents --draft" "$(bash "$REL" --help 2>&1)" "--draft"
