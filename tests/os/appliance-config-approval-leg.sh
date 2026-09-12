@@ -11,8 +11,16 @@ APPROVAL_RESTORE_SNAPSHOT=""
 # control route and needs no privileged loopback identity. What is kept is the restore discipline:
 # this phase repoints the appliance at reserved nodes and MUST put the original config back.
 
+# The max-time is not arbitrary and must stay above the dashboard's own answer window (#2060):
+# handle_control_* holds the request open until the runner answers or CONTROL_WAIT_S (30s) elapses,
+# and only THEN returns 202 with the request id. That id is the only way into the polling loop in
+# dashboard_control_request, so a POST that gives up first loses the request entirely — the caller
+# gets nothing back and the row reports "no result" for an operation that was merely slow. At 8s
+# that was every control operation which does real work: a commit that runs an apply, and doctor on
+# an unhealthy box. Their fast siblings (preview, doctor on a healthy box) answered inside 8s and
+# passed, which is what made the failures read as the runner losing results.
 dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
-    printf '%s' "$2" | dashboard_curl -sSk -m 8 -H 'Content-Type: application/json' \
+    printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
         -H 'X-Pithead-Control: 1' --data-binary @- "https://$ip/api/control/$1" 2>/dev/null
 }
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }

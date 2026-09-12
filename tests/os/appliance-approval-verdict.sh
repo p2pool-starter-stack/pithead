@@ -97,6 +97,22 @@ MergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
     return 0
 )
 
+# The one invariant behind #2060's control rows: the POST must outlast the window the dashboard
+# itself waits before handing back a pollable id. Both numbers are read from their own sources — a
+# literal repeated here would keep passing after either side moved, which is exactly how an 8s cap
+# survived beside a 30s server wait and a 420s outer deadline.
+_control_post_timeout_self_test() (
+    local here cap window
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    cap=$(awk '/^dashboard_control_post\(\)/, /^}/' "$here/appliance-config-approval-leg.sh" |
+        sed -n 's/.* -m \([0-9][0-9]*\) .*/\1/p')
+    window=$(sed -n 's/^CONTROL_WAIT_S *= *float(os.environ.get("CONTROL_WAIT_S", *\([0-9][0-9.]*\))).*/\1/p' \
+        "$here/../../dashboard/mining_dashboard/config/config.py")
+    # Either read coming back empty means the shape it keys on moved; that is a failure, not a pass.
+    [ -n "$cap" ] && [ -n "$window" ] || return 1
+    awk -v c="$cap" -v w="$window" 'BEGIN { exit !(c > w) }'
+)
+
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
 # Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
@@ -109,6 +125,7 @@ _approval_bind_payload_self_test() {
     local f=0 rid=r1 out
     local audit='{"id":"r1","action":"commit-confirmed","status":"applied","approver":""}'
     local applied='{"status":"applied"}'
+    _control_post_timeout_self_test || f=$((f + 1))
     out=$(approval_bind_payload "$applied" "$audit" "$rid")
     case "$out" in 'apply=applied/no error audit=bound;'*) ;; *) f=$((f + 1)) ;; esac
     # One failing leg at a time: the other must still read `bound`, or the row cannot say which broke.
