@@ -59,13 +59,27 @@ tari_mode_commit() { # <proposed-config-json> -> prints the commit result
 # the same contract every other provision leg uses. SC2154: $ip is a global the assembled runner
 # sets before any phase runs.
 # shellcheck disable=SC2034,SC2154
-phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed result before after origin rc=0 tries restored
+phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <phase-rc>
+    local DASH_USER="$1" DASH_PASS="$2" phase_rc="${3:-0}"
+    local live proposed result before after origin rc=0 tries restored unexercised=bad
+    # A PRECONDITION FAILURE IS NOT A VERDICT ON TARI SWITCHING (#2059's contract, learned here the
+    # same way). When the phase is already red this leg cannot run, and saying "bad" would put a
+    # tari-shaped label on somebody else's defect: its first bench run reported "live config could
+    # not be read" because #2060's known hostname-approval row had left the dashboard unreadable,
+    # which reads exactly like day-two switching being broken. On a HEALTHY phase an unreadable
+    # dashboard is still a real failure, so the verdict follows the phase.
+    [ "$phase_rc" -eq 0 ] || unexercised=info
 
-    live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
-        bad "tari.mode switch: live config could not be read"
-        return 1
-    }
+    # Retry rather than single-shot: the leg that runs before this one recreates the dashboard
+    # container, so one curl the instant it returns is a race, not a measurement.
+    for tries in 1 2 3 4 5 6; do
+        live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) && break
+        sleep 5
+    done
+    if [ -z "${live:-}" ]; then
+        "$unexercised" "the dashboard config was unreadable — day-two tari.mode switching was NOT exercised (#1929)"
+        return 0
+    fi
     origin=$(printf '%s' "$live" | jq -r '.tari.mode // "local"')
     if [ "$origin" != "local" ]; then
         bad "tari.mode switch: expected a provisioned local Tari node, found mode=$origin"
@@ -194,7 +208,7 @@ _tari_mode_self_test() {
     tari_approval_bounce '{"status":"rejected","error":"this change is disruptive (x) — type APPLY in the dashboard to confirm."}' && f=$((f + 1))
     tari_approval_bounce '{"status":"applied"}' && f=$((f + 1))
     # The leg is wired into the provision phase; a leg nobody calls proves nothing.
-    grep -Fq 'phase_provision_tari_mode_switch "$pv_user" "$pv_pass"' \
+    grep -Fq 'phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"' \
         "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-tari-mode-leg self-test FAILED: %s checks\n' "$f"

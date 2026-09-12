@@ -12,6 +12,12 @@ _phase_provision_initial() {
     local rc=0
     _phase_provision_initial_body || rc=$?
     phase_provision_egress_backstop "$rc"
+    # Same placement and the same reason as the backstop above (#2059), learned the same way: this
+    # leg first ran inside the body, downstream of the hostname and approval legs, and #2060's
+    # known mDNS failures left the dashboard unreadable — so it reported its own precondition
+    # failure as if day-two tari switching were broken. Out here it runs on every path and, when
+    # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
+    phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
     return "$rc"
 }
 
@@ -181,9 +187,6 @@ _phase_provision_initial_body() {
     phase_provision_control_regressions "$pv_user" "$pv_pass"
     phase_provision_hostname_regressions "$pv_user" "$pv_pass"
     phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
-    # Runs AFTER the sensitive leg on purpose: that leg repoints both chains at reserved remote
-    # nodes and restores them, so starting here would race its restore for ownership of tari.mode.
-    phase_provision_tari_mode_switch "$pv_user" "$pv_pass" || bad "tari.mode day-two switching leg aborted before completing required checks"
     # ---- local-miner leg (#796): enable -> xmrig up -> wired to the machine's own stratum ---
     # The submit above asked to mine on the box itself, so the built-in RigForge worker must
     # come up without any hands: setup renders its config, runs its appliance-mode setup, and
