@@ -121,6 +121,29 @@ assert_eq "a non-zero doctor rc with a readable report still applies (rc is a fa
 assert_eq "and the bad news it carries is preserved, not flattened away" \
     "$(jq -r '.doctor.exit' "$DGC/results/$did2.json")" "1"
 
+# The same case again, under the runner's OWN shell options. `run_sourced` calls `set +e`, and the
+# unit does not: pithead's prelude runs under `set -e`, so capturing a nonzero doctor aborted the
+# whole runner before the branch that writes a result could run. Measured on a provisioned
+# appliance (#2060): the unit died with "pithead aborted unexpectedly (exit 1)", the audit stopped
+# at `diag-doctor -> started`, no result document was ever written, and the caller polled four
+# minutes into silence. The assertion directly above passes on that broken code, because `set +e`
+# masks the abort that does the damage — so it cannot be the control for this.
+did_e="b1b1b1b1-0000-4000-8000-00000000000e"
+export DIAG_DOCTOR_MODE=failcount
+diag_req "$did_e" diag-doctor >/dev/null
+(
+    cd "$SANDBOX" || exit 1
+    # shellcheck source=/dev/null
+    source "$STACK"
+    export PATH="$DGC/bin:$PATH"
+    set -e
+    control_process_request "$DGC/req-$did_e.json" "$DGC"
+) >/dev/null 2>&1
+assert_eq "a nonzero doctor under the runner's own errexit still writes its result" \
+    "$(jq -r .status "$DGC/results/$did_e.json" 2>/dev/null)" "applied"
+assert_eq "and under errexit the bad news still survives" \
+    "$(jq -r '.doctor.exit' "$DGC/results/$did_e.json" 2>/dev/null)" "1"
+
 did3="b1b1b1b1-0000-4000-8000-000000000003"
 export DIAG_DOCTOR_MODE=empty
 diag_run "$(diag_req "$did3" diag-doctor)"
