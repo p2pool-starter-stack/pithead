@@ -43,7 +43,12 @@ by channel:
   survives netavark reprogramming its own table.
 
 `pithead doctor` reads whichever mechanism the running engine uses and checks the drop is in a chain
-that is actually hooked at forward, so it cannot report enforced while the rules are orphaned.
+that is actually hooked at forward, so it cannot report enforced while the rules are orphaned. The
+install reads the same live state back before it reports success, so "Tor-only egress enforced" in
+the log means the rules were found in the kernel, not that the install command exited zero. A host
+whose engine has no firewall backend installed at all cannot enforce anything, so `doctor` FAILs
+there rather than skipping the check — on the appliance that is what stops a slot with no firewall
+from committing itself as healthy.
 
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an

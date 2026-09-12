@@ -96,6 +96,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 
+# shellcheck source=tests/stack/test-tor-egress-enforcement.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_ran test-tor-egress-enforcement.sh "$_d0" "$?" || domain_ran test-tor-egress-enforcement.sh "$_d0" "$?"
+
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
 

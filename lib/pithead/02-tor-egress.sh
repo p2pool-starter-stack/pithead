@@ -94,6 +94,59 @@ mining_net_ipv6_bridge() {
     printf '%s' "$br"
 }
 
+# Read the LIVE enforcement state back out of the kernel. Single-sourced on purpose (#2059): it is
+# what `apply` proves its own install with AND what `doctor` reports, so the two can no longer
+# disagree about what "installed" means. Before this, apply logged "Tor-only egress enforced"
+# straight off a zero exit from the install command and doctor kept a second, differently-shaped
+# copy of the probe — an appliance that installed nothing shipped green behind both.
+#
+# The hook, not merely a rule: the failure #855 was about is a DROP sitting in a chain no packet
+# traverses, which is exactly what a base chain hooked at forward CANNOT be.
+#
+# rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
+# 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
+# nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
+# an honest "I cannot tell". Callers act on all four differently; collapsing 2 into 3 is how a
+# fail-open box passed the A/B commit gate.
+tor_egress_enforced() {
+    local out
+    if [ "$(container_engine)" = "podman" ]; then
+        command -v nft >/dev/null 2>&1 || return 2
+        # `nft list table` returns rc 1 both when the table is missing AND when sudo -n is refused; a
+        # cheap `list tables` probe (succeeds whether or not our table exists) tells the two apart, so
+        # a sudo refusal can't masquerade as a missing firewall (a false "not enforced").
+        sudo -n nft list tables >/dev/null 2>&1 || return 3
+        out=$(sudo -n nft list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || return 1
+        printf '%s\n' "$out" | grep -q 'hook forward' || return 1
+        printf '%s\n' "$out" | grep -qw drop || return 1
+        return 0
+    fi
+    command -v iptables >/dev/null 2>&1 || return 2
+    # Same two-probe shape as the nft branch above, and for the same reason: `-S DOCKER-USER` fails
+    # both when sudo is refused AND when the chain does not exist. A bare `-S` (which lists whatever
+    # is there) separates them, so a deleted DOCKER-USER reads as NOT ENFORCED rather than as an
+    # unreadable ruleset doctor would skip past.
+    sudo -n iptables -S >/dev/null 2>&1 || return 3
+    out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
+    printf '%s\n' "$out" | grep -qF -- "$TOR_EGRESS_TAG" || return 1
+    return 0
+}
+
+# An install may only CLAIM success once the kernel agrees. Every failure line carries a stable
+# `egress-apply:<reason>` token because the #2059 diagnostics read a BOUNDED journal excerpt — a
+# token is what lets that excerpt name which exit fired instead of leaving the next battery to
+# guess between exits that need opposite fixes.
+tor_egress_verify_or_warn() { # <success message>
+    local rc=0
+    tor_egress_enforced || rc=$?
+    case "$rc" in
+    0) log "$1" ;;
+    1) warn "egress-apply:verify-absent — the Tor-egress rules installed without error but are NOT in the live ruleset. Clearnet egress is NOT fail-closed." ;;
+    2) warn "egress-apply:verify-no-tool — the Tor-egress rules cannot be read back because the backend's tool is not on PATH. Clearnet egress is NOT fail-closed." ;;
+    *) warn "egress-apply:verify-unreadable — the Tor-egress rules installed, but reading them back needs passwordless sudo, so enforcement is UNPROVEN." ;;
+    esac
+}
+
 # Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
 # BOTH backends so a re-apply (or an engine change) can't leave a stale set behind: drop the nft
 # table if present, then delete the tagged DOCKER-USER rules if present.
@@ -140,35 +193,41 @@ apply_tor_egress_firewall() {
     fi
 }
 
-# Appliance/netavark path: load the independent nft table (atomic, idempotent-replace).
+# Appliance/netavark path: load the independent nft table (atomic, idempotent-replace), then PROVE
+# it landed before saying so.
 apply_tor_egress_nft() { # <subnet> <tor_ip>
-    local subnet="$1" tor_ip="$2" br rc
+    local subnet="$1" tor_ip="$2" br rc=0
     if ! command -v nft >/dev/null 2>&1; then
-        warn "nftables not found — cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
         return 0
     fi
     # mining_net is IPv4-only by design, so br is empty and the ruleset stays v4-only. If it ever
     # gains an IPv6 subnet we key a v6 fail-closed drop on its bridge interface. rc 3 means v6 is
     # present but the bridge couldn't be resolved — refuse rather than load a v4-only firewall we'd
     # then wrongly report as fail-closed (a v6 clearnet leak would fall through policy accept).
-    br=$(mining_net_ipv6_bridge)
-    rc=$?
+    #
+    # `|| rc=$?`, not a bare assignment followed by `rc=$?` (#2059): the program runs under
+    # `set -Eeuo pipefail`, where `br=$(f)` with a non-zero f is a failing simple command — errexit
+    # fires and the shell is GONE before the next line can read $?. The refusal below was therefore
+    # unreachable, and a v6-capable mining_net killed `up` mid-stack_up with rc 3 and no message at
+    # all. Guarding the assignment is what makes the branch it guards able to run.
+    br=$(mining_net_ipv6_bridge) || rc=$?
     if [ "$rc" -eq 3 ]; then
-        warn "mining_net has an IPv6 subnet but its bridge interface could not be resolved — REFUSING to install a v4-only egress firewall that would leave IPv6 clearnet un-fenced. Recreate mining_net or set network.tor_egress_firewall=false to acknowledge."
+        warn "egress-apply:v6-bridge-unresolved — mining_net has an IPv6 subnet but its bridge interface could not be resolved. REFUSING to install a v4-only egress firewall that would leave IPv6 clearnet un-fenced. Recreate mining_net or set network.tor_egress_firewall=false to acknowledge."
         return 0
     fi
     if ! render_tor_egress_nft "$subnet" "$tor_ip" "$br" | sudo nft -f - 2>/dev/null; then
-        warn "Could not install the Tor-egress firewall (needs root + nftables). Stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:nft-load-failed — could not install the Tor-egress firewall (needs root + nftables). Stack runs, but clearnet egress is NOT fail-closed."
         return 0
     fi
-    log "Tor-only egress enforced: clearnet dials from $subnet${br:+ (IPv4) and via $br (IPv6)} dropped except via Tor ($tor_ip)."
+    tor_egress_verify_or_warn "Tor-only egress enforced: clearnet dials from $subnet${br:+ (IPv4) and via $br (IPv6)} dropped except via Tor ($tor_ip)."
 }
 
 # DIY/Docker path: insert the tagged rules into DOCKER-USER, which Docker jumps to from FORWARD.
 apply_tor_egress_iptables() { # <subnet> <tor_ip>
     local subnet="$1" tor_ip="$2" pos=1 rule
     if ! command -v iptables >/dev/null 2>&1; then
-        warn "iptables not found — cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:iptables-missing — iptables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
         return 0
     fi
     # DOCKER-USER may not exist yet on a first-ever `up` (Docker creates it with its first network).
@@ -178,11 +237,11 @@ apply_tor_egress_iptables() { # <subnet> <tor_ip>
     while IFS= read -r rule; do
         # shellcheck disable=SC2086  # intentional word-splitting of the rule body
         if ! sudo iptables -I DOCKER-USER "$pos" -m comment --comment "$TOR_EGRESS_TAG" $rule 2>/dev/null; then
-            warn "Could not install the Tor-egress firewall (needs root + iptables). Stack runs, but clearnet egress is NOT fail-closed."
+            warn "egress-apply:iptables-insert-failed — could not install the Tor-egress firewall (needs root + iptables). Stack runs, but clearnet egress is NOT fail-closed."
             remove_tor_egress_firewall
             return 0
         fi
         pos=$((pos + 1))
     done < <(tor_egress_rules "$subnet" "$tor_ip")
-    log "Tor-only egress enforced: clearnet dials from $subnet dropped except via Tor ($tor_ip)."
+    tor_egress_verify_or_warn "Tor-only egress enforced: clearnet dials from $subnet dropped except via Tor ($tor_ip)."
 }
