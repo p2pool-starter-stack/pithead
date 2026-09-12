@@ -72,8 +72,14 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
 
     # Retry rather than single-shot: the leg that runs before this one recreates the dashboard
     # container, so one curl the instant it returns is a race, not a measurement.
+    #
+    # THE BREAK TESTS THE BODY, NOT JUST THE EXIT CODE. `curl -f` returns 0 with a ZERO-LENGTH body
+    # on a 200 — measured, not assumed — so breaking on rc alone would leave the loop after ONE try
+    # against a dashboard answering empty while it starts, which is the exact condition the retry
+    # exists for. The guard below still catches it, so this was never a false pass; it was a retry
+    # that did not retry.
     for tries in 1 2 3 4 5 6; do
-        live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) && break
+        live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) && [ -n "$live" ] && break
         sleep 5
     done
     if [ -z "${live:-}" ]; then
