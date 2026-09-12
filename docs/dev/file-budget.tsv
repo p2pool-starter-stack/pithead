@@ -76,7 +76,7 @@ tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
-tests/stack/test-config.sh	753
+tests/stack/test-config.sh	705
 tests/stack/test-confirm-approval.sh	413
 tests/stack/test-monero-tari.sh	582
 tests/stack/test-rig-worker.sh	616
