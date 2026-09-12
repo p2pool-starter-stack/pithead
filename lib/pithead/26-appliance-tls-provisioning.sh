@@ -146,6 +146,17 @@ cert_san_string() { # <cert-file>
         tr -d '[:space:]' | sed -e 's/^X509v3SubjectAlternativeName://' -e 's/IPAddress:/IP:/g' || true
 }
 
+# The appliance's writable /etc: a /run-backed overlay over the read-only root's, mounted by
+# whoever needs it first — pithead-machine-id mounts this same one earlier in boot, and an overlay
+# already there is the whole job. Everything written through it is DERIVED (#790): rebuilt every
+# boot, persisted nowhere, gone the moment the machine powers off.
+ensure_etc_overlay() {
+    ! findmnt -no FSTYPE /etc 2>/dev/null | grep -q overlay || return 0
+    sudo mkdir -p /run/pithead-etc/upper /run/pithead-etc/work
+    sudo mount -t overlay overlay \
+        -o lowerdir=/etc,upperdir=/run/pithead-etc/upper,workdir=/run/pithead-etc/work /etc
+}
+
 # The console login mirrors the dashboard login (operator decision 2026-07-31): one secret per
 # machine. Anyone at the physical console with the dashboard password may log in as root —
 # consistent with the LAN/physical trust model (the console already shows the setup token, and
@@ -158,15 +169,10 @@ provision_console_login() {
     # /etc — DERIVED (#790) in the strictest sense: rewritten from config.json on every boot,
     # persisted nowhere, gone the moment the machine powers off. (A bind-mounted shadow FILE
     # does not survive chpasswd, which replaces the file by rename.)
-    if ! findmnt -no FSTYPE /etc 2>/dev/null | grep -q overlay; then
-        sudo mkdir -p /run/pithead-etc/upper /run/pithead-etc/work
-        sudo mount -t overlay overlay \
-            -o lowerdir=/etc,upperdir=/run/pithead-etc/upper,workdir=/run/pithead-etc/work /etc ||
-            {
-                warn "Could not prepare the console login (no /etc overlay)."
-                return 0
-            }
-    fi
+    ensure_etc_overlay || {
+        warn "Could not prepare the console login (no /etc overlay)."
+        return 0
+    }
     local pass
     pass=$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE" 2>/dev/null)
     if [ -z "$pass" ]; then
