@@ -83,11 +83,11 @@ exec "$@"
 EOF
 cat >"$DRBIN/iptables" <<'EOF'
 #!/usr/bin/env bash
-if [ "${IPT_TAGGED:-0}" = "1" ]; then
-    echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
-else
-    echo '-P DOCKER-USER ACCEPT'
-fi
+# `-S FORWARD` answers the jump Docker adds with its first network. This stub ignored its arguments,
+# so once the check asserted REACHABILITY (#2091) it read a healthy host as an orphaned chain.
+[ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
+[ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
+echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
 EOF
 cat >"$DRBIN/ss" <<'EOF'
 #!/usr/bin/env bash

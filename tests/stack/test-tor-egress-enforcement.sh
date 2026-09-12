@@ -117,3 +117,58 @@ assert_not_contains "no nft on PATH -> apply never claims enforcement" "$notool_
 notool_out="$(PITHEAD_ENGINE=podman RUNNING_CONTAINERS="tor" PATH="$EGV/bin-nonft:$(path_without_sbin)" run_sourced "$EGV" check_egress_firewall_installed 2>&1)"
 assert_contains "doctor (podman): no nft binary -> FAIL, not a skip" "$notool_out" "CANNOT be enforced"
 assert_not_contains "doctor (podman): a missing tool is not reported as a sudo problem" "$notool_out" "passwordless sudo"
+
+echo "== the iptables backend proves REACHABILITY, not just presence (#855 inside the verifier) =="
+# An adversarial review of #2091 caught this: asserting the tagged rules are IN DOCKER-USER proves
+# only that WE wrote them there — apply_tor_egress_iptables pre-creates the chain itself. #855's
+# actual failure is a DROP in a chain nothing traverses, which a presence-only check cannot see. The
+# nft branch proves reachability via the forward hook; the iptables equivalent is the FORWARD jump.
+#
+# Absence of the jump means OPPOSITE things at the two call sites, so it has its own rc: at APPLY
+# time the rules deliberately go in before compose (Docker adds the jump with its first network), so
+# alarming would cry wolf on every fresh install; at DOCTOR time the stack is up and a missing jump
+# is a live fail-open.
+IPJ="$EGV/ipj"
+mkdir -p "$IPJ"
+cp "$EGV/bin/sudo" "$EGV/bin/docker" "$IPJ/"
+# iptables: DOCKER-USER always carries our tagged rules; the FORWARD jump exists only when JUMP=1.
+cat >"$IPJ/iptables" <<'IPT'
+#!/usr/bin/env bash
+case "$*" in
+"-S DOCKER-USER")
+    echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
+    exit 0
+    ;;
+"-S FORWARD")
+    [ "${JUMP:-0}" = 1 ] && echo '-A FORWARD -j DOCKER-USER'
+    exit 0
+    ;;
+"-S")
+    echo '-P FORWARD ACCEPT'
+    exit 0
+    ;;
+esac
+exit 0
+IPT
+chmod +x "$IPJ/iptables"
+ipj_enforced() { # <JUMP> -> rc of tor_egress_enforced on the Docker branch
+    PITHEAD_ENGINE=docker JUMP="$1" PATH="$IPJ:$PATH" run_sourced "$EGV" tor_egress_enforced >/dev/null 2>&1
+    echo $?
+}
+assert_eq "tagged rules + a live FORWARD jump -> ENFORCED" "$(ipj_enforced 1)" "0"
+assert_eq "tagged rules in an ORPHANED chain -> NOT enforced (its own verdict, not 0)" "$(ipj_enforced 0)" "4"
+# doctor sees a live stack, so a missing jump there is a fail-open and must FAIL — never dr_ok.
+ipj_out="$(PITHEAD_ENGINE=docker JUMP=0 RUNNING_CONTAINERS="tor" PATH="$IPJ:$PATH" run_sourced "$EGV" check_egress_firewall_installed 2>&1)"
+assert_contains "doctor: orphaned DOCKER-USER -> FAIL naming the unconnected chain" "$ipj_out" "NOTHING JUMPS TO IT"
+assert_not_contains "doctor: orphaned DOCKER-USER never reports fail-closed" "$ipj_out" "are fail-closed"
+# ...and with the jump present it is the ordinary OK, so the row above is not just "doctor always fails".
+assert_contains "doctor: tagged rules + jump -> OK" \
+    "$(PITHEAD_ENGINE=docker JUMP=1 RUNNING_CONTAINERS="tor" PATH="$IPJ:$PATH" run_sourced "$EGV" check_egress_firewall_installed 2>&1)" "fail-closed"
+# apply must NOT cry wolf before compose has created the network — the jump is legitimately absent
+# there, and apply_tor_egress_iptables' own comment says Docker adds it afterwards.
+ipj_out="$(PITHEAD_ENGINE=docker JUMP=0 PATH="$IPJ:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
+assert_not_contains "apply: a not-yet-jumped chain is not claimed as enforced" "$ipj_out" "SHOULD-NOT-CLAIM"
+assert_not_contains "apply: ...and is not alarmed about either, on a first-ever up" "$ipj_out" "egress-apply:"
+assert_contains "apply: it says what is actually true — staged, not yet traversed" "$ipj_out" "staged in DOCKER-USER"
+unset IPJ ipj_out
+unset -f ipj_enforced

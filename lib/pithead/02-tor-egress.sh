@@ -106,8 +106,10 @@ mining_net_ipv6_bridge() {
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
-# an honest "I cannot tell". Callers act on all four differently; collapsing 2 into 3 is how a
-# fail-open box passed the A/B commit gate.
+# an honest "I cannot tell". 4 = the rules are installed but NOTHING TRAVERSES THEM — see the
+# iptables branch. Callers act on all five differently; collapsing 2 into 3 is how a fail-open box
+# passed the A/B commit gate, and collapsing 4 into 0 would hide #855's own failure mode inside the
+# verifier written to close it.
 tor_egress_enforced() {
     local out
     if [ "$(container_engine)" = "podman" ]; then
@@ -129,6 +131,17 @@ tor_egress_enforced() {
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
     printf '%s\n' "$out" | grep -qF -- "$TOR_EGRESS_TAG" || return 1
+    # REACHABILITY, not just presence. #855 was a DROP sitting in a chain no packet traverses, and
+    # asserting the tagged rules exist cannot see that — `apply_tor_egress_iptables` pre-creates
+    # DOCKER-USER itself, so a populated chain proves only that WE wrote to it. The nft branch above
+    # proves reachability by asserting the base chain's forward hook; the iptables equivalent is the
+    # FORWARD -> DOCKER-USER jump, which Docker adds when it creates a network.
+    #
+    # Its own rc because absence means OPPOSITE things at the two call sites. `stack_up` installs the
+    # firewall BEFORE compose, so on a first-ever `up` the jump legitimately does not exist yet (see
+    # apply_tor_egress_iptables' own note) — alarming there would cry wolf on every fresh install.
+    # doctor only runs this with the stack already up, where a missing jump IS the orphaned chain.
+    sudo -n iptables -S FORWARD 2>/dev/null | grep -qF -- '-j DOCKER-USER' || return 4
     return 0
 }
 
@@ -143,6 +156,10 @@ tor_egress_verify_or_warn() { # <success message>
     0) log "$1" ;;
     1) warn "egress-apply:verify-absent — the Tor-egress rules installed without error but are NOT in the live ruleset. Clearnet egress is NOT fail-closed." ;;
     2) warn "egress-apply:verify-no-tool — the Tor-egress rules cannot be read back because the backend's tool is not on PATH. Clearnet egress is NOT fail-closed." ;;
+    # Expected on a first-ever `up`: the rules go in before compose, and Docker adds the
+    # FORWARD -> DOCKER-USER jump when it creates the network. Stated rather than claimed as
+    # enforced — and doctor, which runs against a live stack, FAILs if the jump never appears.
+    4) log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack." ;;
     *) warn "egress-apply:verify-unreadable — the Tor-egress rules installed, but reading them back needs passwordless sudo, so enforcement is UNPROVEN." ;;
     esac
 }
