@@ -171,6 +171,40 @@ migrate_legacy_workers() {
     fi
 }
 
+# telegram.control (#338) was removed in #2076: the bot is read-only, so /restart and /apply are
+# gone and a config commit no longer asks for a Telegram approval. The key renders no env var, and
+# the control gate's closed-schema guard refuses any STAGED config carrying a path that is not in
+# config.reference.json — so a leftover block would strand the dashboard config editor on every
+# commit. Drop it here, on the apply an upgrade already runs, before the dashboard serves the
+# config back to the browser. Nothing is lost: the block held only a toggle, an allow-list and a
+# timeout for a feature that no longer exists, so unlike migrate_legacy_workers this needs no
+# backup and never fails the apply.
+# The `if … type == "object"` wrapper below looks redundant against the `has("control")`
+# guard, and is not: #561's config-read extractor is fixed-shape and FAILS LOUD on a shape it
+# does not recognise, so the bare `.telegram |= del(.control)` form reds that gate.
+migrate_removed_telegram_control() {
+    local owner tmp="${CONFIG_FILE}.tmp"
+    [ -f "$CONFIG_FILE" ] || return 0
+    jq -e '(.telegram // {}) | has("control")' "$CONFIG_FILE" >/dev/null 2>&1 || return 0
+    [ "$PITHEAD_DRY_RUN" -eq 1 ] && return 0
+    if [ "$(jq -r '(.telegram.control.enabled // false) | tostring' "$CONFIG_FILE" 2>/dev/null)" == "true" ]; then
+        warn "telegram.control was removed: the Telegram bot is read-only now. /restart and /apply are gone, and configuration changes no longer ask for an approval in Telegram — confirm them in the dashboard instead. Dropping the key from $CONFIG_FILE."
+    fi
+    owner=$(stat -c '%u:%g' "$CONFIG_FILE" 2>/dev/null || stat -f '%u:%g' "$CONFIG_FILE" 2>/dev/null) || owner=""
+    if (
+        umask 077
+        jq 'if (.telegram | type) == "object" then .telegram |= del(.control) else . end' \
+            "$CONFIG_FILE" >"$tmp" 2>/dev/null
+    ); then
+        mv "$tmp" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        if [ -n "$owner" ]; then chown "$owner" "$CONFIG_FILE" 2>/dev/null || true; fi
+    else
+        rm -f "$tmp"
+        warn "Could not drop the removed telegram.control key from $CONFIG_FILE — it is no longer read, but the dashboard config editor will refuse commits until it is deleted by hand."
+    fi
+}
+
 # Validate the dashboard.energy block for the energy/profit calculator (#260). Like the worker
 # descriptors, this renders nothing to .env — the dashboard reads it off the read-only config.json
 # bind mount — so validation exists only to fail an apply loudly on a typo. Prices are operator-set

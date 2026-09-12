@@ -297,16 +297,6 @@ describe_change() {
     TELEGRAM_COMMANDS_ENABLED)
         msg="Telegram command interface → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now answers" || echo "no longer answers") /status, /hashrate, /workers, /sync from the configured chat; the dashboard container is recreated."
         ;;
-    TELEGRAM_CONTROL_ENABLED)
-        msg="Telegram control commands → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now accepts" || echo "no longer accepts") /restart and /apply from allow-listed operator ids, each with an in-chat confirmation; the dashboard container is recreated."
-        ;;
-    TELEGRAM_CONTROL_ALLOWED_IDS)
-        # Telegram user ids are not secret, but they are the control-command allow-list — report the change.
-        msg="Telegram control allow-list: [$old] → [$new] — only these operator user ids may run /restart or /apply."
-        ;;
-    TELEGRAM_CONTROL_CONFIRM_S)
-        msg="Telegram control confirmation timeout: ${old}s → ${new}s — an unconfirmed control command is denied after this."
-        ;;
     TELEGRAM_EVENT_*)
         msg="Telegram alert toggle ($key): $old → $new."
         ;;

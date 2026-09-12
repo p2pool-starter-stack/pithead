@@ -167,9 +167,9 @@ ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.t
 #   xvb.url                    a public service endpoint
 #   workers.api_auth           an auth MODE string ("token"/"none"), not a credential
 #   telegram.chat_id           a routing id, not a secret
-#   telegram.control.allowed_ids[]  routing ids, the same class as telegram.chat_id
-MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id
-telegram.control.allowed_ids[]"
+# (telegram.control.allowed_ids[] was a survivor here until #2076 removed the whole telegram.control
+# block from the schema — a path that no longer exists cannot be asserted either way.)
+MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id"
 # ⛔ NOT a survivor on merit. `notifications.ntfy.url` IS a capability URL and ought to be
 # redacted; a line-wise filter cannot reach it, because the key is the bare word "url" and only
 # its NESTING distinguishes it from xvb.url. Asserted at its CURRENT behaviour so the gap is

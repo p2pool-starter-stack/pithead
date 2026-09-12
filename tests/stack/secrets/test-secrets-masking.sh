@@ -1,10 +1,11 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel secrets-masking domain (#1105 Phase 1, appliance lane): the four sections that
+# Control-channel secrets-masking domain (#1105 Phase 1, appliance lane): the three sections that
 # prove a secret never leaves the host in the clear. The pre-masked prefill copy and the host-side
 # secret merge the dashboard container reads instead of the raw config.json (#440), the per-field
-# .env line-injection guard (#33 hardening), the client-auth requirement on a published onion
-# (#33 hardening), and telegram.control failing closed on each of its legs (#521).
+# .env line-injection guard (#33 hardening), and the client-auth requirement on a published onion
+# (#33 hardening). A fourth section covered telegram.control failing closed on each of its legs
+# (#521) until #2076 removed that feature.
 # Sourced by tests/stack/run.sh.
 #
 # THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
@@ -48,10 +49,10 @@
 # - Provider functions this domain calls, from lib.sh: assert_eq, assert_contains,
 #   assert_not_contains, assert_rc, file_mode, control_config, run_pending, and ok/bad beneath the
 #   assertions. It does NOT call seed_control_env.
-# - inject_reject(), onion_control_config() and tg_control_config() are defined in the moved text
-#   and are not unset at its end, so they outlive the source exactly as they outlived their old
-#   position in run.sh. No other file under tests/stack/ uses those names, so nothing downstream
-#   can see a definition it did not see before.
+# - inject_reject() and onion_control_config() are defined in the moved text and are not unset at
+#   its end, so they outlive the source exactly as they outlived their old position in run.sh. No
+#   other file under tests/stack/ uses those names, so nothing downstream can see a definition it
+#   did not see before. (tg_control_config() was a third such name until #2076 removed it.)
 #
 # The block's own tail is load-bearing for what follows it: its last lines restore the section
 # baseline — control on, no telegram — and re-apply, and the in-code comment there says so. The
@@ -186,40 +187,10 @@ control_config main
 out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
 assert_rc "control without an onion is allowed" "$?" "0"
 
-echo "== black-box: telegram.control fails closed on each leg (#521) =="
-# telegram.control (the #338 remote /restart /apply surface) is a remotely-reachable host-control
-# channel, so it refuses to enable unless the whole chain is present: dashboard.control on (the #33
-# spool it rides), telegram.commands on (the bot that answers it), and at least one allow-listed
-# operator id (or every command is refused and the feature is inert). Each leg must fail closed.
-tg_control_config() { # <dashboard.control.enabled> <telegram.commands.enabled> <allowed_ids-json>
-    jq -n --arg w "$WALLET" --argjson ctl "$1" --argjson cmds "$2" --argjson ids "$3" \
-        '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
-          tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
-          telegram:{enabled:true,bot_token:"123456:legit-ABC_def",chat_id:"1111",
-                    commands:{enabled:$cmds}, control:{enabled:true,allowed_ids:$ids}},
-          dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
-                     control:{enabled:$ctl}}}' >"$C/config.json"
-}
-# Leg 1: dashboard.control off — the spool the commands ride does not exist.
-tg_control_config false true '[123456]'
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
-assert_rc "telegram.control without dashboard.control is refused" "$?" "1"
-assert_contains "refusal names dashboard.control.enabled" "$out" "dashboard.control.enabled is false"
-# Leg 2: telegram.commands off — no bot is polling for the commands.
-tg_control_config true false '[123456]'
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
-assert_rc "telegram.control without telegram.commands is refused" "$?" "1"
-assert_contains "refusal names telegram.commands.enabled" "$out" "telegram.commands.enabled is false"
-# Leg 3: allowed_ids empty — no operator could ever confirm, the feature is inert.
-tg_control_config true true '[]'
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
-assert_rc "telegram.control with an empty allowed_ids is refused" "$?" "1"
-assert_contains "refusal names allowed_ids" "$out" "telegram.control.allowed_ids is empty"
-# All three legs present — validates.
-tg_control_config true true '[123456]'
-out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
-assert_rc "fully-configured telegram.control validates" "$?" "0"
-assert_not_contains "fully-configured control raises no telegram.control error" "$out" "telegram.control.enabled is true but"
+# telegram.control's fail-closed legs (#521) were removed with the feature itself (#2076): the bot
+# has no write surface, so there is no remotely-reachable host-control channel left to gate. A
+# config.json still carrying the block is now ACCEPTED and migrated away rather than refused — that
+# behaviour is covered in tests/stack/test-config.sh, beside the other config migrations.
 # Restore the section baseline (control on, no telegram) for the tests that follow.
 control_config main
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)

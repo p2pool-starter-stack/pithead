@@ -59,18 +59,7 @@ HELP_TEXT = (
     "/help — this message"
 )
 
-# The write commands, each mapping 1:1 to a bounded host action the #33 runner knows (see pithead
-# control_lifecycle). The Telegram input only ever SELECTS one of these — it never becomes a host
-# command — so the action set is fixed and there is no arbitrary execution.
-CONTROL_COMMANDS = ("restart", "apply")
-
-CONTROL_HELP_TEXT = (
-    "\n\nControl commands (allow-listed operators only, each needs confirmation):\n"
-    "/restart — recreate the running stack\n"
-    "/apply — re-apply the current config on the host"
-)
-
-_ALL_COMMANDS = frozenset(COMMANDS) | frozenset(CONTROL_COMMANDS)
+_ALL_COMMANDS = frozenset(COMMANDS)
 
 
 def _prefix(host_label):

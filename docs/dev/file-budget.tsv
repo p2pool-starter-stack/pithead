@@ -10,7 +10,6 @@ dashboard/mining_dashboard/service/data_service.py	653
 dashboard/mining_dashboard/service/network/egress.py	424
 dashboard/mining_dashboard/service/notify/alert_edges.py	453
 dashboard/mining_dashboard/service/notify/alert_service.py	518
-dashboard/mining_dashboard/service/notify/telegram_commands.py	575
 dashboard/mining_dashboard/service/notify/telegram_formatters.py	512
 dashboard/mining_dashboard/service/storage_service.py	785
 dashboard/mining_dashboard/service/workers/worker_config_store.py	448
@@ -44,7 +43,6 @@ lib/pithead/28-parse-and-validate-config.sh	485
 lib/pithead/33-render-env.sh	494
 lib/pithead/36-quadlet-units.sh	407
 lib/pithead/39-describe-change.sh	428
-lib/pithead/43-control-approval-and-preview.sh	401
 os/overlay/pithead-boot	420
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
@@ -57,7 +55,6 @@ tests/integration/lib/run-state.sh	403
 tests/integration/selftest/selftest-e2e-phases.sh	507
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest.sh	686
-tests/os/appliance-config-approval-leg.sh	414
 tests/os/failure-evidence.sh	567
 tests/stack/appliance/test-appliance-boot.sh	641
 tests/stack/appliance/test-appliance-identity-boot.sh	465
@@ -77,7 +74,6 @@ tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
-tests/stack/test-confirm-approval.sh	413
 tests/stack/test-monero-tari.sh	582
 tests/stack/test-rig-worker.sh	616
 tests/stack/test-tor-network.sh	780

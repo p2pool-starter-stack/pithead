@@ -52,8 +52,9 @@
 # Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
 # (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
 # CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
-# the Telegram channel (the future #338 approval channel), so the dashboard must not silence
-# them. Space-separated exact env-key names.
+# the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
+# lost its write surface, not its job of telling the operator their payout wallet just changed.
+# Space-separated exact env-key names.
 #
 # NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
 # event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
@@ -148,9 +149,9 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
-# SSH, the approval channel's own identity, dashboard password, and the two tamper alarms. Exact
-# dotted paths/prefixes, space separated. This is checked against config paths before any approval.
-CONTROL_DASHBOARD_NEVER_PATHS='ssh dashboard.auth.password telegram.control.allowed_ids
+# SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space
+# separated. This is checked against config paths before anything else in the commit gate.
+CONTROL_DASHBOARD_NEVER_PATHS='ssh dashboard.auth.password
     telegram.events.wallet_changed telegram.events.clearnet_exposed'
 
 # True if $1 is EXACTLY a canonical dotted-decimal IPv4 literal — four decimal octets 0-255, none

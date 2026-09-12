@@ -238,6 +238,7 @@ parse_and_validate_config() {
     fi
 
     migrate_legacy_workers
+    migrate_removed_telegram_control
     validate_worker_endpoints
     validate_energy_config
 
@@ -462,24 +463,5 @@ parse_and_validate_config() {
     # exposing config editing to the internet.
     if [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_ENABLED" == "true" ] && [ "$DASHBOARD_ONION_CLIENT_AUTH" != "true" ]; then
         error "dashboard.control.enabled is true on a published onion (dashboard.onion.enabled) but dashboard.onion.client_auth is false. A root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable .onion. Set dashboard.onion.client_auth: true (the default) and re-run."
-    fi
-
-    # Telegram two-way control commands (#338). Opt-in, default off. This is a REMOTELY-REACHABLE
-    # host-control surface, so it fails closed on every leg — refuse to enable it unless the whole
-    # chain is present:
-    #   - It rides the #33 spool + root runner, so dashboard.control.enabled must be on (the spool and
-    #     the systemd path unit that drains it only exist then); otherwise a /restart intent would
-    #     pile up unprocessed.
-    #   - The bot must actually be polling for commands (telegram.commands.enabled), which itself
-    #     needs telegram.enabled plus a bot_token and chat_id (guarded by the dashboard too).
-    #   - At least one allow-listed Telegram user id, or nobody could ever confirm an action and the
-    #     feature would be inert — better to say so at apply time than to fail silently at runtime.
-    if [ "$(normalize_bool "$(config_bool '.telegram.control.enabled' false)")" == "true" ]; then
-        [ "$DASHBOARD_CONTROL_ENABLED" == "true" ] ||
-            error "telegram.control.enabled is true but dashboard.control.enabled is false. The Telegram /restart and /apply commands ride the host-control spool, which only exists when the dashboard control channel is on. Enable dashboard.control (and its login) first, or turn telegram.control off."
-        [ "$(normalize_bool "$(config_bool '.telegram.commands.enabled' false)")" == "true" ] ||
-            error "telegram.control.enabled is true but telegram.commands.enabled is false. The control commands are handled by the same bot that answers the read-only commands — enable telegram.commands (and telegram itself) first."
-        [ "$(jq -r '(.telegram.control.allowed_ids // []) | length' "$CONFIG_FILE")" -gt 0 ] ||
-            error "telegram.control.enabled is true but telegram.control.allowed_ids is empty. A remotely-reachable host-control command must be gated to specific operator Telegram user ids — with none listed every command is refused. Add your numeric Telegram user id to telegram.control.allowed_ids."
     fi
 }

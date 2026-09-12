@@ -185,8 +185,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-sp
 # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
 
-# shellcheck source=tests/stack/control/test-control-telegram.sh disable=SC2015
-_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-telegram.sh" && domain_ran test-control-telegram.sh "$_d0" "$?" || domain_ran test-control-telegram.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"

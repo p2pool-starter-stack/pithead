@@ -108,12 +108,13 @@ would otherwise fall into an unlabeled catch-all.
 
 Ordinary settings apply after the preview. Disruptive settings also require typed `APPLY`.
 Settings that redirect traffic, funds, control, authentication, or other sensitive behavior
-require the signed-in dashboard operator plus host-verified approval from an allow-listed Telegram
-user; payout changes additionally require the final eight characters of each new address. The host
-binds the prompt to the staged digest and accepts the configured chat, exact message, and operator
-identity itself; the dashboard cannot supply the approver. The preview shows full old and new
-non-secret values, while credentials and capability URLs stay masked. Four classes remain configuration-stick
-only: `ssh.*`, `dashboard.auth.password`, `telegram.control.allowed_ids`, and the
+require the signed-in dashboard operator to confirm the change in the preview; a disruptive change
+also needs `APPLY` typed, and a payout change needs the final eight characters of each new address,
+which the host re-checks against the staged file. These are typo protection and deliberate
+friction, not a second identity — a signed-in session that can set a field can also fill the
+confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
+old and new non-secret values, while credentials and capability URLs stay masked. Three classes
+remain configuration-stick only: `ssh.*`, `dashboard.auth.password`, and the
 `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms. These are the
 same physical-presence boundary enforced by the media configuration path, not a browser exception.
 
@@ -185,9 +186,6 @@ the desired value is not presented as proof of what the still-running services u
 | `telegram.events.*` | all `true` | Per-event toggles: `stack_online`, `node_down`, `node_recovered`, `worker_offline`, `worker_recovered`, `worker_joined`, `worker_left`, `sync_finished`, `disk_space`, `db_unhealthy`, `db_reset`, `xvb_no_share`, `xvb_registration`, `clearnet_exposed`, `new_release`, `daily_summary`, `hashrate_low`, `hashrate_loss`, `hugepages`, `low_ram`, `wallet_changed`, `high_reject_rate`, `block_found`, `payout_found`, `payout_confirmed`, `container_unhealthy`, `raffle_win`. Each defaults to on once Telegram is enabled; set one `false` to silence just that alert. Full list: [Telegram Bot](telegram.md#choosing-which-alerts-you-get). |
 | `telegram.daily_summary_time` | `08:00` | Local time (24-hour `HH:MM`) to push the once-a-day status digest, when the `daily_summary` event is on. Uses the dashboard's timezone (`dashboard.timezone`). A malformed value disables the digest. |
 | `telegram.commands.enabled` | `false` | Turn on the interactive command interface — the bot answers read-only status queries (`/status`, `/hashrate`, `/workers`, `/luck`, `/earnings`, and more) from the configured `chat_id` (every other chat is ignored). Off by default; alerts work without it. Long-polls over Tor, so it needs no inbound port. Full command list: [Telegram › Commands](telegram.md#commands). |
-| `telegram.control.enabled` | `false` | Security-relevant, default off. Lets the bot **act on the host**: `/restart` and `/apply` (the current on-disk `config.json`, never a change carried in from Telegram). Requires `dashboard.control.enabled` (the commands ride the config-editor's spool channel, not a new one) and `telegram.commands.enabled` (the same bot answers both), plus at least one entry in `allowed_ids`. `apply` fails with the reason if any of the three is missing. See [Telegram › Control commands](telegram.md#control-commands). |
-| `telegram.control.allowed_ids` | `[]` | The numeric Telegram **user ids** allowed to issue control commands. Being in the configured `chat_id` is not enough; every other sender is dropped silently. Empty is fine while `telegram.control.enabled` is `false`; turn control on with this list still empty and `apply` fails, since no id could ever confirm an action. |
-| `telegram.control.confirm_timeout` | `60` | Seconds the per-action **Confirm** button stays valid. A control command does nothing until its issuer taps Confirm; past the timeout the request is denied, never queued. |
 | `notifications.webhooks` | `[]` | Generic JSON webhook alert sinks (#380): every alert the stack produces is POSTed to each listed URL as `{"event", "text", "ts"}` — for Gotify, Home Assistant, or any endpoint that accepts a POST. Empty list keeps it off. The URLs are secrets (query strings often carry tokens): owner-only `.env`, never logged or printed. Sinks carry every event; `telegram.events` gates Telegram only. See [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks). |
 | `notifications.ntfy.url` | `""` | An [ntfy](https://ntfy.sh) topic URL (`https://server/topic`, self-hosted servers included); each alert's text is POSTed as the message body. Blank keeps it off. Treated as a secret like the webhook URLs. Step-by-step setup: [Telegram › Setting up ntfy](telegram.md#setting-up-ntfy-step-by-step). |
 | `notifications.ntfy.token` | `""` | Optional ntfy access token for a protected topic, sent as an `Authorization: Bearer` header. A secret — owner-only `.env`, never logged. |

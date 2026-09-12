@@ -975,7 +975,7 @@ the config tab now behave identically.) The pieces:
   endpoints — render **editable but confirm-gated**
   ([#719](https://github.com/p2pool-starter-stack/pithead/issues/719)): editable, tooltipped
   "you'll type `APPLY` to confirm at Save". Sensitive fields require the signed-in dashboard user
-  plus approval by an allow-listed Telegram user. All three sets come from the host policy and are surfaced on `GET /api/config`
+  and the confirmation envelope described below. All three sets come from the host policy and are surfaced on `GET /api/config`
   as `_editable_keys`, `_confirm_keys`, and `_approval_keys`, so the form cannot silently choose a
   weaker policy than the commit path.
 - **The Advanced pane** is the whole editable candidate as one text block, for operators who'd rather
@@ -1016,12 +1016,14 @@ The flow mirrors the CLI's `apply`:
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
    changed. Your typed confirmation rides to the host gate, which requires it before a
    confirm-gated change proceeds — a change confirmed this way is recorded in the audit log as a
-   `commit-confirmed` action, distinct from an ordinary commit. For an approval-required commit,
-   the host pauses the dashboard poller, creates a one-time token bound to the preview id, staged
-   config digest, dashboard user, payout suffixes, and expiry, then sends and polls the complete
-   non-secret preview itself. It accepts only the configured chat, exact prompt, and an allow-listed
-   Telegram user. The dashboard cannot assert the approver. The result is recorded as
-   `commit-approved` with both the dashboard actor and Telegram approver.
+   `commit-confirmed` action, distinct from an ordinary commit. A sensitive commit additionally
+   carries a confirmation envelope, which the host validates: it may contain payout suffixes and
+   **nothing else**, so the dashboard cannot smuggle in an actor, a preview id or a self-asserted
+   approver, and the host re-checks each suffix against the staged config rather than the browser's
+   labels. The commit is recorded against the signed-in dashboard user. Until
+   [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
+   tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
+   now, that leg is gone, and nothing writes an approver.
 
 Every reference setting belongs to an explicit policy class. The ordinary allowlist covers routine
 operations. A second, confirm-gated allowlist
@@ -1036,26 +1038,26 @@ endpoints** ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888
 only behind typed `APPLY`. Turning Tari off stops the node and the merge-mining and removes the
 container, but leaves the chain on disk, so turning it back on resumes rather than re-syncing.
 Turning it on for a machine that has no `tari.wallet_address` also changes a payout destination,
-which is an approval-class change; a machine set up with Tari on can switch freely.
+which is a sensitive change; a machine set up with Tari on can switch freely.
 `monero.mode` is deliberately not in this class: stopping the chain this stack exists to mine is
-not a recoverable operational tweak. Type-to-confirm is intent friction, not authentication. The approval
-class covers funds, traffic, control, authentication, and sensitive behavior; its host-owned record
-is bound to the preview id, staged digest, and signed-in dashboard actor, requires the existing
-Telegram operator identity, and adds the typed suffix check for payout destinations.
-The machine re-derives the changed paths and expected suffixes rather than trusting browser labels.
+not a recoverable operational tweak. Type-to-confirm is intent friction, not authentication. The
+sensitive class covers funds, traffic, control, authentication, and sensitive behavior; it is
+recorded host-side against the preview id, staged digest, and signed-in dashboard actor, and adds
+the typed suffix check for payout destinations. The machine re-derives the changed paths and
+expected suffixes rather than trusting browser labels.
 Both edit modes use the same policy. Secrets are never included in preview or audit values.
 
-The existing physical-presence boundary is unchanged: `ssh.*`, the dashboard password, the approval
-identity (`telegram.control.allowed_ids`), and the two tamper alarms cannot be approved remotely.
-The machine refuses them even if a request forges an approval envelope and directs the operator to
-use a configuration stick. This prevents the configuration page from weakening the identity or
-evidence needed to approve its own later changes.
+The Telegram approval that once sat on this class was removed in
+[#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076): the bot is read-only, and no
+configuration change asks for anything in Telegram. What remains on a sensitive commit is the
+signed-in operator, the typed `APPLY` for a disruptive change, and the payout suffix check — intent
+friction and typo protection, not a second identity. A sensitive commit no longer depends on
+Telegram being configured, so it works the same on a stack that never set the bot up.
 
-Approval is available when the Telegram bot token, chat, and `allowed_ids` already name an operator.
-The command interface and `telegram.control.enabled` may stay off; configuration approval reuses
-the identity data without enabling status commands, `/restart`, or `/apply`. If no approval identity
-is configured, the page refuses a sensitive commit instead of treating the dashboard login as its
-own approval.
+The existing physical-presence boundary is unchanged: `ssh.*`, the dashboard password, and the two
+tamper alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every
+other check and directs the operator to use a configuration stick. This prevents the configuration
+page from weakening the evidence its own later changes would be judged by.
 
 A node-endpoint change is the one confirm-gated setting with a second gate behind the typed
 `APPLY`: before the commit is accepted, the host dials the endpoint you staged and refuses one it

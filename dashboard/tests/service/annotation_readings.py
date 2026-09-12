@@ -160,17 +160,16 @@ a plain module rather than a helper inside the test file.
 # holding 2 residue sites in 1 function — not the zero slices 9 and 10 reached. Measured at this
 # head, and printed by `TestTheResidueThePinCannotRuleOn` whether anyone writes it here or not.
 #
-# `service/notify/telegram_commands.py:pause_for_host_approval` returns True only after the poller has
-# yielded, and False when approval is unavailable or the poller did not yield before the deadline.
-# Its sole production caller treats both False paths identically: it refuses the configuration
-# commit. A third result would add no caller-visible state, and `-> bool | None` would invent one.
+# `telegram_commands.py:pause_for_host_approval` left this set in #2076, and its floor in
+# test_annotation_coverage went 13 -> 12 in the same diff. It was not re-judged: the Telegram
+# config-approval round-trip was DELETED, so the reading has no subject. No surviving entry was
+# narrowed, and no unannotated function was admitted in its place.
 _UNJUDGED_AND_READ = frozenset(
     {
         "client/docker/docker_control.py:_post",
         "config/config.py:local_miner_enabled",
         "service/notify/healthchecks.py:ping",
         "service/notify/notify_sinks.py:_post",
-        "service/notify/telegram_commands.py:pause_for_host_approval",
         "service/notify/telegram_notifier.py:send",
         "helper/utils.py:is_ip_address",
         "service/network/egress.py:_sinks_all_private",
