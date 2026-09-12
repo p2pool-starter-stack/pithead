@@ -594,91 +594,8 @@ echo "== unit: config.reference.json stays a complete superset of every path pit
 # needs a why-comment.
 # macOS ships bash 3.2 (no associative arrays / mapfile — matches the rest of this file), so
 # extracted paths accumulate as a newline-separated string, deduped with `sort -u` at the end.
-declare -a DRIFT_EXCEPTIONS=()
-
-DRIFT_FOUND="" # newline-separated normalized dotted paths (no leading dot), deduped at the end
-DRIFT_BAD=0
-
-drift_add_path() { # <.dotted.path> (leading dot optional)
-    local p="${1#.}"
-    [ -n "$p" ] && DRIFT_FOUND="$DRIFT_FOUND
-$p"
-}
-
-# Split a jq `//`-alternative chain into its parts and record each leading-dot part as a read
-# path. A part that isn't a path must be one of the literal default shapes this codebase uses
-# (empty/true/false/[]/{}, a quoted string, or a number) — anything else fails the whole test
-# loudly, naming the culprit, so a new default shape gets a deliberate look instead of a silent
-# pass-through.
-drift_classify_chain() { # <chain> <line-label>
-    local chain="$1" line="$2" part
-    while [ -n "$chain" ]; do
-        if [[ "$chain" == *" // "* ]]; then
-            part="${chain%% // *}"
-            chain="${chain#* // }"
-        else
-            part="$chain"
-            chain=""
-        fi
-        if [[ "$part" == .* ]]; then
-            if [[ "$part" =~ ^\.[A-Za-z_][A-Za-z0-9_.]*$ ]]; then
-                drift_add_path "$part"
-            else
-                bad "config-read extractor (#561)" "unrecognized path shape '$part' in $line — extend the extractor"
-                DRIFT_BAD=1
-            fi
-        elif [ "$part" = "empty" ] || [ "$part" = "true" ] || [ "$part" = "false" ] || [ "$part" = "[]" ] || [ "$part" = "{}" ]; then
-            : # known default literal, not a path
-        elif [[ "$part" =~ ^\"[^\"]*\"$ ]] || [[ "$part" =~ ^-?[0-9]+$ ]]; then
-            : # quoted-string or numeric default
-        else
-            bad "config-read extractor (#561)" "unrecognized default shape '$part' in $line — extend the extractor"
-            DRIFT_BAD=1
-        fi
-    done
-}
-
-# config_bool '<path>' <default> call sites (pithead's null-aware boolean reader) — the path arg
-# is always a plain single-quoted leading-dot literal.
-while IFS= read -r p; do
-    drift_add_path "$p"
-done < <(grep -a -oE "config_bool '\.[A-Za-z0-9_.]+'" "$STACK" | sed -E "s/^config_bool '(.*)'\$/\1/")
-
-# Single-line jq reads against $CONFIG_FILE. Filtered down to genuine simple `config_get`-style
-# reads: this excludes multi-line validator blocks (an unterminated quote leaves an odd '-count on
-# its opening/closing line), writes (`= $var`), and the closed-schema gate's own whole-block
-# --slurpfile comparisons (those compare already-covered blocks wholesale, not a new leaf path).
-while IFS=: read -r lineno text; do
-    [[ "$text" == *'--slurpfile'* ]] && continue
-    [[ "$text" == *' = $'* ]] && continue
-    [[ "$text" == *'jq'* ]] || continue
-    qcount=$(grep -o "'" <<<"$text" | wc -l)
-    [ "$qcount" -eq 2 ] || continue
-    filter="${text#*\'}"
-    filter="${filter%\'*}"
-    # In scope only if the filter is itself a path read: a bare path, a parenthesized
-    # `(path // default)` prefix, or an `if path <op> ...` boolean read. Anything else (`.`,
-    # `any(..|strings;...)`, an array-literal walk like `[(.path // [])[] | .name] | group_by(.)`)
-    # is a structural check or a nested-element walk, not a new top-level path — out of scope.
-    if [[ "$filter" == .* ]]; then
-        drift_classify_chain "$filter" "pithead:$lineno"
-    elif [[ "$filter" == \(* ]]; then
-        # Only the parenthesized `(path // default)` prefix is attributed; whatever follows the
-        # closing paren (e.g. `[] | select(.name == $n) | .host // ""`) is relative to an
-        # iterated element, not a new root path — deliberately not walked further.
-        inner="${filter#\(}"
-        inner="${inner%%\)*}"
-        drift_classify_chain "$inner" "pithead:$lineno"
-    elif [[ "$filter" == "if "* ]]; then
-        while IFS= read -r tok; do
-            [ -n "$tok" ] && drift_add_path "$tok"
-        done < <(grep -oE '\.[A-Za-z_][A-Za-z0-9_.]*(\[[^]]*\])?[[:space:]]+(!=|==)' <<<"$filter" |
-            sed -E 's/(\[[^]]*\])?[[:space:]]+(!=|==)$//')
-    fi
-done < <(grep -a -n '"\$CONFIG_FILE"' "$STACK")
-
+config_read_sites # tests/stack/lib/config-read-sites.sh — shared with the inverse row below
 REF_PATHS="$(jq -r '[paths | map(select(type=="string")) | join(".")] | unique[]' "$ROOT/config.reference.json")"
-DRIFT_FOUND="$(sort -u <<<"$DRIFT_FOUND")"
 
 checked=0
 missing=0
@@ -698,7 +615,42 @@ if [ "$checked" -eq 0 ]; then
 elif [ "$missing" -eq 0 ] && [ "$DRIFT_BAD" -eq 0 ]; then
     ok "every extracted config-read path ($checked total) exists in config.reference.json"
 fi
-unset DRIFT_FOUND REF_PATHS DRIFT_BAD
+# THE INVERSE ROW (#1929 follow-up), and the one that closes a standing gap rather than a defect.
+# control_approval_gate's default-deny works on RENDERED ENV KEYS, so a config path that renders
+# NONE emits no porcelain row and that pass cannot see it at all. Two blocks are legitimately in
+# that class and the gate handles each BY NAME (workers.list, dashboard.energy); its own comment
+# says a THIRD added later "MUST add its own line", which is a rule no instrument enforced. This
+# does: a reference path no read site covers must be one of the named blocks.
+#
+# Scalars plus scalar-ARRAY blocks. Intermediate container nodes (`p2pool`, `telegram`) are never
+# read whole and are not settings, so enumerating them would report 30 false positives and train
+# whoever reads this to add exemptions.
+CONFIG_ONLY_NAMED="_docs dashboard.energy workers.list" # _docs is a docs blob, not configuration
+unseen_config_paths() {                                 # <newline-separated paths> -> those no read site and no named block covers
+    local leaf probe hit n out=""
+    while IFS= read -r leaf; do
+        [ -n "$leaf" ] || continue
+        probe="$leaf" hit=0
+        while :; do
+            grep -qxF "$probe" <<<"$DRIFT_FOUND" && { hit=1 && break; }
+            case "$probe" in *.*) probe="${probe%.*}" ;; *) break ;; esac
+        done
+        for n in $CONFIG_ONLY_NAMED; do case "$leaf" in "$n" | "$n".*) hit=1 ;; esac done
+        [ "$hit" -eq 0 ] && out="${out:+$out }$leaf"
+    done <<<"$1"
+    printf '%s' "$out"
+}
+# FIRING CONTROL FIRST. This row reports "" both when every path is covered and when the ancestor
+# walk is broken, and the second reads exactly like the first. Seed a path no read site can cover.
+assert_eq "the unseen-path walk can report an uncovered path" \
+    "$(unseen_config_paths "not.a.real.config.path")" "not.a.real.config.path"
+# ...and the NEAR MISS that keeps it narrow: a leaf under a named block must NOT be reported, or
+# the row would pass by flagging the very blocks the gate already handles.
+assert_eq "a named config.json-only leaf is not reported" \
+    "$(unseen_config_paths "dashboard.energy.currency")" ""
+assert_eq "every config path outside the named config.json-only set renders an env key (#1929)" \
+    "$(unseen_config_paths "$(jq -r '[(paths(scalars), (paths as $p | select(getpath($p) | type == "array") | $p)) | map(select(type == "string")) | join(".")] | unique[]' "$ROOT/config.reference.json")")" ""
+unset DRIFT_FOUND REF_PATHS DRIFT_BAD CONFIG_ONLY_NAMED
 
 echo "== unit: config.core-keys.json — valid JSON, stays inside config.reference.json (#502/#529) =="
 # The core-key shortlist (#529's binding Wave-0 decision) is the ONE shared artifact between the
