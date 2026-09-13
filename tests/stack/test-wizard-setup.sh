@@ -300,7 +300,7 @@ assert_rc "setup with stratum_tls exits 0" "$?" "0"
 assert_contains "setup announces the fingerprint for rig pinning" "$sut_out" "Stratum TLS is ON"
 unset SUT sut_out
 
-unset run_wizard w1_cfg w2_cfg pointer_out core_reads shape_reads
+unset w1_cfg w2_cfg pointer_out core_reads shape_reads # NOT run_wizard: lib.sh owns it, and a bare unset drops the FUNCTION for every later domain
 
 echo "== unit: a failed setup keeps the machine's configuration (#1059) =="
 # The wizard's response to a non-zero `(setup)`. It used to be
