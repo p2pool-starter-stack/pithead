@@ -28,20 +28,9 @@ def config_spool(tmp_path, monkeypatch):
 async def config_client(aiohttp_client, config_spool):
     data = {"shares": [], "workers": [], "global_sync": False}
     state = StateManager(db_path=":memory:")
-    client = await aiohttp_client(create_app(state, data, telegram_bot=ApprovalBot()))
+    client = await aiohttp_client(create_app(state, data))
     yield client
     state.close()
-
-
-class ApprovalBot:
-    config_approval_enabled = True
-
-    def __init__(self):
-        self.paused = False
-
-    async def pause_for_host_approval(self):
-        self.paused = True
-        return True
 
 
 async def test_sensitive_commit_sends_only_suffixes_and_caddy_actor_to_host(
@@ -89,3 +78,24 @@ async def test_hostile_approval_shape_is_rejected_before_spooling(config_client,
     )
     assert resp.status == 400
     assert list((config_spool / "requests").iterdir()) == []
+
+
+async def test_sensitive_commit_needs_no_telegram_at_all(config_client, config_spool):
+    """#2076: a sensitive commit no longer depends on an approval channel existing.
+
+    The app under test is built with no Telegram bot of any kind — the old code took a
+    ``telegram_bot`` and answered ``409 approval-unavailable`` whenever it was absent or had an
+    empty allow-list, which is the default install. The commit must now spool like any other.
+    """
+    rid = str(uuid.uuid4())
+    (config_spool / "results" / f"{rid}.json").write_text(json.dumps({"status": "previewed"}))
+    resp = await config_client.post(
+        "/api/control/commit",
+        json={"id": rid, "approve": True, "confirm": "APPLY", "payout_suffixes": {"tari": "abcd"}},
+        headers={"X-Pithead-Control": "1", "X-Auth-User": "admin"},
+    )
+    assert resp.status == 202
+    assert (await resp.json())["status"] != "approval-unavailable"
+    spooled = json.loads((config_spool / "requests" / f"{rid}.json").read_text())
+    assert spooled["approval"] == {"payout_suffixes": {"tari": "abcd"}}
+    assert spooled["confirm"] == "APPLY"

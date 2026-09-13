@@ -22,7 +22,16 @@
 # name — it gets parsed as a directive, SC1073.)
 # shellcheck disable=SC2034
 config_read_sites() {
-    declare -a DRIFT_EXCEPTIONS=()
+    # Deliberate exceptions: paths the extractor finds that need NO reference entry.
+    # telegram.control.enabled (#2076): a REMOVED path, read only by
+    # migrate_removed_telegram_control, which exists to DELETE it from an upgrading config.json.
+    # Re-adding it to the reference would re-admit telegram.control as a committable path.
+    # NOT `declare -a`: inside a function that makes it function-LOCAL, and the caller in
+    # test-config.sh reads it across the source boundary — so a declared array is always
+    # EMPTY there and every exception is silently ignored. Undetectable while the array was
+    # empty (#2082); this is the first entry, and it reddened the #561 row until fixed.
+    # A plain assignment, exactly like DRIFT_FOUND and DRIFT_BAD below.
+    DRIFT_EXCEPTIONS=("telegram.control.enabled")
 
     DRIFT_FOUND="" # newline-separated normalized dotted paths (no leading dot), deduped at the end
     DRIFT_BAD=0

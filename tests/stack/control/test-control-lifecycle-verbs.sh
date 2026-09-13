@@ -1,8 +1,14 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Control-channel Telegram lifecycle domain (#1105 Phase 1, appliance lane): the bounded Telegram
-# control verbs (#338). The #33 runner dispatches each accepted verb to a FIXED pithead command and
-# audits it; an unknown verb is rejected, and no host command runs on the rejection path.
+# Control-channel lifecycle-verb domain (#1105 Phase 1, appliance lane): the #33 runner's BOUNDED
+# action set. The runner dispatches each accepted verb to a FIXED pithead command and audits it; an
+# unknown verb is rejected, and no host command runs on the rejection path.
+#
+# These verbs reached the spool from the Telegram control commands (#338) until #2076 removed them,
+# so `restart` and `apply` currently have NO producer — the dashboard never submits either. The
+# dispatch table is still live code and still the place "a spool writer cannot run an arbitrary
+# host command" is proven, so the domain is kept and renamed rather than deleted with its old
+# caller. The actor below is a plain test tag now, not a Telegram user id.
 # Sourced by tests/stack/run.sh.
 #
 # This domain IS standalone-sourceable once tests/stack/lib.sh has been sourced, and it needs
@@ -27,10 +33,10 @@
 
 : "${SANDBOX:?}"
 
-echo "== control channel: Telegram lifecycle verbs (#338) =="
-# The #33 runner dispatches the two bounded Telegram control verbs to FIXED pithead commands and
-# audits them; an unknown verb is rejected and no host command runs. PITHEAD_SELF points the runner
-# at a stub that only records the literal verb it was handed, so nothing real is applied/restarted.
+echo "== control channel: bounded lifecycle verbs (#338 dispatch table, #2076) =="
+# The #33 runner dispatches the two bounded lifecycle verbs to FIXED pithead commands and audits
+# them; an unknown verb is rejected and no host command runs. PITHEAD_SELF points the runner at a
+# stub that only records the literal verb it was handed, so nothing real is applied/restarted.
 CC="$SANDBOX/ctrl338"
 mkdir -p "$CC/staged" "$CC/results" "$CC/audit"
 cat >"$CC/self" <<'EOF'
@@ -46,21 +52,21 @@ uid_a="22222222-2222-4222-8222-222222222222"
 uid_x="33333333-3333-4333-8333-333333333333"
 
 : >"$SELF_LOG"
-printf '{"id":"%s","action":"restart","actor":"tg-7"}\n' "$uid_r" >"$CC/req_r.json"
+printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_r" >"$CC/req_r.json"
 run_sourced "$SANDBOX" control_process_request "$CC/req_r.json" "$CC" >/dev/null 2>&1
 assert_eq "restart intent runs the fixed 'restart' verb" "$(cat "$SELF_LOG")" "restart"
 assert_eq "restart result is applied" "$(jq -r .status "$CC/results/$uid_r.json")" "applied"
 assert_contains "restart is audited with the actor + action" \
-    "$(cat "$CC/audit/control.log")" '"actor":"tg-7","action":"restart","status":"applied"'
+    "$(cat "$CC/audit/control.log")" '"actor":"tester","action":"restart","status":"applied"'
 
 : >"$SELF_LOG"
-printf '{"id":"%s","action":"apply","actor":"tg-7"}\n' "$uid_a" >"$CC/req_a.json"
+printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_a" >"$CC/req_a.json"
 run_sourced "$SANDBOX" control_process_request "$CC/req_a.json" "$CC" >/dev/null 2>&1
 assert_eq "apply intent runs the fixed 'apply -y' verb (config re-apply, no edit)" "$(cat "$SELF_LOG")" "apply -y"
 assert_eq "apply result is applied" "$(jq -r .status "$CC/results/$uid_a.json")" "applied"
 
 : >"$SELF_LOG"
-printf '{"id":"%s","action":"frobnicate","actor":"tg-7"}\n' "$uid_x" >"$CC/req_x.json"
+printf '{"id":"%s","action":"frobnicate","actor":"tester"}\n' "$uid_x" >"$CC/req_x.json"
 run_sourced "$SANDBOX" control_process_request "$CC/req_x.json" "$CC" >/dev/null 2>&1
 assert_eq "unknown verb rejected (bounded action set)" "$(jq -r .error "$CC/results/$uid_x.json")" "unknown action"
 assert_eq "unknown verb never runs a host command" "$(cat "$SELF_LOG")" ""

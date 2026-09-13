@@ -317,7 +317,7 @@ class TestEditableKeys:
         assert "proxy.donate_level" not in cfg["_confirm_keys"]
         assert "monero.payout_scan_height" not in cfg["_confirm_keys"]
         assert "tari.payout_scan_birthday" not in cfg["_confirm_keys"]
-        assert "telegram.control.confirm_timeout" not in cfg["_editable_keys"]
+        assert "telegram.commands.enabled" not in cfg["_editable_keys"]
         assert cfg["_editable_keys"] == sorted(cfg["_editable_keys"])  # stable, deterministic order
 
     def test_dashboard_energy_is_the_special_case_addition(self, spool):

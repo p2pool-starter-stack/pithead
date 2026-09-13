@@ -589,9 +589,9 @@ echo "== unit: config.reference.json stays a complete superset of every path pit
 # skipping it), so a new read shape can't slip through unchecked.
 
 # Deliberate exceptions: paths this extractor finds that are NOT required to have a reference
-# entry. Empty today — every path pithead reads already has one (this test itself verifies that).
-# Keep the mechanism here for the day a genuinely internal/env-only read needs one; each entry
-# needs a why-comment.
+# entry. Each entry needs a why-comment.
+# telegram.control.enabled (#2076): a REMOVED path, read only by migrate_removed_telegram_control,
+# which DELETES it — re-adding it to the reference would re-admit it as a committable path.
 # macOS ships bash 3.2 (no associative arrays / mapfile — matches the rest of this file), so
 # extracted paths accumulate as a newline-separated string, deduped with `sort -u` at the end.
 config_read_sites # tests/stack/lib/config-read-sites.sh — shared with the inverse row below

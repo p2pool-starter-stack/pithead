@@ -255,16 +255,20 @@ test("leaving the raffle writes a BOOLEAN false to xvb.enabled (#1848)", () => {
 
 // --- the components on their own ---------------------------------------------------------------
 
-test("the Tari note does not send the operator to a view that cannot change tari.mode", () => {
-  // The defect this guards: the note promised "turn it on later from the dashboard's
-  // Configuration view", and tari.mode is NOT editable there. control_service.py's
-  // EDITABLE_ENV_KEY_PATHS carries only dashboard.tari_required, tari.mem_limit, tari.data_dir
-  // and tari.clearnet_initial_sync, and the host's own allowlist has no TARI_MODE either — so
-  // the field renders greyed and the operator is hunting for a control that is not there.
+test("the Tari note tells the operator where the switch is, and what a later yes still costs", () => {
+  // This note has now been wrong in BOTH directions, so it is pinned to what is true rather than
+  // to a phrase. It first promised a Configuration-view switch that did not exist; #1929 put
+  // TARI_MODE on CONTROL_DASHBOARD_CONFIRM_KEYS, at which point the correction ("the Configuration
+  // view does not carry this switch") became the false half. The operator-visible facts:
+  //   - the switch IS there, behind a typed APPLY (confirm tier, no Telegram needed),
+  //   - turning it off KEEPS the chain data, so back on resumes instead of re-syncing, and
+  //   - answering No stores no tari.wallet_address, which is APPROVAL tier — so a later yes on
+  //     this machine needs the approval step, and the note must not imply otherwise.
+  // The third is the one a happy-path rewrite drops, so it is asserted separately.
   //
-  // Scoped to TariSection ON PURPOSE. The XvbField sibling says "Changeable later" and that is
-  // TRUE (XVB_ENABLED -> xvb.enabled), so a needle swept over the whole form would match the
-  // honest row and this guard would be pinning the wrong subject.
+  // Scoped to TariSection ON PURPOSE. The XvbField sibling says "editable from the dashboard" and
+  // that is TRUE (XVB_ENABLED -> xvb.enabled), so a needle swept over the whole form would match
+  // the honest row and this guard would be pinning the wrong subject.
   const v = (name) => ({ tariWallet: "", tariRemoteHost: "", xvb: true })[name];
   const on = () => () => {};
   // Source wrapping puts newlines inside the sentences, so match on collapsed whitespace.
@@ -272,13 +276,11 @@ test("the Tari note does not send the operator to a view that cannot change tari
     /\s+/g,
     " ",
   );
-  // The needle forbids the PROMISE, not the phrase: the honest copy names the Configuration
-  // view too, to say it does NOT carry this switch. A bare /Configuration view/ needle reddens
-  // on the fix as readily as on the defect.
-  assert.doesNotMatch(out, /(turn|change) it on later from the dashboard/i);
-  assert.doesNotMatch(out, /later from the dashboard's Configuration view/i);
-  assert.match(out, /Configuration view does not carry this switch/);
-  assert.match(out, /setting this machine up again from the boot menu/);
+  assert.doesNotMatch(out, /Configuration view does not carry this switch/);
+  assert.doesNotMatch(out, /setting this machine up again from the boot menu/);
+  assert.match(out, /Configuration view carries this switch/);
+  assert.match(out, /keeps the chain data/i);
+  assert.match(out, /adding one later needs the approval step/i);
 });
 
 test("TariSection and XvbField render from props alone, with no app around them", () => {

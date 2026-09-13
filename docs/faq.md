@@ -129,9 +129,11 @@ address, but a Tari outage never holds up Monero mining — p2pool keeps mining 
 Tari catching up in the background, no matter how `dashboard.tari_required` is set. That flag only
 covers Tari's *sync* holds: set it to `false` to also skip waiting for Tari's initial sync and to
 keep the normal dashboard (instead of the full-screen Sync view) during a Tari resync. You can also
-skip running the Tari node on this box entirely: `tari.mode: remote` points P2Pool's merge-mine leg
-at a Minotari node you run elsewhere, so no `minotari_node` container starts here and its ~200 GB
-leaves the disk budget. See
+decline merge-mining altogether with `tari.mode: off`, or keep it and move the node:
+`tari.mode: remote` points P2Pool's merge-mine leg at a Minotari node you run elsewhere. Either
+way no `minotari_node` container starts here and its ~200 GB leaves the disk budget. Both are
+changeable later from the dashboard's Configuration view behind a typed `APPLY`, and switching to
+`off` keeps the chain on disk. See
 [Configuration › `dashboard.tari_required`](configuration.md#configuration-reference) and
 [Remote Tari node](configuration.md#remote-tari-node).
 

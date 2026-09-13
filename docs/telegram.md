@@ -6,12 +6,11 @@ status commands** on demand, so you can check on the stack from your phone. Both
 default**; this guide takes you from nothing to a working alert in about five minutes, then adds
 commands if you want them.
 
-> **What this is — and isn't.** Alerts are a one-way push (a pager). The status commands
-> (`/status`, `/hashrate`, and friends) are **read-only** — they report what the dashboard already
-> knows and never change anything, so the worst a leaked chat can do is *read* your status. Two
-> **control** commands (`/restart`, `/apply`) can act on the host, but they are a **separate,
-> off-by-default opt-in** locked behind an operator allow-list and a per-action confirmation — see
-> [Control commands](#control-commands).
+> **What this is — and isn't.** Alerts are a one-way push (a pager). Every command is
+> **read-only** — they report what the dashboard already knows and never change anything, so the
+> worst a leaked chat can do is *read* your status. The bot cannot restart the stack, apply a
+> config, or approve a configuration change: it has no write surface at all. Configuration changes
+> are made and confirmed in the dashboard.
 
 ---
 
@@ -43,7 +42,7 @@ transition, not a stream:
 | 💾 **Low RAM** | This host has less RAM than the stack wants (syncing is memory-heavy; Tari can OOM). Sent once when first detected — a heads-up that instability may be under-provisioning, not a bug. |
 | ⚠ **High reject rate** | The pool-wide reject rate over the trailing hour crossed 5% — a bad overclock, clock drift, or a flaky link wasting hashrate. Clears when it drops back. |
 | 💰 **Payout found / confirmed** | A block paid you (this node held a share in the PPLNS window), and — with a view key set — again once the payout is confirmed on-chain by the view-only wallet. |
-| 🚨 **Payout wallet changed** | The wallet p2pool mines to differs from the last one seen — every future reward goes to the new address. Fires on **every** change, including one you made yourself with `./pithead apply`, so treat it as a confirmation; if you didn't change it, your rewards are being redirected. This alert truncates addresses to 8 characters; a separately requested Configuration-view approval shows the complete non-secret destination so the operator can verify it. The dashboard shows a matching top-bar warning for 72 hours — the dashboard warning works even with Telegram off. |
+| 🚨 **Payout wallet changed** | The wallet p2pool mines to differs from the last one seen — every future reward goes to the new address. Fires on **every** change, including one you made yourself with `./pithead apply`, so treat it as a confirmation; if you didn't change it, your rewards are being redirected. This alert truncates addresses to 8 characters; the Configuration view's preview shows the complete non-secret destination so the operator can verify it before applying. The dashboard shows a matching top-bar warning for 72 hours — the dashboard warning works even with Telegram off. |
 | 🎉 **Block found** | The P2Pool sidechain found a Monero block. Pool-wide: every miner with a PPLNS share gets paid from it. |
 | 💰 **Payout incoming** | That block pays **you** — this node held a share in the PPLNS window when it was found. The amount lands in your wallet once the block matures (about two hours). |
 | ✅ **Payout confirmed** | A P2Pool payout (Monero or Tari) matured and was seen **on-chain** by the view-only wallet — ground truth that a reward actually arrived, beside the estimate. Fires once per confirmed payout. Only when a view key is set (see [Payout confirmation](dashboard.md#payout-confirmation)). |
@@ -239,76 +238,6 @@ the same outbound path as the alerts — nothing about your host is exposed to r
 > **Tor-only host.** Like alerts, commands reach `api.telegram.org` over clearnet. With no clearnet
 > egress the poll just fails silently and the bot answers nothing — see
 > [Privacy and secrets](#privacy-and-secrets).
-
----
-
-## Control commands
-
-Two commands can **act on the host** rather than just report:
-
-| Command | What it does |
-|---|---|
-| `/restart` | Recreate the running stack (`./pithead restart`). |
-| `/apply` | Re-render and re-apply the **current** `config.json` on the host (`./pithead apply`). It applies what is already on disk — it does not carry a config change from Telegram. |
-
-This is a **remotely-reachable control surface**, so it is off by default and gated at every step.
-The bot token being known is **not** authorization. Turn it on only if you accept that a Telegram
-message can trigger these actions, and set the allow-list to the operators who may.
-
-```json
-"telegram": {
-    "enabled": true,
-    "bot_token": "…",
-    "chat_id": "…",
-    "commands": { "enabled": true },
-    "control": {
-        "enabled": true,
-        "allowed_ids": [123456789],
-        "confirm_timeout": 60
-    }
-},
-"dashboard": {
-    "auth": { "username": "admin", "password": "…" },
-    "control": { "enabled": true }
-}
-```
-
-How the gating works:
-
-- **Operator allow-list.** A control command is accepted **only** from the numeric Telegram **user
-  ids** in `allowed_ids` — being in the right `chat_id` is not enough. Every other sender is refused
-  and dropped silently (no reply, so the bot can't be used to probe who is authorised). Find your
-  user id the same way you found your chat id ([step 3](#3-find-your-chat-id)). An **empty**
-  allow-list is refused outright: `apply` fails until you list at least one numeric user id, so a
-  control-enabled stack can never run with nobody authorised.
-- **Per-action confirmation, deny-on-timeout.** Issuing `/restart` or `/apply` doesn't do anything
-  yet — the bot replies with the concrete action and a single **Confirm** button. Nothing happens
-  until you tap it, and if you don't within `confirm_timeout` seconds (default 60) the request is
-  **denied**, never queued. Only the operator who issued the command can confirm it, and each button
-  is one-shot.
-- **Per-operator rate limit.** Each allow-listed operator can be issued at most 10 confirm
-  prompts per rolling hour; past that, `/restart` / `/apply` from that operator are dropped without a
-  prompt (an anti-fatigue guard so a stuck or compromised session can't spam approvals). The budget is
-  keyed per operator, so one hitting the cap never locks the others out. Not configurable.
-- **A fixed, small action set.** The two verbs are the whole surface — a Telegram message **selects**
-  one of them, it never becomes a host command. There is no arbitrary execution.
-- **It rides the config-editor's channel, not a new one.** Both verbs act by dropping a typed intent
-  into the same host-control spool the dashboard config editor uses (`dashboard.control.enabled`,
-  see [Editing config from the dashboard](operations.md#editing-config-from-the-dashboard)); the root runner on the host validates
-  and runs the fixed verb. The dashboard container never runs a host command itself. That is why
-  `dashboard.control.enabled` (and its login) is a prerequisite — `apply` refuses to enable the
-  Telegram control commands without it.
-- **Everything is audited.** Each confirmed command lands in the host-side control audit log
-  (`data/control/audit/control.log`) with the actor tagged `tg-<your-user-id>` and the outcome —
-  the same tamper-evident log the config editor writes to.
-
-A **config-changing** apply is deliberately **not** a Telegram command: editing config still goes
-through the dashboard's editor, where the host's default-deny allowlist refuses security-sensitive
-keys. `/apply` here only re-applies the config already on the host.
-
-> **Tuning the confirmation window.** `confirm_timeout` is in seconds. Shorten it if you want a
-> tighter window; a value that is too short just means you have to be quicker to tap Confirm before
-> the request is denied.
 
 ---
 

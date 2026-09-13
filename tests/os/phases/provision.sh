@@ -14,7 +14,7 @@ phase_provision() {
     # so they belong to the phase, not to one leg.
     local pv_user="" pv_pass=""
     # shellcheck disable=SC2034 # provision_browser_config reads both through dynamic scope.
-    local PROVISION_DASHBOARD_HOST=fixture-box PROVISION_FAKE_APPROVAL=1
+    local PROVISION_DASHBOARD_HOST=fixture-box
     _phase_provision_initial || return
     _phase_provision_reboot || return
     _phase_provision_migration

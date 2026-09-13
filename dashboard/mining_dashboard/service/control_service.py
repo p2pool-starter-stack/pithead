@@ -104,25 +104,21 @@ def _deep_merge(base, override):
     return merged
 
 
-# Env-var -> config-path(s) map (#613), mirroring pithead's CONTROL_DASHBOARD_EDITABLE_KEYS
-# (pithead ~L4793) — the commit gate's ACTUAL allowlist, the single source of truth for what the
-# control channel will commit. Surfaced to the browser as ``_editable_keys`` below so the
-# Configuration view can grey out everything else up front instead of letting an operator edit a
-# host-only field and find out at Save (#613).
+# Env-var -> config-path(s) map (#613), mirroring pithead's CONTROL_DASHBOARD_EDITABLE_KEYS — the
+# commit gate's ACTUAL allowlist and the single source of truth for what the control channel will
+# commit. Surfaced to the browser as ``_editable_keys`` below so the Configuration view greys out
+# everything else up front rather than letting an operator edit a host-only field and learn at Save.
 #
-# Some env vars are derived from MORE than one config path — P2POOL_FLAGS folds in both
-# ``p2pool.pool`` (--mini/--nano) and ``p2pool.clearnet`` (the Tor-egress socks flags appended in
-# render_env) — so this has to mirror the actual derivation in render_env, not the prose summary
-# in pithead's own allowlist comment (which lists "clearnet toggles" as generally host-only
-# elsewhere; the gate itself works on RENDERED ENV VARS, not config paths, so a config path that
-# feeds an allowlisted var IS committable even if it sounds like it shouldn't be from the comment
-# alone).
+# An env var may derive from MORE than one config path (P2POOL_FLAGS folds in ``p2pool.pool`` and
+# ``p2pool.clearnet``), so this mirrors render_env's real derivation, not the prose in pithead's own
+# allowlist comment. The gate works on RENDERED ENV VARS, not config paths: a path feeding an
+# allowlisted var IS committable however host-only it sounds. (CONFIRM_ENV_KEY_PATHS documents the
+# one deliberate exception, where a NARROWER map is the safe direction.)
 #
 # Drift-guarded (mirrors #515's WORKER_WRITABLE_KEYS check, see
-# test_editable_keys_have_no_intra_repo_drift below): a test regexes
-# CONTROL_DASHBOARD_EDITABLE_KEYS out of the pithead script and asserts its env-var names equal
-# this map's keys, so an allowlist edit without a matching map edit fails CI loudly instead of
-# silently drifting the greyed set out of sync with what the gate actually accepts.
+# test_editable_keys_have_no_intra_repo_drift below): a test regexes CONTROL_DASHBOARD_EDITABLE_KEYS
+# out of the pithead script and asserts its env-var names equal this map's keys, so an allowlist edit
+# without a matching map edit fails CI loudly instead of silently drifting the greyed set.
 EDITABLE_ENV_KEY_PATHS = {
     "P2POOL_FLAGS": ("p2pool.pool", "p2pool.clearnet"),
     "P2POOL_PORT": ("p2pool.pool",),
@@ -145,9 +141,8 @@ EDITABLE_ENV_KEY_PATHS = {
     # container would use to silence them, so the dashboard must never be able to turn them off.
     # They still render (greyed) in the Notifications > Telegram events nested subgroup (#612).
     # NOTE (2026-08 audit): raffle_win was missing from this generated set for a while — the one
-    # event toggle out of step with its siblings. If you add a new event toggle, list it here AND
-    # in pithead's CONTROL_DASHBOARD_EDITABLE_KEYS — the drift guard below only catches a mismatch
-    # between the two, not an omission from both.
+    # event toggle out of step with its siblings. Add a new event toggle here AND in pithead's
+    # CONTROL_DASHBOARD_EDITABLE_KEYS: the drift guard catches a mismatch, not an omission from both.
     **{
         f"TELEGRAM_EVENT_{name.upper()}": (f"telegram.events.{name}",)
         for name in (
@@ -180,12 +175,11 @@ EDITABLE_ENV_KEY_PATHS = {
     },
 }
 
-# dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads
-# it straight off config.json, pithead ~L4879), so it can never appear in the map above — but the
-# gate explicitly ALLOWS it (#504). Fold it in as the map's one special-case addition. Worker
-# descriptors (workers.list[], #506) are the gate's OTHER config.json-only special
-# case, but they're REFUSED outright (per-rig hosts/tokens), so they never get an editable path —
-# and buildSections never renders them as a form field anyway (arrays, #172).
+# dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
+# straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
+# it (#504). Fold it in as the map's one special-case addition. Worker descriptors (workers.list[],
+# #506) are the OTHER config.json-only case but are REFUSED outright (per-rig hosts/tokens), so they
+# never get an editable path — and buildSections never renders an array as a field anyway (#172).
 _ENERGY_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
@@ -221,10 +215,9 @@ CONFIRM_ENV_KEY_PATHS = {
     "TARI_CLEARNET_SYNC": ("tari.clearnet_initial_sync",),
     "MONERO_PRUNE": ("monero.prune",),
     # 2026-08 security review: bounded (8-1024) and instantly reversible, but the biggest
-    # steady-state knob on the shared Tor daemon's CPU — confirm-gated, not free-commit. The same
-    # review kept proxy.donate_level and the two payout restore points host-only (donate traffic
-    # bypasses the Tor socks5 per docs/privacy.md; a future-dated restore point silently defeats
-    # payout-confirmation tamper evidence).
+    # steady-state knob on the shared Tor daemon's CPU — confirm-gated, not free-commit. That review
+    # kept proxy.donate_level and the two payout restore points host-only (donate traffic bypasses
+    # the Tor socks5; a future-dated restore point defeats payout-confirmation tamper evidence).
     "MONERO_OUT_PEERS": ("monero.out_peers",),
     # Node endpoints (#1888): confirm-gated, not free-commit, and paired with the approval gate's
     # host-side reachability probe. 42-control-policy-and-host-checks.sh carries the reasoning.
@@ -232,6 +225,13 @@ CONFIRM_ENV_KEY_PATHS = {
     "MONERO_RPC_PORT": ("monero.remote.rpc_port",),
     "MONERO_ZMQ_PORT": ("monero.remote.zmq_port",),
     "TARI_GRPC_ADDRESS": ("tari.remote.host", "tari.remote.grpc_port"),
+    # Whether this host merge-mines at all (#1929), and COMPOSE_PROFILES the PROFILE HALF of the
+    # same switch — without it, default-deny counts an unlisted key and drags every mode switch
+    # back to the Telegram tier. Mapped to tari.mode ALONE, narrower than its real derivation on
+    # purpose: monero.mode and the view keys also move it and must NOT read as confirm-tier; their
+    # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
+    "TARI_MODE": ("tari.mode",),
+    "COMPOSE_PROFILES": ("tari.mode",),
 }
 
 

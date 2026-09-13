@@ -44,7 +44,7 @@ plus headroom for the OS. Per-component breakdown, from each project's own guida
 |---|---|---|---|---|
 | **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~100 GB** pruned · **~270 GB** full — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
 | **[P2Pool](https://github.com/SChernykh/p2pool)** | **~2.3 GB** for the RandomX dataset it uses to verify blocks fast | 1 GB | tiny (sidechain state) | Needs a 64-bit CPU with **AVX2** and a synced `monerod`. The dataset lives in the shared HugePages reservation, not in the container, so don't count it twice. |
-| **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB** SSD — and growing | The largest single disk consumer once Monero is pruned (~150 GB vs a pruned Monero node's ~100 GB), so budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote`. |
+| **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB** SSD — and growing | The largest single disk consumer once Monero is pruned (~150 GB vs a pruned Monero node's ~100 GB), so budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
 | **XMRig proxy · Tor · dashboard** | a few hundred MB combined | 512 MB each | a few GB (Docker images) | These coordinate and serve the UI. They don't mine, so no special CPU. |
 | **Caddy · Docker socket proxies** | small | 128 MB each | — | Serve the dashboard and mediate its Docker access. |
 | **Payout confirmation** (`wallet-rpc`, `tari-wallet`) | only when enabled | 2 GB · 512 MB | small (view-only wallet state) | Started only when `monero.view_key` / `tari.view_key` are set — and both are refused in that node's `remote` mode, since the scan needs a local node. |
@@ -199,7 +199,7 @@ The defaults assume a self-hosted, pruned, HugePages-tuned local node. You can t
 
 | Want to… | Do this | Saves |
 |---|---|---|
-| Skip the Tari node entirely | `tari.mode: remote`; the bundled `minotari_node` isn't started | ~200 GB disk budget + Tari's RAM ceiling — the biggest single cut |
+| Skip the Tari node entirely | `tari.mode: remote` merge-mines against a node elsewhere; `tari.mode: off` declines merge-mining altogether. Either way the bundled `minotari_node` isn't started | ~200 GB disk budget + Tari's RAM ceiling — the biggest single cut |
 | Skip the Monero node entirely | `monero.mode: remote`; the bundled `monerod` isn't started | ~120 GB (pruned) / ~320 GB (full) disk budget + Monero's 4 GB RAM |
 | Skip the initial sync wait | [Reuse an existing synced chain](configuration.md#reusing-an-existing-node) | Hours–days + sync bandwidth |
 | Free the 6 GB HugePages reservation | `./pithead setup --skip-optimize` | ~6 GB RAM (at the cost of RandomX performance). The reservation is unconditional otherwise — remote-node modes don't shrink it, since P2Pool still verifies blocks with RandomX |

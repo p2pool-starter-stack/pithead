@@ -52,8 +52,9 @@
 # Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
 # (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
 # CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
-# the Telegram channel (the future #338 approval channel), so the dashboard must not silence
-# them. Space-separated exact env-key names.
+# the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
+# lost its write surface, not its job of telling the operator their payout wallet just changed.
+# Space-separated exact env-key names.
 #
 # NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
 # event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
@@ -110,9 +111,35 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 # cannot silently park a chain on a node that is not there. The RPC LOGIN CREDENTIALS for a remote
 # node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) are deliberately NOT here — those are secrets,
 # not address identity, and they stay host-only DEST with the rest of the credentials above.
+# TARI_MODE (#1929) joins on the same reasoning as the endpoints, one step further: it decides
+# WHETHER this host merge-mines at all and whether the bundled Tari node runs. It is the expensive-
+# but-recoverable class this tier is for — the container stops, its chain data on disk is KEPT
+# (remove_deactivated_profile_containers removes the container, never the data dir), and the same
+# route reverses it. It is NOT a payout change and NOT a credential: declining to merge-mine cannot
+# redirect a reward, only stop earning one, and the Tari payout ADDRESS stays where it was, outside
+# this tier. Turning Tari ON toward a remote node still drags TARI_GRPC_ADDRESS in with it, so the
+# reachability probe below fires on exactly the direction that parks a chain on a third-party node.
+# MONERO_MODE is deliberately NOT here: Monero is the chain this stack exists to mine, and stopping
+# monerod is not "expensive but recoverable", it is the stack ceasing to do its job.
+#
+# COMPOSE_PROFILES rides in WITH it, and that pairing is the part to read carefully, because this
+# var is NOT tari's alone — it also carries local_node (monero's node switch) and the two
+# payout_confirm tokens. Listing it is unavoidable: tari.mode moves the local_tari token, so every
+# mode switch renders a COMPOSE_PROFILES diff, and while it was unlisted the default-deny pass
+# counted it and sent the switch to the Telegram tier — the exact dead end #1929 exists to remove
+# for an appliance with no Telegram channel. What keeps that from widening monero's door is that
+# this allowlist is only the FIRST of two gates: describe_change still flags a local_node flip DEST
+# (39-describe-change.sh), and a DEST row sets approval_required whatever the allowlist says, so a
+# monero node switch still needs the second identity. The view-key toggles that move the
+# payout_confirm tokens are likewise held by their own unlisted keys AND their own DEST rows.
+# So the pair below is, today, exactly the tari.mode switch and nothing else.
+# THE STANDING RISK IS A NEW TOKEN. A profile added later whose drivers are all allowlisted and
+# whose rows are all INFO would become confirm-committable for free, silently. That is why
+# tests/stack/control/test-control-editable-allowlist.sh pins the EXACT token set render_env can
+# emit: adding one reddens there and forces this comment to be re-read rather than inherited.
 CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
-    MONERO_OUT_PEERS
+    MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
 # The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
@@ -122,9 +149,9 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
-# SSH, the approval channel's own identity, dashboard password, and the two tamper alarms. Exact
-# dotted paths/prefixes, space separated. This is checked against config paths before any approval.
-CONTROL_DASHBOARD_NEVER_PATHS='ssh dashboard.auth.password telegram.control.allowed_ids
+# SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space
+# separated. This is checked against config paths before anything else in the commit gate.
+CONTROL_DASHBOARD_NEVER_PATHS='ssh dashboard.auth.password
     telegram.events.wallet_changed telegram.events.clearnet_exposed'
 
 # True if $1 is EXACTLY a canonical dotted-decimal IPv4 literal — four decimal octets 0-255, none

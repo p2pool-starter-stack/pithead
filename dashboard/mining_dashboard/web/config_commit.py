@@ -1,25 +1,16 @@
-"""Approval preparation for a sensitive Configuration-view commit."""
-
-from aiohttp import web
+"""Typed payout confirmation for a sensitive Configuration-view commit."""
 
 
-async def approval_envelope(request, body, actor):
-    """Pause dashboard polling and pass only typed suffixes to the host approval gate."""
+def approval_envelope(body):
+    """Pass only typed payout suffixes to the host gate, which re-checks them against the staged
+    config. This is the "retype the last characters of the new payout address" box — typo
+    protection on an unrecoverable field, not a second identity (#2076)."""
     if body.get("approve") is not True:
-        return None, None
+        return None
     suffixes = body.get("payout_suffixes", {})
     if not isinstance(suffixes, dict) or any(
         key not in ("monero", "tari") or not isinstance(value, str)
         for key, value in suffixes.items()
     ):
         raise ValueError("invalid payout confirmation")
-    bot = request.app.get("telegram_bot")
-    if bot is None or not bot.config_approval_enabled:
-        return None, web.json_response(
-            {"id": body.get("id"), "status": "approval-unavailable"}, status=409
-        )
-    if not await bot.pause_for_host_approval():
-        return None, web.json_response(
-            {"id": body.get("id"), "status": "approval-unavailable"}, status=409
-        )
-    return {"payout_suffixes": suffixes}, None
+    return {"payout_suffixes": suffixes}

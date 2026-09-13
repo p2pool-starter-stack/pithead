@@ -218,6 +218,9 @@ moved the data, which is the failure the pin comment below records happening twi
 # `collapse` (each returns `[]` where the success value is a list — the defect #1556 documents, not
 # one a slice fixes); `maybe_daily_summary`, `result`, `_safe_reply_for` -> `signed`;
 # `_dispatch_control` -> `procedure` (ONE return, bare, in the handler). No pair shared a verdict.
+# `_dispatch_control` and `pause_for_host_approval` were deleted with the Telegram write surface
+# (#2076); the module's anchor moved to `_safe_reply_for`, one of the rows slice 11 already
+# read as `signed`, so the pin still names a row this walk actually produces.
 #
 # Three `signed` rows are weaker than the word — one here, two from earlier slices, recorded
 # together because disclosing only the new one is what #1604 was. `classify` reads `signed` off the
@@ -379,7 +382,7 @@ _ANCHORS = {
     "service/storage_service.py": "service/storage_service.py:get_kv",
     "service/mining_store.py": "service/mining_store.py:add_block",
     "service/storage_schema.py": "service/storage_schema.py:_prune_quarantined",
-    "service/notify/telegram_commands.py": "service/notify/telegram_commands.py:_dispatch_control",
+    "service/notify/telegram_commands.py": "service/notify/telegram_commands.py:_safe_reply_for",
     "service/telemetry_store.py": "service/telemetry_store.py:add_xvb_history",
     "service/health/tor_heal.py": "service/health/tor_heal.py:_probe_egress",
     "service/health/update_checker.py": "service/health/update_checker.py:latest_release",

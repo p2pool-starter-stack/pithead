@@ -23,7 +23,12 @@ test("sensitive payout preview shows full values and requires the destination su
   );
   assert.match(unarmed, /4old-address-full/);
   assert.match(unarmed, /4new-address-full/);
-  assert.match(unarmed, /allow-listed Telegram account/);
+  // #2076: the sensitive banner no longer sends the operator to Telegram, and the action button
+  // no longer has an "Approve & apply" variant — the whole modal is confirmed in place.
+  assert.match(unarmed, /These settings are sensitive/);
+  assert.doesNotMatch(unarmed, /Telegram/);
+  assert.doesNotMatch(unarmed, /Approve & apply/);
+  assert.match(unarmed, /Confirm &amp; apply|Confirm & apply/);
   assert.match(unarmed.match(/<button class="btn-toggle active"[^>]*>/)[0], /disabled/);
   const armed = renderToString(
     PreviewModal({

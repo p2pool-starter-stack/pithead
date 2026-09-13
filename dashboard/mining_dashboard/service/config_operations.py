@@ -3,7 +3,6 @@
 NEVER_APPROVE_PATHS = frozenset(
     {
         "dashboard.auth.password",
-        "telegram.control.allowed_ids",
         "telegram.events.wallet_changed",
         "telegram.events.clearnet_exposed",
     }

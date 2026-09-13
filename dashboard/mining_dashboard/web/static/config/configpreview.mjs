@@ -38,8 +38,8 @@ export const PreviewModal = ({
           )}
           ${
             preview.approval_required
-              ? html`<p class="status-warn">After you continue, approve this exact preview from an
-                allow-listed Telegram account. The dashboard user and approval are recorded.</p>`
+              ? html`<p class="status-warn">These settings are sensitive. Check the values above
+                before continuing — the change and the dashboard user are recorded.</p>`
               : null
           }
           ${Object.entries(payoutConfirmations).map(
@@ -61,7 +61,7 @@ export const PreviewModal = ({
               <button class="btn-toggle" onClick=${onCancel} disabled=${busy}>Cancel</button>
               <button class="btn-toggle active" onClick=${onConfirm}
                       disabled=${busy || changes.length === 0 || !armed}>
-                  ${busy ? "Applying…" : preview.approval_required ? "Approve & apply" : "Confirm & apply"}
+                  ${busy ? "Applying…" : "Confirm & apply"}
               </button>
           </div>
       </div>

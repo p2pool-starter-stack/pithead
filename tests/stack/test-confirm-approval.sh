@@ -6,6 +6,9 @@
 # without the token is held; the same edit with the typed APPLY applies; and with that token in
 # hand a DEST-flagged perimeter change — clearnet exposure, a prune disable — is still refused
 # (#719, with #713's refusal wording naming the host apply path rather than the stale #338).
+# Since #2076 it also holds the sensitive class's typed payout-confirmation envelope (the Telegram
+# approval tap that used to follow it is gone), and, last in the file, the removed-key migration
+# that keeps this same gate from false-rejecting an upgrading operator's config.json.
 # Sourced by tests/stack/run.sh.
 #
 # THIS FILE IS DELIBERATELY NOT STANDALONE-SOURCEABLE, AND THAT IS THE CORRECT CALL HERE.
@@ -115,98 +118,12 @@ assert_eq "confirmed change landed in config.json" "$(jq -r '.monero.clearnet_in
 assert_contains "confirmed commit audits as commit-confirmed with the key name" \
     "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" "monero.clearnet_initial_sync"
 
-echo "== black-box: sensitive changes need the authenticated approval envelope (#1959) =="
-# The real host verifier is exercised once with a fake Telegram transport. It still creates its
-# nonce/digest sidecar, sends the full host-produced preview, and validates callback chat, message,
-# and allow-listed user; no dashboard assertion supplies the approver.
-mk_tmpdir TG
-mkdir -p "$TG/bin" "$TG/control/staged" "$TG/control/audit"
-cp "$C/config.json" "$TG/staged.json"
-cat >"$C/bin/curl" <<'EOF'
-#!/usr/bin/env bash
-out="" payload="" arg=""
-while [ "$#" -gt 0 ]; do
-    arg="$1"; shift
-    case "$arg" in
-    -o) out="$1"; shift ;;
-    --data-binary) payload="${1#@}"; shift ;;
-    esac
-done
-read -r api_url
-case "$api_url" in
-*sendMessage*)
-    cp "$payload" "$FAKE_APPROVAL_DIR/prompt.json"
-    printf '{"ok":true,"result":{"message_id":77,"chat":{"id":"-10042"}}}\n' >"$out"
-    ;;
-*getUpdates*)
-    nonce=$(jq -r '.nonce' "$FAKE_APPROVAL_PENDING"/.*.approval-pending)
-    prompt_text=$(jq -r '.text' "$FAKE_APPROVAL_DIR/prompt.json")
-    [ -z "${FAKE_TG_TEXT+x}" ] || prompt_text="$FAKE_TG_TEXT"
-    jq -n --arg nonce "$nonce" --arg uid "${FAKE_TG_UID:-7}" --arg text "$prompt_text" \
-        '{ok:true,result:[{update_id:1,callback_query:{id:"cb",from:{id:($uid|tonumber)},data:("approve-config:"+$nonce),message:{message_id:77,chat:{id:-10042},text:$text}}}]}' >"$out"
-    ;;
-*) exit 2 ;;
-esac
-EOF
-chmod +x "$C/bin/curl"
-export FAKE_APPROVAL_DIR="$TG" FAKE_APPROVAL_PENDING="$TG/control/staged" FAKE_TG_UID=7
-arm_fake_telegram() {
-    export FAKE_APPROVAL_PENDING="$C/data/control/staged"
-    sed -i '/^TELEGRAM_BOT_TOKEN=/d; /^TELEGRAM_CHAT_ID=/d; /^TELEGRAM_CONTROL_ALLOWED_IDS=/d; /^TELEGRAM_CONTROL_CONFIRM_S=/d' "$C/.env"
-    cat >>"$C/.env" <<'EOF'
-TELEGRAM_BOT_TOKEN=fake-token
-TELEGRAM_CHAT_ID=-10042
-TELEGRAM_CONTROL_ALLOWED_IDS=7
-TELEGRAM_CONTROL_CONFIRM_S=5
-EOF
-}
-arm_fake_telegram
-export FAKE_APPROVAL_PENDING="$TG/control/staged"
-FAKE_APPROVAL_DIR="$TG" PATH="$C/bin:$PATH" run_sourced "$C" control_telegram_approve \
-    "$TG/staged.json" "$UUID3" "admin" '{}' $'APPROVAL\tMONERO_RPC_LAN_ACCESS\tRPC access changed' "$TG/control" >/dev/null
-assert_contains "host Telegram prompt contains the complete sanitized change" \
-    "$(jq -r '.text' "$TG/prompt.json")" "MONERO_RPC_LAN_ACCESS: RPC access changed"
-assert_eq "host Telegram verifier records the actual allow-listed identity" \
-    "$(jq -r '.approver' "$TG/staged.json.approved")" "tg-7"
-cp "$C/config.json" "$TG/tampered.json"
-if FAKE_TG_TEXT="Approve a harmless-looking change" FAKE_APPROVAL_DIR="$TG" PATH="$C/bin:$PATH" run_sourced "$C" \
-    control_telegram_approve "$TG/tampered.json" "$UUID3" "admin" '{}' \
-    $'APPROVAL\tMONERO_RPC_LAN_ACCESS\tRPC access changed' "$TG/control" >/dev/null; then
-    bad "edited Telegram approval text is refused" "accepted a callback for altered prompt text"
-else
-    ok "edited Telegram approval text is refused"
-fi
-unset FAKE_TG_TEXT
-mkdir -p "$TG/failbin"
-cat >"$TG/failbin/mv" <<'EOF'
-#!/usr/bin/env bash
-case "${2:-}" in
-*"${FAKE_MV_DEST:?}") exit 1 ;;
-esac
-exec /bin/mv "$@"
-EOF
-chmod +x "$TG/failbin/mv"
-cp "$C/config.json" "$TG/rate-write-failure.json"
-if FAKE_MV_DEST=approval-prompts FAKE_APPROVAL_DIR="$TG" PATH="$TG/failbin:$C/bin:$PATH" run_sourced "$C" \
-    control_telegram_approve "$TG/rate-write-failure.json" "$UUID3" "admin" '{}' \
-    $'APPROVAL\tMONERO_RPC_LAN_ACCESS\tRPC access changed' "$TG/control" >/dev/null; then
-    bad "approval refuses a failed prompt-budget write" "continued without durable rate accounting"
-else
-    ok "approval refuses a failed prompt-budget write"
-fi
-cp "$C/config.json" "$TG/approver-write-failure.json"
-if FAKE_MV_DEST=.approved FAKE_APPROVAL_DIR="$TG" PATH="$TG/failbin:$C/bin:$PATH" run_sourced "$C" \
-    control_telegram_approve "$TG/approver-write-failure.json" "$UUID3" "admin" '{}' \
-    $'APPROVAL\tMONERO_RPC_LAN_ACCESS\tRPC access changed' "$TG/control" >/dev/null; then
-    bad "approval refuses a failed verified-approver write" "continued without durable approver audit"
-else
-    ok "approval refuses a failed verified-approver write"
-fi
-[ ! -e "$TG/approver-write-failure.json.approved" ] && ok "failed approver write leaves no approval marker" ||
-    bad "failed approver write leaves no approval marker" "partial approval marker remains"
-export FAKE_APPROVAL_PENDING="$C/data/control/staged"
-# Type-to-confirm alone is still only friction. A sensitive RPC exposure is refused without an
-# envelope bound to this preview and actor, then accepted with the real envelope.
+echo "== black-box: sensitive changes need the typed payout-confirmation envelope (#1959, #2076) =="
+# Type-to-confirm alone is still only friction, and it is no longer the ONLY thing the gate wants:
+# a sensitive change is refused unless the commit also carries the confirmation envelope, whose
+# shape the host validates. #2076 removed the Telegram tap that used to follow it; what remains is
+# the envelope itself, which is the dashboard stating that the operator confirmed a sensitive
+# change and supplying any payout suffixes for the host to re-check.
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -214,11 +131,12 @@ jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin
 run_pending >/dev/null
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID3" >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "sensitive RPC-LAN change refuses typed APPLY without approval" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "rejected"
-assert_contains "sensitive refusal names approval" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "Telegram approval"
-assert_eq "unapproved perimeter change did not touch config.json" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
-# Re-preview because every refused commit consumes its staged copy. A dashboard-forged identity is
-# rejected; a suffix-only request lets the host verifier establish the approver.
+assert_eq "sensitive RPC-LAN change refuses typed APPLY without the envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "rejected"
+assert_contains "sensitive refusal names the typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "typed payout confirmations"
+assert_eq "unconfirmed perimeter change did not touch config.json" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
+# Re-preview because every refused commit consumes its staged copy. An envelope carrying ANY key
+# beyond payout_suffixes is rejected outright — the dashboard cannot smuggle an actor, a preview id
+# or a self-asserted approver past the host, which is why the shape check outlived the tap.
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -226,20 +144,20 @@ jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{preview_id:$id,actor:"mallory",approver:"tg-7",payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "dashboard cannot forge an approval identity" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "an envelope with any extra key is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",rpc_lan_access:true},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "matching approval envelope applies sensitive change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "approved perimeter change landed" "$(jq -r '.monero.rpc_lan_access' "$C/config.json")" "true"
-assert_contains "approved change records actor and approved action" "$(grep '"action":"commit-approved","status":"applied"' "$AUDIT" | tail -n 1)" '"actor":"admin"'
-assert_contains "approved change records the host-verified Telegram identity" \
-    "$(grep '"action":"commit-approved","status":"applied"' "$AUDIT" | tail -n 1)" '"approver":"tg-7"'
+assert_eq "well-formed envelope applies sensitive change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "confirmed perimeter change landed" "$(jq -r '.monero.rpc_lan_access' "$C/config.json")" "true"
+assert_contains "confirmed change records the signed-in actor" "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" '"actor":"admin"'
+# #2076: nothing can populate `approver` any more — it was only ever written by the Telegram
+# verifier. An audit row that carries one would mean the removed leg came back.
+assert_not_contains "no commit records an approver" "$(cat "$AUDIT")" '"approver":"tg-'
 
 # An existing worker descriptor is no longer a hidden host-only exception: the JSON pane can
 # repoint it, but only through the same approval identity, and the audit names the schema path.
@@ -250,22 +168,20 @@ run_pending >/dev/null
 assert_eq "worker repoint preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
 assert_contains "worker repoint preview names its schema path" "$(jq -r '.changes[].key' "$RESULTS/$UUID3.json")" "workers.list"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "approved worker repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "approved worker host landed" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.51"
-assert_contains "worker repoint audit names workers.list" "$(grep '"action":"commit-approved","status":"applied"' "$AUDIT" | tail -n 1)" "workers.list"
+assert_eq "confirmed worker repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "confirmed worker host landed" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.51"
+assert_contains "worker repoint audit names workers.list" "$(grep '"action":"commit","status":"applied"' "$AUDIT" | tail -n 1)" "workers.list"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
 jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
 assert_eq "worker append preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$APPEND_UUID.json")" "true"
 jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "approved worker append applies" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "applied"
-assert_eq "approved worker append lands the new descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host' "$C/config.json")" "192.168.1.52"
+assert_eq "confirmed worker append applies" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "applied"
+assert_eq "confirmed worker append lands the new descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host' "$C/config.json")" "192.168.1.52"
 assert_contains "worker append audit names workers.list" \
-    "$(jq -c --arg id "$APPEND_UUID" 'select(.id==$id and .action=="commit-approved" and .status=="applied")' "$AUDIT")" "workers.list"
+    "$(jq -c --arg id "$APPEND_UUID" 'select(.id==$id and .action=="commit" and .status=="applied")' "$AUDIT")" "workers.list"
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
@@ -278,13 +194,12 @@ jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "approved prune disable applies" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "applied"
-assert_eq "approved prune disable landed" "$(jq -r '.monero.prune' "$C/config.json")" "false"
-[ ! -f "$STAGED/$UUID3.json" ] && ok "approved destructive intent cleared from staged" || bad "approved destructive intent cleared from staged" "still staged"
+assert_eq "confirmed prune disable applies" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "applied"
+assert_eq "confirmed prune disable landed" "$(jq -r '.monero.prune' "$C/config.json")" "false"
+[ ! -f "$STAGED/$UUID3.json" ] && ok "confirmed destructive intent cleared from staged" || bad "confirmed destructive intent cleared from staged" "still staged"
 
-echo "== black-box: payout approval previews full addresses and binds the typed suffix (#1959) =="
+echo "== black-box: a payout change previews full addresses and binds the typed suffix (#1959) =="
 NEW_WALLET="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 NEW_WALLET_SUFFIX="${NEW_WALLET: -8}"
 jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
@@ -292,7 +207,7 @@ jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,act
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "payout preview marks approval required" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
+assert_eq "payout preview marks the sensitive class" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
 assert_eq "payout preview old value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .old' "$RESULTS/$UUID3.json")" "$WALLET"
 assert_eq "payout preview new value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .new' "$RESULTS/$UUID3.json")" "$NEW_WALLET"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:"wrong"}}}' >"$REQS/$UUID3.json"
@@ -305,12 +220,11 @@ jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" --arg suffix "$NEW_WALLET_SUFFIX" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$suffix}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
 assert_eq "matching payout suffix applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "approved payout destination landed" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$NEW_WALLET"
+assert_eq "confirmed payout destination landed" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$NEW_WALLET"
 
-echo "== black-box: approval never crosses the media-only boundary (#1959) =="
+echo "== black-box: the envelope never crosses the media-only boundary (#1959) =="
 jq -n --arg w "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -318,23 +232,22 @@ jq -n --arg w "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"a
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{preview_id:$id,actor:"admin",approver:"tg-7",payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "dashboard password stays physical-presence-only despite approval" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "dashboard password stays physical-presence-only despite a valid envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_contains "media-only refusal names the configuration stick" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "configuration stick"
-assert_eq "refused approval did not change dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+assert_eq "the refusal did not change dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
 
-echo "== black-box: the remote electricity-price feed joins the approval class (#1959) =="
+echo "== black-box: the remote electricity-price feed joins the sensitive class (#1959) =="
 jq '.dashboard.energy.price_feed=false' "$C/config.json" >"$C/config.energy" && mv "$C/config.energy" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.energy.price_feed=true)}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "price-feed preview requires the second identity" \
+assert_eq "price-feed preview is classified sensitive" \
     "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "host-approved price-feed change applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "approved price feed landed" "$(jq -r '.dashboard.energy.price_feed' "$C/config.json")" "true"
+assert_eq "confirmed price-feed change applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "confirmed price feed landed" "$(jq -r '.dashboard.energy.price_feed' "$C/config.json")" "true"
 
 # Scalar arrays have one dashboard field path. The host audit must collapse element indexes to that
 # same path or the history reconciler will mislabel this approved dashboard edit as a later host edit.
@@ -342,11 +255,10 @@ jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .notifications.webhooks=["https://example.com/hook"])}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
-arm_fake_telegram
 run_pending >/dev/null
-assert_eq "approved webhook edit applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "confirmed webhook edit applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
 assert_eq "scalar-array audit uses the dashboard field path" \
-    "$(jq -r 'select(.action=="commit-approved") | .keys' "$AUDIT" | tail -n 1)" "notifications.webhooks"
+    "$(jq -r 'select(.action=="commit") | .keys' "$AUDIT" | tail -n 1)" "notifications.webhooks"
 
 echo "== unit: every rendered fixed secret and variable secret stays out of change text (#1959) =="
 for secret_key in DASHBOARD_AUTH_HASH_B64 TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN \
@@ -357,8 +269,34 @@ for secret_key in DASHBOARD_AUTH_HASH_B64 TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN \
     assert_not_contains "$secret_key preview hides its old value" "$secret_msg" "OLD_SECRET_"
     assert_not_contains "$secret_key preview hides its new value" "$secret_msg" "NEW_SECRET_"
 done
-rm -rf "$TG"
-unset TG FAKE_APPROVAL_DIR FAKE_APPROVAL_PENDING FAKE_TG_UID
+echo "== black-box: a REMOVED config key is migrated away, not refused (#2076) =="
+# telegram.control left the schema with the bot's write surface. The gate above refuses any STAGED
+# path missing from config.reference.json, so a block left in an upgrading operator's config.json
+# would brick this very commit path — which is why the migration is proven HERE, beside the gate it
+# protects, rather than in tests/stack/test-config.sh (at its file-budget ceiling; CONTRIBUTING.md
+# — File budget gate). Runs last in this domain: it rewrites $C/config.json and nothing follows.
+jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
+    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}},
+    telegram:{enabled:true,bot_token:"tg_tok_2076",chat_id:"-1001",commands:{enabled:true},
+              control:{enabled:true,allowed_ids:[7],confirm_timeout:60}}}' >"$C/config.json"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply --dry-run --porcelain 2>&1)"
+assert_rc "a config carrying the removed telegram.control is not REFUSED" "$?" "0"
+assert_eq "a dry run never drops it (#556)" "$(jq -r '.telegram | has("control")' "$C/config.json")" "true"
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "and applying it succeeds" "$?" "0"
+assert_eq "telegram.control is dropped in place" "$(jq -r '.telegram | has("control")' "$C/config.json")" "false"
+assert_contains "an operator who had it ON is told once, by name" "$out" "telegram.control was removed"
+assert_eq "the bot token survives" "$(jq -r '.telegram.bot_token' "$C/config.json")" "tg_tok_2076"
+assert_eq "the read-only command interface survives" "$(jq -r '.telegram.commands.enabled' "$C/config.json")" "true"
+case "$(file_mode "$C/config.json")" in
+600) ok "config.json stays owner-only through the migration" ;;
+*) bad "config.json stays owner-only through the migration" "mode $(file_mode "$C/config.json")" ;;
+esac
+# Control: the SAME apply on the now-migrated config says nothing — so the announcement above is the
+# migration firing, not apply being chatty.
+out="$(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_not_contains "a config without telegram.control announces no migration" "$out" "telegram.control was removed"
 
 echo "== unit: setup-wizard provenance marker is consumed only after durable audit (#1962) =="
 mk_tmpdir PROV

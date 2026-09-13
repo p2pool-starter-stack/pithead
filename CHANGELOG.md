@@ -9,6 +9,44 @@ Pithead ships as **one product, one version** — the version lives in the top-l
 [`VERSION`](VERSION) file and every released image is tagged with it. Releases are cut
 per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
+## [Unreleased]
+
+### Removed
+
+- **Telegram is a read-only notification channel.** The bot still answers `/status`, `/info`,
+  `/hashrate`, `/workers`, `/sync`, `/system`, `/pool`, `/xvb`, `/earnings`, `/luck` and `/help`,
+  and still sends every event alert and the daily summary. Its two write surfaces are gone
+  ([#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076)):
+  - The `/restart` and `/apply` control commands ([#338](https://github.com/p2pool-starter-stack/pithead/issues/338)),
+    with the `telegram.control` config block (`enabled`, `allowed_ids`, `confirm_timeout`).
+  - The Telegram approval tap on a sensitive Configuration-view commit ([#911](https://github.com/p2pool-starter-stack/pithead/issues/911)).
+    Changing a payout wallet, a node endpoint or any other sensitive setting no longer sends a
+    prompt to Telegram and no longer waits for anyone to tap a button.
+
+  `apply` drops `telegram.control` from an existing `config.json` on the next run, so no manual
+  edit is needed. If you had the control commands enabled, it says so once as it removes the key.
+
+### Changed
+
+- **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
+  still asks you to type `APPLY`, and a payout change still asks for the last characters of the new
+  address, which the host re-checks against the staged config. The action button reads
+  "Confirm & apply" in every case — there is no longer an "Approve & apply" variant. A sensitive
+  commit no longer depends on Telegram being set up at all: on a stack that never configured the
+  bot, these changes used to fail with an approval-unavailable error and now apply normally.
+- **Sensitive commits audit without an approver.** `commit-approved` and the audit log's `approver`
+  field had exactly one writer, the Telegram verifier, so sensitive commits now record as `commit`
+  or `commit-confirmed` against the signed-in dashboard user. Existing log rows are unchanged.
+
+### Security
+
+- The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
+  replaces it in this release. What still gates such a change is the signed-in dashboard operator,
+  the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
+  friction and typo protection, not a second identity. The physical-presence boundary is unchanged:
+  `ssh.*`, `dashboard.auth.password` and the two tamper-alarm event toggles still cannot be changed
+  from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
+
 ## [2.0.0] - 2026-09-06
 
 Pithead 2.0.0 is the first release of **Pithead OS**, the appliance: a bootable image that

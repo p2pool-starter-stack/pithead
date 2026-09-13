@@ -119,6 +119,9 @@ chk "display hotplug polling off (repeated EDID spam)" 'grep -q "drm_kms_helper.
 . "$SCRIPT_DIR/verify-image-boot-menu.sh"
 # mDNS advertises IPv4 only — AAAA records stalled clients that cannot route to the box's v6.
 chk "avahi is IPv4-only (no unreachable-AAAA stall)" 'grep -q "^use-ipv6=no" "$ROOT/etc/avahi/avahi-daemon.conf"'
+# The boot render rewrites this line to name the LAN NICs, so <name>.local stops resolving to a
+# container bridge (#2060). A shipped config without the line makes that rewrite a silent no-op.
+chk "avahi ships a rewritable allow-interfaces line" 'grep -qE "^#?allow-interfaces=" "$ROOT/etc/avahi/avahi-daemon.conf"'
 # Boot recovery is compose-owned (#792): pithead-boot renders + ups + health-gates the slot commit.
 chk "pithead-boot unit enabled" 'test -L "$ROOT/etc/systemd/system/multi-user.target.wants/pithead-boot.service"'
 chk "pithead-boot script present and executable" 'test -x "$ROOT/usr/local/sbin/pithead-boot"'
