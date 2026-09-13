@@ -2,7 +2,9 @@
 # suite can drive the Q&A directly (piped stdin) without ensure_config_exists's tty gate below —
 # that gate exists to refuse a non-interactive run, not to block testing the prompts themselves.
 # Scope is deliberately narrow: the CORE_KEYS_CONFIG shortlist (wallet addresses, monero.mode,
-# p2pool.pool, dashboard auth) plus a few high-level "how should this run" shape questions.
+# p2pool.pool, dashboard auth) plus a few high-level "how should this run" shape questions —
+# tari.mode among them (#1916), asked by wizard_ask_tari in the same place and the same three-way
+# shape the browser wizard asks it, so the two setup paths cannot answer it differently.
 # Everything else keeps its config.reference.json default, silently — see wizard_print_pointer.
 # workers.list (also in the shortlist, #529) isn't asked inline: it's a variable-length list of
 # per-rig objects, not a single answer, and the standard fleet needs no entries at all (see
@@ -33,10 +35,11 @@ ensure_config_exists() {
     wizard_print_pointer
 }
 
-# Stage 1 (required — only the operator can answer these): wallet addresses, local/remote node
-# (+ remote details), pool tier, and an optional dashboard login. Sets globals consumed by
-# wizard_write_config: IN_MONERO_WALLET, IN_TARI_WALLET, MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC,
-# REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER, IN_DASH_USER, IN_DASH_PASS.
+# Stage 1 (required — only the operator can answer these): the Monero payout address, local/remote
+# node (+ remote details), the Tari merge-mining question (delegated to wizard_ask_tari), pool tier,
+# and an optional dashboard login. Sets globals consumed by wizard_write_config: IN_MONERO_WALLET,
+# MONERO_MODE_WIZ, REMOTE_HOST, REMOTE_RPC, REMOTE_ZMQ, IN_MONERO_USER, IN_MONERO_PASS, POOL_TIER,
+# IN_DASH_USER, IN_DASH_PASS — plus wizard_ask_tari's own.
 wizard_ask_core() {
     while :; do
         read -r -p "Enter Monero Wallet Address (primary — starts with 4): " IN_MONERO_WALLET || break
@@ -48,20 +51,7 @@ wizard_ask_core() {
         *) echo "  ✗ Not a valid Monero primary address (95 chars, starts with 4). Try again." >&2 ;;
         esac
     done
-    while :; do
-        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
-        [ -z "$IN_TARI_WALLET" ] && break # the shared required-fields check below owns this
-        case "$(tari_address_type "$IN_TARI_WALLET")" in
-        ok | unchecked) break ;;
-        checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your Tari wallet." >&2 ;;
-        network) echo "  ✗ That address is for a Tari testnet — this stack mines MAINNET Tari. Use your mainnet address." >&2 ;;
-        *) echo "  ✗ Not a valid Tari address (base58 or emoji form). Try again." >&2 ;;
-        esac
-    done
-
-    if [ -z "$IN_MONERO_WALLET" ] || [ -z "$IN_TARI_WALLET" ]; then
-        error "Wallet addresses are required. Aborting."
-    fi
+    [ -n "$IN_MONERO_WALLET" ] || error "A Monero wallet address is required. Aborting."
 
     echo ""
     echo "--- Node Configuration ---"
@@ -84,8 +74,8 @@ wizard_ask_core() {
         read -r -p "Enter Remote Node Host (IP or Domain): " REMOTE_HOST || true
         read -r -p "Enter Remote RPC Port [18081]: " REMOTE_RPC || true
         read -r -p "Enter Remote ZMQ Port [18083]: " REMOTE_ZMQ || true
-        REMOTE_RPC=${REMOTE_RPC:-18081}
-        REMOTE_ZMQ=${REMOTE_ZMQ:-18083}
+        REMOTE_RPC=$(wizard_port "$REMOTE_RPC" 18081)
+        REMOTE_ZMQ=$(wizard_port "$REMOTE_ZMQ" 18083)
 
         read -r -p "Does the remote node require authentication? (y/N): " REMOTE_AUTH || true
         if [[ "$REMOTE_AUTH" =~ ^[Yy] ]]; then
@@ -94,6 +84,8 @@ wizard_ask_core() {
             echo ""
         fi
     fi
+
+    wizard_ask_tari
 
     # Pool tier (#502's highest-value gap): p2pool's three sidechains are sized by hashrate, so
     # picking the wrong one is silently suboptimal (a small miner on "main" waits days between
@@ -129,6 +121,126 @@ wizard_ask_core() {
         [ "${#IN_DASH_PASS}" -ge 8 ] && break
         echo "  ✗ Must be at least 8 characters (or blank to skip). Try again." >&2
     done
+}
+
+# A port answer, or the default when the answer is blank or is not a port. Every port prompt here
+# feeds `jq --argjson`, which aborts the whole wizard on anything that is not a number — after the
+# operator has already answered every other question. Same shape as the browser wizard's own
+# build_config port() helper, and used by all three prompts, not just the new one.
+wizard_port() {
+    is_valid_port "$1" && printf '%s' "$1" || printf '%s' "$2"
+}
+
+# The Enter-through answer to "Merge-mine Tari?" (#1916), derived from free disk rather than fixed.
+# The bundled Tari node wants a ~200 GB chain of its own on top of Monero's, so a fixed yes commits
+# an undersized host to a first sync that fills its disk, and a fixed no drops the stack's headline
+# feature on a host with room to spare. Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the
+# one-line reason for it — the operator reads the measurement, not just the verdict it produced.
+# Printing rather than returning the reason is deliberate: a `$(...)` caller would run this in a
+# subshell, where a second global could be set and silently lost.
+#
+# Budget figures and mount resolution come from disk_component_gib / disk_fs_mount, the same source
+# doctor's Disk check and preflight_resources read, so a host offered "local" here is not a host
+# doctor then warns about. ./data is the location because config.json — the file that could move a
+# data_dir — is what this wizard is being run to write.
+#
+# Best-effort: a mount or a df that will not resolve gives "local", which is what every pre-#1916
+# run did and what an omitted tari.mode still means, and the line says the disk could not be read.
+# Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
+wizard_tari_disk_default() {
+    local monero_mode="$1" mount avail_kb avail_h need_gib comp verdict
+    need_gib=0
+    for comp in tari p2pool dashboard tor; do
+        need_gib=$((need_gib + $(disk_component_gib "$comp")))
+    done
+    [ "$monero_mode" == "remote" ] || need_gib=$((need_gib + $(disk_component_gib monero 1)))
+
+    mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
+    avail_kb=""
+    if [ -n "$mount" ]; then
+        avail_kb=$(df -P "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
+    fi
+    if [ -z "$avail_kb" ]; then
+        WIZ_TARI_DEFAULT="local"
+        echo "Disk: could not read the free space where $PWD/data will live, so running the bundled node is the default. The whole stack needs ~${need_gib} GB there."
+        return 0
+    fi
+    avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
+    # One sentence, one verdict clause: the two outcomes cannot drift apart on a later edit.
+    if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then
+        WIZ_TARI_DEFAULT="local"
+        verdict="it fits, so running it is the default."
+    else
+        WIZ_TARI_DEFAULT="off"
+        verdict="it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
+    fi
+    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GB there — $verdict"
+}
+
+# Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?
+#
+# The CLI wizard had no answer that meant "I do not merge-mine": it demanded a payout address and
+# aborted without one, and it wrote no tari.mode, so an operator who did not want Tari had to know
+# that tari.mode "off" existed and hand-edit config.json after setup. This asks the same three-way
+# question the browser wizard asks, in the same order and the same place — after the Monero node
+# question, before the pool tier (dashboard/.../wizard/setup.mjs) — so the two setup paths cannot
+# answer it in different dialects. The Monero answer comes first for a second reason: it decides
+# whether Monero's chain counts against the disk the default is derived from.
+#
+# A decline asks nothing further and stores no payout address: a machine that merge-mines nothing
+# has nowhere to be paid, and parse_and_validate_config already drops the address from the required
+# set when the mode is "off" (#1855). Sets TARI_MODE_WIZ, IN_TARI_WALLET, TARI_REMOTE_HOST,
+# TARI_REMOTE_GRPC.
+wizard_ask_tari() {
+    local dflt
+    IN_TARI_WALLET="" TARI_REMOTE_HOST="" TARI_REMOTE_GRPC=""
+
+    echo ""
+    echo "--- Tari merge-mining ---"
+    echo "Merge-mining earns Tari from the same work that mines Monero, so it costs no hashrate —"
+    echo "but it needs its own payout address and a Tari base node."
+    echo "  1) No — mine Monero only"
+    echo "  2) Yes — run the bundled Tari node on this machine"
+    echo "  3) Yes — use a Tari node I already run"
+    wizard_tari_disk_default "$MONERO_MODE_WIZ" # prints the Disk: line, sets WIZ_TARI_DEFAULT
+    dflt=2
+    [ "$WIZ_TARI_DEFAULT" == "off" ] && dflt=1
+    read -r -p "Merge-mine Tari? [$dflt]: " IN_TARI_MODE || true
+    case "$(printf '%s' "$IN_TARI_MODE" | tr 'A-Z' 'a-z')" in
+    "") TARI_MODE_WIZ="$WIZ_TARI_DEFAULT" ;;
+    1 | n | no | off) TARI_MODE_WIZ="off" ;;
+    2 | y | yes | local) TARI_MODE_WIZ="local" ;;
+    3 | remote) TARI_MODE_WIZ="remote" ;;
+    *)
+        echo "  Not 1/2/3 — taking the default ($dflt)." >&2
+        TARI_MODE_WIZ="$WIZ_TARI_DEFAULT"
+        ;;
+    esac
+
+    if [ "$TARI_MODE_WIZ" == "off" ]; then
+        log "Tari merge-mining is OFF: no Tari node runs, P2Pool drops its merge-mine arguments, and no Tari payout address is needed. Turn it on later by setting tari.mode in $CONFIG_FILE and running '$0 apply', or from the dashboard's Configuration view."
+        return 0
+    fi
+
+    while :; do
+        read -r -p "Enter Tari Wallet Address (base58 or emoji form): " IN_TARI_WALLET || break
+        [ -z "$IN_TARI_WALLET" ] && break # the required-field check below owns this
+        case "$(tari_address_type "$IN_TARI_WALLET")" in
+        ok | unchecked) break ;;
+        checksum) echo "  ✗ Checksum failed — at least one character is mistyped. Re-copy the address from your Tari wallet." >&2 ;;
+        network) echo "  ✗ That address is for a Tari testnet — this stack mines MAINNET Tari. Use your mainnet address." >&2 ;;
+        *) echo "  ✗ Not a valid Tari address (base58 or emoji form). Try again." >&2 ;;
+        esac
+    done
+    [ -n "$IN_TARI_WALLET" ] ||
+        error "A Tari payout address is required to merge-mine Tari — the rewards would have nowhere to go. Answer 1 (No) to mine Monero only. Aborting."
+
+    if [ "$TARI_MODE_WIZ" == "remote" ]; then
+        read -r -p "Enter Tari Node Host (IP or Domain): " TARI_REMOTE_HOST || true
+        read -r -p "Enter Tari gRPC Port [18142]: " TARI_REMOTE_GRPC || true
+        TARI_REMOTE_GRPC=$(wizard_port "$TARI_REMOTE_GRPC" 18142)
+    fi
+    log "Tari merge-mining is ON, against the $TARI_MODE_WIZ Tari node."
 }
 
 # Stage 2 (#502): a FEW overarching "how should this run" questions, each Enter-through and each
@@ -173,12 +285,28 @@ wizard_write_config() {
         --arg mwallet "$IN_MONERO_WALLET" \
         --arg mu "$IN_MONERO_USER" \
         --arg mp "$IN_MONERO_PASS" \
-        --arg twallet "$IN_TARI_WALLET" \
+        --arg tmode "$TARI_MODE_WIZ" \
         --arg pool "$POOL_TIER" \
         '{monero: {mode: $mode, wallet_address: $mwallet, node_username: $mu, node_password: $mp},
-          tari: {wallet_address: $twallet},
+          tari: {mode: $tmode},
           p2pool: {pool: $pool, stratum_password: "auto"},
           dashboard: {secure: true}}')
+
+    # tari.mode is written EXPLICITLY, and it is the one key here that departs from the rest of the
+    # wizard's omit-and-inherit habit (#1916). A config with no tari.mode parses as "local" — the
+    # deliberate default that keeps a 1.x upgrade merge-mining (28-parse-and-validate-config.sh) —
+    # so omitting the key on a decline would merge-mine anyway, which is the whole defect. The
+    # payout address goes the other way: a machine that merge-mines nothing has nowhere to be paid,
+    # so the key is absent rather than written empty. Same two rules as the browser wizard's
+    # build_config, for the same two reasons.
+    if [ "$TARI_MODE_WIZ" != "off" ]; then
+        cfg=$(jq --arg tw "$IN_TARI_WALLET" '.tari.wallet_address = $tw' <<<"$cfg")
+    fi
+
+    if [ "$TARI_MODE_WIZ" == "remote" ]; then
+        cfg=$(jq --arg h "$TARI_REMOTE_HOST" --argjson g "${TARI_REMOTE_GRPC:-18142}" \
+            '.tari.remote = {host: $h, grpc_port: $g}' <<<"$cfg")
+    fi
 
     if [ "$MONERO_MODE_WIZ" == "remote" ]; then
         cfg=$(jq --arg h "$REMOTE_HOST" --argjson rpc "${REMOTE_RPC:-18081}" --argjson zmq "${REMOTE_ZMQ:-18083}" \
