@@ -304,9 +304,12 @@ it on. An install that had already reported success is safe on the disk.)
 Most of the configuration stays editable from the dashboard afterwards — see
 [configuration](configuration.md) for everything you can tune. Be aware of one honest limit
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts. Changing them later does not mean reinstalling: write the new settings to a
+password) can be set **here, at install**, but not changed from the dashboard later — that
+restriction is deliberate, so a compromised browser session can never redirect your payouts.
+Per-rig worker entries are the exception: adding or repointing a rig's control address and token
+*is* possible from the dashboard, behind a typed confirmation, so that a machine with no keyboard
+can still adopt a new rig. Changing them later does not mean reinstalling: write the new settings
+to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
 media and power-cycle the machine is authority over it already, so that channel may set anything,
