@@ -52,11 +52,11 @@ case "$*" in
     echo "table inet netavark"
     exit 0
     ;;
-"list table inet pithead_egress")
+*"list table inet pithead_egress")
+    # JSON: the check reads `nft -j` and asks whether the drop is a rule IN the forward-hooked
+    # chain. A text ruleset is no longer what the code consumes, so a text stub tests nothing.
     [ "${NFT_LIVE:-0}" = 1 ] || exit 1
-    printf '%s\n' 'table inet pithead_egress {' '  chain forward {' \
-        '    type filter hook forward priority -5; policy accept;' \
-        '    ip saddr 172.28.0.0/24 drop' '  }' '}'
+    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}'
     exit 0
     ;;
 esac
@@ -184,3 +184,98 @@ assert_not_contains "apply: ...and is not alarmed about either, on a first-ever 
 assert_contains "apply: it says what is actually true — staged, not yet traversed" "$ipj_out" "staged in DOCKER-USER"
 unset IPJ ipj_out
 unset -f ipj_enforced
+
+echo "== 'enforced' must mean the DROP DECIDES, not that the word appears (#2059 final review) =="
+# A pre-merge adversarial review executed the real tor_egress_enforced() against two realistic
+# kernel states and got rc 0 — "enforced" — on both while clearnet egress was open. Presence is not
+# enforcement, and these are the two ways that came apart.
+DEC="$EGV/decide"
+mkdir -p "$DEC"
+cp "$EGV/bin/sudo" "$EGV/bin/docker" "$DEC/"
+
+# (1) nft: the hooked chain only ACCEPTS; a second, unhooked chain merely CONTAINS the word "drop".
+# Two independent greps over one dump are both satisfied; the kernel drops nothing.
+cat >"$DEC/nft" <<'NFT'
+#!/usr/bin/env bash
+case "$*" in
+"list tables") echo "table inet pithead_egress" ;;
+*"list table inet pithead_egress")
+    if [ "${NFT_DECOY:-0}" = 1 ]; then
+        cat <<'J'
+{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},
+{"chain":{"name":"decoy_unused"}},
+{"rule":{"chain":"decoy_unused","expr":[{"drop":null}]}}]}
+J
+    else
+        cat <<'J'
+{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},
+{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}
+J
+    fi
+    ;;
+esac
+exit 0
+NFT
+chmod +x "$DEC/nft"
+# `env` cannot invoke a SHELL FUNCTION, and run_sourced is one — the first cut of this helper
+# silently failed every call rather than exercising the branch. Prefix assignments are what the
+# rest of this file uses, and they demonstrably reach the stub processes.
+dec_rc() { # <engine> <NFT_DECOY> <IPT_SHADOW> -> rc of the real tor_egress_enforced
+    local rc=0
+    NFT_DECOY="$2" IPT_SHADOW="$3" PITHEAD_ENGINE="$1" PATH="$DEC:$PATH" \
+        run_sourced "$EGV" tor_egress_enforced >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+assert_eq "nft: drop INSIDE the hooked chain -> enforced" "$(dec_rc podman 0 0)" "0"
+assert_eq "nft: hooked chain accepts, 'drop' only in an unhooked chain -> NOT enforced" "$(dec_rc podman 1 0)" "1"
+
+# (2) iptables: our tagged DROP is present and the chain IS jumped to, but a foreign ACCEPT sits
+# above it. iptables is first-match-wins (inserting an ACCEPT at DOCKER-USER position 1 is a
+# documented ufw/firewalld workaround), so the DROP never fires.
+cat >"$DEC/iptables" <<'IPT'
+#!/usr/bin/env bash
+case "$*" in
+"-S DOCKER-USER")
+    echo '-N DOCKER-USER'
+    [ "${IPT_SHADOW:-0}" = 1 ] && echo '-A DOCKER-USER -s 172.28.0.0/24 -j ACCEPT'
+    echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
+    echo '-A DOCKER-USER -j RETURN'
+    ;;
+"-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
+"-S") echo '-P FORWARD ACCEPT' ;;
+esac
+exit 0
+IPT
+chmod +x "$DEC/iptables"
+assert_eq "iptables: our DROP first, Docker's RETURN below it -> enforced" "$(dec_rc docker 0 0)" "0"
+assert_eq "iptables: a foreign ACCEPT above our DROP -> NOT provably enforced" "$(dec_rc docker 0 1)" "5"
+# ...and neither apply nor doctor may call that "enforced".
+dec_out="$(IPT_SHADOW=1 PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
+assert_not_contains "apply: a shadowed DROP is never claimed as enforced" "$dec_out" "SHOULD-NOT-CLAIM"
+assert_contains "apply: ...and says which exit it took" "$dec_out" "egress-apply:shadowed"
+dec_out="$(IPT_SHADOW=1 PITHEAD_ENGINE=docker RUNNING_CONTAINERS=tor PATH="$DEC:$PATH" run_sourced "$EGV" check_egress_firewall_installed 2>&1)"
+assert_not_contains "doctor: a shadowed DROP is never reported fail-closed" "$dec_out" "are fail-closed"
+assert_contains "doctor: ...it warns that precedence cannot be confirmed" "$dec_out" "sits ABOVE the DROP"
+
+# (3) A missing FORWARD jump is benign ONLY before the stack exists. With the stack up it is a live
+# fail-open, and apply must say so rather than inherit stack_up's first-boot framing.
+cat >"$DEC/iptables-nojump" <<'IPT'
+#!/usr/bin/env bash
+case "$*" in
+"-S DOCKER-USER")
+    echo '-N DOCKER-USER'
+    echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
+    ;;
+"-S FORWARD") echo '-P FORWARD ACCEPT' ;;
+"-S") echo '-P FORWARD ACCEPT' ;;
+esac
+exit 0
+IPT
+cp "$DEC/iptables-nojump" "$DEC/iptables"
+dec_out="$(PITHEAD_ENGINE=docker RUNNING_CONTAINERS='' PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
+assert_contains "apply, stack NOT up: a missing jump is stated as staged, not alarmed" "$dec_out" "staged in DOCKER-USER"
+dec_out="$(PITHEAD_ENGINE=docker RUNNING_CONTAINERS=tor PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
+assert_contains "apply, stack ALREADY UP: a missing jump is a live fail-open and warns" "$dec_out" "egress-apply:jump-missing"
+assert_not_contains "apply, stack already up: ...and is not called staged" "$dec_out" "staged in DOCKER-USER"
+unset DEC dec_out
+unset -f dec_rc

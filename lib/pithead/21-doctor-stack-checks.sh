@@ -74,6 +74,10 @@ check_egress_firewall_installed() {
     # nothing traverses them. The stack is up by the time this runs, so the engine has had its chance
     # to add the jump — its absence is a live fail-open, not the first-boot ordering apply tolerates.
     4) dr_fail_surface "Tor-only egress rules are present in DOCKER-USER but NOTHING JUMPS TO IT — the chain is orphaned, so clearnet dials from the stack are NOT being dropped. This is what a container engine that does not add the FORWARD jump (or a firewall manager that removed it) leaves behind. Run './pithead up' to reinstall, and check that the engine manages iptables." "Tor-only egress rules exist but are not being applied to traffic — the firewall chain is not connected, so clearnet dials from the stack are not being dropped. Restarting this machine reinstalls them." ;;
+    # Reachable and present, but a foreign rule sits above our DROP. Not proof of a leak — proof we
+    # cannot rule one out — so it is a WARN, not the FAIL a confirmed absence gets. Saying "installed"
+    # here would be the exact unearned claim this check exists to stop.
+    5) dr_warn_surface "Tor-egress rules are installed, but a rule that is not ours sits ABOVE the DROP in DOCKER-USER — iptables is first-match-wins, so the DROP may never be reached and clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." "Tor-egress rules are installed, but another firewall rule takes precedence over them, so clearnet egress cannot be confirmed as blocked on this machine." ;;
     *) dr_info_surface "Tor-egress firewall check skipped — reading the rules needs passwordless sudo. Verify manually: '$reread'." "Tor-egress firewall check skipped — the firewall rules could not be read on this machine." ;;
     esac
     return 0

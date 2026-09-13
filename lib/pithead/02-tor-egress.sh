@@ -107,9 +107,11 @@ mining_net_ipv6_bridge() {
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
 # an honest "I cannot tell". 4 = the rules are installed but NOTHING TRAVERSES THEM — see the
-# iptables branch. Callers act on all five differently; collapsing 2 into 3 is how a fail-open box
-# passed the A/B commit gate, and collapsing 4 into 0 would hide #855's own failure mode inside the
-# verifier written to close it.
+# iptables branch. 5 = installed and reachable, but a FOREIGN rule sits ABOVE our DROP, so we
+# cannot claim the drop is what decides — not proof of a leak, proof we cannot verify one is absent.
+# Callers act on all six differently; collapsing 2 into 3 is how a fail-open box passed the A/B
+# commit gate, and collapsing 4 or 5 into 0 would hide #855's own failure mode inside the verifier
+# written to close it.
 tor_egress_enforced() {
     local out
     if [ "$(container_engine)" = "podman" ]; then
@@ -117,15 +119,22 @@ tor_egress_enforced() {
         # `nft list table` returns rc 1 both when the table is missing AND when sudo -n is refused; a
         # cheap `list tables` probe (succeeds whether or not our table exists) tells the two apart, so
         # a sudo refusal can't masquerade as a missing firewall (a false "not enforced").
+        command -v jq >/dev/null 2>&1 || return 3
         sudo -n nft list tables >/dev/null 2>&1 || return 3
-        out=$(sudo -n nft list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || return 1
-        # Here-strings, NOT pipes. Under `pipefail` a `grep -q` that matches EARLY exits while the
-        # producer is still writing, the producer takes SIGPIPE, and the pipeline yields 141 — so the
-        # guard fires on a SUCCESSFUL match. Measured: identical code returns 0 on one line of input
-        # and 141 on a long one, which is why a one-line stub can never reproduce it and a real
-        # ruleset does. A here-string is not a pipeline and has no such failure mode.
-        grep -q 'hook forward' <<<"$out" || return 1
-        grep -qw drop <<<"$out" || return 1
+        out=$(sudo -n nft -j list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || return 1
+        # STRUCTURE, not two greps over one dump. The first cut asked `grep -q 'hook forward'` and
+        # `grep -qw drop` INDEPENDENTLY — which a table satisfies when its hooked chain only ACCEPTS
+        # and some OTHER chain merely contains the word "drop". Measured rc 0 on exactly that state:
+        # "enforced" while forward traffic was wide open. The drop has to be IN a chain hooked at
+        # forward, and only the JSON can say so. `nft -j` and jq are already dependencies of this
+        # file — mining_net_ipv6_bridge parses podman's JSON with jq a few lines below.
+        #
+        # Here-string, not a pipe: under `pipefail` a consumer that exits early makes the producer
+        # take SIGPIPE and the pipeline yield 141, firing the guard on a SUCCESSFUL match. That
+        # shipped once and real hardware caught it.
+        jq -e '[.nftables[] | select(has("chain")) | select(.chain.hook == "forward") | .chain.name] as $h
+               | [.nftables[] | select(has("rule")) | select(.rule.expr | any(has("drop"))) | .rule.chain]
+               | map(select(IN($h[]))) | length > 0' >/dev/null 2>&1 <<<"$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -135,8 +144,23 @@ tor_egress_enforced() {
     # unreadable ruleset doctor would skip past.
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
-    grep -qF -- "$TOR_EGRESS_TAG" <<<"$out" || return 1
-    # REACHABILITY, not just presence. #855 was a DROP sitting in a chain no packet traverses, and
+    grep -qE -- "$TOR_EGRESS_TAG.* -j DROP" <<<"$out" || return 1
+    # iptables is FIRST MATCH WINS, so a rule ABOVE our DROP makes it dead while it is still
+    # "present". Inserting an ACCEPT at DOCKER-USER position 1 is a documented ufw/firewalld
+    # workaround, and this function measured rc 0 — "enforced" — with the DROP unreachable behind
+    # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
+    # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
+    # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+        -N* | -P*) continue ;;
+        *"$TOR_EGRESS_TAG"*" -j DROP"*) break ;;
+        *"$TOR_EGRESS_TAG"*) continue ;;
+        *) return 5 ;;
+        esac
+    done <<<"$out"
+    # REACHABILITY AND PRECEDENCE, not just presence. #855 was a DROP in a chain no packet traverses, and
     # asserting the tagged rules exist cannot see that — `apply_tor_egress_iptables` pre-creates
     # DOCKER-USER itself, so a populated chain proves only that WE wrote to it. The nft branch above
     # proves reachability by asserting the base chain's forward hook; the iptables equivalent is the
@@ -163,10 +187,24 @@ tor_egress_verify_or_warn() { # <success message>
     0) log "$1" ;;
     1) warn "egress-apply:verify-absent — the Tor-egress rules installed without error but are NOT in the live ruleset. Clearnet egress is NOT fail-closed." ;;
     2) warn "egress-apply:verify-no-tool — the Tor-egress rules cannot be read back because the backend's tool is not on PATH. Clearnet egress is NOT fail-closed." ;;
-    # Expected on a first-ever `up`: the rules go in before compose, and Docker adds the
-    # FORWARD -> DOCKER-USER jump when it creates the network. Stated rather than claimed as
-    # enforced — and doctor, which runs against a live stack, FAILs if the jump never appears.
-    4) log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack." ;;
+    # A missing jump is only benign BEFORE the network exists. `stack_up` installs ahead of compose
+    # on a first-ever `up`, and Docker adds the FORWARD -> DOCKER-USER jump with its first network —
+    # alarming there would cry wolf on every fresh install. But this same function is reached from
+    # `apply`, `upgrade` and `reset-dashboard` (40-apply-and-render.sh, 03-release-verify.sh,
+    # 16-reset.sh), which normally run against an ALREADY-RUNNING stack — where the engine has long
+    # since had its chance and a vanished jump is a live fail-open, right now. Keying on the stack
+    # itself is what separates the two; a silent `log` in the second case is an apply that should
+    # have alarmed and did not.
+    4)
+        if container_is_running tor; then
+            warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER while the stack is running. Clearnet egress is NOT fail-closed."
+        else
+            log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack."
+        fi
+        ;;
+    # Reachable and present, but something foreign sits above our DROP. We cannot say the drop is
+    # what decides, so we do not say "enforced" — on either call path.
+    5) warn "egress-apply:shadowed — a rule that is not ours sits ABOVE the Tor-egress DROP in DOCKER-USER, so the DROP may never be reached. Clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." ;;
     *) warn "egress-apply:verify-unreadable — the Tor-egress rules installed, but reading them back needs passwordless sudo, so enforcement is UNPROVEN." ;;
     esac
 }

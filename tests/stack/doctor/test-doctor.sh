@@ -88,6 +88,7 @@ cat >"$DRBIN/iptables" <<'EOF'
 [ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
 [ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
 echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
+echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
 EOF
 cat >"$DRBIN/ss" <<'EOF'
 #!/usr/bin/env bash
@@ -103,13 +104,12 @@ EOF
 # else exits 1 (table absent). Lets a test distinguish "installed & traversed" from "missing".
 cat >"$DRBIN/nft" <<'EOF'
 #!/usr/bin/env bash
+# Speaks JSON: the check reads `nft -j` to ask if the drop is a rule IN the forward-hooked chain.
 case "$*" in
-"list tables") echo "table inet netavark" ;;
-"list table inet pithead_egress")
+*"list tables") echo "table inet netavark" ;;
+*"list table inet pithead_egress")
     [ "${NFT_HOOK:-0}" = "1" ] || exit 1
-    printf '%s\n' 'table inet pithead_egress {' '  chain forward {' \
-        '    type filter hook forward priority -5; policy accept;' \
-        '    ip saddr 172.28.0.0/24 drop' '  }' '}' ;;
+    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
 esac
 exit 0
 EOF
