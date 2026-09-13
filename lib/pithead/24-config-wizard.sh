@@ -148,9 +148,11 @@ wizard_port() {
 # run did and what an omitted tari.mode still means, and the line says the disk could not be read.
 # Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
 wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib
-    need_gib=$(($(disk_component_gib tari) + $(disk_component_gib p2pool) +
-        $(disk_component_gib dashboard) + $(disk_component_gib tor)))
+    local monero_mode="$1" mount avail_kb avail_h need_gib comp
+    need_gib=0
+    for comp in tari p2pool dashboard tor; do
+        need_gib=$((need_gib + $(disk_component_gib "$comp")))
+    done
     [ "$monero_mode" == "remote" ] || need_gib=$((need_gib + $(disk_component_gib monero 1)))
 
     mount=$(disk_fs_mount "$PWD/data" 2>/dev/null) || mount=""
