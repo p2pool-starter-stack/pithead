@@ -23,11 +23,16 @@ remote_node_ip_allowed() { # <ip> <firewall-enabled>
     case "${ip,,}" in 2*:* | 3*:* | fc*:* | fd*:*) return 0 ;; *) return 1 ;; esac
 }
 
-remote_node_address() { # <config-file> <host>; prints one address approved for every probe
+# Prints one address approved for every probe. Two failures, two exit codes, because the caller has
+# to tell them apart and cannot read a variable back out of a command substitution (#1913): rc 2 is
+# "the name produced no address at all", rc 1 is "it resolved, and an answer is outside what
+# network.tor_egress_firewall allows". Collapsing them sent an operator with a typo'd hostname to
+# check a firewall that was working.
+remote_node_address() { # <config-file> <host>; rc 2 = unresolvable, rc 1 = address not allowed
     local cfg="$1" host="$2" firewall resolved ip first=""
     firewall=$(config_bool '.network.tor_egress_firewall' true "$cfg")
-    resolved=$(_resolve_host_ips "$host") || return 1
-    [ -n "$resolved" ] || return 1
+    resolved=$(_resolve_host_ips "$host") || return 2
+    [ -n "$resolved" ] || return 2
     while IFS= read -r ip; do
         remote_node_ip_allowed "$ip" "$firewall" || return 1
         [ -n "$first" ] || first="$ip"
@@ -124,7 +129,9 @@ preflight_remote_nodes() { # <config-file>
         port=$(jq -r '.monero.remote.rpc_port // 18081' "$cfg")
         zmq=$(jq -r '.monero.remote.zmq_port // 18083' "$cfg")
         address=$(remote_node_address "$cfg" "$host") || {
-            printf 'cannot use the remote Monero node at %s:%s — use an address allowed by network.tor_egress_firewall' "$host" "$port"
+            case "$?" in 2) NODE_PROBE_REASON=dns ;; *) NODE_PROBE_REASON=address ;; esac
+            [ "$NODE_PROBE_REASON" != dns ] || printf 'the remote Monero node name %s does not resolve from this machine — check it for a typo, or give a numeric address' "$host"
+            [ "$NODE_PROBE_REASON" = dns ] || printf 'cannot use the remote Monero node at %s:%s — use an address allowed by network.tor_egress_firewall' "$host" "$port"
             return 1
         }
         if ! monero_rpc_speaks "$cfg" "$address" "$port"; then
@@ -147,7 +154,9 @@ preflight_remote_nodes() { # <config-file>
         host=$(jq -r '.tari.remote.host // ""' "$cfg")
         port=$(jq -r '.tari.remote.grpc_port // 18142' "$cfg")
         address=$(remote_node_address "$cfg" "$host") || {
-            printf 'cannot use the remote Tari node at %s:%s — use an address allowed by network.tor_egress_firewall and check tari.grpc_lan_access' "$host" "$port"
+            case "$?" in 2) NODE_PROBE_REASON=dns ;; *) NODE_PROBE_REASON=address ;; esac
+            [ "$NODE_PROBE_REASON" != dns ] || printf 'the remote Tari node name %s does not resolve from this machine — check it for a typo, or give a numeric address' "$host"
+            [ "$NODE_PROBE_REASON" = dns ] || printf 'cannot use the remote Tari node at %s:%s — use an address allowed by network.tor_egress_firewall and check tari.grpc_lan_access' "$host" "$port"
             return 1
         }
         if ! timeout 5 bash -c "</dev/tcp/$address/$port" 2>/dev/null; then

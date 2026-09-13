@@ -1,6 +1,6 @@
 // The wizard server's remote-node probe report, rendered (#1889). ONE module, because the same report
 // reaches an operator on two surfaces — the wizard's setup screen, and the Configuration view's
-// preview once the control channel carries a probe of its own — and six failure reasons worded
+// preview once the control channel carries a probe of its own — and nine failure reasons worded
 // two ways is exactly how two surfaces come to disagree about what a failure means.
 //
 // IT GATES NOTHING. wizard.py runs the protocol checks and hands the form back before it stages a
