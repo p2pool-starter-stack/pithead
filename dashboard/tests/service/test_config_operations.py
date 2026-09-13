@@ -72,7 +72,9 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["p2pool.pool"] == "free"
     assert classes["monero.prune"] == "confirm"
     assert classes["telegram.enabled"] == "approval"
-    assert "monero.wallet_address" not in classes, "a payout destination is host-only (2026-09-13 perimeter audit)"
+    assert "monero.wallet_address" not in classes, (
+        "a payout destination is host-only (2026-09-13 perimeter audit)"
+    )
     assert "network.tor_egress_firewall" not in classes
     assert "dashboard.control.enabled" not in classes
     assert "dashboard.auth.password" not in classes

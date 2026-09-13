@@ -87,7 +87,7 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   );
 }
 
-const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply, or use a configuration stick";
+const HOST_ONLY_TITLE = "Host-only — run ./pithead apply on the host, or use a configuration stick";
 // #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review
 // modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
