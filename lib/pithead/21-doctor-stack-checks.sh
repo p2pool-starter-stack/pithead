@@ -77,7 +77,12 @@ check_egress_firewall_installed() {
     # Reachable and present, but a foreign rule sits above our DROP. Not proof of a leak — proof we
     # cannot rule one out — so it is a WARN, not the FAIL a confirmed absence gets. Saying "installed"
     # here would be the exact unearned claim this check exists to stop.
-    5) dr_warn_surface "Tor-egress rules are installed, but a rule that is not ours sits ABOVE the DROP in DOCKER-USER — iptables is first-match-wins, so the DROP may never be reached and clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." "Tor-egress rules are installed, but another firewall rule takes precedence over them, so clearnet egress cannot be confirmed as blocked on this machine." ;;
+    # FAIL, not WARN. os/overlay/pithead-boot gates the A/B commit on doctor's EXIT CODE, and only
+    # dr_fail moves it — so a WARN here would commit a slot whose enforcement is, by this check's own
+    # wording, unproven. That is the "an ambiguous readback passes the gate silently" class #2059
+    # exists to close, one severity level down. The walk only reaches here for a rule that could
+    # actually match the mining subnet, so this does not fire on an unrelated neighbour rule.
+    5) dr_fail_surface "Tor-egress rules are installed, but a rule that is not ours sits ABOVE the DROP in DOCKER-USER — iptables is first-match-wins, so the DROP may never be reached and clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." "Tor-egress rules are installed, but another firewall rule takes precedence over them, so clearnet egress cannot be confirmed as blocked on this machine." ;;
     *) dr_info_surface "Tor-egress firewall check skipped — reading the rules needs passwordless sudo. Verify manually: '$reread'." "Tor-egress firewall check skipped — the firewall rules could not be read on this machine." ;;
     esac
     return 0

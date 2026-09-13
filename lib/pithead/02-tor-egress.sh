@@ -132,9 +132,13 @@ tor_egress_enforced() {
         # Here-string, not a pipe: under `pipefail` a consumer that exits early makes the producer
         # take SIGPIPE and the pipeline yield 141, firing the guard on a SUCCESSFUL match. That
         # shipped once and real hardware caught it.
+        # ...and PRECEDENCE within it, for the same reason the iptables branch walks rule order: a
+        # drop below an unconditional `accept` in the same hooked chain never fires. Verified
+        # against real nftables — that shape read as "enforced" before this clause.
         jq -e '[.nftables[] | select(has("chain")) | select(.chain.hook == "forward") | .chain.name] as $h
-               | [.nftables[] | select(has("rule")) | select(.rule.expr | any(has("drop"))) | .rule.chain]
-               | map(select(IN($h[]))) | length > 0' >/dev/null 2>&1 <<<"$out" || return 1
+               | [.nftables[] | select(has("rule")) | select(.rule.chain as $c | $h | index($c)) | .rule.expr] as $r
+               | ($r | map(any(has("drop"))) | index(true)) as $d
+               | $d != null and (($r[0:$d] // []) | all(. != [{"accept":null}]))' >/dev/null 2>&1 <<<"$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -151,13 +155,33 @@ tor_egress_enforced() {
     # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
-    local line
+    local line subnet
+    subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
+    [ -n "$subnet" ] || subnet="172.28.0.0/24"
     while IFS= read -r line; do
         case "$line" in
         -N* | -P*) continue ;;
         *"$TOR_EGRESS_TAG"*" -j DROP"*) break ;;
         *"$TOR_EGRESS_TAG"*) continue ;;
-        *) return 5 ;;
+        *)
+            # A foreign rule only shadows if it TERMINATES the chain (ACCEPT/RETURN) *and* could
+            # match our traffic — unscoped, or scoped to our own subnet. DOCKER-USER is host-wide
+            # and shared with every other compose project (ufw-docker writes there), so flagging a
+            # rule that cannot match us would fire permanently on healthy hosts and desensitise the
+            # one time it matters. KNOWN GAP, stated rather than hidden: a `-s` SUPERNET containing
+            # our subnet is not recognised as overlapping, so it reads as harmless.
+            case "$line" in
+            *" -j ACCEPT" | *" -j RETURN" | *" -j ACCEPT "* | *" -j RETURN "*) ;;
+            *) continue ;;
+            esac
+            case "$line" in
+            *" -s "*)
+                case "$line" in *" -s $subnet "* | *" -s $subnet") return 5 ;; esac
+                continue
+                ;;
+            *) return 5 ;;
+            esac
+            ;;
         esac
     done <<<"$out"
     # REACHABILITY AND PRECEDENCE, not just presence. #855 was a DROP in a chain no packet traverses, and
@@ -196,7 +220,10 @@ tor_egress_verify_or_warn() { # <success message>
     # itself is what separates the two; a silent `log` in the second case is an apply that should
     # have alarmed and did not.
     4)
-        if container_is_running tor; then
+        # mining_stack_running, NOT container_is_running tor. Tor can be down while p2pool/monerod/
+        # xmrig-proxy keep running — a live, clearnet-capable stack — and keying on tor reported
+        # that as the benign first-boot case. Measured on exactly that state before this change.
+        if mining_stack_running; then
             warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER while the stack is running. Clearnet egress is NOT fail-closed."
         else
             log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack."

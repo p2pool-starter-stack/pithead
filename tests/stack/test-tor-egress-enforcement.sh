@@ -255,7 +255,8 @@ assert_not_contains "apply: a shadowed DROP is never claimed as enforced" "$dec_
 assert_contains "apply: ...and says which exit it took" "$dec_out" "egress-apply:shadowed"
 dec_out="$(IPT_SHADOW=1 PITHEAD_ENGINE=docker RUNNING_CONTAINERS=tor PATH="$DEC:$PATH" run_sourced "$EGV" check_egress_firewall_installed 2>&1)"
 assert_not_contains "doctor: a shadowed DROP is never reported fail-closed" "$dec_out" "are fail-closed"
-assert_contains "doctor: ...it warns that precedence cannot be confirmed" "$dec_out" "sits ABOVE the DROP"
+assert_contains "doctor: ...and FAILs, because a WARN would still commit the A/B slot" "$dec_out" "sits ABOVE the DROP"
+assert_contains "doctor: ...as a FAIL verdict, not a warning" "$dec_out" "FAIL"
 
 # (3) A missing FORWARD jump is benign ONLY before the stack exists. With the stack up it is a live
 # fail-open, and apply must say so rather than inherit stack_up's first-boot framing.
@@ -274,8 +275,75 @@ IPT
 cp "$DEC/iptables-nojump" "$DEC/iptables"
 dec_out="$(PITHEAD_ENGINE=docker RUNNING_CONTAINERS='' PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
 assert_contains "apply, stack NOT up: a missing jump is stated as staged, not alarmed" "$dec_out" "staged in DOCKER-USER"
+# tor alone is NOT a live mining stack: nothing clearnet-capable is running, so a missing jump has
+# nothing to leak and the first-boot framing is honest. The signal is mining_stack_running, and this
+# row is what stops it drifting back to tor's own liveness (which reported a MINING-up, tor-down box
+# as benign — the re-review found that by execution).
 dec_out="$(PITHEAD_ENGINE=docker RUNNING_CONTAINERS=tor PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
-assert_contains "apply, stack ALREADY UP: a missing jump is a live fail-open and warns" "$dec_out" "egress-apply:jump-missing"
-assert_not_contains "apply, stack already up: ...and is not called staged" "$dec_out" "staged in DOCKER-USER"
-unset DEC dec_out
+assert_contains "apply, only tor up: a missing jump is still staged, not alarmed" "$dec_out" "staged in DOCKER-USER"
+assert_not_contains "apply, only tor up: ...and is not called a live fail-open" "$dec_out" "egress-apply:jump-missing"
 unset -f dec_rc
+
+echo "== the last three gaps the re-review found (#2059) =="
+# (a) A drop BELOW an unconditional accept in the same hooked chain never fires. Verified against
+# real nftables: that shape read as "enforced" until the check learned rule ORDER.
+cat >"$DEC/nft-prec" <<'NFT'
+#!/usr/bin/env bash
+case "$*" in
+*"list tables") echo "table inet pithead_egress" ;;
+*"list table inet pithead_egress")
+    printf '%s' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 1 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"accept":null}]}},'
+    printf '%s\n' '{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
+esac
+exit 0
+NFT
+chmod +x "$DEC/nft-prec"
+cp "$DEC/nft-prec" "$DEC/nft"
+prec_rc() {
+    local rc=0
+    NFT_PRE_ACCEPT="$1" PITHEAD_ENGINE=podman PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_enforced >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+assert_eq "nft: drop with only conditional rules above it -> enforced" "$(prec_rc 0)" "0"
+assert_eq "nft: an UNCONDITIONAL accept above the drop -> NOT enforced" "$(prec_rc 1)" "1"
+
+# (b) DOCKER-USER is host-wide and shared with every other compose project. A neighbour's rule that
+# cannot match the mining subnet must NOT be called shadowing, or the verdict fires forever on
+# healthy hosts and stops meaning anything.
+cat >"$DEC/iptables" <<'IPT'
+#!/usr/bin/env bash
+case "$*" in
+"-S DOCKER-USER")
+    echo '-N DOCKER-USER'
+    [ -n "${FOREIGN:-}" ] && echo "$FOREIGN"
+    echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
+    ;;
+"-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
+"-S") echo '-P FORWARD ACCEPT' ;;
+esac
+exit 0
+IPT
+chmod +x "$DEC/iptables"
+fgn_rc() {
+    local rc=0
+    FOREIGN="$1" PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_enforced >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+assert_eq "iptables: a neighbour project's rule on another subnet -> still enforced" \
+    "$(fgn_rc '-A DOCKER-USER -s 10.99.99.0/24 -d 10.99.99.1/32 -j ACCEPT')" "0"
+assert_eq "iptables: an UNSCOPED accept above our DROP -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -j ACCEPT')" "5"
+assert_eq "iptables: an accept scoped to OUR subnet -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -s 172.28.0.0/24 -j ACCEPT')" "5"
+assert_eq "iptables: a neighbour's non-terminating rule (LOG) -> still enforced" \
+    "$(fgn_rc '-A DOCKER-USER -s 10.99.99.0/24 -j LOG')" "0"
+
+# (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
+# Keying the "is this benign?" question on tor alone reported that as the first-boot case.
+cp "$DEC/iptables-nojump" "$DEC/iptables"
+dec_out="$(RUNNING_CONTAINERS=p2pool PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
+assert_contains "apply: tor down but MINING up, jump missing -> a live fail-open, warned" "$dec_out" "egress-apply:jump-missing"
+assert_not_contains "apply: ...not excused as first-boot staging" "$dec_out" "staged in DOCKER-USER"
+unset -f prec_rc fgn_rc
+unset DEC dec_out
