@@ -21,7 +21,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
-| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
+| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
@@ -299,7 +299,8 @@ rate and pattern of failures, not identity.
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
   guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`.
+  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a
   fresh onion and client key; the old ones stop working immediately

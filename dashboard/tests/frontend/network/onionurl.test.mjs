@@ -11,16 +11,20 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
 import { clone, renderApp } from '../harness.mjs';
-import { CLEAR_MS, OnionUrl, copyText } from '../../../mining_dashboard/web/static/network/onionurl.mjs';
+import { renderToString } from '../helpers/render.mjs';
+import { CLEAR_MS, OnionUrl, copyText, fetchClientKey } from '../../../mining_dashboard/web/static/network/onionurl.mjs';
 
 // A run of one letter, not a realistic v3 address: nothing here depends on the characters, and a
 // high-entropy literal is what puts a secret scanner on a test file that holds no secret.
 const ADDR = 'a'.repeat(56) + '.onion';
 const URL = `http://${ADDR}`;
 
-const withOnion = (onion) => {
+// controlEnabled decides WHICH answer the client-auth note gives, so it is a parameter rather
+// than the fixture's own value: the two branches are one boolean apart and both must be pinned.
+const withOnion = (onion, controlEnabled = false) => {
     const s = clone();
     s.dashboard_onion = onion;
+    s.control_enabled = controlEnabled;
     return renderApp({ state: s });
 };
 
@@ -48,6 +52,11 @@ test('no onion means no block at all — not an empty row (#1853)', () => {
 test('client authorisation is explained beside the URL when it is on (#1853)', () => {
     // The URL alone does not open under client auth, and Tor Browser's failure for a missing key
     // is indistinguishable from the service being down.
+    //
+    // With the control channel OFF there is no host runner to ask for the key, so naming the host
+    // CLI verb is the honest answer. With it ON — which is every appliance — that sentence named a
+    // command the reader has no shell to run, and #1882 is exactly that gap; the button below
+    // covers that branch.
     const on = withOnion({ url: URL, client_auth: true });
     assert.match(on, /Client authorisation is on/);
     assert.match(on, /onion-client-key/);
@@ -164,4 +173,82 @@ test('copyText degrades instead of throwing where there is no clipboard (#1853)'
 test('copyText answers false when the clipboard rejects (#1853)', async () => {
     const rejects = { writeText: async () => { throw new Error('denied'); } };
     assert.equal(await copyText(URL, rejects), false);
+});
+
+test('with the control channel on, the note offers the key instead of naming a shell (#1882)', () => {
+    // THE DEFECT. On an appliance there is no shell, so "run pithead onion-client-key" describes a
+    // door with no handle: the onion is on, published in this very header, and impossible to open.
+    const on = withOnion({ url: URL, client_auth: true }, true);
+    assert.match(on, /Client authorisation is on/);
+    assert.match(on, /Show client key/);
+    // The dead sentence must be GONE, not merely joined by a button — a reader who follows it
+    // spends their time looking for a prompt this machine does not have.
+    assert.doesNotMatch(on, /pithead onion-client-key/);
+    // The control, one boolean apart: with the channel off the CLI sentence is still the right
+    // answer and must stay. Without this row the assertion above passes on a note that lost both.
+    const off = withOnion({ url: URL, client_auth: true }, false);
+    assert.match(off, /pithead onion-client-key/);
+    assert.doesNotMatch(off, /Show client key/);
+});
+
+test('the reveal button is absent when there is no client auth to explain (#1882)', () => {
+    // A password-only onion opens from the URL alone. Offering a key there would send the
+    // operator looking for something that does not exist.
+    assert.doesNotMatch(withOnion({ url: URL, client_auth: false }, true), /Show client key/);
+});
+
+test('fetchClientKey POSTs the intent and polls to a terminal result (#1882)', async () => {
+    // The container names nothing: no key, no address, no window. It asks, and the host decides.
+    const calls = [];
+    const realFetch = globalThis.fetch;
+    const realTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = (cb) => { cb(); return 0; };
+    globalThis.fetch = async (url, opts) => {
+        calls.push({ url, opts });
+        if (url === '/api/control/onion-client-key') {
+            return { ok: true, status: 202, json: async () => ({ id: 'ID1' }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ status: 'applied', client_key: 'K', torrc_line: 'a:descriptor:x25519:K' }) };
+    };
+    try {
+        const kit = await fetchClientKey();
+        assert.equal(kit.client_key, 'K');
+    } finally {
+        globalThis.fetch = realFetch;
+        globalThis.setTimeout = realTimeout;
+    }
+    assert.equal(calls[0].opts.method, 'POST');
+    // The CSRF guard the host-side routes require: without the header the route answers 403, so a
+    // request that omits it is a reveal that never happens.
+    assert.equal(calls[0].opts.headers['X-Pithead-Control'], '1');
+    // No body — there is nothing for the container to propose.
+    assert.equal(calls[0].opts.body, undefined);
+    assert.match(calls[1].url, /^\/api\/control\/result\?id=ID1$/);
+});
+
+test('a revealed kit shows both Tor client forms, once, and says so (#1882)', () => {
+    // Both forms, because they are for different clients: Tor Browser prompts for the bare key
+    // and a system Tor wants the whole line. Guessing which the reader has is how they paste the
+    // wrong string into a prompt whose only answer is "invalid".
+    const panel = new OnionUrl({ onion: { url: URL, client_auth: true }, enabled: true });
+    panel.state = {
+        copied: false,
+        keyPhase: 'shown',
+        kit: { client_key: 'KEYVALUE', torrc_line: 'aaaa:descriptor:x25519:KEYVALUE' },
+        keyError: null,
+    };
+    const html = renderToString(panel.render(panel.props, panel.state));
+    assert.match(html, /KEYVALUE/);
+    assert.match(html, /aaaa:descriptor:x25519:KEYVALUE/);
+    // "Shown once" is the host's behaviour, so the copy has to be an instruction and not a hint.
+    assert.match(html, /shown once/);
+});
+
+test("a host refusal is surfaced verbatim, not reinterpreted (#1882)", () => {
+    // The host knows why there is no key — the onion is off, password-only, or not provisioned
+    // yet. A generic client-side "failed" would send the operator to debug Tor instead.
+    const panel = new OnionUrl({ onion: { url: URL, client_auth: true }, enabled: true });
+    panel.state = { copied: false, keyPhase: 'idle', kit: null, keyError: 'The dashboard onion is not provisioned yet.' };
+    const html = renderToString(panel.render(panel.props, panel.state));
+    assert.match(html, /not provisioned yet/);
 });

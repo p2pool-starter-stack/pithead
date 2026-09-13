@@ -26,6 +26,22 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `apply` drops `telegram.control` from an existing `config.json` on the next run, so no manual
   edit is needed. If you had the control commands enabled, it says so once as it removes the key.
 
+### Added
+
+- **The dashboard onion's client key without a shell.** With Tor client authorization on — the
+  default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
+  browser that has no client key, and the key was printed by exactly one thing: `pithead
+  onion-client-key`, on a host shell. An appliance has none, so turning the onion on there produced
+  an address that was published, shown in the dashboard header, and impossible to open, under a
+  note naming a command the reader could not run
+  ([#1882](https://github.com/p2pool-starter-stack/pithead/issues/1882)). The header's
+  client-authorization note now carries a **Show client key** button wherever the config editor is
+  on. The host answers once — both Tor client forms — and wipes its own copy on the same timer the
+  backup kit uses; every reveal is recorded in the config-change audit log. The key is still not in
+  the dashboard container's environment
+  ([#1880](https://github.com/p2pool-starter-stack/pithead/issues/1880) stands): the container
+  asks, the host decides, and the answer crosses once through the read-only results spool.
+
 ### Changed
 
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change

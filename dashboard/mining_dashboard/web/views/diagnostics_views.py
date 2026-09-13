@@ -1,4 +1,4 @@
-"""Service Diagnostics routes (#913 doctor detail, #943 log tail).
+"""Service Diagnostics routes (#913 doctor detail, #943 log tail, #1882 onion client key).
 
 Its own module rather than server.py's: that file holds every other handler and is at its
 recorded line ceiling. These two handlers are also the channel's only READ-ONLY asks — they
@@ -18,6 +18,7 @@ import logging
 
 from aiohttp import web
 
+from mining_dashboard.service import control_service
 from mining_dashboard.service.health import diagnostics_service
 
 logger = logging.getLogger(__name__)
@@ -82,4 +83,28 @@ async def handle_diag_logs(request):
     except Exception:
         logger.exception("Error submitting diag-logs request")
         return web.json_response({"error": "Failed to submit the diagnostics request."}, status=500)
+    return web.json_response({"id": rid, "status": "pending"}, status=202)
+
+
+async def handle_onion_client_key(request):
+    """Ask the host for the dashboard onion's Tor client-auth credential, shown once (#1882).
+
+    No body, like backup: the container supplies nothing and decides nothing. The host checks that
+    the onion is on, client-authorised and provisioned, and answers either a "rejected" result
+    carrying its own reason or a one-time kit it nulls again on its own timer.
+
+    This is the ONE route in this module that returns a secret rather than a report, and it is the
+    reason the onion exists at all on a machine with no shell: with client authorisation on — the
+    default, and mandatory while the control channel is on — the published .onion does not answer
+    a browser that has no client key, and until now the key was printed only by a host CLI verb.
+    The key is still not in this container's environment (#1880 stands); it crosses once, through
+    the host-written read-only results leg, and every reveal is recorded in the audit log."""
+    _require_control_header(request)
+    try:
+        rid = control_service.submit(
+            "onion-client-key", actor=request.headers.get("X-Auth-User", "")
+        )
+    except Exception:
+        logger.exception("Error submitting onion-client-key request")
+        return web.json_response({"error": "Failed to submit the request."}, status=500)
     return web.json_response({"id": rid, "status": "pending"}, status=202)
