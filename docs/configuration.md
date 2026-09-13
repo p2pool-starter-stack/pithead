@@ -507,7 +507,9 @@ To connect to an external Monero node instead of running one locally, set `moner
 - Before a dashboard endpoint change is committed, the trusted host repeats the Monero checks:
   the name must resolve only to addresses allowed by `network.tor_egress_firewall`, `get_info`
   must be a bounded, usable reply with that Digest login, and ZMQ must complete a ZMTP publisher
-  handshake. A refused port and the wrong protocol are reported separately.
+  handshake. A name that produces no address at all, an address the firewall disallows, a refused
+  port and the wrong protocol are each reported as themselves — a hostname with a typo in it is
+  never reported as a firewall or LAN-access problem.
 - If the remote node is another Pithead stack, the serving side is two switches on that stack:
   `monero.rpc_lan_access: true` (RPC, digest-auth'd with its `node_username`/`node_password`)
   and `monero.zmq_lan_access: true` (the ZMQ feed).
