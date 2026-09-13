@@ -141,7 +141,19 @@ case "$*" in
     ;;
 "-S FORWARD")
     [ "${JUMP:-0}" = 1 ] && echo '-A FORWARD -j DOCKER-USER'
-    exit 0
+    # `exec`, and the bulk, are BOTH load-bearing — do not tidy either away.
+    #
+    # A `grep -q` that matches on line 1 exits while the producer is still writing; the producer
+    # takes SIGPIPE; under `pipefail` the pipeline yields 141, so a guard written as
+    # `producer | grep -q ... || return N` fires on a SUCCESSFUL match. That cost a false FAIL on a
+    # live Docker host, where the real FORWARD chain is long.
+    #
+    # Reproducing it needs the stub to BE the producer, the way iptables is. A first cut wrote the
+    # bulk and then `exit 0`: SIGPIPE killed the inner command, the stub still exited 0, and the
+    # control passed against the broken piped code — a fixture that looked like coverage and was
+    # not. `exec` replaces the stub with the producer, so the producer's death IS the stub's.
+    # Measured: `exit 0` form -> rc 0 (no bug visible), `exec` form -> rc 141 (bug visible).
+    exec seq 1 20000
     ;;
 "-S")
     echo '-P FORWARD ACCEPT'

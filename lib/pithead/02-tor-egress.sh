@@ -119,8 +119,13 @@ tor_egress_enforced() {
         # a sudo refusal can't masquerade as a missing firewall (a false "not enforced").
         sudo -n nft list tables >/dev/null 2>&1 || return 3
         out=$(sudo -n nft list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || return 1
-        printf '%s\n' "$out" | grep -q 'hook forward' || return 1
-        printf '%s\n' "$out" | grep -qw drop || return 1
+        # Here-strings, NOT pipes. Under `pipefail` a `grep -q` that matches EARLY exits while the
+        # producer is still writing, the producer takes SIGPIPE, and the pipeline yields 141 — so the
+        # guard fires on a SUCCESSFUL match. Measured: identical code returns 0 on one line of input
+        # and 141 on a long one, which is why a one-line stub can never reproduce it and a real
+        # ruleset does. A here-string is not a pipeline and has no such failure mode.
+        grep -q 'hook forward' <<<"$out" || return 1
+        grep -qw drop <<<"$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -130,7 +135,7 @@ tor_egress_enforced() {
     # unreadable ruleset doctor would skip past.
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
-    printf '%s\n' "$out" | grep -qF -- "$TOR_EGRESS_TAG" || return 1
+    grep -qF -- "$TOR_EGRESS_TAG" <<<"$out" || return 1
     # REACHABILITY, not just presence. #855 was a DROP sitting in a chain no packet traverses, and
     # asserting the tagged rules exist cannot see that — `apply_tor_egress_iptables` pre-creates
     # DOCKER-USER itself, so a populated chain proves only that WE wrote to it. The nft branch above
@@ -141,7 +146,9 @@ tor_egress_enforced() {
     # firewall BEFORE compose, so on a first-ever `up` the jump legitimately does not exist yet (see
     # apply_tor_egress_iptables' own note) — alarming there would cry wolf on every fresh install.
     # doctor only runs this with the stack already up, where a missing jump IS the orphaned chain.
-    sudo -n iptables -S FORWARD 2>/dev/null | grep -qF -- '-j DOCKER-USER' || return 4
+    local fwd
+    fwd=$(sudo -n iptables -S FORWARD 2>/dev/null) || return 4
+    grep -qF -- '-j DOCKER-USER' <<<"$fwd" || return 4
     return 0
 }
 
