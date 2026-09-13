@@ -18,6 +18,11 @@ This is the shared source for `AGENTS.md`, `CLAUDE.md`, and `.cursorrules`.
 
 - Branch from `develop`; `main` holds released commits. Preserve other worktrees
   and uncommitted changes. Keep moves and behavior changes in separate commits.
+- Merge into `develop` only on green required checks plus the `adversarial-review`
+  status from a non-author session, human-driven or automated, with
+  `gh pr merge --squash` once the branch is up to date with `develop`: never
+  `--admin`, never auto-merge. Bench evidence goes in the PR first when the change
+  needs it.
 - Edit CLI sources in `lib/pithead/`, then run `make`. Root `pithead` is generated
   and ignored. Slice order is significant; do not rename or nest slices casually.
 - Keep a feature's implementation and tests in the corresponding feature folders.
