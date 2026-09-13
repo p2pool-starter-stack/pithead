@@ -135,10 +135,23 @@ tor_egress_enforced() {
         # ...and PRECEDENCE within it, for the same reason the iptables branch walks rule order: a
         # drop below an unconditional `accept` in the same hooked chain never fires. Verified
         # against real nftables — that shape read as "enforced" before this clause.
-        jq -e '[.nftables[] | select(has("chain")) | select(.chain.hook == "forward") | .chain.name] as $h
-               | [.nftables[] | select(has("rule")) | select(.rule.chain as $c | $h | index($c)) | .rule.expr] as $r
-               | ($r | map(any(has("drop"))) | index(true)) as $d
-               | $d != null and (($r[0:$d] // []) | all(. != [{"accept":null}]))' >/dev/null 2>&1 <<<"$out" || return 1
+        #
+        # UNCONDITIONAL means "no `match` statement ahead of the verdict", not "the rule is a bare
+        # `{accept}` and nothing else". `counter accept` and `log accept` are the standard nftables
+        # idioms for a visible/audited allow-all, and both shadow the drop exactly like a bare
+        # accept does — a security review caught that the byte-exact check missed them (false
+        # "enforced"). Every real packet-filter condition (address, port, protocol, ct state) is
+        # represented under the `match` key in `nft -j` output; `counter`/`log`/`limit`/`quota` and
+        # anything else are side-effect statements that never narrow which packets they apply to,
+        # so their presence ahead of `accept` still makes the rule unconditional.
+        jq -e '
+            def is_unconditional_accept:
+                (length > 0) and (.[-1] == {"accept":null}) and (.[0:-1] | all(has("match") | not));
+            [.nftables[] | select(has("chain")) | select(.chain.hook == "forward") | .chain.name] as $h
+            | [.nftables[] | select(has("rule")) | select(.rule.chain as $c | $h | index($c)) | .rule.expr] as $r
+            | ($r | map(any(has("drop"))) | index(true)) as $d
+            | $d != null and (($r[0:$d] // []) | all(is_unconditional_accept | not))
+        ' >/dev/null 2>&1 <<<"$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -176,7 +189,9 @@ tor_egress_enforced() {
             esac
             case "$line" in
             *" -s "*)
-                case "$line" in *" -s $subnet "* | *" -s $subnet") return 5 ;; esac
+                # -F: $subnet is operator data (NETWORK_SUBNET), matched literally — a glob
+                # metacharacter in it must not change what this matches.
+                grep -qF -- " -s $subnet " <<<"$line " && return 5
                 continue
                 ;;
             *) return 5 ;;

@@ -294,6 +294,8 @@ case "$*" in
 *"list table inet pithead_egress")
     printf '%s' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},'
     [ "${NFT_PRE_ACCEPT:-0}" = 1 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"accept":null}]}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 2 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"counter":{"packets":0,"bytes":0}},{"accept":null}]}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 3 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"192.0.2.1","op":"=="}},{"accept":null}]}},'
     printf '%s\n' '{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
 esac
 exit 0
@@ -307,6 +309,11 @@ prec_rc() {
 }
 assert_eq "nft: drop with only conditional rules above it -> enforced" "$(prec_rc 0)" "0"
 assert_eq "nft: an UNCONDITIONAL accept above the drop -> NOT enforced" "$(prec_rc 1)" "1"
+# A security review found the first cut of this check matched the accept rule's expr array
+# byte-for-byte, so `counter accept` and `log accept` — the standard idioms for a visible/audited
+# allow-all — read as "conditional" and the shadowing drop below them was called "enforced".
+assert_eq "nft: counter+accept above the drop still shadows it -> NOT enforced" "$(prec_rc 2)" "1"
+assert_eq "nft: a genuinely scoped match+accept does not shadow -> enforced" "$(prec_rc 3)" "0"
 
 # (b) DOCKER-USER is host-wide and shared with every other compose project. A neighbour's rule that
 # cannot match the mining subnet must NOT be called shadowing, or the verdict fires forever on
