@@ -15,16 +15,25 @@ ENV UV_PYTHON_DOWNLOADS=never \
     UV_LINK_MODE=copy \
     PATH="/app/.venv/bin:$PATH"
 
-# System dependencies. The openssl trio is already in the base image — naming it here pulls the
-# distro's current security build past the digest-pinned base, which can lag a published fix until
-# upstream rebuilds the image; that lag closed the CVE gate base-wide on 2026-08-28
-# (CVE-2026-14456, #1438). apt-get upgrade is the blanket alternative and hadolint bans it (DL3005).
+# System dependencies. Only iproute2 is a genuine addition — EVERY other name here is already in the
+# base image, listed solely to pull the distro's current security build past the digest-pinned base,
+# which can lag a published fix until upstream rebuilds the image. Do not "tidy" one away because
+# the image already has it: that is the point. That lag closed the CVE gate base-wide on 2026-08-28
+# (the openssl trio, CVE-2026-14456, #1438) and again on 2026-09-12 (gzip, libpcre2-8-0,
+# libsqlite3-0, perl-base — 12 fixable HIGH/CRITICAL on an untouched branch). A base-image digest
+# bump is NOT the alternative: `docker buildx imagetools inspect python:3.11-slim` still returns the
+# digest pinned above, so there is nothing newer to bump to. apt-get upgrade is the blanket
+# alternative and hadolint bans it (DL3005).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
+    gzip \
     iproute2 \
+    libpcre2-8-0 \
+    libsqlite3-0 \
     libssl3t64 \
     openssl \
     openssl-provider-legacy \
+    perl-base \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
