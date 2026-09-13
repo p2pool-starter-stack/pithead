@@ -101,14 +101,21 @@ Setup walks through five stages. It's interactive on the first run and safe to r
 
 2. **Interactive configuration.** Asks only what only you can answer, in two short stages, then
    fills in the rest and writes a minimal `config.json`, locked down to owner-only (`chmod 600`).
-   - **Required:** your Monero and Tari wallet addresses; whether you're running a local Monero
-     node (the default — the stack runs its own) or connecting to a remote one, with a local
-     node's RPC credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` —
-     pick low if you're not sure, a high-hashrate default silently starves a small rig of
-     shares). An optional dashboard login, Enter to skip.
-     The wizard asks about the Monero node only. To merge-mine against a Tari node on another
-     machine, set `tari.mode: remote` and `tari.remote.host` in `config.json` afterwards and run
-     `./pithead apply` — see [Remote Tari node](configuration.md#remote-tari-node).
+   - **Required:** your Monero wallet address; whether you're running a local Monero node (the
+     default — the stack runs its own) or connecting to a remote one, with a local node's RPC
+     credentials auto-generated; and your P2Pool pool tier (`main`/`mini`/`nano` — pick low if
+     you're not sure, a high-hashrate default silently starves a small rig of shares). An
+     optional dashboard login, Enter to skip.
+   - **Merge-mine Tari?** Three answers: no, run the bundled Tari node here, or use a Tari node
+     you already run. A yes asks for your Tari payout address, and "a node I already run" asks
+     for its host and gRPC port — see [Remote Tari node](configuration.md#remote-tari-node). A no
+     asks nothing further and stores no Tari address; nothing merge-mines and no Tari node runs.
+     The wizard writes `tari.mode` explicitly whichever way you answer, so the answer survives.
+     The default offered depends on free disk where `./data` will live: the bundled Tari node
+     needs its own ~200 GB chain on top of Monero's, so a host with room for the whole stack is
+     offered yes and one without is offered no. The wizard prints the figure it measured and the
+     one it compared against, and the answer is yours either way. Changeable later from the
+     dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.
    - **A few more, Enter for the default:** a faster clearnet initial sync instead of the private
