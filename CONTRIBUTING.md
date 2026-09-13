@@ -189,9 +189,10 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 - Link the issue your PR addresses (e.g. `Closes #123`).
 - Make sure `make test` passes; CI runs the same checks.
 - A PR into `develop` merges on green required checks plus the `adversarial-review`
-  status recorded on its head SHA by a session that did not author it; see
-  [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). Only the owner's
-  account merges. A PR into `main` also needs the [code owner](.github/CODEOWNERS).
+  status recorded on its head SHA by a session that did not author it, human-driven
+  or automated; see [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). The
+  merge is a squash, and only the owner's account performs it. A PR into `main` also
+  needs the [code owner](.github/CODEOWNERS).
 
 ## Style
 
