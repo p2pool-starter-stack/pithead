@@ -148,7 +148,7 @@ wizard_port() {
 # run did and what an omitted tari.mode still means, and the line says the disk could not be read.
 # Args: <monero_mode> — "remote" leaves Monero's chain out of the budget; it lives on another host.
 wizard_tari_disk_default() {
-    local monero_mode="$1" mount avail_kb avail_h need_gib comp
+    local monero_mode="$1" mount avail_kb avail_h need_gib comp verdict
     need_gib=0
     for comp in tari p2pool dashboard tor; do
         need_gib=$((need_gib + $(disk_component_gib "$comp")))
@@ -166,13 +166,15 @@ wizard_tari_disk_default() {
         return 0
     fi
     avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
+    # One sentence, one verdict clause: the two outcomes cannot drift apart on a later edit.
     if [ "$avail_kb" -ge "$((need_gib * 1048576))" ] 2>/dev/null; then
         WIZ_TARI_DEFAULT="local"
-        echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GB there — it fits, so running it is the default."
+        verdict="it fits, so running it is the default."
     else
         WIZ_TARI_DEFAULT="off"
-        echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GB there — it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
+        verdict="it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
     fi
+    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GB there — $verdict"
 }
 
 # Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?
