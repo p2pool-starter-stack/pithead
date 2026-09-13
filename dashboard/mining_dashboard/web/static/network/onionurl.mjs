@@ -76,7 +76,10 @@ export class OnionUrl extends Component {
     try {
       const kit = await fetchClientKey();
       if (kit.status !== "applied") {
-        this.setState({ keyPhase: "idle", keyError: kit.error || "The host declined to show the client key." });
+        this.setState({
+          keyPhase: "idle",
+          keyError: kit.error || "The host declined to show the client key.",
+        });
         return;
       }
       this.setState({ keyPhase: "shown", kit });

@@ -271,6 +271,7 @@ assert_contains "the CLI verb still prints both client forms when there IS a key
 # these rows could read what was written — and what was written is the point. The redaction itself
 # is proved separately below, against the real function.
 ock_id=a1a1a1a1-0000-4000-8000-0000000000a1
+# shellcheck disable=SC1090  # STACK path is dynamic by design
 (
     cd "$ock_ok" && source "$STACK" && set +e
     control_kit_redact() { :; }
@@ -297,6 +298,7 @@ assert_contains "kit: every reveal is recorded in the audit log" \
 # The window really closes: the real function, TTL 0, redacting in band before the verb returns.
 # That is what makes "shown once" true rather than aspirational.
 ock_ttl_id=a1a1a1a1-0000-4000-8000-0000000000a2
+# shellcheck disable=SC1090  # STACK path is dynamic by design
 (
     cd "$ock_ok" && source "$STACK" && set +e
     APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 control_onion_client_key "$ock_ttl_id" admin "$ock_ok/control"
@@ -312,6 +314,7 @@ assert_eq "kit: the address survives, so the card can still say WHICH onion" \
 # A machine with nothing to hand over answers with the host's OWN reason. The operator who turned
 # the onion on a minute ago must be told it is not provisioned yet, not shown an empty card.
 ock_rej_id=a1a1a1a1-0000-4000-8000-0000000000a3
+# shellcheck disable=SC1090  # STACK path is dynamic by design
 (
     cd "$ock_unprov" && source "$STACK" && set +e
     APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 control_onion_client_key "$ock_rej_id" admin "$ock_unprov/control"
@@ -333,6 +336,7 @@ ock_disp_id=a1a1a1a1-0000-4000-8000-0000000000a4
 ock_bogus_id=a1a1a1a1-0000-4000-8000-0000000000a5
 printf '{"id":"%s","action":"onion-client-key","actor":"admin"}\n' "$ock_disp_id" >"$ock_ok/req.json"
 printf '{"id":"%s","action":"onion-client-keyx","actor":"admin"}\n' "$ock_bogus_id" >"$ock_ok/req2.json"
+# shellcheck disable=SC1090  # STACK path is dynamic by design
 (
     cd "$ock_ok" && source "$STACK" && set +e
     APP_GID="$(id -g)" CONTROL_BACKUP_KIT_TTL_S=0 control_process_request "$ock_ok/req.json" "$ock_ok/control"
