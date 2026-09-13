@@ -45,7 +45,7 @@ for a particular task. Use the models available in the contributor's account.
 | Implement an agreed change, run shell commands, fix tests, group files | Codex Sol at medium effort | Small commits and actual check results |
 | Appliance architecture, install/recovery experience, dashboard interaction and visual review | Claude with a reasoning model appropriate to the task | A concrete design or rendered review with affected contracts |
 | Disputed evidence, cross-process ordering, or an architecture problem unresolved by the first pass | Codex Astra or a stronger Claude reasoning model, explicitly selected | A bounded decision and a check that distinguishes the alternatives |
-| Review correctness, security, and acceptance | A fresh non-author session; prefer the other provider when available | PASS or RETURN at the full current SHA, with commands and limits |
+| Review correctness, security, and acceptance | A fresh non-author session, human-driven or automated; prefer the other provider when available | PASS or RETURN at the full current SHA, with commands and limits, recorded as the `adversarial-review` commit status |
 
 Do not route routine terminal work to the largest model by default. Start with a
 controller and at most two workers; keep each worker's paths disjoint. Add a
@@ -106,6 +106,29 @@ it without the repository's credential and topology review.
 Run affected checks during implementation, then the combined required gates once
 the candidate is stable. Record collected tests and assertions so moves cannot
 silently remove coverage. A static review does not establish a runtime PASS.
+
+The reviewer records the verdict as a commit status on the exact head SHA it
+reviewed. `develop` requires that status, so a new push clears it and the new head
+needs its own review:
+
+```bash
+gh api repos/p2pool-starter-stack/pithead/statuses/<full head SHA> \
+  -f context=adversarial-review -f state=success \
+  -f description='PASS at <sha7> by <reviewer session>' \
+  -f target_url='<URL of the review comment>'
+```
+
+Use `state=failure` for a RETURN. The order matters, because the required checks
+are strict and a new head clears the status: bring the branch up to date with
+`develop` first (`gh pr update-branch <n>`), let the checks go green at that head,
+review that head, record the status, then merge right away with
+`gh pr merge <n> --squash`, the same shape every commit on `develop` has. Do not
+use `--admin`, and do not enable auto-merge: tier 4 runs on the bench through the
+private bench-ci runner, on an exact commit, and reports to the PR rather than to
+GitHub checks. When a change needs that tier, record the job's tier, SHA, and result
+in the PR before merging. A reviewer that is itself an automated session follows the
+same rule: it is never the session that produced the head, and the status
+description names it.
 
 End with owner, branch, full SHA, changed areas, tests and outcomes, retained private
 evidence paths, next action, and remaining operator decisions. The next session
