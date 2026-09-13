@@ -247,13 +247,19 @@ assert_contains "the operator's payout destination is unchanged in .env" "$(cat 
 # helper does not rot while it waits for a tier with a real second identity behind it.
 jq --arg w "$NEW_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/suffix-staged.json"
 assert_rc "control_validate_approval accepts the exact final characters" \
-    "$(run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
-        "{\"payout_suffixes\":{\"monero\":\"$NEW_WALLET_SUFFIX\"}}" \
-        "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1; echo $?)" "0"
+    "$(
+        run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
+            "{\"payout_suffixes\":{\"monero\":\"$NEW_WALLET_SUFFIX\"}}" \
+            "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1
+        echo $?
+    )" "0"
 assert_rc "control_validate_approval refuses a wrong one" \
-    "$(run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
-        '{"payout_suffixes":{"monero":"wrong"}}' \
-        "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1; echo $?)" "1"
+    "$(
+        run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
+            '{"payout_suffixes":{"monero":"wrong"}}' \
+            "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1
+        echo $?
+    )" "1"
 
 echo "== black-box: the envelope never crosses the media-only boundary (#1959) =="
 jq -n --arg w "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
