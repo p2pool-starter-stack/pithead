@@ -18,15 +18,16 @@
 #
 # POSITION-LOCKED: run.sh sources this immediately after test-control-add-only-ssrf.sh, and it
 # reads gate_try() and $UUID5 from there — both deliberately outlive that source, as its header
-# says. It re-derives its own spool paths and seeds its own baseline from the host CLI, so it
-# borrows no ambient fixture beyond those two names.
+# says. It re-derives the results path and seeds its own baseline from the host CLI, so it borrows
+# no ambient fixture beyond those two names.
 #
 # MUTATION PROOF: widening control_committable_re (42-) to re-admit any perimeter key, or turning
 # the `bad` refusal in control_approval_gate back into approval_required=1, reddens every
 # "is refused with a self-written envelope" row here while leaving the token-less battery next
 # door green — which is precisely the blind spot this file was written to close.
 
-REQS="$C/data/control/requests"
+# gate_try() writes the request spool itself, from the $REQS it reads in the file that defines it;
+# only the results path is read here.
 RESULTS="$C/data/control/results"
 
 # The envelope a compromised container writes for itself: no operator typed any of it.
