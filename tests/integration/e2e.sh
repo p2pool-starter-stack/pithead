@@ -628,7 +628,7 @@ run_harness() {
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$no_mining" || return 1
+        harness_pregate "$WORKERS" "$no_mining" || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
