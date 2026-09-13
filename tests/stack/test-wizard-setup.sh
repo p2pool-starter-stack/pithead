@@ -60,7 +60,7 @@ echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt f
 # eat one more blank line unnoticed. Pinning the count is what actually catches wizard scope creep.
 core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
-assert_eq "wizard_ask_core has exactly 12 read prompts (wallets, node config, pool tier, dashboard login)" "$core_reads" "12"
+assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node config, pool tier, dashboard login — the Tari prompts are wizard_ask_tari's, pinned in test-wizard-tari.sh)" "$core_reads" "11"
 assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in)" "$shape_reads" "6"
 
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
@@ -70,7 +70,7 @@ echo "== unit: wizard — Enter-through defaults skip everything but the core an
 # config.reference.json default because the wizard never wrote them at all.
 W1="$SANDBOX/wizard-defaults"
 mkdir -p "$W1"
-printf '%s\n%s\n\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$W1" run_wizard >/dev/null 2>&1
 if [ -f "$W1/config.json" ]; then
     ok "wizard (defaults path) writes config.json"
 else
@@ -101,7 +101,7 @@ assert_eq "defaults path: no local_miner block written (opt-in off, #593)" \
 # local_miner.enabled=true; every other answer left blank so only that key appears.
 WLM="$SANDBOX/wizard-local-miner"
 mkdir -p "$WLM"
-printf '%s\n%s\n\n\n\n\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
 wlm_cfg="$(cat "$WLM/config.json" 2>/dev/null)"
 assert_eq "opt-in path: local_miner.enabled written true (#593)" "$(jq -r '.local_miner.enabled' <<<"$wlm_cfg")" "true"
 unset wlm_cfg
@@ -111,7 +111,7 @@ echo "== unit: wizard — remote node branch is unchanged by the ask/write split
 # this catches the refactor breaking the variable handoff to wizard_write_config.
 W3="$SANDBOX/wizard-remote"
 mkdir -p "$W3"
-printf '%s\n%s\nn\nnode.example.com\n\n\ny\nremoteuser\nremotepass\n\n\n\n\n\n\n' \
+printf '%s\nn\nnode.example.com\n\n\ny\nremoteuser\nremotepass\n2\n%s\n\n\n\n\n\n\n\n' \
     "$WALLET" "$VALID_TARI" | run_sourced "$W3" run_wizard >/dev/null 2>&1
 w3_cfg="$(cat "$W3/config.json" 2>/dev/null)"
 assert_eq "remote path: monero.mode remote" "$(jq -r '.monero.mode' <<<"$w3_cfg")" "remote"
@@ -128,7 +128,7 @@ echo "== unit: wizard — remote node WITHOUT auth + an explicit nano pool tier 
 # the pool-tier case's "nano" arm. Same run_wizard helper, non-default answers on both axes.
 W4="$SANDBOX/wizard-remote-noauth-nano"
 mkdir -p "$W4"
-printf '%s\n%s\nn\nremote2.example.com\n\n\nn\nnano\n\n\n\n\n\n' \
+printf '%s\nn\nremote2.example.com\n\n\nn\n2\n%s\nnano\n\n\n\n\n\n\n' \
     "$WALLET" "$VALID_TARI" | run_sourced "$W4" run_wizard >/dev/null 2>&1
 w4_cfg="$(cat "$W4/config.json" 2>/dev/null)"
 assert_eq "remote-noauth path: monero.mode remote" "$(jq -r '.monero.mode' <<<"$w4_cfg")" "remote"
@@ -143,7 +143,7 @@ echo "== unit: wizard — shape-question and dashboard-login answers flow into c
 # tier mapping, the dashboard-login cluster, and each Stage-2 cluster) actually wires through.
 W2="$SANDBOX/wizard-full"
 mkdir -p "$W2"
-printf '%s\n%s\n\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n987654321\n' \
+printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n987654321\n' \
     "$WALLET" "$VALID_TARI" | run_sourced "$W2" run_wizard >/dev/null 2>&1
 w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
 assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
@@ -187,7 +187,7 @@ mkdir -p "$SU/build/tari" "$SU/dashboard"
 cp "$STACK" "$SU/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$SU/build/tari/"
 make_stubs "$SU/bin"
-printf '%s\n%s\n\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\n\n\n' "$WALLET" "$VALID_TARI" | run_sourced "$SU" run_wizard >/dev/null 2>&1
 if [ -f "$SU/config.json" ]; then ok "setup e2e: wizard stage produces config.json"; else bad "setup e2e: wizard stage produces config.json" "no file at $SU/config.json"; fi
 su_out="$(cd "$SU" && printf '\nn\n' | DOCKER_LOG=/dev/null PATH="$SU/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)"
 su_rc=$?

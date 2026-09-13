@@ -199,6 +199,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && do
 
 # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
