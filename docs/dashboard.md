@@ -1064,7 +1064,9 @@ A node-endpoint change is the one confirm-gated setting with a second gate behin
 cannot reach, reporting which check failed
 ([#1889](https://github.com/p2pool-starter-stack/pithead/issues/1889)). The host resolves once and
 requires every answer to satisfy `network.tor_egress_firewall`, then reuses one address for each
-check. Monero RPC must return a bounded, usable `get_info` response with the configured Digest
+check — so the two Monero checks can never disagree about one host. A name that resolves to nothing
+is reported as a name that did not resolve, not as an address the firewall refused
+([#1913](https://github.com/p2pool-starter-stack/pithead/issues/1913)). Monero RPC must return a bounded, usable `get_info` response with the configured Digest
 login; ZMQ must complete a ZMTP READY exchange and advertise PUB or XPUB. Tari gets a bounded TCP
 connect because the host CLI ships no gRPC client. The probe runs on the staged config, host-side,
 and only when an endpoint key actually changed, so an unrelated commit is never held up by a node

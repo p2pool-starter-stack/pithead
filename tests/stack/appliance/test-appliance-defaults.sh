@@ -43,6 +43,52 @@ assert_rc "unreachable remote Tari -> rc 1" "$?" "1"
 assert_contains "failure names host and port" "$out" "127.0.0.1:1"
 assert_contains "failure points at the LAN-access switch" "$out" "grpc_lan_access"
 
+# A name that yields no address and an address the egress policy refuses were ONE refusal, worded
+# as the policy one (#1913). "use an address allowed by network.tor_egress_firewall" sends an
+# operator whose hostname has a typo to check a firewall that is working, and the likeliest way to
+# reach here IS a typo. The resolver is the documented seam (`_resolve_host_ips`), so both causes
+# are stubbed rather than dialed — this asserts the DISCRIMINATION, so the policy leg is run as the
+# within-block control on the same config: change one stub, get the other verdict.
+printf '{"monero":{"mode":"remote","remote":{"host":"nodee.lan","rpc_port":18081,"zmq_port":18083}},"tari":{"mode":"local"}}' >"$PFSB/dns.json"
+out=$(
+    cd "$PFSB" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    _resolve_host_ips() { :; } # NXDOMAIN: the real pipeline exits 0 with no address
+    preflight_remote_nodes "$PFSB/dns.json"
+    printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
+)
+assert_contains "an unresolvable Monero name -> rc 1, reason dns" "$out" "|1|dns"
+assert_contains "the refusal names the name that did not resolve" "$out" "nodee.lan does not resolve"
+assert_not_contains "the refusal never blames the egress firewall" "$out" "tor_egress_firewall"
+out=$(
+    cd "$PFSB" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    _resolve_host_ips() { printf '8.8.8.8\n'; } # resolves, and the answer is outside the policy
+    preflight_remote_nodes "$PFSB/dns.json"
+    printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
+)
+assert_contains "a name resolving outside the egress policy -> reason address, not dns" "$out" "|1|address"
+assert_contains "that refusal is the one that names the egress firewall" "$out" "tor_egress_firewall"
+# The other rc-2 arm, on the Tari leg: the resolver itself failed or timed out rather than
+# answering NXDOMAIN. Same cause, so it must reach the same word.
+printf '{"monero":{"mode":"local"},"tari":{"mode":"remote","remote":{"host":"tarii.lan","grpc_port":18142}}}' >"$PFSB/dnstari.json"
+out=$(
+    cd "$PFSB" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    _resolve_host_ips() { return 1; }
+    preflight_remote_nodes "$PFSB/dnstari.json"
+    printf '|%s|%s' "$?" "$NODE_PROBE_REASON"
+)
+assert_contains "a resolver that failed outright -> rc 1, reason dns on the Tari leg too" "$out" "|1|dns"
+assert_contains "the Tari refusal names the name that did not resolve" "$out" "tarii.lan does not resolve"
+assert_not_contains "the Tari refusal never points at the LAN-access switch" "$out" "grpc_lan_access"
+
 # The ZMQ half. A TCP connect proves reachability and NOTHING else, and on the ZMQ port that gap
 # is load-bearing: docker's userland proxy binds a published host port and accepts the connection
 # itself, so a containerised node whose publisher failed to bind answers the dial rc 0. The
