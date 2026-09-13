@@ -7,9 +7,11 @@
 # Telegram lifecycle verbs, #338), `worker-apply`/`worker-upgrade` (a rig's own control API,
 # #185/#597), `backup` (an encrypted archive + one-time emergency kit, #908), the five staged
 # appliance OS-update verbs `os-check`/`os-download`/`os-verify`/`os-install`/`os-reboot`
-# (47-/48-os-update-*.sh), and the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
-# (#913/#943, 46a-control-diagnostics.sh). The dispatching `case` in 49-control-request-loop.sh
-# is the list this sentence must match; check it there before trusting this one.
+# (47-/48-os-update-*.sh), the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
+# (#913/#943, 46a-control-diagnostics.sh), and `onion-client-key` (the dashboard onion's
+# client-auth credential as a one-time kit, #1882, 45-control-backup.sh). The dispatching `case`
+# in 49-control-request-loop.sh is the list this sentence must match; check it there before
+# trusting this one.
 # Outcomes land in results/ and an audit line in audit/, both mounted read-only in the container —
 # as is masked/, the pre-masked config copy the editor form prefills from (#440); the raw
 # config.json is never mounted, so the container holds no secret it wasn't given.
@@ -18,17 +20,24 @@
 
 # Approval gate for a commit (#33). The client-side typed-APPLY modal is NOT a security control:
 # a compromised/XSS'd container writes the request spool directly and never renders that modal, so
-# the only trustworthy gate is here, host-side. FAIL CLOSED, two independent checks:
+# the only trustworthy gate is here, host-side. Three TIERS, not one wall:
 #
-#   1. TRUE DEFAULT-DENY: a commit that changes ANY env key NOT in
-#      CONTROL_DASHBOARD_EDITABLE_KEYS — in EITHER direction (enable, change, or DISABLE) — is
-#      refused. An allowlist, not a blocklist: a key added to render_env tomorrow is
-#      un-committable from the dashboard until someone deliberately lists it here. Deliberately
-#      decoupled from describe_change's cosmetic INFO/DEST flag: that flag labels only the
-#      disruptive direction (enabling auth is DEST, disabling is INFO), so a compromised
-#      container could otherwise switch security controls OFF with zero DEST rows.
-#   2. Anything describe_change still flags DEST (pruning, data dirs, node-mode switch, ...) is
-#      refused as disruptive, even for allowlisted keys.
+#   1. An env key on CONTROL_DASHBOARD_EDITABLE_KEYS commits freely.
+#   2. A key on CONTROL_DASHBOARD_CONFIRM_KEYS, and separately anything describe_change flags
+#      DEST, additionally needs the operator's typed APPLY.
+#   3. EVERY OTHER key — one nobody thought to enumerate — falls through to `approval_required`
+#      and must carry the approval envelope control_validate_approval checks, plus a payout
+#      suffix typed exactly when a wallet address is what moved.
+#
+# READ TIER 3 AS IT IS, NOT AS IT WAS. Until #1978 this was a TRUE DEFAULT-DENY: an unlisted key,
+# and separately any DEST row, was REFUSED outright. This comment said so for long enough that
+# #1882 was filed on the strength of it and stated that "onion exposure" cannot be changed from
+# the dashboard — true when written, false now. #1978 deliberately reclassified the unlisted
+# remainder from "refused" to "approval-gated" so that every reference leaf has a route
+# (config_operations.approval_paths is the dashboard's mirror of exactly that remainder), and
+# #2076 then collapsed the second identity that backed tier 3 into the typed envelope. So the
+# allowlists below no longer decide WHETHER a key is committable, only how CHEAPLY; the
+# physical-presence set (CONTROL_DASHBOARD_NEVER_PATHS) is the only outright refusal left.
 #
 # Both checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
 # runs — nothing is trusted from the container's request or its (host-written but container-visible)
@@ -45,12 +54,14 @@
 # and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
 # WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
 # TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
-# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
+# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — is NOT free-commit. Since #1978 that means
+# tier 3 above (the approval envelope), not the outright refusal this sentence used to describe.
+# PAYOUT_SCAN_HEIGHT and
 # TARI_WALLET_BIRTHDAY moved to the confirm-gated set below (2026-08 audit reclassification):
 # they're wallet-creation metadata, not a secret, and a wrong value only re-scans from a different
 # height on the wallet's NEXT creation — recoverable, not destructive.
-# Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
-# (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
+# Each view key reveals every incoming payout amount/time, so it is never free-commit (tier 3
+# already holds it; named here deliberately). The WALLET_CHANGED and
 # CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
 # the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
 # lost its write surface, not its job of telling the operator their payout wallet just changed.

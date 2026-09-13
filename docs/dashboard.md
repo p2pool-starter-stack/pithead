@@ -1237,8 +1237,14 @@ other three hidden services — the Monero node's, the Tari node's and P2Pool's 
 than by address, so there is nothing of theirs on this page to hide.
 
 The two surfaces disagree about your dashboard's **own** onion on purpose: the header shows it in
-full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix. This
-panel still redacts it. A `[redacted].onion` here is not a promise that the address is absent from
+full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix — and,
+when client authorization is on and the config editor with it, a **Show client key** button beside
+it, because on a machine with no shell an address nothing can open is the same as no address at
+all. The key is not in this container: the button asks the host, the host answers once through the
+read-only results spool and then wipes its copy, and the reveal is recorded in the [config-change
+log](#access-log-and-recent-config-changes). This panel still redacts the address.
+
+A `[redacted].onion` here is not a promise that the address is absent from
 the browser — scroll up and it is in the header on both the Compose stack and the appliance. When
 you need one of the node onions, they are in the stack's `.env`, which the encrypted backup archive
 carries.

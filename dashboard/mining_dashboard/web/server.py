@@ -621,6 +621,7 @@ def create_app(state_manager, latest_data_ref):
                 # poll /api/control/result above — they add no polling route of their own.
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
+            web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_client_key),
             ]
         )
 

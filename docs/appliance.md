@@ -315,6 +315,27 @@ including what no remote channel is allowed to touch.
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
 
+### Reaching it from outside your network, over Tor
+
+Turn on `dashboard.onion.enabled` in the Configuration view and apply it. The machine publishes
+the dashboard as a Tor hidden service — no port forwarding, no VPN, no public IP — and its
+`.onion` address then appears under the machine name at the top of the dashboard, with a **Copy**
+button.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes its own copy moments later, and pressing the button
+again gives you a fresh reveal rather than the old one. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
+on this machine rotating means setting it up again.
+
 ## What the machine does on its own
 
 Two things the appliance sets for itself, that a machine you installed the stack on yourself

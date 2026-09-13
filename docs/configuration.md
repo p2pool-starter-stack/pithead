@@ -175,7 +175,7 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.auth.username` | `admin` | Login name for the dashboard when a password is set (see below). Letters, digits, and `. _ @ -`, 1–64 chars. Ignored while `dashboard.auth.password` is empty. |
 | `dashboard.auth.password` | `""` _(off)_ | Optional password to open the dashboard. Turns on a Caddy [HTTP basic-auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth) prompt in front of every page. `""` (default) = no login, anyone who can reach the dashboard sees it (fine for a private LAN appliance). Any 8–128-character string (no double-quotes) turns the prompt on. The plaintext lives only in your owner-only `config.json`; pithead bcrypt-hashes it with the pinned Caddy image and stores only the hash in `.env`, so the password itself is never persisted in rendered state. Basic-auth credentials travel in cleartext over HTTP, so keep `dashboard.secure: true` (the default); pithead warns if you set a password with `secure: false`. See [Exposing the dashboard safely](#exposing-the-dashboard-safely). |
 | `dashboard.onion.enabled` | `false` _(off)_ | Privacy-relevant, default off. `true` publishes the dashboard as a Tor v3 onion service so you can reach it remotely over Tor — no port-forward, no VPN, no public IP. It fronts the authenticated Caddy login on the internal bridge, never the LAN. pithead **fails closed**: if no `dashboard.auth.password` is set it generates a strong one (saved to `config.json`, login `admin`); a password you set yourself must be at least 16 characters. See [Remote access over Tor](#remote-access-over-tor-onion-service). |
-| `dashboard.onion.client_auth` | `true` _(on)_ | Only applies when `dashboard.onion.enabled` is `true`. Keeps Tor v3 **client authorization** on: the onion does not respond at all without your client key, so the address can't be scanned or brute-forced — the password becomes a second factor behind it. pithead generates the keypair and prints the client line via `./pithead onion-client-key`. Set to `false` for a deliberately password-only onion — but not alongside `dashboard.control.enabled: true`: `apply` refuses that pairing, since a root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable address. |
+| `dashboard.onion.client_auth` | `true` _(on)_ | Only applies when `dashboard.onion.enabled` is `true`. Keeps Tor v3 **client authorization** on: the onion does not respond at all without your client key, so the address can't be scanned or brute-forced — the password becomes a second factor behind it. pithead generates the keypair; get the client line from the dashboard header's **Show client key** button, or with `./pithead onion-client-key` on a machine you can log in to. Set to `false` for a deliberately password-only onion — but not alongside `dashboard.control.enabled: true`: `apply` refuses that pairing, since a root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable address. Because an appliance turns the config editor on for itself, an appliance onion is always client-authorized. |
 | `dashboard.control.enabled` | `false` _(off)_ | Security-relevant, default off. `true` turns on the dashboard's **Configuration view**: edit `config.json` from the browser, preview the changes, and apply them. The dashboard container never runs `pithead` itself — it writes a typed change request into a spool directory and a root systemd unit on the host (`pithead-control`) validates and applies it (see [Dashboard › Configuration view](dashboard.md#configuration-view)). Fails closed twice: enabling it without a `dashboard.auth.password` is a validation error, because this channel can change the payout wallet; and enabling it on a published onion (`dashboard.onion.enabled`) with `dashboard.onion.client_auth: false` is refused too, since a password alone is brute-forceable over Tor. |
 | `dashboard.timezone` | `auto` | Timezone for the dashboard's timestamps and charts. `auto` = the host machine's timezone (auto-detected, falling back to `Etc/UTC`); set an IANA name (e.g. `America/Chicago`) to override. |
 | **Notifications** |  | _Choose where operational messages and alerts are sent._ |
@@ -391,9 +391,19 @@ the `.onion` as a secret: anyone who has it can _attempt_ the login (and, withou
 it), so the header shows it only to a browser that is already through the dashboard's own login.
 
 **Connecting with client authorization.** With `client_auth: true` the onion won't answer at all
-until your Tor client presents the private key. Run `./pithead onion-client-key` on the host — it
-prints the address and the key in both forms you might need (it's kept out of `status`, which is a
-shareable report). Then pick your client:
+until your Tor client presents the private key. Get the key either way:
+
+- **From the dashboard**, wherever the config editor is on (`dashboard.control.enabled`) — which is
+  every appliance, because it is that machine's only way to change a setting. The header's
+  client-authorization note carries a **Show client key** button; it asks the host, which answers
+  once and then wipes its own copy, so save the key when it appears. The key is never in the
+  dashboard container's environment: the container asks, the host decides, and every reveal is
+  written to the config-change audit log.
+- **From a shell on the host**, with `./pithead onion-client-key` — it prints the address and the
+  key in both forms (it's kept out of `status`, which is a shareable report). An appliance has no
+  shell, so this is the Compose answer.
+
+Then pick your client:
 
 - **Tor Browser (easiest).** Open `http://<address>.onion` (Tor Browser upgrades it to `https://`
   automatically). Accept the one-time self-signed-cert prompt ("Advanced" → "Accept the Risk and
@@ -412,7 +422,8 @@ address becomes online-guessable, so lean on the password).
 
 **Rotation.** A leaked `.onion` address or client key is otherwise permanent. Run
 `./pithead rotate-dashboard-onion` to mint a fresh address and client key; the old ones stop working
-immediately, and the command prints the new client line.
+immediately, and the command prints the new client line. This one is still host-CLI-only: on an
+appliance, rotating means setting the machine up again.
 
 Prefer a mesh VPN like Tailscale instead? Point it at the LAN yourself — the stack does not ship a
 profile for it, and the onion service is the supported remote path.

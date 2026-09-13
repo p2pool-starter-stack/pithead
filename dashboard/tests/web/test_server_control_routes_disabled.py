@@ -14,6 +14,9 @@ class TestControlRoutesDisabled:
         assert (await client.get("/api/control/result?id=x")).status == 404
         assert (await client.post("/api/control/backup")).status == 404
         assert (await client.get("/api/control/backup-download?id=x")).status == 404
+        # #1882: with no control channel there is no host runner to ask, so the reveal route is
+        # absent too — and the header's note falls back to naming the host CLI verb instead.
+        assert (await client.post("/api/control/onion-client-key")).status == 404
         assert (await client.post("/api/control/os-update", json={})).status == 404
         # The config-change audit view is a control-channel artifact — absent with it (#349).
         assert (await client.get("/api/audit")).status == 404
