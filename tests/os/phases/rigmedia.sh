@@ -14,7 +14,11 @@ phase_rigmedia() {
     vm_destroy_or_refuse || return
     rm -f "$target_disk"
     cp "$img" "$DISK"
-    qemu-img resize "$DISK" 16G >/dev/null 2>&1 || true
+    qemu-img resize "$DISK" 16G >/dev/null 2>&1 || {
+        bad "could not size the removable-media disk"
+        rm -f "$target_disk"
+        return
+    }
     qemu-img create -f raw "$target_disk" 30G >/dev/null
     empty_before=$(sha256sum "$target_disk" | cut -d' ' -f1)
     : >"$SERIAL"
@@ -37,7 +41,7 @@ phase_rigmedia() {
         rm -f "$target_disk"
         return
     }
-    ok "image boots as removable media, mining from the stick ($ip)"
+    ok "image boots as removable media ($ip)"
 
     local tries=0
     token=""
