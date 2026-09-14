@@ -196,10 +196,21 @@ phase_rig() {
     # AC power loss, which a KVM guest cannot show (that's a firmware setting) but a real power cut
     # against a virtual disk still can.
     info "power-cut leg — the rig must come back mining after a cut, not just a clean reboot"
-    virsh destroy "$VM" >/dev/null 2>&1 || true
+    local before
+    before=$(_boot_id) || {
+        bad "could not read the rig boot id before the power cut"
+        return
+    }
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "could not cut power to the mining rig"
+        return
+    }
     sleep 3
-    virsh start "$VM" >/dev/null 2>&1 || true
-    if _wait_ssh 300; then
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "could not restore power to the mining rig"
+        return
+    }
+    if _wait_new_boot "$before" 300; then
         ok "the rig survived a power cut — booted"
     else
         bad "the rig is BRICKED — no boot after a power cut while mining (disqualifying)"

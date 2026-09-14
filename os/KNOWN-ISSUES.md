@@ -382,15 +382,28 @@ not proven.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
   (#911) and fleet descriptor editing (#912).
-- **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
+- **The manual hardware battery has not been run (#2044).** The hardware-only remainder is not a KVM gate. Secure
   Boot, real disks, headless discovery and Restore on AC Power Loss are exactly what a VM
-  cannot show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an
+  cannot show — the hardware-only remainder of M1–M10, M15 and M16 in the release doc must pass on a physical box before an
   image ships (the KVM battery now proves the write/commit half of M8 and M10's power cuts,
   #2067, not the firmware setting itself). (M11–M14 are the rig-role steps and stay manual
   today — see the manual release checklist — because the `rig` KVM phase does not yet prove an
   accepted share, MSR/hugepages, a dashboard adopt, or a stick-root boot; converting what it can
-  is #1886's first gap.) #394's gate list still does not name this battery — the same omission
-  #976's own title records for the OS-update path.
+  is #1886's first gap.)
+- **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
+  KVM battery now measures this rather than leaving it an unread flag: every other guest in
+  `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
+  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and records whether userspace is
+  reached. It is not: **that measured deferred limitation does not fail the boot phase.** The image
+  installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
+  kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
+  chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
+  harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
+  the measured outcome plainly for 2.0.0, while later versions fail a non-boot. A guest that
+  cannot even be DEFINED — no OVMF
+  secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
+  read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
+  keys is still the manual battery's M-row above (#2044).
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The

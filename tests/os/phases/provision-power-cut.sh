@@ -14,30 +14,45 @@
 # property M10 actually guards against (a slot that forgot how far it had gotten).
 _phase_provision_power_cut() {
     info "power-cut leg (M10) — cut power while the provisioned stack is live, three times"
-    local i height_before
+    local i height_before names_before names images_before images slot_before slot_after before
     height_before=$(_monerod_height)
+    names_before=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+    images_before=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+    slot_before=$(_ssh "grub-editenv /boot/efi/grub/grubenv list 2>/dev/null | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort" | tr '\n' ' ')
+    [ -n "$names_before" ] && [ -n "$images_before" ] && [ -n "$slot_before" ] || {
+        bad "could not record the live stack, stored-image, and slot baseline before the power cuts"
+        return 1
+    }
     for i in 1 2 3; do
-        virsh destroy "$VM" >/dev/null 2>&1 || true
+        before=$(_boot_id) || {
+            bad "M10.$i: could not read the boot id before the power cut"
+            return 1
+        }
+        virsh destroy "$VM" >/dev/null 2>&1 || {
+            bad "M10.$i: could not cut power"
+            return 1
+        }
         sleep 3
-        virsh start "$VM" >/dev/null 2>&1 || true
-        if _wait_ssh 300; then
-            ok "M10.$i: survived a power cut with the stack live — booted"
-        else
+        virsh start "$VM" >/dev/null 2>&1 || {
+            bad "M10.$i: could not restore power"
+            return 1
+        }
+        if ! _wait_new_boot "$before" 300; then
             bad "M10.$i: BRICKED — no boot after a power cut with the stack live (disqualifying)"
             return 1
         fi
+        local deadline=$(($(date +%s) + 420))
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+            [ "$names" = "$names_before" ] && break
+            sleep 10
+        done
+        [ "$names" = "$names_before" ] &&
+            ok "M10.$i: every pre-cut container returned before the next cut ($names)" || {
+            bad "M10.$i: the stack did NOT return before the next cut (wanted: '$names_before'; running: '${names:-none}')"
+            return 1
+        }
     done
-
-    local names deadline=$(($(date +%s) + 420))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
-        names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-        case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
-        sleep 10
-    done
-    case "$names" in
-    *dashboard*caddy* | *caddy*dashboard*) ok "every container returned after the power cuts (podman: $names)" ;;
-    *) bad "the stack did NOT return after the power cuts — running: '${names:-none}'" ;;
-    esac
 
     # The #1029 class, from a REAL virsh destroy rather than the unit-tested fixture: an
     # interrupted image load can leave containers/storage holding zero-length `lower` files, which
@@ -51,10 +66,11 @@ _phase_provision_power_cut() {
     else
         bad "the image store is damaged after the power cuts: $broken"
     fi
-    if _ssh "podman images >/dev/null 2>&1"; then
-        ok "podman images still runs after the power cuts"
+    images=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+    if [ "$images" = "$images_before" ]; then
+        ok "every stored image still has its pre-cut digest after the power cuts"
     else
-        bad "podman images failed after the power cuts"
+        bad "stored image digests changed after the power cuts (wanted: '$images_before'; got: '${images:-unreadable}')"
     fi
 
     if [ -n "$height_before" ]; then
@@ -116,7 +132,10 @@ _phase_provision_power_cut() {
     done
     case "$genv" in
     *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*)
-        ok "the slot is still committed after the power cuts (A_OK=1 A_TRY=0) — pithead-boot committed nothing new"
+        slot_after=$(printf '%s\n' "$genv" | tr ' ' '\n' | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort | tr '\n' ' ')
+        [ "$slot_after" = "$slot_before" ] &&
+            ok "the slot stayed committed after the power cuts — pithead-boot committed nothing new" ||
+            bad "the slot commit state changed after the power cuts (before: '$slot_before'; after: '$slot_after')"
         ;;
     *) bad "the slot is not committed after the power cuts — grubenv: ${genv:-unreadable}" ;;
     esac
