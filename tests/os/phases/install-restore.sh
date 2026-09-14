@@ -107,6 +107,7 @@ _phase_install_restore() {
     }
     # Restore the source archive first, then the checked-in supported-N-1 artifact. This retains
     # the existing same-version KVM coverage while proving the operator upgrade path separately.
+    local source_archive="$restore_archive"
     restore_fixture_fingerprints || {
         bad "restore leg: source or v1.20.0 archive is missing required restore fingerprints"
         rm -f "$target_disk" "$restore_archive" "${RESTORE_N1_ARCHIVE:-}"
@@ -117,6 +118,7 @@ _phase_install_restore() {
     for restore_case in same-version n1; do
         case "$restore_case" in
         same-version)
+            restore_archive="$source_archive"
             expected_wallet="$HARNESS_WALLET"
             expected_onion="$RESTORE_SOURCE_ONION"
             expected_secrets="$RESTORE_SOURCE_SECRETS"
@@ -390,5 +392,5 @@ _phase_install_restore() {
         fi
     done
     phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
-    rm -f "$target_disk" "$restore_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
+    rm -f "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
 }
