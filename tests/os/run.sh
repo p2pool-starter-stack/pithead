@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rig-media|media|fault|reset|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -24,6 +24,10 @@
 #   rig     answer "RigForge" on the same page and prove the OTHER machine this image installs:
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
+#   rig-media (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
+#           beside a blank internal disk that must stay untouched; answer "RigForge" and never
+#           install. Mines from the stick, no containers, volatile journald, an unaided reboot
+#           returns it mining, and the blank disk is still blank.
 #   media   physical-presence config channel (#786 sub-issue D): a removable stick applied at boot
 #           shows its exact diff on the console, counts down, applies, and consumes itself; pulling
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
@@ -31,7 +35,8 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
-#   all     every phase above, in that order — media, fault and reset included since #1064
+#   all     every phase above, in that order — media, fault and reset included since #1064;
+#           rig-media added since #2069
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -140,6 +145,8 @@ source "$SCRIPT_DIR/phases/provision.sh" || exit $?
 source "$SCRIPT_DIR/phases/media.sh" || exit $?
 # shellcheck source=tests/os/phases/rig.sh
 source "$SCRIPT_DIR/phases/rig.sh" || exit $?
+# shellcheck source=tests/os/phases/rig-media.sh
+source "$SCRIPT_DIR/phases/rig-media.sh" || exit $?
 # shellcheck source=tests/os/phases/fault.sh
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
@@ -152,6 +159,7 @@ update) phase_update ;;
 install) phase_install ;;
 provision) phase_provision ;;
 rig) phase_rig ;;
+rig-media) phase_rig_media ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
@@ -164,6 +172,7 @@ all)
     phase_install
     phase_provision
     phase_rig
+    phase_rig_media
     phase_media
     phase_fault
     phase_reset
