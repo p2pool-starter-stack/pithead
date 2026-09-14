@@ -65,9 +65,13 @@ _image_upgrade_stage_guest() {
     _ssh 'chmod 0700 /run/pithead-image-upgrade/image-upgrade-guest.sh' || return 1
 }
 
+_image_upgrade_clear_guest_inputs() {
+    _ssh 'rm -rf /run/pithead-image-upgrade'
+}
+
 phase_image_upgrade() {
     info "phase: image-upgrade (signed v1.20.0 -> candidate on guest-local reflink XFS)"
-    local ip="" rc=0 head
+    local ip="" rc=0 cleanup_rc=0 head
     _image_upgrade_inputs_valid || {
         bad "image-upgrade requires REMOTE_MONERO_HOST, REMOTE_MONERO_RPC_PORT, REMOTE_MONERO_ZMQ_PORT, REMOTE_TARI_HOST, and PITHEAD_REGISTRY"
         return
@@ -91,16 +95,18 @@ phase_image_upgrade() {
         return
     }
     _image_upgrade_stage_guest || {
+        _image_upgrade_clear_guest_inputs >/dev/null 2>&1 || true
         bad "could not stage the private upgrade inputs inside the guest"
         return
     }
     _ssh "/run/pithead-image-upgrade/image-upgrade-guest.sh $head" || rc=$?
+    _image_upgrade_clear_guest_inputs || cleanup_rc=1
     if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
         ok "guest-local reflink volume and private inputs were torn down"
     else
         bad "guest-local reflink volume teardown did not finish"
     fi
-    if [ "$rc" -eq 0 ]; then
+    if [ "$rc" -eq 0 ] && [ "$cleanup_rc" -eq 0 ]; then
         ok "deployed image upgrade and exact rollback passed in the disposable guest"
     else
         bad "deployed image upgrade gate failed (guest runner rc=$rc)"
