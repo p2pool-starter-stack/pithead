@@ -50,16 +50,16 @@ jq -n --arg w "$WALLET" \
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-gate_try() { # <candidate-json-file> [confirm-token] — preview then commit via the spool; result lands in $RESULTS/$UUID5.json
-    # An optional second arg carries a typed confirmation ("APPLY") on the commit, so a PERIMETER case
-    # can prove the change stays refused EVEN WITH a valid token present. Omitted → token-less commit.
+gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview then commit via the spool
+    # Second arg: a typed "APPLY", so a PERIMETER case can prove refusal EVEN WITH a valid token.
+    # Third: the approval ENVELOPE (2026-09-13 perimeter audit). Without one, every case here proved only that a
+    # TOKEN-LESS commit is refused — and a self-written envelope walked past four (the container
+    # writes the spool: its own actor, APPLY and suffix). test-control-perimeter-tier3.sh sends them.
     jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$1" >"$REQS/$UUID5.json"
     run_pending >/dev/null
-    if [ -n "${2:-}" ]; then
-        printf '{"id":"%s","action":"commit","actor":"admin","confirm":"%s"}\n' "$UUID5" "$2" >"$REQS/$UUID5.json"
-    else
-        printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
-    fi
+    jq -n --arg id "$UUID5" --arg c "${2:-}" --argjson a "${3:-null}" \
+        '{id:$id,action:"commit",actor:"admin"} + (if $c == "" then {} else {confirm:$c} end)
+         + (if $a == null then {} else {approval:$a} end)' >"$REQS/$UUID5.json"
     run_pending >/dev/null
 }
 
@@ -69,8 +69,8 @@ gate_try() { # <candidate-json-file> [confirm-token] — preview then commit via
 jq '.dashboard.auth={username:"admin"} | .dashboard.control={enabled:false}' "$C/config.json" >"$C/cand.json"
 jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
 run_pending >/dev/null
-assert_eq "auth-disable previews destructive:false (DEST alone would allow it)" \
-    "$(jq -r '.destructive' "$RESULTS/$UUID5.json" 2>/dev/null)" "false"
+# Preview REFUSES it now (round 2 of the perimeter audit) instead of calling it committable.
+assert_eq "auth-disable preview is refused, not previewed as committable" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "dashboard-login disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -126,7 +126,7 @@ assert_eq "config.json keeps healthchecks unset" "$(jq -r '.healthchecks.ping_ur
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "tor-egress-firewall disable commit is refused even with the APPLY token" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tor-egress refusal still requires the confirmation envelope after APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "tor-egress refusal names the perimeter key, not a missing envelope (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TOR_EGRESS_FIREWALL"
 assert_eq "config.json keeps the tor egress firewall unset (defaults on)" "$(jq -r '.network.tor_egress_firewall // "unset"' "$C/config.json")" "unset"
 # Setting a Monero view key (the #381 payout-confirm secret) reveals every incoming amount — a
 # secret, host-only, never confirm-gated. Commit WITH a valid APPLY token: the perimeter gate must
@@ -179,7 +179,7 @@ assert_eq "workers.list REMOVAL of an existing entry is refused" "$(jq -r '.stat
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "workers.list append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "safe worker append names the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "safe worker append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a
@@ -209,11 +209,11 @@ assert_eq "config.json still has exactly rig1 after every SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 unset -f assert_new_worker_host_refused
 
-# A safe LAN address reaches the approval gate instead of the unsafe-host refusal.
+# A safe LAN address is STILL refused outright: every descriptor change is a credential change.
 jq '.workers.list += [{name:"rig3",host:"10.0.0.50",control_port:8082,token:"tok_rig3"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "ordinary LAN append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "ordinary LAN append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "ordinary LAN append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json does not gain the unapproved ordinary-LAN rig" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # #893 round 5: an independent review found the battery above was still a STRING classifier under
@@ -279,12 +279,12 @@ unset -f assert_resolved_worker_host_refused
 assert_eq "config.json still has exactly rig1 after every round-5 SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 
-# A genuine LAN hostname must reach approval, proving resolve-and-check does not refuse every name.
+# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — it still hits the same descriptor refusal.
 printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "LAN hostname append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system
@@ -335,7 +335,7 @@ rm -f "$RESULTS/$UUIDE.json" "$STAGED/$UUIDE.json"
 jq '.dashboard.energy={cost_per_kwh:0.25} | .monero.rpc_lan_access=true' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "energy edit bundled with a non-allowlisted key is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "bundled refusal names the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
+assert_contains "bundled refusal names the perimeter key (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "MONERO_RPC_BIND"
 assert_eq "config.json keeps monero LAN access off after the refusal" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
 assert_eq "config.json keeps the previously-committed energy cost after the refusal" "$(jq -r '.dashboard.energy.cost_per_kwh' "$C/config.json")" "0.18"
 
@@ -389,7 +389,7 @@ assert_contains "commit request smuggling a destructive flag is rejected" "$(jq 
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "commit after result-file tampering is still refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TELEGRAM_BOT_TOKEN"
 assert_eq "config.json keeps the untampered bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
 
 # Sensitive keys PRESENT but UNCHANGED must not trip the gate: a plain pool-tier change on the

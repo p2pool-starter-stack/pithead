@@ -29,8 +29,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Changed
 
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
-  still asks you to type `APPLY`, and a payout change still asks for the last characters of the new
-  address, which the host re-checks against the staged config. The action button reads
+  still asks you to type `APPLY`. (A payout change asked for the last characters of the new address
+  as well; the perimeter fix below made payout addresses host-only again, so that prompt no longer
+  appears.) The action button reads
   "Confirm & apply" in every case — there is no longer an "Approve & apply" variant. A sensitive
   commit no longer depends on Telegram being set up at all: on a stack that never configured the
   bot, these changes used to fail with an approval-unavailable error and now apply normally.
@@ -40,6 +41,31 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Security
 
+- **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
+  Between
+  [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
+  configuration key that was on neither the freely-editable nor the confirm-gated allowlist did not
+  fail closed: it asked for the approval tier instead, so that every configuration leaf had some
+  route from a machine with no host shell. That tier's second identity was the Telegram tap, which
+  [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) removed — leaving the typed
+  confirmation alone in it. The dashboard container writes its own request spool, so it could
+  supply that confirmation itself. Payout addresses, view keys, node and stratum credentials, the
+  Tor egress firewall, onion exposure, webhook and Healthchecks URLs and the control channel's own
+  switch were all reachable that way. **The approval tier is now a short named list**, so a key
+  nobody enumerated is refused outright again, and the perimeter [`SECURITY.md`](SECURITY.md)
+  describes holds as written. The gap opened and closed inside this Unreleased section: #1978 is in
+  no release tag, so no tagged release carries it. A build cut from `develop` between those two
+  commits does — check the commit an RC image was built from before trusting it.
+- **What this means for the Configuration view.** Settings outside the three tiers render greyed
+  as host-only, as they did before #1978 — change them on the host with `./pithead apply`, or on
+  an appliance with a configuration stick, which may set anything. The settings that lose their
+  dashboard route include the payout addresses, the view keys, the node RPC credentials, the
+  stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
+  Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
+  Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
+  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
+  API token is a credential change, closed in the same round-2 pass after an initial review found
+  it still routed through the self-written approval envelope.
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
