@@ -2,7 +2,6 @@
 # Bounded XvB actuation smoke for the throwaway KVM appliance. The appliance is
 # intentionally unsynchronised, so this injects the controller's existing switch
 # method rather than pretending a PPLNS share or routed hashrate exists.
-[ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ] || : "${OS_RUN_SUITE:?source via the suite runner}"
 
 _xvb_payload() { # <mode> -> base64 Python that calls the real controller actuator
     case "$1" in P2POOL | XVB) ;; *) return 2 ;; esac
@@ -74,7 +73,6 @@ phase_provision_xvb_routing() { # <dashboard user> <dashboard password>
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
-    OS_RUN_SUITE=1
     [ -n "$(_xvb_payload XVB)" ] && [ -n "$(_xvb_payload P2POOL)" ] && ! _xvb_payload SPLIT >/dev/null || exit 1
     echo "appliance-xvb-routing-leg self-test passed"
 fi
