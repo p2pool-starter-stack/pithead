@@ -82,7 +82,7 @@ assert_eq "no incomplete marker survives a same-call recovery" \
 echo "== black-box: the retry is bounded — a real failure still fails apply (#2218) =="
 # The bound is the whole point: a retry that never gives up would hide a genuine compose fault
 # (a port already bound, a failed dependency gate) behind an apply that hangs instead of reporting.
-cur_config observer
+cur_config nano
 cur_stub 99
 out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "apply still fails once every try is spent" "$?" "1"

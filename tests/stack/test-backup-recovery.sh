@@ -50,7 +50,7 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 
 backup_case() {
     rm -f "$FB/docker.log" "$FB/up.count" "$FB/tar.called" "$FB"/backups/pithead-backup-*
-    (cd "$FB" && DOCKER_LOG="$FB/docker.log" UP_COUNT="$FB/up.count" PATH="$FB/bin:$PATH" "$@" ./pithead backup -y --no-encrypt 2>&1)
+    (cd "$FB" && DOCKER_LOG="$FB/docker.log" UP_COUNT="$FB/up.count" PITHEAD_COMPOSE_UP_TRIES=1 PATH="$FB/bin:$PATH" "$@" ./pithead backup -y --no-encrypt 2>&1)
 }
 out="$(backup_case env TAR_FAIL=1)"
 rc=$?
