@@ -21,13 +21,14 @@
 
 tari_env() { _ssh "sed -n 's/^$1=//p' /data/pithead/.env" 2>/dev/null | tr -d '\r'; }
 
-# A stable fingerprint of the Tari chain directory: entry count plus total bytes. The POINT of
-# switching off is that this does not change — the container is removed, the data is not.
+# A stable fingerprint of the Tari chain directory itself. Its contents can legitimately grow
+# before the apply removes the container; the device/inode pair changes only if the directory is
+# replaced. The POINT of switching off is that the directory is kept, not frozen byte-for-byte.
 tari_data_fingerprint() {
     _ssh 'set -eu
 d=$(sed -n "s/^TARI_DATA_DIR=//p" /data/pithead/.env)
 [ -n "$d" ] || d=/data/pithead/data/tari
-if [ -d "$d" ]; then printf "%s %s" "$(find "$d" | wc -l | tr -d " ")" "$(du -sk "$d" | cut -f1)"; else printf missing; fi' 2>/dev/null | tr -d '\r'
+if [ -d "$d" ]; then stat -c "%d %i" "$d"; else printf missing; fi' 2>/dev/null | tr -d '\r\n'
 }
 
 tari_container_present() { _ssh "podman ps -a --format '{{.Names}}' | grep -qx tari" 2>/dev/null; }
@@ -35,7 +36,25 @@ tari_container_present() { _ssh "podman ps -a --format '{{.Names}}' | grep -qx t
 # p2pool's launch argv, as the container is ACTUALLY running it — not the rendered .env. #1903's
 # entrypoint drops the --merge-mine triple on TARI_MODE=off, and only the live argv shows it.
 p2pool_merge_mine_argv() {
-    _ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'index(\"--merge-mine\") // \"none\"'" 2>/dev/null | tr -d '\r'
+    local argv
+    argv=$(_ssh "podman exec p2pool cat /proc/1/cmdline" 2>/dev/null | tr '\0' '\n') || return 1
+    if printf '%s\n' "$argv" | grep -Eq '^--merge-mine(=|$)'; then
+        printf present
+    else
+        printf none
+    fi
+}
+
+tari_live_config() {
+    local live tries
+    for tries in 1 2 3 4 5 6; do
+        live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) && [ -n "$live" ] && {
+            printf '%s' "$live"
+            return 0
+        }
+        sleep 5
+    done
+    return 1
 }
 
 # Pure: did a commit result land, and land WITHOUT being bounced to the approval tier? Separated so
@@ -78,11 +97,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     # against a dashboard answering empty while it starts, which is the exact condition the retry
     # exists for. The guard below still catches it, so this was never a false pass; it was a retry
     # that did not retry.
-    for tries in 1 2 3 4 5 6; do
-        live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) && [ -n "$live" ] && break
-        sleep 5
-    done
-    if [ -z "${live:-}" ]; then
+    if ! live=$(tari_live_config); then
         "$unexercised" "the dashboard config was unreadable — day-two tari.mode switching was NOT exercised (#1929)"
         return 0
     fi
@@ -149,14 +164,19 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         rc=1
     fi
 
-    if [ "$(p2pool_merge_mine_argv)" = "none" ]; then
-        ok "p2pool relaunched with no --merge-mine argument (#1903)"
-    else
-        bad "p2pool is still being handed --merge-mine on an off machine"
-        rc=1
-    fi
+    tries=0
+    while [ "$tries" -lt 30 ] && ! _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | grep -qx p2pool; do
+        tries=$((tries + 1))
+        sleep 4
+    done
     if _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | grep -qx p2pool; then
         ok "a machine that declined Tari keeps mining Monero"
+        if [ "$(p2pool_merge_mine_argv)" = "none" ]; then
+            ok "p2pool relaunched with no --merge-mine argument (#1903)"
+        else
+            bad "p2pool is still being handed --merge-mine on an off machine"
+            rc=1
+        fi
     else
         bad "p2pool is not running after Tari was turned off — the sync gate never released"
         rc=1
@@ -170,7 +190,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     # "Tari is off AND the chain is gone" and "Tari is off but the chain is intact" are different
     # incidents, and an early return here reports only the first line of either.
     restored=0
-    if live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) &&
+    if live=$(tari_live_config) &&
         proposed=$(printf '%s' "$live" | jq -c --arg m "$origin" '.tari.mode = $m') &&
         result=$(tari_mode_commit "$proposed") && tari_commit_verdict "$result"; then
         restored=1
@@ -213,6 +233,38 @@ _tari_mode_self_test() {
     tari_approval_bounce '{"status":"rejected","error":"sensitive changes need typed payout confirmations followed by host-verified Telegram approval"}' || f=$((f + 1))
     tari_approval_bounce '{"status":"rejected","error":"this change is disruptive (x) — type APPLY in the dashboard to confirm."}' && f=$((f + 1))
     tari_approval_bounce '{"status":"applied"}' && f=$((f + 1))
+    (
+        ip=fixture
+        counter=$(mktemp)
+        printf '0\n' >"$counter"
+        dashboard_curl() {
+            calls=$(($(cat "$counter") + 1))
+            printf '%s\n' "$calls" >"$counter"
+            [ "$calls" -gt 1 ] && printf '{"tari":{"mode":"off"}}'
+        }
+        sleep() { :; }
+        if [ "$(tari_live_config)" = '{"tari":{"mode":"off"}}' ] && [ "$(cat "$counter")" -eq 2 ]; then
+            rc=0
+        else
+            rc=1
+        fi
+        rm -f "$counter"
+        exit "$rc"
+    ) || f=$((f + 1))
+    (
+        _ssh() {
+            case "$*" in
+            *stat\ -c*) printf '41 2111\n' ;;
+            */proc/1/cmdline*) printf 'p2pool\0--wallet\0fixture\0' ;;
+            *) return 1 ;;
+            esac
+        }
+        [ "$(tari_data_fingerprint)" = '41 2111' ] && [ "$(p2pool_merge_mine_argv)" = none ]
+    ) || f=$((f + 1))
+    (
+        _ssh() { printf 'p2pool\0--merge-mine=tari://fixture\0wallet\0'; }
+        [ "$(p2pool_merge_mine_argv)" = present ]
+    ) || f=$((f + 1))
     # The leg is wired into the provision phase; a leg nobody calls proves nothing.
     grep -Fq 'phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"' \
         "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
