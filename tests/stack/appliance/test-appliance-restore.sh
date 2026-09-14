@@ -160,6 +160,12 @@ printf 'DBDATA-OLDROOT\n' >"$OLDROOT/data/dashboard/dashboard.db"
 printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/lmdb-sentinel"
 printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/db-sentinel"
 printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/db-sentinel"
+# A SECOND name in each chain dir, the one the target plants too (#2195): the archive therefore
+# ships both a name the target lacks (the sentinels above) and a name it already holds (these), so
+# the merge's two halves — add what is missing, keep what is already there — each get their own row.
+printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/chain-state"
+printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/chain-state"
+printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/chain-state"
 # --with-chains: the issue's own repro (#2181) backs up Monero/Tari/P2Pool data too, so the
 # cross-root restore below has to prove those trees, not just config/Tor/dashboard.
 out="$(cd "$OLDROOT" && PATH="$OLDROOT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup --with-chains -y 2>&1)"
@@ -177,13 +183,13 @@ printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
 # has the opposite rule for the same collision (restore_commit_stage's `cp -a --remove-destination`
 # lets the archive win — an operator running that command explicitly wants the archive back). See
 # docs/dev/appliance-wizard.md for that divergence and the tracking issue for unifying it. Distinct
-# content on each side is what makes this a real collision test: same filenames as the archive
-# above, so restore_apply's `cp -a -n` (no-clobber) is what the assertions below actually exercise
-# — remove the `-n` and the archive's content would win here instead, and they would go red.
+# content on each side is what makes this a real collision test: `chain-state` is a name the archive
+# ships too, so restore_apply's `cp -a -n` (no-clobber) is what the collision rows below actually
+# exercise — remove the `-n` and the archive's content would win here instead, and they go red.
 mkdir -p "$RS/data/monero" "$RS/data/tari" "$RS/data/p2pool" # the target's chain dirs; only `wipe=keep` leaves them behind, and this fixture is a fresh $RS
-printf 'MONERO-CHAIN-TARGET\n' >"$RS/data/monero/lmdb-sentinel"
-printf 'TARI-CHAIN-TARGET\n' >"$RS/data/tari/db-sentinel"
-printf 'P2POOL-CHAIN-TARGET\n' >"$RS/data/p2pool/db-sentinel"
+printf 'MONERO-CHAIN-TARGET\n' >"$RS/data/monero/chain-state"
+printf 'TARI-CHAIN-TARGET\n' >"$RS/data/tari/chain-state"
+printf 'P2POOL-CHAIN-TARGET\n' >"$RS/data/p2pool/chain-state"
 out="$(cd "$RS" && PATH="$RS/bin:$PATH" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 2>&1)"
 rc=$?
 # The restore's own success is asserted FIRST and separately from the collision survival checks
@@ -193,9 +199,12 @@ assert_rc "cross-root restore with colliding target chain data returns 0 (#2195)
 assert_contains "cross-root restore carries the source box's config" "$(cat "$RS/config.json" 2>/dev/null)" "old-bundle.lan"
 assert_eq "cross-root restore brings back the onion key" "$(cat "$RS/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-OLDROOT"
 assert_eq "cross-root restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-OLDROOT"
-assert_eq "target's own monero chain data wins the collision, not resynced from the archive (#2195)" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-TARGET"
-assert_eq "target's own tari chain data wins the collision (#2195)" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-TARGET"
-assert_eq "target's own p2pool chain data wins the collision (#2195)" "$(cat "$RS/data/p2pool/db-sentinel" 2>/dev/null)" "P2POOL-CHAIN-TARGET"
+assert_eq "cross-root restore brings back the monero chain data" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the tari chain data" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the p2pool chain data" "$(cat "$RS/data/p2pool/db-sentinel" 2>/dev/null)" "P2POOL-CHAIN-OLDROOT"
+assert_eq "target's own monero chain data wins the collision, not resynced from the archive (#2195)" "$(cat "$RS/data/monero/chain-state" 2>/dev/null)" "MONERO-CHAIN-TARGET"
+assert_eq "target's own tari chain data wins the collision (#2195)" "$(cat "$RS/data/tari/chain-state" 2>/dev/null)" "TARI-CHAIN-TARGET"
+assert_eq "target's own p2pool chain data wins the collision (#2195)" "$(cat "$RS/data/p2pool/chain-state" 2>/dev/null)" "P2POOL-CHAIN-TARGET"
 rm -rf "$OLDROOT" "$RS/data/monero" "$RS/data/tari" "$RS/data/p2pool"
 rm -f "$RSPOOL/applied" "$RS/config.json"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile" # fixtures back to their case-1 state for the cases below
