@@ -94,11 +94,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
         return 1
     fi
-    if [ "${bad:-0}" -gt 0 ]; then
-        hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
-        printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
-        return 1
-    fi
+    # MUTATION-PROOF PROBE (temporary, reverted before merge): reintroduces the exact #2110 defect
+    # — an unlisted key gets approval_required instead of an outright refusal.
+    [ "${bad:-0}" -gt 0 ] && approval_required=1
     # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
