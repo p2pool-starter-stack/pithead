@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # Runtime diagnostics assertions for the appliance control runner (#1961/#1966).
 
-diagnostics_doctor_verdict() { # <result-json> <healthy|nonzero>
+diagnostics_doctor_verdict() { # <result-json> <readable|healthy|nonzero>
     printf '%s' "$1" | jq -e --arg mode "$2" '
-        .status == (if $mode == "nonzero" then "failed" else "applied" end) and
         (.doctor.exit | type == "number") and
-        (if $mode == "nonzero" then .doctor.exit > 0 else .doctor.exit == 0 end) and
+        .status == (if .doctor.exit == 0 then "applied" else "failed" end) and
+        (if $mode == "readable" then true
+        elif $mode == "nonzero" then .doctor.exit > 0
+        elif $mode == "healthy" then .doctor.exit == 0
+        else false end) and
         (.doctor.checks | type == "array" and length > 0) and
         all(.doctor.checks[]; (.status | type == "string") and (.message | type == "string"))' >/dev/null
 }
 
 # WHICH half of the doctor verdict the runner lost, for the two rows that reported only that one
 # of them was lost (#2060). `diagnostics_doctor_verdict` is a single jq conjunction, so a red says
-# nothing about whether the applied wrapper, the numeric exit or the structured rows went missing
+# nothing about whether the result wrapper, the numeric exit or the structured rows went missing
 # — and "lost or flattened" is a guess until this line is read beside it.
 # Every branch is total on purpose. A FLATTENED `checks` — the very shape the row is named after —
 # is a string, and indexing a string is a jq error: a payload that let that fall through to its
@@ -46,7 +49,7 @@ phase_provision_diagnostics_regressions() { # <dashboard-user> <dashboard-passwo
     # shellcheck disable=SC2034
     local DASH_USER="$1" DASH_PASS="$2" result
     result=$(dashboard_control_request diag-doctor '{}')
-    if diagnostics_doctor_verdict "$result" healthy; then
+    if diagnostics_doctor_verdict "$result" readable; then
         ok "doctor returns every structured health row through the appliance control runner"
     else
         bad "doctor did not return a complete structured report through the control runner ($(control_result_payload "$result"); $(diagnostics_doctor_payload "$result"))"
@@ -79,9 +82,11 @@ phase_provision_failed_doctor_regression() { # <dashboard-user> <dashboard-passw
 
 _diagnostics_self_test() {
     local good='{"status":"failed","doctor":{"exit":2,"checks":[{"status":"fail","message":"node down"}]}}' f=0 over json
+    diagnostics_doctor_verdict "$good" readable || f=$((f + 1))
     diagnostics_doctor_verdict "$good" nonzero || f=$((f + 1))
     diagnostics_doctor_verdict "$good" healthy && f=$((f + 1))
     diagnostics_doctor_verdict '{"status":"applied","doctor":{"exit":0,"checks":[{"status":"pass","message":"healthy"}]}}' healthy || f=$((f + 1))
+    diagnostics_doctor_verdict "${good/\"failed\"/\"applied\"}" readable && f=$((f + 1))
     diagnostics_doctor_verdict "${good/\"failed\"/\"applied\"}" nonzero && f=$((f + 1))
     diagnostics_doctor_verdict "${good/\"checks\"/\"lost\"}" nonzero && f=$((f + 1))
     diagnostics_doctor_verdict "${good/\"message\"/\"detail\"}" nonzero && f=$((f + 1))
