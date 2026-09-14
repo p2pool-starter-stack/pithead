@@ -49,4 +49,17 @@ source "$ROOT/lib/run-rig-control.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-reverse.sh
 source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
+
+detail="$({
+    source "$ROOT/lib.sh"
+    env_on_box() { case "$1" in MONERO_CLEARNET_SYNC | TARI_CLEARNET_SYNC) echo false ;; NETWORK_PREFIX) echo 172.28.0 ;; esac }
+    rx() { printf '%s\n' '  ✗ tari: 1 PERSISTENT PUBLIC connection(s) — CLEARNET LEAK:' '        198.51.100.42 (3/3 polls)' '[verify-egress] FAIL'; }
+    it_fail() { printf '%s' "$2"; }
+    it_pass() { :; }
+    IT_MODE=local IT_REMOTE_DIR=. assert_egress_posture
+})"
+[[ "$detail" == *'198.51.100.42 (3/3 polls)'* ]] || {
+    echo "leak detail discarded its address and poll count" >&2
+    exit 1
+}
 echo "selftest-run-modules: PASS"

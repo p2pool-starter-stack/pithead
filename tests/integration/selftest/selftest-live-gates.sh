@@ -191,7 +191,7 @@ tor_down_fixture() { # <extra flags...> -> rc, output on stdout
         'if [ "$1 $2 $3" = "compose config --services" ]; then printf "monerod\ntor\n"; exit 0; fi' \
         'if [ "$1 $2 $3 $4" = "compose ps -q tor" ]; then exit 0; fi' \
         'if [ "$1 $2 $3" = "compose ps -q" ]; then echo cid; exit 0; fi' \
-        'if [ "$1" = exec ]; then printf "  sl  local_address rem_address st\\n"; exit 0; fi' \
+        'if [ "$1" = exec ]; then printf "  sl  local_address rem_address st\\n0: 00000000:0000 01004064:0050 01\\n"; exit 0; fi' \
         'exit 125' >"$td/docker" && chmod +x "$td/docker"
     PATH="$td:$PATH" bash "$HERE/benchmarks/bench-verify-egress.sh" tor --dir "$td" --polls 1 --interval 0 "$@" 2>&1
     rc=$?
@@ -208,9 +208,9 @@ fi
 out="$(tor_down_fixture --allow-tor-down)"
 waived_rc=$?
 if [ "$waived_rc" = 0 ] && [[ "$out" != *INCONCLUSIVE* ]]; then
-    it_pass "--allow-tor-down waives ONLY that control and still grades the apps (#563)"
+    it_pass "--allow-tor-down waives ONLY that control and treats firewall-allowed CGNAT as private (#563/#270)"
 else
-    it_fail "--allow-tor-down waives ONLY that control and still grades the apps (#563)" "rc=$waived_rc"
+    it_fail "--allow-tor-down waives ONLY that control and treats firewall-allowed CGNAT as private (#563/#270)" "rc=$waived_rc"
 fi
 
 # The Tor-egress verifier gates whether the gate will start containers at all, so a version that

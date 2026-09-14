@@ -520,9 +520,11 @@ and `--list` prints it).
   that second dial is the within-row control, without which a DROP and a bench with no route to the
   internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
-  checks state, not effect: `assert_egress_posture` samples the connections the apps *chose* to
-  make, so it reads clean on a fail-open box whose apps are all correctly Tor-configured, and
-  `verify_tor_egress_firewall` compares the installed ruleset to the applier's own render. Rules can
+  checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
+  to make, excluding the firewall's four accepted private ranges. A failure retains each remote
+  address and its poll count in the harness output; a clean sample still reads clean on a fail-open
+  box whose apps are all correctly Tor-configured. `verify_tor_egress_firewall` compares the
+  installed ruleset to the applier's own render. Rules can
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
   appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.

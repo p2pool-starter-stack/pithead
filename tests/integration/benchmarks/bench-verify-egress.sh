@@ -97,6 +97,7 @@ public_conns() { # <container-id>  → one "ip:port" per established public conn
         o4=$((16#${hip:0:2}))
         case "$o1.$o2" in 10.* | 127.* | 0.* | 169.254 | 192.168) continue ;; esac
         { [ "$o1" = 172 ] && [ "$o2" -ge 16 ] && [ "$o2" -le 31 ]; } && continue
+        { [ "$o1" = 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ]; } && continue
         printf '%d.%d.%d.%d:%d\n' "$o1" "$o2" "$o3" "$o4" "$((16#$hport))"
     done
 }
