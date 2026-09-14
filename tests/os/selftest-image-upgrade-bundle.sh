@@ -19,11 +19,11 @@ PATH="$td/bin:$PATH" PITHEAD_REGISTRY=registry.test "$HERE/image-upgrade-bundle.
     echo "candidate commit missing" >&2
     exit 1
 }
-tar -xOf "$td/candidate.tar.gz" pithead/docker-compose.yml | grep -Eq 'pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):\$\{STACK_VERSION:-dev\}@sha256:[0-9a-f]{64}' || {
+tar -xOf "$td/candidate.tar.gz" pithead/docker-compose.yml | grep -E 'pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):\$\{STACK_VERSION:-dev\}@sha256:[0-9a-f]{64}' >/dev/null || {
     echo "candidate images are not digest pinned" >&2
     exit 1
 }
-tar -xOf "$td/candidate.tar.gz" pithead/docker-compose.yml | grep -Fq 'registry.test/pithead-dashboard:' || {
+tar -xOf "$td/candidate.tar.gz" pithead/docker-compose.yml | grep -F 'registry.test/pithead-dashboard:' >/dev/null || {
     echo "candidate registry is not self-contained" >&2
     exit 1
 }
