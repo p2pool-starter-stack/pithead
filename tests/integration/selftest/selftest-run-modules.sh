@@ -60,8 +60,11 @@ proxy_payload_verdict() {
         assert_proxy_workers_payload
     )
 }
-[ "$(proxy_payload_verdict '116 1 1048576' 1)" = PASS ] || exit 1
-[ "$(proxy_payload_verdict '1048577 1 1048576' 1)" = FAIL ] || exit 1
-[ "$(proxy_payload_verdict '116 0 1048576' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 1 1048576 True' 1)" = PASS ] || exit 1
+[ "$(proxy_payload_verdict '1048577 1 1048576 True' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 0 1048576 True' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 1 1048576 False' 1)" = FAIL ] || exit 1
 [ "$(proxy_payload_verdict 'not-a-sample' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 1 1048576 True trailing' 1)" = FAIL ] || exit 1
+grep -qx '        assert_proxy_workers_payload' "$ROOT/lib/run-state.sh" || exit 1
 echo "selftest-run-modules: PASS"

@@ -506,7 +506,7 @@ and `--list` prints it).
 - End-to-end mining. Workers are online (`proxy_workers >= --workers`), stratum has connections,
   and total hashes are accumulating ([#28](https://github.com/p2pool-starter-stack/pithead/issues/28)).
   With a borrowed miner, the same row reads xmrig-proxy's `/1/workers` through the production
-  bounded helper, records the raw response bytes and worker count, and fails above the 1 MiB cap
+  bounded helper, records the response body bytes and worker count, and fails above the 1 MiB cap
   ([#1360](https://github.com/p2pool-starter-stack/pithead/issues/1360)).
 - Posture propagated. `MONERO_RPC_BIND`, `DASHBOARD_SECURE`, `XVB_ENABLED`, and `TARI_REQUIRED`
   in `.env` match the config; the Caddyfile uses the right scheme.
