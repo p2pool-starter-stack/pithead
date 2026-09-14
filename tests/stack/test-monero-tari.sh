@@ -543,8 +543,7 @@ assert_rc "above-maximum out_peers refused" "$?" "1"
 assert_contains "above-maximum refusal names the bounds" "$out" "between 8 and 1024"
 
 echo "== black-box: local node creds auto-generated + persisted (#50) =="
-# A local node with BLANK creds: apply must generate them, write them into .env AND back into
-# config.json, and keep them stable on a second apply (don't regenerate every run).
+# Blank local credentials are generated, persisted, and stable across apply.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"","node_password":""}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -556,26 +555,26 @@ assert_eq "username persisted to config.json" "$(jq -r '.monero.node_username' "
 assert_eq "password persisted to config.json" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "password stable across apply" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
-
-# A REMOTE node with blank creds means "no auth" — leave it empty, don't invent credentials.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com"}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote username left blank" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_NODE_USERNAME)" ""
 assert_eq "remote creds not persisted" "$(jq -r '.monero.node_username' "$V/config.json")" ""
-
-# Custom remote rpc_port/zmq_port propagate to .env (the dashboard + p2pool read these to reach the
-# node); both default to 18081/18083 but an operator can point at a node on non-standard ports.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote rpc_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_PORT)" "28081"
+assert_eq "remote RPC URL rendered from the endpoint" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://node.example.com:28081"
 assert_eq "remote zmq_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "28083"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "zmq_port defaults to 18083" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "18083"
-
+assert_eq "local RPC URL renders host loopback" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://127.0.0.1:18081"
+seed_env
+printf '{ "monero": {"mode":"remote","wallet_address":"%s","remote":{"host":"fd00::10","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_eq "IPv6 remote RPC URL brackets the host" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://[fd00::10]:28081"
 seed_env
 : >"$DOCKER_LOG"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead logs monerod 2>&1)"
