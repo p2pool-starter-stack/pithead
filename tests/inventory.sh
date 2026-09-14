@@ -213,7 +213,7 @@ ${n_scen} live config scenarios (${n_axes} axis values) · ${n_mini} mini-stack 
 | 1 — Unit | dashboard pytest | ${n_py_dash} |
 | 1 — Unit | frontend (node --test) | ${n_node} |
 | 1 — Unit | \`pithead\` shell suite | ${n_stack} sections |
-| 1 — Unit | compose interpolation + hardening (#90) | 1 |
+| 1 — Unit | compose hardening + generated Caddyfile parsing (#90/#1037) | 1 |
 | 2 — Contract | fake-daemon clients | ${n_py_fake} |
 | 3 — Mini-stack | docker control-plane scenarios | ${n_mini} |
 | 4 — Live matrix | config scenarios | ${n_scen} (${n_axes} axis values) |

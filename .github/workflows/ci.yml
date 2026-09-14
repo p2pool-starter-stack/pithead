@@ -412,7 +412,7 @@ jobs:
         run: uvx zizmor@1.25.2 --offline .github/workflows/
 
   compose:
-    name: Compose config + security hardening
+    name: Compose hardening + generated Caddyfile parsing
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -420,7 +420,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate docker-compose.yml interpolation + hardening invariants (#90)
+      - name: Validate Compose hardening and generated Caddyfiles (#90/#1037)
         run: make test-compose
 
   lint-surfaces:
