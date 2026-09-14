@@ -63,6 +63,7 @@ trap 'umount "$WORK/mnt" 2>/dev/null || true; rm -rf "$WORK"' EXIT
     exit 2
 }
 verify_tarball_commit "$TARBALL" || exit $?
+[ "$DEV" -eq 1 ] || verify_guarded_rootfs_tar "$TARBALL" || exit $?
 
 # The bundle is signed with this key and RAUC verifies it against the keyring baked at image build.
 # A release bundle must name the key explicitly; --dev auto-generates a labelled throwaway.

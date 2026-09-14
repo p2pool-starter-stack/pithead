@@ -154,8 +154,8 @@ Release notes, where operators actually read it. The branch model itself is in
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
    `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds. Then build the
    appliance rootfs with that staged dashboard digest baked in. Its push guard reads the exported
-   rootfs and refuses any artifact carrying the debug SSH key; the same exported tar is the input
-   to the appliance image and RAUC bundle.
+   rootfs and refuses any artifact carrying the debug SSH key. It records that tar's SHA-256; the
+   production appliance image and RAUC bundle refuse any other export.
 4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
    immutable digests. Nothing user-facing points here yet. The first `pithead-os-rootfs` push
    creates a private package because that is GHCR's default. Change that package's visibility to

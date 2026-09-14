@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Sourced by release.sh; shares its configuration and stage state.
 
+# shellcheck source=os/rauc/populate-slot.sh
+. "$RELEASE_LIB_DIR/../../os/rauc/populate-slot.sh"
+
 # --- Stage 2: test gate ---------------------------------------------------------------------------
 
 test_gate() {
@@ -76,33 +79,13 @@ build_images() {
     ok "Built + pushed all 6 images for $PLATFORMS."
 }
 
-rootfs_publish_check() { # <exported-rootfs-tar>
-    local rootfs_tar="$1" variant listing
-    variant="$(tar -xOf "$rootfs_tar" etc/pithead-variant 2>/dev/null)" || {
-        echo "rootfs publish guard: cannot read etc/pithead-variant" >&2
-        return 1
-    }
-    [ "$variant" = release ] || {
-        echo "rootfs publish guard: variant is '$variant', not release" >&2
-        return 1
-    }
-    listing="$(tar -tf "$rootfs_tar")" || {
-        echo "rootfs publish guard: cannot list the exported rootfs" >&2
-        return 1
-    }
-    if grep -Fx 'root/.ssh/authorized_keys' <<<"$listing" >/dev/null; then
-        echo "rootfs publish guard: refusing a rootfs carrying the debug SSH key" >&2
-        return 1
-    fi
-}
-
 rootfs_image_check() { # <image-ref>
     local ref="$1" check_dir cid rc=0
     check_dir="$(mktemp -d)"
     cid="$(docker create "$ref")" || rc=$?
     [ "$rc" -ne 0 ] || docker export --output "$check_dir/root.tar" "$cid" || rc=$?
     [ -z "$cid" ] || docker rm "$cid" >/dev/null || rc=$?
-    [ "$rc" -ne 0 ] || rootfs_publish_check "$check_dir/root.tar" || rc=$?
+    [ "$rc" -ne 0 ] || verify_release_rootfs_tar "$check_dir/root.tar" || rc=$?
     rm -r "$check_dir"
     return "$rc"
 }
@@ -128,13 +111,14 @@ build_rootfs_image() {
     fi
     dashboard_digest="$(manifest_digest "$(image_for dashboard):$STAGING_TAG")" ||
         die "Could not resolve the staged dashboard digest needed by the appliance rootfs."
-    DOCKER_DEFAULT_PLATFORM="${PLATFORMS%%,*}" \
+    run env DOCKER_DEFAULT_PLATFORM="${PLATFORMS%%,*}" \
         PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" \
         PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@$dashboard_digest" \
         os/build-image.sh
-    rootfs_publish_check os/build/pithead-root.tar ||
+    verify_release_rootfs_tar os/build/pithead-root.tar ||
         die "Refusing to push $repo:$STAGING_TAG: the exported rootfs is not the release variant."
-    docker push "$repo:$STAGING_TAG"
+    sha256sum os/build/pithead-root.tar | awk '{print $1}' >os/build/pithead-root.tar.sha256
+    run docker push "$repo:$STAGING_TAG"
 }
 
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------

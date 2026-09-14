@@ -124,6 +124,48 @@ verify_tarball_commit() {
     return 2
 }
 
+# Release rootfs content is checked here so the registry push, initial image and update bundle use
+# one rule. Tar listings may prefix members with ./; an absolute member is equally unsafe.
+verify_release_rootfs_tar() { # $1 = tarball path
+    local tarball="$1" variant listing
+    variant="$(tar -xOf "$tarball" etc/pithead-variant 2>/dev/null)" || {
+        echo "rootfs release guard: cannot read etc/pithead-variant" >&2
+        return 2
+    }
+    [ "$variant" = release ] || {
+        echo "rootfs release guard: variant is '$variant', not release" >&2
+        return 2
+    }
+    listing="$(tar -tf "$tarball")" || {
+        echo "rootfs release guard: cannot list $tarball" >&2
+        return 2
+    }
+    if grep -Eq '^(\./)*/?root/\.ssh/authorized_keys$' <<<"$listing"; then
+        echo "rootfs release guard: refusing a rootfs carrying the debug SSH key" >&2
+        return 2
+    fi
+}
+
+# A non-dev image or bundle must consume the exact export guarded immediately before publication.
+verify_guarded_rootfs_tar() { # $1 = tarball path
+    local tarball="$1" expected actual
+    verify_release_rootfs_tar "$tarball" || return $?
+    [ -s "$tarball.sha256" ] || {
+        echo "rootfs release guard: missing $tarball.sha256 from the guarded registry push" >&2
+        return 2
+    }
+    expected="$(tr -d '[:space:]' <"$tarball.sha256")"
+    [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "rootfs release guard: malformed digest in $tarball.sha256" >&2
+        return 2
+    }
+    actual="$(sha256sum "$tarball" | awk '{print $1}')" || return 2
+    [ "$actual" = "$expected" ] || {
+        echo "rootfs release guard: $tarball changed after the guarded registry push" >&2
+        return 2
+    }
+}
+
 # The working tree's commit, with build-image.sh's exact -dirty suffix. These scripts normally run
 # under sudo, and root's git refuses to read another user's checkout ("dubious ownership") — and
 # `git -c safe.directory=` is documented as ignored from the command line — so on failure ask

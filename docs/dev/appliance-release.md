@@ -454,8 +454,9 @@ one version and one GitHub Release.
    then creates on this commit names those same bytes.
 3. Run the release pipeline with `--draft`. It builds and publishes `pithead-os-rootfs:vX.Y.Z` by
    digest, refuses a rootfs carrying the debug SSH key, and leaves the exact exported bytes in
-   `os/build/pithead-root.tar`. Do not run `os/build-image.sh` again: rebuilding would re-resolve apt
-   and make the published rootfs differ from the appliance.
+   `os/build/pithead-root.tar` with its `.sha256` handoff. The production image and bundle builders
+   require that digest and refuse a changed or debug-keyed tar. Do not run `os/build-image.sh`
+   again: rebuilding would re-resolve apt and make the published rootfs differ from the appliance.
 4. Build the image and bundle from that tar with the **release key**, never the throwaway `--dev`
    chain. Point both scripts at it and omit `--dev` — a release build refuses to run without an
    explicit key, so there is no silent-dev-cert path:

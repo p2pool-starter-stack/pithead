@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
+# Shipped-image CVE sweep report (#1313). The workflow resolves each release tag to a digest and
+# scans published bytes; this script only renders those artifacts. Rebuilding here would resolve
+# apt again and could hide a CVE carried by the release.
 #
-# Shipped-image CVE sweep report (#1313).
-#
-# The Monday sweep in ci.yml rebuilds every image from the branch and scans the rebuild. That
-# cannot answer the question users care about. A rebuild resolves apt at scan time, so it picks up
-# archive fixes the published image never got — the sweep goes green while the bytes people are
-# running still carry the CVE. It also scans the default branch, not the release. This report
-# covers the other half: the images published at cut time, promoted by digest with no rebuild
-# (release.sh stage 6 is `buildx imagetools create`, a re-tag), scanned exactly as published.
-#
-# REPORT-ONLY, and that posture is deliberate. A CVE in a shipped image is a fact to act on — it
-# means "consider cutting a patch release", a decision a person makes — not a build to fail. The
-# run goes red only when the sweep itself could not do its job.
-#
-# WHAT THIS SCRIPT IS. It does no scanning and touches no network. ci.yml's `sweep-shipped` matrix
-# resolves each published tag to a digest, scans that digest with trivy, and uploads two files per
-# image; this script reads that directory and renders the tracking-issue body. Keeping the render
-# out of the workflow is what makes it testable — `--self-test` drives every failure mode below
-# through fixtures with no docker, no network, and no GitHub.
-#
-# INCOMPLETE IS NEVER CLEAN. Every refusal below exits 1 and says UNCHECKED in the report rather
-# than printing a reassuring zero. This is the defect class the whole currency lane exists for: a
-# watcher with nothing to say and a watcher that has quietly died look identical from the Actions
-# tab, and "0 findings" off a partial run is the most expensive kind of false green.
-#
-#   - the artifact directory is missing, or holds no scan output at all
-#   - an expected image produced no report (its matrix leg failed)
-#   - an unexpected image appeared (ci.yml's matrix and SWEPT_IMAGES below have drifted)
-#   - a report cannot be parsed
-#   - a report names an artifact that is NOT a digest reference, so the run cannot honestly claim
-#     it scanned published bytes rather than a moving tag
-#   - a report's artifact is a different image than the leg it arrived as
-#   - the legs disagree about which release tag they swept (a cut landed mid-run)
+# Findings are report-only because they ask for a patch-release decision. An incomplete or
+# malformed sweep exits 1 and reports UNCHECKED, never a reassuring zero. The self-test covers
+# missing and unexpected legs, bad report structure, tag drift, and wrong image/tag references.
 #
 # Usage:
 #   scripts/watch/shipped-image-sweep-report.sh <dir>   Render the report for the artifacts in <dir> on
@@ -75,10 +49,8 @@ short_digest() {
     printf '%s…' "${1:0:20}"
 }
 
-# Every HIGH/CRITICAL row in a trivy JSON report, as TSV: id, severity, package, installed, fixed.
-# `.Results[]?` and `.Vulnerabilities[]?` are both optional-indexed on purpose — a clean image
-# reports Results with no Vulnerabilities key at all, which is a legitimate zero, not a parse
-# failure. A genuinely unreadable file fails in render_report() before this runs.
+# Every HIGH/CRITICAL row as TSV. render_report validates Results; a missing Vulnerabilities key is
+# a legitimate clean target.
 findings_tsv() {
     jq -r '
         [ .Results[]? | .Vulnerabilities[]? ]
@@ -139,7 +111,11 @@ render_report() {
             continue
         fi
 
-        if ! ref="$(jq -er '.ArtifactName' "$file" 2>/dev/null)"; then
+        if ! ref="$(jq -er '
+            select((.Results | type) == "array")
+            | select(all(.Results[]; .Vulnerabilities == null or (.Vulnerabilities | type) == "array"))
+            | .ArtifactName
+        ' "$file" 2>/dev/null)"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
 "
             problems="${problems}- \`$svc\`'s scan report could not be parsed. This image is UNCHECKED, not clean.
@@ -160,13 +136,18 @@ render_report() {
             continue
         fi
 
-        if [ -s "$tagfile" ]; then
-            tag="$(tr -d '[:space:]' <"$tagfile")"
-            if [ -z "$tag_seen" ]; then
-                tag_seen="$tag"
-            elif [ "$tag" != "$tag_seen" ]; then
-                tag_conflict=1
-            fi
+        if [ ! -s "$tagfile" ] || ! tag="$(tr -d '[:space:]' <"$tagfile")" || [ -z "$tag" ]; then
+            summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
+"
+            problems="${problems}- \`$svc\` produced no release-tag metadata. This image is UNCHECKED, not clean.
+"
+            rc=1
+            continue
+        fi
+        if [ -z "$tag_seen" ]; then
+            tag_seen="$tag"
+        elif [ "$tag" != "$tag_seen" ]; then
+            tag_conflict=1
         fi
 
         # Captured, not piped in from a process substitution: a jq failure inside `< <(...)` is
@@ -357,6 +338,22 @@ if [ "${1:-}" = "--self-test" ]; then
         "$(printf '%s' "$out" | grep -c 'could not be parsed')" "1"
     st "an unparseable report is not misreported as a missing leg" \
         "$(printf '%s' "$out" | grep -c 'its matrix leg did not finish')" "0"
+
+    malformed="$tmp/malformed"
+    cp -R "$clean" "$malformed"
+    jq 'del(.Results)' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a report without a Results array fails the run" "$rc" "1"
+    st "a structurally incomplete report reads UNCHECKED" \
+        "$(printf '%s' "$out" | grep -c 'could not be parsed')" "1"
+
+    notag="$tmp/notag"
+    cp -R "$clean" "$notag"
+    rm "$notag/sweep-monero.tag"
+    out="$(render_report "$notag")" && rc=0 || rc=$?
+    st "missing release-tag metadata fails the run" "$rc" "1"
+    st "missing release-tag metadata reads UNCHECKED" \
+        "$(printf '%s' "$out" | grep -c 'produced no release-tag metadata')" "1"
 
     # The load-bearing one. If the digest resolve fell through and trivy scanned a TAG, the run
     # must not claim it swept published bytes — that is #1313's own defect, one level in.

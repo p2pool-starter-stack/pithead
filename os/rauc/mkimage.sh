@@ -45,6 +45,7 @@ TARBALL="os/build/pithead-root.tar"
     exit 2
 }
 verify_tarball_commit "$TARBALL" || exit $?
+[ "$DEV" -eq 1 ] || verify_guarded_rootfs_tar "$TARBALL" || exit $?
 
 # The keyring baked into slot A is the fleet's update trust root. Resolve it before anything heavy
 # so a release build with no key stops immediately, not after minutes of imaging.

@@ -21,13 +21,14 @@ printf 'release\n' >"$ROOTFS_GUARD/debug/etc/pithead-variant"
 printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug/root/.ssh/authorized_keys"
 tar -cf "$ROOTFS_GUARD/release.tar" -C "$ROOTFS_GUARD/release" etc
 tar -cf "$ROOTFS_GUARD/debug.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar -cf "$ROOTFS_GUARD/debug-dot.tar" -C "$ROOTFS_GUARD/debug" .
 # shellcheck disable=SC1090
 (
     cd "$ROOT" || exit
     set --
     source "$REL" 2>/dev/null
     set +eu
-    rootfs_publish_check "$ROOTFS_GUARD/release.tar"
+    verify_release_rootfs_tar "$ROOTFS_GUARD/release.tar"
 )
 assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
 # shellcheck disable=SC1090
@@ -36,11 +37,57 @@ rootfs_guard_out="$(
     set --
     source "$REL" 2>/dev/null
     set +eu
-    rootfs_publish_check "$ROOTFS_GUARD/debug.tar" 2>&1
+    verify_release_rootfs_tar "$ROOTFS_GUARD/debug.tar" 2>&1
 )"
-assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "1"
+assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
-assert_contains "the release build calls the rootfs producer" "$(cat "$REL_IMAGES")" "build_rootfs_image"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    verify_release_rootfs_tar "$ROOTFS_GUARD/debug-dot.tar"
+) >/dev/null 2>&1
+assert_rc "a dot-prefixed debug-key member is also refused" "$?" "2"
+
+# Drive the real producer call site. Stubbing run supplies the producer's exported tar and records
+# registry writes; deleting or moving the guard after the push makes the keyed case red.
+drive_rootfs_build() { # <fixture-tar> <push-log>
+    local source_tar="$1" push_log="$2"
+    (
+        export SOURCE_TAR="$source_tar" PUSH_LOG="$push_log"
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        DRY_RUN=0
+        PLATFORMS=linux/amd64
+        STAGING_TAG=v2.0.0-rc.1
+        manifest_digest() { printf 'sha256:%064d\n' 4; }
+        run() {
+            if [[ "$*" == *os/build-image.sh ]]; then
+                cp "$SOURCE_TAR" os/build/pithead-root.tar
+            elif [ "$1 $2" = "docker push" ]; then
+                [ -s os/build/pithead-root.tar.sha256 ] || return 1
+                printf '%s\n' "$3" >>"$PUSH_LOG"
+            else
+                command "$@"
+            fi
+        }
+        trap 'rm -f os/build/pithead-root.tar os/build/pithead-root.tar.sha256' EXIT
+        build_rootfs_image
+    )
+}
+PUSH_LOG="$ROOTFS_GUARD/pushes"
+: >"$PUSH_LOG"
+drive_rootfs_build "$ROOTFS_GUARD/debug-dot.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "the producer refuses a keyed export" "$?" "1"
+assert_eq "the keyed export is refused before any registry push" "$(wc -l <"$PUSH_LOG" | tr -d ' ')" "0"
+drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "the producer accepts a release export" "$?" "0"
+assert_eq "the guarded release export is pushed once" "$(wc -l <"$PUSH_LOG" | tr -d ' ')" "1"
+unset -f drive_rootfs_build
 # The weekly sweep pulls anonymously, while a release cut is logged in. A private first push would
 # pass every authenticated registry read and leave the sweep UNCHECKED, so drive the anonymous read.
 # shellcheck disable=SC1090
