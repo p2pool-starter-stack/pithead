@@ -203,10 +203,12 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
-    run_go_raise_watch() {
-        printf 'raise-watch-called\n'
-        return 1
-    }
+    integration_root=$(mktemp -d)
+    trap 'rm -rf "$integration_root"' EXIT
+    mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
+    : >"$integration_root/os/rootfs/Dockerfile"
+    printf '%s\n' 'printf "raise-watch-called\n"' 'exit 1' >"$integration_root/scripts/watch/go-raise-watch.sh"
+    ROOT=$integration_root
     failed=0
     finish_rc=0
     finish_out=$(finish_report) || finish_rc=$?

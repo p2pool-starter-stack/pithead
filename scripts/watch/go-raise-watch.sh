@@ -10,8 +10,29 @@ DOCKERFILE="${DOCKERFILE:-$ROOT/os/rootfs/Dockerfile}"
 
 arg() { sed -n "s/^ARG $1=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" "$DOCKERFILE"; }
 
+selected_version() { # <checkout> <module> -> selected version, or empty when absent
+    GOTOOLCHAIN=local go -C "$1" list -m -f '{{.Path}}{{"\t"}}{{.Version}}' all |
+        awk -F '\t' -v module="$2" '$1 == module { print $2 }'
+}
+
+classify_change() { # <module> <before> <after> <requested> <go-get-output> -> status<TAB>detail
+    local module="$1" before="$2" after="$3" requested="$4" change="$5" detail
+    [ "$after" = "$requested" ] || return 1
+    if [ "$before" = "$after" ]; then
+        printf 'obsolete\talready selected at %s without this entry\n' "$after"
+    elif detail=$(printf "%s\n" "$change" | grep -F "go: upgraded $module $before => $after" | head -1); then
+        printf 'active\t%s\n' "$detail"
+    elif [ -z "$before" ] && detail=$(printf "%s\n" "$change" | grep -F "go: added $module $after" | head -1); then
+        printf 'active\t%s\n' "$detail"
+    elif detail=$(printf "%s\n" "$change" | grep -F "go: downgraded $module $before => $after" | head -1); then
+        printf 'downgrade\t%s\n' "$detail"
+    else
+        return 1
+    fi
+}
+
 measure_checkout() { # <checkout> <raise...> -> raise<TAB>active|obsolete|downgrade<TAB>detail
-    local checkout="$1" candidate module change detail status version spec
+    local checkout="$1" candidate module requested before after change verdict spec
     local -a others
     shift
     for candidate in "$@"; do
@@ -21,19 +42,12 @@ measure_checkout() { # <checkout> <raise...> -> raise<TAB>active|obsolete|downgr
         others=()
         for spec in "$@"; do [ "$spec" = "$candidate" ] || others+=("$spec"); done
         if ((${#others[@]} > 0)) && ! GOTOOLCHAIN=local go -C "$checkout" get "${others[@]}" >/dev/null 2>&1; then return 1; fi
+        if ! before=$(selected_version "$checkout" "$module"); then return 1; fi
         if ! change=$(GOTOOLCHAIN=local go -C "$checkout" get "$candidate" 2>&1); then return 1; fi
-        if detail=$(printf "%s\n" "$change" | grep -F "go: upgraded $module " | head -1); then
-            status=active
-        elif detail=$(printf "%s\n" "$change" | grep -F "go: added $module " | head -1); then
-            status=active
-        elif detail=$(printf "%s\n" "$change" | grep -F "go: downgraded $module " | head -1); then
-            status=downgrade
-        else
-            if ! version=$(GOTOOLCHAIN=local go -C "$checkout" list -m -f "{{.Version}}" "$module"); then return 1; fi
-            status=obsolete
-            detail="already selected at $version without this entry"
-        fi
-        printf "%s\t%s\t%s\n" "$candidate" "$status" "$detail"
+        if ! after=$(selected_version "$checkout" "$module"); then return 1; fi
+        requested=${candidate##*@}
+        verdict=$(classify_change "$module" "$before" "$after" "$requested" "$change") || return 1
+        printf "%s\t%s\n" "$candidate" "$verdict"
     done
 }
 
@@ -175,6 +189,9 @@ EOF
     st 'an active raise stays active' "$(grep -c 'active — go: upgraded' <<<"$out")" 1
     st 'a synthetic no-op raise is reported obsolete' "$(grep -c 'no-op\|OBSOLETE — already selected' <<<"$out")" 1
     st 'a downgrade is never called an active raise' "$(grep -c 'INVALID — go: downgraded' <<<"$out")" 1
+    unknown_rc=0
+    classify_change example.test/active v1.1.0 v1.2.0 v1.2.0 'unrecognized successful output' >/dev/null || unknown_rc=$?
+    st 'an unrecognized successful mutation is unchecked' "$unknown_rc" 1
     st 'the trailer distinguishes findings from failed measurements' \
         "$(grep -o 'obsolete=[0-9]* downgrade=[0-9]* checked=[0-9]* failed=[0-9]*' <<<"$out")" \
         'obsolete=1 downgrade=1 checked=3 failed=0'
