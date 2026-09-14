@@ -48,7 +48,8 @@ echo "== unit: secure_boot_boot_verdict — Secure Boot ON is measured, not left
 # tests/os/secure-boot-boot-verdict.sh for exactly that reason. The case that matters is the
 # second pair below: a guest that DEFINED successfully but never reached userspace fails, naming
 # the signing gap (pithead#2187) — that is the CURRENT, correct verdict on an appliance with no
-# signing tooling, and the same check flips to a pass with no code change once #2187 lands.
+# signing tooling. #2187 defers signing past 2.0.0 to `v2.x - post-GA`, when the same check can
+# flip to a pass with no code change.
 # Mutation run: treat "did not reach userspace" as a pass (the flag nobody reads the issue warns
 # against) -> this case flips from fail to pass, silently re-hiding the gap.
 sbv() { # <virt-install-defined> <userspace-banner-seen> -> "<rc> <verdict-text>"
@@ -66,7 +67,7 @@ assert_eq "guest defined + reaches userspace under SB: passes" \
     "0 the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
 assert_eq "guest defined but never reaches userspace under SB: fails — today's correct, tracked state" \
     "$(sbv 1 0)" \
-    "1 the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — this is the current, tracked state, not a battery defect; the row goes green the day #2187's signing lands"
+    "1 the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — this is the current, tracked state, not a battery defect; signing is deferred past 2.0.0 to v2.x - post-GA"
 assert_eq "virt-install could not even define the guest: fails, names it unmeasured (a possible bench firmware gap)" \
     "$(sbv 0 0)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"

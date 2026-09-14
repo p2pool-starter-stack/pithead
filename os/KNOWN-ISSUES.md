@@ -398,11 +398,10 @@ not proven.
   installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
   kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
   chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
-  harness, and #2187 tracks the product decision (whether 2.0.0 ships Secure Boot support at all,
-  or it rides a later milestone). `secure_boot_boot_verdict` states the measured outcome plainly
-  instead of special-casing a pass, so the same row goes green with no test change the day a
-  signed chain exists. A guest that cannot even be DEFINED — no OVMF secure-boot firmware on the
-  host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
+  harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
+  the measured outcome plainly instead of special-casing a pass, so the same row goes green with
+  no test change when a signed chain exists. A guest that cannot even be DEFINED — no OVMF
+  secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
   read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
   keys is still the manual battery's M-row above (#2044).
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
