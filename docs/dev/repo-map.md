@@ -20,6 +20,7 @@ pithead/
 │   ├── lint/             repository gates and their selftests
 │   ├── release/          release preparation, publication, and verification
 │   └── watch/            scheduled dependency and security checks
+├── .config/              tool-discovered configs each linter is pointed at explicitly
 ├── docs/                 operator guides
 │   ├── dev/              contributor guides and architecture contracts
 │   ├── images/           documentation images
@@ -112,7 +113,10 @@ described in the [AI workflow](ai-workflow.md).
 - Shared agent guidance: `AI_RULES.md`, with relative symlinks from `AGENTS.md`,
   `CLAUDE.md`, and `.cursorrules`.
 - Tool-discovered configuration such as `.editorconfig`, `ruff.toml`,
-  `biome.json`, and `.pre-commit-config.yaml`.
+  `biome.json`, and `.pre-commit-config.yaml`. A linter that takes an explicit config
+  path instead — yamllint, markdownlint, hadolint, lychee, taplo, gitleaks, trivy — is
+  pointed at `.config/` (the invocation is single-sourced in the Makefile or, for
+  trivy and gitleaks, in the CI job that runs it).
 
 Release bundles and appliance images use explicit file lists. Moving a source
 file does not authorize adding development tools or private evidence to an image.

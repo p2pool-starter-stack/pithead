@@ -11,10 +11,11 @@
 # - diag-doctor's rc is doctor's own FAILURE COUNT, so a non-zero rc produces a failed result that
 #   still carries the readable document. That is the inverse of an unreadable failure and the
 #   easier one to regress, because both look like "doctor exited non-zero" from outside.
-# - diag-logs refuses any container name outside the fixed allowlist, BY MEMBERSHIP, before the
-#   docker command is built. #1745 asks for that refusal on "both verbs"; diag-doctor takes no
-#   container at all — it never reads the request file — so the honest form of that bullet on that
-#   verb is that a `container` key is INERT, which is asserted here rather than skipped.
+# - diag-logs serves all nine names in the fixed allowlist and refuses every other container by
+#   membership before the docker command is built. #1745 asks for that refusal on "both verbs";
+#   diag-doctor takes no container at all — it never reads the request file — so the honest form of
+#   that bullet on that verb is that a `container` key is INERT, which is asserted here rather than
+#   skipped.
 # - the line count is clamped host-side at the boundary AND one past it, and the byte cap holds
 #   independently, because a single log line has no length limit and satisfies any line cap.
 # - the onion address is REDACTED on both verbs' output, checked as the raw value being ABSENT
@@ -203,14 +204,26 @@ assert_eq "two allowlisted names in one string is not a member — membership, n
     "$(jq -r .status "$DGC/results/$lid1.json")" "rejected"
 assert_contains "a refused container is audited rejected" \
     "$(cat "$DGC/audit/control.log")" '"action":"diag-logs","status":"rejected"'
-# The control that makes the three refusals above mean something: an allowlisted name is NOT
-# refused. Without it they would all pass against a verb that refused everything.
-lid2="b1b1b1b1-0000-4000-8000-000000000022"
-diag_run "$(diag_req "$lid2" diag-logs ',"container":"tor","lines":10')"
-assert_eq "an allowlisted container is served (the control on the refusals above)" \
-    "$(jq -r .status "$DGC/results/$lid2.json")" "applied"
-assert_eq "the tail it returns is the container's output" \
-    "$(jq -r .lines "$DGC/results/$lid2.json")" "tor: bootstrapped 100%"
+# A single served container only proves that the verb does not refuse everything. Keep this list
+# independent from PITHEAD_DIAG_CONTAINERS: every name must remain available to the dashboard.
+for _diag_pair in \
+    "tor:b1b1b1b1-0000-4000-8000-000000000022" \
+    "monerod:b1b1b1b1-0000-4000-8000-000000000023" \
+    "tari:b1b1b1b1-0000-4000-8000-000000000024" \
+    "p2pool:b1b1b1b1-0000-4000-8000-000000000025" \
+    "xmrig-proxy:b1b1b1b1-0000-4000-8000-000000000026" \
+    "dashboard:b1b1b1b1-0000-4000-8000-000000000027" \
+    "docker-proxy:b1b1b1b1-0000-4000-8000-000000000028" \
+    "docker-control:b1b1b1b1-0000-4000-8000-000000000029" \
+    "caddy:b1b1b1b1-0000-4000-8000-00000000002a"; do
+    _diag_container="${_diag_pair%%:*}"
+    _diag_id="${_diag_pair#*:}"
+    diag_run "$(diag_req "$_diag_id" diag-logs ',"container":"'"$_diag_container"'","lines":10')"
+    assert_eq "the allowlisted container $_diag_container is served" \
+        "$(jq -r .status "$DGC/results/$_diag_id.json")" "applied"
+done
+assert_eq "a served container returns its log tail" \
+    "$(jq -r .lines "$DGC/results/b1b1b1b1-0000-4000-8000-000000000022.json")" "tor: bootstrapped 100%"
 
 # ---------------------------------------------------------------------------
 echo "== control channel: diag-logs is bounded host-side, at the boundary and past it (#943) =="
@@ -246,7 +259,13 @@ assert_not_contains "the raw onion address is ABSENT from the whole result file"
 # limit, so 70000 bytes on ONE line satisfies any line cap and only the byte cap stops it.
 lid4="b1b1b1b1-0000-4000-8000-000000000042"
 export DIAG_LOG_BIG=1
-diag_run "$(diag_req "$lid4" diag-logs ',"container":"tor","lines":1')"
+diag_req "$lid4" diag-logs ',"container":"tor","lines":1' >/dev/null
+# The cap closes the pipe while docker still writes. Under the runner's production errexit and
+# pipefail settings that SIGPIPE must not prevent the applied result from being recorded.
+PATH="$DGC/bin:$PATH" run_sourced_e "$SANDBOX" \
+    control_process_request "$DGC/req-$lid4.json" "$DGC" >/dev/null 2>&1
+assert_eq "the capped single-line result is still recorded as applied under errexit" \
+    "$(jq -r .status "$DGC/results/$lid4.json" 2>/dev/null)" "applied"
 assert_eq "one 70000-byte line is cut at the byte cap, which no line cap could have bounded" \
     "$(jq -r '.lines | length' "$DGC/results/$lid4.json")" "65536"
 unset DIAG_LOG_BIG
@@ -263,4 +282,4 @@ assert_contains "a served container is audited applied" \
 
 unset PITHEAD_SELF DIAG_SELF_LOG DIAG_DOCKER_LOG DIAG_DOCTOR_DOC DIAG_LOG_BODY
 unset -f diag_run diag_req diag_tail
-unset DGC DIAG_ONION did1 did2 did3 did4 did5 lid1 lid2 lid3 lid4 lid5 _c _id _pair
+unset DGC DIAG_ONION did1 did2 did3 did4 did5 lid1 lid2 lid3 lid4 lid5 _c _id _pair _diag_pair _diag_container _diag_id

@@ -32,7 +32,7 @@ echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 if [ "$human" = 1 ]; then echo "src 9 9 ${WDF_H} 1% /data"; else echo "src 9 9 ${WDF_KB} 1% /data"; fi
 EOF
 chmod +x "$WT/bin/df"
-# 600 GiB clears the 328 GB the whole stack with a bundled Tari node needs; 100 GiB does not.
+# 600 GiB clears the 528 GiB the whole stack with a bundled Tari node needs; 100 GiB does not.
 WT_ROOMY_KB=629145600 WT_ROOMY_H=600G
 WT_SMALL_KB=104857600 WT_SMALL_H=100G
 
@@ -76,13 +76,13 @@ assert_contains "the decline says what it turned off and how to turn it back on"
 assert_contains "and points at the key that does it" "$out" "tari.mode"
 
 echo "== unit: the disk figure shown is the stack's own budget, and follows monero.mode (#1916) =="
-# Not a bare 'Tari needs 200 GB': the question is whether Tari fits ALONGSIDE everything else that
+# Not a bare 'Tari needs 200 GiB': the question is whether Tari fits ALONGSIDE everything else that
 # lands on that filesystem, which is what doctor and preflight_resources measure too. A remote
-# Monero node keeps its chain on another host, so its 120 GB drops out of the comparison.
-assert_contains "local Monero: the whole stack's pruned budget, 120+200+5+2+1" \
-    "$(wt_run note-local "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n")" "needs ~328 GB"
+# Monero node keeps its chain on another host, so its 320 GiB drops out of the comparison.
+assert_contains "local Monero: the whole stack's budget, 320+200+5+2+1" \
+    "$(wt_run note-local "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\n\n1\n\n\n\n\n\n\n\n")" "needs ~528 GiB"
 assert_contains "remote Monero: Monero's chain drops out of the budget" \
-    "$(wt_run note-remote "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\nn\nnode.example.com\n\n\nn\n1\n\n\n\n\n\n\n")" "needs ~208 GB"
+    "$(wt_run note-remote "$WT_ROOMY_KB" "$WT_ROOMY_H" "$WALLET\nn\nnode.example.com\n\n\nn\n1\n\n\n\n\n\n\n")" "needs ~208 GiB"
 
 echo "== unit: an explicit answer beats the disk-derived default, both ways (#1916) =="
 # The probe picks the DEFAULT, never the answer. An operator with a big disk who does not want Tari
