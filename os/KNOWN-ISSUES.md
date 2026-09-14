@@ -385,9 +385,11 @@ not proven.
 - **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
   Boot, real disks, headless discovery and a genuine power cut are exactly what a VM cannot
   show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an image
-  ships. (M11–M14 were the rig-role steps; #1886 moved their automatable parts into the `rig`
-  phase.) #394's gate list still does not name this battery — the same omission #976's own title
-  records for the OS-update path.
+  ships. (M11–M14 are the rig-role steps and stay manual today — see the manual release
+  checklist — because the `rig` KVM phase does not yet prove an accepted share, MSR/hugepages,
+  a dashboard adopt, a rig power cut, or a stick-root boot; converting what it can is #1886's
+  first gap.) #394's gate list still does not name this battery — the same omission #976's own
+  title records for the OS-update path.
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The

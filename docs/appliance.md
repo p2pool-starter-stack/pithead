@@ -151,7 +151,7 @@ a rig has none. The token is shown once — a rig serves no page after this — 
 it, the boot menu's **Set up again** with the same worker name shows the same token again
 (see [The boot menu](#the-boot-menu)). It is what lets that Pithead adopt the rig: in its dashboard, under Workers, the adopt
 form takes this rig's address, control port `8082` and the token. Until you do that, the rig
-still mines and still appears under Workers once it connects, but its row reads as an API error,
+still mines and still appears under Workers once it connects, but its row is badged `not adopted`,
 because the token guards every API on the rig — the miner's own included, so nothing else on the
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
@@ -306,7 +306,10 @@ Most of the configuration stays editable from the dashboard afterwards — see
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
 password, per-rig worker entries) can be set **here, at install**, but not changed from the
 dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts. Changing them later does not mean reinstalling: write the new settings to a
+redirect your payouts or repoint a rig's control address and token to one it controls. A
+shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
+not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
 media and power-cycle the machine is authority over it already, so that channel may set anything,
@@ -522,17 +525,20 @@ next.
 
 **Restore it at setup.** Write a fresh image, boot the machine, and on the setup page choose
 "Restoring an existing Pithead? Upload its backup instead." above the form. Upload the archive
-and its passphrase; the machine decrypts, validates, and provisions itself from what it
+and its passphrase; use **Show passphrase** to check the string while typing it. On the
+installation medium, choose the target disk first; the upload fields then appear below it. The
+machine decrypts, validates, and provisions itself from what it
 restores — the same wallets, the same Tor onion address, the same dashboard login and history,
 on hardware that has never seen them. Provisioning runs to completion and the stack comes up on
 that same boot: the restored configuration is new to this hardware, not a re-run of a finished
 setup, so it is treated as first-time provisioning even though the identity underneath it is not.
-This works on the installation medium's combined page too, alongside the disk choice.
+This works on the installation medium's combined page too.
 
-A wrong passphrase or a damaged archive is rejected with the reason, and the page falls back to
-the normal form — restore never blocks setup. Restore is available at first setup and from the
-saved-setup screen. In both cases it runs through setup again; the day-two `restore` command is
-the separate path for restoring a running stack in place.
+A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
+form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+Restore is available at first setup and from the saved-setup screen. In both cases it runs through
+setup again; the day-two `restore` command is the separate path for restoring a running stack in
+place.
 
 ## Changing settings with a USB stick
 

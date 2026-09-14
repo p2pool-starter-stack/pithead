@@ -186,16 +186,75 @@ rm -f "$RSPOOL/applied" "$RS/config.json"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile" # fixtures back to their case-1 state for the cases below
 printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
 
+# 1c) A genuine backup made from a DIFFERENT working directory than this appliance's — exactly
+# what the supported v1.20.0 Compose bundle produces, since its `pithead backup` ran from
+# wherever the operator extracted the bundle, never this box's directory (#2181). Every member is
+# still rooted at ONE directory (the bundle's own), just not $RS, so it must restore just as a
+# same-directory backup does.
+OLDROOT="$RS/old-bundle-root"
+mkdir -p "$OLDROOT/build/tari" "$OLDROOT/data/tor" "$OLDROOT/data/dashboard" \
+    "$OLDROOT/data/monero" "$OLDROOT/data/tari" "$OLDROOT/data/p2pool" "$OLDROOT/bin"
+cp "$STACK" "$OLDROOT/pithead"
+cp "$ROOT/build/tari/config.toml.template" "$OLDROOT/build/tari/"
+cp "$RS/bin/docker" "$RS/bin/sudo" "$OLDROOT/bin/"
+cat >"$OLDROOT/.env" <<EOF
+MONERO_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion
+TARI_ONION_ADDRESS=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.onion
+P2POOL_ONION_ADDRESS=ffffffffffffffffffffffffffffffffffffffffffffffffffffffff.onion
+PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
+HOST_IP=box.lan
+DEPLOYMENT_COMPLETED=true
+COMPOSE_PROFILES=local_node
+EOF
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":true,"host":"old-bundle.lan"} }\n' "$WALLET" >"$OLDROOT/config.json"
+printf 'CADDY-OLDROOT\n' >"$OLDROOT/Caddyfile"
+printf 'ONIONKEY-OLDROOT\n' >"$OLDROOT/data/tor/hs_ed25519_secret_key"
+printf 'DBDATA-OLDROOT\n' >"$OLDROOT/data/dashboard/dashboard.db"
+printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/lmdb-sentinel"
+printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/db-sentinel"
+printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/db-sentinel"
+# --with-chains: the issue's own repro (#2181) backs up Monero/Tari/P2Pool data too, so the
+# cross-root restore below has to prove those trees, not just config/Tor/dashboard.
+out="$(cd "$OLDROOT" && PATH="$OLDROOT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup --with-chains -y 2>&1)"
+rc=$?
+assert_rc "cross-root fixture: backup exits 0" "$rc" "0"
+oldarchive="$(ls "$OLDROOT"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
+{ [ -n "$oldarchive" ] && [ -f "$oldarchive" ]; } && ok "cross-root fixture: encrypted archive created" || bad "cross-root fixture: encrypted archive created" "no .enc archive"
+cp "$oldarchive" "$RSPOOL/restore-archive"
+printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
+out=$(cd "$RS" && PATH="$RS/bin:$PATH" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" && echo rc0)
+assert_contains "cross-root restore accepted" "$out" "rc0"
+assert_contains "cross-root restore carries the source box's config" "$(cat "$RS/config.json" 2>/dev/null)" "old-bundle.lan"
+assert_eq "cross-root restore brings back the onion key" "$(cat "$RS/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-OLDROOT"
+assert_eq "cross-root restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-OLDROOT"
+assert_eq "cross-root restore brings back the monero chain data" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the tari chain data" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the p2pool chain data" "$(cat "$RS/data/p2pool/db-sentinel" 2>/dev/null)" "P2POOL-CHAIN-OLDROOT"
+rm -rf "$OLDROOT" "$RS/data/monero" "$RS/data/tari" "$RS/data/p2pool"
+rm -f "$RSPOOL/applied" "$RS/config.json"
+printf 'CADDY-ORIG\n' >"$RS/Caddyfile" # fixtures back to their case-1 state for the cases below
+printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
+
 # Expected-member policy is shared by the wizard and carried-archive doors (#1971).
 # These are ordinary fixture files. The added note is outside the backup item list.
-run_sourced "$RS" restore_setup_members "${RS#/}/config.json"
+run_sourced "$RS" restore_setup_members "${RS#/}/config.json" "${RS#/}/"
 assert_rc "member policy accepts a mapped configuration file" "$?" 0
-run_sourced "$RS" restore_setup_members "${RS#/}/data/tor/"
+run_sourced "$RS" restore_setup_members "${RS#/}/data/tor/" "${RS#/}/"
 assert_rc "member policy accepts a mapped data directory" "$?" 0
-run_sourced "$RS" restore_setup_members "${RS#/}/config.json/"
+run_sourced "$RS" restore_setup_members "${RS#/}/config.json/" "${RS#/}/"
 assert_rc "member policy refuses a directory in place of configuration" "$?" 1
-run_sourced "$RS" restore_setup_members "${RS#/}/data/tor"
+run_sourced "$RS" restore_setup_members "${RS#/}/data/tor" "${RS#/}/"
 assert_rc "member policy refuses a file in place of a data directory" "$?" 1
+mixed_root_members="${RS#/}/config.json
+other/root/data/tor/"
+run_sourced "$RS" restore_setup_members "$mixed_root_members" "${RS#/}/"
+assert_rc "member policy refuses a member outside the given root" "$?" 1
+two_depth_configs="a/config.json
+b/config.json"
+run_sourced "$RS" restore_setup_root "$two_depth_configs"
+assert_rc "root detection refuses config.json at two depths" "$?" 1
+PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_root "${RS#/}/config.json"
+assert_rc "root detection refuses an absolute CONFIG_FILE override" "$?" 1
 out=$(PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_config_path)
 assert_eq "absolute config override is not prefixed with the working directory" "$out" "$RS/config.json"
 printf 'one\ntwo\n' >"$RS/restore-names"
