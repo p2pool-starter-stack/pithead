@@ -23,8 +23,11 @@ CADDY_IMAGE="$(awk '
     exit 1
 }
 case "$CADDY_IMAGE" in */*) ;; *) CADDY_IMAGE="docker.io/library/$CADDY_IMAGE" ;; esac
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+
+# shellcheck source=tests/stack/lib.sh
+source "$ROOT/tests/stack/lib.sh"
+mk_tmpdir TMP
+trap 'rm -rf "$SANDBOX" "$TMP"' EXIT
 
 adapt() { docker run --rm -i "$CADDY_IMAGE" caddy adapt --config - --adapter caddyfile; }
 
@@ -71,9 +74,6 @@ CADDY_TEST_DOCKER="$(command -v docker)"
 export CADDY_TEST_IMAGE="$CADDY_IMAGE" CADDY_TEST_ATTEMPT_LOG="$TMP/attempted.log"
 export CADDY_TEST_ADAPT_LOG="$TMP/adapted.log" CADDY_TEST_FAILURE_LOG="$TMP/failed.log"
 
-# shellcheck source=tests/stack/lib.sh
-source "$ROOT/tests/stack/lib.sh"
-trap 'rm -rf "$SANDBOX" "$TMP"' EXIT
 export STACK="$STACK_WITH_ADAPT"
 # The reused suites assert expected non-zero render paths; match tests/stack/run.sh's shell mode.
 set +e
