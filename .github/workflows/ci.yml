@@ -4,23 +4,15 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-  # Two Monday sweeps hang off this schedule, answering two different questions. Every other job
-  # gates itself off the event, so only these two run.
-  #
-  #   build-images  (#833) rebuilds every image from the branch and scans the rebuild: does what
-  #                 we are about to ship carry a CVE? It is the only sweep that can go red before
-  #                 a release, and the run reddening in the Actions tab is its alert.
-  #   sweep-shipped (#1313) scans what users are already running — the published ghcr images from
-  #                 `main`, each tag resolved to a digest and the digest scanned as published. A
-  #                 rebuild structurally cannot answer that: it resolves apt at scan time, so it
-  #                 picks up archive fixes the published bytes never got. It reports into a
-  #                 tracking issue rather than reddening, because "a shipped image has a fixable
-  #                 CVE" asks for a patch release, which is a decision a person makes.
-  #
-  # THIS cron block is the one that fires: `schedule:` is read from the DEFAULT branch only, and
-  # `develop` is it. `make lint-trivy-parity` covers sweep-shipped's trivy step. Change the cadence
-  # here, and prove it fired with `gh run list --json event` — a schedule that never runs looks
-  # exactly like one that ran and found nothing (#1162).
+  # Two Monday sweeps hang off this schedule (every other job gates itself off the event, so only
+  # these two run): build-images (#833) rebuilds this branch and scans the rebuild — the only
+  # sweep that can go red before a release. sweep-shipped (#1313) scans the published ghcr images
+  # by resolved digest — a rebuild resolves apt at scan time and would hide archive fixes the
+  # shipped bytes never got — and reports into a tracking issue rather than reddening, since a
+  # fixable CVE in a shipped image asks for a patch release, a person's decision.
+  # THIS cron block is the one that fires: `schedule:` reads from the DEFAULT branch only, and
+  # `develop` is it. Change the cadence here, and prove it fired with `gh run list --json event` —
+  # a schedule that never runs looks exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
@@ -141,6 +133,8 @@ jobs:
         # depends on when it last ran is not a gate (on 2026-08-20 the identical dashboard image
         # passed on one branch and failed on another 40s apart for that reason). Fresh-download
         # cost: 108.49 MiB/3.3s vs a ~997 MB/13.9s cache restore, 7.5 GB of cache budget freed.
+        id: trivy-scan
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit on purpose (#1290): the action's default engine drifts otherwise, and
@@ -155,6 +149,12 @@ jobs:
           exit-code: "1"
           trivyignores: .trivyignore
           cache: "false"
+      - name: Retry Scan image for CVEs (Trivy)
+        if: steps.trivy-scan.outcome == 'failure'
+        uses: ./.github/actions/retry-trivy-scan
+        with:
+          image-ref: pithead-${{ matrix.service }}:ci
+          trivyignores: .trivyignore
 
   sweep-shipped:
     # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
