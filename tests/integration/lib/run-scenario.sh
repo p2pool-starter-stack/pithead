@@ -8,6 +8,20 @@ assert_scenario() {
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
 }
 
+assert_proxy_workers_payload() {
+    local sample bytes workers cap
+    sample="$(rx "docker exec dashboard python3 -c 'import os;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.helper.http import MAX_RESPONSE_BYTES,bounded_request;c=XMRigProxyClient(os.environ[\"PROXY_HOST\"],int(os.environ[\"PROXY_API_PORT\"]),os.environ[\"PROXY_AUTH_TOKEN\"]);r=bounded_request(\"GET\",c.base_url+\"/1/workers\",timeout=5,session=c.session);r.raise_for_status();w=r.json().get(\"workers\");print(len(r.content),len(w) if isinstance(w,list) else 0,MAX_RESPONSE_BYTES,isinstance(w,list))'" 2>/dev/null)"
+    if [[ "$sample" =~ ^([0-9]+)\ ([0-9]+)\ ([0-9]+)\ True$ ]]; then
+        bytes="${BASH_REMATCH[1]}" workers="${BASH_REMATCH[2]}" cap="${BASH_REMATCH[3]}"
+    fi
+    if [ -n "${bytes:-}" ] &&
+        [ "$workers" -ge "$EXPECTED_WORKERS" ] && [ "$bytes" -le "$cap" ]; then
+        it_pass "xmrig-proxy /1/workers is bounded under real miner load ($bytes/$cap bytes, $workers workers; #1360)"
+    else
+        it_fail "xmrig-proxy /1/workers is bounded under real miner load (#1360)" "expected '<bytes> <workers> <cap> True' with workers >= $EXPECTED_WORKERS and bytes <= cap; got [$sample]"
+    fi
+}
+
 # Runtime egress observation (#274), beyond config: poll each bridge app container's LIVE IPv4 TCP
 # connections and FAIL if any holds a PERSISTENT direct public connection (i.e. it isn't dialing
 # through the Tor SOCKS). It observes IPv4 TCP from the bridge networks only — it does NOT capture

@@ -184,9 +184,9 @@ assert_running_state() {
         conns="$(jq_get "$st" '.stratum.conns')"
         hashes="$(jq_get "$st" '.stratum.total_hashes')"
         assert_mining_state "0" "$workers" "$hashes" "$EXPECTED_WORKERS"
+        assert_proxy_workers_payload
         it_step "stratum conns=${conns:-?} (informational)"
     fi
-
     # 7. Tari sync-gate posture matches tari_required. The sync verdict tolerates post-restart
     #    target re-discovery ONLY once Tari has proved "done" earlier this run (#746).
     assert_eq "TARI_REQUIRED env matches config" "$(env_on_box TARI_REQUIRED)" "${tari_req:-true}"

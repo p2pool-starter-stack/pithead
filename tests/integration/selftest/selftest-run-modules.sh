@@ -13,7 +13,7 @@ actual_modules="$(sed -n 's|^source "$HERE/\(lib/run-[a-z-]*\.sh\)".*|\1|p' "$RO
     exit 1
 }
 
-expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario assert_running_state assert_scenario assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode assert_release_readiness run_lifecycle _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_tor_stopped _pred_tor_healthy fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback fault_tor_down fault_clock_drift fault_disk_enospc run_fault_injection _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback'
+expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario assert_running_state assert_scenario assert_proxy_workers_payload assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode assert_release_readiness run_lifecycle _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_tor_stopped _pred_tor_healthy fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback fault_tor_down fault_clock_drift fault_disk_enospc run_fault_injection _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback'
 actual_functions="$(for module in "${modules[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$ROOT/lib/$module"; done | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "integration function order or completeness mismatch" >&2
@@ -49,4 +49,22 @@ source "$ROOT/lib/run-rig-control.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-reverse.sh
 source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
+
+proxy_payload_verdict() {
+    (
+        TEST_SAMPLE="$1"
+        rx() { printf '%s' "$TEST_SAMPLE"; }
+        it_pass() { printf PASS; }
+        it_fail() { printf FAIL; }
+        EXPECTED_WORKERS="$2"
+        assert_proxy_workers_payload
+    )
+}
+[ "$(proxy_payload_verdict '116 1 1048576 True' 1)" = PASS ] || exit 1
+[ "$(proxy_payload_verdict '1048577 1 1048576 True' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 0 1048576 True' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 1 1048576 False' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict 'not-a-sample' 1)" = FAIL ] || exit 1
+[ "$(proxy_payload_verdict '116 1 1048576 True trailing' 1)" = FAIL ] || exit 1
+grep -qx '        assert_proxy_workers_payload' "$ROOT/lib/run-state.sh" || exit 1
 echo "selftest-run-modules: PASS"
