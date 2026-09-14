@@ -69,6 +69,12 @@ done
 host_remedies_match "$doc_host"
 assert_rc "doctor: exact host-remedy guard accepts production wording (#1770)" "$?" "0"
 sed 's/to generate Tor hidden services\./to generate Tor hidden services. MUTATION/' "$DOC/pithead" >"$DOC/pithead-host-remedy-mutant"
+chmod +x "$DOC/pithead-host-remedy-mutant"
+if cmp -s "$DOC/pithead" "$DOC/pithead-host-remedy-mutant"; then
+    bad "doctor: host-remedy mutant applied (#1770)" "sed matched no host remedy"
+else
+    ok "doctor: host-remedy mutant applied (#1770)"
+fi
 mutant_host="$(doctor_missing_onions 0 "$DOC/pithead-host-remedy-mutant")"
 host_remedies_match "$mutant_host"
 assert_rc "doctor: appended host-remedy text trips the exact guard (#1770)" "$?" "1"
