@@ -102,17 +102,33 @@ remove_deactivated_profile_containers() {
 
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
+#
+# The `up` is RETRIED (#2218), same fix and same failure as the boot-time race in #1684: a passenger
+# container (p2pool, stopped/started outside compose by the dashboard's sync-gate/node-down worker,
+# #31/#35) can be mid-transition at the instant compose recreates the stack, and compose aborts the
+# WHOLE up on that container's improper state though it settles within seconds. #1684 retried only
+# the boot release's own `up` call; this retries every caller through the one function they share —
+# apply (#2218), `up`, and upgrade — so a passenger's transition delays the up by seconds and never
+# vetoes it outright.
+COMPOSE_UP_TRIES=${PITHEAD_COMPOSE_UP_TRIES:-3}
+COMPOSE_UP_PAUSE=${PITHEAD_COMPOSE_UP_PAUSE:-3}
 compose_up_checked() {
-    local tmp out rc
+    local tmp out rc try
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
-    tmp="$(mktemp)"
-    compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
-    rc=${PIPESTATUS[0]}
-    out="$(<"$tmp")"
-    rm -f "$tmp"
-    [ "$rc" -ne 0 ] && explain_subnet_collision "$out"
+    for try in $(seq "$COMPOSE_UP_TRIES"); do
+        tmp="$(mktemp)"
+        compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
+        rc=${PIPESTATUS[0]}
+        out="$(<"$tmp")"
+        rm -f "$tmp"
+        [ "$rc" -eq 0 ] && return 0
+        [ "$try" -lt "$COMPOSE_UP_TRIES" ] || break
+        warn "docker compose up failed (try $try of $COMPOSE_UP_TRIES) — a passenger container may still be mid-transition; retrying in ${COMPOSE_UP_PAUSE}s"
+        sleep "$COMPOSE_UP_PAUSE"
+    done
+    explain_subnet_collision "$out"
     return "$rc"
 }
 
