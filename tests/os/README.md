@@ -138,11 +138,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
+- **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
+  reflinks inside that disposable guest, verify and install the published v1.20.0 bundle without
+  modifying it, then invoke the existing image-upgrade harness against the submitted images. The
+  baseline uses remote Monero and remote Tari because v1.20.0 predates Tari-off mode. The phase
+  runs the release-shaped stack under the CLI's existing test override inside the otherwise
+  appliance-shaped guest. It proves bundle trust (including a wrong-key
+  refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
+  and resumed hashes; its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|image-upgrade|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all eight phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means every phase, including
+image-upgrade, fault, and reset; routine branch validation selects only the phases the change touches.
+
+The image-upgrade phase fails closed unless `REMOTE_MONERO_HOST`, `REMOTE_MONERO_RPC_PORT`,
+`REMOTE_MONERO_ZMQ_PORT`, and `REMOTE_TARI_HOST` are supplied by the tier-4 remote-node wrapper.
+These are endpoint names, never values committed to the repository. Local-chain directory
+continuity is outside this lean-storage gate and tracked by
+[#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than

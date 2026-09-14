@@ -142,7 +142,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
         jq openssl curl ca-certificates xxd iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
-        fdisk gdisk parted e2fsprogs dosfstools \
+        fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
         squashfs-tools \

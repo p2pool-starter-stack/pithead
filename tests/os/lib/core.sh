@@ -254,7 +254,7 @@ require_host() {
         exit 2
     }
     # --image is the boot phase's input; update and fault build their own v1/v2 images.
-    if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
+    if [ "$PHASE" = "boot" ] || [ "$PHASE" = "image-upgrade" ] || [ "$PHASE" = "all" ]; then
         [ -n "$IMAGE" ] && [ -f "$IMAGE" ] || {
             echo "--image PATH is required for the boot phase (build with os/build-image.sh)" >&2
             exit 2
@@ -325,6 +325,9 @@ cleanup() {
         cp "$SERIAL" "$SERIAL.failed" 2>/dev/null &&
             info "console from the failed run kept at $SERIAL.failed"
     fi
+    case "${IMAGE_UPGRADE_HOST_STAGE:-}" in
+    /tmp/pithead-os-image-upgrade.*) rm -rf -- "$IMAGE_UPGRADE_HOST_STAGE" || approval_cleanup_rc=1 ;;
+    esac
     if [ "$KEEP" -eq 1 ]; then
         info "left VM '$VM' and $DISK in place (--keep)"
         [ "$approval_cleanup_rc" -eq 0 ] || exit "$approval_cleanup_rc"

@@ -111,3 +111,50 @@ derived_state_fingerprint() {
 reset_control_units_for_render() {
     rx 'source ./pithead; [ "$OS_TYPE" != Linux ] || { d=$(control_unit_dir); sudo -n rm -f "$d/pithead-control.path" "$d/pithead-control.service" && sudo -n systemctl daemon-reload; }'
 }
+
+dashboard_durable_rows() { # <fixed capture epoch>
+    local payload
+    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
+    rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 - --require-current-schema $(quote_arg "$1")" 2>/dev/null
+}
+
+archived_dashboard_durable_rows() { # <archive> <fixed capture epoch>
+    local payload
+    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
+    rx "d=\$(mktemp -d); cleanup() { rm -rf \"\$d\"; }; trap cleanup EXIT; member=\$(tar -tzf $(quote_arg "$1") | grep '/mining_data.db$'); [ \$(printf '%s\\n' \"\$member\" | grep -c .) = 1 ] && tar -xOf $(quote_arg "$1") \"\$member\" >\"\$d/db\" && printf %s $(quote_arg "$payload") | base64 -d | python3 - $(quote_arg "$2") \"\$d/db\"" 2>/dev/null
+}
+
+telemetry_rows_continue() { # <before-lines> <after-lines>
+    [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort))" ]
+}
+
+proxy_active_route() {
+    rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;c=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_config();p=next((p for p in c.get(\"pools\",[]) if p.get(\"enabled\")),{});print(json.dumps({\"url\":p.get(\"url\",\"\"),\"socks5\":p.get(\"socks5\",\"\")}))' 2>/dev/null"
+}
+proxy_active_pool() { proxy_active_route | jq -r '.url // empty' 2>/dev/null; }
+proxy_active_socks5() { proxy_active_route | jq -r '.socks5 // empty' 2>/dev/null; }
+
+_pred_proxy_route() { # <mode-substring> <active-pool-url>
+    local st
+    st="$(api_state)"
+    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *"$1"* ]] &&
+        [ "$(proxy_active_pool)" = "$2" ] &&
+        [ "$(jq_get "$st" '.proxy_workers')" -gt 0 ] 2>/dev/null
+}
+
+_pred_xvb_feed_fresh() {
+    local st ts
+    st="$(api_state)"
+    ts="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
+    [ "$(jq_get "$st" '.hashrate.xvb_stale')" = "false" ] &&
+        [ "${ts:-0}" -gt "$XVB_FEED_TS_BEFORE" ] 2>/dev/null
+}
+
+_pred_xvb_routed_visible() {
+    local st routed
+    st="$(api_state)"
+    routed="$(jq_get "$st" '.hashrate.xvb_routed_1h')"
+    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *XVB* ]] &&
+        [ "$(jq_get "$st" '.shares_window.count')" -gt 0 ] 2>/dev/null &&
+        [ -n "$routed" ] && [ "$routed" != "0.00 H/s" ]
+}

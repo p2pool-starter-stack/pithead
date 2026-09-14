@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|image-upgrade|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -31,7 +31,8 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
-#   all     every phase above, in that order — media, fault and reset included since #1064
+#   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
+#   all     every phase above, in that order — image-upgrade, media, fault and reset included
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -144,6 +145,8 @@ source "$SCRIPT_DIR/phases/rig.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 require_host
 require_clean_bench
 case "$PHASE" in
@@ -155,6 +158,7 @@ rig) phase_rig ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
+image-upgrade) phase_image_upgrade ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
@@ -167,6 +171,7 @@ all)
     phase_media
     phase_fault
     phase_reset
+    phase_image_upgrade
     ;;
 *)
     echo "unknown phase: $PHASE" >&2

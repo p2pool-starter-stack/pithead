@@ -14,7 +14,7 @@ run_image_upgrade() {
     it_log "── cross-version image upgrade phase ────────────────"
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
-    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs candidate_all_refs
+    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs
     before_state="$(api_state)"
     before_rev="$(dashboard_image_revision)"
     before_images="$(compose_image_ids)"
@@ -38,6 +38,8 @@ run_image_upgrade() {
     before_tari_dir="$(env_on_box TARI_DATA_DIR)"
     before_mounts="$(stateful_mounts)" || before_mounts=""
     before_all_refs="$(all_running_refs)" || before_all_refs=""
+    before_first_refs="$(first_party_running_refs)" || before_first_refs=""
+    UPGRADE_BASELINE_REGISTRY="$(first_party_registry "$before_first_refs")" || UPGRADE_BASELINE_REGISTRY=""
 
     if [ "$(jq_get "$before_state" '.sync.monero.state')" != "done" ] ||
         [ "$(jq_get "$before_state" '.sync.tari.state')" != "done" ] ||
@@ -73,13 +75,14 @@ run_image_upgrade() {
     if ! prepare_candidate_bundle; then
         [ -z "$UPGRADE_STAGE_DIR" ] || rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
-        it_fail "candidate bundle and images verify against the external trust root" \
-            "bundle signature, key continuity, pinned refs, or an image signature failed; upgrade not attempted"
+        it_fail "candidate bundle and images verify against their external trust roots" \
+            "bundle signature, image-key binding, pinned refs, or an image signature failed; upgrade not attempted"
         return 0
     fi
-    candidate_refs="$UPGRADE_CANDIDATE_REFS"
+    candidate_refs="$(candidate_refs_for_running_set "$before_first_refs")" || candidate_refs=""
     candidate_all_refs="$(candidate_refs_for_running_set "$before_all_refs")" || candidate_all_refs=""
-    if [ -z "$before_mounts" ] || [ -z "$before_all_refs" ] || [ -z "$candidate_all_refs" ]; then
+    if [ -z "$before_mounts" ] || [ -z "$before_all_refs" ] || [ -z "$before_first_refs" ] ||
+        [ -z "$UPGRADE_BASELINE_REGISTRY" ] || [ -z "$candidate_refs" ] || [ -z "$candidate_all_refs" ]; then
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
         it_fail "pre-upgrade mounts and full running image set captured" "stateful mounts or candidate refs are incomplete; upgrade not attempted"
@@ -94,7 +97,8 @@ run_image_upgrade() {
         printf 'candidate_commit: %s\n' "$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
         printf 'candidate_bundle_sha256: %s\n' "$(sha256_file "$UPGRADE_BUNDLE_SNAPSHOT")"
         printf 'candidate_signature_sha256: %s\n' "$(sha256_file "$UPGRADE_SIGNATURE_SNAPSHOT")"
-        printf 'trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_TRUSTED_KEY")"
+        printf 'bundle_trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_TRUSTED_KEY")"
+        printf 'image_trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_IMAGE_TRUSTED_KEY")"
         printf 'monero_anchor: %s %s\n' "$before_monero" "$before_monero_id"
         printf 'tari_anchor: %s\n' "$before_tari_id"
         printf '%s\n' "$before_revisions"
@@ -144,11 +148,12 @@ run_image_upgrade() {
     it_pass "verified candidate staged in a fresh version directory with exact rollback armed"
 
     it_step "running the candidate's supported pithead upgrade path…"
-    if ! strict_pithead upgrade 2>&1 | redact >"$OUT_DIR/image-upgrade.log"; then
+    if ! PITHEAD_APPLIANCE=0 PITHEAD_REGISTRY="$UPGRADE_CANDIDATE_REGISTRY" strict_pithead upgrade 2>&1 | redact >"$OUT_DIR/image-upgrade.log"; then
         it_fail "pithead upgrade succeeded" "see $OUT_DIR/image-upgrade.log"
         capture_artifacts "image-upgrade" "$OUT_DIR"
         return 0
     fi
+    export PITHEAD_REGISTRY="$UPGRADE_CANDIDATE_REGISTRY"
     wait_status_ok 300 || it_fail "stack recovered after image upgrade" "pithead status did not become healthy"
     wait_monero_synced 300 || it_fail "Monero resynchronized after image upgrade" "sync did not reach done"
     wait_tari_synced 300 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
