@@ -2,26 +2,19 @@
 #
 # Weekly upstream-currency watch (#1128).
 #
-# REPORTS ONLY. It never bumps a pin and never opens a PR. That is deliberate: a Tari or monerod
-# minor is a data migration to schedule, not a bump to merge — #1129 carries three one-time
-# migrations and a one-way wallet-DB change. RigForge's xmrig-bump.yml opens a build-verified PR
-# instead, which is right there and wrong here; the two share this shape, not this output.
+# REPORTS ONLY. It never bumps a pin or opens a PR: Tari and monerod minors are scheduled data migrations (#1129).
+# RigForge's xmrig-bump.yml opens a build-verified PR; the watchers share shape, not output.
 #
-# The pins come from scripts/release/release.sh's pin(), which is where the release notes read them from.
-# A second list is how the gap this closes opened in the first place.
+# The pins come from scripts/release/release.sh's pin(), the release-notes source of truth.
 #
-# One question per component: is the pinned VERSION behind upstream's latest release?
+# Two questions for Tari: is the pinned VERSION behind upstream, and would its gRPC schema break the vendored client?
 #
-# NOT asked here, deliberately: whether an image pinned `tag@sha256:...` still has a digest that
-# corresponds to that tag. The digest is authoritative and the tag is decoration, so a bump that
-# moves the tag and leaves the digest keeps running the old image while every doc says otherwise
-# — but answering it needs a registry client (two different token flows for quay.io and Docker
-# Hub), which is a second source type with its own failure mode. It is its own change.
+# NOT asked here: whether an image `tag@sha256:...` still matches its tag. The digest is authoritative,
+# but checking it needs a registry client with separate quay.io and Docker Hub token flows.
+# It is its own source type and change.
 #
-# UNREACHABLE IS NOT CURRENT. Every failed lookup increments a counter, the run exits non-zero,
-# and the report names what could not be checked. A watcher that has silently stopped otherwise
-# looks exactly like a watcher with nothing to report — which is how a scheduled workflow in this
-# repo ran zero times without anyone noticing.
+# UNREACHABLE IS NOT CURRENT. Failures increment a counter, return non-zero, and name what was not checked.
+# Otherwise a stopped watcher looks current; one scheduled workflow here once ran zero times unnoticed.
 #
 # Usage:
 #   scripts/watch/pin-watch.sh              Print the markdown report on stdout; rc 1 if anything failed.
@@ -76,7 +69,6 @@ norm() {
 }
 
 # The one lookup, wrapped so a failure is a COUNTED failure and never a quiet "current".
-
 latest_release() { # <owner/repo> -> tag on stdout, rc 1 on any failure
     local tag
     tag=$(gh api "repos/$1/releases/latest" --jq .tag_name 2>/dev/null) || return 1
@@ -99,7 +91,6 @@ latest_release() { # <owner/repo> -> tag on stdout, rc 1 on any failure
 # but a CONFIDENT one — the row reads `stale`, `failed` stays 0, the run exits 0 and stamps itself
 # fully successful. A watcher that has stopped working then looks exactly like one with nothing to
 # report, which is the defect this script's own header says it exists to prevent.
-
 comparable() { # <component> <owner/repo> <tag> -> the tag in that pin's spelling, rc 1 on failure
     local sha
     case "$1" in
@@ -116,6 +107,68 @@ comparable() { # <component> <owner/repo> <tag> -> the tag in that pin's spellin
         ;;
     *) printf '%s' "$3" ;;
     esac
+}
+
+tari_proto_ref() { # <node image pin> -> upstream tag
+    local ref="${1%%@*}"
+    ref="${ref##*:}"
+    ref="${ref%-mainnet}"
+    printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+    printf '%s' "$ref"
+}
+run_buf() {
+    docker run --rm \
+        -v "$ROOT/dashboard/mining_dashboard/client/tari/proto:/workspace" \
+        --workdir /workspace bufbuild/buf:1.71.0@sha256:7f3e3dfb8650f39878625bbc9f2016a51a781693b209165671d5a61d11c74992 "$@"
+}
+check_tari_protos() { # <upstream tag> -> 0 compatible, 1 local, 2 upstream, 3 drift, 4 comparison failure
+    local upstream="https://github.com/tari-project/tari.git#tag=$1,subdir=applications/minotari_app_grpc/proto" rc=0
+    run_buf build . >&2 || return 1
+    run_buf build "$upstream" >&2 || return 2
+    run_buf breaking "$upstream" --against . >&2 || rc=$?
+    [ "$rc" -eq 100 ] && return 3
+    [ "$rc" -eq 0 ] || return 4
+}
+add_tari_proto_row() {
+    local raw ref rc=0
+    raw=$(tree_pin tari 2>/dev/null) || raw=""
+    if ! ref=$(tari_proto_ref "$raw"); then
+        row "tari gRPC schema" "\`f42e14d\`" "—" "**could not read the pinned node tag — NOT checked**"
+        failed=$((failed + 1))
+        return
+    fi
+    check_tari_protos "$ref" || rc=$?
+    case "$rc" in
+    0) row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "compatible" ;;
+    1)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**vendored schema build failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    2)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    3)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**breaking drift**"
+        stale=$((stale + 1))
+        ;;
+    *)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**schema comparison failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    esac
+}
+run_go_raise_watch() { bash "$ROOT/scripts/watch/go-raise-watch.sh"; }
+finish_report() {
+    local raise_rc=0
+    if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
+        run_go_raise_watch || raise_rc=$?
+    fi
+    if [ "$failed" -eq 0 ] && [ "$raise_rc" -eq 0 ]; then
+        printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
+        return 0
+    fi
+    return 1
 }
 
 # --- self-test -----------------------------------------------------------------------------------
@@ -189,6 +242,55 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
+    st "the Tari node pin selects the matching upstream proto tag" \
+        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa')" "v5.3.1"
+    st "a malformed Tari pin is refused" \
+        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
+    run_buf() {
+        case "$1" in
+        build)
+            [ "$2" = . ] && return "${ST_LOCAL_BUILD_RC:-0}"
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
+            return "${ST_UPSTREAM_BUILD_RC:-0}"
+            ;;
+        breaking)
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
+            return "${ST_BUF_BREAKING_RC:-0}"
+            ;;
+        esac
+    }
+    tree_pin() { printf '%s' 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa'; }
+    row() { ST_ROW="$*"; }
+    proto_report() {
+        failed=0 stale=0 ST_ROW=""
+        add_tari_proto_row
+        printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
+    }
+    ST_LOCAL_BUILD_RC=0 ST_UPSTREAM_BUILD_RC=0 ST_BUF_BREAKING_RC=0
+    st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
+    ST_BUF_BREAKING_RC=100
+    st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v5.3.1\` **breaking drift**"
+    ST_BUF_BREAKING_RC=0
+    st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
+    ST_BUF_BREAKING_RC=1
+    st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **schema comparison failed — NOT checked**"
+    ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
+    st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
+    st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **vendored schema build failed — NOT checked**"
+    st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
+    integration_root=$(mktemp -d)
+    trap 'rm -rf "$integration_root"' EXIT
+    mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
+    : >"$integration_root/os/rootfs/Dockerfile"
+    printf '%s\n' 'printf "raise-watch-called\n"' 'exit 1' >"$integration_root/scripts/watch/go-raise-watch.sh"
+    ROOT=$integration_root
+    failed=0
+    finish_rc=0
+    finish_out=$(finish_report) || finish_rc=$?
+    st "a failed Go raise watch fails the combined report" "$finish_rc" "1"
+    st "the combined report actually ran the Go raise watch" "$(grep -c raise-watch-called <<<"$finish_out")" "1"
+    st "a failed Go raise watch withholds the last-success stamp" "$(grep -c 'Last fully successful' <<<"$finish_out")" "0"
     [ "$st_fail" = 0 ] && echo "pin-watch self-test OK"
     exit "$st_fail"
 fi
@@ -267,6 +369,8 @@ for component in $components; do
     row "$component" "\`$(norm "$raw")\`" "\`$(norm "$latest")\`" "$verdict"
 done
 
+add_tari_proto_row
+
 printf '%s\n\n' "Upstream currency for $lane, checked weekly by \`scripts/watch/pin-watch.sh\`. This never bumps anything."
 printf '| component | pinned | upstream latest | |\n|---|---|---|---|\n%s\n' "$rows"
 printf '%s\n' "Not watched here, because they publish no GitHub release feed: the alpine base image, \`ubuntu:24.04\`, \`python:3.11-slim\`. Dependabot's docker ecosystem reads those \`FROM\` lines and does cover them."
@@ -289,9 +393,8 @@ fi
 printf '%s\n' "Also NOT checked: whether each image pin's digest still corresponds to its tag. The digest is what actually runs, so a half-done bump is invisible to the table above."
 if [ "$failed" -gt 0 ]; then
     printf '\n%s\n' "**$failed lookup(s) could not run — those rows are unchecked, not current.**"
-else
-    printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
 fi
 printf '\n%s\n' "<!-- pin-watch: stale=$stale failed=$failed -->"
 
-exit "$([ "$failed" -gt 0 ] && echo 1 || echo 0)"
+printf '\n'
+finish_report
