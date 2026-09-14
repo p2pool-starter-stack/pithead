@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-#
 # Scheduled-run watch (#1377, #1418).
-#
 # The Monday run of ci.yml IS the CVE sweep: `build-images` rebuilds every image and scans the
 # rebuild (#833), `sweep-shipped` scans the published digests (#1313). A scheduled run has no pull
-# request, so nothing draws a person to it — and on 2026-08-17 `build-images` went red and nobody
-# was told for seven days. This watcher is that run's reader.
-#
+# request, so nothing draws a person to it. This watcher is that run's reader.
 # REPORT-ONLY. A scheduled failure, LATE run or MISSED run is a finding. This watcher fails only
 # when its inputs are unreadable or incomplete; those paths say UNCHECKED rather than clean.
-# The workflow performs GitHub lookups and this script renders its JSON, keeping every decision
-# fixture-testable without network access.
 # CADENCE. cadence.json names every schedule declared in the checked-out workflows and carries
 # server-filtered run history for each. A missing run becomes LATE after 12 hours and MISSED after
 # one full period. Both are report findings; only unreadable inputs make the watcher fail.
-#
 # ONE UNWATCHED WATCHER REMAINS. This script can include its own workflow in the table, but a
 # GitHub-wide schedule shutdown also stops this run. The carried-forward success stamp makes that
 # absence readable to an observer outside GitHub; it cannot make the absence self-announcing.
@@ -88,6 +81,9 @@ render_cadence() {
                 - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
                 | if . > $now then . - 604800 else . end
             end;
+        def interior_gap($runs; $p): reduce ($runs | map(slot(.epoch; $p)) | unique[]) as $s
+                ({previous: null, missed: false}; {previous: $s, missed: (.missed or (.previous != null and $s - .previous > $p.period))})
+            | .missed;
         (.checkedAt | fromdateiso8601) as $now
         | [.workflows[] | . as $w | ($w | parts) as $p
             | [.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] as $valid
@@ -101,6 +97,7 @@ render_cadence() {
                 | (if $before_declared < ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
                 | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"),
                    state: (if .path == ".github/workflows/scheduled-run-watch.yml" then "external stamp only"
+                           elif interior_gap($valid; $p) then "**MISSED**"
                            elif $new == null and $now >= ($first + $p.period) then "**MISSED**"
                            elif $new == null and $now >= ($first + 43200) then "LATE"
                            elif $new == null then "within 12h grace"
@@ -287,6 +284,10 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$gap")" && rc=0 || rc=$?
     st "an actual elapsed hourly gap is MISSED" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
     st "a missed run is a report finding, not a broken watcher" "$rc" "0"
+    interior="$tmp/interior"
+    cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T07:00:00Z"},{"createdAt":"2026-09-21T07:00:00Z"}]'
+    out="$(render_cadence "$interior")"
+    st "a recovered weekly run does not erase the missed interior slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
     fresh="$tmp/fresh"
     cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
     jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
@@ -300,7 +301,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$late")" && rc=0 || rc=$?
     st "a run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -c '| LATE |')" "1"
     st "late is informational" "$rc" "0"
-
     unknown="$tmp/unknown"
     cadence_fixture "$unknown"
     jq '.workflows[0].runs = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
