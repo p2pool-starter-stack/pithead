@@ -117,10 +117,13 @@ test("restore section: names what a restore does and asks for the archive + pass
   assert.match(out, /Show passphrase/);
 });
 
-const findVNode = (vnode, type) => {
+const findVNode = (vnode, type, text = "") => {
   if (!vnode || typeof vnode !== "object") return null;
-  if (Array.isArray(vnode)) return vnode.map((child) => findVNode(child, type)).find(Boolean);
-  return vnode.type === type ? vnode : findVNode(vnode.props?.children, type);
+  if (Array.isArray(vnode))
+    return vnode.map((child) => findVNode(child, type, text)).find(Boolean);
+  return vnode.type === type && (!text || renderToString(vnode).includes(text))
+    ? vnode
+    : findVNode(vnode.props?.children, type, text);
 };
 
 test("the show-passphrase control reveals and masks the entered passphrase", async () => {
@@ -134,6 +137,20 @@ test("the show-passphrase control reveals and masks the entered passphrase", asy
   toggle().props.onChange({ target: { checked: true } });
   assert.match(renderToString(inst.render()), /type="text" value="fixture-pw"/);
   toggle().props.onChange({ target: { checked: false } });
+  assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
+  restore();
+});
+
+test("leaving restore masks the retained passphrase before the form reopens", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  inst.setState({
+    restoreMode: true,
+    restorePassphrase: "fixture-pw",
+    restorePassphraseVisible: true,
+  });
+  findVNode(inst.renderRestore(), "button", "Back to").props.onClick();
+  assert.equal(inst.state.restorePassphraseVisible, false);
+  inst.setState({ restoreMode: true });
   assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
   restore();
 });

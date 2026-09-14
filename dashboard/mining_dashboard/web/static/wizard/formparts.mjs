@@ -76,7 +76,8 @@ export function renderRestore(app) {
             }
         </form>
         <button type="button" class="wizard-link"
-            onClick=${() => app.setState({ restoreMode: false, error: "" })}>
+            onClick=${() =>
+              app.setState({ restoreMode: false, restorePassphraseVisible: false, error: "" })}>
             ${restoreBackLabel(app.state.savedRole, app.state.setUpAgain)}</button>
     </div>`;
 }
