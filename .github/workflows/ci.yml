@@ -382,15 +382,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0  # full history so the scan covers every commit, not just the tip
       - name: Scan git history for secrets (gitleaks, pinned by digest)
-        # Run the binary via its pinned image (the gitleaks-action requires a license for org repos).
-        # Accepted false positives live in .config/gitleaks.toml.
-        #
-        # --log-opts="HEAD" is load-bearing (#2204): gitleaks' git scan defaults to every ref
-        # reachable in the local clone, and fetch-depth: 0 above makes actions/checkout fetch
-        # +refs/heads/*:refs/remotes/origin/* — every OTHER open branch, not just this ref. Without
-        # the pin, an un-ignored secret-shaped fixture on any unrelated in-flight branch reds this
-        # PR's gate. HEAD here is the checked-out commit (this PR's merge ref), so the scan covers
-        # every commit reachable from it and nothing else.
+        # Pinned image (the gitleaks-action needs an org license); accepted false positives live in
+        # .config/gitleaks.toml. --log-opts="HEAD" (#2204) scopes the scan to this ref, since fetch-depth: 0 fetches every branch and gitleaks defaults to scanning all of them.
         run: |
           docker run --rm -v "$PWD":/repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
