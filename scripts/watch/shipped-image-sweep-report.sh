@@ -113,6 +113,7 @@ render_report() {
             select((.Results | type) == "array")
             | select(all(.Results[]; (type == "object") and (.Vulnerabilities == null or
                 ((.Vulnerabilities | type) == "array" and all(.Vulnerabilities[]; type == "object")))))
+            | select(any(.Results[]; .Class == "os-pkgs" and (.Target | type) == "string" and (.Target | length) > 0))
             | .ArtifactName
         ' "$file" 2>/dev/null)"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
@@ -149,9 +150,8 @@ render_report() {
             tag_conflict=1
         fi
 
-        # Captured, not piped in from a process substitution: a jq failure inside `< <(...)` is
-        # invisible to `set -e`, so a report whose Results array is malformed would render as a
-        # confident zero. Same rule as everywhere else here — unreadable is UNCHECKED.
+        # Capture the jq result: process-substitution failures are invisible to `set -e`, and an
+        # unreadable Results array must be UNCHECKED rather than a confident zero.
         local tsv
         if ! tsv="$(findings_tsv "$file")"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
@@ -244,7 +244,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fixture() {
         mkdir -p "$1"
         jq -n --arg a "$3" --argjson v "$4" \
-            '{ArtifactName: $a, Results: [{Target: "t", Vulnerabilities: $v}]}' \
+            '{ArtifactName: $a, Results: [{Target: "t", Class: "os-pkgs", Vulnerabilities: $v}]}' \
             >"$1/sweep-$2.json"
         printf 'v1.20.0\n' >"$1/sweep-$2.tag"
     }
@@ -291,7 +291,6 @@ if [ "${1:-}" = "--self-test" ]; then
         "$(printf '%s' "$out" | grep -c 'CVE-2026-3')" "0"
     st "the finding's own digest is named in full" \
         "$(printf '%s' "$out" | grep -c "Scanned \`$(ref_for dashboard 5)\`")" "1"
-
     # Every refusal. Each must exit 1 AND say UNCHECKED — a quiet zero is the bug.
     miss="$tmp/miss"
     i=1
@@ -303,16 +302,11 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a leg that did not finish fails the run" "$rc" "1"
     st "the missing image reads UNCHECKED, never clean" \
         "$(printf '%s' "$out" | grep -c '`pithead-tor` | — | \*\*UNCHECKED\*\*')" "1"
-    # On the PROBLEM TEXT, not just the UNCHECKED row. The missing-file guard and the
-    # unparseable-report guard below it emit an identical summary row and an identical rc, so an
-    # assertion on either of those passes whichever guard fired — deleting the missing-file check
-    # outright left this whole block green until it was checked by mutation. Each guard is now
-    # named by the one sentence only it writes.
+    # Assert each guard's unique diagnosis; their summary row and rc are otherwise identical.
     st "the missing leg is diagnosed as a leg that did not finish" \
         "$(printf '%s' "$out" | grep -c 'produced no scan report; its matrix leg did not finish')" "1"
     st "a missing leg is not misreported as an unparseable one" \
         "$(printf '%s' "$out" | grep -c 'could not be parsed')" "0"
-
     extra="$tmp/extra"
     i=1
     for s in $SWEPT_IMAGES; do
@@ -351,6 +345,12 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.Results = [{Vulnerabilities: [null]}]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
     out="$(render_report "$malformed")" && rc=0 || rc=$?
     st "a non-object vulnerability entry is UNCHECKED" "$rc" "1"
+    jq '.Results = []' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "an empty Results array is UNCHECKED" "$rc" "1"
+    jq '.Results = [{Target: "language-pkgs", Class: "lang-pkgs", Vulnerabilities: []}]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a report without an OS-package result is UNCHECKED" "$rc" "1"
 
     notag="$tmp/notag"
     cp -R "$clean" "$notag"

@@ -43,6 +43,8 @@ assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
 rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
 assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
+TAR_OPTIONS='--exclude=*/authorized_keys' rootfs_guard "$ROOTFS_GUARD/debug.tar" >/dev/null 2>&1
+assert_rc "inherited tar exclusions cannot hide the debug SSH key" "$?" "2"
 for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
