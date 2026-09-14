@@ -93,13 +93,15 @@ first_party_running_refs() {
     services="$(first_party_running_services | tr '\n' ' ')"
     rx "for s in $services; do c=\$(docker compose ps -q \"\$s\" 2>/dev/null | head -n1); [ -n \"\$c\" ] || exit 1; docker inspect --format \"\$s {{.Config.Image}}\" \"\$c\"; done"
 }
-pinned_refs_valid() {
-    local name ref seen=""
+pinned_refs_valid() { # <service/ref lines> [required service lines]
+    local name ref seen="" required="${2:-tor monerod p2pool xmrig-proxy dashboard}"
+    required="$(tr '\n' ' ' <<<"$required")"
+    required="${required% }"
     while read -r name ref; do
         [[ "$ref" =~ @sha256:[0-9a-f]{64}$ ]] || return 1
         seen="$seen $name"
     done <<<"$1"
-    [ "$seen" = " tor monerod p2pool xmrig-proxy dashboard" ]
+    [ "$seen" = " $required" ]
 }
 first_party_registry() { # <service/ref lines>
     local service ref repo image registry found=""
@@ -216,7 +218,7 @@ PY
 }
 
 prepare_candidate_bundle() {
-    local _service ref revision service line candidate_commit
+    local _service ref revision service candidate_commit
     UPGRADE_STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pithead-live-candidate.XXXXXX")" || return 1
     chmod 700 "$UPGRADE_STAGE_DIR" || return 1
     UPGRADE_BUNDLE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.tar.gz"
@@ -244,14 +246,8 @@ prepare_candidate_bundle() {
     valid_full_sha "$candidate_commit" && [ "$candidate_commit" = "$IMAGE_UPGRADE_TO_SHA" ] || return 1
     UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
     all_refs_pinned "$UPGRADE_CANDIDATE_ALL_REFS" || return 1
-    UPGRADE_CANDIDATE_REFS="$({
-        for service in tor monerod p2pool xmrig-proxy dashboard; do
-            line="$(awk -v s="$service" '$1==s {print}' <<<"$UPGRADE_CANDIDATE_ALL_REFS")"
-            [ -n "$line" ] || exit 1
-            printf '%s\n' "$line"
-        done
-    })" || return 1
-    pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" || return 1
+    UPGRADE_CANDIDATE_REFS="$(candidate_refs_for_running_set "$(first_party_running_services)")" || return 1
+    pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" "$(first_party_running_services)" || return 1
     # shellcheck disable=SC2034 # consumed by live-gates.sh after this sourced helper returns
     UPGRADE_CANDIDATE_REGISTRY="$(first_party_registry "$UPGRADE_CANDIDATE_REFS")" || return 1
     while read -r _service ref; do
