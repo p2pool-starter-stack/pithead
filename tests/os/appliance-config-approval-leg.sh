@@ -272,7 +272,8 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
 }
 
 _approval_self_test() {
-    local f=0
+    local f=0 here
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     mm_roundtrip_verdict 'MergeMiningClientTari tari://127.0.0.1:18142 uses chain_id 0123456789abcdef' >/dev/null || f=$((f + 1))
     mm_roundtrip_verdict 'MergeMiningClientTari worker thread ready' >/dev/null && f=$((f + 1))
     tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://node.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' || f=$((f + 1))
@@ -285,7 +286,10 @@ _approval_self_test() {
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
-    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
+    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
+    # The removed fake-provider fixture stopped the path and service over SSH. That can SIGTERM a
+    # claimed request between applying it and writing its result, manufacturing a product failure.
+    ! grep -RE 'systemctl (stop|restart) pithead-control\.(path|service)' --include='*.sh' "$here" >/dev/null || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1
