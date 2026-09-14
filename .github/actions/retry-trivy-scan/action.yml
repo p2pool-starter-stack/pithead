@@ -1,0 +1,34 @@
+name: Retry a failed Trivy scan
+description: >
+  Re-runs the same pinned trivy-action invocation once. setup-trivy's install.sh resolves the
+  pinned tag through an undocumented, unauthenticated `github.com/.../releases/<tag>` JSON
+  endpoint (not the GitHub API), which intermittently 404s on a tag that exists (#2215) —
+  confirmed transient, not a withdrawn release: the same pin passes on a bare rerun with no code
+  change. Callers keep their own primary trivy-action step inline (parity-checked by
+  `make lint-trivy-parity`); this is only the fallback attempt, so its pin is kept in sync by hand.
+inputs:
+  image-ref:
+    required: true
+  trivyignores:
+    required: true
+  exit-code:
+    default: "1"
+  format:
+    default: "table"
+  output:
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        version: v0.74.0
+        image-ref: ${{ inputs.image-ref }}
+        scanners: vuln
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: ${{ inputs.exit-code }}
+        trivyignores: ${{ inputs.trivyignores }}
+        cache: "false"
+        format: ${{ inputs.format }}
+        output: ${{ inputs.output }}

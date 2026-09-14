@@ -98,6 +98,8 @@ jobs:
       # directly, since this gate would not have reported it either way.
       - name: Scan image for CVEs (Trivy)
         if: matrix.service != 'test-runner'
+        id: trivy-scan
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
@@ -112,3 +114,11 @@ jobs:
           # day-granular, so a branch's first run of the day freezes its database until midnight and
           # the gate's answer starts depending on when the branch last ran.
           cache: "false"
+      - name: Retry Scan image for CVEs (Trivy)
+        # See .github/actions/retry-trivy-scan (#2215): absorbs setup-trivy's transient install
+        # flake without a second full step definition here.
+        if: matrix.service != 'test-runner' && steps.trivy-scan.outcome == 'failure'
+        uses: ./.github/actions/retry-trivy-scan
+        with:
+          image-ref: pithead-${{ matrix.service }}:ci
+          trivyignores: .trivyignore
