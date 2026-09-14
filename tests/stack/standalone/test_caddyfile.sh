@@ -79,10 +79,14 @@ export STACK="$STACK_WITH_ADAPT"
 # The reused suites assert expected non-zero render paths; match tests/stack/run.sh's shell mode.
 set +e
 run_suite() (
+    local source_rc
+    PASS=0
     FAIL=0
     # shellcheck source=/dev/null
     source "$1"
-    [ "$FAIL" -eq 0 ]
+    source_rc=$?
+    domain_ran "$1" 0 "$source_rc"
+    [ "$source_rc" -eq 0 ] && [ "$FAIL" -eq 0 ]
 )
 
 suite_failures=0
