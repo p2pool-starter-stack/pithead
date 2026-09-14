@@ -383,8 +383,9 @@ rig_minimize_writes() {
     # `local-miner`) — a cleanup that cannot complete must never leave a slot uncommitted.
     if mountpoint -q "$journal" 2>/dev/null; then
         umount "$journal" 2>/dev/null || true
-        # DELIBERATELY DISABLED for #2052 evidence: this must make the #1817 guard test go red.
-        if false && mountpoint -q "$journal" 2>/dev/null; then
+        # A bind that did not come off is left alone: `rm -rf` through it would empty the
+        # persistent home on /data, the one thing this block promises not to do.
+        if mountpoint -q "$journal" 2>/dev/null; then
             warn "The journal bind is still up, so nothing is reclaimed; journald is volatile for this boot anyway."
             return 0
         fi
