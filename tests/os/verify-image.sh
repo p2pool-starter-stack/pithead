@@ -198,6 +198,7 @@ chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/conta
 chk "container storage on /data" 'grep -q "graphroot = \"/data/containers/storage\"" "$ROOT/etc/containers/storage.conf"'
 chk "wizard image baked (offline first boot)" 'ls "$ROOT"/opt/pithead/images/*.tar.gz'
 chk "installer + its whole toolset" '[ -x "$ROOT/usr/local/sbin/pithead-install" ] && [ -e "$ROOT/usr/sbin/sgdisk" ] && [ -e "$ROOT/usr/bin/jq" ]'
+chk "unused xxd package absent (#1380)" '[ -s "$ROOT/var/lib/dpkg/status" ] && ! grep -qxF "Package: xxd" "$ROOT/var/lib/dpkg/status"'
 chk "grub.cfg staged for installs" '[ -s "$ROOT/usr/share/pithead/grub.cfg" ]'
 chk "rauc daemon present (CLI alone cannot install)" '[ -f "$ROOT/usr/lib/systemd/system/rauc.service" ]'
 chk "rauc keyring baked" '[ -s "$ROOT/etc/rauc/keyring.pem" ]'
