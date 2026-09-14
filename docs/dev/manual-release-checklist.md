@@ -54,10 +54,9 @@ image; never hand one to a user.
 
 ## The manual hardware battery (M1–M10)
 
-Defined in [appliance-release.md](appliance-release.md). Run it on a physical box and record the
-results in the release issue. Today every item is driven by hand; a harness that automates the
-parts a script can reach, and demands typed attestation for the rest, is tracked as #1022 and is
-not yet merged. Until it is, this whole battery is a human procedure.
+Defined in [appliance-release.md](appliance-release.md). Run its remaining hardware-only checks on a physical box and record the
+results in the release issue. The KVM battery covers the scriptable parts noted below; the physical
+checks remain hands-on until #1022 can collect the scripted and attested results together.
 
 Needs hands, every time:
 

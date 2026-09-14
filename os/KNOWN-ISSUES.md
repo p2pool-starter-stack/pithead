@@ -382,15 +382,14 @@ not proven.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
   (#911) and fleet descriptor editing (#912).
-- **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
+- **The manual hardware battery has not been run (#2044).** The hardware-only remainder is not a KVM gate. Secure
   Boot, real disks, headless discovery and Restore on AC Power Loss are exactly what a VM
-  cannot show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an
+  cannot show — the hardware-only remainder of M1–M10, M15 and M16 in the release doc must pass on a physical box before an
   image ships (the KVM battery now proves the write/commit half of M8 and M10's power cuts,
   #2067, not the firmware setting itself). (M11–M14 are the rig-role steps and stay manual
   today — see the manual release checklist — because the `rig` KVM phase does not yet prove an
   accepted share, MSR/hugepages, a dashboard adopt, or a stick-root boot; converting what it can
-  is #1886's first gap.) #394's gate list still does not name this battery — the same omission
-  #976's own title records for the OS-update path.
+  is #1886's first gap.)
 - **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
   KVM battery now measures this rather than leaving it an unread flag: every other guest in
   `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
