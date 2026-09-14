@@ -219,17 +219,28 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    identical to `stack_restore`'s own pre-flight — BEFORE anything is extracted.
 2. Reject links, special files and members outside the appliance backup layout before
    extracting to a private staging tree. The accepted items are `config.json`, `.env`,
-   `Caddyfile`, and the `data/{tor,dashboard,monero,tari,p2pool}` trees under the install
-   directory. Backups with custom data paths need the administrative restore workflow.
+   `Caddyfile`, and the `data/{tor,dashboard,monero,tari,p2pool}` trees, all rooted at a single
+   directory found from where `config.json` sits in the archive — the box that made the backup's
+   own working directory, not necessarily this one (a supported prior release's Compose bundle
+   ran from wherever the operator placed it). Backups with custom data paths, or whose members do
+   not share one consistent root, need the administrative restore workflow.
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
    call `firstboot_consume_spool` uses.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
    validated generated secrets and Tor identity from the archived environment.
-   Only on success: install the configuration files at mode `0600`, copy the
-   accepted data trees to their mapped destinations, and publish `applied`. Optional chain
-   data is accepted within the upload cap; normal backups exclude it. The firstboot
-   loop short-circuits straight into that acceptance path; `prepare_directories` (run by the
-   `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
+   Only on success: install the configuration files at mode `0600`, apply the accepted data
+   trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
+   database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
+   within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
+   on this box instead, an existing file winning on a name collision: a `wipe=keep` install
+   target keeps its own synced chain data, and a restore must never force it into a resync
+   (#2195) — the opposite of the admin `pithead restore` CLI command's own collision rule
+   (`restore_commit_stage`'s `cp -a --remove-destination` lets the archive win instead, since an
+   operator running that command explicitly wants the archive back); nothing here changes that
+   path. The firstboot loop reaches this door unconditionally, before it ever checks whether
+   `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
+   gating on that presence used to skip the carried restore outright; `prepare_directories` (run
+   by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
 `error.txt` and returns 1 — nothing already on disk is touched, and the

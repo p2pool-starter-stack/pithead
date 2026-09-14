@@ -174,7 +174,10 @@ export class DiagnosticsPanel extends Component {
     try {
       const result = await runDiag("diag-doctor", {}, "the health check");
       this.setState({
-        healthPhase: result.status === "applied" ? "done" : "failed",
+        healthPhase:
+          result.doctor && typeof result.doctor === "object" && !Array.isArray(result.doctor)
+            ? "done"
+            : "failed",
         healthResult: result,
       });
     } catch (error) {
