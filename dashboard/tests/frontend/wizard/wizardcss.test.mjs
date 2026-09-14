@@ -66,3 +66,11 @@ test("wizard.mjs: the handoff values the operator transcribes are still <code> e
     );
   }
 });
+
+test("wizard.css: radio answers stack at the full card width", () => {
+  const group = ruleFor(WIZARD_CSS, /\.wizard-choices/);
+  const answer = ruleFor(WIZARD_CSS, /\.wizard-choices\s+label/);
+  assert.match(group.body, /display:\s*grid/);
+  assert.match(answer.body, /display:\s*grid/);
+  assert.match(answer.body, /width:\s*100%/);
+});
