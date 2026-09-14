@@ -42,8 +42,8 @@ _build_bundle_stamped() {
             (
                 cd "$wt" &&
                     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$marker" \
-                    PITHEAD_ROOTFS_TAG="pithead-os-rootfs-$marker" PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml" \
-                        os/build-image.sh &&
+                    PITHEAD_ROOTFS_TAG="pithead-os-rootfs-$marker" PITHEAD_OS_SYNTHETIC_COMPOSE=1 \
+                    PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml" os/build-image.sh &&
                     PITHEAD_STALE_TARBALL_OK=1 PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$floor" \
                         os/rauc/mkbundle.sh --dev
             ) &&

@@ -69,7 +69,11 @@ assert_eq "the tree path ships the working tree's compose file byte for byte" \
 assert_eq "the tree path's stamp is the bare word" "$(cat "$CS/untagged/COMPOSE_SOURCE")" "tree"
 
 printf 'services:\n  immutable: {image: example.invalid/app@sha256:%064d}\n' 3 >"$CS/external-compose.yml"
-cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/file")"
+cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/unmarked-file")"
+assert_contains "a normal build cannot replace the tagged compose with an explicit file" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/release-file")"
+assert_contains "a shell-less release build cannot opt into synthetic compose staging" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/file")"
 CS_FILE_SHA="$(sha256sum "$CS/external-compose.yml" | cut -d' ' -f1)"
 assert_contains "an explicit compose file is stamped with its content hash" "$cs_out" "file sha256:$CS_FILE_SHA"
 assert_eq "the explicit compose file is copied byte for byte" \
@@ -79,7 +83,7 @@ assert_eq "the explicit compose file is copied byte for byte" \
     )" "0"
 assert_eq "the file stamp carries the exact lowercase sha256" "$(cat "$CS/file/COMPOSE_SOURCE")" "file sha256:$CS_FILE_SHA"
 
-cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/missing-compose.yml" cs_stage v0.0.1 "$CS/missing-file")"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/missing-compose.yml" cs_stage v0.0.1 "$CS/missing-file")"
 assert_contains "a missing explicit compose file is refused" "$cs_out" "rc=1"
 assert_contains "the missing-file refusal names PITHEAD_OS_COMPOSE_FILE" "$cs_out" "PITHEAD_OS_COMPOSE_FILE"
 
@@ -88,7 +92,7 @@ printf 'stale\n' >"$CS/copy-failure/docker-compose.yml"
 printf 'tree\n' >"$CS/copy-failure/COMPOSE_SOURCE"
 cs_out="$(
     {
-        export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml"
+        export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml"
         set --
         source "$ROOT/os/build-image.sh"
         set +e
@@ -116,7 +120,7 @@ cs_out="$(
 assert_contains "a failed remote tag query is refused, not read as tag absence" "$cs_out" "rc=1"
 assert_contains "the remote-query refusal names the uncertainty" "$cs_out" "could not determine whether tag v0.0.9 exists"
 assert_eq "the remote-query failure stages nothing" "$(ls "$CS/remote-error" 2>/dev/null)" ""
-assert_contains "the synthetic floor-fallback build explicitly stages its copied compose file" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml"'
+assert_contains "the floor-fallback build opts into synthetic compose staging" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_OS_SYNTHETIC_COMPOSE=1'
 
 echo "== unit: build-image --stage-only parses, and stops after staging, before the first docker step (#1215) =="
 # The CI rootfs scan runs the Dockerfile itself, so it needs the staging without the build. The
