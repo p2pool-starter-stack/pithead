@@ -5,7 +5,7 @@ phase_rigmedia() {
     # The install phase's own boot shape (image on a removable USB bus, boot.order=1) beside a
     # blank internal disk — but here the internal disk is the thing under test BY STAYING BLANK:
     # a rig that answers RigForge must never touch it, unlike the install phase's own target.
-    local img target_disk="/srv/code/bench-vm/pithead-rigmedia-target.img" token jar body scode empty_before empty_after
+    local img target_disk="/srv/code/bench-vm/pithead-rigmedia-target.img" token jar body scode card empty_before empty_after
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
@@ -71,13 +71,31 @@ phase_rigmedia() {
     # same branch: test_run_from_this_stick_is_first_class_for_the_rig_role_only).
     body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rigmedia&disk=usb"
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
-    rm -f "$jar"
     [ "$scode" = "200" ] || {
         bad "rig submit did not return 200 (got ${scode:-none})"
-        rm -f "$target_disk"
+        rm -f "$jar" "$target_disk"
         return
     }
     ok "rig role submitted through the wizard, no install offered"
+    tries=0
+    while [ "$tries" -lt 24 ]; do
+        card=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+        case "$card" in *'"worker"'*) break ;; esac
+        sleep 5
+        tries=$((tries + 1))
+    done
+    [ "$tries" -lt 24 ] || {
+        bad "no rig card appeared on the page"
+        rm -f "$jar" "$target_disk"
+        return
+    }
+    scode=$(curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
+    [ "$scode" = "200" ] || {
+        bad "rig card acknowledgement did not return 200 (got ${scode:-none})"
+        rm -f "$jar" "$target_disk"
+        return
+    }
+    rm -f "$jar"
 
     if _rig_mining_up 36; then
         ok "the rig mines from the stick (xmrig unit active, process running), no disk install"
