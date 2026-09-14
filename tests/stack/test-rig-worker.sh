@@ -470,13 +470,13 @@ case "\$url" in
 esac
 exit 0
 EOF
-chmod +x "$stale_dir/bin/curl"
+printf '#!/usr/bin/env bash\n:\n' >"$stale_dir/bin/sleep"
+chmod +x "$stale_dir/bin/curl" "$stale_dir/bin/sleep"
 w11="56565656-5656-4256-9256-565656565656"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w11" >"$stale_dir/req.json"
 (
     export PATH="$stale_dir/bin:$PATH"
     hash -r
-    sleep() { :; }
     CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$stale_dir/config.json" \
         run_sourced_e "$SANDBOX" control_process_request "$stale_dir/req.json" "$stale_dir" >/dev/null 2>&1
 )
@@ -536,13 +536,13 @@ case "$url" in
 esac
 exit 0
 EOF
-chmod +x "$gh_dir/bin/curl"
+printf '#!/usr/bin/env bash\n:\n' >"$gh_dir/bin/sleep"
+chmod +x "$gh_dir/bin/curl" "$gh_dir/bin/sleep"
 w14="89898989-8989-4289-9289-898989898989"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w14" >"$gh_dir/req.json"
 (
     export PATH="$gh_dir/bin:$PATH"
     hash -r
-    sleep() { :; }
     CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$gh_dir/config.json" \
         run_sourced_e "$SANDBOX" control_process_request "$gh_dir/req.json" "$gh_dir" >/dev/null 2>&1
 )
