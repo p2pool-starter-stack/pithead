@@ -280,6 +280,34 @@ if [ "${1:-}" = "--self-test" ]; then
         st_fail=1
     fi
 
+    printf '%s\n' 'export const t = "clean";' >"$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+    printf '%s\n' 'const t = "clean";' >"$bare/dashboard/mining_dashboard/web/static/untracked.js"
+    printf '%s\n' '<p>clean</p>' >"$bare/dashboard/mining_dashboard/web/templates/untracked.html"
+    chmod 000 "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+    if [ -r "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs" ]; then
+        echo "  self-test skipped: this user bypasses file permissions, so a frontend scan failure cannot be staged"
+    else
+        bare_out=$(cd "$bare" && bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+        if [ "$bare_rc" -ne 0 ] && printf '%s\n' "$bare_out" | grep -q 'dashboard frontend scan failed'; then
+            echo "  self-test ok: a frontend scan error is refused"
+        else
+            echo "  self-test FAIL: a frontend scan error was accepted (rc=$bare_rc)"
+            st_fail=1
+        fi
+    fi
+    chmod 600 "$bare/dashboard/mining_dashboard/web/static/untracked module.mjs"
+
+    mkdir "$tmp/fakebin"
+    printf '%s\n' '#!/bin/sh' 'exit 1' >"$tmp/fakebin/git"
+    chmod +x "$tmp/fakebin/git"
+    bare_out=$(cd "$bare" && PATH="$tmp/fakebin:$PATH" bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+    if [ "$bare_rc" -ne 0 ] && printf '%s\n' "$bare_out" | grep -q 'frontend enumeration failed'; then
+        echo "  self-test ok: a git enumeration error is refused"
+    else
+        echo "  self-test FAIL: a git enumeration error was accepted (rc=$bare_rc)"
+        st_fail=1
+    fi
+
     [ "$st_fail" -eq 0 ] && {
         echo "lint-operator-strings self-test OK"
         exit 0
@@ -318,15 +346,21 @@ fi
 
 # The static frontend, minus the *.min.js bundles.
 #
-# NUL delimiters preserve valid filenames containing whitespace. The array also lets the scan
-# quote each path rather than splitting the enumeration back into words.
+# NUL delimiters preserve valid filenames containing whitespace. Store the enumeration so git's
+# status is checked before reading it; process substitution would discard that status.
+enumeration=$(mktemp)
+trap 'rm -f "$enumeration"' EXIT
+if ! git ls-files --cached --others --exclude-standard -z -- \
+    'dashboard/mining_dashboard/web/static/*.mjs' \
+    'dashboard/mining_dashboard/web/static/*.js' \
+    'dashboard/mining_dashboard/web/templates/*.html' >"$enumeration"; then
+    echo "operator strings: dashboard frontend enumeration failed." >&2
+    exit 1
+fi
 files=()
 while IFS= read -r -d '' file; do
     [[ $file == *.min.js ]] || files+=("$file")
-done < <(git ls-files --cached --others --exclude-standard -z -- \
-    'dashboard/mining_dashboard/web/static/*.mjs' \
-    'dashboard/mining_dashboard/web/static/*.js' \
-    'dashboard/mining_dashboard/web/templates/*.html')
+done <"$enumeration"
 #
 # THIS REFUSAL MUST STAY ABOVE THE SCAN. `scan_frontend` ends in `awk '...' "$@"`, and awk with zero
 # file arguments reads STDIN — so folding this check into the `if` below, or moving it after the
@@ -335,7 +369,10 @@ done < <(git ls-files --cached --others --exclude-standard -z -- \
 # blocks until the runner's timeout.
 enforce_nonempty_frontend "${files[*]-}" || exit 1
 
-hits=$(scan_frontend "${files[@]}") || exit 1
+if ! hits=$(scan_frontend "${files[@]}"); then
+    echo "operator strings: dashboard frontend scan failed." >&2
+    exit 1
+fi
 if [ -n "$hits" ]; then
     echo "operator strings: issue/PR number in a dashboard frontend user-visible string:"
     echo "$hits"
