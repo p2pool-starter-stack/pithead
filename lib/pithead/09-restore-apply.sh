@@ -256,22 +256,40 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         case "$rel" in "$CONFIG_FILE") dest=$(restore_setup_config_path) ;; *) dest="$PWD/$rel" ;; esac
         if [[ "$dest" = */ ]]; then
             dest="${dest%/}"
-            rm -rf -- "$dest"
-            # The parent may not exist yet (#2051): prepare_directories runs inside setup(), which
-            # the restore doors call AFTER this, so on a fresh machine `data/` is simply absent and
-            # `mv -T` fails ENOENT on the first tree item. That aborted the whole apply with
-            # config.json and .env already written — a partial restore the caller then read as a
-            # valid pre-seed, with the carried DEPLOYMENT_COMPLETED never cleared because the clear
-            # sits past the failure. Measured on the bench: the machine refused setup as already
-            # provisioned and ran zero containers.
-            mkdir -p -- "$(dirname -- "$dest")" || {
-                copy_failed=1
-                break
-            }
-            mv -T -- "$source" "$dest" || {
-                copy_failed=1
-                break
-            }
+            case "$rel" in
+            data/monero/ | data/tari/ | data/p2pool/)
+                # Chain data survives this box's own `keep` policy (#2195): a restore must not
+                # force a resync, so the archive's tree is MERGED into whatever already sits here
+                # instead of replacing it — an existing file wins on a name collision, and files
+                # only the archive has are added alongside it.
+                mkdir -p -- "$dest" || {
+                    copy_failed=1
+                    break
+                }
+                cp -a -n -- "$source"/. "$dest"/ || {
+                    copy_failed=1
+                    break
+                }
+                ;;
+            *)
+                rm -rf -- "$dest"
+                # The parent may not exist yet (#2051): prepare_directories runs inside setup(),
+                # which the restore doors call AFTER this, so on a fresh machine `data/` is simply
+                # absent and `mv -T` fails ENOENT on the first tree item. That aborted the whole
+                # apply with config.json and .env already written — a partial restore the caller
+                # then read as a valid pre-seed, with the carried DEPLOYMENT_COMPLETED never
+                # cleared because the clear sits past the failure. Measured on the bench: the
+                # machine refused setup as already provisioned and ran zero containers.
+                mkdir -p -- "$(dirname -- "$dest")" || {
+                    copy_failed=1
+                    break
+                }
+                mv -T -- "$source" "$dest" || {
+                    copy_failed=1
+                    break
+                }
+                ;;
+            esac
         else
             restore_setup_publish_file "$source" "$dest" || {
                 copy_failed=1
