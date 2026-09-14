@@ -31,14 +31,12 @@ bash "$ROOT/scripts/lint/lint-operator-strings.sh" --self-test >/dev/null 2>&1
 assert_rc "operator-strings guard self-test passes" "$?" "0"
 
 echo "== unit: pin-watch self-test (#1128) =="
-# The watcher's whole product is the COMPARISON: our pins do not spell versions the way upstream
-# tags them (`caddy:2.11.4` vs `v2.11.4`, `minotari_node:v5.3.1-mainnet` vs `v5.6.0`), so a plain
-# string compare reports two components stale every week for ever and the report gets muted — as
-# useless as the scheduled workflow that lived on a non-default branch and never ran at all. Its
-# --self-test drives the normalisation over the real pin spellings and drives both lookup failure
-# paths, because an upstream lookup that could not run must never read as "current".
+# Drives the real pin spellings and failed lookups: unreachable must never read as current.
 bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
+# Drives active, transitive no-op and downgrade raises through a synthetic Go module graph.
+bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
+assert_rc "Go module raise watch self-test passes" "$?" "0"
 
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
@@ -345,6 +343,7 @@ test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
+test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-doctor.sh|ip

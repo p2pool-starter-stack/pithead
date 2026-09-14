@@ -51,6 +51,17 @@ A workable layout (adjust to taste):
   pages out of 67,605,667, and `pages_used * 4096` equals the file size exactly, so the file is
   dense and compacting it would reclaim nothing. An earlier version of this line promised
   "~95 GiB" and told you to compact anything reading ~250 GiB; that figure was never measured.
+  This copy alone does not establish normal pruned-node sizing: source and copy were both measured
+  with `pruning_seed=384` ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)), so
+  `--copy-pruned-database` copied `txs_prunable` and `txs_prunable_tip` verbatim instead of running
+  the prune routine
+  ([source](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_utilities/blockchain_prune.cpp#L584-L627)).
+  The user-facing budget instead follows the independent node that enabled pruning at genesis and
+  consumed 285.8 GB after syncing. Its first-start log enters the zero-seed branch that creates the
+  seed and aborts initialization if pruning fails; synchronization then continued from genesis. A
+  direct freelist read would classify its pages but would not reduce the disk space `data.mdb`
+  occupies. This bench's dense 276.9 GB copy corroborates that footprint
+  ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)).
 - **`MDB_VERSION_MISMATCH` from a system LMDB tool is the lock-file format, not a patched data
   format, and not corruption.** It appears while monerod holds the environment; the same tool
   opens an idle copy of the same chain. Measured here on monerod 0.18.5.1, where both DBs read
