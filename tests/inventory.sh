@@ -256,6 +256,11 @@ cat <<EOF
 - #90 hardening invariants: no-new-privileges / cap_drop / read-only roots, credential-free
   healthchecks, least-privilege Docker socket proxies, and the pinned \`pithead\` project name
 
+### Generated Caddyfile parser gate (tests/stack/standalone/test_caddyfile.sh)
+- the pinned Caddy image rejects the #1037 bind/basic_auth directive collision
+- every successful Caddyfile from the existing DIY, appliance, auth, custom-port and onion render
+  scenarios adapts to non-empty JSON
+
 ### Real-image data-reset repair (tests/stack/standalone/test_data_reset.sh)
 - #1062 on a REAL ext4 image with the system's own e2fsprogs: the superblock-magic damage the
   battery injects is repaired with its payload intact — never reformatted — and a destroyed
