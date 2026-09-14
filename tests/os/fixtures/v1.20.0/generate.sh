@@ -37,6 +37,8 @@ base="https://github.com/p2pool-starter-stack/pithead/releases/download/$TAG"
 curl -fsSLo "$work/pithead.tar.gz" "$base/pithead.tar.gz"
 curl -fsSLo "$work/pithead.tar.gz.sig" "$base/pithead.tar.gz.sig"
 printf '%s  %s\n' "$BUNDLE_SHA256" "$work/pithead.tar.gz" | sha256sum -c -
+chmod 755 "$work"
+chmod 644 "$work/pithead.tar.gz" "$work/pithead.tar.gz.sig"
 docker run --rm -e HOME=/tmp -v "$work:/artifact:ro" -v "$repo:/trust:ro" "$COSIGN_IMAGE" \
     verify-blob --key /trust/cosign.pub --signature /artifact/pithead.tar.gz.sig \
     --insecure-ignore-tlog=true /artifact/pithead.tar.gz >/dev/null
