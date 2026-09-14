@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Done, RestoreSection, WizardApp } from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
+import {
+  Done,
+  Gate,
+  RestoreSection,
+  WizardApp,
+} from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
 import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
 import { renderToString } from "../helpers/render.mjs";
 import { DISKS, REF, appOn, stateFor, stubServer, stubSetState } from "./wizard-helpers.mjs";
@@ -93,15 +98,22 @@ test("before a disk is chosen, the page asks ONLY that", async () => {
 // enforces the size cap it can check without a round trip.
 
 test("restore section: names what a restore does and asks for the archive + passphrase", () => {
-  const out = renderToString(
-    html`<${RestoreSection} file=${null} passphrase="" passphraseVisible=${false}
-      onFile=${() => {}} onPassphrase=${() => {}} onPassphraseVisible=${() => {}} />`,
-  );
+  const section = RestoreSection({
+    file: null,
+    passphrase: "",
+    passphraseVisible: false,
+    onFile() {},
+    onPassphrase() {},
+    onPassphraseVisible() {},
+  });
+  const out = renderToString(section);
   assert.match(out, /Restore from a backup/);
   assert.match(out, /emergency-kit passphrase/);
   assert.match(out, /type="file"/);
   assert.match(out, /type="password"/);
   assert.match(out, /autocomplete="off" autocorrect="off" autocapitalize="off"/);
+  const passphrase = section.props.children.find((child) => child?.props?.label === "Passphrase");
+  assert.equal(passphrase.props.children.props.spellcheck, false);
   assert.match(out, /Show passphrase/);
 });
 
@@ -115,11 +127,13 @@ test("the show-passphrase control reveals and masks the entered passphrase", asy
   const { inst, restore } = await appOn([stateFor("setup")]);
   inst.setState({ restoreMode: true, restorePassphrase: "fixture-pw" });
   const section = findVNode(inst.renderRestore(), RestoreSection);
-  section.props.onPassphraseVisible({ target: { checked: true } });
+  const toggle = () =>
+    RestoreSection(section.props).props.children.find(
+      (child) => child?.type === "label" && renderToString(child).includes("Show passphrase"),
+    ).props.children[0];
+  toggle().props.onChange({ target: { checked: true } });
   assert.match(renderToString(inst.render()), /type="text" value="fixture-pw"/);
-  findVNode(inst.renderRestore(), RestoreSection).props.onPassphraseVisible({
-    target: { checked: false },
-  });
+  toggle().props.onChange({ target: { checked: false } });
   assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
   restore();
 });
@@ -246,6 +260,13 @@ test("a rejected restore returns to restore mode with the reason, not the typed-
 });
 
 // --- the token gate: the lockout must read as actionable, not as a dead page -----------------
+
+test("gate errors are announced beside the Continue action", () => {
+  const out = renderToString(html`<${Gate} error="Wrong token." onSubmit=${() => {}} />`);
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Wrong token.") > out.indexOf("Token"));
+  assert.ok(out.indexOf("Wrong token.") < out.indexOf("Continue"));
+});
 
 test("auth: a 429 (lockout) shows the console-token message, not the generic wrong-token one", async () => {
   const inst = new WizardApp({});

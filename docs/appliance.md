@@ -522,7 +522,7 @@ next.
 
 **Restore it at setup.** Write a fresh image, boot the machine, and on the setup page choose
 "Restoring an existing Pithead? Upload its backup instead." above the form. Upload the archive
-and its passphrase; use **Show passphrase** to check the generated string while typing it. On the
+and its passphrase; use **Show passphrase** to check the string while typing it. On the
 installation medium, choose the target disk first; the upload fields then appear below it. The
 machine decrypts, validates, and provisions itself from what it
 restores — the same wallets, the same Tor onion address, the same dashboard login and history,
