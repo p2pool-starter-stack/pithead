@@ -118,6 +118,20 @@ comparable() { # <component> <owner/repo> <tag> -> the tag in that pin's spellin
     esac
 }
 
+run_go_raise_watch() { bash "$ROOT/scripts/watch/go-raise-watch.sh"; }
+
+finish_report() {
+    local raise_rc=0
+    if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
+        run_go_raise_watch || raise_rc=$?
+    fi
+    if [ "$failed" -eq 0 ] && [ "$raise_rc" -eq 0 ]; then
+        printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
+        return 0
+    fi
+    return 1
+}
+
 # --- self-test -----------------------------------------------------------------------------------
 # The comparison logic is the whole product here; the lookup itself is one `gh api` call. Drives
 # norm() over the real pin spellings, and both of the lookup's refusal paths over a stubbed `gh`.
@@ -189,6 +203,18 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
+    integration_root=$(mktemp -d)
+    trap 'rm -rf "$integration_root"' EXIT
+    mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
+    : >"$integration_root/os/rootfs/Dockerfile"
+    printf '%s\n' 'printf "raise-watch-called\n"' 'exit 1' >"$integration_root/scripts/watch/go-raise-watch.sh"
+    ROOT=$integration_root
+    failed=0
+    finish_rc=0
+    finish_out=$(finish_report) || finish_rc=$?
+    st "a failed Go raise watch fails the combined report" "$finish_rc" "1"
+    st "the combined report actually ran the Go raise watch" "$(grep -c raise-watch-called <<<"$finish_out")" "1"
+    st "a failed Go raise watch withholds the last-success stamp" "$(grep -c 'Last fully successful' <<<"$finish_out")" "0"
     [ "$st_fail" = 0 ] && echo "pin-watch self-test OK"
     exit "$st_fail"
 fi
@@ -289,9 +315,8 @@ fi
 printf '%s\n' "Also NOT checked: whether each image pin's digest still corresponds to its tag. The digest is what actually runs, so a half-done bump is invisible to the table above."
 if [ "$failed" -gt 0 ]; then
     printf '\n%s\n' "**$failed lookup(s) could not run — those rows are unchecked, not current.**"
-else
-    printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
 fi
 printf '\n%s\n' "<!-- pin-watch: stale=$stale failed=$failed -->"
 
-exit "$([ "$failed" -gt 0 ] && echo 1 || echo 0)"
+printf '\n'
+finish_report
