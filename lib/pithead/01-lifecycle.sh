@@ -113,7 +113,10 @@ remove_deactivated_profile_containers() {
 COMPOSE_UP_TRIES=${PITHEAD_COMPOSE_UP_TRIES:-3}
 COMPOSE_UP_PAUSE=${PITHEAD_COMPOSE_UP_PAUSE:-3}
 compose_up_checked() {
-    local tmp out rc try
+    # rc/out are seeded because the loop below may never run: a COMPOSE_UP_TRIES of 0, or any value
+    # `seq` refuses, yields no iterations, and an unset rc would be an `unbound variable` abort under
+    # the control runner's `set -u` rather than the honest "the up did not succeed" this returns.
+    local tmp out="" rc=1 try
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers

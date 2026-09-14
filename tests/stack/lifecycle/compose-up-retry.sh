@@ -112,3 +112,11 @@ out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_TRIES=1 PITHEAD_COMPOSE_UP_PAUSE=0 PATH="
 assert_rc "up with the count at 1 fails on the first try" "$?" "1"
 assert_eq "and calls compose up exactly once" "$(cat "$CUR_CALLS")" "1"
 assert_not_contains "announcing no retry it did not make" "$out" "retrying in"
+# And a count that yields no iterations at all (0, or anything `seq` refuses) must still come back
+# as an honest failure. The CLI runs under `set -Eeuo pipefail`, so an rc left unset by a loop that
+# never ran aborts the verb on `unbound variable` — a shell fault where a verdict belongs.
+cur_stub 99
+out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_TRIES=0 PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead up 2>&1)"
+assert_rc "up with a count of 0 fails rather than succeeding by default" "$?" "1"
+assert_not_contains "and fails as a verdict, not an unbound-variable abort" "$out" "unbound variable"
+assert_eq "having called compose up not at all" "$(cat "$CUR_CALLS")" ""
