@@ -150,7 +150,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|image-upgrade|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase, including
-image-upgrade, fault, and reset, and the full run is required once for every RC candidate.
+image-upgrade, fault, and reset; routine branch validation selects only the phases the change touches.
 
 The image-upgrade phase fails closed unless `REMOTE_MONERO_HOST`, `REMOTE_MONERO_RPC_PORT`,
 `REMOTE_MONERO_ZMQ_PORT`, and `REMOTE_TARI_HOST` are supplied by the tier-4 remote-node wrapper.

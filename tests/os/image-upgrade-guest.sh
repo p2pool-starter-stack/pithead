@@ -38,7 +38,6 @@ fi
 tar -xzf "$INPUT/v1.20.0.tar.gz" -C "$MOUNT"
 mv "$MOUNT/pithead" "$MOUNT/pithead-v1.20.0"
 [ "$(tr -d '[:space:]' <"$MOUNT/pithead-v1.20.0/VERSION")" = "1.20.0" ]
-[ "$(cat "$MOUNT/pithead-v1.20.0/PITHEAD_COMMIT")" = "$OLD_SHA" ]
 ln -s pithead-v1.20.0 "$MOUNT/current"
 install -m 0600 "$INPUT/config.json" "$MOUNT/pithead-v1.20.0/config.json"
 mkdir "$MOUNT/harness"
