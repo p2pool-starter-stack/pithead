@@ -82,6 +82,39 @@ health-gated commit, the migration hold). They have never been proven on real ha
 
 ---
 
+## The rig-role manual battery (M11–M14)
+
+Defined in [appliance-release.md](appliance-release.md). Required for any release that touches
+the rig role. The `rig` KVM phase only proves the wizard's
+rig card, role select, a submit toward a faked pool listener, volatile journald, a plain reboot,
+and the A/B update leg — so these four stay hands-on until #1886's first gap converts what it can
+and names a bench e2e for the rest. Each row below names the check that replaces it once that
+lands.
+
+- **M11 — rig install and mine.** Flash the same stick; boot a rig-class loaner (never a
+  production-only rig); choose RigForge; point it at a real coordinator. Expected: the rig card
+  shows worker + pool with no login, the coordinator's dashboard shows the worker with accepted
+  shares within minutes, `doctor` on the rig reports MSR applied and hugepages reserved, and
+  hashrate sits within the box's recorded baseline band. *Replaced by: the accepted-share and
+  `doctor` MSR/hugepages checks #1886's gap 1 still has to add — the KVM phase fakes the pool
+  listener and never accepts a share, and asserts nothing about MSR or hugepages.*
+- **M12 — rig from the coordinator's dashboard.** From the coordinator's Worker Inspect, adopt
+  the rig, apply one writable change (for example the donation level), and watch it reach
+  `applied`; confirm no pool credential was touched. *Replaced by: a dashboard-driven adopt/config
+  push check, not yet written — a rig serves no dashboard of its own, so nothing in the KVM `rig`
+  phase exercises this today.*
+- **M13 — rig power loss and rig update.** Cut power at the wall with the rig mining; it must
+  return mining unaided (Restore on AC power loss). Then install the release bundle on the rig and
+  confirm it comes back mining on the new slot and self-commits. *Replaced by: a power-cut leg on
+  the rig phase — the KVM phase already covers the update/slot-commit half with a plain reboot,
+  not a power cut, so only the power-loss half of this row is still open.*
+- **M14 — run-from-USB rig.** Boot the stick, choose RigForge, do **not** install to disk.
+  Expected: it mines from the stick; a reboot returns it mining; reaching the wizard again needs
+  the bootloader path (#1318). *Replaced by: a stick-root boot leg — the KVM phase always boots the
+  rig image as an installed disk, never as the stick itself.*
+
+---
+
 ## Cutting
 
 1. **Signing must be ON.** Confirm the preflight says so *before* answering the confirmation
