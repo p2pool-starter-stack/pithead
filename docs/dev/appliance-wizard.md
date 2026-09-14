@@ -234,7 +234,10 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
    on this box instead, an existing file winning on a name collision: a `wipe=keep` install
    target keeps its own synced chain data, and a restore must never force it into a resync
-   (#2195). The firstboot loop reaches this door unconditionally, before it ever checks whether
+   (#2195) — the opposite of the admin `pithead restore` CLI command's own collision rule
+   (`restore_commit_stage`'s `cp -a --remove-destination` lets the archive win instead, since an
+   operator running that command explicitly wants the archive back); nothing here changes that
+   path. The firstboot loop reaches this door unconditionally, before it ever checks whether
    `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
    gating on that presence used to skip the carried restore outright; `prepare_directories` (run
    by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
