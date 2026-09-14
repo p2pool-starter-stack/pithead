@@ -4,23 +4,15 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-  # Two Monday sweeps hang off this schedule, answering two different questions. Every other job
-  # gates itself off the event, so only these two run.
-  #
-  #   build-images  (#833) rebuilds every image from the branch and scans the rebuild: does what
-  #                 we are about to ship carry a CVE? It is the only sweep that can go red before
-  #                 a release, and the run reddening in the Actions tab is its alert.
-  #   sweep-shipped (#1313) scans what users are already running — the published ghcr images from
-  #                 `main`, each tag resolved to a digest and the digest scanned as published. A
-  #                 rebuild structurally cannot answer that: it resolves apt at scan time, so it
-  #                 picks up archive fixes the published bytes never got. It reports into a
-  #                 tracking issue rather than reddening, because "a shipped image has a fixable
-  #                 CVE" asks for a patch release, which is a decision a person makes.
-  #
-  # THIS cron block is the one that fires: `schedule:` is read from the DEFAULT branch only, and
-  # `develop` is it. `make lint-trivy-parity` covers sweep-shipped's trivy step. Change the cadence
-  # here, and prove it fired with `gh run list --json event` — a schedule that never runs looks
-  # exactly like one that ran and found nothing (#1162).
+  # Two Monday sweeps hang off this schedule (every other job gates itself off the event, so only
+  # these two run): build-images (#833) rebuilds this branch and scans the rebuild — the only
+  # sweep that can go red before a release. sweep-shipped (#1313) scans the published ghcr images
+  # by resolved digest — a rebuild resolves apt at scan time and would hide archive fixes the
+  # shipped bytes never got — and reports into a tracking issue rather than reddening, since a
+  # fixable CVE in a shipped image asks for a patch release, a person's decision.
+  # THIS cron block is the one that fires: `schedule:` reads from the DEFAULT branch only, and
+  # `develop` is it. Change the cadence here, and prove it fired with `gh run list --json event` —
+  # a schedule that never runs looks exactly like one that ran and found nothing (#1162).
   schedule:
     - cron: "0 5 * * 1" # Mondays 05:00 UTC
 
@@ -132,7 +124,7 @@ jobs:
       - name: docker build ./${{ matrix.context }}
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       - name: Scan image for CVEs (Trivy)
-        # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .trivyignore.
+        # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .config/trivyignore.
         # Must stay green before v1.1 images publish (#282).
         #
         # cache: false is load-bearing (#1159). The action caches the vulnerability database under
@@ -144,6 +136,8 @@ jobs:
         # Measured cost of downloading it every time: 108.49 MiB from mirror.gcr.io/aquasec/trivy-db
         # in 3.3s, against the 13.9s the ~997 MB cache restore was taking. It also returns ~7.5 GB of
         # the repo's 10 GB Actions cache budget, which was 92% near-duplicate copies of this one DB.
+        id: trivy-scan
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit on purpose (#1290) — the action's default engine moves whenever the action is
@@ -155,8 +149,14 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
           cache: "false"
+      - name: Retry Scan image for CVEs (Trivy)
+        if: steps.trivy-scan.outcome == 'failure'
+        uses: ./.github/actions/retry-trivy-scan
+        with:
+          image-ref: pithead-${{ matrix.service }}:ci
+          trivyignores: .config/trivyignore
 
   sweep-shipped:
     # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
@@ -196,9 +196,9 @@ jobs:
           ver="$(git show origin/main:VERSION)"
           [ -n "$ver" ] || { echo "::error::main carries no VERSION — cannot tell what shipped"; exit 1; }
           tag="v$ver"
-          # main's OWN .trivyignore, never develop's. A mute added after the cut would otherwise
-          # silence a finding in an image whose review never saw that mute.
-          git show origin/main:.trivyignore >main.trivyignore
+          # main's OWN .trivyignore, never develop's; tries the moved path, falls back to the
+          # pre-move root path until main carries #1901's move (PR #2201), then drop the fallback.
+          git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore
           repo="p2pool-starter-stack/pithead-$SERVICE"
           # The packages are public, so an anonymous pull token is enough — no registry secret
           # enters this workflow.
@@ -344,8 +344,8 @@ jobs:
             https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
           echo "56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010  /tmp/hadolint" | sha256sum -c -
           sudo install -m 0755 /tmp/hadolint /usr/local/bin/hadolint
-      - name: Lint all build/* and dashboard/ Dockerfiles (config in .hadolint.yaml)
-        run: hadolint build/*/Dockerfile dashboard/Dockerfile
+      - name: Lint all build/* and dashboard/ Dockerfiles (config in .config/hadolint.yaml)
+        run: hadolint --config .config/hadolint.yaml build/*/Dockerfile dashboard/Dockerfile
 
   python-lint:
     name: Python lint + format (ruff)
@@ -382,12 +382,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0  # full history so the scan covers every commit, not just the tip
       - name: Scan git history for secrets (gitleaks, pinned by digest)
-        # Run the binary via its pinned image (the gitleaks-action requires a license for org repos).
-        # Accepted false positives live in .gitleaks.toml.
+        # Run via the pinned image (gitleaks-action needs a license for org repos); accepted false
+        # positives live in .config/gitleaks.toml. --log-opts=HEAD scopes the scan to this ref's commits (#2203).
         run: |
           docker run --rm -v "$PWD":/repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            git /repo --no-banner --redact --config /repo/.gitleaks.toml
+            git /repo --no-banner --redact --config /repo/.config/gitleaks.toml --gitleaks-ignore-path /repo/.config/gitleaksignore --log-opts=HEAD
 
   zizmor:
     name: Workflow audit (zizmor)
