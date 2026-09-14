@@ -116,6 +116,14 @@ run_sourced() {
     )
 }
 
+# Run a sourced function with pithead's production shell options intact. Control-runner tests use
+# this variant so an unguarded failure aborts the request exactly as it does in the systemd unit.
+run_sourced_e() {
+    local dir="$1"
+    shift
+    bash -Eeuo pipefail -c 'cd "$1"; source "$2"; shift 2; "$@"' _ "$dir" "$STACK" "$@"
+}
+
 # Poll CHECK (a predicate function name) until it succeeds, but never past the point where PID
 # has already exited -- callers learn "the process gave up trying" rather than counting ticks
 # that a loaded box may not owe it (#1495: a fixed 200x0.05s budget reddened the #1342 mutation-
