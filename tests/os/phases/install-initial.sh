@@ -21,12 +21,11 @@ _phase_install_initial() {
     # two disks beyond doubt.
     qemu-img create -f raw "$target_disk" 30G >/dev/null
     # M4's wrong-disk guard: a disk holding unrelated data that must be OFFERED for erasure and
-    # left alone when the operator installs to the target instead. scsi (not virtio) because only
-    # scsi/usb carry an INQUIRY vendor/product — virtio-blk has no such field, so this is the only
-    # bus on which lsblk's MODEL column can ever be non-blank. serial= works on either bus, so the
-    # target also gets one; its MODEL stays "unknown" as a real NVMe/virtio target's often does.
+    # left alone when the operator installs to the target instead. scsi (not virtio) gives QEMU's
+    # native SCSI model; virtio-blk has no such field. serial= works on either bus, so the target
+    # also gets one; its MODEL stays "unknown" as a real NVMe/virtio target's often does.
     local foreign_disk="/srv/code/bench-vm/pithead-foreign.img"
-    local foreign_serial="PHFOREIGN01" foreign_model="ForeignDisk" target_serial="PHTARGET01"
+    local foreign_serial="PHFOREIGN01" foreign_model="QEMU HARDDISK" target_serial="PHTARGET01"
     # The stick gets one as well — not for the inventory's sake (it must never appear there) but
     # so the exclusion assertion below has an expectation the HARNESS owns. See that assertion.
     local stick_serial="PHSTICK01"
@@ -49,7 +48,7 @@ _phase_install_initial() {
         --import \
         --disk "path=$DISK,format=raw,bus=usb,removable=on,serial=$stick_serial,boot.order=1" \
         --disk "path=$target_disk,format=raw,bus=virtio,serial=$target_serial,boot.order=2" \
-        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
+        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
         bad "virt-install failed to define the installer VM: $(printf '%s' "$virt_install_err" | tail -3 | tr '\n' ' ' | cut -c1-300)"
@@ -90,8 +89,8 @@ _phase_install_initial() {
         bad "inventory does not offer vda — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
         return 1
     fi
-    # Echo the row itself: whether libvirt's vendor/product really reaches lsblk's MODEL column
-    # is not knowable by inspection, so the log has to carry the observed evidence.
+    # Echo the row itself: whether QEMU's native SCSI model reaches lsblk's MODEL column is not
+    # knowable by inspection, so the log has to carry the observed evidence.
     local foreign_row
     foreign_row=$(printf '%s' "$out" | grep -F "$(printf '%s\t%s\tempty' "$foreign_model" "$foreign_serial")" | head -1)
     if [ -n "$foreign_row" ]; then
@@ -218,7 +217,7 @@ _phase_install_initial() {
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$target_disk,format=raw,bus=virtio" \
-        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
+        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
         bad "virt-install failed to define the installed VM: $(printf '%s' "$virt_install_err" | tail -3 | tr '\n' ' ' | cut -c1-300)"
