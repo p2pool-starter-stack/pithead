@@ -26,9 +26,15 @@ check_installer_cache() {
             fail=1
             continue
         fi
-        n_trivy=$(grep -c 'uses:.*aquasecurity/trivy-action@' "$f")
-        n_install=$(grep -c 'uses:[[:space:]]*\./.github/actions/install-trivy' "$f")
-        n_skip=$(grep -c 'skip-setup-trivy:[[:space:]]*true' "$f")
+        # `|| true` on each: a zero-match grep -c exits 1, and under `set -e` an unguarded
+        # `var=$(grep -c ...)` at top level kills the whole script right here — silently, before
+        # the MISMATCH line or the Fix: hint ever print, and before the loop reaches the other
+        # workflow files. That defeats the one thing this script exists to add over a bare
+        # workflow failure: a named diagnostic. Exactly this case (a missing install-trivy step,
+        # or a missing skip-setup-trivy: true) is what the self-test below asserts on.
+        n_trivy=$(grep -c 'uses:.*aquasecurity/trivy-action@' "$f" || true)
+        n_install=$(grep -c 'uses:[[:space:]]*\./.github/actions/install-trivy' "$f" || true)
+        n_skip=$(grep -c 'skip-setup-trivy:[[:space:]]*true' "$f" || true)
         if [ "$n_trivy" -eq 0 ] || [ "$n_trivy" -ne "$n_install" ] || [ "$n_trivy" -ne "$n_skip" ]; then
             echo "$base: MISMATCH — $n_trivy trivy-action step(s), $n_install install-trivy step(s), $n_skip skip-setup-trivy: true line(s)"
             fail=1
@@ -93,6 +99,14 @@ if [ "${1:-}" = "--self-test" ]; then
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "missing install step -> rc 1" "$rc" "1"
+    # Asserted on TEXT, not just rc: rc alone doesn't catch a `set -e` kill mid-loop, which
+    # produces the same rc=1 with zero diagnostic output — the exact bug that shipped once.
+    st "missing install step -> names the file and the 0-vs-1 mismatch" \
+        "$(printf '%s\n' "$out" | grep -c 'ci2.yml: MISMATCH — 1 trivy-action step(s), 0 install-trivy step(s)')" "1"
+    st "missing install step -> still reaches and reports the other two files" \
+        "$(printf '%s\n' "$out" | grep -c 'all paired')" "2"
+    st "missing install step -> prints the Fix: hint" \
+        "$(printf '%s\n' "$out" | grep -c '^Fix: ')" "1"
 
     missing_skip="$tmp/ci3.yml"
     write_file "$missing_skip" 1 0
@@ -100,6 +114,8 @@ if [ "${1:-}" = "--self-test" ]; then
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "missing skip-setup-trivy -> rc 1" "$rc" "1"
+    st "missing skip-setup-trivy -> names the file and the 0-vs-1 mismatch" \
+        "$(printf '%s\n' "$out" | grep -c 'ci3.yml: MISMATCH — 1 trivy-action step(s), 1 install-trivy step(s), 0 skip-setup-trivy: true line(s)')" "1"
 
     no_step="$tmp/ci4.yml"
     printf 'jobs:\n  j:\n    steps:\n      - run: echo hi\n' >"$no_step"
@@ -107,6 +123,8 @@ if [ "${1:-}" = "--self-test" ]; then
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "no trivy-action step at all -> rc 1 (never a vacuous pass)" "$rc" "1"
+    st "no trivy-action step at all -> names the 0-vs-0-vs-0 mismatch, not a silent kill" \
+        "$(printf '%s\n' "$out" | grep -c 'ci4.yml: MISMATCH — 0 trivy-action step(s)')" "1"
 
     echo "lint-trivy-installer-cache self-test: $pass ok, $fail_ct failed"
     [ "$fail_ct" -eq 0 ]
