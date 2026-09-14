@@ -4,7 +4,10 @@ The Tari gRPC client and its generated protobuf stubs.
 
 ## Generate Protobuf Files
 
-Ensure `base_node.proto` and `types.proto` are in the `proto/` subdirectory, then run:
+The eight files in `proto/` are byte-identical to
+`applications/minotari_app_grpc/proto/` at Tari commit
+`f42e14ddac360db0bda56eff43e6c7e00167fb10`. Replace all eight files together from one upstream
+ref, then run:
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work ghcr.io/astral-sh/uv:0.12.13-python3.11-trixie-slim \
