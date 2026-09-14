@@ -139,8 +139,10 @@ ARG COMPOSE_GO_RAISES="example.test/active@v1.2.0 example.test/noop@v1.2.0"
 ARG COSIGN_GO_RAISES="example.test/down@v1.0.0"
 EOF
     DOCKERFILE="$fixture"
-    mkdir -p "$graph/active" "$graph/noop" "$graph/down"
-    for module in active noop down; do
+    mkdir -p "$graph/active-old" "$graph/active-new" "$graph/noop" "$graph/down"
+    printf 'module example.test/active\n\ngo 1.21\n\nrequire example.test/noop v1.1.0\n' >"$graph/active-old/go.mod"
+    printf 'module example.test/active\n\ngo 1.21\n\nrequire example.test/noop v1.2.0\n' >"$graph/active-new/go.mod"
+    for module in noop down; do
         printf 'module example.test/%s\n\ngo 1.21\n' "$module" >"$graph/$module/go.mod"
     done
     cat >"$graph/go.mod" <<EOF
@@ -150,11 +152,11 @@ go 1.21
 
 require (
 	example.test/active v1.1.0
-	example.test/noop v1.2.0
 	example.test/down v1.2.0
 )
 
-replace example.test/active => ./active
+replace example.test/active v1.1.0 => ./active-old
+replace example.test/active v1.2.0 => ./active-new
 replace example.test/noop => ./noop
 replace example.test/down => ./down
 EOF
