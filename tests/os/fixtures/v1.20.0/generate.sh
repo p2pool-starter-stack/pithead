@@ -4,7 +4,7 @@ set -euo pipefail
 
 out=${1:?usage: generate.sh OUTPUT_DIRECTORY}
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'sudo rm -rf "$work"' EXIT
 
 readonly TAG=v1.20.0
 readonly BUNDLE_SHA256=77071195f5e8ef07b68a7bde9db20d30c0e64cfb561280d962d555acc03a6d4b
