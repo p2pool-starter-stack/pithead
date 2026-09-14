@@ -82,16 +82,51 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         bad "faulted setup credentials could not be acknowledged"
         return 1
     fi
-    # 25 minutes (seq 300 x 5s), not the old leg's 5: the fault now fires deep into setup — after
+    # 25 minutes (seq 1500 x 1s), not the old leg's 5: the fault now fires deep into setup — after
     # Tor is fully provisioned, the Caddyfile and control-runner units are written, and stack_up has
     # started pulling every first-party image — not at provision_tor's early 60s Tor timeout, and
     # this same suite already budgets 1500s elsewhere (provision-initial.sh) for a first-time image
-    # pull to finish.
-    if ! _ssh "for i in \$(seq 300); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live' && exit 0; sleep 5; done; exit 1"; then
+    # pull to finish. 1s granularity, not 5s: the marker's whole "true" window — from provision_tor's
+    # success to the (setup) subshell's exit — measured under a minute on the bench (#2061), so a
+    # coarser poll risked landing entirely between samples.
+    #
+    # THE DISCRIMINATING ASSERTION (#2061, the operator's return on this leg): the row above just
+    # proves the guest recorded SOME failure — it read exactly the same whether the fault fired
+    # before DEPLOYMENT_COMPLETED was ever set (the #2050 regression this leg replaced) or after.
+    # This loop instead watches .env on every poll and remembers whether it ever caught the marker
+    # `true`, then — at the exact instant it also sees the recorded failure — reads .env's CURRENT
+    # value. A fault that regressed to firing at provision_tor's Tor-hidden-service wait (like the
+    # #2050 stub) leaves .env at the bootstrap render_env's DEPLOYMENT_COMPLETED=false the entire
+    # time — `seen` stays 0 and this turns the row red, rather than printing the same green message
+    # the old arming did on a claim it never actually exercised.
+    local envf=/data/pithead/.env marker_seen="" marker_at_failure="" fault_report=""
+    if ! fault_report=$(_ssh "seen=0
+        for i in \$(seq 1500); do
+            grep -q '^DEPLOYMENT_COMPLETED=true\$' '$envf' 2>/dev/null && seen=1
+            if test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live'; then
+                printf 'seen=%s at_failure=%s\n' \"\$seen\" \"\$(grep '^DEPLOYMENT_COMPLETED=' '$envf' 2>/dev/null)\"
+                exit 0
+            fi
+            sleep 1
+        done
+        exit 1"); then
         restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
         bad "the armed host setup fault never returned a recorded failure"
         return 1
     fi
+    marker_seen=$(printf '%s' "$fault_report" | grep -oE 'seen=[01]' | cut -d= -f2)
+    marker_at_failure=$(printf '%s' "$fault_report" | sed -n 's/.*at_failure=DEPLOYMENT_COMPLETED=//p' | tr -d '\r')
+    if [ "$marker_seen" != "1" ]; then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
+        bad "DEPLOYMENT_COMPLETED was never observed true before the recorded failure — the fault fired before the marker was ever set (a #2050-style regression), not after it (raw: '$fault_report')"
+        return 1
+    fi
+    if [ "$marker_at_failure" != "false" ]; then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
+        bad "DEPLOYMENT_COMPLETED was not cleared by the time the failure was recorded (read '${marker_at_failure:-unset}') — #2054's clear did not run on this fault"
+        return 1
+    fi
+    ok "DEPLOYMENT_COMPLETED was observed true before the fault fired, and false by the time the failure was recorded — the marker was set, then cleared, not skipped (#2054, #2061)"
     if restore_setup_fault; then
         ok "post-marker setup fault cleanup restores the exact Compose file"
     else
