@@ -259,6 +259,23 @@ test("a rejected restore returns to restore mode with the reason, not the typed-
   restore();
 });
 
+test("a restore network failure shows an actionable error beside the retry", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  const file = new File([new Uint8Array(4)], "backup.tar.gz.enc");
+  inst.setState({ restoreMode: true, restoreFile: file });
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  await inst.submitRestore({ preventDefault() {} });
+  globalThis.fetch = real;
+  assert.match(inst.state.error, /Could not reach this machine/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf(inst.state.error) < out.indexOf("Restore and provision"));
+  restore();
+});
+
 // --- the token gate: the lockout must read as actionable, not as a dead page -----------------
 
 test("gate errors are announced beside the Continue action", () => {
