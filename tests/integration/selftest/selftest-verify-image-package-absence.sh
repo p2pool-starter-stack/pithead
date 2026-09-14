@@ -19,7 +19,7 @@ check() { # <name> <root> <want-rc>
 }
 
 mkdir -p "$TMP/absent/var/lib/dpkg"
-printf 'Package: jq\nStatus: install ok installed\n' >"$TMP/absent/var/lib/dpkg/status"
+printf 'Package: jq\nStatus: install ok installed\nDescription: JSON processor\n continuation line\n' >"$TMP/absent/var/lib/dpkg/status"
 check "another installed package does not mask xxd absence" "$TMP/absent" 0
 
 mkdir -p "$TMP/present/var/lib/dpkg"
@@ -27,7 +27,7 @@ printf 'Package: xxd\nStatus: install ok installed\n' >"$TMP/present/var/lib/dpk
 check "an installed xxd package is rejected" "$TMP/present" 1
 
 mkdir -p "$TMP/malformed/var/lib/dpkg"
-printf 'not a status stanza\n' >"$TMP/malformed/var/lib/dpkg/status"
+printf 'Package: jq\nStatus: install ok installed\nnot a status field\n' >"$TMP/malformed/var/lib/dpkg/status"
 check "malformed status metadata is rejected, not mistaken for absence" "$TMP/malformed" 1
 
 echo "selftest-verify-image-package-absence: $IT_PASS passed, $IT_FAIL failed"

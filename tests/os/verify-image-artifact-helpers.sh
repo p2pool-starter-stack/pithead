@@ -37,10 +37,19 @@ package_absent() { # <image-root> <package> — 0 iff a readable dpkg status has
     local status="$1/var/lib/dpkg/status" rc=0
     [ -f "$status" ] && [ -s "$status" ] || return 1
     awk -v wanted="$2" 'BEGIN { RS=""; FS="\n" }
-        { package = status = 0
+        { package = status = field = 0
           for (i = 1; i <= NF; i++) {
-              if ($i ~ /^Package: /) { package++; if ($i == "Package: " wanted) found = 1 }
-              if ($i ~ /^Status: /) status++
+              if ($i ~ /^[A-Za-z0-9][A-Za-z0-9-]*:($| )/) field = 1
+              else if ($i !~ /^[ \t]/ || !field) malformed = 1
+              if ($i ~ /^Package: /) {
+                  package++
+                  if ($i !~ /^Package: [a-z0-9][a-z0-9+.-]*$/) malformed = 1
+                  if ($i == "Package: " wanted) found = 1
+              }
+              if ($i ~ /^Status: /) {
+                  status++
+                  if ($i !~ /^Status: [a-z-]+ [a-z-]+ [a-z-]+$/) malformed = 1
+              }
           }
           if (package != 1 || status != 1) malformed = 1 }
         END { exit malformed || !NR ? 2 : found ? 1 : 0 }' "$status" || rc=$?
