@@ -191,7 +191,7 @@ assert_eq "worker append preview is rejected, not previewed for approval" "$(jq 
 jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
 assert_eq "a self-written envelope does not commit a worker append" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
-assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host // "unset"' "$C/config.json")" "unset"
+assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '[.workers.list[] | select(.name=="rig-2")] | length' "$C/config.json")" "0"
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
@@ -217,9 +217,13 @@ jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,act
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "payout preview marks the sensitive class" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
-assert_eq "payout preview old value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .old' "$RESULTS/$UUID3.json")" "$WALLET"
-assert_eq "payout preview new value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .new' "$RESULTS/$UUID3.json")" "$NEW_WALLET"
+# These three rows read "marks the sensitive class" and previewed both wallet values in full,
+# which is exactly the edit-then-reject the gate then performed: a payout address is in no
+# committable tier, so the preview now REFUSES it and names the key (2026-09-13 perimeter audit
+# round 2). Preview and gate reach the same verdict, which is what #613 asks of them.
+assert_eq "payout preview is refused, not offered for approval" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "payout preview refusal names the key" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_WALLET_ADDRESS"
+assert_eq "payout preview leaks no wallet value into the result" "$(jq -r '.preview_values // "none"' "$RESULTS/$UUID3.json")" "none"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:"wrong"}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "wrong payout suffix is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"

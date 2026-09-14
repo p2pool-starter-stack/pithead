@@ -69,8 +69,8 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
 jq '.dashboard.auth={username:"admin"} | .dashboard.control={enabled:false}' "$C/config.json" >"$C/cand.json"
 jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
 run_pending >/dev/null
-assert_eq "auth-disable previews destructive:false (DEST alone would allow it)" \
-    "$(jq -r '.destructive' "$RESULTS/$UUID5.json" 2>/dev/null)" "false"
+# Preview REFUSES it now (round 2 of the perimeter audit) instead of calling it committable.
+assert_eq "auth-disable preview is refused, not previewed as committable" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "dashboard-login disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -179,7 +179,7 @@ assert_eq "workers.list REMOVAL of an existing entry is refused" "$(jq -r '.stat
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "workers.list append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "safe worker append names the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "safe worker append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a

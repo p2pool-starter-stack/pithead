@@ -277,7 +277,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 hit="${hit:-unparseable change row}"
             fi
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "this change alters a security-sensitive setting ($hit) that is not committable from the dashboard. $(_control_host_remedy)" '{status:"rejected",error:$e,ts:(now|floor)}')"
-            rm -f "$staged" "$errf"
+            # The staged intent STAYS (unlike a validation failure) so a commit attempt still
+            # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
+            rm -f "$errf"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
             return 0
         fi
