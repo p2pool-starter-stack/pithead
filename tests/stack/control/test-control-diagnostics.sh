@@ -74,18 +74,25 @@ export PITHEAD_SELF="$DGC/self"
 export DIAG_SELF_LOG="$DGC/self.log"
 export DIAG_DOCKER_LOG="$DGC/docker.log"
 
-# The stub is on PATH only for the duration of the call, in a subshell of run_sourced's own, so
+# The stub is on PATH only for the duration of the call, in a subshell of run_sourced_e's own, so
 # nothing here can leak a stub docker into a sibling domain.
 diag_run() { # <request-file>
     (
         export PATH="$DGC/bin:$PATH"
-        run_sourced "$SANDBOX" control_process_request "$1" "$DGC"
+        run_sourced_e "$SANDBOX" control_process_request "$1" "$DGC"
     ) >/dev/null 2>&1
 }
 diag_req() { # <id> <action> [extra json body] -> writes and echoes the request path
     printf '{"id":"%s","action":"%s","actor":"admin"%s}\n' "$1" "$2" "${3:-}" >"$DGC/req-$1.json"
     printf '%s\n' "$DGC/req-$1.json"
 }
+
+# ---------------------------------------------------------------------------
+echo "== control channel: sourced runner calls keep production errexit (#2095) =="
+out=$(run_sourced_e "$SANDBOX" eval 'false; printf reached')
+rc=$?
+assert_rc "a failing sourced runner call exits non-zero" "$rc" "1"
+assert_eq "errexit stops the sourced call at its first failure" "$out" ""
 
 # ---------------------------------------------------------------------------
 echo "== control channel: diag-doctor returns a nested, redacted document (#913) =="
@@ -121,8 +128,8 @@ assert_eq "a non-zero doctor rc with a readable report still applies (rc is a fa
 assert_eq "and the bad news it carries is preserved, not flattened away" \
     "$(jq -r '.doctor.exit' "$DGC/results/$did2.json")" "1"
 
-# The same case again, under the runner's OWN shell options. `run_sourced` calls `set +e`, and the
-# unit does not: pithead's prelude runs under `set -e`, so capturing a nonzero doctor aborted the
+# The same case again, under the runner's OWN shell options. `run_sourced_e` preserves the
+# prelude's `set -e`, so capturing a nonzero doctor used to abort the
 # whole runner before the branch that writes a result could run. Measured on a provisioned
 # appliance (#2060): the unit died with "pithead aborted unexpectedly (exit 1)", the audit stopped
 # at `diag-doctor -> started`, no result document was ever written, and the caller polled four
@@ -131,14 +138,8 @@ assert_eq "and the bad news it carries is preserved, not flattened away" \
 did_e="b1b1b1b1-0000-4000-8000-00000000000e"
 export DIAG_DOCTOR_MODE=failcount
 diag_req "$did_e" diag-doctor >/dev/null
-(
-    cd "$SANDBOX" || exit 1
-    # shellcheck source=/dev/null
-    source "$STACK"
-    export PATH="$DGC/bin:$PATH"
-    set -e
-    control_process_request "$DGC/req-$did_e.json" "$DGC"
-) >/dev/null 2>&1
+PATH="$DGC/bin:$PATH" run_sourced_e "$SANDBOX" \
+    control_process_request "$DGC/req-$did_e.json" "$DGC" >/dev/null 2>&1
 assert_eq "a nonzero doctor under the runner's own errexit still writes its result" \
     "$(jq -r .status "$DGC/results/$did_e.json" 2>/dev/null)" "applied"
 assert_eq "and under errexit the bad news still survives" \
