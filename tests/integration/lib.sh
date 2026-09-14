@@ -379,7 +379,7 @@ control_units_verdict() { # <doctor-output>
 monero_caught_up() { # 0 caught up / 1 answered, behind / ANY other could-not-ask: 2 no usable body, 255 ssh
     rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env 2>/dev/null | cut -d= -f2-);
         p=$(grep -E "^MONERO_NODE_PASSWORD=" .env 2>/dev/null | cut -d= -f2-);
-        url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=$(jq -r "if (.monero.mode // \"local\") == \"remote\" and .monero.remote.host then \"http://\" + .monero.remote.host + \":\" + ((.monero.remote.rpc_port // 18081) | tostring) else \"http://127.0.0.1:18081\" end" config.json 2>/dev/null); [ -n "$url" ] || url="http://127.0.0.1:18081";
+        url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=$(jq -r "if (.monero.mode // \"local\") == \"remote\" and .monero.remote.host then (.monero.remote.host | if contains(\":\") then \"[\" + . + \"]\" else . end) as \$host | \"http://\" + \$host + \":\" + ((.monero.remote.rpc_port // 18081) | tostring) else \"http://127.0.0.1:18081\" end" config.json 2>/dev/null); [ -n "$url" ] || url="http://127.0.0.1:18081";
         if [ -n "$u" ]; then body=$(printf "user = %s\n" "$(printf "%s:%s" "$u" "$p" | jq -Rs .)" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null);
         else body=$(curl -fsS --max-time 8 "$url/get_info" 2>/dev/null); fi;
         [ -n "$body" ] || exit 2; printf "%s" "$body" | jq -e "(.status==\"OK\") and ((.synchronized==true) or (.target_height==0))" >/dev/null 2>&1; case $? in 0) exit 0 ;; 1) exit 1 ;; *) exit 2 ;; esac'

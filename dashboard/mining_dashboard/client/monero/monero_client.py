@@ -17,8 +17,8 @@ class MoneroClient:
     """
     Reads monerod state from its `get_info` RPC instead of scraping docker logs.
 
-    The dashboard runs `network_mode: host` and monerod publishes 127.0.0.1:18081, so
-    the RPC is directly reachable. Reading height/target_height from `get_info` is
+    The rendered RPC URL selects the host-published local node or the configured remote node.
+    Reading height/target_height from `get_info` is
     format-stable, unlike the log line (which broke once already when v0.18.x changed
     "Synced N/M" to "... top block candidate: X -> Y").
 

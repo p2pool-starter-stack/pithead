@@ -272,3 +272,4 @@ assert_eq "an ordinary allowlisted change still commits" "$(jq -r '.status' "$RE
 # both directions keeps the rule narrow instead of "emit everything", which refuses every commit.
 assert_contains "the settable spend key has a describe_change message" "$(run_sourced "$C" describe_change TARI_SPEND_PUBLIC_KEY "" "$SILENT_SPEND")" "spend key"
 assert_eq "its fixed-internal siblings stay silent" "$(run_sourced "$C" describe_change TARI_WALLET_GRPC_ADDRESS a b | tr -d '\t')" "INFO"
+assert_eq "the derived Monero RPC URL stays behind its source endpoint rows" "$(run_sourced "$C" describe_change MONERO_RPC_URL a b | tr -d '\t')" "INFO"
