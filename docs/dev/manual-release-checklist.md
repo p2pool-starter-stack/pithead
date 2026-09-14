@@ -89,8 +89,8 @@ the rig role. The `rig` KVM phase only proves the wizard's
 rig card, role select, a submit toward a faked pool listener, volatile journald, a plain reboot,
 and the A/B update leg — so these three stay hands-on until #1886's first gap converts what it can
 and names a bench e2e for the rest. Each row below names the check that replaces it once that
-lands. M14 (run-from-USB) no longer needs a hand-run: the `rig-media` KVM phase
-(`tests/os/phases/rig-media.sh`, #2069) covers it — see the row below for what it proves and
+lands. M14 (run-from-USB) no longer needs a hand-run: the `rigmedia` KVM phase
+(`tests/os/phases/rigmedia.sh`, #2069) covers it — see the row below for what it proves and
 what it still leaves out.
 
 - **M11 — rig install and mine.** Flash the same stick; boot a rig-class loaner (never a
@@ -112,8 +112,8 @@ what it still leaves out.
   not a power cut, so only the power-loss half of this row is still open.*
 - **M14 — run-from-USB rig. AUTOMATED (#2069).** Boot the stick, choose RigForge, do **not**
   install to disk. Expected: it mines from the stick; a reboot returns it mining; reaching the
-  wizard again needs the bootloader path (#1318). *Replaced by: the `rig-media` KVM phase
-  (`tests/os/phases/rig-media.sh`), which boots the image as removable media beside a blank
+  wizard again needs the bootloader path (#1318). *Replaced by: the `rigmedia` KVM phase
+  (`tests/os/phases/rigmedia.sh`), which boots the image as removable media beside a blank
   internal disk, answers RigForge with no install offered, and asserts the stick-run rig mines
   the baked binary with no containers, volatile journald, an unaided reboot returns it mining,
   and the blank disk stays byte-for-byte untouched. Still manual: reaching the wizard again via
