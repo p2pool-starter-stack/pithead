@@ -27,7 +27,7 @@ dashboard, no Linux to set up.
 | Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
-| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Plan for ~530 GB of SSD with both Monero and Tari local, in either prune mode. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
+| Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | Software | Docker Engine, Docker Compose V2, `jq`, and `openssl`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
@@ -35,8 +35,8 @@ dashboard, no Linux to set up.
 > [RigForge](https://github.com/p2pool-starter-stack/rigforge).
 
 > 🔎 `setup` checks this for you. Before it starts anything, `./pithead setup` runs a best-effort
-> pre-flight on free disk and total RAM. If either is below the recommended minimums (~530 GB
-> with both nodes local, 16 GB RAM), it prints a warning. The disk figure follows the node
+> pre-flight on free disk and total RAM. If free disk is below the enforced budget (528 GiB
+> with both nodes local) or RAM is below the 16 GB floor, it prints a warning. The disk figure follows the node
 > modes you configured; the 16 GB RAM warning fires regardless. It never blocks setup, so you can
 > proceed on a smaller host at your own risk. See **[Hardware Requirements](hardware.md)**.
 
@@ -112,7 +112,7 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      asks nothing further and stores no Tari address; nothing merge-mines and no Tari node runs.
      The wizard writes `tari.mode` explicitly whichever way you answer, so the answer survives.
      The default offered depends on free disk where `./data` will live: the bundled Tari node
-     needs its own ~200 GB chain on top of Monero's, so a host with room for the whole stack is
+     adds a 200 GiB budget on top of Monero's, so a host with room for the whole stack is
      offered yes and one without is offered no. The wizard prints the figure it measured and the
      one it compared against, and the answer is yours either way. Changeable later from the
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.

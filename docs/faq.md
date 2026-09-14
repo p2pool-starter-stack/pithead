@@ -131,7 +131,7 @@ covers Tari's *sync* holds: set it to `false` to also skip waiting for Tari's in
 keep the normal dashboard (instead of the full-screen Sync view) during a Tari resync. You can also
 decline merge-mining altogether with `tari.mode: off`, or keep it and move the node:
 `tari.mode: remote` points P2Pool's merge-mine leg at a Minotari node you run elsewhere. Either
-way no `minotari_node` container starts here and its ~200 GB leaves the disk budget. Both are
+way no `minotari_node` container starts here and its 200 GiB leaves the disk budget. Both are
 changeable later from the dashboard's Configuration view behind a typed `APPLY`, and switching to
 `off` keeps the chain on disk. See
 [Configuration › `dashboard.tari_required`](configuration.md#configuration-reference) and
@@ -150,11 +150,12 @@ too: point `tari.data_dir` at an existing Minotari directory, or set `tari.mode:
 ### What hardware do I need?
 
 Plan for 16 GB+ RAM, a 64-bit x86 CPU (AVX2 strongly recommended — RandomX runs far slower without
-it, and setup only warns), and an SSD (~530 GB minimum with both nodes local in either prune mode;
-Monero's chain budget is ~320 GB and Tari's is ~200 GB). Both chains keep growing, so a 2–4 TB
+it, and setup only warns), and an SSD (600 GB+ with both nodes local in either prune mode;
+Monero's enforced budget is 320 GiB and Tari's is 200 GiB). Both chains keep growing, so a 2–4 TB
 drive is the set-and-forget choice. Those figures assume both nodes run here. A remote node cuts
 the disk budget — `tari.mode: remote` alone
-takes the total from ~530 GB to ~330 GB — while the 16 GB RAM floor stays as-is, since
+takes the enforced total from 528 GiB to 328 GiB, so the purchasable floor drops from 600 GB to
+370 GB — while the 16 GB RAM floor stays as-is, since
 HugePages and P2Pool don't shrink. Full sizing and the per-mode totals are in
 [Hardware Requirements](hardware.md). (Miner hardware is sized separately in
 [RigForge](https://github.com/p2pool-starter-stack/rigforge).)

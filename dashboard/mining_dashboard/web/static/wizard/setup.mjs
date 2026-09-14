@@ -260,15 +260,15 @@ export function renderSetup(app) {
                   !remoteMonero &&
                   html`<${Field} label="Chain size">
                     <select value=${String(v("prune") ?? true)} onChange=${on("prune")}>
-                        <option value="true">Pruned — about 320 GB (default, mines exactly the same)</option>
-                        <option value="false">Full — about 320 GB (only if you need the whole chain)</option>
+                        <option value="true">Pruned — 320 GiB budget (default, mines exactly the same)</option>
+                        <option value="false">Full — 320 GiB budget (only if you need the whole chain)</option>
                     </select>
                 <//>
                 ${
                   tariMode !== "off" &&
-                  html`<${Note}>A local Tari node adds about 200 GB on top. Under roughly 350 GB
-                    of disk, pruned Monero plus a ${" "}<em>remote</em>${" "}Tari node is the
-                    combination that fits.<//>`
+                  html`<${Note}>A local Tari node adds a 200 GiB budget. At 370 GB, local Monero
+                    plus a ${" "}<em>remote</em>${" "}Tari node is the combination that fits;
+                    both local need a 600 GB disk.<//>`
                 }`
                 }
                 <${Field} label="Healthchecks.io ping URL">

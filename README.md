@@ -107,8 +107,9 @@ cp config.minimal.json config.json   # then set your Monero + Tari payout addres
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
 
-> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (~530 GB in either prune mode
-> minimum with both nodes local; the chains grow ~100+ GB/year, so 2–4 TB avoids a later resize),
+> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
+> with both nodes local, or 370 GB+ with Tari remote; the chains grow ~100+ GB/year, so 2–4 TB
+> avoids a later resize),
 > and your Monero + Tari payout addresses. Running a node on another machine cuts the disk budget —
 > full sizing in [Hardware Requirements](docs/hardware.md).
 

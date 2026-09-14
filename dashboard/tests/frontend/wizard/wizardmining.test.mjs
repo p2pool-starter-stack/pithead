@@ -198,22 +198,25 @@ test("the disk cost of saying yes is stated before the answer, not after it (#18
   // that is cheap to make has to state what it costs to accept, so the figure sits on the
   // question itself and shows at every answer, off included.
   for (const mode of ["off", "local", "remote"]) {
-    assert.match(renderToString(setupOn(mode).tree), /about 200 GB/, mode);
+    assert.match(renderToString(setupOn(mode).tree), /200 GiB disk budget/, mode);
   }
 });
 
 test("the advanced chain-size choice states the current Monero disk budget (#1502)", () => {
-  assert.match(renderToString(setupOn("off").tree), /Pruned — about 320 GB/);
+  assert.match(renderToString(setupOn("off").tree), /Pruned — 320 GiB budget/);
 });
 
 test("the chain-size advice stops citing a Tari node on a machine that has none (#1855)", () => {
-  // Advanced's "pruned Monero plus a remote Tari node is the combination that fits" is disk
+  // Advanced's "local Monero plus a remote Tari node is the combination that fits" is disk
   // arithmetic for a machine that runs Tari. With Tari off it is advice about software this
   // machine will not install. It is right for BOTH yes answers — that is what makes the gate a
   // gate on the decline and not on the remote branch.
   assert.doesNotMatch(renderToString(setupOn("off").tree), /combination that fits/);
-  assert.match(renderToString(setupOn("local").tree), /combination that fits/);
-  assert.match(renderToString(setupOn("remote").tree), /combination that fits/);
+  for (const mode of ["local", "remote"]) {
+    const out = renderToString(setupOn(mode).tree);
+    assert.match(out, /At 370 GB/, mode);
+    assert.match(out, /both local need a 600 GB disk/, mode);
+  }
 });
 
 // --- the raffle (#1848) -----------------------------------------------------------------------
