@@ -142,8 +142,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   reflinks inside that disposable guest, verify and install the published v1.20.0 bundle without
   modifying it, then invoke the existing image-upgrade harness against the submitted images. The
   baseline uses remote Monero and remote Tari because v1.20.0 predates Tari-off mode. The phase
-  uses the CLI's test override only around `pithead upgrade`, so the release-shaped stack path can
-  run inside the otherwise appliance-shaped guest. It proves bundle trust (including a wrong-key
+  runs the release-shaped stack under the CLI's existing test override inside the otherwise
+  appliance-shaped guest. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
   and resumed hashes; its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
 

@@ -52,7 +52,7 @@ monero_host="$(jq -r '.monero.remote.host' "$INPUT/config.json")"
 monero_rpc="$(jq -r '.monero.remote.rpc_port' "$INPUT/config.json")"
 monero_zmq="$(jq -r '.monero.remote.zmq_port' "$INPUT/config.json")"
 tari_host="$(jq -r '.tari.remote.host' "$INPUT/config.json")"
-PITHEAD_APPLIANCE=1 env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA \
+PITHEAD_APPLIANCE=0 env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA \
     "$MOUNT/harness/tests/integration/run.sh" --local --dir "$MOUNT/current" --workers 1 \
     --remote-monero-host "$monero_host" --remote-monero-rpc-port "$monero_rpc" \
     --remote-monero-zmq-port "$monero_zmq" --remote-tari-host "$tari_host" \
