@@ -343,6 +343,7 @@ test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
+test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-doctor.sh|ip
