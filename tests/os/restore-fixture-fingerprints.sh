@@ -5,7 +5,7 @@
 restore_fixture_fingerprints() {
     local fixture_env fixture_config fixture_secrets
     RESTORE_SOURCE_ONION=$(_ssh "sed -n 's/^DASHBOARD_ONION_ADDRESS=//p' /data/pithead/.env") || return 1
-    RESTORE_SOURCE_SECRETS=$(_ssh "grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1") || return 1
+    RESTORE_SOURCE_SECRETS=$(_ssh "grep -Eq '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env && grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1") || return 1
     RESTORE_SOURCE_CONFIG=$(_ssh "jq -c '{monero: {mode, wallet_address, node_username, node_password, remote}, tari: {mode, wallet_address, remote}, p2pool: {pool, stratum_password}, dashboard: {auth, onion, control, energy}}' /data/pithead/config.json | sha256sum | cut -d' ' -f1") || return 1
     [ -n "$RESTORE_SOURCE_ONION" ] && [ -n "$RESTORE_SOURCE_SECRETS" ] && [ -n "$RESTORE_SOURCE_CONFIG" ] || return 1
 
