@@ -46,10 +46,11 @@ of each product release, not independent releases:
 
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
-against the component's latest upstream release, and keeps one tracking issue up to date. It
-reports and never bumps: a Tari or `monerod` minor can carry a one-time data migration, which is
-work to schedule rather than a pull request to merge. Dependabot covers the base images it can see
-and is set to ignore minor and major bumps on the component pins for the same reason.
+against the component's latest upstream release, checks whether each exact Go module raise still
+changes its pinned upstream graph, and keeps one tracking issue up to date. It reports and never
+bumps: a Tari or `monerod` minor can carry a one-time data migration, which is work to schedule
+rather than a pull request to merge. Dependabot covers the base images it can see and is set to
+ignore minor and major bumps on the component pins for the same reason.
 
 One pin is not spelled as a version. The appliance pins RigForge by commit, so that a moved tag
 cannot change what is baked; that row resolves the latest release tag to the commit it names and
