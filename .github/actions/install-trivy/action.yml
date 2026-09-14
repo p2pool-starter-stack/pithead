@@ -1,0 +1,20 @@
+name: Install Trivy (cached binary)
+description: >
+  Installs the Trivy binary via aquasecurity/setup-trivy with its own
+  version/os/arch-keyed cache (#2214) — a different cache from trivy-action's
+  DB cache, which the three trivy-action call sites (ci.yml, os-rootfs.yml,
+  test-images.yml) deliberately keep off (#1159). Once this cache is
+  populated for a version, a GitHub Releases hiccup in the installer no
+  longer fails every scan that version runs; call this step first, then pass
+  `skip-setup-trivy: true` to trivy-action so it reuses this binary instead
+  of re-running its own copy of the same installer. Version is pinned here
+  to match TRIVY_VERSION in scripts/watch/trivyignore-watch.sh and the
+  `version:` each call site passes trivy-action directly (`make
+  lint-trivy-parity` holds those three to each other, not to this file).
+runs:
+  using: composite
+  steps:
+    - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      with:
+        version: v0.74.0
+        cache: true

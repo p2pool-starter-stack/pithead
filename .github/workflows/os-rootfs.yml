@@ -86,6 +86,8 @@ jobs:
           os/build-image.sh --stage-only
           docker build -f os/rootfs/Dockerfile -t pithead-os-rootfs:ci \
             --build-arg PITHEAD_UPDATER=rauc .
+      - uses: ./.github/actions/install-trivy # cached binary install, see #2214
+        if: steps.tree.outputs.present == 'true'
       - name: Scan rootfs for CVEs (Trivy)
         if: steps.tree.outputs.present == 'true'
         # Same gate as ci.yml's image scan: actionable (fixable) HIGH/CRITICAL only; accepted
@@ -101,6 +103,7 @@ jobs:
           # bumped, and scripts/watch/trivyignore-watch.sh's verdicts only mean something when it scans
           # with the engine the gate runs. `make lint-trivy-parity` holds the two to one value.
           version: v0.74.0
+          skip-setup-trivy: true # binary already installed above (#2214)
           image-ref: pithead-os-rootfs:ci
           scanners: vuln
           severity: HIGH,CRITICAL

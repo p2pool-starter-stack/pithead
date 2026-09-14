@@ -96,12 +96,15 @@ jobs:
       # refuses to run without. A narrow skip would have to name every one of those targets, which
       # is this `if` with more lines. uv's own pair went 4 -> 0 in #2084, measured on the digests
       # directly, since this gate would not have reported it either way.
+      - uses: ./.github/actions/install-trivy # cached binary install, see #2214
+        if: matrix.service != 'test-runner'
       - name: Scan image for CVEs (Trivy)
         if: matrix.service != 'test-runner'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
           version: v0.74.0
+          skip-setup-trivy: true # binary already installed above (#2214)
           image-ref: pithead-${{ matrix.service }}:ci
           scanners: vuln
           severity: HIGH,CRITICAL
