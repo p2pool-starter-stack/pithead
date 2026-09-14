@@ -337,11 +337,11 @@ else
     _dd_all=${_dd_sites%%$'\n'*}
     # THE GUARD THAT EARNS ITS PLACE, replacing one that could not: reseeding TOR_DATA_DIR was
     # strictly REDUNDANT, its pass condition being exactly what the CANNOT row asserts, so it could
-    # never red alone. This closes what those rows cannot see -- a second `for var in ..._DATA_DIR;
-    # do` above missing_data_dirs would feed them, through head -1, a set the shipped code no longer
-    # uses, every row green. The awk gap is narrower: a trailing comment after its closing quote
-    # makes it over-read. Wrong input, no wrong output today, so NAMED not guarded.
+    # never red alone. A second site above either live extractor would otherwise feed these rows a
+    # stale list. The residuals differ: sed drops a `for ...; do` line with a trailing comment;
+    # awk over-reads a comment after its closing quote. Both red today, so named not guarded.
     assert_eq "the data-dir key list comes from exactly one site (#1776)" "$(printf '%s\n' "$_dd_sites" | grep -c .)" "1"
+    assert_eq "the confirm-key allowlist comes from exactly one site (#1816)" "$(grep -c "^CONTROL_DASHBOARD_CONFIRM_KEYS='" "$STACK")" "1"
     _dd_conf=$(awk "/^CONTROL_DASHBOARD_CONFIRM_KEYS='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" |
         tr -d "\n'" | sed "s/^CONTROL_DASHBOARD_CONFIRM_KEYS=//;s/  */ /g;s/^ //")
     assert_eq "the dirs doctor warns about that the dashboard CAN repoint (#1776)" \
