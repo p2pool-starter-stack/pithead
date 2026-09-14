@@ -137,14 +137,13 @@ now invokes `--check` separately after `--readiness`; their first exact-head rec
 | # | Gap (not tested live) | Worth filling before release? |
 |---|---|---|
 | 1 | Full (unpruned) Monero mode live — a pruned bench can't cover it | Low. Stack code paths don't differ by prune mode (it's monerod-internal); fakes/config cover it. A multi-day full sync isn't justified. |
-| 2 | Automated PR gate — a self-hosted runner is manual/opt-in | Medium-high, high-impact. Wire the live harness as a required check on protected `main` only (never fork PRs). |
+| 2 | Protected release gate | Pending bench-ci commit-status publication and the administrator-set `main` rule; `release.sh` requires `bench-ci/tier4` from the configured App id. |
 | 3 | Exact-head privacy/upgrade/XvB combined hardware record | Medium. Run `--check`; `--image-upgrade` proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. `--xvb-routing-smoke` runs the wallet-bearing fetch in a Tor-only internal network and polls a real controller/proxy transition. Egress observation skips only for explicit clearnet initial sync; a requested XvB transition with no share fails. |
 | 4 | Multi-worker scale — the harness assumes ~2 workers | Medium. For perf confidence add a load-gen worker and assert proxy routing/hashrate. Not a blocker. |
 | 5 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
 | 6 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; issue #2000 owns a focused remote quoting/cleanup/restoration proof. |
 
-**Recommended before release:** record the combined upgrade/XvB run, then automate the protected
-gate when a self-hosted runner exists. The rest are nice-to-have.
+**Recommended before release:** record the combined upgrade/XvB run. The rest are nice-to-have.
 
 ## Notes for AI agents
 

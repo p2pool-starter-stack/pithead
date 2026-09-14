@@ -144,8 +144,10 @@ Release notes, where operators actually read it. The branch model itself is in
    `vX.Y.Z` isn't already released; resolve the component pins into the ingredients manifest.
    The generated executable is copied into the release bundle; its source slices are not.
 2. Bench gate (blocking): require a successful `bench-ci/tier4` commit status for the exact
-   release SHA. The bench runner publishes this only after its full tier-4 suite completes; a
-   missing, failed, or unreadable status aborts the release before images are built.
+   release SHA from the dedicated bench-ci GitHub App. Set `BENCH_CI_APP_ID` to that App's numeric
+   id on the release box; `BENCH_CI_APP_SLUG` defaults to `bench-ci`. The bench runner publishes
+   the status only after its full tier-4 suite completes. A missing, failed, unreadable, or
+   wrong-App status aborts the release before images are built.
 3. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
@@ -263,10 +265,10 @@ tolerated-known-failure habit the flag exists to end.
 ### Which gates are automated, and which are not
 
 The release lane requires a successful `bench-ci/tier4` status on its release SHA; `main` carries
-the same requirement once its branch ruleset is updated. The bench publishes that status after its
-full tier-4 suite, and `release.sh` reads the exact-SHA result before it builds. The existing
-`release-gate.yml` stays dispatch-only as an operator tool: no self-hosted runner is registered on
-this public repository.
+the same requirement once its branch ruleset is updated with the bench-ci App's `integration_id`.
+The bench publishes that status after its full tier-4 suite, and `release.sh` checks the exact SHA,
+context, App slug, and numeric App id before it builds. The existing `release-gate.yml` stays
+dispatch-only as an operator tool: no self-hosted runner is registered on this public repository.
 
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
