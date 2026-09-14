@@ -41,8 +41,6 @@ usage() {
     sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-# --- render helpers ---------------------------------------------------------------------------
-
 # Shorten a digest for the summary table; the full value is printed in the per-image section, so
 # nothing is lost. `sha256:5da0208411…` is enough to eyeball against `docker inspect` output.
 short_digest() {
@@ -113,7 +111,8 @@ render_report() {
 
         if ! ref="$(jq -er '
             select((.Results | type) == "array")
-            | select(all(.Results[]; (type == "object") and (.Vulnerabilities == null or (.Vulnerabilities | type) == "array")))
+            | select(all(.Results[]; (type == "object") and (.Vulnerabilities == null or
+                ((.Vulnerabilities | type) == "array" and all(.Vulnerabilities[]; type == "object")))))
             | .ArtifactName
         ' "$file" 2>/dev/null)"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
@@ -349,6 +348,9 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.Results = [null]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
     out="$(render_report "$malformed")" && rc=0 || rc=$?
     st "a non-object Results entry is UNCHECKED" "$rc" "1"
+    jq '.Results = [{Vulnerabilities: [null]}]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a non-object vulnerability entry is UNCHECKED" "$rc" "1"
 
     notag="$tmp/notag"
     cp -R "$clean" "$notag"
@@ -401,8 +403,7 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$empty")" && rc=0 || rc=$?
     st "an empty artifact directory fails the run" "$rc" "1"
 
-    # Every case above calls render_report inside an `&&` list, where bash suppresses `set -e`
-    # for the whole dynamic extent of the call — so none of them can see an error-exit that only
+    # Calls above suppress errexit through `&&`, so drive both paths through a real subprocess.
     # bites the way CI actually invokes this: bare, in its own process. Drive the green path
     # through a real subprocess once, or the suite is proving the logic and not the script.
     out="$(bash "${BASH_SOURCE[0]}" "$clean")" && rc=0 || rc=$?

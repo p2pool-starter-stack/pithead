@@ -15,46 +15,35 @@ printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug/root/.ssh/authorized_keys"
 tar -cf "$ROOTFS_GUARD/release.tar" -C "$ROOTFS_GUARD/release" etc
 tar -cf "$ROOTFS_GUARD/debug.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar -cf "$ROOTFS_GUARD/debug-dot.tar" -C "$ROOTFS_GUARD/debug" .
-# shellcheck disable=SC1090
-(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    verify_release_rootfs_tar "$ROOTFS_GUARD/release.tar"
-)
+tar --transform='s|root/.ssh/authorized_keys|root//.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-double.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|root/./.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-inner-dot.tar" -C "$ROOTFS_GUARD/debug" etc root
+rootfs_guard() {
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        set +eu
+        if [ "$1" = absolute-member-fixture.tar ]; then
+            tar() { [ "$1" = -xOf ] && printf 'release\n' || printf '//root/.ssh/authorized_keys\n'; }
+        fi
+        verify_release_rootfs_tar "$1"
+    )
+}
+rootfs_guard "$ROOTFS_GUARD/release.tar"
 assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
-# shellcheck disable=SC1090
-rootfs_guard_out="$(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    verify_release_rootfs_tar "$ROOTFS_GUARD/debug.tar" 2>&1
-)"
+rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
 assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
-# shellcheck disable=SC1090
-(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    verify_release_rootfs_tar "$ROOTFS_GUARD/debug-dot.tar"
-) >/dev/null 2>&1
-assert_rc "a dot-prefixed debug-key member is also refused" "$?" "2"
-# shellcheck disable=SC1090
-(
-    cd "$ROOT" || exit
-    set --
-    source "$REL" 2>/dev/null
-    set +eu
-    tar() {
-        [ "$1" = -xOf ] && printf 'release\n' || printf '//root/.ssh/authorized_keys\n'
-    }
-    verify_release_rootfs_tar absolute-member-fixture.tar
-) >/dev/null 2>&1
-assert_rc "an absolute debug-key member is also refused" "$?" "2"
+for unsafe_tar in debug-dot debug-double debug-inner-dot; do
+    rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
+    assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
+done
+rootfs_guard absolute-member-fixture.tar >/dev/null 2>&1
+assert_rc "an absolute debug-key member is refused" "$?" "2"
+unset -f rootfs_guard
 
 # Drive the producer with a stubbed export and registry write so ordering mutations fail.
 drive_rootfs_build() { # <fixture-tar> <push-log>

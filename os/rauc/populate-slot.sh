@@ -127,7 +127,7 @@ verify_tarball_commit() {
 # Release rootfs content is checked here so the registry push, initial image and update bundle use
 # one rule. Tar listings may prefix members with ./; an absolute member is equally unsafe.
 verify_release_rootfs_tar() { # $1 = tarball path
-    local tarball="$1" variant listing
+    local tarball="$1" variant listing normalized
     variant="$(tar -xOf "$tarball" etc/pithead-variant 2>/dev/null)" || {
         echo "rootfs release guard: cannot read etc/pithead-variant" >&2
         return 2
@@ -144,7 +144,12 @@ verify_release_rootfs_tar() { # $1 = tarball path
         echo "rootfs release guard: refusing a rootfs with an absolute tar member" >&2
         return 2
     fi
-    if grep -Eq '^(\./)*/?root/\.ssh/authorized_keys$' <<<"$listing"; then
+    normalized="$(sed -E 's#^(\./)+##' <<<"$listing")"
+    if grep -Eq '(^|/)(\.|\.\.)/|//' <<<"$normalized"; then
+        echo "rootfs release guard: refusing a rootfs with an ambiguous tar member" >&2
+        return 2
+    fi
+    if grep -Eq '^root/\.ssh/authorized_keys$' <<<"$normalized"; then
         echo "rootfs release guard: refusing a rootfs carrying the debug SSH key" >&2
         return 2
     fi
