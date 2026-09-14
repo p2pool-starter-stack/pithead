@@ -229,7 +229,7 @@ case "$vd_hb_out" in
 esac
 unset vd_id_out vd_hb_out
 
-echo "== unit: scheduled-run watch self-test (#1377) =="
+echo "== unit: scheduled-run watch self-test (#1377, #1418) =="
 # The Monday CVE sweep's reader. Its red path CANNOT be exercised live — staging it would mean
 # making the default branch's CI genuinely fail — so the fixtures here are the only place the
 # failure branch runs at all. They also pin the distinction the watcher exists for: a sweep that

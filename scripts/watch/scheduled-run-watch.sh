@@ -1,91 +1,60 @@
 #!/usr/bin/env bash
 #
-# Scheduled-run watch (#1377).
+# Scheduled-run watch (#1377, #1418).
 #
 # The Monday run of ci.yml IS the CVE sweep: `build-images` rebuilds every image and scans the
 # rebuild (#833), `sweep-shipped` scans the published digests (#1313). A scheduled run has no pull
 # request, so nothing draws a person to it — and on 2026-08-17 `build-images` went red and nobody
 # was told for seven days. This watcher is that run's reader.
 #
-# WHY IT IS NOT A JOB INSIDE ci.yml. Two reasons, both measured rather than assumed:
+# REPORT-ONLY. A scheduled failure, LATE run or MISSED run is a finding. This watcher fails only
+# when its inputs are unreadable or incomplete; those paths say UNCHECKED rather than clean.
+# The workflow performs GitHub lookups and this script renders its JSON, keeping every decision
+# fixture-testable without network access.
+# CADENCE. cadence.json names every schedule declared in the checked-out workflows and carries
+# server-filtered run history for each. A missing run becomes LATE after 12 hours and MISSED after
+# one full period. Both are report findings; only unreadable inputs make the watcher fail.
 #
-#   1. SUBJECT. The one reader ci.yml already has is `sweep-shipped-report`, and its tracking issue
-#      is titled "Shipped-image CVE sweep" — a title that is also the upsert key, so it cannot be
-#      widened without orphaning the existing issue and filing a duplicate on the next run. Filing
-#      a `build-images` red under it would put a finding about a REBUILD of the branch inside the
-#      one report whose whole premise is that it scanned the bytes users pulled, and would make its
-#      "Last fully successful sweep" stamp span two different questions.
-#   2. IT GENERALISES. `build-images` is the job that reddened, but it is not the only job that can.
-#      Watching the RUN covers every job the schedule reaches, including ones added later — the
-#      failure mode of a per-job reader is that it silently stops covering the thing it was named
-#      for.
-#
-# REPORT-ONLY, like its two siblings. A failed sweep is reported into a tracking issue rather than
-# reddening this run, because "the Monday sweep found a CVE" asks for a decision a person makes,
-# and because reddening a scheduled run is precisely the notification that was proven not to work.
-# This run goes red only when the WATCHER could not do its job.
-#
-# WHAT THIS SCRIPT IS. It does no lookups and touches no network. The workflow calls `gh` and
-# leaves two JSON files in a directory; this script reads them and renders the tracking-issue body.
-# Keeping the render out of the workflow is what makes it testable: `--self-test` drives the clean
-# path and every refusal below through fixtures, with no network and no gh. That matters more here
-# than usual, because the red path CANNOT be exercised live — staging it would mean making the
-# default branch's CI genuinely fail.
-#
-# INCOMPLETE IS NEVER CLEAN. Every refusal below exits 1 and says UNCHECKED rather than printing a
-# reassuring "no failures". A watcher with nothing to say and a watcher that has quietly died look
-# identical from the Actions tab.
-#
-#   - the directory is missing, or holds no runs file
-#   - the runs file cannot be parsed, or lists no scheduled run at all
-#   - the newest scheduled run has not finished, so nothing can be said about whether it passed
-#   - the newest scheduled run failed and its jobs file is missing, unparseable, or names no job
-#
-# NOT COVERED, deliberately, and filed as #1418: a scheduled run that never HAPPENS. This watcher
-# reads the runs it can see, so a dropped cron is invisible to it in exactly the way it is
-# invisible to everything else. The history table below is the human-readable half of that — a
-# reader can see the gap — but nothing here decides that a gap is too long.
-#
+# ONE UNWATCHED WATCHER REMAINS. This script can include its own workflow in the table, but a
+# GitHub-wide schedule shutdown also stops this run. The carried-forward success stamp makes that
+# absence readable to an observer outside GitHub; it cannot make the absence self-announcing.
 # Usage:
 #   scripts/watch/scheduled-run-watch.sh <dir>    Render the report for the JSON in <dir> on stdout.
+#                                           <dir>/cadence.json = declared schedules + run history
 #                                           <dir>/runs.json  = gh run list --json ... (an array)
 #                                           <dir>/jobs.json  = gh run view --json jobs (an object)
 #                                           rc 1 if the watch could not do its job.
 #   scripts/watch/scheduled-run-watch.sh --title  Print the tracking issue's title, nothing else.
+#   scripts/watch/scheduled-run-watch.sh --schedules <workflow-dir>
+#                                           Print path<TAB>cron for every declared schedule.
 #   scripts/watch/scheduled-run-watch.sh --self-test
 #                                           Drive the render and every refusal above through
 #                                           fixtures. No network, no gh.
 
 set -Eeuo pipefail
 
-# THE TITLE IS A CONSTANT AND MUST NEVER BE EDITED. The workflow upserts the tracking issue by
-# EXACT title match over the open issue list. Change this string and the next run silently files a
-# SECOND issue instead of updating the first, then keeps both — the old one frozen at whatever it
-# last said, which reads as a watch that found nothing new. Renaming the issue by hand in the web
-# UI breaks it the same way.
+# The exact title is the issue-upsert key. Changing it files a second report.
 WATCH_ISSUE_TITLE="Scheduled CI run watch (weekly report)"
 
-# How many past scheduled runs the history table prints. It exists to make a STREAK visible: the
-# second-order finding from #1419 is that a gate red for nine consecutive runs has no transition
-# left to make, so it can no longer signal a new break — and that is invisible in any report that
-# shows only the newest run.
+# Six rows expose a failure streak that a single newest-run row cannot (#1419).
 HISTORY_ROWS=6
 
 usage() {
     sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-# --- render helpers -----------------------------------------------------------------------------
+list_schedules() {
+    local file line cron
+    for file in "$1"/*.yml "$1"/*.yaml; do
+        [ -f "$file" ] || continue
+        while IFS= read -r line; do
+            cron="$(printf '%s\n' "$line" | sed -E "s/^[[:space:]]*- cron: [\"']([^\"']+)[\"'].*/\1/")"
+            printf '%s\t%s\n' "$file" "$cron"
+        done < <(awk '$0 == "  schedule:" { inside=1; next } inside && /^[^ ]/ { inside=0 } inside && /^    - cron:/ { print }' "$file")
+    done
+}
 
-# A conclusion as a table cell. `cancelled` and `timed_out` are NOT folded into failure: they mean
-# the sweep did not run to completion, which is a different thing from the sweep finding something,
-# and a reader deciding whether to cut a patch release needs to tell them apart — so the conclusion
-# is printed verbatim rather than bucketed.
-#
-# THE SAME RULE IS SPELLED TWICE: here, and in `render_history`'s jq, because one table is built in
-# bash and the other in jq. They had already drifted once (this said `**FAILED**` where jq said
-# `**failure**` for the same run), so the self-test below renders one run through BOTH and asserts
-# the cells are identical. Change one spelling and that assertion fails.
+# Keep non-success conclusions verbatim; the self-test pins both rendered tables to one spelling.
 conclusion_cell() {
     case "$1" in
     success) printf 'ok' ;;
@@ -94,13 +63,76 @@ conclusion_cell() {
     esac
 }
 
+render_cadence() {
+    local file="$1/cadence.json" rows unchecked
+    if [ ! -s "$file" ]; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: no declared-schedule history was collected.\n\n'
+        return 1
+    fi
+    if jq -e '.workflows | group_by(.path) | any(length != 1)' "$file" >/dev/null 2>&1; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: a workflow declares more than one cron slot; Actions history does not identify which slot fired.\n\n'
+        return 1
+    fi
+    rows="$(jq -c '
+        def parts:
+            if .cron | test("^[0-9]{1,2} \\* \\* \\* \\*$") then
+                (.cron | split(" ") | {minute: (.[0] | tonumber), period: 3600, kind: "hourly"})
+            elif .cron | test("^[0-9]{1,2} [0-9]{1,2} \\* \\* [0-6]$") then
+                (.cron | split(" ") | {minute: (.[0] | tonumber), hour: (.[1] | tonumber), weekday: (.[4] | tonumber), period: 604800, kind: "weekly"})
+            else null end;
+        def slot($now; $p):
+            if $p.kind == "hourly" then
+                ((($now - ($p.minute * 60)) / 3600 | floor) * 3600) + ($p.minute * 60)
+            else
+                (($now / 86400 | floor) * 86400) + ($p.hour * 3600) + ($p.minute * 60)
+                - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
+                | if . > $now then . - 604800 else . end
+            end;
+        (.checkedAt | fromdateiso8601) as $now
+        | [.workflows[] | . as $w | ($w | parts) as $p
+            | ([.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] | sort_by(.epoch) | last) as $new
+            | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
+                 or (($w.runs | length) == 0 and ($w.declaredAt | type) != "number") then
+                {workflow: .path, cron: .cron, last: "unknown", state: "**UNCHECKED**"}
+              else (slot($now; $p)) as $latest
+                | (slot(($w.declaredAt // $now); $p)) as $before_declared
+                | (if $before_declared < ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
+                | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"),
+                   state: (if .path == ".github/workflows/scheduled-run-watch.yml" then "external stamp only"
+                           elif $new == null and $now >= ($first + $p.period) then "**MISSED**"
+                           elif $new == null and $now >= ($first + 43200) then "LATE"
+                           elif $new == null then "within 12h grace"
+                           elif $new.epoch < ($latest - $p.period) then "**MISSED**"
+                           elif $new.epoch < $latest and $now >= ($latest + 43200) then "LATE"
+                           elif $new.epoch < $latest then "within 12h grace"
+                           else "ok" end)}
+              end]
+    ' "$file" 2>/dev/null || true)"
+    if [ -z "$rows" ] || [ "$rows" = "[]" ]; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: the declared-schedule history could not be parsed.\n\n'
+        return 1
+    fi
+    printf '## Declared schedule cadence\n\n'
+    printf '| Workflow | Cron | Last observed run | Cadence |\n|---|---|---|---|\n'
+    printf '%s' "$rows" | jq -r '.[] | "| `\(.workflow)` | `\(.cron)` | \(.last) | \(.state) |"'
+    printf '\nMISSED means no run appeared for a full period after an expected slot. LATE is informational\n'
+    printf 'after 12 hours; neither finding fails this report. UNCHECKED means the watch itself failed.\n\n'
+    printf 'This scheduled watcher cannot announce its own absence or a GitHub-wide schedule shutdown.\n'
+    printf 'The carried-forward successful-check stamp is the external observer signal for that gap.\n\n'
+    unchecked="$(printf '%s' "$rows" | jq '[.[] | select(.state == "**UNCHECKED**")] | length')"
+    [ "$unchecked" = 0 ]
+}
+
 render_report() {
     local dir="$1" runs newest id url created status conclusion rc=0
 
-    printf 'The Monday run of `ci.yml` is the CVE sweep — `build-images` scans a rebuild of this\n'
+    printf 'Every workflow schedule declared on the default branch is compared with its run history.\n'
+    printf 'The Monday run of `ci.yml` is also the CVE sweep — `build-images` scans a rebuild of this\n'
     printf 'branch (#833) and `sweep-shipped` scans the published digests (#1313). A scheduled run\n'
     printf 'has no pull request, so nothing draws anyone to its red tick. This issue is its reader\n'
     printf '(#1377); it is rewritten in place every week.\n\n'
+
+    render_cadence "$dir" || rc=$?
 
     if [ ! -d "$dir" ] || [ ! -s "$dir/runs.json" ]; then
         printf 'UNCHECKED: no run history was collected, so this report cannot say whether the\n'
@@ -135,9 +167,6 @@ render_report() {
     elif [ "$conclusion" = "success" ]; then
         printf 'The sweep completed and found nothing it had to report.\n\n'
     else
-        # Called for its OUTPUT and its rc, so it must not be captured: `rc=$(render_failed_jobs)`
-        # assigns the rendered table to rc and drops it from the report — the table vanishes and
-        # the exit code becomes a string. Caught by the self-test below, never by reading.
         render_failed_jobs "$dir" || rc=$?
     fi
 
@@ -145,9 +174,6 @@ render_report() {
     return "$rc"
 }
 
-# The failed-job table for a run that did not succeed. Returns 1 when the jobs could not be read —
-# knowing the run failed while being unable to say WHICH job failed is a half-answer, and the
-# report must not present it as a whole one.
 render_failed_jobs() {
     local dir="$1" failed count
     if [ ! -s "$dir/jobs.json" ]; then
@@ -173,8 +199,6 @@ render_failed_jobs() {
     return 0
 }
 
-# The history table. A single red tells a reader almost nothing; a streak tells them the gate has
-# stopped being an instrument (#1419).
 render_history() {
     printf '## Recent scheduled runs\n\n'
     printf '| Run | Started | Result |\n|---|---|---|\n'
@@ -183,10 +207,13 @@ render_history() {
     printf '\n'
 }
 
-# --- entry points -------------------------------------------------------------------------------
-
 if [ "${1:-}" = "--title" ]; then
     printf '%s\n' "$WATCH_ISSUE_TITLE"
+    exit 0
+fi
+
+if [ "${1:-}" = "--schedules" ] && [ $# -eq 2 ]; then
+    list_schedules "$2"
     exit 0
 fi
 
@@ -209,6 +236,7 @@ if [ "${1:-}" = "--self-test" ]; then
         local dir="$1" i=0 c
         shift
         mkdir -p "$dir"
+        cadence_fixture "$dir"
         for c in "$@"; do
             printf '{"databaseId":%d,"url":"https://x/%d","createdAt":"2026-08-%02dT05:00:00Z","status":"completed","conclusion":"%s"}\n' \
                 $((100 + i)) $((100 + i)) $((28 - i)) "$c"
@@ -222,6 +250,24 @@ if [ "${1:-}" = "--self-test" ]; then
             printf '{"name":"%s","conclusion":"%s"}\n' "${spec%%:*}" "${spec##*:}"
         done | jq -s '{jobs: .}' >"$dir/jobs.json"
     }
+    cadence_fixture() { # <dir> [checked-at] [cron] [runs-json]
+        local dir="$1" checked="${2:-2026-09-14T08:00:00Z}" cron="${3:-0 5 * * 1}"
+        local runs="${4:-}"
+        [ -n "$runs" ] || runs='[{"createdAt":"2026-09-14T06:00:00Z"}]'
+        mkdir -p "$dir"
+        jq -n --arg checkedAt "$checked" --arg cron "$cron" --argjson runs "$runs" \
+            '{checkedAt: $checkedAt, workflows: [{path: ".github/workflows/ci.yml", cron: $cron, declaredAt: ("2026-08-01T00:00:00Z" | fromdateiso8601), runs: $runs}]}' >"$dir/cadence.json"
+    }
+
+    workflows="$tmp/workflows"
+    mkdir -p "$workflows"
+    printf 'on:\n  schedule:\n    - cron: "0 5 * * 1"\njobs: {}\n' >"$workflows/a.yml"
+    printf 'on:\n  push:\njobs: {}\n' >"$workflows/b.yml"
+    printf 'on:\n  schedule:\n    - cron: "30 6 * * 1" # comment\njobs: {}\n' >"$workflows/c.yaml"
+    out="$(list_schedules "$workflows")"
+    st "every workflow carrying schedule is enumerated" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+    st "an unscheduled workflow is omitted" "$(printf '%s\n' "$out" | grep -cF 'b.yml')" "0"
+    st "cron comments and .yaml workflows are handled" "$(printf '%s\n' "$out" | grep -cF $'c.yaml\t30 6 * * 1')" "1"
 
     # The GREEN path has to be REACHABLE. A check that can only ever say "incomplete" is as
     # useless as one that only ever says "clean".
@@ -236,7 +282,36 @@ if [ "${1:-}" = "--self-test" ]; then
     st "the history table is capped at HISTORY_ROWS" "$(hist "$out")" "$HISTORY_ROWS"
     st "a clean report names no failing job" "$(printf '%s' "$out" | grep -c 'did not pass')" "0"
 
-    # A shorter history than the cap prints what exists, not a padded table.
+    # The first run at 04:45 followed four dropped hourly slots; history was still empty at 04:40.
+    gap="$tmp/gap"
+    cadence_fixture "$gap" "2026-09-04T04:40:00Z" "23 * * * *" '[]'
+    out="$(render_cadence "$gap")" && rc=0 || rc=$?
+    st "an actual elapsed hourly gap is MISSED" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
+    st "a missed run is a report finding, not a broken watcher" "$rc" "0"
+
+    fresh="$tmp/fresh"
+    cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
+    jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
+    out="$(render_cadence "$fresh")"
+    st "a new schedule gets its first full period of grace" "$(printf '%s' "$out" | grep -cF 'within 12h grace')" "1"
+
+    jq '.workflows[0].path = ".github/workflows/scheduled-run-watch.yml"' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
+    out="$(render_cadence "$fresh")"
+    st "the scheduled watcher does not claim to observe itself" "$(printf '%s' "$out" | grep -cF 'external stamp only')" "1"
+
+    late="$tmp/late"
+    cadence_fixture "$late" "2026-09-14T18:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T06:00:00Z"}]'
+    out="$(render_cadence "$late")" && rc=0 || rc=$?
+    st "a run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -c '| LATE |')" "1"
+    st "late is informational" "$rc" "0"
+
+    unknown="$tmp/unknown"
+    cadence_fixture "$unknown"
+    jq '.workflows[0].runs = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "unreadable history is UNCHECKED" "$(printf '%s' "$out" | grep -cF '**UNCHECKED**')" "1"
+    st "unchecked history fails the watcher" "$rc" "1"
+
     short="$tmp/short"
     runs_fixture "$short" success success
     out="$(render_report "$short")" && rc=0 || rc=$?
@@ -257,12 +332,10 @@ if [ "${1:-}" = "--self-test" ]; then
     st "the failed run is marked in both tables, identically" \
         "$(printf '%s' "$out" | grep -c '| \*\*failure\*\* |')" "2"
 
-    # --- the refusals. Each is pinned on the ONE input only it rejects. ---
-
     miss="$tmp/missing"
     out="$(render_report "$miss")" && rc=0 || rc=$?
     st "a missing directory fails" "$rc" "1"
-    st "a missing directory says UNCHECKED" "$(printf '%s' "$out" | grep -c UNCHECKED)" "1"
+    st "a missing directory says both inputs are UNCHECKED" "$(printf '%s' "$out" | grep -c UNCHECKED)" "2"
 
     empty="$tmp/empty"
     mkdir -p "$empty"
@@ -276,7 +349,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$bad")" && rc=0 || rc=$?
     st "an unparseable run list fails" "$rc" "1"
 
-    # An unfinished run is the case a naive reader calls "not failed". It is UNCHECKED.
     running="$tmp/running"
     mkdir -p "$running"
     printf '[{"databaseId":1,"url":"https://x/1","createdAt":"2026-08-31T05:00:00Z","status":"in_progress","conclusion":null}]\n' >"$running/runs.json"
