@@ -114,6 +114,36 @@ phase_boot() {
     else
         bad "could not read machine-id before the reboot check (test SSH unreachable)"
     fi
+
+    _secure_boot_guest_leg
+}
+
+# A second guest, Secure Boot ON (#2055 G2). Every other virt-install in the battery pins
+# firmware.feature0.enabled=no; this is the one measurement of the signed-boot chain the KVM
+# battery can give without hardware — the honest alternative to leaving the flag unmeasured with
+# nothing written down. Reuses $VM/$DISK/$SERIAL sequentially, same as every other guest in this
+# file; the guest above is already done with them.
+_secure_boot_guest_leg() {
+    vm_destroy_or_refuse || return
+    cp "$IMAGE" "$DISK"
+    qemu-img resize "$DISK" 40G >/dev/null 2>&1 || true
+    : >"$SERIAL"
+    kvm_preflight || exit 1
+    local defined=0 booted=0 verdict
+    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+        --osinfo debian12 \
+        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=yes \
+        --import --disk "path=$DISK,format=raw,bus=virtio" \
+        --network network=default,model=virtio --graphics none \
+        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 && defined=1
+    if [ "$defined" = 1 ] && wait_serial "login:|Debian GNU/Linux|Pithead setup wizard" 180; then
+        booted=1
+    fi
+    if verdict=$(secure_boot_boot_verdict "$defined" "$booted"); then
+        ok "$verdict"
+    else
+        bad "$verdict"
+    fi
 }
 
 # Boot a raw appliance disk under OVMF and return once it has a lease. Sets the global `ip`.
