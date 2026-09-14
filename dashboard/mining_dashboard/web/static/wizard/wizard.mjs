@@ -1,6 +1,6 @@
 import { Component, html, render } from "../app/preact.mjs";
 import { jsonSyntaxError } from "../config/configlogic.mjs";
-import { coerceForPath, emptyReferenceWallets, pathSet } from "../config/configsync.mjs";
+import { coerceForPath, pathGet, pathSet } from "../config/configsync.mjs";
 import { needsNodeProbe } from "../network/nodeprobe.mjs";
 import { renderRestore, renderRigFields } from "./formparts.mjs";
 import { savedRoleOrSetup } from "./savedrole.mjs";
@@ -54,7 +54,10 @@ export class WizardApp extends Component {
     const res = await fetch("/api/wizard-state");
     if (!res.ok) return false;
     const s = await res.json();
-    emptyReferenceWallets(s.config, s.reference);
+    for (const path of ["monero.wallet_address", "tari.wallet_address"]) {
+      const placeholder = pathGet(s.reference, path);
+      if (placeholder && pathGet(s.config, path) === placeholder) pathSet(s.config, path, "");
+    }
     const next = {
       // The installation medium gets the SAME setup form with an install section folded in —
       // one page, one submission (config + disk + wipe), one credentials card, then the erase.

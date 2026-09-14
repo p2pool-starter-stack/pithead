@@ -21,15 +21,6 @@ export function pathSet(obj, path, value) {
   cur[keys[keys.length - 1]] = value;
 }
 
-/** Keep reference documentation strings out of the wizard's wallet inputs. */
-export function emptyReferenceWallets(config, reference) {
-  for (const path of ["monero.wallet_address", "tari.wallet_address"]) {
-    const placeholder = pathGet(reference, path);
-    if (placeholder && pathGet(config, path) === placeholder) pathSet(config, path, "");
-  }
-  return config;
-}
-
 /**
  * Coerce a form input's string to the type the reference holds at that path. A form's value is
  * always a string; the config's type is not — a port must stay a number and a toggle a boolean,

@@ -10,7 +10,6 @@ import { test } from "node:test";
 import {
   classifyMoneroAddress,
   coerceForPath,
-  emptyReferenceWallets,
   pathGet,
   pathSet,
   telegramPairReady,
@@ -32,23 +31,6 @@ test("pathSet creates intermediate objects and overwrites scalars in the way", (
   const scalar = { monero: "oops" };
   pathSet(scalar, "monero.mode", "remote");
   assert.deepEqual(scalar, { monero: { mode: "remote" } });
-});
-
-test("emptyReferenceWallets removes both documented examples and preserves real addresses", () => {
-  const ref = {
-    monero: { wallet_address: "your_monero_wallet_address" },
-    tari: { wallet_address: "your_tari_wallet_address" },
-  };
-  const fresh = JSON.parse(JSON.stringify(ref));
-  assert.deepEqual(emptyReferenceWallets(fresh, ref), {
-    monero: { wallet_address: "" },
-    tari: { wallet_address: "" },
-  });
-  const configured = {
-    monero: { wallet_address: `4${"A".repeat(94)}` },
-    tari: { wallet_address: "real-tari-address" },
-  };
-  assert.deepEqual(emptyReferenceWallets(configured, ref), configured);
 });
 
 test("coerceForPath keeps the reference's types — ports stay numbers, toggles booleans", () => {
