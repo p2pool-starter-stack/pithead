@@ -74,13 +74,14 @@ plain HTTP, edit `config.json` and run `./pithead apply`.
 `./pithead setup` and the dashboard's first-run web wizard only ask for the fields listed in
 [Getting Started › Run setup](getting-started.md#3-run-setup) — the Monero payout address, the
 Monero node mode, whether the machine merge-mines Tari (and the Tari payout address and node if it
-does), the pool tier, and a handful of other high-level questions. Every other key in
+does), whether to join the XvB raffle, the pool tier, and a handful of other high-level questions.
+Every other key in
 [`config.reference.json`](../config.reference.json) is day-2: not asked by either wizard,
 deliberately out of scope for a first run. Set it by editing `config.json` directly (then
 `./pithead apply`) or through the dashboard's config editor once the stack is up. Examples include
 stratum TLS and the stratum password (`p2pool.stratum_tls`, `p2pool.stratum_password`), onion
-client authentication (`dashboard.onion.client_auth`), the XvB raffle switch (`xvb.*`), energy
-pricing (`dashboard.energy.*`), and notification webhooks (`notifications.webhooks`).
+client authentication (`dashboard.onion.client_auth`), energy pricing (`dashboard.energy.*`), and
+notification webhooks (`notifications.webhooks`).
 
 The web wizard leaves both payout-address inputs empty on a new machine; the example strings in
 `config.reference.json` are documentation, not saved answers. Questions with two to four answers

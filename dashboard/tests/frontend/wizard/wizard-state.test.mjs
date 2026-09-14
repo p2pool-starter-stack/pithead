@@ -110,6 +110,15 @@ test("submit carries the auth-mode choice beside the config", async () => {
   restore();
 });
 
+test("submit reveals guidance for an untouched invalid Monero address", async () => {
+  const config = { ...REF, monero: { ...REF.monero, wallet_address: "not-an-address" } };
+  const { inst, restore } = await appOn([stateFor("setup", { config })]);
+  assert.doesNotMatch(renderToString(inst.render()), /A primary Monero address starts with 4/);
+  await inst.submit({ preventDefault() {} });
+  assert.match(renderToString(inst.render()), /A primary Monero address starts with 4/);
+  restore();
+});
+
 test("on the installation medium, ONE submit carries config, disk, confirmation and wipe", async () => {
   const { inst, restore } = await appOn([stateFor("installer")]);
   inst.setState({ chosen: "sda", confirm: "sda", wipe: "data" });
