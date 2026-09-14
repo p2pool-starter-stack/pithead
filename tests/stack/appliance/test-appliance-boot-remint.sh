@@ -246,15 +246,21 @@ PS_RC=255 ps_run 'inactive\ninact' 1 settled
 assert_rc "a transport-truncated two-word probe is not a settled machine" "$?" "1"
 ps_run 'unknown\nunknown\n' 1 settled
 assert_rc "two unknown unit states are not a settled machine (unknown is neither terminal nor a ran-signal)" "$?" "1"
-# `reloading` is the one real systemd ActiveState that is neither terminal nor caught by the
+# The two rows that pin provisioning_terminal_state, one per call site. `reloading` is the one real
+# systemd ActiveState that is neither in that helper's terminal list nor caught by the
 # word-anchored `activating` match above, and a unit mid-reload has NOT let go of the mutation
-# lock. It is the only row here whose ran-signal reads yes while its ActiveState is non-terminal,
-# so it is the one that pins provisioning_terminal_state: with the four-field probe (#2055 G3)
-# every other row is refused by provisioning_ran_verdict first, and a `return 0` mutation of the
-# terminal check alone would go unread. Mutation run: provisioning_terminal_state() { return 0; }
-# -> this row alone goes red.
+# lock (#1945) — so these are the only rows that reach the terminal check with a non-terminal state
+# and everything else already satisfied: four fields, no `activating`, and a ran-signal of yes.
+# Every row above either never reaches that check (the `activating`, short-probe and
+# transport-failure rows) or reaches it with both states terminal, where it cannot discriminate.
+# So without these two, the #2055 G3 four-field probe left the helper called but unpinned.
+# Mutation runs: provisioning_terminal_state() { return 0; } -> both rows red; drop the
+# `provisioning_terminal_state "$1"` call -> the first alone; drop the `"$2"` call -> the second
+# alone.
 ps_run 'reloading\ninactive\n' 1 settled
-assert_rc "a unit mid-reload has not let go of the lock: not settled, even though one unit ran" "$?" "1"
+assert_rc "the wizard mid-reload has not let go of the lock: not settled, even though one unit ran" "$?" "1"
+ps_run 'inactive\nreloading\n' 1 settled
+assert_rc "pithead-boot mid-reload: the same, pinning the second unit's check too" "$?" "1"
 PS_FLIP=1 ps_run 'activating\ninactive\n' 5 settled
 assert_rc "activating on the first read, inactive on the next: settled after one poll" "$?" "0"
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
