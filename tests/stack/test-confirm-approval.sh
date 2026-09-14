@@ -178,23 +178,20 @@ jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",hos
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "worker repoint preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
-assert_contains "worker repoint preview names its schema path" "$(jq -r '.changes[].key' "$RESULTS/$UUID3.json")" "workers.list"
+assert_eq "worker repoint preview is rejected, not previewed for approval (2026-09-13 perimeter audit round 2)" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "worker repoint refusal names workers.list" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "workers.list"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "confirmed worker repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "confirmed worker host landed" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.51"
-assert_contains "worker repoint audit names workers.list" "$(grep '"action":"commit","status":"applied"' "$AUDIT" | tail -n 1)" "workers.list"
+assert_eq "a self-written envelope does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
 jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "worker append preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$APPEND_UUID.json")" "true"
+assert_eq "worker append preview is rejected, not previewed for approval" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
 jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "confirmed worker append applies" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "applied"
-assert_eq "confirmed worker append lands the new descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host' "$C/config.json")" "192.168.1.52"
-assert_contains "worker append audit names workers.list" \
-    "$(jq -c --arg id "$APPEND_UUID" 'select(.id==$id and .action=="commit" and .status=="applied")' "$AUDIT")" "workers.list"
+assert_eq "a self-written envelope does not commit a worker append" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
+assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host // "unset"' "$C/config.json")" "unset"
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
