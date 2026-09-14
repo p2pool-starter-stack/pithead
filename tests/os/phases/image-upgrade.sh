@@ -95,8 +95,8 @@ phase_image_upgrade() {
         return
     }
     _ssh "/run/pithead-image-upgrade/image-upgrade-guest.sh $head" || rc=$?
-    if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs'; then
-        ok "guest-local reflink volume was torn down"
+    if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
+        ok "guest-local reflink volume and private inputs were torn down"
     else
         bad "guest-local reflink volume teardown did not finish"
     fi
