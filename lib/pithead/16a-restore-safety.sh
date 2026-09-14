@@ -236,6 +236,9 @@ restore_commit_stage() {
     done
     for path in "${RESTORE_ALLOWED_DIRS[@]}"; do
         rel="${path#/}"
+        # This explicit recovery command makes the archive win collisions. The wizard setup
+        # path intentionally preserves existing chain files; see docs/operations.md's
+        # "Restore collision rules" for the different operational intent.
         [ ! -d "$RESTORE_STAGE_DIR/$rel" ] || { sudo mkdir -p "$path" && sudo cp -a --remove-destination "$RESTORE_STAGE_DIR/$rel"/. "$path"/; } || {
             restore_discard_stage
             error "Restore failed while committing $path; inspect the destination before retrying."
