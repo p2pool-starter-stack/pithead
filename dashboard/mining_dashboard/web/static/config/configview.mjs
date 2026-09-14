@@ -510,7 +510,8 @@ export class UpgradeControl extends Component {
   render() {
     const { update, enabled } = this.props;
     const { phase, confirmText, result } = this.state;
-    if ((!enabled || !update || !update.available) && phase !== "failed") return null;
+    const available = enabled && update && update.available;
+    if (!available && phase !== "failed") return null;
     const version = update?.latest;
     let modal = null;
     if (phase === "confirm") {
@@ -566,10 +567,15 @@ export class UpgradeControl extends Component {
           </div>
       </div>`;
     }
-    return html`<button class="badge badge-accent version-badge ml-2"
-            title=${"Upgrade the stack to " + version + " from the dashboard"}
-            onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
-            Upgrade to ${version}
-        </button>${modal}`;
+    return [
+      available
+        ? html`<button class="badge badge-accent version-badge ml-2"
+              title=${"Upgrade the stack to " + version + " from the dashboard"}
+              onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
+              Upgrade to ${version}
+          </button>`
+        : null,
+      modal,
+    ];
   }
 }

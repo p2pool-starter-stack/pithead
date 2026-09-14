@@ -34,4 +34,5 @@ test("Header keeps an appliance upgrade failure honest without enabling tarball 
   assert.match(out, /this machine's own log from the failed upgrade/);
   assert.match(out, /kept on this machine/);
   assert.doesNotMatch(out, /cd \/srv|kept on the host|\.bak-upgrade/);
+  assert.doesNotMatch(out, />Upgrade to v9\.9\.9</);
 });
