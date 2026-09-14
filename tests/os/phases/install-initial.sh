@@ -56,8 +56,9 @@ _phase_install_initial() {
     # Plant the foreign disk's filesystem and sentinel before the inventory is read: M4 must
     # prove a disk that already carries someone else's data is still correctly offered for
     # erasure, not skipped for having a filesystem lsblk doesn't recognise as ours.
+    _foreign_dev() { _ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'"; }
     local foreign_dev foreign_hash
-    foreign_dev=$(_ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'")
+    foreign_dev=$(_foreign_dev)
     [ -n "$foreign_dev" ] || {
         bad "the foreign disk (serial $foreign_serial) is not visible to the guest"
         return 1
@@ -260,7 +261,7 @@ _phase_install_initial() {
     # ---- M4: the disk left alone stays alone -----------------------------------------------
     # THE row this phase was missing: installing to vda must never touch the foreign disk. Found
     # by serial again — the scsi bus is free to renumber it now that the USB stick is gone.
-    foreign_dev=$(_ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'")
+    foreign_dev=$(_foreign_dev)
     if [ -n "$foreign_dev" ] && _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" &&
             [ \"\$(sha256sum \"\$m/sentinel\" | cut -d' ' -f1)\" = \"$foreign_hash\" ] &&
             umount \"\$m\""; then
