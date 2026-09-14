@@ -192,7 +192,8 @@ printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
 # still rooted at ONE directory (the bundle's own), just not $RS, so it must restore just as a
 # same-directory backup does.
 OLDROOT="$RS/old-bundle-root"
-mkdir -p "$OLDROOT/build/tari" "$OLDROOT/data/tor" "$OLDROOT/data/dashboard" "$OLDROOT/bin"
+mkdir -p "$OLDROOT/build/tari" "$OLDROOT/data/tor" "$OLDROOT/data/dashboard" \
+    "$OLDROOT/data/monero" "$OLDROOT/data/tari" "$OLDROOT/data/p2pool" "$OLDROOT/bin"
 cp "$STACK" "$OLDROOT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$OLDROOT/build/tari/"
 cp "$RS/bin/docker" "$RS/bin/sudo" "$OLDROOT/bin/"
@@ -209,7 +210,12 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 printf 'CADDY-OLDROOT\n' >"$OLDROOT/Caddyfile"
 printf 'ONIONKEY-OLDROOT\n' >"$OLDROOT/data/tor/hs_ed25519_secret_key"
 printf 'DBDATA-OLDROOT\n' >"$OLDROOT/data/dashboard/dashboard.db"
-out="$(cd "$OLDROOT" && PATH="$OLDROOT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
+printf 'MONERO-CHAIN-OLDROOT\n' >"$OLDROOT/data/monero/lmdb-sentinel"
+printf 'TARI-CHAIN-OLDROOT\n' >"$OLDROOT/data/tari/db-sentinel"
+printf 'P2POOL-CHAIN-OLDROOT\n' >"$OLDROOT/data/p2pool/db-sentinel"
+# --with-chains: the issue's own repro (#2181) backs up Monero/Tari/P2Pool data too, so the
+# cross-root restore below has to prove those trees, not just config/Tor/dashboard.
+out="$(cd "$OLDROOT" && PATH="$OLDROOT/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup --with-chains -y 2>&1)"
 rc=$?
 assert_rc "cross-root fixture: backup exits 0" "$rc" "0"
 oldarchive="$(ls "$OLDROOT"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
@@ -221,7 +227,10 @@ assert_contains "cross-root restore accepted" "$out" "rc0"
 assert_contains "cross-root restore carries the source box's config" "$(cat "$RS/config.json" 2>/dev/null)" "old-bundle.lan"
 assert_eq "cross-root restore brings back the onion key" "$(cat "$RS/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-OLDROOT"
 assert_eq "cross-root restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-OLDROOT"
-rm -rf "$OLDROOT"
+assert_eq "cross-root restore brings back the monero chain data" "$(cat "$RS/data/monero/lmdb-sentinel" 2>/dev/null)" "MONERO-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the tari chain data" "$(cat "$RS/data/tari/db-sentinel" 2>/dev/null)" "TARI-CHAIN-OLDROOT"
+assert_eq "cross-root restore brings back the p2pool chain data" "$(cat "$RS/data/p2pool/db-sentinel" 2>/dev/null)" "P2POOL-CHAIN-OLDROOT"
+rm -rf "$OLDROOT" "$RS/data/monero" "$RS/data/tari" "$RS/data/p2pool"
 rm -f "$RSPOOL/applied" "$RS/config.json"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile" # fixtures back to their case-1 state for the cases below
 printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
