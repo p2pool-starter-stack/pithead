@@ -88,7 +88,37 @@ if [ "${1:-}" = "--self-test" ]; then
     (cd "$tmp/repo" && git add -A)
     leg "the FIRST of two sources on one line is caught" 1 "sources probe-gone/first$sfx"
 
-    # Leg 6: an empty enumeration is a broken filter, not a clean tree.
+    # Legs 6-8 cover Part 3, the workflow config-input scan. The fixture is a real ci.yml, because
+    # the zero-match refusal keys off that file being present — a fixture without it would prove
+    # nothing about the shape the gate actually runs on. The fragment is repointed to a live path
+    # first so legs 3-5's code scan stays green while these run.
+    printf '%s %s/probe-bench/measure%s"\n' "$src" "$here" "$sfx" >"$tmp/repo/lib/frag$sfx"
+    mkdir -p "$tmp/repo/.github/workflows" "$tmp/repo/.config"
+    echo 'x' >"$tmp/repo/.config/trivyignore"
+    wfi="trivyignores"
+
+    # Leg 6: a trivyignores: input naming a path that is not on disk must be caught. This is the
+    # exact defect the #1901 merge shipped green.
+    printf 'jobs:\n  s:\n    steps:\n      - with:\n          %s: .trivyignore\n' \
+        "$wfi" >"$tmp/repo/.github/workflows/ci.yml"
+    (cd "$tmp/repo" && git add -A)
+    leg "a stale workflow config-input path is caught" 1 "passes $wfi: .trivyignore"
+
+    # Leg 7: the same input, repointed at the file that exists — narrowness.
+    printf 'jobs:\n  s:\n    steps:\n      - with:\n          %s: .config/trivyignore\n' \
+        "$wfi" >"$tmp/repo/.github/workflows/ci.yml"
+    (cd "$tmp/repo" && git add -A)
+    leg "a live workflow config-input path is NOT caught" 0 "every named repo path resolves"
+
+    # Leg 8: an Actions expression is resolved at run time, so it must be skipped, not red — and a
+    # file carrying ONLY expressions must still trip the zero-match refusal rather than pass.
+    printf 'jobs:\n  s:\n    steps:\n      - with:\n          %s: ${{ inputs.%s }}\n' \
+        "$wfi" "$wfi" >"$tmp/repo/.github/workflows/ci.yml"
+    (cd "$tmp/repo" && git add -A)
+    leg "an expression-only trivyignores tree is refused, not passed" 1 "no literal $wfi: input matched"
+    rm -rf "$tmp/repo/.github"
+
+    # Leg 9: an empty enumeration is a broken filter, not a clean tree.
     git init -q "$tmp/empty" && mv "$tmp/repo" "$tmp/repo.bak" && mv "$tmp/empty" "$tmp/repo"
     leg "an empty enumeration is refused" 1 "returned zero files"
 
@@ -117,6 +147,8 @@ allowed_absent() {
     os/build/stage/docker-compose.yml) return 0 ;;
     # RigForge's own repo path, vendored here under tests/integration/fakes/contract/.
     tests/contract/v1/feed.json) return 0 ;;
+    # Written at run time by ci.yml's shipped-image sweep (`git show origin/main:...`), never on disk.
+    main.trivyignore) return 0 ;;
     *) return 1 ;;
     esac
 }
@@ -165,6 +197,34 @@ for f in $files; do
     done < <(grep -noE "(^|[^A-Za-z0-9/._-])$root/[A-Za-z0-9./_-]+\.$ext" "$f" 2>/dev/null |
         sed -E "s/:[^:]*[^A-Za-z0-9\/._-]($root\/)/:\1/")
 done
+
+# --- Part 3: a tool-config path handed to a workflow as an input. `trivyignores:` names a file in
+# THIS tree, and #1901 moved that file into .config/; a later merge reintroduced three steps still
+# naming the pre-move root path with every gate green. Nothing could see it: `lint-trivy-parity`
+# compares the pinned `version:` and nothing else, and Part 1's scan is anchored at the source
+# directories, so a dotfile config path never matches. A moved config with a stale consumer is the
+# same invariant as a moved file with a stale comment, so it gets the same gate.
+wf_seen=0
+while IFS=: read -r wf lineno ref; do
+    [ -n "${ref:-}" ] || continue
+    # An expression is resolved by Actions at run time; only a literal names a path we can check.
+    case "$ref" in *'${{'*) continue ;; esac
+    wf_seen=$((wf_seen + 1))
+    [ -e "$ref" ] && continue
+    allowed_absent "$ref" && continue
+    echo "$wf:$lineno passes trivyignores: $ref, which does not exist" >&2
+    rc=1
+done < <(git ls-files '.github/*.yml' '.github/*/*.yml' '.github/*/*/*.yml' |
+    xargs -r grep -HnoE 'trivyignores:[[:space:]]*[^[:space:]#]+' 2>/dev/null |
+    sed -E 's/trivyignores:[[:space:]]*//')
+
+# The same refusal Part 1 makes: ci.yml always carries a literal trivyignores input, so zero
+# matches beside a present ci.yml means the pattern rotted, not that the tree is clean.
+if [ -e .github/workflows/ci.yml ] && [ "$wf_seen" -eq 0 ]; then
+    echo "path refs: .github/workflows/ci.yml is here but no literal trivyignores: input matched." >&2
+    echo "A rotted pattern and a clean tree both report zero hits — refusing to call either a pass." >&2
+    exit 1
+fi
 
 # The code scan lives in its own file: two independent behaviours, and this one was over the
 # 400-line target with it inline. It is sourced, not run, because it shares allowed_absent() and

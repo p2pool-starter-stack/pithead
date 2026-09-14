@@ -31,7 +31,7 @@ SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (weekly report)"
 SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard os-rootfs"
 
 # Only fixable HIGH/CRITICAL are counted, the same scope ci.yml's gate uses (`ignore-unfixed`), and
-# the same scope every `.trivyignore` entry is written against. It is also the only scope that maps
+# the same scope every `.config/trivyignore` entry is written against. It is also the only scope that maps
 # to a decision: a patch release can only ship a fix that exists. Unfixed findings are left to the
 # gate's own reporting rather than counted here as if someone could act on them. This is the label
 # the table header prints; the jq filter below spells the same two out literally.
@@ -198,7 +198,7 @@ ${rows}"
     printf 'first and the digest is what trivy reads, so this reports the bytes on the registry — not\n'
     printf 'a rebuild, which would resolve apt afresh and hide the very CVEs this exists to find.\n'
     if [ -n "$tag_seen" ]; then
-        printf '\nRelease swept: **%s** (from `main`, scanned against `main`'"'"'s own `.trivyignore`).\n' "$tag_seen"
+        printf '\nRelease swept: **%s** (from `main`, scanned against `main`'"'"'s own `.config/trivyignore`).\n' "$tag_seen"
     fi
     printf '\n| image | digest | fixable %s |\n| --- | --- | --- |\n' "$SEVERITY_LABEL"
     printf '%s' "$summary"

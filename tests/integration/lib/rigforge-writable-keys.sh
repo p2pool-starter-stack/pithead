@@ -120,10 +120,10 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
 run_rigforge_writable_keys() { # <rig>
     local rig="$1" detail orig probe
     it_log "   #1236: the writable keys the control phase never applied"
-    # State the refusals in the RUN OUTPUT, not only in this file. A permanent, reasoned omission is
-    # a deliverable of this phase, and one that is only visible to whoever opens the source reads —
-    # to the operator scanning a release-gate log — exactly like an omission nobody noticed.
-    it_log "   #1236: autotune and watchdog are deliberately NOT driven (a real tuning run; and dropping thermal protection on a rig at its temperature ceiling), and pools is never derived from the rig's own read (credential-stripped, #113) — see docs/dev/integration-testing.md"
+    # Permanent safety refusals are verdict rows, not prose that disappears beside the summary.
+    it_skip_leg "autotune write (#1236)" "starts a real tuning run on borrowed production hardware" by-design
+    it_skip_leg "watchdog write (#1236)" "would remove thermal protection from borrowed production hardware" by-design
+    it_log "   #1236: pools is never derived from the rig's own read (credential-stripped, #113) — see docs/dev/integration-testing.md"
     detail="$(_worker_detail "$rig")"
     if ! printf '%s' "$detail" | jq -e '(.rig_config | type) == "object"' >/dev/null 2>&1; then
         it_skip_phase "rigforge writable-key legs (#1236)" "rig '$rig' reports no writable config (.rig_config is null — 'could not read', or a RigForge older than v1.10.0/rigforge#253)"
