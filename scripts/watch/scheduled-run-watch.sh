@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
-# Scheduled-run watch (#1377, #1418): LATE/MISSED are findings; unreadable inputs are UNCHECKED.
 # Usage:
 #   scripts/watch/scheduled-run-watch.sh <dir>    Render <dir>/cadence.json, runs.json and jobs.json; rc 1 if unchecked.
-#   scripts/watch/scheduled-run-watch.sh --title  Print the tracking issue's title, nothing else.
-#   scripts/watch/scheduled-run-watch.sh --schedules <workflow-dir>  Print path<TAB>cron for every declared schedule.
-#   scripts/watch/scheduled-run-watch.sh --self-test  Drive fixtures. No network, no gh.
-
 set -Eeuo pipefail
 
 WATCH_ISSUE_TITLE="Scheduled CI run watch (weekly report)"
@@ -76,7 +71,7 @@ render_cadence() {
                 | (if $before_declared <= ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
                 | ([$valid[] | . + {slot: slot(.epoch; $p)} | select(.slot >= $first)] | sort_by(.slot) | group_by(.slot) | map(last)) as $observed
                 | ($observed | first) as $old | ($observed | last) as $new
-                | (if $old != null and $old.slot > $first then [range($first; $old.slot; $p.period) | {slot: ., before: null, after: $old}] else interior_gap($observed; $p) end) as $gaps
+                | ((if $old != null and $old.slot > $first then [range($first; $old.slot; $p.period) | {slot: ., before: null, after: $old}] else [] end) + interior_gap($observed; $p)) as $gaps
                 | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"), state:
                    (if .path == ".github/workflows/scheduled-run-watch.yml" then {kind: "external"}
                     elif ($gaps | length) > 0 then {kind: "missed", gaps: $gaps}
@@ -283,6 +278,12 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.workflows[0].declaredAt = ("2026-09-14T05:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
     out="$(render_cadence "$recovered")"
     st "a declaration exactly on a slot starts with the next slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    boundary_interior="$tmp/boundary-interior"
+    cadence_fixture "$boundary_interior" "2026-10-05T08:00:00Z" "0 5 * * 1" '[{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"},{"databaseId":1005,"url":"https://x/1005","createdAt":"2026-10-05T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$boundary_interior/cadence.json" >"$boundary_interior/next" && mv "$boundary_interior/next" "$boundary_interior/cadence.json"
+    out="$(render_cadence "$boundary_interior")"
+    st "a recovered declaration boundary retains later interior gaps" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "a recovered declaration boundary names the later interior gap" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-28T05:00:00Z` between [921](https://x/921) and [1005](https://x/1005)')" "1"
     fresh="$tmp/fresh"
     cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
     jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
