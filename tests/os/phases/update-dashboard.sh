@@ -1,7 +1,15 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# Set to 1 only once this leg has actually WATCHED pithead-boot's health gate commit the slot and
+# write its verdict. phase_update reads it to class its #2055 G1 skip: legs 1-3 never start
+# pithead-boot, and this leg is the only thing in the phase that does — so on every early return
+# below, those properties are as unproven as they were in legs 1-3, and the skip must say missing
+# rather than claim this leg as its cover.
+# shellcheck disable=SC2034  # shared through the assembled runner scope, read by phases/update.sh
+LEG4_PITHEAD_BOOT_PROVED=0
 phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-boot>
     local good_bundle="$1" serial_mark="${2:-0}" marker before
+    LEG4_PITHEAD_BOOT_PROVED=0
     info "leg 4 — dashboard OS-update action end-to-end (provision, then check/download/verify/install/reboot)"
     if ! _wizard_provision_capture "$serial_mark"; then
         bad "leg 4: could not provision the stack through the wizard (${WIZ_FAIL_REASON:-no dashboard, no control channel})"
@@ -231,6 +239,10 @@ phase_update_dashboard() { # <good-bundle-path> <serial-byte-offset-before-this-
     done
     if [ "$verdict" = "updated" ]; then
         ok "leg 4: COMMIT + VERDICT — the slot committed and the verdict says updated"
+        # The one line in the phase that proves pithead-boot ran at all: the verdict is written
+        # only by its health gate. phase_update's #2055 G1 skip reads this to say covered.
+        # shellcheck disable=SC2034  # shared through the assembled runner scope, read by phases/update.sh
+        LEG4_PITHEAD_BOOT_PROVED=1
     else
         bad "leg 4: no 'updated' verdict after the reboot (got '${verdict:-none}') — commit or verdict is broken"
     fi
