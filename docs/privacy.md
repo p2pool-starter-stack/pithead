@@ -84,12 +84,15 @@ shadowing, whether or not it could actually match our traffic — safe, but not 
 the same host also writes rules into `DOCKER-USER`; the podman/netavark appliance path proves
 reachability structurally instead of by rule-scanning, so it does not have this gap.
 
-One parsing weakness remains open ([pithead#2129](https://github.com/p2pool-starter-stack/pithead/issues/2129)):
-the check reads `-s`/`! -s` values by scanning the raw rule text, so a foreign rule whose own
-`-m comment` text happens to embed a matching substring ahead of the real flag can still confuse
-which CIDR value gets compared. It cannot flip a plain match into the wrong (negated) branch — that
-part is positional — and it only requires an attacker who can already write rules into
-`DOCKER-USER`, i.e. who already has root-equivalent control of the host firewall.
+The check strips a `-m comment --comment "..."` clause before reading `-s`/`! -s`, so a foreign
+rule's own comment text can no longer confuse which CIDR value is compared or which branch
+(negated or plain) is taken — a review found and closed a live case of exactly that
+([pithead#2129](https://github.com/p2pool-starter-stack/pithead/issues/2129)), for this codebase's
+actual `iptables -S` rendering, which always places `--comment` immediately ahead of `-s`. What
+remains open in #2129: a rule with more than one `-m comment` clause, or an `iptables` build that
+renders `--comment` differently than verified here, falls back to the pre-fix whole-line search for
+whatever isn't stripped — narrower than before, and still requires an attacker who can already
+write rules into `DOCKER-USER`, i.e. who already has root-equivalent control of the host firewall.
 
 ---
 

@@ -213,7 +213,7 @@ tor_egress_enforced() {
     # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
-    local line subnet foreign_net negated
+    local line subnet foreign_net negated search_line before after
     subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
     [ -n "$subnet" ] || subnet="172.28.0.0/24"
     while IFS= read -r line; do
@@ -232,25 +232,38 @@ tor_egress_enforced() {
             *" -j ACCEPT" | *" -j RETURN" | *" -j ACCEPT "* | *" -j RETURN "*) ;;
             *) continue ;;
             esac
-            case "$line" in
+            # Strip a `-m comment --comment "..."` clause BEFORE any `-s`/`! -s` search. This
+            # codebase's own `iptables -S` rendering always places `--comment` ahead of `-s`, so a
+            # foreign rule's own comment text containing a token like `! -s <cidr> ` was the FIRST
+            # occurrence in the raw line and hijacked BOTH the extracted CIDR and the negated/plain
+            # branch — not just the value, as an earlier version of this fix claimed (a security
+            # review reproduced a live fail-open: `-m comment --comment "note ! -s 0.0.0.0/0 x"
+            # -s <our-subnet> -j ACCEPT`, a plain ACCEPT exactly matching the mining subnet, read
+            # as "enforced" because the comment's fake negated 0.0.0.0/0 was evaluated instead of
+            # the real rule). Search the comment-stripped `search_line`, never the raw `$line`.
+            search_line="$line"
+            case "$search_line" in
+            *'--comment "'*)
+                before="${search_line%%'--comment "'*}"
+                after="${search_line#*'--comment "'}"
+                after="${after#*'"'}"
+                search_line="$before$after"
+                ;;
+            esac
+            case "$search_line" in
             *" -s "*)
-                foreign_net="${line#*" -s "}"
+                foreign_net="${search_line#*" -s "}"
                 foreign_net="${foreign_net%% *}"
                 # `iptables -S` renders a negated source as `! -s <cidr>` (the `!` precedes the
                 # flag). A NEGATED accept matches every packet whose source is OUTSIDE <cidr> —
                 # the opposite test from a plain match: it shadows our DROP unless the mining
                 # subnet sits entirely inside <cidr>, not merely overlaps it. Missing this let a
                 # disjoint `! -s <unrelated-cidr>` — which matches OUR subnet precisely because
-                # it's disjoint from it — read as harmless.
-                #
-                # Positional, not a whole-line search: check only the text immediately before the
-                # MATCHED `-s` (the same occurrence `foreign_net` was just cut from), not anywhere
-                # in the line. A whole-line `*"! -s "*` search reads a `--comment` string containing
-                # that literal token as negation on an unrelated, non-negated `-s` later in the
-                # line — a false positive a security review found (#2129 tracks the matching
-                # extraction weakness the tokenizer half of that gap still has).
+                # it's disjoint from it — read as harmless. Positional on `search_line` (the text
+                # immediately before the matched `-s`), not a whole-line search — the comment strip
+                # above is what makes that positional check trustworthy.
                 negated=0
-                case "${line%%" -s "*}" in *"!") negated=1 ;; esac
+                case "${search_line%%" -s "*}" in *"!") negated=1 ;; esac
                 if [ "$negated" = 1 ]; then
                     tor_egress_cidr_contains "$foreign_net" "$subnet" || return 5
                 else

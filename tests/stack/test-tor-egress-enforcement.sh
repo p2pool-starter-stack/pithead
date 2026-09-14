@@ -365,14 +365,23 @@ assert_eq "iptables: a NEGATED accept on a DISJOINT subnet -> not provably enfor
 # only that slice, so the rest of the mining subnet is exposed: this must still shadow.
 assert_eq "iptables: a NEGATED accept NARROWER than our subnet -> not provably enforced (exposes the rest)" \
     "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/25 -j ACCEPT')" "5"
-# Negation detection is now POSITIONAL — it reads only the text immediately before the matched
-# `-s` token, not a whole-line search — so a foreign rule's OWN `--comment` text embedding the
-# literal token "! -s " ahead of a real, non-negated `-s` cannot flip a plain match into the
-# inverted negated test. This rule is scoped to exactly our subnet either way (rc 5 whether read
-# as negated or not), so it can't distinguish the two paths by itself — #2129 tracks the
-# remaining extraction weakness (the `-s` VALUE itself is still a whole-line search and can still
-# be misled by comment content), deliberately left open here.
-assert_eq "iptables: a plain accept on our subnet with a comment embedding '! -s ' -> not provably enforced" \
+# This codebase's own `iptables -S` rendering always places `-m comment --comment "..."` ahead of
+# `-s`, so the `--comment` clause is now stripped before any `-s`/`! -s` search runs — closing a
+# live fail-open a security review reproduced: without the strip, a foreign rule's OWN comment
+# text embedding a PARSEABLE negated CIDR (one that doesn't error out, unlike a truncated one) was
+# the FIRST " -s " occurrence and hijacked BOTH the extracted value AND the negated/plain branch,
+# not just the value as an earlier version of this fix claimed. `0.0.0.0/0` in the comment is
+# chosen deliberately: read as a genuine negated match, `! -s 0.0.0.0/0` trivially "contains"
+# everything (cp=0), so the OLD code called the REAL rule below — a plain ACCEPT scoped to exactly
+# our subnet — safe. Reverting just the comment-strip reproduces rc 0 here; this is the control
+# that must fail without the fix, not one that coincidentally lands on rc 5 either way.
+assert_eq "iptables: a plain accept on our subnet with a comment embedding a parseable '! -s 0.0.0.0/0' -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment "note ! -s 0.0.0.0/0 x" -s 172.28.0.0/24 -j ACCEPT')" "5"
+# Kept as a secondary case: a comment CIDR that gets truncated by the extraction's own
+# cut-at-next-space step (no trailing word before the closing quote) errors out in
+# tor_egress_ip_to_int rather than parsing — still lands on rc 5, but via the guard's fail-safe
+# `[ ... ] || return 1`, not by reading the real rule correctly. Both must hold.
+assert_eq "iptables: a plain accept on our subnet with a comment embedding a truncating '! -s 10.0.0.0/8' -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -m comment --comment "note ! -s 10.0.0.0/8" -s 172.28.0.0/24 -j ACCEPT')" "5"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
