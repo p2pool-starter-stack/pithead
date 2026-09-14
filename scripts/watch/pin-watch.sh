@@ -289,9 +289,14 @@ fi
 printf '%s\n' "Also NOT checked: whether each image pin's digest still corresponds to its tag. The digest is what actually runs, so a half-done bump is invisible to the table above."
 if [ "$failed" -gt 0 ]; then
     printf '\n%s\n' "**$failed lookup(s) could not run — those rows are unchecked, not current.**"
-else
-    printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
 fi
 printf '\n%s\n' "<!-- pin-watch: stale=$stale failed=$failed -->"
 
-exit "$([ "$failed" -gt 0 ] && echo 1 || echo 0)"
+printf '\n'
+raise_rc=0
+if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
+    bash "$ROOT/scripts/watch/go-raise-watch.sh" || raise_rc=$?
+fi
+[ "$failed" -gt 0 ] || [ "$raise_rc" -ne 0 ] || printf '\n%s\n' "_Last fully successful check: $(date -u '+%Y-%m-%d %H:%M UTC')_"
+
+exit "$([ "$failed" -gt 0 ] || [ "$raise_rc" -ne 0 ] && echo 1 || echo 0)"
