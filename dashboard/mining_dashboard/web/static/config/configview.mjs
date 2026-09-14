@@ -87,11 +87,11 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   );
 }
 
-const HOST_ONLY_TITLE = "Host-only — run ./pithead apply on the host, or use a configuration stick";
+const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
 // #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review
 // modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
-const APPROVAL_TITLE = "Editable — this change is sensitive; you confirm at Save and it is audited";
+const APPROVAL_TITLE = "Editable — this sensitive change is recorded under your signed-in identity";
 
 // `full` (#529): the pinned Core card mixes fields from several sections, so its rows need the
 // FULL dotted key ("monero.wallet_address") to stay unambiguous. A natural section keeps the

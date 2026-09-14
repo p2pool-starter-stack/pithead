@@ -121,10 +121,7 @@ test("form mode: a field NOT in the editable set renders disabled with the host-
   inst.state.editableKeys = ["p2pool.pool"]; // dashboard.auth.password deliberately absent
   const out = renderToString(inst.render());
   assert.match(out, /disabled/);
-  // The tooltip names BOTH remedies since the perimeter fix: an appliance has no host shell, so
-  // "edit config.json" alone is a dead end there (#786/#1821) and the stick is the real route.
-  assert.match(out, /Host-only — run \.\/pithead apply on the host/);
-  assert.match(out, /configuration stick/);
+  assert.match(out, /Host-only — edit config\.json and run \.\/pithead apply/);
 });
 
 test("form mode: a field IN the editable set renders enabled, no host-only tooltip on it", () => {
