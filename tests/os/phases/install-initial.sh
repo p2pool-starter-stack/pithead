@@ -27,6 +27,9 @@ _phase_install_initial() {
     # target also gets one; its MODEL stays "unknown" as a real NVMe/virtio target's often does.
     local foreign_disk="/srv/code/bench-vm/pithead-foreign.img"
     local foreign_serial="PHFOREIGN01" foreign_model="ForeignDisk" target_serial="PHTARGET01"
+    # The stick gets one as well — not for the inventory's sake (it must never appear there) but
+    # so the exclusion assertion below has an expectation the HARNESS owns. See that assertion.
+    local stick_serial="PHSTICK01"
     rm -f "$foreign_disk"
     # 5G, not a token size: the negative control at the end INSTALLS to this disk, and
     # pithead-install's partition_fresh lays down a 256 MiB ESP plus a 4 GiB slot A. Anything
@@ -43,7 +46,7 @@ _phase_install_initial() {
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import \
-        --disk "path=$DISK,format=raw,bus=usb,removable=on,boot.order=1" \
+        --disk "path=$DISK,format=raw,bus=usb,removable=on,serial=$stick_serial,boot.order=1" \
         --disk "path=$target_disk,format=raw,bus=virtio,serial=$target_serial,boot.order=2" \
         --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
         --network network=default,model=virtio --graphics none \
@@ -61,9 +64,9 @@ _phase_install_initial() {
     # Plant the foreign disk's filesystem and sentinel before the inventory is read: M4 must
     # prove a disk that already carries someone else's data is still correctly offered for
     # erasure, not skipped for having a filesystem lsblk doesn't recognise as ours.
-    _foreign_dev() { _ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'"; }
+    _dev_by_serial() { _ssh "lsblk -drno NAME,SERIAL | awk -v s=\"$1\" '\$2==s{print \$1; exit}'"; }
     local foreign_dev foreign_hash
-    foreign_dev=$(_foreign_dev)
+    foreign_dev=$(_dev_by_serial "$foreign_serial")
     [ -n "$foreign_dev" ] || {
         bad "the foreign disk (serial $foreign_serial) is not visible to the guest"
         return 1
@@ -96,16 +99,27 @@ _phase_install_initial() {
         bad "foreign disk row missing or wrong — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
-    # The boot medium must never be a target — checked by its actual name, not a bus-shaped guess:
-    # the foreign disk above rides the same scsi-class bus the USB stick does, so a blanket "no
-    # sdX" pattern would now reject a disk that is supposed to be offered.
-    local boot_name
-    boot_name=$(_ssh "lsblk -no PKNAME \$(findmnt -no SOURCE /) 2>/dev/null" | head -1)
-    if [ -n "$boot_name" ] && printf '%s' "$out" | cut -f1 | grep -qx "$boot_name"; then
-        bad "inventory offers the boot medium itself ($boot_name)"
+    # The boot medium must never be a target. Two things this assertion must NOT do, both of
+    # which it did before:
+    #   - derive its expectation from `lsblk -no PKNAME $(findmnt -no SOURCE /)`. That is
+    #     character-for-character pithead-install's own boot_disk(), so the check and the code it
+    #     checks shared one oracle: if boot_disk() resolved the wrong disk, or none, the
+    #     expectation moved with it and the assertion could not fail.
+    #   - treat an unresolvable name as "nothing to compare, so pass". An expectation the harness
+    #     cannot compute is a broken harness, and a check that cannot fail is not a check.
+    # So: the name comes from the serial this phase itself put on the stick, and an empty answer
+    # fails loudly.
+    local stick_dev
+    stick_dev=$(_dev_by_serial "$stick_serial")
+    if [ -z "$stick_dev" ]; then
+        bad "the boot medium (serial $stick_serial) is not visible to the guest — the exclusion check below would prove nothing"
         return 1
     fi
-    ok "inventory excludes the disk the system booted from"
+    if printf '%s' "$out" | cut -f1 | grep -qx "$stick_dev"; then
+        bad "inventory offers the boot medium itself ($stick_dev)"
+        return 1
+    fi
+    ok "inventory excludes the disk the system booted from ($stick_dev)"
     # The host wizard loop must be in installer mode — the same gate a real stick hits.
     # Poll: firstboot loads the wizard image from its tarball BEFORE publishing the inventory,
     # which takes about a minute on a first boot. Checking the moment SSH answers is a race the
@@ -270,7 +284,7 @@ _phase_install_initial() {
     # ---- M4: the disk left alone stays alone -----------------------------------------------
     # THE row this phase was missing: installing to vda must never touch the foreign disk. Found
     # by serial again — the scsi bus is free to renumber it now that the USB stick is gone.
-    foreign_dev=$(_foreign_dev)
+    foreign_dev=$(_dev_by_serial "$foreign_serial")
     if [ -n "$foreign_dev" ] && _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" &&
             [ \"\$(sha256sum \"\$m/sentinel\" | cut -d' ' -f1)\" = \"$foreign_hash\" ] &&
             umount \"\$m\""; then
