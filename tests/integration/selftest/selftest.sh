@@ -60,11 +60,11 @@ resolve_overrides "monero.mode=remote"
 rc=$?
 assert_rc "remote skips without endpoint" "$rc" "1"
 assert_contains "skip names --remote-monero-host" "$SKIP_REASON" "--remote-monero-host"
-REMOTE_MONERO_HOST="10.0.0.5:18081"
+REMOTE_MONERO_HOST="10.0.0.5"
 resolve_overrides "monero.mode=remote"
 rc=$?
 assert_rc "remote ok with endpoint" "$rc" "0"
-assert_contains "augments remote host" "$RESOLVED" "monero.remote.host=10.0.0.5:18081"
+assert_contains "augments remote host" "$RESOLVED" "monero.remote.host=10.0.0.5"
 # tari.mode remote (#103/#942): same shape as monero's above, its own global/endpoint.
 REMOTE_TARI_HOST=""
 resolve_overrides "tari.mode=remote"
@@ -108,12 +108,12 @@ unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1
 FULL_DATA_DIR="/srv/full"
-REMOTE_MONERO_HOST="10.0.0.5:18081"
+REMOTE_MONERO_HOST="10.0.0.5"
 resolve_overrides "monero.mode=remote monero.prune=false"
 rc=$?
 assert_rc "compound prereqs resolve" "$rc" "0"
 assert_contains "compound: data_dir" "$RESOLVED" "monero.data_dir=/srv/full"
-assert_contains "compound: remote host" "$RESOLVED" "monero.remote.host=10.0.0.5:18081"
+assert_contains "compound: remote host" "$RESOLVED" "monero.remote.host=10.0.0.5"
 # A network.subnet move can't be hot-applied (#201) — the hot-apply loop must SKIP it (loud, not
 # silent), leaving the real coverage to run.sh's --subnet phase.
 BASELINE_PRUNE=1
