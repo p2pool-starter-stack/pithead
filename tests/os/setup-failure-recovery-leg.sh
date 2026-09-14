@@ -42,13 +42,23 @@ setup_failure_state_retained() { # <wizard-state-json> <expected-wallet>
 # `error()` is what actually fails the (setup) subshell the wizard is running — a post-marker
 # setup failure, which is what this leg is now named for.
 SETUP_FAULT_MARK=pithead-os-2061-nonexistent-tag
+# THE ARMING's retag, as one definition: the SED PROGRAM the remote arm below runs on the live
+# Compose file, and what the self-test pins directly (`_dashboard_retag`) without a guest. Matches
+# only the dashboard's own image line — "pithead-dashboard:" is not a substring of "pithead-tor:"
+# or any other first-party name, so provision_tor's target service is never touched.
+DASHBOARD_RETAG_SED="s#pithead-dashboard:.*#pithead-dashboard:$SETUP_FAULT_MARK#"
+_dashboard_retag() { sed "$DASHBOARD_RETAG_SED"; } # stdin -> stdout; the self-test drives this
+# The fault_report line the arming loop below prints ("seen=0|1 at_failure=DEPLOYMENT_COMPLETED=...")
+# parsed here, once, so the self-test can pin both fields against synthetic reports without a guest.
+_fault_report_marker_seen() { printf '%s' "$1" | grep -oE 'seen=[01]' | cut -d= -f2; }
+_fault_report_marker_at_failure() { printf '%s' "$1" | sed -n 's/.*at_failure=DEPLOYMENT_COMPLETED=//p' | tr -d '\r'; }
 restore_setup_fault() { _ssh "mv -f /run/pithead-os-1966-docker-compose.yml /data/pithead/docker-compose.yml &&
     test -s /data/pithead/docker-compose.yml && test ! -e /run/pithead-os-1966-docker-compose.yml &&
     ! grep -q $SETUP_FAULT_MARK /data/pithead/docker-compose.yml"; }
 provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-token>
     local ip="$1" jar="$2" old_token="$3" handoff="" state code new_token="" tries=0
     local live=/data/pithead/docker-compose.yml backup=/run/pithead-os-1966-docker-compose.yml
-    if _ssh "test -s '$live' && test ! -e '$backup' && cp '$live' '$backup' && test -s '$backup' && sed -i 's#pithead-dashboard:.*#pithead-dashboard:$SETUP_FAULT_MARK#' '$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
+    if _ssh "test -s '$live' && test ! -e '$backup' && cp '$live' '$backup' && test -s '$backup' && sed -i '$DASHBOARD_RETAG_SED' '$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
         ok "post-marker setup fault is armed: the dashboard image cannot be pulled, but tor still starts"
     else
         # Restore only over an absent file or our OWN edit — never over a file we did not touch,
@@ -114,8 +124,8 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         bad "the armed host setup fault never returned a recorded failure"
         return 1
     fi
-    marker_seen=$(printf '%s' "$fault_report" | grep -oE 'seen=[01]' | cut -d= -f2)
-    marker_at_failure=$(printf '%s' "$fault_report" | sed -n 's/.*at_failure=DEPLOYMENT_COMPLETED=//p' | tr -d '\r')
+    marker_seen=$(_fault_report_marker_seen "$fault_report")
+    marker_at_failure=$(_fault_report_marker_at_failure "$fault_report")
     if [ "$marker_seen" != "1" ]; then
         restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
         bad "DEPLOYMENT_COMPLETED was never observed true before the recorded failure — the fault fired before the marker was ever set (a #2050-style regression), not after it (raw: '$fault_report')"
@@ -181,7 +191,33 @@ _setup_failure_self_test() {
     # earlier in this same phase, so a page that handed back THAT attempt instead of the accepted
     # one would otherwise pass.
     ! setup_failure_state_retained "${failed/\"local\"/\"remote\"}" wallet || return 1
-    echo "setup-failure-recovery self-test: failed-page retention controls passed"
+
+    # THE RETAG (#2061): a fixture Compose fragment with three services, so the pattern's specificity
+    # is pinned, not just its match — "pithead-dashboard:" sharing no substring with "pithead-tor:"
+    # is what keeps provision_tor's own target untouched, and a sed pattern that regressed to
+    # matching too broadly (e.g. a bare "image:.*") would retag tor here and redden this row.
+    local compose_fixture got
+    compose_fixture='  tor:
+    image: ghcr.io/x/pithead-tor:dev
+  dashboard:
+    image: ghcr.io/x/pithead-dashboard:dev
+  caddy:
+    image: caddy:2.11.4@sha256:deadbeef'
+    got=$(printf '%s\n' "$compose_fixture" | _dashboard_retag)
+    printf '%s' "$got" | grep -q "pithead-dashboard:$SETUP_FAULT_MARK" || return 1
+    printf '%s' "$got" | grep -q "pithead-tor:dev" || return 1
+    printf '%s' "$got" | grep -q "caddy:2.11.4@sha256:deadbeef" || return 1
+    ! printf '%s' "$got" | grep -q "pithead-dashboard:dev$" || return 1
+
+    # THE DISCRIMINATING ASSERTION's parsing (#2061): both fields, and the two negatives that must
+    # each turn the row red on their own — a fault that never saw the marker true (the #2050-style
+    # regression), and one that saw it true but never cleared it (#2054's clear not running).
+    [ "$(_fault_report_marker_seen 'seen=1 at_failure=DEPLOYMENT_COMPLETED=false')" = "1" ] || return 1
+    [ "$(_fault_report_marker_at_failure 'seen=1 at_failure=DEPLOYMENT_COMPLETED=false')" = "false" ] || return 1
+    [ "$(_fault_report_marker_seen 'seen=0 at_failure=DEPLOYMENT_COMPLETED=false')" = "0" ] || return 1
+    [ "$(_fault_report_marker_at_failure 'seen=1 at_failure=DEPLOYMENT_COMPLETED=true')" = "true" ] || return 1
+
+    echo "setup-failure-recovery self-test: failed-page retention, retag and marker-parsing controls passed"
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
