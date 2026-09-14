@@ -52,7 +52,7 @@ permissions:
 
 jobs:
   scheduled-run-watch:
-    name: Report whether the Monday CVE sweep ran and passed
+    name: Report declared schedule cadence and the Monday CVE sweep
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

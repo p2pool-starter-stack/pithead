@@ -90,8 +90,10 @@ render_cadence() {
             end;
         (.checkedAt | fromdateiso8601) as $now
         | [.workflows[] | . as $w | ($w | parts) as $p
-            | ([.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] | sort_by(.epoch) | last) as $new
+            | [.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] as $valid
+            | ($valid | sort_by(.epoch) | last) as $new
             | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
+                 or ($valid | length) != ($w.runs | length)
                  or (($w.runs | length) == 0 and ($w.declaredAt | type) != "number") then
                 {workflow: .path, cron: .cron, last: "unknown", state: "**UNCHECKED**"}
               else (slot($now; $p)) as $latest
@@ -258,7 +260,6 @@ if [ "${1:-}" = "--self-test" ]; then
         jq -n --arg checkedAt "$checked" --arg cron "$cron" --argjson runs "$runs" \
             '{checkedAt: $checkedAt, workflows: [{path: ".github/workflows/ci.yml", cron: $cron, declaredAt: ("2026-08-01T00:00:00Z" | fromdateiso8601), runs: $runs}]}' >"$dir/cadence.json"
     }
-
     workflows="$tmp/workflows"
     mkdir -p "$workflows"
     printf 'on:\n  schedule:\n    - cron: "0 5 * * 1"\njobs: {}\n' >"$workflows/a.yml"
@@ -268,7 +269,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "every workflow carrying schedule is enumerated" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
     st "an unscheduled workflow is omitted" "$(printf '%s\n' "$out" | grep -cF 'b.yml')" "0"
     st "cron comments and .yaml workflows are handled" "$(printf '%s\n' "$out" | grep -cF $'c.yaml\t30 6 * * 1')" "1"
-
     # The GREEN path has to be REACHABLE. A check that can only ever say "incomplete" is as
     # useless as one that only ever says "clean".
     # Eight runs against HISTORY_ROWS=6, so the cap is EXERCISED rather than merely configured. A
@@ -281,24 +281,20 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a passing run says so" "$(printf '%s' "$out" | grep -c 'found nothing it had to report')" "1"
     st "the history table is capped at HISTORY_ROWS" "$(hist "$out")" "$HISTORY_ROWS"
     st "a clean report names no failing job" "$(printf '%s' "$out" | grep -c 'did not pass')" "0"
-
     # The first run at 04:45 followed four dropped hourly slots; history was still empty at 04:40.
     gap="$tmp/gap"
     cadence_fixture "$gap" "2026-09-04T04:40:00Z" "23 * * * *" '[]'
     out="$(render_cadence "$gap")" && rc=0 || rc=$?
     st "an actual elapsed hourly gap is MISSED" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
     st "a missed run is a report finding, not a broken watcher" "$rc" "0"
-
     fresh="$tmp/fresh"
     cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
     jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
     out="$(render_cadence "$fresh")"
     st "a new schedule gets its first full period of grace" "$(printf '%s' "$out" | grep -cF 'within 12h grace')" "1"
-
     jq '.workflows[0].path = ".github/workflows/scheduled-run-watch.yml"' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
     out="$(render_cadence "$fresh")"
     st "the scheduled watcher does not claim to observe itself" "$(printf '%s' "$out" | grep -cF 'external stamp only')" "1"
-
     late="$tmp/late"
     cadence_fixture "$late" "2026-09-14T18:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T06:00:00Z"}]'
     out="$(render_cadence "$late")" && rc=0 || rc=$?
@@ -311,6 +307,10 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "unreadable history is UNCHECKED" "$(printf '%s' "$out" | grep -cF '**UNCHECKED**')" "1"
     st "unchecked history fails the watcher" "$rc" "1"
+
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1" '[{"createdAt":"not-a-time"}]'
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "a malformed run timestamp is UNCHECKED" "$rc" "1"
 
     short="$tmp/short"
     runs_fixture "$short" success success
