@@ -42,6 +42,7 @@ mkdir -p "$CC/staged" "$CC/results" "$CC/audit"
 cat >"$CC/self" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$SELF_LOG"
+[ "${SELF_RC:-0}" -eq 0 ] || echo "$*" >&2
 exit "${SELF_RC:-0}"
 EOF
 chmod +x "$CC/self"
