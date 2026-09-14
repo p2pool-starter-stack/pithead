@@ -1,7 +1,7 @@
 name: Link check (lychee)
 
 # Scheduled (not per-PR) so flaky external links never redden a PR (#281). The run goes red in the
-# Actions tab if a link breaks; trigger on demand with workflow_dispatch. Ignored URLs: .lycheeignore.
+# Actions tab if a link breaks; trigger on demand with workflow_dispatch. Ignored URLs: .config/lycheeignore.
 on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
@@ -22,7 +22,7 @@ jobs:
       - name: Check links in Markdown
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: "--no-progress --exclude-path docs/research/xvb-delivery-study/data/sources './**/*.md'"
+          args: "--no-progress --exclude-file .config/lycheeignore --exclude-path docs/research/xvb-delivery-study/data/sources './**/*.md'"
           fail: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # higher github.com rate limit for repo links

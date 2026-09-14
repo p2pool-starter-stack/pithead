@@ -27,7 +27,7 @@ on:
       - "tests/integration/tor-client/**"
       - "tests/runner/**"
       - ".github/workflows/test-images.yml"
-      - ".trivyignore"
+      - ".config/trivyignore"
   schedule:
     # Weekly, on the same cadence as ci.yml's sweep. A base digest does not change under us, but the
     # CVE database does: an image that scanned clean in March is not clean in September, and nothing
@@ -107,7 +107,7 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
           # cache: false for the same reason as ci.yml (#1159): the action's DB cache is per-ref and
           # day-granular, so a branch's first run of the day freezes its database until midnight and
           # the gate's answer starts depending on when the branch last ran.

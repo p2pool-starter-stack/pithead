@@ -62,7 +62,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IGNOREFILE="$ROOT/.trivyignore"
+IGNOREFILE="$ROOT/.config/trivyignore"
 
 # The two CVE-gate workflows whose trivy-action steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
