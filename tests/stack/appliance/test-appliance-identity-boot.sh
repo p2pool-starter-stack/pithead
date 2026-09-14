@@ -57,8 +57,9 @@
 # self-arm stanza and no seed lines: the moved text is byte-identical to what it replaced, with
 # nothing authored inside it. Everything else it needs it sources for itself inside a subshell —
 # os/overlay/pithead-hugepages for its pool figure, its sizing helper and its own entry point,
-# tests/os/hugepages-boot-verdict.sh, tests/os/restore-live-state-verdict.sh and
-# tests/os/reinstall-prefill-verdict.sh for the three verdict functions, and os/build-image.sh for
+# tests/os/hugepages-boot-verdict.sh, tests/os/provisioning-settled.sh,
+# tests/os/restore-live-state-verdict.sh and
+# tests/os/reinstall-prefill-verdict.sh for the four verdict functions, and os/build-image.sh for
 # its argument handling and remedy hint — so none of those reaches this file as ambient state.
 # lib.sh alone is therefore the whole of this file's contract, and that is measured rather than
 # asserted: sourcing lib.sh and then this file under set -u, with no run.sh in the picture, runs
@@ -251,6 +252,40 @@ assert_eq "never ran + unreadable is-active: fails, names it unreadable" \
 assert_eq "ran but the page count is garbage: fails cleanly, no arithmetic error" \
     "$(hbv banana active)" "1 hugepage pool unreadable at boot (HugePages_Total: banana, want >= 3072)"
 unset -f hbv
+
+echo "== unit: provisioning_ran_verdict — is-active alone can't tell skipped-by-design from never-triggered (#2055 G3) =="
+# tests/os/run.sh's restore leg cannot be driven from here (it needs a real KVM guest), but the
+# verdict is pure text-matching over four already-observed strings (two ActiveState reads, two
+# ConditionResult reads) — pulled into tests/os/provisioning-settled.sh for exactly that reason,
+# the same discrimination #1212 needed for hugepages. The case that matters is the second pair
+# below: firstboot and boot BOTH read `inactive` (the exact "units: inactive inactive" row #2055
+# names) but now fails instead of reading as a finished provisioning, because neither unit's
+# ConditionResult says it ran.
+# Mutation run: drop the ConditionResult check and fall back to judging ActiveState alone -> the
+# "neither unit ran" case flips from fail to pass, silently reintroducing the #2055 G3 gap.
+prv() { # <firstboot-active> <boot-active> <firstboot-ran> <boot-ran> -> "<rc> <verdict-text>"
+    local out rc
+    out=$(
+        # shellcheck disable=SC1091
+        source "$ROOT/tests/os/provisioning-settled.sh"
+        provisioning_ran_verdict "$1" "$2" "$3" "$4"
+    )
+    rc=$?
+    printf '%s %s' "$rc" "$out"
+}
+assert_eq "firstboot skipped, boot ran (the normal provisioned case): passes" \
+    "$(prv inactive active no yes)" \
+    "0 one provisioning unit ran this boot (firstboot: inactive/ran=no, boot: active/ran=yes)"
+assert_eq "firstboot ran, boot skipped (the normal unprovisioned case): passes" \
+    "$(prv inactive inactive yes no)" \
+    "0 one provisioning unit ran this boot (firstboot: inactive/ran=yes, boot: inactive/ran=no)"
+assert_eq "both inactive, neither ran: fails — the #2055 G3 case is-active alone missed" \
+    "$(prv inactive inactive no no)" \
+    "1 neither provisioning unit ran this boot (firstboot ConditionResult: no, boot: no) — is-active alone cannot tell a correctly-skipped unit from one that never got the chance"
+assert_eq "unreadable ConditionResult: fails, names it unreadable" \
+    "$(prv inactive inactive "" "")" \
+    "1 neither provisioning unit ran this boot (firstboot ConditionResult: unreadable, boot: unreadable) — is-active alone cannot tell a correctly-skipped unit from one that never got the chance"
+unset -f prv
 
 echo "== unit: restore_live_state_verdict — a restore leaves proof it is RUNNING, not just unpacked (#1091) =="
 # tests/os/run.sh's phase_install restore leg cannot be driven from here (it needs a real KVM
