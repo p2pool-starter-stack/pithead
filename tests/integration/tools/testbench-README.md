@@ -125,7 +125,7 @@ failure rolls the box back (down → restore → up). See `docs/dev/integration-
 
 **Validated live (Tier 4):** the config matrix (remote/local node, dashboard secure/insecure, Tari
 required/optional, RPC LAN access, XvB on/off) applied and asserted on real synced chains;
-lifecycle (restart, secret-preserving `apply`, backup→restore round-trip); node-down failover and
+lifecycle (restart, secret-preserving `apply`, same-version backup→restore round-trip); node-down failover and
 recovery; release readiness; pruned monerod (the common production config); and the privacy egress
 assertions. [#274](https://github.com/p2pool-starter-stack/pithead/issues/274) promoted the persistent direct-IPv4-TCP bridge-container observation, and [#206](https://github.com/p2pool-starter-stack/pithead/issues/206)
 added the running XvB-over-Tor configuration assertion. Together with the historical live evidence
@@ -139,11 +139,14 @@ with the stated IPv4-TCP/bridge-network limit, not a residual gap.
 |---|---|---|
 | 1 | Full (unpruned) Monero mode live — a pruned bench can't cover it | Low. Stack code paths don't differ by prune mode (it's monerod-internal); fakes/config cover it. A multi-day full sync isn't justified. |
 | 2 | Protected pre-release gate — a self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
-| 3 | Cross-version upgrade and XvB route record | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057), and the XvB gate tracked by [#1998](https://github.com/p2pool-starter-stack/pithead/issues/1998). Upgrade proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. The routing transition has no recorded live proof. |
-| 4 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
-| 5 | Multi-worker scale — the harness assumes ~2 workers | Medium. For perf confidence add a load-gen worker and assert proxy routing/hashrate; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
-| 6 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
-| 7 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) owns a focused remote quoting/cleanup/restoration proof. |
+| 3 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. |
+| 4 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
+| 5 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
+| 6 | XvB route record | Medium. Run the gate tracked by [#1998](https://github.com/p2pool-starter-stack/pithead/issues/1998). The routing transition has no recorded live proof. |
+| 7 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
+| 8 | Multi-worker scale — the harness assumes ~2 workers | Medium. For perf confidence add a load-gen worker and assert proxy routing/hashrate; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
+| 9 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
+| 10 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) owns a focused remote quoting/cleanup/restoration proof. |
 
 **Recommended before release:** record the combined upgrade/XvB run, then automate the protected
 gate when a self-hosted runner exists. The rest are nice-to-have.
