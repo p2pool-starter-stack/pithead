@@ -76,7 +76,7 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
             elif [ "$1 $2" = "docker push" ]; then
                 printf 'push=%s final=%s temporary=%s\n' "$3" \
                     "$([ -e "$rootfs_tar.sha256" ] && echo yes || echo no)" \
-                    "$([ -s "$rootfs_tar.sha256.tmp" ] && echo yes || echo no)" >>"$PUSH_LOG"
+                    "$([ "$(cat "$rootfs_tar.sha256.tmp")" = "$(sha256sum "$rootfs_tar" | awk '{print $1}')" ] && echo exact || echo bad)" >>"$PUSH_LOG"
                 [ "${PUSH_FAIL:-0}" -eq 0 ]
             else
                 command "$@"
@@ -95,14 +95,14 @@ assert_eq "the keyed export is refused before any registry push" "$(wc -l <"$PUS
 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
 assert_rc "the producer accepts a release export" "$?" "0"
 assert_contains "the push starts with only a temporary digest handoff" "$(cat "$PUSH_LOG")" \
-    "final=no temporary=yes"
+    "final=no temporary=exact"
 assert_contains "a successful push atomically finalizes the digest handoff" "$(cat "$PUSH_LOG")" \
     "finalized=yes"
 : >"$PUSH_LOG"
 PUSH_FAIL=1 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
 assert_rc "a failed rootfs registry push fails the producer" "$?" "1"
 assert_contains "a failed push never exposes the final digest handoff" "$(cat "$PUSH_LOG")" \
-    "final=no temporary=yes"
+    "final=no temporary=exact"
 assert_not_contains "a failed push does not finalize the digest handoff" "$(cat "$PUSH_LOG")" \
     "finalized=yes"
 unset -f drive_rootfs_build

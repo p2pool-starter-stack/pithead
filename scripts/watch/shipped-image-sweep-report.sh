@@ -113,7 +113,7 @@ render_report() {
 
         if ! ref="$(jq -er '
             select((.Results | type) == "array")
-            | select(all(.Results[]; .Vulnerabilities == null or (.Vulnerabilities | type) == "array"))
+            | select(all(.Results[]; (type == "object") and (.Vulnerabilities == null or (.Vulnerabilities | type) == "array")))
             | .ArtifactName
         ' "$file" 2>/dev/null)"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
@@ -346,6 +346,9 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a report without a Results array fails the run" "$rc" "1"
     st "a structurally incomplete report reads UNCHECKED" \
         "$(printf '%s' "$out" | grep -c 'could not be parsed')" "1"
+    jq '.Results = [null]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a non-object Results entry is UNCHECKED" "$rc" "1"
 
     notag="$tmp/notag"
     cp -R "$clean" "$notag"
@@ -355,8 +358,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "missing release-tag metadata reads UNCHECKED" \
         "$(printf '%s' "$out" | grep -c 'produced no release-tag metadata')" "1"
 
-    # The load-bearing one. If the digest resolve fell through and trivy scanned a TAG, the run
-    # must not claim it swept published bytes — that is #1313's own defect, one level in.
+    # If digest resolution fell through and trivy scanned a tag, the run must say UNCHECKED.
     tagref="$tmp/tagref"
     i=1
     for s in $SWEPT_IMAGES; do
