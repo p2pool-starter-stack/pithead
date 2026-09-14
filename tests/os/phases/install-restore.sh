@@ -359,11 +359,11 @@ _phase_install_restore() {
             esac
         fi
         local restored_config restored_secrets
-        restored_config=$(_ssh "jq -c '{monero: {mode, wallet_address, node_username, node_password, remote}, tari: {mode, wallet_address, remote}, p2pool: {pool, stratum_password}, dashboard: {auth, onion, control, energy}}' /data/pithead/config.json | sha256sum | cut -d' ' -f1")
+        restored_config=$(_ssh "jq -c '{monero: (.monero | {mode, wallet_address, node_username, node_password, remote}), tari: (.tari | {mode, wallet_address, remote}), p2pool: (.p2pool | {pool, stratum_password}), dashboard: (.dashboard | {auth, onion, control, energy})}' /data/pithead/config.json | sha256sum | cut -d' ' -f1")
         [ "$restored_config" = "$expected_config" ] &&
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
-        restored_secrets=$(_ssh "grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1")
+        restored_secrets=$(_ssh "[ \$(grep -Ec '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env) = 4 ] && grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1")
         [ "$restored_secrets" = "$expected_secrets" ] &&
             ok "restore leg: restored RPC, dashboard-auth and onion-client secrets match the v1.20.0 fixture" ||
             bad "restore leg: restored RPC, dashboard-auth or onion-client secrets differ from the v1.20.0 fixture"
