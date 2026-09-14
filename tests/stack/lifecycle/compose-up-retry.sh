@@ -61,12 +61,10 @@ EOF
     chmod +x "$CUR/bin/docker"
     : >"$CUR_CALLS"
 }
-cur_run() { # <verb...> -> prints combined output; sets cur_rc
-    local out
-    out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead "$@" 2>&1)"
-    cur_rc=$?
-    printf '%s' "$out"
-}
+# No run helper on purpose: a function cannot hand its exit status back through `$( )`, which runs
+# it in a subshell, so every call site below captures `$?` itself, as the sibling black-boxes do.
+# The env prefix is written out literally for the same class of reason — bash decides what is an
+# assignment prefix before expansion, so a "VAR=value" word produced by one is a command name.
 
 echo "== black-box: apply rides out a transient 'compose up' failure in the SAME call (#2218) =="
 # The reported path: an approved disruptive setting is submitted, the control runner commits it and
@@ -74,8 +72,8 @@ echo "== black-box: apply rides out a transient 'compose up' failure in the SAME
 # leaving the incomplete marker for a retry nobody was there to run.
 cur_config mini
 cur_stub 1
-out="$(cur_run apply -y)"
-assert_rc "apply recovers inside one call when the first compose up fails" "$cur_rc" "0"
+out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "apply recovers inside one call when the first compose up fails" "$?" "0"
 assert_contains "and says it is retrying, naming the try" "$out" "try 1 of 3"
 assert_eq "having called compose up exactly twice" "$(cat "$CUR_CALLS")" "2"
 assert_eq "no incomplete marker survives a same-call recovery" \
@@ -86,8 +84,8 @@ echo "== black-box: the retry is bounded — a real failure still fails apply (#
 # (a port already bound, a failed dependency gate) behind an apply that hangs instead of reporting.
 cur_config observer
 cur_stub 99
-out="$(cur_run apply -y)"
-assert_rc "apply still fails once every try is spent" "$cur_rc" "1"
+out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "apply still fails once every try is spent" "$?" "1"
 assert_eq "after exactly 3 tries, never more" "$(cat "$CUR_CALLS")" "3"
 assert_contains "and prints the unchanged #125 recovery guidance" "$out" "were NOT recreated"
 assert_eq "leaving the incomplete marker for the next apply (#125)" \
@@ -99,8 +97,8 @@ echo "== black-box: 'up' gets the same retry, because the fix is in the shared f
 # plain `up`. Proving `up` here is what makes the placement — compose_up_checked, not the apply
 # verb — a claim the suite checks rather than a comment.
 cur_stub 1
-out="$(cur_run up)"
-assert_rc "up recovers inside one call when the first compose up fails" "$cur_rc" "0"
+out="$(cd "$CUR" && PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$CUR/bin:$PATH" ./pithead up 2>&1)"
+assert_rc "up recovers inside one call when the first compose up fails" "$?" "0"
 assert_contains "and announces the retry the same way" "$out" "try 1 of 3"
 assert_eq "having called compose up exactly twice" "$(cat "$CUR_CALLS")" "2"
 
