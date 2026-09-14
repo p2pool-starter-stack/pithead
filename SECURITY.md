@@ -100,9 +100,18 @@ The stack's defaults:
   every direction, as is anything the change preview flags destructive (including the heavy direction
   of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The security
   perimeter — wallets and view keys, dashboard auth and onion exposure, the control channel itself,
-  the Tor egress firewall, binds, every credential, and the per-rig hosts and tokens —
+  the Tor egress firewall, binds, and every credential —
   is never dashboard-committable, with or without the typed confirmation. A key added in the
-  future stays un-committable until deliberately listed. Those edits must be applied from the host CLI.
+  future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
+  edits must be applied from the host CLI, or on an appliance from a configuration stick.
+  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
+  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
+  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
+  confirmation rather than a second identity — the same self-approval shape this perimeter exists
+  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
+  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
+  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
+  second identity that a future approval tier could rejoin once one exists.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the
@@ -183,11 +192,37 @@ upgrade.
 
 **What this costs.** The Telegram tap was the only second identity on a sensitive config commit.
 A sensitive change is still gated by the never-set perimeter below, by the default-deny env
-allowlist, by a typed `APPLY` for a disruptive change, and — for a payout wallet — by retyping the
-last characters of the new address, which the host re-checks against the staged file. Those are
-typo protection and deliberate friction, **not** a second identity: a compromised dashboard session
+allowlist, and by a typed `APPLY` for a disruptive change. The payout-suffix retype is no longer
+part of that list: since the 2026-09-13 perimeter audit, a payout address is refused by the
+allowlist outright, so the suffix comparison is never reached on a commit and the field is not
+offered in the editor. The
+helper stays, and stays tested, for a future tier with a real second identity behind it. What
+remains are typo protection and deliberate friction, **not** a second identity: a compromised
+dashboard session
 that can set a field can also fill the confirm box. A second factor may return later through a
-channel designed for it; Telegram was not that channel.
+channel designed for it; Telegram was not that channel. The likeliest such channel is the phone
+client sketched in
+[p2pool-starter-stack/.github#6](https://github.com/p2pool-starter-stack/.github/issues/6), whose
+open question — whether the app carries the dashboard's own onion client-auth key or a scoped,
+revocable token minted for the device — is the same question a second identity here has to answer.
+Until something answers it, treat every tier below the physical-presence boundary as reachable by a
+compromised dashboard container, and keep the tiers small on that basis.
+
+**Removing it opened a hole, and how it was closed.** The paragraph above names the default-deny
+env allowlist as a gate on a sensitive change. For one day — between #2076 merging on 2026-09-11
+and the 2026-09-13 perimeter audit closing it — it was not one. #1978 had replaced the allowlist's
+outright refusal of an unlisted env key with "this needs
+the approval tier", so that every configuration leaf had *some* dashboard route; at the time that
+tier was the Telegram tap. #2076 removed the tap and left the typed envelope alone in the tier —
+and the dashboard container writes its own request spool, so it could supply its own `actor`, its
+own `APPLY`, and its own payout suffix. Measured on the released code, a request written straight
+into the spool applied a Monero payout-wallet swap, landing in `config.json` and `.env`. The
+approval tier is now a **short named list** (`CONTROL_DASHBOARD_APPROVAL_KEYS`, mirrored by
+`control_service.APPROVAL_ENV_KEY_PATHS`) rather than "every leaf not otherwise classified", so a
+key nobody enumerated fails closed again and the perimeter below is true as written. What remains
+true, and is the reason that tier is kept deliberately small: **anything reachable through the
+approval envelope is reachable by a compromised dashboard container**, because the envelope is a
+typed confirmation, not proof of who asked.
 
 ### Secret trust boundary for dashboard config editing
 

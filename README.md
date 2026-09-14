@@ -107,8 +107,9 @@ cp config.minimal.json config.json   # then set your Monero + Tari payout addres
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
 
-> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (~330 GB pruned / ~530 GB full
-> minimum with both nodes local; the chains grow ~100+ GB/year, so 2–4 TB avoids a later resize),
+> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
+> with both nodes local, or 370 GB+ with Tari remote; the chains grow ~100+ GB/year, so 2–4 TB
+> avoids a later resize),
 > and your Monero + Tari payout addresses. Running a node on another machine cuts the disk budget —
 > full sizing in [Hardware Requirements](docs/hardware.md).
 
@@ -267,4 +268,4 @@ If this stack saved you time, donations to this XMR wallet are appreciated:
 Pithead's own code is provided "as-is" under the [MIT License](./LICENSE). Bundled
 third-party components keep their own licenses (two, `p2pool` and `xmrig-proxy`, are GPLv3,
 shipped unmodified as separate containers). See
-[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
+[`docs/THIRD_PARTY_LICENSES.md`](./docs/THIRD_PARTY_LICENSES.md).

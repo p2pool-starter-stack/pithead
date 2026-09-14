@@ -41,7 +41,7 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
     case "$(egress_verdict "$out")" in
     ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
-    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$(printf '%s' "$out" | grep -E 'LEAK|✗' | head -4)" ;;
+    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
     *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
     esac
 }
