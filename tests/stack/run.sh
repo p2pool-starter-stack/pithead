@@ -338,8 +338,8 @@ else
     # THE GUARD THAT EARNS ITS PLACE, replacing one that could not: reseeding TOR_DATA_DIR was
     # strictly REDUNDANT, its pass condition being exactly what the CANNOT row asserts, so it could
     # never red alone. A second site above either live extractor would otherwise feed these rows a
-    # stale list. The residuals differ: sed drops a `for ...; do` line with a trailing comment and reds;
-    # awk over-reads a comment after its closing quote without changing today's output. Both are named, not guarded.
+    # stale list. Sed drops a `for ...; do` line with a trailing comment, and the existing uniqueness guard reds.
+    # Only awk's closing-quote trailing-comment over-read remains unguarded; it does not change today's output.
     assert_eq "the data-dir key list comes from exactly one site (#1776)" "$(printf '%s\n' "$_dd_sites" | grep -c .)" "1"
     assert_eq "the confirm-key allowlist comes from exactly one site (#1816)" "$(grep -c "^CONTROL_DASHBOARD_CONFIRM_KEYS='" "$STACK")" "1"
     _dd_conf=$(awk "/^CONTROL_DASHBOARD_CONFIRM_KEYS='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" |
