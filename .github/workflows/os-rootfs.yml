@@ -86,9 +86,10 @@ jobs:
           os/build-image.sh --stage-only
           docker build -f os/rootfs/Dockerfile -t pithead-os-rootfs:ci \
             --build-arg PITHEAD_UPDATER=rauc .
-      - uses: ./.github/actions/install-trivy # cached binary install, see #2214
+      - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         if: steps.tree.outputs.present == 'true'
-        with: {version: v0.74.0} # same literal as the version: below — the one live pin (#1290, #2214)
+        with:
+          version: v0.74.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
       - name: Scan rootfs for CVEs (Trivy)
         if: steps.tree.outputs.present == 'true'
         # Same gate as ci.yml's image scan: actionable (fixable) HIGH/CRITICAL only; accepted
@@ -102,11 +103,7 @@ jobs:
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Explicit on purpose (#1290): the action's default engine drifts otherwise, and
-          # `make lint-trivy-parity` reads this line. Keep it equal to the install-trivy step's
-          # `version:` above — trivy-action itself never reads this one (skip-setup-trivy, #2214).
-          version: v0.74.0
-          skip-setup-trivy: true # installs from the version: passed above, not this input (#2214)
+          skip-setup-trivy: true # scans with the binary the step above installed (#1290, #2214)
           image-ref: pithead-os-rootfs:ci
           scanners: vuln
           severity: HIGH,CRITICAL
