@@ -104,10 +104,10 @@ def parse_rigforge(payload, now=None):
 
 
 # Pool keys that are a credential and must never reach the dashboard, let alone an editor box that
-# can POST them back. RigForge already deletes both before serving the block (its read is
-# token-OPTIONAL, so it masks at the source), but this is the same defence-in-depth posture
-# ``mask_secrets`` takes with the host config: the rig is remote, and a rig running an older or
-# patched build is exactly the case a single mask would miss.
+# can POST them back. RigForge already masks a stored one to a {"__secret__": true} sentinel
+# before serving the block (its read is token-OPTIONAL, so it masks at the source), but this is
+# the same defence-in-depth posture ``mask_secrets`` takes with the host config: the rig is
+# remote, and an older or patched build is exactly the case a single mask would miss.
 _POOL_CREDENTIAL_KEYS = ("pass", "tls-fingerprint")
 
 # How deep the strip below will walk before it stops trusting the value. A real writable config is
