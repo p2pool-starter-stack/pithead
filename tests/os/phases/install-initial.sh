@@ -42,7 +42,8 @@ _phase_install_initial() {
     # analog of a user's stick: the host-side gate (installer_mode_available) keys on
     # /sys/block/*/removable, which virtio never sets.
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+    local virt_install_err
+    virt_install_err=$(virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import \
@@ -50,8 +51,8 @@ _phase_install_initial() {
         --disk "path=$target_disk,format=raw,bus=virtio,serial=$target_serial,boot.order=2" \
         --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
         --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "virt-install failed to define the installer VM"
+        --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
+        bad "virt-install failed to define the installer VM: $(printf '%s' "$virt_install_err" | tail -3 | tr '\n' ' ' | cut -c1-300)"
         return 1
     }
     _wait_dhcp_ip 120
@@ -213,14 +214,14 @@ _phase_install_initial() {
     # not just before.
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+    virt_install_err=$(virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$target_disk,format=raw,bus=virtio" \
         --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
         --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "virt-install failed to define the installed VM"
+        --serial "file,path=$SERIAL" --noautoconsole 2>&1) || {
+        bad "virt-install failed to define the installed VM: $(printf '%s' "$virt_install_err" | tail -3 | tr '\n' ' ' | cut -c1-300)"
         return 1
     }
     _wait_dhcp_ip 120
