@@ -75,10 +75,10 @@ render_cadence() {
                 | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"), state:
                    (if .path == ".github/workflows/scheduled-run-watch.yml" then {kind: "external"}
                     elif ($gaps | length) > 0 then {kind: "missed", gaps: $gaps}
-                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", gaps: [{slot: $first, before: null, after: null}]}
+                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", gaps: [range($first; $latest; $p.period) | {slot: ., before: null, after: null}]}
                     elif $new == null and $now >= ($first + 43200) then {kind: "late"}
                     elif $new == null then {kind: "grace"}
-                    elif $new.slot < ($latest - $p.period) then {kind: "missed", gaps: [{slot: ($new.slot + $p.period), before: $new, after: null}]}
+                    elif $new.slot < ($latest - $p.period) then {kind: "missed", gaps: [range($new.slot + $p.period; $latest; $p.period) | {slot: ., before: $new, after: null}]}
                     elif $new.slot < $latest and $now >= ($latest + 43200) then {kind: "late"}
                     elif $new.slot < $latest then {kind: "grace"} else {kind: "ok"} end)}
               end]
@@ -252,8 +252,9 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a clean report names no failing job" "$(printf '%s' "$out" | grep -c 'did not pass')" "0"
     gap="$tmp/gap"
     cadence_fixture "$gap" "2026-09-04T04:40:00Z" "23 * * * *" '[]'
+    jq '.workflows[0].declaredAt = ("2026-09-04T00:00:00Z" | fromdateiso8601)' "$gap/cadence.json" >"$gap/next" && mv "$gap/next" "$gap/cadence.json"
     out="$(render_cadence "$gap")" && rc=0 || rc=$?
-    st "an actual elapsed hourly gap is MISSED" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
+    st "an actual elapsed hourly gap retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "4"
     st "a missed run is a report finding, not a broken watcher" "$rc" "0"
     interior="$tmp/interior"
     cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"}]'
@@ -298,13 +299,15 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$late")" && rc=0 || rc=$?
     st "a run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -c '| LATE |')" "1"
     st "late is informational" "$rc" "0"
+    jq '.checkedAt = "2026-10-06T08:00:00Z"' "$late/cadence.json" >"$late/next" && mv "$late/next" "$late/cadence.json"
+    out="$(render_cadence "$late")"
+    st "a trailing gap retains every fully elapsed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "3"
     unknown="$tmp/unknown"
     cadence_fixture "$unknown"
     jq '.workflows[0].runs = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "unreadable history is UNCHECKED" "$(printf '%s' "$out" | grep -cF '**UNCHECKED**')" "1"
     st "unchecked history fails the watcher" "$rc" "1"
-
     cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1" '[{"createdAt":"not-a-time"}]'
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "a malformed run timestamp is UNCHECKED" "$rc" "1"
@@ -320,12 +323,10 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.workflows[0].path = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "a missing workflow path fails closed" "$rc" "1"
-
     short="$tmp/short"
     runs_fixture "$short" success success
     out="$(render_report "$short")" && rc=0 || rc=$?
     st "a history shorter than the cap prints only the runs it has" "$(hist "$out")" "2"
-
     red="$tmp/red"
     runs_fixture "$red" failure success success
     jobs_fixture "$red" "Build image (dashboard):failure" "Shell tests:success" "Lint:skipped"
@@ -336,7 +337,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a SKIPPED job is not listed as failing" "$(printf '%s' "$out" | grep -cF '| `Lint` |')" "0"
     st "the failed run is marked in both tables, identically" \
         "$(printf '%s' "$out" | grep -c '| \*\*failure\*\* |')" "2"
-
     miss="$tmp/missing"
     out="$(render_report "$miss")" && rc=0 || rc=$?
     st "a missing directory fails" "$rc" "1"
