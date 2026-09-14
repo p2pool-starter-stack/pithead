@@ -83,6 +83,8 @@ source "$ROOT/tests/stack/dashboard/test-dashboard.sh"
 source "$ROOT/tests/stack/dashboard/test-dashboard-onion.sh"
 # shellcheck source=tests/stack/appliance/test-appliance-caddyfile-optional-env.sh
 source "$ROOT/tests/stack/appliance/test-appliance-caddyfile-optional-env.sh"
+# shellcheck source=tests/stack/appliance/test-appliance-identity.sh
+source "$ROOT/tests/stack/appliance/test-appliance-identity.sh"
 
 [ "$FAIL" -eq 0 ] || {
     echo "FAIL: $FAIL existing Caddyfile render assertion(s) failed" >&2
