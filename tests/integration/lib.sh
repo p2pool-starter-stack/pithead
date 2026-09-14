@@ -38,7 +38,7 @@ it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 # redact() or it_fail, independent of shape or key name. A no-op sed when the var is unset.
 redact_it_password() {
     if [ -n "${IT_DASHBOARD_PASSWORD:-}" ]; then
-        sed "s/$(printf '%s' "$IT_DASHBOARD_PASSWORD" | sed 's/[&/\]/\\&/g')/<redacted>/g"
+        sed "s/$(printf '%s' "$IT_DASHBOARD_PASSWORD" | sed 's/[][\.*^$\/]/\\&/g')/<redacted>/g"
     else
         cat
     fi

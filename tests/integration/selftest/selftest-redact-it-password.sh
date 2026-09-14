@@ -30,6 +30,21 @@ case "$OUT" in *"$SENTINEL"*) it_fail "curl -K auth line: raw password absent" "
 OUT="$(printf 'a bare mid-sentence mention of %s with no key prefix\n' "$SENTINEL" | redact)"
 case "$OUT" in *"$SENTINEL"*) it_fail "unprefixed literal value absent" "password leaked: $OUT" ;; *) it_pass "unprefixed literal value absent" ;; esac
 
+echo "== redact(): every BRE/sed-delimiter metacharacter in the password is escaped, not just &/\\ =="
+# The literal-match sed builds its own pattern from the password at runtime (lib.sh), so a
+# password containing a regex metacharacter must not (a) fail to match — leaving the raw value
+# in the output — or (b) match something OTHER than itself. One password per metachar class.
+for p in 'pass*word' 'pass[word]' 'a.b^c$d' 'sl/ash' 'back\slash'; do
+    export IT_DASHBOARD_PASSWORD="$p"
+    OUT="$(printf 'the secret is %s here\n' "$p" | redact)"
+    case "$OUT" in
+    *"$p"*) it_fail "metachar password '$p' redacted" "raw value survived: $OUT" ;;
+    *"<redacted>"*) it_pass "metachar password '$p' redacted" ;;
+    *) it_fail "metachar password '$p' redacted" "no marker either — pattern likely broke the sed command: $OUT" ;;
+    esac
+done
+unset IT_DASHBOARD_PASSWORD
+
 echo "== redact(): unset IT_DASHBOARD_PASSWORD is a no-op, nothing invented to redact =="
 unset IT_DASHBOARD_PASSWORD
 OUT="$(printf 'ordinary text unrelated to any credential\n' | redact)"
