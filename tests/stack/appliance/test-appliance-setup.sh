@@ -198,7 +198,7 @@ cp "$STACK" "$OLDROOT/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$OLDROOT/build/tari/"
 cp "$RS/bin/docker" "$RS/bin/sudo" "$OLDROOT/bin/"
 cat >"$OLDROOT/.env" <<EOF
-MONERO_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion
+MONERO_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion
 TARI_ONION_ADDRESS=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.onion
 P2POOL_ONION_ADDRESS=ffffffffffffffffffffffffffffffffffffffffffffffffffffffff.onion
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
