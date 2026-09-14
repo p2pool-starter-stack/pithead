@@ -181,7 +181,7 @@ disk_fs_mount() {
 #
 # Args: <mode> <prune> <monero_dir> <tari_dir> <p2pool_dir> <dashboard_dir> <tor_dir>
 #   mode  = "doctor" (emit dr_ok/dr_warn) or "preflight" (emit warn only when under requirement)
-#   prune = 1 (pruning on) / 0 (off); only affects the Monero requirement.
+#   prune = accepted for call compatibility; both Monero modes currently budget 320 GiB.
 check_disk_grouped() {
     local mode="$1" prune="$2"
     shift 2
@@ -237,13 +237,13 @@ check_disk_grouped() {
         avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}')
         if [ "$mode" = "doctor" ]; then
             if [ -n "$avail_kb" ] && [ "$avail_kb" -ge "$need_kb" ] 2>/dev/null; then
-                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GB."
+                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
             else
-                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GB the stack needs there."
+                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
             fi
         else
             if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$need_kb" ] 2>/dev/null; then
-                warn "Low disk on $mount (hosts $comps): ${avail_h:-?} free, below the ~${req_gib[i]} GB the stack needs there — free space or move a data_dir to a larger volume."
+                warn "Low disk on $mount (hosts $comps): ${avail_h:-?} free, below the ~${req_gib[i]} GiB the stack needs there — free space or move a data_dir to a larger volume."
             fi
         fi
     done

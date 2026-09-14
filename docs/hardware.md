@@ -67,7 +67,7 @@ operation, which writes the seed, before synchronization starts
 ([core](https://github.com/monero-project/monero/blob/v0.18.5.1/src/cryptonote_core/cryptonote_core.cpp#L723-L734),
 [LMDB](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_db/lmdb/db_lmdb.cpp#L2049-L2101)).
 The file occupies 285.8 GB whether its pages are live data or reusable LMDB high-water space, so its
-unread freelist does not make the old 120 GB disk budget safe. A separate bench copy measured
+unread freelist does not make the old 120 GiB disk budget safe. A separate bench copy measured
 276.9 GB with only 10 free pages out of 67,605,667
 ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)).
 `./pithead setup` therefore budgets 320 GiB for Monero in either mode and 200 GiB for Tari. The
