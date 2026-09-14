@@ -74,11 +74,22 @@ On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` loo
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
 Compose project. It does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
 `RETURN` rule scoped with `-s` to any network that overlaps the mining subnet — a wider supernet
-containing it, or a narrower range inside it — is recognized as shadowing, in addition to an
-unscoped rule or one scoped to exactly the mining subnet ([pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)).
+containing it, or a narrower range inside it, negated (`! -s`) or not — is recognized as shadowing,
+in addition to an unscoped rule or one scoped to exactly the mining subnet
+([pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)). A rule scoped only
+with `-d` (destination) is covered conservatively rather than precisely: the walk doesn't do
+CIDR math on `-d`, so any `-d`-scoped rule is treated the same as an unscoped one and flagged as
+shadowing, whether or not it could actually match our traffic — safe, but not exact.
 `pithead doctor` reports the shadowed case as not-enforced. This only matters if something else on
 the same host also writes rules into `DOCKER-USER`; the podman/netavark appliance path proves
 reachability structurally instead of by rule-scanning, so it does not have this gap.
+
+One parsing weakness remains open ([pithead#2129](https://github.com/p2pool-starter-stack/pithead/issues/2129)):
+the check reads `-s`/`! -s` values by scanning the raw rule text, so a foreign rule whose own
+`-m comment` text happens to embed a matching substring ahead of the real flag can still confuse
+which CIDR value gets compared. It cannot flip a plain match into the wrong (negated) branch — that
+part is positional — and it only requires an attacker who can already write rules into
+`DOCKER-USER`, i.e. who already has root-equivalent control of the host firewall.
 
 ---
 

@@ -242,8 +242,15 @@ tor_egress_enforced() {
                 # subnet sits entirely inside <cidr>, not merely overlaps it. Missing this let a
                 # disjoint `! -s <unrelated-cidr>` — which matches OUR subnet precisely because
                 # it's disjoint from it — read as harmless.
+                #
+                # Positional, not a whole-line search: check only the text immediately before the
+                # MATCHED `-s` (the same occurrence `foreign_net` was just cut from), not anywhere
+                # in the line. A whole-line `*"! -s "*` search reads a `--comment` string containing
+                # that literal token as negation on an unrelated, non-negated `-s` later in the
+                # line — a false positive a security review found (#2129 tracks the matching
+                # extraction weakness the tokenizer half of that gap still has).
                 negated=0
-                case "$line" in *"! -s "*) negated=1 ;; esac
+                case "${line%%" -s "*}" in *"!") negated=1 ;; esac
                 if [ "$negated" = 1 ]; then
                     tor_egress_cidr_contains "$foreign_net" "$subnet" || return 5
                 else

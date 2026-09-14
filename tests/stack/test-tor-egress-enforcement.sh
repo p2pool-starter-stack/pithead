@@ -365,6 +365,15 @@ assert_eq "iptables: a NEGATED accept on a DISJOINT subnet -> not provably enfor
 # only that slice, so the rest of the mining subnet is exposed: this must still shadow.
 assert_eq "iptables: a NEGATED accept NARROWER than our subnet -> not provably enforced (exposes the rest)" \
     "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/25 -j ACCEPT')" "5"
+# Negation detection is now POSITIONAL — it reads only the text immediately before the matched
+# `-s` token, not a whole-line search — so a foreign rule's OWN `--comment` text embedding the
+# literal token "! -s " ahead of a real, non-negated `-s` cannot flip a plain match into the
+# inverted negated test. This rule is scoped to exactly our subnet either way (rc 5 whether read
+# as negated or not), so it can't distinguish the two paths by itself — #2129 tracks the
+# remaining extraction weakness (the `-s` VALUE itself is still a whole-line search and can still
+# be misled by comment content), deliberately left open here.
+assert_eq "iptables: a plain accept on our subnet with a comment embedding '! -s ' -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment "note ! -s 10.0.0.0/8" -s 172.28.0.0/24 -j ACCEPT')" "5"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
 # Keying the "is this benign?" question on tor alone reported that as the first-boot case.
