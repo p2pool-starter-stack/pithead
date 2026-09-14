@@ -43,6 +43,7 @@ lib/pithead/28-parse-and-validate-config.sh	485
 lib/pithead/33-render-env.sh	494
 lib/pithead/36-quadlet-units.sh	407
 lib/pithead/39-describe-change.sh	428
+lib/pithead/43-control-approval-and-preview.sh	432
 os/overlay/pithead-boot	420
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
@@ -63,6 +64,7 @@ tests/stack/appliance/test-appliance-media.sh	409
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
 tests/stack/appliance/test-appliance-rig-miner.sh	466
+tests/stack/appliance/test-appliance-setup.sh	453
 tests/stack/control/test-control-add-only-ssrf.sh	448
 tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
