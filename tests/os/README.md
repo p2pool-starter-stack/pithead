@@ -14,10 +14,10 @@ It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
 # Publish the five first-party images under the tag the appliance will ask for, then point the
 # build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img
 ```
 
@@ -40,7 +40,7 @@ printing it. The build runs on the host, so the evidence outlives the guest — 
 the omission was expensive (#2060). A missing log, an empty one and a failing build each get their
 own sentence, because "nothing to show" and "nothing went wrong" are different facts. It is also the
 first thing to put build-log lines on the battery's stdout, so `PITHEAD_REGISTRY` and
-`PITHEAD_REGISTRY_CA` are masked out of the tail from the environment, literally and without a
+`PITHEAD_REGISTRY_CA` and `PITHEAD_REGISTRY_COSIGN_PUB` are masked out of the tail from the environment, literally and without a
 regex — the failing image ref survives, because which ref failed is the diagnostic and the bench
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.

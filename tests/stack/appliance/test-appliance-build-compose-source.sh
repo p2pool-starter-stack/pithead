@@ -383,6 +383,9 @@ assert_contains "an immutable wizard source is pulled by digest" "$CS_BI" 'docke
 assert_contains "the pulled wizard digest is tagged with the runtime name" "$CS_BI" 'docker tag "$WIZARD_SOURCE" "$WIZARD_IMAGE"'
 assert_contains "the marker layer inherits from the immutable wizard source" "$CS_BI" '"$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER"'
 assert_contains "the runtime-tagged wizard image is saved" "$CS_BI" 'docker save "$WIZARD_IMAGE"'
+assert_contains "the staged five-image compose is digest-pinned before the rootfs build" "$CS_BI" 'pin_first_party_images os/build/stage/docker-compose.yml'
+assert_contains "a debug registry requires its alternate cosign public key" "$CS_BI" 'PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required'
+assert_contains "the Dockerfile bakes the release cosign key" "$CS_DF" 'config.minimal.json cosign.pub /opt/pithead/'
 assert_contains "the Dockerfile copies the STAGED compose file" "$CS_DF" 'os/build/stage/docker-compose.yml'
 assert_contains "the Dockerfile copies the stamp beside it" "$CS_DF" 'os/build/stage/COMPOSE_SOURCE'
 assert_eq "the appliance carries no documentation or source-only trees" "$(grep -cE '^COPY (docs|lib|scripts|tests|dashboard|\.github)/' "$ROOT/os/rootfs/Dockerfile" || true)" "0"
@@ -391,3 +394,6 @@ assert_not_contains "the appliance excludes Monero image-build sources" "$CS_DF"
 assert_not_contains "the Dockerfile no longer copies the tree's compose file" "$CS_DF" 'VERSION docker-compose.yml'
 assert_contains "verify-image compares against what the stamp resolves to, not the tree" "$CS_VI" 'compose_reference "$ROOT" "$COMPOSE_REF"'
 assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docker-compose.yml" ./docker-compose.yml'
+
+# shellcheck source=tests/stack/appliance/test-appliance-image-signature.sh
+source "$ROOT/tests/stack/appliance/test-appliance-image-signature.sh"

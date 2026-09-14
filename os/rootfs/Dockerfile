@@ -157,7 +157,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # answer to "did my change ship?". os/build/stage/: the compose file + its COMPOSE_SOURCE stamp — the
 # STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
-COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json /opt/pithead/
+COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
 # ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
 # dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
 # KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident

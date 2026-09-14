@@ -278,8 +278,8 @@ if [ -f ./pithead ] && [ -d dashboard/mining_dashboard ]; then
     # The compose file is staged from the STACK_VERSION tag when that tag exists (#1215), so the
     # tree is the wrong reference then. The stamp says which; compose_reference refuses the rest.
     COMPOSE_REF=$(mktemp)
-    chk "shipped compose file matches its stamped source ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
-        'compose_reference "$ROOT" "$COMPOSE_REF" && cmp -s "$ROOT/opt/pithead/docker-compose.yml" "$COMPOSE_REF"'
+    chk "shipped compose file matches its stamped source with immutable first-party pins ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
+        'compose_reference "$ROOT" "$COMPOSE_REF" && compose_matches_source "$ROOT" "$COMPOSE_REF"'
     rm -f "$COMPOSE_REF"
     chk "shipped config reference matches" 'cmp -s "$ROOT/opt/pithead/config.reference.json" ./config.reference.json'
 

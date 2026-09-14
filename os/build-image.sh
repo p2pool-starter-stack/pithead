@@ -77,6 +77,21 @@ fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 
+pin_first_party_images() { # <compose-file> <registry> <stack-version>
+    local compose="$1" registry="$2" version="$3" svc digest
+    for svc in tor monero p2pool xmrig-proxy dashboard; do
+        digest="$(docker manifest inspect --verbose "${registry}/pithead-${svc}:${version}" 2>/dev/null | jq -r '.Descriptor.digest // empty')"
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
+            return 1
+        }
+        awk -v svc="$svc" -v digest="$digest" '
+            $0 ~ ("pithead-" svc ":") { sub("@sha256:[0-9a-f]{64}", ""); sub("pithead-" svc ":[^[:space:]@]+", "&@" digest) }
+            { print }
+        ' "$compose" >"$compose.new" && mv "$compose.new" "$compose" || return 1
+    done
+}
+
 # stage_compose (#1215): put the compose file the image will ship, plus a COMPOSE_SOURCE stamp
 # naming where it came from, into <stage-dir>. Every `image:` in docker-compose.yml is pinned by
 # STACK_VERSION, which the appliance derives from its baked VERSION — so an image built from a
@@ -185,9 +200,15 @@ WIZARD_SOURCE="$WIZARD_IMAGE"
 # registry and first boot re-derives the same name at runtime, so the two must agree, and nothing
 # on the box sets the runtime half otherwise. Release builds never carry either file.
 TEST_REGISTRY=""
+TEST_COSIGN_PUB=""
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
     [ "$PITHEAD_REGISTRY" != "ghcr.io/p2pool-starter-stack" ]; then
     TEST_REGISTRY="$PITHEAD_REGISTRY"
+    TEST_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"
+    [ -s "$TEST_COSIGN_PUB" ] || {
+        echo "PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required for a debug registry" >&2
+        exit 1
+    }
     if [ -n "${PITHEAD_REGISTRY_CA:-}" ]; then
         [ -s "$PITHEAD_REGISTRY_CA" ] || {
             echo "PITHEAD_REGISTRY_CA: $PITHEAD_REGISTRY_CA is not a readable file" >&2
@@ -201,6 +222,7 @@ fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
+pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"
 if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
@@ -301,7 +323,9 @@ if [ -n "$TEST_REGISTRY" ]; then
         printf '[[registry]]\nlocation = "%s"\ninsecure = true\n' "${TEST_REGISTRY%%/*}" \
             >"$stage/etc/containers/registries.conf.d/pithead-test-registry.conf"
     fi
-    (cd "$stage" && find etc -type f) |
+    mkdir -p "$stage/opt/pithead"
+    cp "$TEST_COSIGN_PUB" "$stage/opt/pithead/cosign.pub"
+    (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
 fi

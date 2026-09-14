@@ -157,7 +157,7 @@ bench is the KVM-capable build box; a laptop cannot run this (`/dev/kvm` is requ
 
 ```bash
 # PITHEAD_REGISTRY is not optional while VERSION is unreleased — see the note below.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh &&
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> os/build-image.sh --ssh &&
     sudo os/rauc/mkimage.sh --dev
 ```
 
@@ -197,8 +197,11 @@ Two build variants, chosen by one flag:
   pins that registry into its boot units, the dashboard control runner and `/etc/environment`
   (so a `pithead` verb run by hand over SSH pulls from the same place, #1931), and tells podman
   how to trust it — the CA file named by `PITHEAD_REGISTRY_CA` for a TLS registry, or an insecure
-  entry without one — so a bench box can provision from a registry on the LAN (#1892); the release
-  variant never carries any of that, and `verify-image.sh` checks both ways.
+  entry without one — and requires `PITHEAD_REGISTRY_COSIGN_PUB` for that registry's signed images.
+  The staged five service references are digest-pinned and verified before provision; the release
+  variant uses the shipped release key, while the debug variant replaces it with that alternate key.
+  A failed verification refuses the pull and leaves the wizard/console error visible. The release
+  variant never carries the debug material, and `verify-image.sh` checks both ways.
 
 The updater defaults to RAUC; an image built without it cannot take another update, and the
 only way to get one now is to set `PITHEAD_UPDATER` to something else on purpose.
@@ -247,7 +250,7 @@ Then the tiered battery, lowest tier first — the same rule as
 [`testing-strategy.md`](testing-strategy.md):
 
 ```bash
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --phase boot --image os/rauc/build/system.img
 ```
 
