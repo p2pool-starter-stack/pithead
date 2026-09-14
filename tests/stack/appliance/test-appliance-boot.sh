@@ -623,7 +623,7 @@ for ph in boot update install provision rig media fault reset; do
     assert_contains "--phase all runs phase_$ph" "$osh_all" "phase_$ph"
 done
 assert_contains "the battery's own build pins the commit verify-image checks against" "$OSH" 'PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh'
-assert_contains "the supplied boot image is verified before the KVM phase" "$OSH" 'tests/os/verify-image.sh "$IMAGE" --test || exit $?'
+assert_contains "the supplied boot image is verified before the KVM phase" "$(printf '%s\n' "$OSH" | sed -n '/^require_clean_bench$/,/^case "\$PHASE" in/p')" 'tests/os/verify-image.sh "$IMAGE" --test || exit $?'
 VIS="$(cat "$ROOT/tests/os/verify-image.sh")"
 # Wiring the guard on is only half of it: the two ends have to speak the same shape. build-image.sh
 # stamps `git rev-parse HEAD` — the FULL sha — and the harness first handed over `--short`, so the
