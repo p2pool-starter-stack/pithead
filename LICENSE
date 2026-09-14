@@ -24,4 +24,4 @@ SOFTWARE.
 
 The MIT license above applies to this project's own code. Bundled third-party
 components — including the GPLv3 `p2pool` and `xmrig-proxy` binaries in the
-published images — retain their own licenses. See THIRD_PARTY_LICENSES.md.
+published images — retain their own licenses. See docs/THIRD_PARTY_LICENSES.md.

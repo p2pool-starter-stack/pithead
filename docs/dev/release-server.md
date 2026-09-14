@@ -453,13 +453,12 @@ live at `~/pithead-testbench/` on the box, for operators and AI agents.)
 
 Historical live coverage (not current exact-head release evidence): the config matrix (remote/local node, dashboard
 secure/insecure, Tari required/optional, RPC LAN access, XvB on/off) applied + asserted; lifecycle
-(restart, secret-preserving `apply`, backup→restore round-trip); node-down failover → recovery;
-release readiness; pruned monerod (the real prod config); and recorded no-clearnet evidence during
-the Tor-down fault and recovery path from [#274](https://github.com/p2pool-starter-stack/pithead/issues/274).
-The sustained IPv4 TCP bridge-container observation and running XvB-over-Tor configuration assertion from
-[#206](https://github.com/p2pool-starter-stack/pithead/issues/206) exist in `run.sh`; this change
-fixes the branch e2e precheck so `--check` actually runs them after readiness. Their first exact-head
-record is still pending. Covered without a real chain (tiers
+(restart, secret-preserving `apply`, same-version backup→restore round-trip); node-down failover → recovery;
+release readiness; pruned monerod (the real prod config); and the privacy egress assertions. [#274](https://github.com/p2pool-starter-stack/pithead/issues/274)
+promoted the persistent direct-IPv4-TCP bridge-container observation into `run.sh`, and [#206](https://github.com/p2pool-starter-stack/pithead/issues/206)
+added the running XvB-over-Tor configuration assertion. Together with the historical live evidence
+from [#274](https://github.com/p2pool-starter-stack/pithead/issues/274), privacy egress is covered,
+with the stated IPv4-TCP/bridge-network limit, not a residual gap. Covered without a real chain (tiers
 1–3): client↔daemon contract tests, the fake-daemon mini-stack (incl. full-prune behavior),
 compose hardening, config rendering, dashboard tests.
 
@@ -467,8 +466,12 @@ compose hardening, config rendering, dashboard tests.
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
 | Protected pre-release gate | Pending bench-ci commit-status publication and the administrator-set `main` rule; `release.sh` requires `bench-ci/tier4` from the configured GitHub App id. |
-| Exact-head steady-state privacy, cross-version upgrade, and XvB route record | Medium. Run `--check`, then the opt-in combined gate on the reserved bench. Upgrade requires private CoW snapshots and proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. The steady-state observation covers active bridge-app IPv4 TCP; it does not attribute the host-network dashboard or capture UDP. The focused candidate-client fetch is kernel-isolated with only Tor as a peer, and the enabled route starts only with hooked DROP rules. No recent share fails the requested XvB gate. |
-| Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence. |
+| Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), which is blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. |
+| Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
+| N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
+| XvB route record | Medium. Run the gate tracked by [#1998](https://github.com/p2pool-starter-stack/pithead/issues/1998). The enabled route starts only with hooked DROP rules; the routing transition has no recorded live proof. |
+| Caddy-fronted `/metrics` with dashboard authentication | Medium. Supply the live credential input and record the missing leg tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058). |
+| Multi-worker scale: the harness assumes ~2 workers | Medium. Add a load-gen worker + assert proxy routing/hashrate for perf confidence; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
 | Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
 
