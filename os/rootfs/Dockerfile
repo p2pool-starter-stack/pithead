@@ -135,7 +135,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
 # hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
 ARG APT_INDEX_STAMP=0
-# gzip/libpcre2-8-0/libsqlite3-0/perl-base above are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
+# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
