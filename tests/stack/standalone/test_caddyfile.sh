@@ -46,17 +46,17 @@ eval "$(declare -f generate_caddyfile | sed '1s/generate_caddyfile/_generate_cad
 generate_caddyfile() {
     local target="${1:-Caddyfile}" adapted
     _generate_caddyfile_unchecked "$@" || return
-    adapted=$("$PITHEAD_CADDY_DOCKER" run --rm -i "$PITHEAD_CADDY_IMAGE" \
+    adapted=$("$CADDY_TEST_DOCKER" run --rm -i "$CADDY_TEST_IMAGE" \
         caddy adapt --config - --adapter caddyfile <"$target") || return
     [ -n "$adapted" ] || { echo "Caddy adapted $target to empty output" >&2; return 1; }
-    printf '%s\n' "$target" >>"$PITHEAD_CADDY_ADAPT_LOG"
+    printf '%s\n' "$target" >>"$CADDY_TEST_ADAPT_LOG"
 }
 EOF
 chmod +x "$STACK_WITH_ADAPT"
 
-export PITHEAD_CADDY_DOCKER
-PITHEAD_CADDY_DOCKER="$(command -v docker)"
-export PITHEAD_CADDY_IMAGE="$CADDY_IMAGE" PITHEAD_CADDY_ADAPT_LOG="$TMP/adapted.log"
+export CADDY_TEST_DOCKER
+CADDY_TEST_DOCKER="$(command -v docker)"
+export CADDY_TEST_IMAGE="$CADDY_IMAGE" CADDY_TEST_ADAPT_LOG="$TMP/adapted.log"
 
 # shellcheck source=tests/stack/lib.sh
 source "$ROOT/tests/stack/lib.sh"
@@ -75,7 +75,7 @@ source "$ROOT/tests/stack/appliance/test-appliance-caddyfile-optional-env.sh"
     echo "FAIL: $FAIL existing Caddyfile render assertion(s) failed" >&2
     exit 1
 }
-adapted_count="$(wc -l <"$PITHEAD_CADDY_ADAPT_LOG")"
+adapted_count="$(wc -l <"$CADDY_TEST_ADAPT_LOG")"
 [ "$adapted_count" -ge 10 ] || {
     echo "FAIL: only $adapted_count generated Caddyfiles reached Caddy" >&2
     exit 1
