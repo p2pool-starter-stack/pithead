@@ -246,6 +246,15 @@ PS_RC=255 ps_run 'inactive\ninact' 1 settled
 assert_rc "a transport-truncated two-word probe is not a settled machine" "$?" "1"
 ps_run 'unknown\nunknown\n' 1 settled
 assert_rc "two unknown unit states are not a settled machine (unknown is neither terminal nor a ran-signal)" "$?" "1"
+# `reloading` is the one real systemd ActiveState that is neither terminal nor caught by the
+# word-anchored `activating` match above, and a unit mid-reload has NOT let go of the mutation
+# lock. It is the only row here whose ran-signal reads yes while its ActiveState is non-terminal,
+# so it is the one that pins provisioning_terminal_state: with the four-field probe (#2055 G3)
+# every other row is refused by provisioning_ran_verdict first, and a `return 0` mutation of the
+# terminal check alone would go unread. Mutation run: provisioning_terminal_state() { return 0; }
+# -> this row alone goes red.
+ps_run 'reloading\ninactive\n' 1 settled
+assert_rc "a unit mid-reload has not let go of the lock: not settled, even though one unit ran" "$?" "1"
 PS_FLIP=1 ps_run 'activating\ninactive\n' 5 settled
 assert_rc "activating on the first read, inactive on the next: settled after one poll" "$?" "0"
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
