@@ -130,6 +130,24 @@ tor_egress_cidr_overlaps() { # <cidr1> <cidr2>
     [ "$(($(tor_egress_ip_to_int "$ip1") & mask))" = "$(($(tor_egress_ip_to_int "$ip2") & mask))" ]
 }
 
+# True (rc 0) iff every address in <member> lies inside <container> — <container>'s prefix no
+# longer than <member>'s, and <member>'s address masked to <container>'s (shorter) prefix matches
+# <container>'s own network. This is NOT the same test as overlap: it is what a NEGATED foreign
+# `! -s <container>` rule needs, because that rule's ACCEPT matches everything OUTSIDE <container>
+# — the mining subnet is exposed to it (shadowed) unless the subnet sits ENTIRELY inside it.
+tor_egress_cidr_contains() { # <container> <member>
+    local cip cp mip mp mask
+    cip="${1%%/*}"
+    cp="${1#*/}"
+    [ "$cp" != "$1" ] || cp=32
+    mip="${2%%/*}"
+    mp="${2#*/}"
+    [ "$mp" != "$2" ] || mp=32
+    [ "$cp" -le "$mp" ] || return 1
+    mask=$(((0xFFFFFFFF << (32 - cp)) & 0xFFFFFFFF))
+    [ "$(($(tor_egress_ip_to_int "$cip") & mask))" = "$(($(tor_egress_ip_to_int "$mip") & mask))" ]
+}
+
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
@@ -195,7 +213,7 @@ tor_egress_enforced() {
     # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
-    local line subnet foreign_net
+    local line subnet foreign_net negated
     subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
     [ -n "$subnet" ] || subnet="172.28.0.0/24"
     while IFS= read -r line; do
@@ -218,7 +236,19 @@ tor_egress_enforced() {
             *" -s "*)
                 foreign_net="${line#*" -s "}"
                 foreign_net="${foreign_net%% *}"
-                tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 5
+                # `iptables -S` renders a negated source as `! -s <cidr>` (the `!` precedes the
+                # flag). A NEGATED accept matches every packet whose source is OUTSIDE <cidr> —
+                # the opposite test from a plain match: it shadows our DROP unless the mining
+                # subnet sits entirely inside <cidr>, not merely overlaps it. Missing this let a
+                # disjoint `! -s <unrelated-cidr>` — which matches OUR subnet precisely because
+                # it's disjoint from it — read as harmless.
+                negated=0
+                case "$line" in *"! -s "*) negated=1 ;; esac
+                if [ "$negated" = 1 ]; then
+                    tor_egress_cidr_contains "$foreign_net" "$subnet" || return 5
+                else
+                    tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 5
+                fi
                 continue
                 ;;
             *) return 5 ;;

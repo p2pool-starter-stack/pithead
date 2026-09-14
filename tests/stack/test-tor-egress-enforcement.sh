@@ -353,6 +353,12 @@ assert_eq "iptables: a SUPERNET containing our subnet -> not provably enforced" 
     "$(fgn_rc '-A DOCKER-USER -s 172.16.0.0/12 -j ACCEPT')" "5"
 assert_eq "iptables: a NARROWER rule inside our subnet -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -s 172.28.0.128/25 -j ACCEPT')" "5"
+# A NEGATED `! -s` accept matches everything OUTSIDE the given block — the opposite of a plain
+# match. A disjoint `! -s` is the dangerous case: negation makes it match exactly our subnet.
+assert_eq "iptables: a NEGATED accept scoped to exactly our subnet -> still enforced (excludes us)" \
+    "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/24 -j ACCEPT')" "0"
+assert_eq "iptables: a NEGATED accept on a DISJOINT subnet -> not provably enforced (matches us)" \
+    "$(fgn_rc '-A DOCKER-USER ! -s 10.0.0.0/8 -j ACCEPT')" "5"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
 # Keying the "is this benign?" question on tor alone reported that as the first-boot case.
