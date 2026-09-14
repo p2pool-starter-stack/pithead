@@ -208,7 +208,7 @@ doctor() {
         doctor_prune=$(env_get MONERO_PRUNE)
         [ -n "$doctor_prune" ] || doctor_prune=1
         # A remote node (#103) keeps its chain elsewhere, so its dir must not count toward THIS
-        # host's disk budget — otherwise doctor demands ~120 GiB (Monero) / ~200 GiB (Tari) for a
+        # host's disk budget — otherwise doctor demands ~320 GiB (Monero) / ~200 GiB (Tari) for a
         # container that never runs, on exactly the small-disk hosts remote mode exists for. Read
         # the mode from the profile tokens like the container checks above; a pre-#103 .env has no
         # local_tari token yet, so require a rendered TARI_GRPC_ADDRESS (also new in #103) before
