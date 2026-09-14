@@ -148,13 +148,20 @@ The final summary carries the same missing/by-design/covered skip vocabulary as 
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
 re-implemented so the two tier-4 summaries read the same way (#2064). It prints the three buckets
 separately — scenarios, phases, legs — and the class breakdown under them in the integration
-summary's own wording, so the two can be compared line for line:
+summary's own wording, so the two can be compared line for line. A green `--phase all` ends with
+its five skip rows accounted like this:
 
 ```
-os harness: 128 passed, 0 failed
-skipped: 0 scenarios, 0 phases, 4 legs
-  of which: 3 missing (an input would have run it), 1 by-design (this run's mode excludes it), 0 covered elsewhere
+os harness: <N> passed, 0 failed
+skipped: 0 scenarios, 0 phases, 5 legs
+  of which: 3 missing (an input would have run it), 1 by-design (this run's mode excludes it), 1 covered elsewhere
 ```
+
+The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
+enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
+covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
+drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+and `--phase rig` prints that row alone.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
