@@ -29,7 +29,6 @@ set -Eeuo pipefail
 # The exact title is the issue-upsert key. Changing it files a second report.
 WATCH_ISSUE_TITLE="Scheduled CI run watch (weekly report)"
 
-# Six rows expose a failure streak that a single newest-run row cannot (#1419).
 HISTORY_ROWS=6
 
 usage() {
@@ -47,7 +46,6 @@ list_schedules() {
     done
 }
 
-# Keep non-success conclusions verbatim; the self-test pins both rendered tables to one spelling.
 conclusion_cell() {
     case "$1" in
     success) printf 'ok' ;;
@@ -81,30 +79,30 @@ render_cadence() {
                 - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
                 | if . > $now then . - 604800 else . end
             end;
-        def interior_gap($runs; $p): reduce ($runs | map(slot(.epoch; $p)) | unique[]) as $s
-                ({previous: null, missed: false}; {previous: $s, missed: (.missed or (.previous != null and $s - .previous > $p.period))})
-            | .missed;
+        def interior_gap($runs; $p): reduce $runs[] as $after
+            ({previous: null, gap: null}; if .gap != null then . elif .previous != null and $after.slot - .previous.slot > $p.period then . + {gap: {slot: (.previous.slot + $p.period), before: .previous, after: $after}} else . + {previous: $after} end) | .gap;
         (.checkedAt | fromdateiso8601) as $now
         | [.workflows[] | . as $w | ($w | parts) as $p
             | [.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] as $valid
-            | ($valid | sort_by(.epoch) | last) as $new
             | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
                  or ($valid | length) != ($w.runs | length)
-                 or (($w.runs | length) == 0 and ($w.declaredAt | type) != "number") then
-                {workflow: .path, cron: .cron, last: "unknown", state: "**UNCHECKED**"}
+                 or (.declaredAt | type) != "number" then
+                {workflow: .path, cron: .cron, last: "unknown", state: {kind: "unchecked"}}
               else (slot($now; $p)) as $latest
                 | (slot(($w.declaredAt // $now); $p)) as $before_declared
                 | (if $before_declared < ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
-                | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"),
-                   state: (if .path == ".github/workflows/scheduled-run-watch.yml" then "external stamp only"
-                           elif interior_gap($valid; $p) then "**MISSED**"
-                           elif $new == null and $now >= ($first + $p.period) then "**MISSED**"
-                           elif $new == null and $now >= ($first + 43200) then "LATE"
-                           elif $new == null then "within 12h grace"
-                           elif $new.epoch < ($latest - $p.period) then "**MISSED**"
-                           elif $new.epoch < $latest and $now >= ($latest + 43200) then "LATE"
-                           elif $new.epoch < $latest then "within 12h grace"
-                           else "ok" end)}
+                | ([$valid[] | . + {slot: slot(.epoch; $p)} | select(.slot >= $first)] | sort_by(.slot) | group_by(.slot) | map(last)) as $observed
+                | ($observed | first) as $old | ($observed | last) as $new
+                | (if $old != null and $old.slot > $first then {slot: $first, before: null, after: $old} else interior_gap($observed; $p) end) as $gap
+                | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"), state:
+                   (if .path == ".github/workflows/scheduled-run-watch.yml" then {kind: "external"}
+                    elif $gap != null then $gap + {kind: "missed"}
+                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", slot: $first, before: null, after: null}
+                    elif $new == null and $now >= ($first + 43200) then {kind: "late"}
+                    elif $new == null then {kind: "grace"}
+                    elif $new.slot < ($latest - $p.period) then {kind: "missed", slot: ($new.slot + $p.period), before: $new, after: null}
+                    elif $new.slot < $latest and $now >= ($latest + 43200) then {kind: "late"}
+                    elif $new.slot < $latest then {kind: "grace"} else {kind: "ok"} end)}
               end]
     ' "$file" 2>/dev/null || true)"
     if [ -z "$rows" ] || [ "$rows" = "[]" ]; then
@@ -113,12 +111,15 @@ render_cadence() {
     fi
     printf '## Declared schedule cadence\n\n'
     printf '| Workflow | Cron | Last observed run | Cadence |\n|---|---|---|---|\n'
-    printf '%s' "$rows" | jq -r '.[] | "| `\(.workflow)` | `\(.cron)` | \(.last) | \(.state) |"'
+    printf '%s' "$rows" | jq -r '
+        def bound($run; $empty): if $run == null then $empty else "[\($run.databaseId)](\($run.url))" end;
+        def state: if .kind == "missed" then "**MISSED** `\(.slot | todateiso8601)` between \(bound(.before; "the declaration boundary")) and \(bound(.after; "no observed run"))" elif .kind == "unchecked" then "**UNCHECKED**" elif .kind == "external" then "external stamp only" elif .kind == "late" then "LATE" elif .kind == "grace" then "within 12h grace" else "ok" end;
+        .[] | "| `\(.workflow)` | `\(.cron)` | \(.last) | \(.state | state) |"'
     printf '\nMISSED means no run appeared for a full period after an expected slot. LATE is informational\n'
     printf 'after 12 hours; neither finding fails this report. UNCHECKED means the watch itself failed.\n\n'
     printf 'This scheduled watcher cannot announce its own absence or a GitHub-wide schedule shutdown.\n'
     printf 'The carried-forward successful-check stamp is the external observer signal for that gap.\n\n'
-    unchecked="$(printf '%s' "$rows" | jq '[.[] | select(.state == "**UNCHECKED**")] | length')"
+    unchecked="$(printf '%s' "$rows" | jq '[.[] | select(.state.kind == "unchecked")] | length')"
     [ "$unchecked" = 0 ]
 }
 
@@ -266,10 +267,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "every workflow carrying schedule is enumerated" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
     st "an unscheduled workflow is omitted" "$(printf '%s\n' "$out" | grep -cF 'b.yml')" "0"
     st "cron comments and .yaml workflows are handled" "$(printf '%s\n' "$out" | grep -cF $'c.yaml\t30 6 * * 1')" "1"
-    # The GREEN path has to be REACHABLE. A check that can only ever say "incomplete" is as
-    # useless as one that only ever says "clean".
-    # Eight runs against HISTORY_ROWS=6, so the cap is EXERCISED rather than merely configured. A
-    # fixture smaller than the cap can never tell a working limit from an absent one.
     ok="$tmp/ok"
     runs_fixture "$ok" success success success success success success success success
     out="$(render_report "$ok")" && rc=0 || rc=$?
@@ -278,16 +275,22 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a passing run says so" "$(printf '%s' "$out" | grep -c 'found nothing it had to report')" "1"
     st "the history table is capped at HISTORY_ROWS" "$(hist "$out")" "$HISTORY_ROWS"
     st "a clean report names no failing job" "$(printf '%s' "$out" | grep -c 'did not pass')" "0"
-    # The first run at 04:45 followed four dropped hourly slots; history was still empty at 04:40.
     gap="$tmp/gap"
     cadence_fixture "$gap" "2026-09-04T04:40:00Z" "23 * * * *" '[]'
     out="$(render_cadence "$gap")" && rc=0 || rc=$?
     st "an actual elapsed hourly gap is MISSED" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
     st "a missed run is a report finding, not a broken watcher" "$rc" "0"
     interior="$tmp/interior"
-    cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T07:00:00Z"},{"createdAt":"2026-09-21T07:00:00Z"}]'
+    cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$interior/cadence.json" >"$interior/next" && mv "$interior/next" "$interior/cadence.json"
     out="$(render_cadence "$interior")"
     st "a recovered weekly run does not erase the missed interior slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
+    st "an interior gap names its slot and bounding runs" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between [907](https://x/907) and [921](https://x/921)')" "1"
+    recovered="$tmp/recovered"
+    cadence_fixture "$recovered" "2026-09-29T08:00:00Z" "0 5 * * 1" '[{"databaseId":929,"url":"https://x/929","createdAt":"2026-09-29T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
+    out="$(render_cadence "$recovered")"
+    st "a recovered first run retains missed declaration-boundary slots" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
     fresh="$tmp/fresh"
     cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
     jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
@@ -298,6 +301,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "the scheduled watcher does not claim to observe itself" "$(printf '%s' "$out" | grep -cF 'external stamp only')" "1"
     late="$tmp/late"
     cadence_fixture "$late" "2026-09-14T18:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T06:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$late/cadence.json" >"$late/next" && mv "$late/next" "$late/cadence.json"
     out="$(render_cadence "$late")" && rc=0 || rc=$?
     st "a run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -c '| LATE |')" "1"
     st "late is informational" "$rc" "0"
@@ -317,8 +321,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$short")" && rc=0 || rc=$?
     st "a history shorter than the cap prints only the runs it has" "$(hist "$out")" "2"
 
-    # A failed run is REPORTED, not reddened: rc stays 0 because the WATCHER did its job. This is
-    # the assertion that separates this watcher from the red tick it exists to replace.
     red="$tmp/red"
     runs_fixture "$red" failure success success
     jobs_fixture "$red" "Build image (dashboard):failure" "Shell tests:success" "Lint:skipped"
@@ -327,8 +329,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "the failing job is named" "$(printf '%s' "$out" | grep -cF 'Build image (dashboard)')" "1"
     st "a passing job is not listed as failing" "$(printf '%s' "$out" | grep -cF '| `Shell tests` |')" "0"
     st "a SKIPPED job is not listed as failing" "$(printf '%s' "$out" | grep -cF '| `Lint` |')" "0"
-    # The SAME run renders in both tables, one built in bash and one in jq. Asserting the count is
-    # 2 is what pins the two spellings together — it fails if either side drifts.
     st "the failed run is marked in both tables, identically" \
         "$(printf '%s' "$out" | grep -c '| \*\*failure\*\* |')" "2"
 

@@ -76,7 +76,9 @@ It runs every Monday at 08:00 UTC, enumerates every workflow with a declared `sc
 each workflow's server-filtered scheduled-run history. The report marks a run LATE after 12 hours
 and MISSED after one full declared period. LATE is informational and MISSED is a reported finding;
 neither makes the watcher fail. A schedule with no history gets one full period from the commit that
-declared its cron before it can be MISSED. The issue also keeps the sweep result and its six most recent runs.
+declared its cron before it can be MISSED. Every MISSED row names its nominal slot and links the runs
+that bound the gap; when the gap starts at the declaration boundary, it names that boundary and the
+first observed run. The issue also keeps the sweep result and its six most recent runs.
 Six rows rather than one because a single red says little and a streak says the gate has stopped
 being an instrument — the weekly link check was red for nine consecutive Mondays before anyone noticed
 ([#1419](https://github.com/p2pool-starter-stack/pithead/issues/1419)).
