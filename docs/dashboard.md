@@ -622,10 +622,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
-**XMR Network** and **Tari Merge-Mining** each carry a **Node** row saying whether that node runs
-here or somewhere else, and the **Stack Topology & Egress** diagram captions `monerod` and `tari`
-the same way. The difference is operational: a node you run is yours to restart and resync, and a
-node you point at (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
+**XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
+sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
+remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
+Unverified. The difference is
+operational: a node you run is yours to restart and resync, and a node you point at
+(`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
 before this shipped, rather than a node it has decided is local.

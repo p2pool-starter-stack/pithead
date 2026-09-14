@@ -80,3 +80,10 @@ test('syncing App renders the sync gauges instead of the dashboard', () => {
     assert.match(html, /Tari Sync/);
     assert.doesNotMatch(html, /Workers Alive/);
 });
+
+test('the Tari sync gauge says when it belongs to a remote node', () => {
+    const s = clone();
+    s.syncing = true;
+    s.sync.tari.local = false;
+    assert.match(renderApp({ state: s }), /Remote node/);
+});

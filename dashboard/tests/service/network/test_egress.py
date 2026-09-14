@@ -412,10 +412,8 @@ def test_firewall_off_counts_every_clearnet_path_as_a_leak(_posture):
     assert "exposing your IP" in p["summary"]["label"]
 
 
-def test_firewall_on_blocks_every_clearnet_path(_posture):
-    # Same clearnet-everywhere config with the firewall ON: every clearnet path belongs to a
-    # container, so all are blocked and nothing leaks — the dashboard's own egress is Tor-only
-    # (#163/#701), so the host-networked firewall bypass has nothing clearnet to expose.
+def test_firewall_does_not_cover_the_dashboard_s_remote_node_hop(_posture):
+    # The container paths are blocked, but the host-networked dashboard's remote-node RPC is not.
     p = _posture(
         firewall=True,
         p2pool_clearnet=True,
@@ -424,10 +422,10 @@ def test_firewall_on_blocks_every_clearnet_path(_posture):
         tari_clearnet_sync=True,
         monero_route=CLEARNET,
     )
-    assert p["summary"]["leaks"] == 0
+    assert p["summary"]["leaks"] == 1
     assert _conn(p, "dashboard", "XvB stats")["route"] == TOR
-    assert p["summary"]["blocked_by_firewall"] >= 5
-    assert p["summary"]["all_tor"] is True
+    assert p["summary"]["blocked_by_firewall"] >= 4
+    assert p["summary"]["all_tor"] is False
 
 
 # The dashboard clients hard-wired through Tor SOCKS — no knob points any of them at clearnet

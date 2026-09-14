@@ -32,6 +32,8 @@ def test_only_the_relocatable_nodes_carry_a_location():
         nodes = {n["id"]: n for n in topology_nodes(monero_route=mono, tari_route=tari)}
         assert nodes["monerod"]["remote"] is (mono != LOCAL), (mono, tari)
         assert nodes["tari"]["remote"] is (tari != LOCAL), (mono, tari)
+        assert nodes["monerod"]["route"] == mono
+        assert nodes["tari"]["route"] == tari
         assert sorted(i for i, n in nodes.items() if "remote" in n) == ["monerod", "tari"]
 
 
@@ -66,3 +68,8 @@ def test_the_served_graph_carries_each_node_s_real_location(monkeypatch):
     nodes = {n["id"]: n for n in egress.topology_from_config()["nodes"]}
     assert nodes["monerod"]["remote"] is False
     assert nodes["tari"]["remote"] is True
+
+
+def test_the_served_graph_omits_tari_when_merge_mining_is_off(monkeypatch):
+    monkeypatch.setattr(egress.config, "TARI_MODE", "off")
+    assert "tari" not in {n["id"] for n in egress.topology_from_config()["nodes"]}

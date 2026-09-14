@@ -332,6 +332,7 @@ DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 # start the miner as soon as monerod is synced (Tari finishes in the background), and keep
 # the operational dashboard — with a "Tari syncing" indicator — instead of the takeover
 # screen (Issue #51).
+TARI_MODE = os.environ.get("TARI_MODE", "local").strip().lower()
 TARI_REQUIRED = os.environ.get("TARI_REQUIRED", "true").strip().lower() == "true"
 
 # Container the dashboard stops/starts to reject/readmit workers on a monerod outage.
