@@ -144,8 +144,8 @@ prompt_start_stack() {
 
 # Per-component free-disk requirement in GiB — the single source of truth for the stack's disk
 # budget, shared by setup's preflight_resources and doctor's Disk check. Monero (the blockchain) is
-# ~320 GiB for Monero in either prune mode. Two normally pruned live nodes measured 258 GiB and
-# 266 GiB in August/September 2026, so pruning is not a smaller safe preflight budget (#1502).
+# ~320 GiB for Monero in either prune mode. A node synced from genesis with pruning enabled consumed
+# 266 GiB in September 2026, so pruning is not a smaller safe preflight budget (#1502).
 # Tari adds ~200 GiB, making ~530 GiB the documented minimum with both nodes local
 # (docs/hardware.md). For a set-and-forget host the docs recommend a 2–4 TB drive.
 # Args: <component> [<prune>]. The prune argument is kept for callers, but the current Monero

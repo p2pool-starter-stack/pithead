@@ -32,7 +32,7 @@ Size the host for nodes, storage, and uptime; size the workers for CPU mining pe
 | **OS** | Ubuntu Server **24.04 LTS** | Ubuntu Server 24.04 LTS |
 
 > These figures assume the default configuration: both nodes local, Monero pruned, HugePages enabled.
-> Pointing either node at a machine you already run lowers them a lot — Tari is the bigger cut. See
+> Pointing either node at a machine you already run lowers them a lot — Monero is the bigger cut. See
 > [Running a node elsewhere](#running-a-node-elsewhere).
 
 ### Where these numbers come from
@@ -42,7 +42,7 @@ plus headroom for the OS. Per-component breakdown, from each project's own guida
 
 | Service | RAM it wants | Container ceiling | Disk | Notes |
 |---|---|---|---|---|
-| **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~277–286 GB measured pruned** · **~267 GB measured full** — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
+| **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~286 GB measured fresh-sync pruned** · **~267 GB measured full** — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
 | **[P2Pool](https://github.com/SChernykh/p2pool)** | **~2.3 GB** for the RandomX dataset it uses to verify blocks fast | 1 GB | tiny (sidechain state) | Needs a 64-bit CPU with **AVX2** and a synced `monerod`. The dataset lives in the shared HugePages reservation, not in the container, so don't count it twice. |
 | **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB** SSD — and growing | Budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
 | **XMRig proxy · Tor · dashboard** | a few hundred MB combined | 512 MB each | a few GB (Docker images) | These coordinate and serve the UI. They don't mine, so no special CPU. |
@@ -60,13 +60,16 @@ rewrite with `monero-blockchain-prune` can reclaim space. Stop monerod first: th
 DB into place itself, renaming the old chain aside, and it will do that under a running daemon.
 
 Both chains keep growing, ~100+ GB/year combined. That's why the table lists a ~530 GB minimum and
-recommends more: for a set-and-forget host, put it on a 2–4 TB SSD. In August/September 2026, two
-independent normally pruned Monero nodes measured 276.9 GB and 285.8 GB; the latter was configured
-for pruning while its database held only genesis, then synced every later block. Monero 0.18.5.1
-logs that first-start pruning branch only when the database pruning seed is zero, before setting the
-seed; later starts take the already-pruned update path. That provenance rules out an old full chain
-whose file merely failed to shrink, and the separate bench chain has pruning seed 384 and only 10
-free pages out of 67,605,667 ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)).
+recommends more: for a set-and-forget host, put it on a 2–4 TB SSD. In September 2026, a Monero node
+synced from genesis with pruning enabled consumed 285.8 GB. Its first startup logged the branch that
+Monero 0.18.5.1 enters only when the database has no pruning seed; that branch runs the prune
+operation, which writes the seed, before synchronization starts
+([core](https://github.com/monero-project/monero/blob/v0.18.5.1/src/cryptonote_core/cryptonote_core.cpp#L723-L734),
+[LMDB](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_db/lmdb/db_lmdb.cpp#L2049-L2101)).
+The file occupies 285.8 GB whether its pages are live data or reusable LMDB high-water space, so its
+unread freelist does not make the old 120 GB disk budget safe. A separate bench copy measured
+276.9 GB with only 10 free pages out of 67,605,667
+([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)).
 `./pithead setup` therefore budgets 320 GB for Monero in either mode and 200 GB for Tari. The
 per-service **RAM** figures are provisioning minimums — steady-state resident memory is much lower
 (`monerod` and P2Pool a few hundred MB each, since their large data lives in the shared HugePages and
@@ -129,7 +132,7 @@ node databases do heavy random I/O that punishes spinning disks. What to provisi
 
 | | Pruned (default) | Full (`monero.prune: false`) |
 |---|---|---|
-| Monero chain | ~277–286 GB measured | ~267 GB measured |
+| Monero chain | ~286 GB measured fresh-sync | ~267 GB measured |
 | Tari chain | ~150 GB | ~150 GB |
 | P2Pool + dashboard + Docker images | a few GB | a few GB |
 | **Plan for** | **~530 GB+ SSD** | **~530 GB+ SSD** |
@@ -168,8 +171,9 @@ e.g. to keep the Monero blockchain on a separate SSD. See
   node you point at over the network is the exception — that leg is a direct connection, so keep it
   on the LAN or behind WireGuard ([Privacy › Runtime egress](privacy.md#runtime-egress)).
 - Initial sync is the heavy part. The first run downloads and verifies both chains over Tor (slower
-  than clearnet): ~100 GB pruned / ~270 GB full for Monero, plus ~150 GB for Tari. This takes a few
-  hours to a day or more. A node in `remote` mode syncs nothing here, so its share drops out. Avoid
+  than clearnet). A fresh pruned sync produced a ~286 GB Monero database in September 2026; Tari
+  measured ~150 GB. This takes a few hours to a day or more. A node in `remote` mode syncs nothing
+  here, so its share drops out. Avoid
   it by
   [reusing an existing synced node](configuration.md#reusing-an-existing-node), or speed it up with
   an [optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default)
