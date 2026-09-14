@@ -112,16 +112,16 @@ every gate is green.
 
 ### Branch mechanics
 
-Releases are cut from `develop`. Land the release-prep commit (`VERSION`, `pyproject.toml`, the
-`CHANGELOG.md` entry) as a normal PR, run the pipeline with that commit checked out, and publish:
-the tag lands on it, and `release.sh` then moves `main` to the tagged commit with a fast-forward
-push. `main` keeps its meaning — the last released commit — and stays an ancestor of `develop` by
-construction, so there is no back-merge and no post-release repair step ([#1076]; releases through
-v1.19.3 instead merged `develop` into `main` and back, and the back-merge was missed on v1.19.0).
-Commits that land on `develop` after the prep commit sit ahead of `main`, the normal state
-between releases — cut with the prep commit checked out, not whatever `develop` has moved on to.
-`release.sh` warns (it does not abort) when the working tree is on any branch other than
-`develop`.
+Releases are cut from `develop`. Land the release-prep commit (`VERSION`, `pyproject.toml`, and a
+draft `CHANGELOG.md` entry) as a normal PR. On the cut date, land a final cut commit on `develop`
+that refreshes the changelog for every included operator-visible change and sets its heading to
+the current UTC date. Run the pipeline with the final cut commit checked out: the tag lands on it,
+and `release.sh` then moves `main` to the tagged commit with a fast-forward push. `main` keeps its
+meaning — the last released commit — and stays an ancestor of `develop` by construction, so there
+is no back-merge and no post-release repair step ([#1076]; releases through v1.19.3 instead merged
+`develop` into `main` and back, and the back-merge was missed on v1.19.0). Commits that land on
+`develop` after the final cut commit sit ahead of `main`, the normal state between releases.
+`release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
 
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not

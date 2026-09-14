@@ -437,20 +437,21 @@ integrated into an image and the full battery runs.
 
 ## Cutting a release
 
-The branch mechanics are the DIY doc's ([releasing.md](releasing.md#branch-mechanics)): the cut
-runs from the release-prep commit on `develop`, and `main` fast-forwards to the tag only when
-`release.sh` publishes it. The steps here run from that same prep commit; both channels share
-one version and one GitHub Release.
+The branch mechanics are the DIY doc's ([releasing.md](releasing.md#branch-mechanics)): the prep
+commit carries the version bump and draft notes, and the final cut commit refreshes and dates
+those notes on `develop`. `main` fast-forwards only when `release.sh` publishes the tag. Both
+channels share the final cut commit, one version and one GitHub Release.
 
-1. On the cut date, set the top `CHANGELOG.md` heading's date to the current UTC date and commit
-   it. `release.sh` publishes that heading verbatim, so the tag must point to this dated commit.
-   Run `make lint && make test`, and `tests/os/run.sh --phase all` on that commit. `make lint-sh`
+1. On the cut date, land the final cut commit: refresh the top `CHANGELOG.md` section for every
+   operator-visible change included since prep and set its heading to the current UTC date.
+   `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
+   cut commit. Run `make lint && make test`, and `tests/os/run.sh --phase all` on it. `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
    nothing — install the pin from [`release-server.md`](release-server.md#the-lintrelease-toolchain).
-2. Confirm `VERSION` was bumped in the same release commit. The tag is `v<VERSION>` and every
-   artifact derives from it — `STACK_VERSION` is the single place the registry tag comes from.
+2. Confirm `VERSION` still holds the version set by the prep commit. The tag is `v<VERSION>` and
+   every artifact derives from it — `STACK_VERSION` is the single place the registry tag comes from.
    The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
