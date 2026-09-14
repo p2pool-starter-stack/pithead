@@ -83,6 +83,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ([#2181](https://github.com/p2pool-starter-stack/pithead/issues/2181)). It now finds the
   archive's own working directory from where `config.json` sits and accepts the same backup
   layout rooted there, still refusing anything that mixes roots or strays outside it.
+- **The installer-carried restore lands on a `wipe=keep` target, and never forces a chain resync
+  ([#2195](https://github.com/p2pool-starter-stack/pithead/issues/2195)).** A `wipe=keep`
+  reinstall keeps the target's prior `config.json`, and firstboot used to skip the carried
+  restore entirely whenever that file was already present — it now always attempts it, and a
+  present `config.json` is simply what the restore replaces. Restoring `data/monero`,
+  `data/tari` and `data/p2pool` also used to delete the target's own directory outright before
+  writing the archive's; it now merges the archive's files in instead, so the target's already-
+  synced chain data survives a restore that carries none of its own.
 
 ## [2.0.0] - 2026-09-06
 
