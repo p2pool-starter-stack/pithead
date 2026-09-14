@@ -32,6 +32,7 @@ source "$HERE/lib.sh" || exit $?
 # shellcheck source=tests/integration/lib/rig-supply.sh
 source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
+source "$HERE/lib/load-worker.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" || exit $?
@@ -197,6 +198,7 @@ restore_all() {
     # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
     # back — and an outer restore would mutate a bench this mode promised only to read.
     [ "$MODE" = "check" ] && return
+    stop_load_worker
     if [ "$KEEP" = "1" ]; then
         warn "--keep set: leaving the branch deployed on $BENCH_HOST and the miner repointed."
         warn "  Re-run without --keep, or restore by hand: canonical=$CANONICAL_DIR, miner cfg backup=$MINER_CFG_BACKUP"
@@ -671,10 +673,12 @@ main() {
     if [ "$MODE" != "check" ]; then
         backup_stack
         borrow_miner
+        start_load_worker || die "Failed to start the requested load worker."
         deploy_branch
     fi
     local hrc=0
     run_harness || hrc=$?
+    [ "$hrc" -ne 0 ] || verify_load_worker || hrc=1
     # restore_all runs via the EXIT trap.
     echo ""
     if [ "$hrc" -eq 0 ]; then
