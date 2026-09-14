@@ -37,13 +37,15 @@ tari_container_present() { _ssh "podman ps -a --format '{{.Names}}' | grep -qx t
 # entrypoint drops the --merge-mine triple on TARI_MODE=off, and only the live argv shows it.
 p2pool_merge_mine_argv() {
     local argv
-    argv=$(_ssh "podman exec p2pool cat /proc/1/cmdline" 2>/dev/null | tr '\0' '\n') || return 1
+    argv=$(_ssh "set -o pipefail; podman exec p2pool cat /proc/1/cmdline | tr '\\0' '\\n'" 2>/dev/null) || return 1
     if printf '%s\n' "$argv" | grep -Eq '^--merge-mine(=|$)'; then
         printf present
     else
         printf none
     fi
 }
+
+tari_data_preserved() { [ "$1" != missing ] && [ "$1" = "$2" ]; }
 
 tari_live_config() {
     local live tries
@@ -80,7 +82,7 @@ tari_mode_commit() { # <proposed-config-json> -> prints the commit result
 # shellcheck disable=SC2034,SC2154
 phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <phase-rc>
     local DASH_USER="$1" DASH_PASS="$2" phase_rc="${3:-0}"
-    local live proposed result before after origin rc=0 tries restored unexercised=bad
+    local live proposed result before after origin argv rc=0 tries restored unexercised=bad
     # A PRECONDITION FAILURE IS NOT A VERDICT ON TARI SWITCHING (#2059's contract, learned here the
     # same way). When the phase is already red this leg cannot run, and saying "bad" would put a
     # tari-shaped label on somebody else's defect: its first bench run reported "live config could
@@ -157,8 +159,8 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     # THE OPERATOR'S OWN REQUIREMENT, and the one a careless implementation gets wrong: the chain
     # stays on disk. A re-sync is ~150 GB and days; "off" must cost neither.
     after=$(tari_data_fingerprint)
-    if [ "$after" = "$before" ]; then
-        ok "the Tari chain data is untouched by the switch ($before)"
+    if tari_data_preserved "$before" "$after"; then
+        ok "the same Tari chain directory remains after the switch ($before)"
     else
         bad "turning Tari off changed the chain directory: [$before] -> [$after]"
         rc=1
@@ -171,14 +173,17 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     done
     if _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | grep -qx p2pool; then
         ok "a machine that declined Tari keeps mining Monero"
-        if [ "$(p2pool_merge_mine_argv)" = "none" ]; then
-            ok "p2pool relaunched with no --merge-mine argument (#1903)"
-        else
-            bad "p2pool is still being handed --merge-mine on an off machine"
-            rc=1
-        fi
     else
         bad "p2pool is not running after Tari was turned off — the sync gate never released"
+        rc=1
+    fi
+    if ! argv=$(p2pool_merge_mine_argv); then
+        bad "p2pool's executed arguments could not be read after Tari was turned off"
+        rc=1
+    elif [ "$argv" = none ]; then
+        ok "p2pool relaunched with no --merge-mine argument (#1903)"
+    else
+        bad "p2pool is still being handed --merge-mine on an off machine"
         rc=1
     fi
 
@@ -213,13 +218,15 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     fi
     # Resumed, not re-synced: the directory it came back to is the one it left.
     after=$(tari_data_fingerprint)
-    case "$after" in
-    missing)
+    if tari_data_preserved "$before" "$after"; then
+        ok "the same Tari chain directory survived the whole cycle ($after)"
+    elif [ "$after" = missing ]; then
         bad "the Tari data directory is gone — the chain was destroyed by the switch"
         rc=1
-        ;;
-    *) ok "the chain survived the whole cycle and is reused, not re-synced ($after)" ;;
-    esac
+    else
+        bad "the Tari data directory was replaced during the switch: [$before] -> [$after]"
+        rc=1
+    fi
     return "$rc"
 }
 
@@ -233,6 +240,9 @@ _tari_mode_self_test() {
     tari_approval_bounce '{"status":"rejected","error":"sensitive changes need typed payout confirmations followed by host-verified Telegram approval"}' || f=$((f + 1))
     tari_approval_bounce '{"status":"rejected","error":"this change is disruptive (x) — type APPLY in the dashboard to confirm."}' && f=$((f + 1))
     tari_approval_bounce '{"status":"applied"}' && f=$((f + 1))
+    tari_data_preserved '41 2111' '41 2111' || f=$((f + 1))
+    tari_data_preserved '41 2111' '41 2112' && f=$((f + 1))
+    tari_data_preserved missing missing && f=$((f + 1))
     (
         ip=fixture
         counter=$(mktemp)
@@ -255,14 +265,14 @@ _tari_mode_self_test() {
         _ssh() {
             case "$*" in
             *stat\ -c*) printf '41 2111\n' ;;
-            */proc/1/cmdline*) printf 'p2pool\0--wallet\0fixture\0' ;;
+            */proc/1/cmdline*) printf 'p2pool\n--wallet\nfixture\n' ;;
             *) return 1 ;;
             esac
         }
         [ "$(tari_data_fingerprint)" = '41 2111' ] && [ "$(p2pool_merge_mine_argv)" = none ]
     ) || f=$((f + 1))
     (
-        _ssh() { printf 'p2pool\0--merge-mine=tari://fixture\0wallet\0'; }
+        _ssh() { printf 'p2pool\n--merge-mine=tari://fixture\nwallet\n'; }
         [ "$(p2pool_merge_mine_argv)" = present ]
     ) || f=$((f + 1))
     # The leg is wired into the provision phase; a leg nobody calls proves nothing.
