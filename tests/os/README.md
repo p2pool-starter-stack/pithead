@@ -138,11 +138,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
+- **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
+  reflinks inside that disposable guest, verify and install the published v1.20.0 bundle without
+  modifying it, then invoke the existing image-upgrade harness against the submitted images. The
+  baseline uses remote Monero and remote Tari because v1.20.0 predates Tari-off mode. The phase
+  uses the CLI's test override only around `pithead upgrade`, so the release-shaped stack path can
+  run inside the otherwise appliance-shaped guest. It proves bundle trust (including a wrong-key
+  refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
+  and resumed hashes; its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|image-upgrade|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all eight phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means every phase, including
+image-upgrade, fault, and reset, and the full run is required once for every RC candidate.
+
+The image-upgrade phase fails closed unless `REMOTE_MONERO_HOST`, `REMOTE_MONERO_RPC_PORT`,
+`REMOTE_MONERO_ZMQ_PORT`, and `REMOTE_TARI_HOST` are supplied by the tier-4 remote-node wrapper.
+These are endpoint names, never values committed to the repository. Local-chain directory
+continuity is outside this lean-storage gate and tracked by
+[#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,

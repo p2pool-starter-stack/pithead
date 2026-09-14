@@ -2,8 +2,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/fault.sh phases/reset.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/fault.sh phases/reset.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/fault.sh phases/reset.sh phases/image-upgrade.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
@@ -11,7 +11,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig phase_fault phase_reset'
+expected_functions='ok bad info have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig phase_fault phase_reset _image_upgrade_inputs_valid _image_upgrade_prepare_inputs _image_upgrade_stage_guest phase_image_upgrade'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -45,7 +45,27 @@ source "$HERE/phases/rig.sh" || exit $?
 source "$HERE/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$HERE/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$HERE/phases/image-upgrade.sh" || exit $?
 trap - EXIT
+if (
+    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT=18083 \
+        REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    _image_upgrade_inputs_valid
+); then
+    :
+else
+    echo "image-upgrade rejected the complete remote-node contract" >&2
+    exit 1
+fi
+if (
+    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT='' \
+        REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    _image_upgrade_inputs_valid
+); then
+    echo "image-upgrade accepted a missing remote-node input" >&2
+    exit 1
+fi
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
 rm -f "$SERIAL" "$SERIAL.failed"

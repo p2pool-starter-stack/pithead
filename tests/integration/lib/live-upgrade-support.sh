@@ -17,7 +17,9 @@ UPGRADE_CANDIDATE_DIR=""
 UPGRADE_CURRENT_LINK=""
 UPGRADE_CANDIDATE_REFS=""
 UPGRADE_CANDIDATE_ALL_REFS=""
+UPGRADE_CANDIDATE_REGISTRY=""
 UPGRADE_BEFORE_REFS=""
+UPGRADE_BASELINE_REGISTRY=""
 UPGRADE_BEFORE_REVISIONS=""
 UPGRADE_BEFORE_SECRETS=""
 UPGRADE_BEFORE_TELEMETRY=""
@@ -28,7 +30,6 @@ UPGRADE_BEFORE_MONERO=""
 UPGRADE_BEFORE_TARI=""
 UPGRADE_BEFORE_MONERO_ID=""
 UPGRADE_BEFORE_TARI_ID=""
-UPGRADE_TARI_ENABLED=1
 _UPGRADE_RESTORE_ARMED=0
 _UPGRADE_FOREIGN_TRAP=""
 
@@ -36,10 +37,6 @@ valid_full_sha() { [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]]; }
 revision_matches_sha() { valid_full_sha "${2:-}" && [ "${1:-}" = "$2" ]; }
 height_continues() {
     [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "${2:-}" =~ ^[0-9]+$ ]] && [ "$2" -ge "$1" ]
-}
-
-upgrade_tari_enabled() {
-    [ "$(jq_get "$BASELINE_CONFIG" '.tari.mode')" != "off" ]
 }
 
 validate_live_gate_args() {
@@ -86,8 +83,15 @@ revisions_match_sha() { # <service/revision lines> <full-sha>
     case "$seen" in *" tor"*" p2pool"*" xmrig-proxy"*" dashboard"*) return 0 ;; esac
     return 1
 }
+first_party_running_services() {
+    printf '%s\n' tor
+    [ "$(jq_get "$BASELINE_CONFIG" '.monero.mode')" = remote ] || printf '%s\n' monerod
+    printf '%s\n' p2pool xmrig-proxy dashboard
+}
 first_party_running_refs() {
-    rx 'for s in tor monerod p2pool xmrig-proxy dashboard; do c=$(docker compose ps -q "$s" 2>/dev/null | head -n1); [ -n "$c" ] || exit 1; docker inspect --format "$s {{.Config.Image}}" "$c"; done'
+    local services
+    services="$(first_party_running_services | tr '\n' ' ')"
+    rx "for s in $services; do c=\$(docker compose ps -q \"\$s\" 2>/dev/null | head -n1); [ -n \"\$c\" ] || exit 1; docker inspect --format \"\$s {{.Config.Image}}\" \"\$c\"; done"
 }
 pinned_refs_valid() {
     local name ref seen=""
@@ -96,6 +100,23 @@ pinned_refs_valid() {
         seen="$seen $name"
     done <<<"$1"
     [ "$seen" = " tor monerod p2pool xmrig-proxy dashboard" ]
+}
+first_party_registry() { # <service/ref lines>
+    local service ref repo image registry found=""
+    while read -r service ref; do
+        [ -n "$service" ] && [ -n "$ref" ] || return 1
+        repo="${ref%@*}"
+        image="${repo##*/}"
+        case "$service:$image" in
+        tor:pithead-tor:* | monerod:pithead-monero:* | p2pool:pithead-p2pool:* | xmrig-proxy:pithead-xmrig-proxy:* | dashboard:pithead-dashboard:*) ;;
+        *) return 1 ;;
+        esac
+        registry="${repo%/*}"
+        [ "$registry" != "$repo" ] && [[ "$registry" =~ ^[A-Za-z0-9._:/-]+$ ]] || return 1
+        [ -z "$found" ] || [ "$found" = "$registry" ] || return 1
+        found="$registry"
+    done <<<"$1"
+    [ -n "$found" ] && printf '%s\n' "$found"
 }
 worker_names() { api_state | jq -r '.workers[]?.name' 2>/dev/null | sort -u; }
 _pred_worker_set() { [ "$(worker_names)" = "$1" ]; }
@@ -218,7 +239,7 @@ prepare_candidate_bundle() {
         [ -f "$UPGRADE_STAGE_DIR/pithead/cosign.pub" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT" ] &&
         [ -z "$(find "$UPGRADE_STAGE_DIR/pithead" -type l -print -quit)" ] || return 1
-    cmp -s "$UPGRADE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
+    cmp -s "$UPGRADE_IMAGE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
     candidate_commit="$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
     valid_full_sha "$candidate_commit" && [ "$candidate_commit" = "$IMAGE_UPGRADE_TO_SHA" ] || return 1
     UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
@@ -231,6 +252,8 @@ prepare_candidate_bundle() {
         done
     })" || return 1
     pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" || return 1
+    # shellcheck disable=SC2034 # consumed by live-gates.sh after this sourced helper returns
+    UPGRADE_CANDIDATE_REGISTRY="$(first_party_registry "$UPGRADE_CANDIDATE_REFS")" || return 1
     while read -r _service ref; do
         run_trusted_image_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
         docker pull -q "$ref" >/dev/null 2>&1 || return 1
@@ -277,6 +300,8 @@ restore_upgrade_baseline() {
     _UPGRADE_RESTORE_ARMED=0
     it_warn "restoring the exact pre-upgrade release, state, and image set"
     local failed=0 files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local PITHEAD_REGISTRY="$UPGRADE_BASELINE_REGISTRY"
+    export PITHEAD_REGISTRY
     pithead down >/dev/null 2>&1 || {
         failed=1
         files_ok=0
@@ -314,13 +339,13 @@ restore_upgrade_baseline() {
     [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed=1
     state="$(api_state)"
     [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed=1
-    [ "$UPGRADE_TARI_ENABLED" = 0 ] || [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
+    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
     monero_tip="$(monero_chain_tip)"
     monero_height="${monero_tip%% *}"
     chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed=1
-    [ "$UPGRADE_TARI_ENABLED" = 0 ] || height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
+    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
     [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed=1
-    [ "$UPGRADE_TARI_ENABLED" = 0 ] || [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
+    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
     [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed=1
     restored_workers="$(worker_names)"
     [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed=1
@@ -364,53 +389,6 @@ arm_upgrade_abort_restore() {
     fi
     _UPGRADE_RESTORE_ARMED=1
     trap upgrade_abort_restore EXIT
-}
-
-dashboard_durable_rows() { # <fixed capture epoch>
-    local payload
-    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
-    rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 - --require-current-schema $(quote_arg "$1")" 2>/dev/null
-}
-
-archived_dashboard_durable_rows() { # <archive> <fixed capture epoch>
-    local payload
-    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
-    rx "d=\$(mktemp -d); cleanup() { rm -rf \"\$d\"; }; trap cleanup EXIT; member=\$(tar -tzf $(quote_arg "$1") | grep '/mining_data.db$'); [ \$(printf '%s\\n' \"\$member\" | grep -c .) = 1 ] && tar -xOf $(quote_arg "$1") \"\$member\" >\"\$d/db\" && printf %s $(quote_arg "$payload") | base64 -d | python3 - $(quote_arg "$2") \"\$d/db\"" 2>/dev/null
-}
-
-telemetry_rows_continue() { # <before-lines> <after-lines>
-    [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort))" ]
-}
-
-proxy_active_route() {
-    rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;c=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_config();p=next((p for p in c.get(\"pools\",[]) if p.get(\"enabled\")),{});print(json.dumps({\"url\":p.get(\"url\",\"\"),\"socks5\":p.get(\"socks5\",\"\")}))' 2>/dev/null"
-}
-proxy_active_pool() { proxy_active_route | jq -r '.url // empty' 2>/dev/null; }
-proxy_active_socks5() { proxy_active_route | jq -r '.socks5 // empty' 2>/dev/null; }
-
-_pred_proxy_route() { # <mode-substring> <active-pool-url>
-    local st
-    st="$(api_state)"
-    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *"$1"* ]] &&
-        [ "$(proxy_active_pool)" = "$2" ] &&
-        [ "$(jq_get "$st" '.proxy_workers')" -gt 0 ] 2>/dev/null
-}
-
-_pred_xvb_feed_fresh() {
-    local st ts
-    st="$(api_state)"
-    ts="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
-    [ "$(jq_get "$st" '.hashrate.xvb_stale')" = "false" ] &&
-        [ "${ts:-0}" -gt "$XVB_FEED_TS_BEFORE" ] 2>/dev/null
-}
-
-_pred_xvb_routed_visible() {
-    local st routed
-    st="$(api_state)"
-    routed="$(jq_get "$st" '.hashrate.xvb_routed_1h')"
-    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *XVB* ]] &&
-        [ "$(jq_get "$st" '.shares_window.count')" -gt 0 ] 2>/dev/null &&
-        [ -n "$routed" ] && [ "$routed" != "0.00 H/s" ]
 }
 
 monero_block_identity() { # <height>
