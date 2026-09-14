@@ -63,6 +63,7 @@ tests/stack/appliance/test-appliance-media.sh	409
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
 tests/stack/appliance/test-appliance-rig-miner.sh	466
+tests/stack/appliance/test-appliance-setup.sh	438
 tests/stack/control/test-control-add-only-ssrf.sh	448
 tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422

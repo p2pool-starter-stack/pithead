@@ -47,6 +47,17 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `ssh.*`, `dashboard.auth.password` and the two tamper-alarm event toggles still cannot be changed
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
+### Fixed
+
+- **The setup wizard's restore accepts a genuine backup from a prior supported release.** A
+  backup made by the v1.20.0 Compose bundle stores its files under whatever directory the
+  operator ran it from, not this appliance's own working directory. The wizard's restore used to
+  compare every archive member against its own directory only, so a real v1.20.0 archive was
+  refused before it ever reached configuration validation
+  ([#2181](https://github.com/p2pool-starter-stack/pithead/issues/2181)). It now finds the
+  archive's own working directory from where `config.json` sits and accepts the same backup
+  layout rooted there, still refusing anything that mixes roots or strays outside it.
+
 ## [2.0.0] - 2026-09-06
 
 Pithead 2.0.0 is the first release of **Pithead OS**, the appliance: a bootable image that
