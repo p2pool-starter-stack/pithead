@@ -188,6 +188,37 @@ phase_rig() {
         ;;
     *) bad "the rig never self-committed — grubenv: ${genv:-unreadable}" ;;
     esac
+
+    # ---- power cut (M13, #2067b): the reboot leg above proves a CLEAN return; this proves the
+    # same "mining unaided" fact after a virsh destroy instead — the rig half of M13's Restore on
+    # AC power loss, which a KVM guest cannot show (that's a firmware setting) but a real power cut
+    # against a virtual disk still can.
+    info "power-cut leg — the rig must come back mining after a cut, not just a clean reboot"
+    virsh destroy "$VM" >/dev/null 2>&1 || true
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || true
+    if _wait_ssh 300; then
+        ok "the rig survived a power cut — booted"
+    else
+        bad "the rig is BRICKED — no boot after a power cut while mining (disqualifying)"
+        return
+    fi
+    _rig_mining_up 24 &&
+        ok "the rig returned mining with no hands on it after a power cut" ||
+        bad "the rig did not return mining after a power cut"
+    genv=""
+    tries3=0
+    while [ "$tries3" -lt 18 ]; do
+        genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+        case "$genv" in *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;; esac
+        sleep 10
+        tries3=$((tries3 + 1))
+    done
+    case "$genv" in
+    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) ok "the rig is still committed after the power cut (A_OK=1 A_TRY=0)" ;;
+    *) bad "the rig is not committed after the power cut — grubenv: ${genv:-unreadable}" ;;
+    esac
+
     rig_setup_again_legs "$card_tok" "$token" # #1318: Keep it, then Set up again as the same rig (tests/os/setup-again-leg.sh)
 
     # ---- A/B update: identical pipeline, identical outcome --------------------------------

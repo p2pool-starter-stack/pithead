@@ -383,13 +383,14 @@ not proven.
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
   (#911) and fleet descriptor editing (#912).
 - **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
-  Boot, real disks, headless discovery and a genuine power cut are exactly what a VM cannot
-  show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an image
-  ships. (M11–M14 are the rig-role steps and stay manual today — see the manual release
-  checklist — because the `rig` KVM phase does not yet prove an accepted share, MSR/hugepages,
-  a dashboard adopt, a rig power cut, or a stick-root boot; converting what it can is #1886's
-  first gap.) #394's gate list still does not name this battery — the same omission #976's own
-  title records for the OS-update path.
+  Boot, real disks, headless discovery and Restore on AC Power Loss are exactly what a VM
+  cannot show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an
+  image ships (the KVM battery now proves the write/commit half of M8 and M10's power cuts,
+  #2067, not the firmware setting itself). (M11–M14 are the rig-role steps and stay manual
+  today — see the manual release checklist — because the `rig` KVM phase does not yet prove an
+  accepted share, MSR/hugepages, a dashboard adopt, or a stick-root boot; converting what it can
+  is #1886's first gap.) #394's gate list still does not name this battery — the same omission
+  #976's own title records for the OS-update path.
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The
