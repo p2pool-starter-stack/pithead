@@ -248,7 +248,13 @@ assert_rc "member policy refuses a file in place of a data directory" "$?" 1
 mixed_root_members="${RS#/}/config.json
 other/root/data/tor/"
 run_sourced "$RS" restore_setup_members "$mixed_root_members" "${RS#/}/"
-assert_rc "member policy refuses a mixed-root archive" "$?" 1
+assert_rc "member policy refuses a member outside the given root" "$?" 1
+two_depth_configs="a/config.json
+b/config.json"
+run_sourced "$RS" restore_setup_root "$two_depth_configs"
+assert_rc "root detection refuses config.json at two depths" "$?" 1
+PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_root "${RS#/}/config.json"
+assert_rc "root detection refuses an absolute CONFIG_FILE override" "$?" 1
 out=$(PITHEAD_CONFIG_FILE="$RS/config.json" run_sourced "$RS" restore_setup_config_path)
 assert_eq "absolute config override is not prefixed with the working directory" "$out" "$RS/config.json"
 printf 'one\ntwo\n' >"$RS/restore-names"
