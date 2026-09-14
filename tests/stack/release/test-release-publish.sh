@@ -148,6 +148,14 @@ tc_rc=$?
 assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
+echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
+dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
+dirty_real_out="$(bash "$REL" --allow-dirty 2>&1)"
+assert_rc "--allow-dirty refuses a real release" "$?" "1"
+assert_contains "real release refusal requires --dry-run" "$dirty_real_out" "--allow-dirty requires --dry-run"
+dirty_dry_out="$(bash "$REL" --allow-dirty --dry-run 2>&1)"
+assert_not_contains "--allow-dirty permits a dirty dry-run path" "$dirty_dry_out" "--allow-dirty requires --dry-run"
+rm -f "$dirty_marker"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
 # repoints `current`, which is what makes rollback possible. So asserting on the directory the run

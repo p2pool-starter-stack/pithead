@@ -28,7 +28,7 @@
 #   --skip-smoke         Skip the staged-image smoke verification.
 #   --draft              Create the GitHub Release as a DRAFT (held for review; publish it by hand).
 #   --resume-promote     Skip build/stage; promote the already-staged digests (retry after a smoke pass).
-#   --allow-dirty        Don't require a clean git working tree (for local experimentation only).
+#   --allow-dirty        Permit a dirty tree for --dry-run only.
 #   --unsigned           Publish WITHOUT cosign signatures. One-click upgrades refuse an unsigned
 #                        release once cosign.pub is committed — deliberate, loud, and rarely right.
 #   -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
@@ -146,6 +146,7 @@ while [ $# -gt 0 ]; do
 done
 
 [[ "$RC" =~ ^[0-9]+$ ]] || die "--rc must be a number (got '$RC')."
+[ "$ALLOW_DIRTY" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || die "--allow-dirty requires --dry-run."
 
 # --- State (filled by the stages) ----------------------------------------------------------------
 
