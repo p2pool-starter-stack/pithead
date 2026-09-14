@@ -521,7 +521,7 @@ and `--list` prints it).
   internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
   checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
-  to make, excluding the firewall's four accepted private ranges. A failure retains each remote
+  to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
   address and its poll count in the harness output; a clean sample still reads clean on a fail-open
   box whose apps are all correctly Tor-configured. `verify_tor_egress_firewall` compares the
   installed ruleset to the applier's own render. Rules can

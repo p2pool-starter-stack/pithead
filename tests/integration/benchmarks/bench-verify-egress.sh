@@ -82,8 +82,8 @@ done
     exit 2
 }
 [ "$MIN_HITS" -le "$POLLS" ] 2>/dev/null || MIN_HITS="$POLLS" # can't need more hits than polls
-# Established (st=01) foreign IPv4s for a container that are PUBLIC (skip loopback/private/bridge/
-# link-local — the Tor SOCKS lives in the private 172.16/12 range, so SOCKS-routed traffic is skipped).
+# Established (st=01) foreign IPv4s for a container that are PUBLIC (skip loopback, private/bridge,
+# link-local, and shared CGNAT — the Tor SOCKS lives in 172.16/12, so SOCKS traffic is skipped).
 # /proc/net/tcp `rem_address` is little-endian hex "IIIIIIII:PPPP"; decode with bash arithmetic so we
 # don't depend on gawk/strtonum inside minimal images (only `cat` runs in the container). IPv4-only by
 # design — mining_net is IPv4 (matches the #270 firewall scope).
