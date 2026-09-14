@@ -141,6 +141,8 @@ assert_eq "a failed child backup is reported failed, not applied" \
     "$(jq -r .status "$BKC/results/$bid3.json")" "failed"
 assert_contains "the failure carries the child's own error tail" \
     "$(jq -r .log "$BKC/results/$bid3.json")" "boom: disk full"
+assert_eq "the failure does not duplicate the child's log as an error" \
+    "$(jq -r 'has("error")' "$BKC/results/$bid3.json")" "false"
 assert_eq "a failed backup's result never carries a passphrase field" \
     "$(jq -r 'has("passphrase")' "$BKC/results/$bid3.json")" "false"
 assert_contains "the failed attempt is audited" \

@@ -79,6 +79,20 @@ test("a rejected appliance preview labels the host validation log", async () => 
   assert.match(out, /cannot\s+be run from here/);
 });
 
+test("a rejected appliance preview leaves an authored error unlabelled", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", error: "Another config apply is already running" }),
+    () => view.save(),
+  );
+  const out = renderToString(view.render());
+  assert.match(out, /Another config apply is already running/);
+  assert.doesNotMatch(out, /this machine's own log/);
+});
+
 test("runUpgrade posts the seen version, skips 'running', rides out the restart, returns the outcome", async () => {
   let posted = null;
   let polls = 0;
