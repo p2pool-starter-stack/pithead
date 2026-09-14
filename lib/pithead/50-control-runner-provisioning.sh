@@ -89,7 +89,8 @@ provision_control_runner() {
     # on. Falling through costs one sudo write, once, and then converges.
     if grep -qsF "PathExistsGlob=$CONTROL_DIR/requests/*.json" "$unit_dir/pithead-control.path" &&
         grep -qsF "ExecStart=$PWD/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
-        grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service"; then
+        grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service" &&
+        grep -qsF "StartLimitIntervalSec=0" "$unit_dir/pithead-control.service"; then
         return 0
     fi
     # The grep above is an idempotence skip, not an ownership check. The removal branch got its
@@ -121,11 +122,23 @@ provision_control_runner() {
     sudo tee "$unit_dir/pithead-control.service" >/dev/null <<EOF
 [Unit]
 Description=pithead dashboard control runner (#33)
+# A recovered setup fault (or any other momentary "stack isn't fully set up yet" read) makes
+# control-run-pending exit 1, and every request queued in the meantime fires the .path trigger
+# again — several failures inside systemd's default 10s/5-start window. Once that default limit
+# trips, the unit goes start-limit-hit and NOTHING re-arms it: not a new request landing in the
+# spool, not the stack finishing setup — only a reboot, which resets systemd's own counters
+# (#2219). Disabling the limit here removes the one place a transient failure could ever wedge
+# the control channel; Restart=on-failure below is what actually retries it.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 User=root
 WorkingDirectory=$PWD
+# Retries a transient "not fully set up yet" (or any other one-off failure) without waiting for
+# a new request to land — the request already queued is what needs the retry (#2219).
+Restart=on-failure
+RestartSec=15
 # Pin the engine (#2059). A systemd unit does NOT read /etc/environment — that is PAM, for login
 # shells — so the appliance image's own PITHEAD_ENGINE pin never reaches a unit, which is why
 # pithead-boot, pithead-firstboot and pithead-setup-again each set it explicitly. This unit is

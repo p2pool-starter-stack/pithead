@@ -234,7 +234,10 @@ on, and remove them when it is off:
 
 - `pithead-control.path` — watches `./data/control/requests/` for request files.
 - `pithead-control.service` — a root oneshot running `pithead control-run-pending` from the
-  install directory. Fixed command, no parameters from the container.
+  install directory. Fixed command, no parameters from the container. It retries on failure
+  (`Restart=on-failure`, 15s) with systemd's own start-limit disabled, so a request that lands
+  while the stack momentarily isn't fully set up — recovering from a setup fault, mid-apply — gets
+  picked up once it is, instead of leaving the runner wedged until a reboot (#2219).
 
 The unit names are global to the host, so removal is ownership-checked: a checkout with the flag
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the

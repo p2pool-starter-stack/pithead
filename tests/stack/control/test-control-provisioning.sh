@@ -196,6 +196,40 @@ assert_contains "control unit pins DOCKER on a docker install, not a hardcoded p
 assert_not_contains "the docker render carries no podman pin" \
     "$(grep '^Environment=' "$PCE/units/pithead-control.service")" "podman"
 
+echo "== unit: the rendered control unit self-heals a transient failure instead of wedging until reboot (#2219) =="
+# #2219, measured on bench-ci job 186: control-run-pending exited 1 on a transient "not fully set
+# up yet" read, several requests queued in the same window each re-fired the .path trigger, and
+# that burst tripped systemd's DEFAULT start-limit (5 starts / 10s — this unit carried no override).
+# Once tripped, the unit went start-limit-hit and nothing re-armed it — not the stack finishing
+# setup, not another request landing in the spool — only a reboot, which resets systemd's own
+# counters. StartLimitIntervalSec=0 removes the wedge; Restart=on-failure is what actually retries
+# the request that was already queued.
+rm -f "$PCE/units"/*
+pce_run podman
+assert_contains "control unit disables systemd's start-limit (no permanent wedge)" \
+    "$(cat "$PCE/units/pithead-control.service")" "StartLimitIntervalSec=0"
+assert_contains "control unit retries on failure instead of needing a new trigger" \
+    "$(cat "$PCE/units/pithead-control.service")" "Restart=on-failure"
+
+# THE ONE THAT NEARLY GOT AWAY, same shape as the engine-pin regression above: a unit written
+# before this fix existed matches on its glob, ExecStart and engine env alone, so a template-only
+# change would be silently inert on every already-provisioned box — including the one #2219 was
+# measured on.
+rm -f "$PCE/units"/*
+pce_seed_matching_path
+printf '[Service]\nType=oneshot\nUser=root\nWorkingDirectory=%s\nEnvironment=PITHEAD_ENGINE=podman\nExecStart=%s/pithead control-run-pending\n' \
+    "$PCE/mine" "$PCE/mine" >"$PCE/units/pithead-control.service"
+pce_run podman
+assert_contains "a pre-fix unit is RE-RENDERED, not skipped (the fix reaches existing installs)" \
+    "$(cat "$PCE/units/pithead-control.service")" "StartLimitIntervalSec=0"
+
+# Control for the row above: the skip must still hold once the unit already carries the fix.
+pce_seed_matching_path
+cp "$PCE/units/pithead-control.service" "$PCE/units/.before"
+pce_run podman
+assert_eq "a unit already carrying the fix is still skipped (idempotence not simply removed)" \
+    "$(cmp -s "$PCE/units/.before" "$PCE/units/pithead-control.service" && echo same || echo rewritten)" "same"
+
 # THE ONE THAT NEARLY GOT AWAY. The idempotence skip returns early when the .path glob and the
 # ExecStart both match — which a unit written BEFORE the pin existed does. So a template-only fix
 # is silently inert on every already-provisioned box, including the one the defect was measured on.
