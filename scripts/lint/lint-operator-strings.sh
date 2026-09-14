@@ -264,6 +264,16 @@ if [ "${1:-}" = "--self-test" ]; then
         st_fail=1
     fi
 
+    : >"$bare/pithead"
+    printf '%s\n' 'export const t = "operator sees #4242";' >"$bare/dashboard/mining_dashboard/web/static/untracked.mjs"
+    bare_out=$(cd "$bare" && bash "$self" 2>&1 </dev/null) && bare_rc=0 || bare_rc=$?
+    if [ "$bare_rc" -ne 0 ] && printf '%s\n' "$bare_out" | grep -q 'untracked.mjs:1:'; then
+        echo "  self-test ok: the real invocation scans an untracked frontend file"
+    else
+        echo "  self-test FAIL: the real invocation missed an untracked frontend file (rc=$bare_rc)"
+        st_fail=1
+    fi
+
     [ "$st_fail" -eq 0 ] && {
         echo "lint-operator-strings self-test OK"
         exit 0
@@ -307,7 +317,7 @@ fi
 # refusal below can run. Swallowing that status is only safe BECAUSE the refusal checks the
 # result; the two are one mechanism. Remove either and a broken enumeration stops explaining
 # itself: without `|| true` the script dies anonymously, without the refusal it reports success.
-files=$(git ls-files 'dashboard/mining_dashboard/web/static/*.mjs' \
+files=$(git ls-files --cached --others --exclude-standard -- 'dashboard/mining_dashboard/web/static/*.mjs' \
     'dashboard/mining_dashboard/web/static/*.js' \
     'dashboard/mining_dashboard/web/templates/*.html' | grep -v '\.min\.js$' || true)
 #
