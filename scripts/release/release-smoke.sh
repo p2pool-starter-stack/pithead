@@ -70,7 +70,6 @@ done
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
 cd "$REPO_ROOT"
-command -v gh >/dev/null 2>&1 || die "gh CLI is required to download the published release assets."
 
 # Resolve the target version → tag. A bare or v-prefixed arg both work; default to the VERSION file.
 STACK_VERSION="${VERSION_ARG:-$(tr -d ' \t\r\n' <VERSION)}"
@@ -334,6 +333,7 @@ confirm_upgrade() {
 # expensive to get wrong, and it only ever ran post-publish where a mistake is already in the field.
 if [ "${BASH_SOURCE[0]}" != "${0}" ]; then return 0 2>/dev/null || true; fi
 
+command -v gh >/dev/null 2>&1 || die "gh CLI is required to download the published release assets."
 log "Post-publish release smoke test (#459) — $TAG"
 fetch_published_bundle
 verify_release
