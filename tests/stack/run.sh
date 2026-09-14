@@ -7,12 +7,12 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
-
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
-_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
+# shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
