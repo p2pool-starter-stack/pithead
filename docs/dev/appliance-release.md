@@ -404,8 +404,7 @@ reserved-node environment
 inputs, it requires the real host preflight, rendered endpoints, the current p2pool container's
 narrowly extracted endpoints, an endpoint-bound current-startup `uses chain_id` round trip, and
 root-side restoration from a mode-600 raw snapshot. Reserved-node credentials must be disposable
-test values. The payout-address
-confirmation and a real human Telegram click remain manual M16 evidence.
+test values. The payout-address confirmation remains manual M16 evidence.
 
 RC1 addendum, still manual after the automated rows run:
 
@@ -432,7 +431,7 @@ unchanged; a commit without the typed confirmation remains refused. A confirmed 
 the ordinary authenticated control route applies the host-generated preview, and `fixture-next`
 must survive the unaided reboot and A/B update.
 The reserved-node `uses chain_id` row is automated but still needs actual reachable node inputs;
-the payout confirmation and human approval click remain manual. #1956 has written the serial
+the payout and browser confirmations remain manual. #1956 has written the serial
 assertion for boot labels, but none of these tier-4 rows is PASS until the product branches are
 integrated into an image and the full battery runs.
 
