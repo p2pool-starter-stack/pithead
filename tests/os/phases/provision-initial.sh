@@ -176,7 +176,7 @@ _phase_provision_initial_body() {
         bad "no HTTP answer behind caddy on :443 within 5m (last: $code)"
         return 1
     fi
-    phase_provision_dashboard_exposure
+    phase_provision_dashboard_exposure || return 1
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
