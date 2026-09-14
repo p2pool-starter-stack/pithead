@@ -2,26 +2,19 @@
 #
 # Weekly upstream-currency watch (#1128).
 #
-# REPORTS ONLY. It never bumps a pin and never opens a PR. That is deliberate: a Tari or monerod
-# minor is a data migration to schedule, not a bump to merge — #1129 carries three one-time
-# migrations and a one-way wallet-DB change. RigForge's xmrig-bump.yml opens a build-verified PR
-# instead, which is right there and wrong here; the two share this shape, not this output.
+# REPORTS ONLY. It never bumps a pin or opens a PR: Tari and monerod minors are scheduled data migrations (#1129).
+# RigForge's xmrig-bump.yml opens a build-verified PR; the watchers share shape, not output.
 #
-# The pins come from scripts/release/release.sh's pin(), which is where the release notes read them from.
-# A second list is how the gap this closes opened in the first place.
+# The pins come from scripts/release/release.sh's pin(), the release-notes source of truth.
 #
 # Two questions for Tari: is the pinned VERSION behind upstream, and would its gRPC schema break the vendored client?
 #
-# NOT asked here, deliberately: whether an image pinned `tag@sha256:...` still has a digest that
-# corresponds to that tag. The digest is authoritative and the tag is decoration, so a bump that
-# moves the tag and leaves the digest keeps running the old image while every doc says otherwise
-# — but answering it needs a registry client (two different token flows for quay.io and Docker
-# Hub), which is a second source type with its own failure mode. It is its own change.
+# NOT asked here: whether an image `tag@sha256:...` still matches its tag. The digest is authoritative,
+# but checking it needs a registry client with separate quay.io and Docker Hub token flows.
+# It is its own source type and change.
 #
-# UNREACHABLE IS NOT CURRENT. Every failed lookup increments a counter, the run exits non-zero,
-# and the report names what could not be checked. A watcher that has silently stopped otherwise
-# looks exactly like a watcher with nothing to report — which is how a scheduled workflow in this
-# repo ran zero times without anyone noticing.
+# UNREACHABLE IS NOT CURRENT. Failures increment a counter, return non-zero, and name what was not checked.
+# Otherwise a stopped watcher looks current; one scheduled workflow here once ran zero times unnoticed.
 #
 # Usage:
 #   scripts/watch/pin-watch.sh              Print the markdown report on stdout; rc 1 if anything failed.
@@ -128,14 +121,13 @@ run_buf() {
         -v "$ROOT/dashboard/mining_dashboard/client/tari/proto:/workspace" \
         --workdir /workspace bufbuild/buf:1.71.0@sha256:7f3e3dfb8650f39878625bbc9f2016a51a781693b209165671d5a61d11c74992 "$@"
 }
-check_tari_protos() { # <upstream tag> -> 0 compatible, 1 breaking drift, 2 unchecked
+check_tari_protos() { # <upstream tag> -> 0 compatible, 1 local, 2 upstream, 3 drift, 4 comparison failure
     local upstream="https://github.com/tari-project/tari.git#tag=$1,subdir=applications/minotari_app_grpc/proto" rc=0
-    run_buf build . >/dev/null 2>&1 || return 2
-    run_buf build "$upstream" >/dev/null 2>&1 || return 2
-    run_buf breaking "$upstream" --against . >/dev/null 2>&1 || rc=$?
-    # Buf reserves 100 for parseable file annotations; other failures mean the comparison did not run.
-    [ "$rc" -eq 100 ] && return 1
-    [ "$rc" -eq 0 ] || return 2
+    run_buf build . >&2 || return 1
+    run_buf build "$upstream" >&2 || return 2
+    run_buf breaking "$upstream" --against . >&2 || rc=$?
+    [ "$rc" -eq 100 ] && return 3
+    [ "$rc" -eq 0 ] || return 4
 }
 add_tari_proto_row() {
     local raw ref rc=0
@@ -149,11 +141,19 @@ add_tari_proto_row() {
     case "$rc" in
     0) row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "compatible" ;;
     1)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**vendored schema build failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    2)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    3)
         row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**breaking drift**"
         stale=$((stale + 1))
         ;;
     *)
-        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**schema comparison failed — NOT checked**"
         failed=$((failed + 1))
         ;;
     esac
@@ -273,11 +273,11 @@ if [ "${1:-}" = "--self-test" ]; then
     ST_BUF_BREAKING_RC=0
     st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
     ST_BUF_BREAKING_RC=1
-    st "a failed comparison renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    st "a failed comparison keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **schema comparison failed — NOT checked**"
     ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
     st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
     ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
-    st "a local parse failure renders unchecked, not drift" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    st "a local parse failure keeps its own unchecked report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **vendored schema build failed — NOT checked**"
     st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
     integration_root=$(mktemp -d)
     trap 'rm -rf "$integration_root"' EXIT
