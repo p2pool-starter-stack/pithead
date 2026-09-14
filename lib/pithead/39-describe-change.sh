@@ -243,6 +243,7 @@ describe_change() {
         msg=""
         ;;
     HOST_IP)
+        flag=APPROVAL
         msg="Dashboard hostname: $old → $new."
         ;;
     HOST_PORT)
