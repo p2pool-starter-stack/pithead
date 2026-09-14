@@ -115,4 +115,4 @@ jobs:
         uses: ./.github/actions/retry-trivy-scan
         with:
           image-ref: pithead-os-rootfs:ci
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore

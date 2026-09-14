@@ -156,7 +156,7 @@ jobs:
         uses: ./.github/actions/retry-trivy-scan
         with:
           image-ref: pithead-${{ matrix.service }}:ci
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
 
   sweep-shipped:
     # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
