@@ -44,6 +44,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
+# shellcheck source=tests/os/secure-boot-boot-verdict.sh
+. "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
 # shellcheck source=tests/os/zero-container-evidence.sh

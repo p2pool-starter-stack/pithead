@@ -59,7 +59,7 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # (x/mod pulls x/tools, x/net, x/crypto...). When you add one, read Go's own upgrade list, not this.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
-# and delete its .trivyignore mute in the SAME change — a mute left over a finding you have just
+# and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
 # fixed means the scan can no longer tell "fixed" from "hidden", which is how two obsolete mutes
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
