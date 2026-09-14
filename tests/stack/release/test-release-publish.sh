@@ -45,12 +45,16 @@ assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
 TAR_OPTIONS='--exclude=*/authorized_keys' rootfs_guard "$ROOTFS_GUARD/debug.tar" >/dev/null 2>&1
 assert_rc "inherited tar exclusions cannot hide the debug SSH key" "$?" "2"
+mkdir "$ROOTFS_GUARD/extracted"
+# shellcheck disable=SC1090
+(cd "$ROOT" && set -- && source "$REL" 2>/dev/null && TAR_OPTIONS='--transform=s#etc/pithead-variant#root/.ssh/authorized_keys#' extract_rootfs_tar "$ROOTFS_GUARD/release.tar" "$ROOTFS_GUARD/extracted")
+assert_eq "inherited tar transforms cannot create an authorized_keys file" "$([ -e "$ROOTFS_GUARD/extracted/root/.ssh/authorized_keys" ] && echo yes || echo no)" "no"
+assert_eq "the hermetic extraction keeps the original member" "$([ -e "$ROOTFS_GUARD/extracted/etc/pithead-variant" ] && echo yes || echo no)" "yes"
 for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
 done
 unset -f rootfs_guard
-
 # Drive the producer with a stubbed export and registry write so ordering mutations fail.
 drive_rootfs_build() { # <fixture-tar> <push-log>
     local source_tar="$1" push_log="$2"

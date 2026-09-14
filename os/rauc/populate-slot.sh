@@ -96,7 +96,7 @@ render_bundle_manifest() { # $1 os_version, $2 variant, $3 data_migration, $4 mi
 # commits, with PITHEAD_STALE_TARBALL_OK=1 as the explicit escape for a deliberate stale rebuild.
 verify_tarball_commit() {
     local tarball="$1" stamped head
-    stamped=$(tar -xOf "$tarball" opt/pithead/BUILD_COMMIT 2>/dev/null) || stamped=""
+    stamped=$(TAR_OPTIONS='' command tar -xOf "$tarball" opt/pithead/BUILD_COMMIT 2>/dev/null) || stamped=""
     [ -n "$stamped" ] || stamped="(no BUILD_COMMIT stamp in the tarball)"
 
     if ! head=$(_working_tree_commit); then
@@ -153,6 +153,10 @@ verify_release_rootfs_tar() { # $1 = tarball path
         echo "rootfs release guard: refusing a rootfs carrying the debug SSH key" >&2
         return 2
     fi
+}
+
+extract_rootfs_tar() { # $1 = tarball, $2 = destination
+    TAR_OPTIONS='' command tar -xf "$1" -C "$2"
 }
 
 # A non-dev image or bundle must consume the exact export guarded immediately before publication.

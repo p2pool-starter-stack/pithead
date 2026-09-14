@@ -84,7 +84,7 @@ mkfs.ext4 -q -L system-a "${LOOP}p2"
 echo "==> populating slot A from the shared rootfs tarball"
 mkdir -p /mnt/rauc-sys /mnt/rauc-esp
 mount "${LOOP}p2" /mnt/rauc-sys
-tar -xf "$TARBALL" -C /mnt/rauc-sys
+extract_rootfs_tar "$TARBALL" /mnt/rauc-sys
 populate_slot /mnt/rauc-sys
 
 echo "==> bootloader"
