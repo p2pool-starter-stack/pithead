@@ -140,7 +140,7 @@ cat >"$WA/config.json" <<'EOF'
 EOF
 wa_case() { # <uuid> <intent-json> <label> <expected-error-substring>
     printf '%s\n' "$2" >"$WA/req.json"
-    PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
+    PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced_e "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
     local out
     out=$(jq -r '.status + "|" + (.error // "")' "$WA/results/$1.json" 2>/dev/null)
     case "$out" in
@@ -162,7 +162,7 @@ wa_case "$u5" "{\"id\":\"$u5\",\"action\":\"worker-apply\",\"actor\":\"admin\",\
 # intent naming rig2 (no token) with an injected token still fails closed.
 u6="ffffffff-6666-4666-8666-666666666666"
 printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig2","changes":{"DONATION":2}}\n' "$u6" >"$WA/req.json"
-PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
+PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced_e "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
 assert_eq "worker-apply reject is audited by name only" \
     "$(jq -r '.status' "$WA/results/$u6.json")" "rejected"
 assert_contains "worker-apply audit records the action, no token" \
@@ -180,7 +180,7 @@ fi
 # now that workers.list[] is the only shape (#1832 removed the 1.x alias this block used to mirror).
 u7="99999999-7777-4777-8777-777777777777"
 printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig1","changes":{"DONATION":2}}\n' "$u7" >"$WA/req.json"
-CONTROL_WA_BUDGET=0 PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
+CONTROL_WA_BUDGET=0 PITHEAD_CONFIG_FILE="$WA/config.json" run_sourced_e "$SANDBOX" control_process_request "$WA/req.json" "$WA" >/dev/null 2>&1
 assert_contains "worker-apply over the dial budget is rejected (no dial)" \
     "$(jq -r '.error // ""' "$WA/results/$u7.json")" "too many worker config changes"
 
@@ -226,7 +226,7 @@ chmod +x "$WA3/bin/curl"
 u9="12121212-1212-4212-8212-121212121212"
 printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig1","changes":{"pools":["pool.example:3333"]}}\n' "$u9" >"$WA3/req.json"
 PATH="$WA3/bin:$PATH" CURL_LOG="$WA3/curl.log" CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$WA3/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$WA3/req.json" "$WA3" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$WA3/req.json" "$WA3" >/dev/null 2>&1
 assert_eq "worker-apply accept path reaches a terminal 'applied' status" \
     "$(jq -r '.status' "$WA3/results/$u9.json" 2>/dev/null)" "applied"
 assert_eq "worker-apply accept path records the rig's change_id" \
@@ -273,7 +273,7 @@ printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig1","chan
     hash -r
     export REAL_JQ="$real_jq" JQ_FAIL_MARKER="$WA4/.jq-failed"
     CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$WA4/config.json" \
-        run_sourced "$SANDBOX" control_process_request "$WA4/req.json" "$WA4" >/dev/null 2>&1
+        run_sourced_e "$SANDBOX" control_process_request "$WA4/req.json" "$WA4" >/dev/null 2>&1
 )
 assert_eq "a failed apply reaches terminal 'failed', not the poll-deadline 'accepted'" \
     "$(jq -r '.status' "$WA4/results/$u10.json" 2>/dev/null)" "failed"
@@ -293,7 +293,7 @@ cat >"$WU/config.json" <<'EOF'
 EOF
 wu_case() { # <uuid> <intent-json> <label> <expected-error-substring>
     printf '%s\n' "$2" >"$WU/req.json"
-    PITHEAD_CONFIG_FILE="$WU/config.json" run_sourced "$SANDBOX" control_process_request "$WU/req.json" "$WU" >/dev/null 2>&1
+    PITHEAD_CONFIG_FILE="$WU/config.json" run_sourced_e "$SANDBOX" control_process_request "$WU/req.json" "$WU" >/dev/null 2>&1
     local out
     out=$(jq -r '.status + "|" + (.error // "")' "$WU/results/$1.json" 2>/dev/null)
     case "$out" in
@@ -313,7 +313,7 @@ wu_case "$w4" "{\"id\":\"$w4\",\"action\":\"worker-upgrade\",\"actor\":\"admin\"
 # Per-drain budget: exactly one upgrade dials per drain; over-budget rejects BEFORE the tag lookup
 # (a "already in this cycle" rejection also proves rig resolution succeeded pre-dial).
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v1.11.2"}\n' "$w5" >"$WU/req.json"
-CONTROL_WU_BUDGET=0 PITHEAD_CONFIG_FILE="$WU/config.json" run_sourced "$SANDBOX" control_process_request "$WU/req.json" "$WU" >/dev/null 2>&1
+CONTROL_WU_BUDGET=0 PITHEAD_CONFIG_FILE="$WU/config.json" run_sourced_e "$SANDBOX" control_process_request "$WU/req.json" "$WU" >/dev/null 2>&1
 assert_contains "upgrade over the per-drain budget is rejected (no dial)" \
     "$(jq -r '.error // ""' "$WU/results/$w5.json")" "already in this cycle"
 if grep -q 'tok-rig1' "$WU/audit/control.log" "$WU"/results/*.json 2>/dev/null; then
@@ -337,7 +337,7 @@ touch "$WUT/staged/.rigforge-latest-stamp"
 w6="ffffffff-6666-4666-9666-666666666666"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v1.11.2"}\n' "$w6" >"$WUT/req.json"
 PATH="$WUT/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$WUT/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$WUT/req.json" "$WUT" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$WUT/req.json" "$WUT" >/dev/null 2>&1
 assert_contains "upgrade inside the 10-min lookup window (no cached tag) is rejected" \
     "$(jq -r '.error // ""' "$WUT/results/$w6.json")" "retry in a few minutes"
 assert_eq "the throttled upgrade made NO network dial" "$(cat "$WUT/dials.log" 2>/dev/null)" ""
@@ -373,7 +373,7 @@ EOF
     chmod +x "$dir/bin/curl"
     printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$1" >"$dir/req.json"
     PATH="$dir/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$dir/config.json" \
-        run_sourced "$SANDBOX" control_process_request "$dir/req.json" "$dir" >/dev/null 2>&1
+        run_sourced_e "$SANDBOX" control_process_request "$dir/req.json" "$dir" >/dev/null 2>&1
     assert_eq "$3" "$(jq -r '.status' "$dir/results/$1.json" 2>/dev/null)" "$4"
     WU_LAST_DIR="$dir"
 }
@@ -428,7 +428,7 @@ chmod +x "$unreach_dir/bin/curl"
 w12="67676767-6767-4267-9267-676767676767"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w12" >"$unreach_dir/req.json"
 PATH="$unreach_dir/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$unreach_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$unreach_dir/req.json" "$unreach_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$unreach_dir/req.json" "$unreach_dir" >/dev/null 2>&1
 assert_contains "an unreachable rig fails cleanly (nothing changed)" \
     "$(jq -r '.status + "|" + (.error // "")' "$unreach_dir/results/$w12.json")" "failed|could not reach worker"
 
@@ -439,7 +439,7 @@ printf '%s' "v9.9.9" >"$wa_dir/staged/.rigforge-latest-tag"
 w10="45454545-4545-4245-9245-454545454545"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v1.0.0"}\n' "$w10" >"$wa_dir/req.json"
 CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$wa_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$wa_dir/req.json" "$wa_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$wa_dir/req.json" "$wa_dir" >/dev/null 2>&1
 assert_contains "a non-latest proposal is refused against the host-derived tag" \
     "$(jq -r '.error // ""' "$wa_dir/results/$w10.json")" "not the latest published RigForge release"
 stale_dir="$SANDBOX/ctrl597-stale"
@@ -478,7 +478,7 @@ printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","ve
     hash -r
     sleep() { :; }
     CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$stale_dir/config.json" \
-        run_sourced "$SANDBOX" control_process_request "$stale_dir/req.json" "$stale_dir" >/dev/null 2>&1
+        run_sourced_e "$SANDBOX" control_process_request "$stale_dir/req.json" "$stale_dir" >/dev/null 2>&1
 )
 assert_eq "a stale terminal for a PREVIOUS change_id is ignored; ours lands" \
     "$(jq -r '.status + "|" + .change_id' "$stale_dir/results/$w11.json" 2>/dev/null)" "applied|chg-9"
@@ -507,7 +507,7 @@ chmod +x "$to_dir/bin/curl"
 w13="78787878-7878-4278-9278-787878787878"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w13" >"$to_dir/req.json"
 PATH="$to_dir/bin:$PATH" CONTROL_WU_BUDGET=1 CONTROL_WU_POLL_CAP=1 PITHEAD_CONFIG_FILE="$to_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$to_dir/req.json" "$to_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$to_dir/req.json" "$to_dir" >/dev/null 2>&1
 assert_eq "hitting the poll cap lands 'accepted' (queued on the rig), not a failure" \
     "$(jq -r '.status + "|" + .change_id' "$to_dir/results/$w13.json" 2>/dev/null)" "accepted|chg-9"
 assert_contains "the timed-out result says the upgrade is still running" \
@@ -544,7 +544,7 @@ printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","ve
     hash -r
     sleep() { :; }
     CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$gh_dir/config.json" \
-        run_sourced "$SANDBOX" control_process_request "$gh_dir/req.json" "$gh_dir" >/dev/null 2>&1
+        run_sourced_e "$SANDBOX" control_process_request "$gh_dir/req.json" "$gh_dir" >/dev/null 2>&1
 )
 assert_eq "a fresh derive parses tag_name and drives the upgrade to applied" \
     "$(jq -r '.status + "|" + .version' "$gh_dir/results/$w14.json" 2>/dev/null)" "applied|v9.9.9"
@@ -558,7 +558,7 @@ chmod +x "$ghfail_dir/bin/curl"
 w15="9a9a9a9a-9a9a-429a-929a-9a9a9a9a9a9a"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w15" >"$ghfail_dir/req.json"
 PATH="$ghfail_dir/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$ghfail_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$ghfail_dir/req.json" "$ghfail_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$ghfail_dir/req.json" "$ghfail_dir" >/dev/null 2>&1
 assert_contains "an unreachable GitHub release API refuses fail-closed" \
     "$(jq -r '.status + "|" + (.error // "")' "$ghfail_dir/results/$w15.json")" \
     "rejected|could not reach the GitHub release API over Tor"
@@ -575,7 +575,7 @@ chmod +x "$ghjunk_dir/bin/curl"
 w16="abababab-abab-42ab-92ab-abababababab"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w16" >"$ghjunk_dir/req.json"
 PATH="$ghjunk_dir/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$ghjunk_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$ghjunk_dir/req.json" "$ghjunk_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$ghjunk_dir/req.json" "$ghjunk_dir" >/dev/null 2>&1
 assert_contains "a release API response with no usable tag refuses fail-closed" \
     "$(jq -r '.status + "|" + (.error // "")' "$ghjunk_dir/results/$w16.json")" \
     "rejected|the GitHub release API returned no usable RigForge release tag"
@@ -608,7 +608,7 @@ chmod +x "$refuse_dir/bin/curl"
 w17="bcbcbcbc-bcbc-42bc-92bc-bcbcbcbcbcbc"
 printf '{"id":"%s","action":"worker-upgrade","actor":"admin","worker":"rig1","version":"v9.9.9"}\n' "$w17" >"$refuse_dir/req.json"
 PATH="$refuse_dir/bin:$PATH" CONTROL_WU_BUDGET=1 PITHEAD_CONFIG_FILE="$refuse_dir/config.json" \
-    run_sourced "$SANDBOX" control_process_request "$refuse_dir/req.json" "$refuse_dir" >/dev/null 2>&1
+    run_sourced_e "$SANDBOX" control_process_request "$refuse_dir/req.json" "$refuse_dir" >/dev/null 2>&1
 assert_contains "a rig non-202 (incl. an old-rig < v1.11.2 refusal) is surfaced as rejected" \
     "$(jq -r '.status + "|" + (.error // "")' "$refuse_dir/results/$w17.json")" \
     "rejected|worker 'rig1' refused the upgrade (HTTP 403): AAAA"

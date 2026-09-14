@@ -536,7 +536,9 @@ a judgement, not a measurement.
 
 - **`set -e`.** bats wraps every `@test` in `set -e`. The suite runs `set -uo pipefail` without
   `-e`, because a large share of `run.sh` tests rejection paths shaped `out=$(cmd); rc=$?`. Under
-  bats those abort before the assertion runs — hit in 3 of 3 ports.
+  bats those abort before the assertion runs — hit in 3 of 3 ports. Sourced control-runner calls
+  use `run_sourced_e`, which keeps the CLI's production `set -e` so an unguarded non-zero exit
+  aborts the request in tier 1 just as it does in the systemd unit (#2095).
 - **One `When` per Example.** ShellSpec's rule splits a continuous scenario into separate Examples.
   That doesn't remove the shared-sandbox order dependency, it hides it — and `shellspec --random
   examples`, an ordinary flake-hunting flag, would corrupt the run silently.
