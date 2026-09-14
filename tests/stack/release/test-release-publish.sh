@@ -19,6 +19,8 @@ tar --transform='s|root/.ssh/authorized_keys|root//.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-double.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar --transform='s|root/.ssh/authorized_keys|root/./.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-inner-dot.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|.//root/.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-dot-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
 rootfs_guard() {
     (
         cd "$ROOT" || exit
@@ -37,7 +39,7 @@ assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
 rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
 assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
-for unsafe_tar in debug-dot debug-double debug-inner-dot; do
+for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
 done

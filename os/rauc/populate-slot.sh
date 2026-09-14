@@ -140,11 +140,11 @@ verify_release_rootfs_tar() { # $1 = tarball path
         echo "rootfs release guard: cannot list $tarball" >&2
         return 2
     }
-    if grep -Eq '^/' <<<"$listing"; then
+    normalized="$(sed -E 's#^(\./)+##' <<<"$listing")"
+    if grep -Eq '^/' <<<"$normalized"; then
         echo "rootfs release guard: refusing a rootfs with an absolute tar member" >&2
         return 2
     fi
-    normalized="$(sed -E 's#^(\./)+##' <<<"$listing")"
     if grep -Eq '(^|/)(\.|\.\.)/|//' <<<"$normalized"; then
         echo "rootfs release guard: refusing a rootfs with an ambiguous tar member" >&2
         return 2
