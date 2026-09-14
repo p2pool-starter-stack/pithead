@@ -64,9 +64,18 @@ provisioning_state() { # one line for a verdict: unit states + whether one ran, 
     local r st
     r=$(_ssh "cat /data/pithead/data/firstboot/error.txt 2>/dev/null" 2>/dev/null | tr -d '[:cntrl:]' | head -c 160)
     st=$(provisioning_units)
-    # shellcheck disable=SC2086  # intentional split: exactly four fields
+    # shellcheck disable=SC2086  # intentional split: four fields on a guest that answered
     set -- $st
-    printf 'units: %s' "$(provisioning_ran_verdict "$1" "$2" "$3" "$4")"
+    # ARITY IS NOT ASSUMED, and that is the whole point of this line. Every caller is a `bad`
+    # reporting that provisioning did not finish, so this runs exactly when the guest is least
+    # likely to answer cleanly: unreachable, truncated mid-probe, systemctl absent. Passing a
+    # short read straight through would read "$4" unbound under run.sh's `set -u` and kill the
+    # verdict — losing the spooled setup error below, which is the one line that says WHY (#2055).
+    if [ "$#" -eq 4 ]; then
+        printf 'units: %s' "$(provisioning_ran_verdict "$1" "$2" "$3" "$4")"
+    else
+        printf 'units: the probe answered %s field(s), not the 4 expected: %s' "$#" "${st:-nothing}"
+    fi
     [ -z "$r" ] || printf ' — setup error: %s' "$r"
 }
 

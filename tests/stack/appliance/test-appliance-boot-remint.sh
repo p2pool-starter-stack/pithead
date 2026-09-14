@@ -253,5 +253,20 @@ assert_contains "the verdict names both units" "$ps_out" "units: one provisionin
 assert_contains "…and the wizard's spooled error when there is one" "$ps_out" "setup error: [ERROR] Stack failed to start"
 ps_out=$(ps_run 'inactive\ninactive\n' 0 state)
 assert_not_contains "an empty spool: no error claimed" "$ps_out" "setup error"
+# The short-probe arity guard (#2055). provisioning_state's every caller is a `bad` line reporting
+# that provisioning did NOT finish, so it runs precisely when the guest may answer with fewer than
+# four fields — and the suite runs under `set -u`, where passing a short read straight into
+# provisioning_ran_verdict read "$4" unbound and killed the whole verdict, taking the spooled setup
+# error with it. Both halves are asserted: the line survives, AND it still carries the one field
+# that says why. Mutation run: drop the `[ "$#" -eq 4 ]` branch -> both rows below go red.
+ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run '' 0 state 2>"$PS/err-none")
+assert_contains "a probe that answers nothing still names the arity it got" "$ps_out" "field(s), not the 4 expected"
+assert_contains "…and still carries the spooled setup error, the one line that says why" \
+    "$ps_out" "setup error: [ERROR] Stack failed to start"
+assert_not_contains "…with nothing dying on an unbound variable under set -u" \
+    "$(cat "$PS/err-none")" "unbound variable"
+ps_out=$(ps_run 'inactive\n' 0 state 2>"$PS/err-short")
+assert_contains "a truncated mid-probe read names its arity too" "$ps_out" "field(s), not the 4 expected"
+assert_not_contains "…and also dies on nothing" "$(cat "$PS/err-short")" "unbound variable"
 unset -f ps_run
 unset PS ps_out
