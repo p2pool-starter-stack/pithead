@@ -62,7 +62,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   dashboard route include the payout addresses, the view keys, the node RPC credentials, the
   stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
   Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
-  Tor egress firewall, the RPC/gRPC LAN-access and bind settings, and `dashboard.control.enabled`.
+  Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
+  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
+  API token is a credential change, closed in the same round-2 pass after an initial review found
+  it still routed through the self-written approval envelope.
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate

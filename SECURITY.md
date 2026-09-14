@@ -104,13 +104,14 @@ The stack's defaults:
   is never dashboard-committable, with or without the typed confirmation. A key added in the
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.
-  **One documented exception: the per-rig worker descriptors** (`workers.list[]`, each rig's control
-  host and API token). #1978 moved them from an outright refusal to the approval tier so a
-  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed confirmation
-  rather than a second identity. A dashboard that can write the control spool can therefore still
-  repoint an existing rig's host and token. They are listed here rather than quietly reclassified
-  because the rest of this paragraph is a promise and that one is not; the control channel's trust
-  model is being revisited as a whole (see "What this costs" below).
+  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
+  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
+  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
+  confirmation rather than a second identity — the same self-approval shape this perimeter exists
+  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
+  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
+  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
+  second identity that a future approval tier could rejoin once one exists.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the

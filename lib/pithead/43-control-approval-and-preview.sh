@@ -30,10 +30,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     #
     # Every descriptor change is sensitive: an append introduces a new remote host and token;
     # repointing or reordering changes an existing trust relationship — a credential change, which
-    # SECURITY.md promises is never dashboard-committable. Routing it through approval_required
-    # (the self-written envelope, the only route left once #2076 took the second identity away) was
-    # the same self-approval shape this file exists to close for wallets/firewall/control-channel;
-    # it is refused outright below, same as those.
+    # SECURITY.md promises is never dashboard-committable. Refused outright below, same as
+    # wallets/firewall/control-channel — not routed through approval_required's self-written
+    # envelope, the only route left once #2076 took the second identity away.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         (.workers.list // []) == ($live[0].workers.list // [])
         ' "$staged" >/dev/null 2>&1; then
@@ -103,14 +102,10 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
-    # workers.list[] carries a per-rig HOST + API TOKEN — a credential by SECURITY.md's own
-    # definition ("every credential ... is never dashboard-committable, with or without the typed
-    # confirmation"). Routing it through approval_required (the self-written envelope, #2076 took
-    # its only real identity) was the exact self-approval shape this file exists to close for
-    # wallets/firewall/control-channel; refuse it the same way instead of carving out the one
-    # credential-class exception SECURITY.md's own perimeter promise forbids. #1959 tracks a real
-    # second identity for a future approval tier this can rejoin; until then it is host-CLI-only,
-    # same as every other credential.
+    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), so approval_required (the
+    # self-written envelope) is the same self-approval shape closed above for wallets/firewall/
+    # control-channel. Refused, host-CLI-only, same as the rest — #1959 tracks a real second
+    # identity a future approval tier could rejoin.
     if [ "$worker_sensitive" -eq 1 ]; then
         printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
         return 1
@@ -265,11 +260,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Same three-way split as the gate (control_committable_re, 42-), not just the same UNION:
-        # a row outside all three tiers REFUSES here too, rather than previewing "approval_required"
-        # for a key the gate then refuses outright regardless of any envelope — the edit-then-reject
-        # experience #613 exists to remove. Only a row actually IN the approval tier, or a DEST row,
-        # sets approval_required.
+        # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
+        # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
+        # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.
         local approval_required=false committable_re approval_re bad hit worker_changed=0
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
