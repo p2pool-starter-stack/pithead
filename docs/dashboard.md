@@ -1278,10 +1278,11 @@ The card names both halves a restore needs: the encrypted archive, and the kit t
 passphrase opening it. Neither half is any use without the other, and setting a machine up later
 asks for that same pair.
 
-On the appliance the card drops the host-side remedy the other builds print. Turning the control
-channel back on means editing `config.json` and running `./pithead apply`, and an appliance
-operator has no shell for either, so there the card says backup returns with the control channel
-rather than naming a file they cannot open.
+On the appliance the card drops the host-side remedy the other builds print. If the machine was
+set up without a dashboard login, it points at **Set up again** in the boot menu instead of
+`config.json` or `./pithead apply`. If a backup attempt fails, the card keeps the error tail but
+labels it as the machine's own backup log, so commands in that log do not read as instructions for
+the browser.
 
 ## Upgrading from the dashboard
 
@@ -1342,10 +1343,12 @@ later ride out the restart.
 The button never appears on a source checkout — the runner refuses the request there, since a dev
 install updates with `git pull`. If the upgrade fails, the result says so in the view: a failed
 release lookup or bundle download changes nothing; a failure during `pithead upgrade` leaves
-containers that were not yet recreated on the previous images, and finishing up is one
-`./pithead upgrade` on the host. There is no automatic rollback — the images of the previous
-release stay on disk, and `docker compose` state is recoverable the same way as a failed
-CLI upgrade. The result names the restore point ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
+containers that were not yet recreated on the previous images. On a host, the result keeps the
+recovery command separate from the upgrade log. On an appliance, the card labels the tail as the
+machine's own log and does not show the host-only command or backup paths. There is no automatic
+rollback — the images of the previous release stay on disk, and `docker compose` state is
+recoverable the same way as a failed CLI upgrade. The host result names the restore point
+([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
 on the versioned layout, the previous `pithead-vX.Y.Z` dir; in place, the pre-upgrade
 `config.json`/`.env` copies.
 

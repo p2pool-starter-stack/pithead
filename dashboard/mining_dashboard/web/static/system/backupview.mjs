@@ -9,6 +9,7 @@
 // a UI suggestion, it is the only chance — match that in the copy, not just the code.
 
 import { Component, html } from "../app/preact.mjs";
+import { failureLog } from "../config/applyfailure.mjs";
 import { pollResult } from "../config/configview.mjs";
 import { fmtEpoch } from "./securityview.mjs";
 
@@ -126,7 +127,12 @@ export class BackupPanel extends Component {
   renderFailed(result) {
     return html`<div class="card">
         <h3>Backup</h3>
-        <p class="status-bad">${(result && result.error) || "The host runner reported a failure."}</p>
+        <p class="status-bad">Backup did not complete.</p>
+        ${failureLog(
+          (result && result.error) || "The host runner reported a failure.",
+          this.props.appliance,
+          "backup",
+        )}
         <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", result: null })}>Close</button>
     </div>`;
   }

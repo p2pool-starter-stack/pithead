@@ -246,7 +246,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
         else
             for rdir in "$cdir" "$new_dir/data/control"; do
                 control_write_result "$rdir/results" "$id" "$(jq -n --arg v "$tag" --arg e "$(tail -c 2000 "$logf")" --arg d "$new_dir" --arg r "$cwd" \
-                    '{status:"failed",version:$v,rollback:$r,error:($e + " — finish the upgrade from the host: cd " + $d + " && ./pithead upgrade; containers not yet recreated keep running the previous images."),ts:(now|floor)}')"
+                    '{status:"failed",version:$v,rollback:$r,error:$e,recovery:("Finish the upgrade from the host: cd " + $d + " && ./pithead upgrade. Containers not yet recreated keep running the previous images."),ts:(now|floor)}')"
                 control_audit "$rdir/audit/control.log" "$id" "$actor" "upgrade" "failed"
             done
         fi
@@ -333,7 +333,7 @@ control_upgrade() { # <request-file> <id> <actor> <control-dir>
         else
             control_write_result "$cdir/results" "$id" "$(jq -n --arg v "$tag" --arg e "$(tail -c 2000 "$logf")" \
                 --arg b "$bak_paths" \
-                '{status:"failed",version:$v,backup:$b,error:($e + " — finish the upgrade from the host with ./pithead upgrade; containers not yet recreated keep running the previous images."),ts:(now|floor)}')"
+                '{status:"failed",version:$v,backup:$b,error:$e,recovery:"Finish the upgrade from the host with ./pithead upgrade. Containers not yet recreated keep running the previous images.",ts:(now|floor)}')"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "upgrade" "failed"
         fi
         rm -f "$logf"

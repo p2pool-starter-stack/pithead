@@ -52,6 +52,38 @@ function logCaption(appliance) {
       on this page can run the health check and show a recent log for each service.</p>`;
 }
 
+export function failureLog(error, appliance, action) {
+  return [
+    appliance
+      ? html`<p class="text-muted text-xs">${`Below is this machine's own log from the failed ${action}. `}It
+          is diagnostic detail: any commands it names run on the machine itself and
+          cannot be run from here.</p>`
+      : null,
+    error ? html`<pre class="config-error-tail">${error}</pre>` : null,
+  ];
+}
+
+export function previewFailure(error, appliance) {
+  const log = typeof error === "object";
+  const text = log ? error.text : error;
+  return html`<div class="card"><p class="status-bad">Configuration preview did not complete.</p>
+      ${log ? failureLog(text, appliance, "config preview") : html`<p>${text}</p>`}</div>`;
+}
+
+export function upgradeFailure(result, appliance) {
+  return [
+    ...failureLog(result.error || "The host runner reported a failure.", appliance, "upgrade"),
+    !appliance && result.recovery ? html`<p class="status-bad">${result.recovery}</p>` : null,
+    result.backup
+      ? appliance
+        ? html`<p class="text-muted">Pre-upgrade copies of <code>config.json</code> and${" "}
+            <code>.env</code> are kept on this machine.</p>`
+        : html`<p class="text-muted">Pre-upgrade copies of <code>config.json</code> and${" "}
+            <code>.env</code> are kept on the host: <code>${result.backup}</code>.</p>`
+      : null,
+  ];
+}
+
 // The whole failed arm of the Configuration card's result state.
 //
 // Returned as a plain array of children rather than one `html` template: every root here is an
@@ -62,6 +94,6 @@ export function applyFailure(result, appliance) {
   return [
     backupLine(result, appliance),
     logCaption(appliance),
-    result.error ? html`<pre class="config-error-tail">${result.error}</pre>` : null,
+    ...failureLog(result.error, false, "apply"),
   ];
 }

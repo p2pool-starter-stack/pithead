@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { previewFailure } from "../../../mining_dashboard/web/static/config/applyfailure.mjs";
 import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
 import { PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
 import { renderToString } from "../helpers/render.mjs";
@@ -61,6 +62,15 @@ test("poll skips the still-present preview result until the commit outcome lands
   const view = new ConfigView({});
   const out = await withFastPoll(fetchStub, () => view.poll(ID, "previewed"));
   assert.equal(out.status, "applied");
+});
+
+test("a rejected appliance preview labels the host validation log", () => {
+  const error = { text: "Run './pithead apply' after fixing p2pool.pool" };
+  const out = renderToString(previewFailure(error, true));
+  assert.match(out, /Configuration preview did not complete/);
+  assert.match(out, /this machine's own log from the\s+failed config preview/);
+  assert.match(out, /\.\/pithead apply/);
+  assert.match(out, /cannot\s+be run from here/);
 });
 
 test("runUpgrade posts the seen version, skips 'running', rides out the restart, returns the outcome", async () => {
@@ -153,6 +163,41 @@ test("the failed modal names the pre-upgrade config/.env copies when the result 
   assert.match(renderToString(inst.render()), /bak-upgrade-1/);
   inst.state.result = { status: "failed", error: "boom" };
   assert.doesNotMatch(renderToString(inst.render()), /Pre-upgrade copies/);
+});
+
+test("an appliance upgrade failure labels the log and hides host-only recovery", () => {
+  const props = { update: UPDATE, enabled: true, appliance: true };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    error: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /this machine's own log from the failed\s+upgrade/);
+  assert.match(out, /upgrade log tail/);
+  assert.doesNotMatch(out, /pithead upgrade|\/host\/path|\/host\/config/);
+  assert.match(out, /copies of <code>config\.json<\/code> and\s+<code>\.env<\/code> are kept on this machine/);
+});
+
+test("a host upgrade failure keeps its separate recovery and backup paths", () => {
+  const props = { update: UPDATE, enabled: true, appliance: false };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    error: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /upgrade log tail/);
+  assert.match(out, /cd \/host\/path && \.\/pithead upgrade/);
+  assert.match(out, /\/host\/config\.json\.bak/);
 });
 
 // --- Preview modal (#504) --------------------------------------------------------------

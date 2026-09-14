@@ -158,10 +158,13 @@ test("BackupPanel kit phase reveals the passphrase exactly once, with download l
   assert.match(out, /I.ve saved it/);
 });
 
-test("BackupPanel failed phase surfaces the host's error", () => {
-  const c = inst({ enabled: true });
+test("BackupPanel failed phase labels the log on an appliance", () => {
+  const c = inst({ enabled: true, appliance: true });
   c.state = { phase: "failed", id: null, result: { status: "failed", error: "boom" } };
-  assert.match(renderToString(c.render()), /boom/);
+  const out = renderToString(c.render());
+  assert.match(out, /Backup did not complete/);
+  assert.match(out, /this machine's own log from the failed\s+backup/);
+  assert.match(out, /boom/);
 });
 
 // #1854: the appliance has no shell, so the host-CLI remedy in the explainer above is advice its
