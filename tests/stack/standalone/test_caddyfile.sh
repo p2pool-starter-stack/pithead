@@ -80,6 +80,7 @@ export STACK="$STACK_WITH_ADAPT"
 set +e
 run_suite() (
     local source_rc
+    # shellcheck disable=SC2034  # read by sourced assertions and domain_ran
     PASS=0
     FAIL=0
     # shellcheck source=/dev/null
