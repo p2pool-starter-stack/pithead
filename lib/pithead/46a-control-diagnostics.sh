@@ -115,8 +115,10 @@ control_diag_logs() { # <request-file> <id> <actor> <control-dir>
     [ "$lines" -gt "$PITHEAD_DIAG_MAX_LINES" ] && lines="$PITHEAD_DIAG_MAX_LINES"
     # Redact BEFORE the byte cap, never after: truncating first would leave the tail of a redacted
     # line intact, which is the leak the redactor exists to stop.
+    # `head` closing at the byte cap can SIGPIPE an upstream writer. The capped bytes remain
+    # valid output, so preserve them and always record the diagnostic result under pipefail.
     out=$(docker compose logs --no-color --tail "$lines" "$container" 2>/dev/null |
-        bundle_redact_log | head -c "$PITHEAD_DIAG_MAX_BYTES")
+        bundle_redact_log | head -c "$PITHEAD_DIAG_MAX_BYTES") || true
     if [ -z "$out" ]; then
         control_write_result "$results" "$id" "$(jq -n --arg c "$container" '{status:"applied",container:$c,lines:"",note:"No log output — the container may not be running on this host.",ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "diag-logs" "applied"
