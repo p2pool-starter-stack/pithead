@@ -8,6 +8,8 @@ source "$HERE/../lib.sh"
 # shellcheck source=tests/os/verify-image-artifact-helpers.sh
 source "$HERE/../../os/verify-image-artifact-helpers.sh"
 
+echo "== verify-image: unwanted packages must be absent from valid dpkg metadata (#1380) =="
+
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
