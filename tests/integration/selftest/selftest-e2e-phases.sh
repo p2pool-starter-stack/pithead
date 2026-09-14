@@ -42,10 +42,9 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and prega
         exec </dev/null
         MODE="$1" BORROW_MINER="$2" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
         SCENARIO="${4:-}" RIGFORGE_BOOTSTRAP_VERSION="${5:-}"
-        HARNESS_ARGS=() REMOTE_NODE_ARGS=() REMOTE_NODE_VALUES=()
+        REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_ARGS=(--remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example)
-        [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_VALUES=(node.example 28081 28083 tari.example)
-        [ -z "${STUB_HARNESS:-}" ] || HARNESS_ARGS=(--scenario "$STUB_HARNESS")
+        [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_HOSTS=(node.example tari.example)
         # rig_supply's inputs (#1378). MINER_HOST is what RIG_HOST defaults to; the token comes off
         # the stubbed on_miner, so the empty-token path is reachable by passing "".
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME="" IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
@@ -166,10 +165,6 @@ assert_contains "targeted readiness/check pregate receives the remote Monero hos
 assert_contains "targeted pregate receives the remote Monero RPC port" "$REMOTE_PREGATE" "--remote-monero-rpc-port 28081"
 assert_contains "targeted pregate receives the remote Monero ZMQ port" "$REMOTE_PREGATE" "--remote-monero-zmq-port 28083"
 assert_contains "targeted readiness/check pregate receives the remote Tari host" "$REMOTE_PREGATE" "--remote-tari-host tari.example"
-FOCUSED_REMOTE="$(STUB_HARNESS=remote-pruned-main-secure-tari compose_phases targeted 0)"
-assert_eq "harness args replace the mode preset for a narrow bench job" "$(phase_set "$FOCUSED_REMOTE")" \
-    "--no-mining-asserts --scenario remote-pruned-main-secure-tari "
-
 echo "== --no-miner: no rig means no rig phases, and the mining asserts are skipped (#905) =="
 NOMINER="$(compose_phases targeted 0)"
 assert_eq "no borrowed miner => no write phase (there is no rig to write to)" \

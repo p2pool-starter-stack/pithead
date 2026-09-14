@@ -80,25 +80,21 @@ assert_contains "e2e Tari refusal names the bare-host grammar" "$out" "bare host
 
 out=$(bash "$HERE/../e2e.sh" --remote-monero-host 'node;echo INJECTED' --help 2>&1)
 assert_rc "e2e refuses a remote host before preflight" "$?" "1"
-assert_contains "e2e refusal names the host grammar" "$out" "unsupported characters"
+assert_contains "e2e refusal names the host grammar" "$out" "bare hostname or IPv4"
 
 out=$(bash "$HERE/../e2e.sh" --remote-monero-rpc-port abc --help 2>&1)
 assert_rc "e2e refuses a remote port before preflight" "$?" "1"
 assert_contains "e2e port refusal names the range" "$out" "1-65535"
 
-REMOTE_NODE_VALUES=(node.example 28081)
+REMOTE_NODE_HOSTS=(node.example)
 out=$(printf 'failed at node.example:28081\n' | redact_remote_output)
 assert_absent "remote hostname is masked from console output" "$out" "node.example"
-assert_absent "remote port is masked from console output" "$out" "28081"
+assert_contains "remote port remains useful evidence" "$out" "28081"
 assert_contains "masked console output retains a useful marker" "$out" "<redacted-endpoint>"
 
-out=$(bash "$HERE/../e2e.sh" candidate --harness-arg --host --help 2>&1)
-assert_rc "harness arguments cannot replace the fixed target transport" "$?" "1"
-assert_contains "transport override refusal names the unsupported value" "$out" "unsupported harness argument: --host"
-
-out=$(bash "$HERE/../e2e.sh" candidate --harness-arg --scenario --harness-arg 'a\e[2J' --help 2>&1)
-assert_rc "scenario values cannot inject terminal controls" "$?" "1"
-assert_contains "scenario metacharacter refusal names the unsupported value" "$out" "unsupported harness argument"
+REMOTE_NODE_HOSTS=()
+out=$(printf 'ordinary output\n' | redact_remote_output)
+assert_contains "empty remote-host array is safe" "$out" "ordinary output"
 
 out=$(bash "$HERE/../run.sh" --remote-monero-rpc-port 0 --local 2>&1)
 assert_rc "port 0 is refused" "$?" "2"

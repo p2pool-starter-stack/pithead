@@ -1,10 +1,28 @@
 #!/usr/bin/env bash
-# Tier-4 branch deploy, live harness and proven restoration on the reserved bench.
-# The e2e and canonical checkouts swap code/images around the same synced chains.
-# See docs/dev/integration-testing.md.
-
+#
+# e2e.sh — one-command Tier-4 end-to-end run of a branch against a live test bench.
+#
+#   tests/integration/e2e.sh <branch> [options]
+#   tests/integration/e2e.sh claude/my-feature --mode matrix
+#
+#   4. Borrows a miner (set MINER_HOST): backs up its xmrig config and repoints it at the test bench so
+#      the live matrix has a real worker mining through this stack.
+#   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
+#      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
+#      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
+#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even
+#      on failure or Ctrl-C (an EXIT trap). The synced chains are never touched. The restore then
+#      PROVES the live stack matches the on-disk config (#971): a credential marker baked into a
+#      running container must equal the on-disk .env's line, and monerod must answer a host-side
+#      authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#
+# The Compose project name is pinned to "pithead", so the e2e checkout and the canonical checkout
+# drive the SAME containers + the SAME shared chains — they are two code copies of one stack, run
+# one at a time, not two stacks. That's why borrow→test→restore is a code/image swap, not a re-sync.
+#
+# Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
+# See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
 # shellcheck source=tests/integration/lib.sh
@@ -30,9 +48,8 @@ BORROW_MINER=1
 SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
-HARNESS_ARGS=()
 REMOTE_NODE_ARGS=()
-REMOTE_NODE_VALUES=()
+REMOTE_NODE_HOSTS=()
 BRANCH=""
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -58,7 +75,6 @@ die() {
     printf '%b ✗%b %s\n' "$C_RED" "$C_RESET" "$*" >&2
     exit 1
 }
-
 usage() {
     cat <<EOF
 Run a branch end-to-end against a live test bench, then restore everything.
@@ -77,7 +93,6 @@ OPTIONS:
   --no-miner        do not borrow a miner; skip its two mining assertions
   --remote-monero-host <h> [--remote-monero-rpc-port <p>] [--remote-monero-zmq-port <p>]
   --remote-tari-host <h>  pass external node endpoints through to the live harness
-  --harness-arg <arg> pass one phase flag or value through; repeat to replace the mode preset
   --skip-preflight  skip the bench-chains-synced pre-flight
   --keep            don't restore at the end (leave the branch deployed + miner repointed — debugging)
   -h, --help        this help
@@ -85,9 +100,12 @@ OPTIONS:
 ENV OVERRIDES: BENCH_HOST, MINER_HOST, CANONICAL_DIR, E2E_DIR, MINER_XMRIG_CONFIG, GIT_REMOTE_URL, and
   RIG_HOST, RIG_NAME, IT_RIG_TOKEN, IT_RIG_ROLLBACK_CHANGES, IT_RIG_POOLS_PROBE, RIG_CONTROL_PORT, RIGFORGE_CONFIG, RIGFORGE_BOOTSTRAP_VERSION
 
+EXAMPLES:
+  tests/integration/e2e.sh claude/my-feature                 # targeted (the default), borrow the miner
+  tests/integration/e2e.sh claude/my-feature --mode check    # safe, non-destructive first run
+  tests/integration/e2e.sh main --mode targeted --keep       # quick, leave it deployed to inspect
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -115,32 +133,8 @@ while [ $# -gt 0 ]; do
         BORROW_MINER=0
         shift
         ;;
-    --remote-monero-host)
-        valid_remote_host "${2:-}" && [[ "$2" != *:* ]] || die "$1 contains unsupported characters; use a bare hostname or IPv4 address."
-        REMOTE_NODE_ARGS+=("$1" "$2")
-        REMOTE_NODE_VALUES+=("$2")
-        shift 2
-        ;;
-    --remote-tari-host)
-        valid_remote_host "${2:-}" && [[ "$2" != *:* ]] || die "$1 contains unsupported characters; use a bare hostname or IPv4 address."
-        REMOTE_NODE_ARGS+=("$1" "$2")
-        REMOTE_NODE_VALUES+=("$2")
-        shift 2
-        ;;
-    --remote-monero-rpc-port | --remote-monero-zmq-port)
-        valid_tcp_port "${2:-}" || die "$1 takes a TCP port 1-65535."
-        REMOTE_NODE_ARGS+=("$1" "$2")
-        REMOTE_NODE_VALUES+=("$2")
-        shift 2
-        ;;
-    --harness-arg)
-        case "${2:-}" in
-        --safety-backup | --lifecycle | --auth-fail-closed | --fault-injection | --hardening | --subnet | --rigforge | --rigforge-control | --xvb-routing-smoke | --scenario) ;;
-        *)
-            [ "${HARNESS_ARGS[-1]:-}" = --scenario ] && [[ "${2:-}" =~ ^[a-z0-9-]+$ ]] || die "unsupported harness argument: ${2:-}"
-            ;;
-        esac
-        HARNESS_ARGS+=("$2")
+    --remote-monero-host | --remote-monero-rpc-port | --remote-monero-zmq-port | --remote-tari-host)
+        add_remote_node_arg "$1" "${2:-}" || die "$1 takes a bare hostname or IPv4 address, or a TCP port 1-65535."
         shift 2
         ;;
     --skip-preflight)
@@ -432,7 +426,11 @@ preflight() {
         on_miner 'echo ok >/dev/null' || die "Cannot SSH to miner '$MINER_HOST' (use --no-miner to skip)."
         on_miner "test -f '$MINER_XMRIG_CONFIG'" || die "No xmrig config at $MINER_XMRIG_CONFIG on $MINER_HOST."
         ok "SSH to $MINER_HOST + xmrig config found"
-        # Hold the exclusive loaner lock through the EXIT-trap restore (#430/rigforge#183).
+        # Loaner-rig lock (#430/rigforge#183): the borrow repoints (and may restart) the rig's
+        # xmrig, so claim the rig's EXCLUSIVE flock now — before anything is mutated — and hold it
+        # until this process dies. rigforge's gates on the same rig refuse (exit 75, holder named)
+        # instead of colliding mid-borrow, and a busy rig fails us fast, before the bench is
+        # touched. The kernel releases the lock on exit, AFTER the EXIT-trap restore has run.
         parent_lock_miner_borrow || die "Miner lock is not continuous."
     fi
 }
@@ -450,7 +448,12 @@ provision() {
         fi
         git -C '$E2E_DIR' remote set-url origin '$GIT_REMOTE_URL'
         git -C '$E2E_DIR' fetch --quiet origin '$BRANCH'
-        # Wipe this disposable checkout while retaining results, backups and chain data (#454).
+        # The e2e checkout is DEDICATED and disposable, so force a pristine tree instead of assuming
+        # one (#454): drop stray untracked files (e.g. a leftover bench script) that would otherwise
+        # abort 'checkout' with \"would be overwritten\". -x clears ignored build cruft too; the -e
+        # excludes keep data/backups and results/, so chains and rollback anchors are never touched.
+        # config.json/.env ARE wiped (gitignored, no -e) — the next step re-seeds them, so don't drop
+        # that seed thinking clean spares them.
         git -C '$E2E_DIR' checkout -q -f -B '$BRANCH' FETCH_HEAD
         git -C '$E2E_DIR' reset -q --hard FETCH_HEAD
         git -C '$E2E_DIR' clean -qfdx -e /results -e /backups -e /data && bash '$E2E_DIR/scripts/build-pithead.sh' >/dev/null
@@ -603,23 +606,22 @@ run_harness() {
     # --check never deployed the branch, so it must assess the checkout the stack actually runs
     # from (#454) — pointing it at the undeployed e2e tree would grade the wrong stack.
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
-    if [ "${#HARNESS_ARGS[@]}" -gt 0 ]; then
-        printf -v phases '%q ' "${HARNESS_ARGS[@]}"
-    else
-        case "$MODE" in
-        check) phases="--check" ;;
-        targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;;
-        matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
-        esac
-    fi
+    case "$MODE" in
+    check) phases="--check" ;;
+    targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
+    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
+    esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
-    # RigForge read and write phases need the real rig supplied here (#1364/#1378).
+    # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
+    # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
+    # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
         phases="$phases --rigforge --rigforge-control --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
     fi
-    # No borrowed miner means the two mining assertions must skip (#905).
+    # #905: no borrowed miner means no worker will ever appear — tell the harness to SKIP its two
+    # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
     phases="$phases$remote_args $no_mining"
