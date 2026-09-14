@@ -209,11 +209,11 @@ assert_eq "config.json still has exactly rig1 after every SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 unset -f assert_new_worker_host_refused
 
-# A safe LAN address reaches the approval gate instead of the unsafe-host refusal.
+# A safe LAN address is STILL refused outright: every descriptor change is a credential change.
 jq '.workers.list += [{name:"rig3",host:"10.0.0.50",control_port:8082,token:"tok_rig3"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "ordinary LAN append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "ordinary LAN append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "ordinary LAN append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json does not gain the unapproved ordinary-LAN rig" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # #893 round 5: an independent review found the battery above was still a STRING classifier under
@@ -279,12 +279,12 @@ unset -f assert_resolved_worker_host_refused
 assert_eq "config.json still has exactly rig1 after every round-5 SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 
-# A genuine LAN hostname must reach approval, proving resolve-and-check does not refuse every name.
+# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — it still hits the same descriptor refusal.
 printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append reaches the confirmation gate" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
+assert_contains "LAN hostname append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
 assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system
