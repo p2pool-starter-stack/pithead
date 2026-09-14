@@ -144,6 +144,15 @@ scopes the run. A failed assertion is recorded and the run carries on, so one be
 the whole battery; the run exits non-zero if anything failed. `all` means all eight phases,
 including fault and reset, and the full run is required once for every RC candidate.
 
+The final summary carries the same missing/by-design/covered skip vocabulary as the integration
+harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
+re-implemented so the two tier-4 summaries read the same way (#2064). A row that structurally
+cannot apply to the guest under test — a rig guest has no dashboard, legs 1-3 of the update phase
+never provision so pithead-boot never starts on that guest (#2055 G1) — is a named, counted skip,
+not a silently absent row or a folded-in early return. Only `missing` is a gap the reader should
+chase; `by-design` and `covered` are accounted for, not accepted blindly. This is distinct from
+the remote-node row below, where a missing input stays a counted **failure**.
+
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_MONERO_ZMQ_PORT`, `PITHEAD_OS_TARI_NODE_HOST`, and

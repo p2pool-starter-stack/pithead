@@ -74,6 +74,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
+# The integration harness's missing/by-design/covered skip vocabulary (#1083/#1444), reused
+# rather than re-invented so the two tier-4 summaries read the same way (#2064). it_warn/it_err,
+# which it_skip_leg and friends call, are defined in lib/core.sh, sourced below.
+# shellcheck source=tests/integration/lib/skip-accounting.sh
+. "$SCRIPT_DIR/../integration/lib/skip-accounting.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
 # shellcheck source=tests/os/setup-failure-recovery-leg.sh
@@ -166,5 +171,14 @@ all)
     ;;
 esac
 
-printf '\nos harness: \033[1;32m%d passed\033[0m, \033[1;31m%d failed\033[0m\n' "$PASS" "$FAIL"
+printf '\nos harness: \033[1;32m%d passed\033[0m, \033[1;31m%d failed\033[0m, %d skipped\n' \
+    "$PASS" "$FAIL" "$((IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))"
+# #2064: the same missing/by-design/covered breakdown the integration harness prints (#1083), so
+# the two tier-4 summaries compare line for line. Only "missing" is a gap; see skip-accounting.sh.
+printf '  of which: %d missing (an input would have run it), %d by-design (this guest excludes it), %d covered elsewhere\n' \
+    "$IT_SKIPPED_MISSING" "$IT_SKIPPED_BY_DESIGN" "$IT_SKIPPED_COVERED"
+if [ -n "$IT_SKIPPED_NAMES" ]; then
+    echo "did NOT run:" >&2
+    echo -e "$IT_SKIPPED_NAMES" >&2
+fi
 [ "$FAIL" -eq 0 ]

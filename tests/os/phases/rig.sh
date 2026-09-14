@@ -83,6 +83,13 @@ phase_rig() {
     *'"password"'*) bad "the rig card published a dashboard password — a rig serves no dashboard" ;;
     *) ok "the rig card is worker + pool, with no login (a rig has none)" ;;
     esac
+    # The dashboard-scoped legs (hostname identity, diagnostics, tari-mode switch, egress
+    # backstop — all phase_provision_* in appliance-*-leg.sh) never run against this guest: they
+    # assert against the dashboard and control API a rig never starts (see the "no stack" check
+    # below). No phase of this harness against a rig guest could ever reach them — by-design, not
+    # an absence anyone forgot (#2064).
+    it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
+        "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
     card_tok=$(printf '%s' "$card" | jq -r '.token // ""' 2>/dev/null)
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null || true
     rm -f "$jar"

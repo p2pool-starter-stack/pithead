@@ -178,6 +178,14 @@ phase_update() {
     [ "$marker" = "v1" ] && ok "ROLLBACK: an operator can return to v1 after committing v2" ||
         bad "expected v1 after the operator rollback, got '$marker'"
 
+    # #2055 G1: legs 1-3 above never write config.json or machine-role, so pithead-boot.service's
+    # ConditionPathExists never triggers on this guest — every property it owns (the boot gate, the
+    # commit decision's health check, and the persisted update verdict) went unasserted here with
+    # nothing saying so, which is exactly how #1956 shipped unnoticed. Leg 4 below provisions this
+    # SAME guest and proves those properties end to end, in this same run — covered, not missing.
+    it_skip_leg "pithead-boot's boot gate, commit-decision health check and update verdict (#2055 G1)" \
+        "legs 1-3 deliberately drive rauc alone and never provision, so pithead-boot never starts here — leg 4 below provisions this guest and asserts the 'updated' verdict end to end" covered
+
     phase_update_dashboard "$bundle" "${serial_mark:-0}"
 }
 
