@@ -57,10 +57,28 @@ listener_bin="$SANDBOX/dashboard-listener-bin"
 listener_env="$SANDBOX/dashboard-listener.env"
 mkdir -p "$listener_bin"
 printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "${SS_OUT:-}"\n' >"$listener_bin/ss"
-printf '#!/usr/bin/env bash\nprintf '\''2: eth0 inet6 2001:db8::1/64 scope global\\n'\''\n' >"$listener_bin/ip"
+printf '#!/usr/bin/env bash\nprintf '\''%%s\\n'\'' "${IP_OUT-2: eth0 inet6 2001:db8::1/64 scope global}"\n' >"$listener_bin/ip"
 chmod +x "$listener_bin/ss" "$listener_bin/ip"
 printf 'DASHBOARD_EXPOSE_PUBLIC_IP=false\nDASHBOARD_SECURE=true\nHOST_PORT=\n' >"$listener_env"
 out="$(PITHEAD_APPLIANCE=1 ENV_FILE="$listener_env" SS_OUT="$safe_ss" PATH="$listener_bin:$PATH" run_sourced "$SANDBOX" check_dashboard_public_listener 2>&1)"
 assert_contains "doctor dashboard listener: private sockets -> OK" "$out" "excludes every public host address"
 out="$(PITHEAD_APPLIANCE=1 ENV_FILE="$listener_env" SS_OUT="$public_ss" PATH="$listener_bin:$PATH" run_sourced "$SANDBOX" check_dashboard_public_listener 2>&1)"
 assert_contains "doctor dashboard listener: public socket -> FAIL" "$out" "FAIL"
+out="$(PITHEAD_APPLIANCE=1 ENV_FILE="$listener_env" IP_OUT='' SS_OUT="$wild_ss" PATH="$listener_bin:$PATH" run_sourced "$SANDBOX" check_dashboard_public_listener 2>&1)"
+assert_contains "doctor dashboard listener: wildcard fails without a public IP" "$out" "FAIL"
+
+phase_rc=0
+(
+    _ssh() {
+        case "$1" in
+        "cat "*) printf '%s' "$safe_caddy" ;;
+        "ss "*) printf '%s' "$wild_ss" ;;
+        "curl "*) return 1 ;;
+        "cd "*) printf '%s' "$safe_doctor" ;;
+        esac
+    }
+    bad() { :; }
+    DASHBOARD_TEST_LAN_V4="$lan" DASHBOARD_TEST_ULA_V6="$ula" DASHBOARD_TEST_GLOBAL_V6="$global" \
+        PROVISION_DASHBOARD_HOST=pithead.local phase_provision_dashboard_exposure
+) || phase_rc=$?
+assert_eq "failed exposure verdict fails the provision leg" "$phase_rc" 1

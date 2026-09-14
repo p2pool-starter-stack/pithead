@@ -97,5 +97,6 @@ phase_provision_dashboard_exposure() {
         ok "$verdict"
     else
         bad "$verdict"
+        return 1
     fi
 }

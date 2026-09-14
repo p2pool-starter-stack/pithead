@@ -181,10 +181,6 @@ check_dashboard_public_listener() {
     fi
     local public_ips port rows verdict
     public_ips=$(host_public_ips)
-    if [ -z "$public_ips" ]; then
-        dr_ok "No public host address is available for the dashboard to expose."
-        return 0
-    fi
     port=$(env_get HOST_PORT 2>/dev/null)
     if [ -z "$port" ]; then
         [ "$(normalize_bool "$(env_get DASHBOARD_SECURE 2>/dev/null)")" = true ] && port=443 || port=80
