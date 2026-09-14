@@ -44,14 +44,12 @@ readonly PITHEAD_DIAG_MAX_BYTES=65536
 # single-threaded drain loop's other queued requests down with it. doctor's rc is the failure
 # COUNT, not a run failure, so a non-zero rc still carries a valid document.
 #
-# THE DOCTOR DOCUMENT IS REDACTED TOO, and it is not obvious that it must be. doctor writes its
-# report for the CLI, where the reader is the operator: `Dashboard onion:` prints the address in
-# full on purpose (06-doctor.sh), because someone at a terminal needs it. That is the right call
-# there and the wrong one here — this document crosses into the container, which is the party the
-# whole channel is built not to trust, and the hidden-service address is the one value whose only
-# security property is that nobody has it. The support bundle carries the same document unredacted
-# because it lands as a chmod-600 file the operator reviews before sharing; same bytes, different
-# trust context, same distinction the log tail already makes.
+# THE DOCTOR DOCUMENT IS REDACTED TOO. doctor writes its report for the CLI, where the reader is
+# the operator: `Dashboard onion:` prints the address in full on purpose (06-doctor.sh). The
+# dashboard header now publishes that same address on its reviewed surface, but diagnostics does
+# not: this path keeps the log tail's redaction policy. The support bundle carries the same
+# document unredacted because it lands as a chmod-600 file the operator reviews before sharing;
+# same bytes, different trust context.
 #
 # It goes through bundle_redact_log — the same and only redactor the log tail uses — rather than a
 # rule of its own, so a value added there is covered on both paths. Redacting JSON as text is safe
