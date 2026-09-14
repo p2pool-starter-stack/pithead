@@ -7,7 +7,7 @@
 import { html } from "../app/preact.mjs";
 import { Field, Note, RadioField } from "./wizardparts.mjs";
 
-// Which of the three answers a stored `tari.mode` is, for the select to show.
+// Which of the three answers a stored `tari.mode` is, for the question to show.
 //
 // Only the literal "off" reads as declined. Everything else — a missing key included — is a yes,
 // because that is what the host does with a config written before the question existed
