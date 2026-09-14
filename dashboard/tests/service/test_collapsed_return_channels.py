@@ -280,9 +280,9 @@ class Store:
 
     def test_a_boolean_failure_return_is_not_read_as_a_numeric_collapse(self):
         """`False == 0` is true in Python, so an unguarded `0` check reclassifies every boolean
-        return as a collapse. The outbound senders are a subset of the `False`-returning population
-        whose callers treat False-on-failure and False-elsewhere alike; non-senders are reported as
-        `unjudged`. This proves the exclusion is implemented, not just documented."""
+        return as a collapse. At `b0a32bd`, 16 functions held 28 `return False` sites; only four
+        outbound senders had callers read as treating both False cases alike. Annotated non-senders
+        are `unjudged`; unannotated ones are `blind`. This proves the exclusion is implemented."""
         seeded = (
             "class C:\n"
             "    def send(self) -> bool:\n"

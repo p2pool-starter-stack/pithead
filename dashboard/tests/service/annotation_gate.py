@@ -30,10 +30,10 @@ import pathlib
 _PACKAGE = pathlib.Path(__file__).resolve().parents[2] / "mining_dashboard"
 
 # The collapsed values an error path can hide inside a success type. `False` is deliberately NOT
-# here: the outbound senders (`_post`/`ping`/`send`) are a subset of the `False`-returning
-# population, and False-on-failure and False-elsewhere mean the same thing to their callers. Other
-# `False` returns are reported as `unjudged`; including `False` needs a separate false-positive
-# decision rather than treating the sender reading as a universal rule.
+# here: at `b0a32bd`, 16 functions held 28 `return False` sites. The four outbound senders
+# (`_post`/`ping`/`send`) are the only ones whose callers were read as treating False-on-failure
+# and False-elsewhere alike. Annotated non-senders are reported as `unjudged`; unannotated ones are
+# `blind`. Including `False` needs a separate false-positive decision, not a universal sender rule.
 _EMPTY = {"[]", "{}", "0"}
 
 # The DB handle. A guard testing THIS is a failure route; a guard testing a domain value is an
