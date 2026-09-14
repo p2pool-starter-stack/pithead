@@ -100,7 +100,6 @@ render_cadence() {
     unchecked="$(printf '%s' "$rows" | jq '[.[] | select(.state.kind == "unchecked")] | length')"
     [ "$unchecked" = 0 ]
 }
-
 render_report() {
     local dir="$1" runs newest id url created status conclusion rc=0
 
@@ -279,6 +278,7 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.workflows[0].declaredAt = ("2026-09-14T05:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
     out="$(render_cadence "$recovered")"
     st "a declaration exactly on a slot starts with the next slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration exactly on a slot excludes that slot" "$(printf '%s' "$out" | grep -cF '2026-09-14T05:00:00Z')" "0"
     boundary_interior="$tmp/boundary-interior"
     cadence_fixture "$boundary_interior" "2026-10-05T08:00:00Z" "0 5 * * 1" '[{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"},{"databaseId":1005,"url":"https://x/1005","createdAt":"2026-10-05T07:00:00Z"}]'
     jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$boundary_interior/cadence.json" >"$boundary_interior/next" && mv "$boundary_interior/next" "$boundary_interior/cadence.json"
