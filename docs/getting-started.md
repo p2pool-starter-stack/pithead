@@ -27,7 +27,7 @@ dashboard, no Linux to set up.
 | Operating system | Ubuntu Server 24.04 LTS is the supported platform. Other Linux distributions may work but aren't supported. macOS is deprecated as of 2026-09-10 and is not tested; the installer refuses it. |
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
-| Disk | Two normally pruned Monero nodes measured 276.9 GB and 285.8 GB in August/September 2026. Plan for ~530 GB of SSD with both Monero and Tari local, in either prune mode. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
+| Disk | A pruned Monero node needs ~100 GB and a full one ~270 GB, plus ~150 GB for the Tari node (its chain is the biggest single consumer). Plan for ~330 GB (pruned) or ~530 GB (full) of SSD minimum. Both chains grow ~100+ GB/year, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | Software | Docker Engine, Docker Compose V2, `jq`, and `openssl`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
@@ -35,8 +35,8 @@ dashboard, no Linux to set up.
 > [RigForge](https://github.com/p2pool-starter-stack/rigforge).
 
 > 🔎 `setup` checks this for you. Before it starts anything, `./pithead setup` runs a best-effort
-> pre-flight on free disk and total RAM. If either is below the recommended minimums (~530 GB
-> with both nodes local, 16 GB RAM), it prints a warning. The disk figure follows the node
+> pre-flight on free disk and total RAM. If either is below the recommended minimums (~330 GB
+> pruned / ~530 GB full disk, 16 GB RAM), it prints a warning. The disk figure follows the node
 > modes you configured; the 16 GB RAM warning fires regardless. It never blocks setup, so you can
 > proceed on a smaller host at your own risk. See **[Hardware Requirements](hardware.md)**.
 

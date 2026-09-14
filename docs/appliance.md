@@ -16,11 +16,12 @@ manage the host.
   on the machine's screen and shrinks that reservation — mining runs slower and everything
   else runs squeezed, at every boot until the machine has 16 GB.
 - An internal SSD or NVMe with room for the chains. The stack budgets
-  about 320 GB for Monero in either prune mode and about 200 GB for a local Tari node, so
-  **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
-  system copies before your data starts, so a 550 GB disk leaves the chains short of their budget.
+  about 120 GB for pruned Monero and about 200 GB for a local Tari node (measured chains:
+  roughly 100 GB and 150 GB in August 2026, and growing — the budget is the growth room), so
+  **400 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
+  system copies before your data starts, so a 350 GB disk leaves the chains short of their budget.
   On a smaller disk, run pruned Monero and point Tari at a node you already have — the setup page
-  asks both questions, and that drops the requirement to about 340 GB. See
+  asks both questions, and that drops the requirement to about 140 GB. See
   [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere) for the totals in
   every combination.
 - A wired ethernet connection. Wi-Fi is not supported.
@@ -242,8 +243,8 @@ Then a handful of choices, all with sensible defaults:
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
-not on the quick form. Today that means Monero pruning (the disk budget is currently ~320 GB in
-either mode — only asked at all when this machine runs the node), the Healthchecks ping URL, and
+not on the quick form. Today that means the Monero chain size (a ~120 GB budget pruned vs.
+~320 GB full — only asked at all when this machine runs the node), the Healthchecks ping URL, and
 the time zone (detected from the machine unless set). They are still there to change, just not asked outright.
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as

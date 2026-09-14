@@ -150,11 +150,10 @@ too: point `tari.data_dir` at an existing Minotari directory, or set `tari.mode:
 ### What hardware do I need?
 
 Plan for 16 GB+ RAM, a 64-bit x86 CPU (AVX2 strongly recommended — RandomX runs far slower without
-it, and setup only warns), and an SSD (~530 GB minimum with both nodes local in either prune mode;
-Monero's chain budget is ~320 GB and Tari's is ~200 GB). Both chains keep growing, so a 2–4 TB
-drive is the set-and-forget choice. Those
+it, and setup only warns), and an SSD (~330 GB pruned / ~530 GB full minimum; Tari's chain alone is
+~150 GB, and both chains grow ~100+ GB/year, so a 2–4 TB drive is the set-and-forget choice). Those
 figures assume both nodes run here. A remote node cuts the disk budget — `tari.mode: remote` alone
-takes the total from ~530 GB to ~330 GB — while the 16 GB RAM floor stays as-is, since
+takes the pruned total from ~330 GB to ~130 GB — while the 16 GB RAM floor stays as-is, since
 HugePages and P2Pool don't shrink. Full sizing and the per-mode totals are in
 [Hardware Requirements](hardware.md). (Miner hardware is sized separately in
 [RigForge](https://github.com/p2pool-starter-stack/rigforge).)
