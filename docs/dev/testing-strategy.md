@@ -407,8 +407,10 @@ Not yet covered. The road to full production confidence.
   captured chain anchors, stable durable row payloads plus volatile-state identity/schema, secrets,
   workers, mining, and exact old-baseline restoration; its first recorded
   combined hardware run remains pending. `reset-dashboard` remains unit-covered.
-- Soak / longevity. The bounded `--xvb-routing-smoke` observes one real controller/proxy transition
-  and restore. Multi-hour leak, log/DB growth, and long-term convergence coverage remains absent.
+- Soak / longevity. The nightly KVM provision battery proves the appliance Tor stats fetch and a
+  bounded injected controller/proxy route transition; `--xvb-routing-smoke` additionally observes
+  one real controller/proxy transition and restore on a synced stack. Multi-hour leak, log/DB
+  growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.
 - Security review. The compose hardening invariants are regression-guarded (the #90 section of
   `tests/stack/standalone/test_compose.sh`: RPC creds never in a healthcheck command,
