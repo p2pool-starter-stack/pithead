@@ -198,8 +198,12 @@ test("the disk cost of saying yes is stated before the answer, not after it (#18
   // that is cheap to make has to state what it costs to accept, so the figure sits on the
   // question itself and shows at every answer, off included.
   for (const mode of ["off", "local", "remote"]) {
-    assert.match(renderToString(setupOn(mode).tree), /about 170 GB/, mode);
+    assert.match(renderToString(setupOn(mode).tree), /about 200 GB/, mode);
   }
+});
+
+test("the advanced chain-size choice states the current Monero disk budget (#1502)", () => {
+  assert.match(renderToString(setupOn("off").tree), /Pruned — about 320 GB/);
 });
 
 test("the chain-size advice stops citing a Tari node on a machine that has none (#1855)", () => {
