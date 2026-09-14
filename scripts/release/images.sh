@@ -102,23 +102,29 @@ anonymous_ghcr_digest() { # <ghcr-repo> <tag>
 }
 
 build_rootfs_image() {
-    local repo dashboard_digest
+    local repo dashboard_digest rootfs_tar=os/build/pithead-root.tar
     repo="$(image_for os-rootfs)"
     if [ "$DRY_RUN" -eq 1 ]; then
         run env PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@sha256:$(printf '%064d' 0)" os/build-image.sh
         run docker push "$repo:$STAGING_TAG"
         return
     fi
+    rm -f "$rootfs_tar.sha256" "$rootfs_tar.sha256.tmp"
     dashboard_digest="$(manifest_digest "$(image_for dashboard):$STAGING_TAG")" ||
         die "Could not resolve the staged dashboard digest needed by the appliance rootfs."
     run env DOCKER_DEFAULT_PLATFORM="${PLATFORMS%%,*}" \
         PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" \
         PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@$dashboard_digest" \
         os/build-image.sh
-    verify_release_rootfs_tar os/build/pithead-root.tar ||
+    verify_release_rootfs_tar "$rootfs_tar" ||
         die "Refusing to push $repo:$STAGING_TAG: the exported rootfs is not the release variant."
-    sha256sum os/build/pithead-root.tar | awk '{print $1}' >os/build/pithead-root.tar.sha256
-    run docker push "$repo:$STAGING_TAG"
+    sha256sum "$rootfs_tar" | awk '{print $1}' >"$rootfs_tar.sha256.tmp"
+    if run docker push "$repo:$STAGING_TAG"; then
+        mv "$rootfs_tar.sha256.tmp" "$rootfs_tar.sha256"
+    else
+        rm -f "$rootfs_tar.sha256.tmp"
+        return 1
+    fi
 }
 
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------

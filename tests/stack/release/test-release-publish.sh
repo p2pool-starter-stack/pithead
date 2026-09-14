@@ -50,6 +50,18 @@ assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refus
     verify_release_rootfs_tar "$ROOTFS_GUARD/debug-dot.tar"
 ) >/dev/null 2>&1
 assert_rc "a dot-prefixed debug-key member is also refused" "$?" "2"
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    tar() {
+        [ "$1" = -xOf ] && printf 'release\n' || printf '//root/.ssh/authorized_keys\n'
+    }
+    verify_release_rootfs_tar absolute-member-fixture.tar
+) >/dev/null 2>&1
+assert_rc "an absolute debug-key member is also refused" "$?" "2"
 
 # Drive the real producer call site. Stubbing run supplies the producer's exported tar and records
 # registry writes; deleting or moving the guard after the push makes the keyed case red.
@@ -64,19 +76,23 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
         DRY_RUN=0
         PLATFORMS=linux/amd64
         STAGING_TAG=v2.0.0-rc.1
+        rootfs_tar=os/build/pithead-root.tar
         manifest_digest() { printf 'sha256:%064d\n' 4; }
         run() {
             if [[ "$*" == *os/build-image.sh ]]; then
-                cp "$SOURCE_TAR" os/build/pithead-root.tar
+                cp "$SOURCE_TAR" "$rootfs_tar"
             elif [ "$1 $2" = "docker push" ]; then
-                [ -s os/build/pithead-root.tar.sha256 ] || return 1
-                printf '%s\n' "$3" >>"$PUSH_LOG"
+                printf 'push=%s final=%s temporary=%s\n' "$3" \
+                    "$([ -e "$rootfs_tar.sha256" ] && echo yes || echo no)" \
+                    "$([ -s "$rootfs_tar.sha256.tmp" ] && echo yes || echo no)" >>"$PUSH_LOG"
+                [ "${PUSH_FAIL:-0}" -eq 0 ]
             else
                 command "$@"
             fi
         }
-        trap 'rm -f os/build/pithead-root.tar os/build/pithead-root.tar.sha256' EXIT
+        trap 'rm -f "$rootfs_tar" "$rootfs_tar.sha256" "$rootfs_tar.sha256.tmp"' EXIT
         build_rootfs_image
+        [ -s "$rootfs_tar.sha256" ] && printf 'finalized=yes\n' >>"$PUSH_LOG"
     )
 }
 PUSH_LOG="$ROOTFS_GUARD/pushes"
@@ -86,7 +102,17 @@ assert_rc "the producer refuses a keyed export" "$?" "1"
 assert_eq "the keyed export is refused before any registry push" "$(wc -l <"$PUSH_LOG" | tr -d ' ')" "0"
 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
 assert_rc "the producer accepts a release export" "$?" "0"
-assert_eq "the guarded release export is pushed once" "$(wc -l <"$PUSH_LOG" | tr -d ' ')" "1"
+assert_contains "the push starts with only a temporary digest handoff" "$(cat "$PUSH_LOG")" \
+    "final=no temporary=yes"
+assert_contains "a successful push atomically finalizes the digest handoff" "$(cat "$PUSH_LOG")" \
+    "finalized=yes"
+: >"$PUSH_LOG"
+PUSH_FAIL=1 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "a failed rootfs registry push fails the producer" "$?" "1"
+assert_contains "a failed push never exposes the final digest handoff" "$(cat "$PUSH_LOG")" \
+    "final=no temporary=yes"
+assert_not_contains "a failed push does not finalize the digest handoff" "$(cat "$PUSH_LOG")" \
+    "finalized=yes"
 unset -f drive_rootfs_build
 # The weekly sweep pulls anonymously, while a release cut is logged in. A private first push would
 # pass every authenticated registry read and leave the sweep UNCHECKED, so drive the anonymous read.
