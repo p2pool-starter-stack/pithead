@@ -29,13 +29,14 @@ tar --transform='s|root/.ssh/authorized_keys|//root/.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar -cf "$ROOTFS_GUARD/debug-link.tar" -C "$ROOTFS_GUARD/debug-link" etc root keys
 rootfs_guard() {
+    local tarball="$1"
     (
         cd "$ROOT" || exit
         set --
         # shellcheck disable=SC1090
         source "$REL" 2>/dev/null
         set +eu
-        verify_release_rootfs_tar "$1"
+        verify_release_rootfs_tar "$tarball"
     )
 }
 rootfs_guard "$ROOTFS_GUARD/release.tar"
@@ -52,7 +53,7 @@ assert_eq "inherited tar transforms cannot create an authorized_keys file" "$([ 
 assert_eq "the hermetic extraction keeps the original member" "$([ -e "$ROOTFS_GUARD/extracted/etc/pithead-variant" ] && echo yes || echo no)" "yes"
 for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
-    assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
+    assert_rc "an unsafe debug-key member is refused" "$?" "2"
 done
 unset -f rootfs_guard
 # Drive the producer with a stubbed export and registry write so ordering mutations fail.
@@ -170,7 +171,6 @@ assert_contains "exhausted retries -> empty digest (caller dies)" "$exhaust_out"
 # The smoke stage's raw manifest read has the same read-after-push exposure — wire it through the retry.
 assert_contains "smoke stage reads the captured digest via retry_registry_read (#429)" \
     "$(cat "$REL_IMAGES")" 'retry_registry_read buildx_inspect "$digest" --raw'
-
 # #557: the test above disables errexit (`set +eu`, right after sourcing) to observe the bare helper
 # in isolation, which happens to mask a real bug in stage_push itself: the bare
 # `digest="$(manifest_digest ...)"` assignment aborts under release.sh's own `set -euo pipefail`
