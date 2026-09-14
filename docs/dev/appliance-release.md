@@ -378,9 +378,17 @@ needs a human to press a button after every outage is not an appliance. This was
 obvious way: a mains outage took the build bench down overnight and it was still dark in
 the morning.
 
-M11–M14 were the rig-role manual steps. Issue #1886 moved their automatable parts into the
-`rig` phase; the accepted-share and real-network portions stay in the reserved bench release e2e.
-The numbering remains stable so old release records still point at the same steps.
+M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
+rig power-loss and update, and run-from-USB. They stay a manual procedure today — see
+[the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) does not yet cover them: it proves the
+wizard's rig card and role select, that a rig submits toward a pool (against a faked listener, so
+it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, and
+the A/B update leg committing on a rig. It proves none of an accepted share at a real coordinator,
+MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, a power cut on a
+rig, or booting the rig role from the stick without installing to disk. No bench release e2e
+scenario for the rig role exists yet either. Converting what KVM can prove, and naming a bench e2e
+for the rest, is tracked as #1886's first gap; the numbering here stays stable so old release
+records still point at the same steps once that lands.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
@@ -491,7 +499,8 @@ one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M15 and M16) on real hardware. Record results. The human half of a
+4. Run the manual battery (M1–M10, M11–M14 for any release touching the rig role, M15 and M16) on
+   real hardware. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
    this list.
