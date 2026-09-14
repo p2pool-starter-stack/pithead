@@ -63,7 +63,11 @@ generate_caddyfile() {
         printf '%s\n' "$target" >>"$CADDY_TEST_FAILURE_LOG"
         return 1
     }
-    [ -n "$adapted" ] || { echo "Caddy adapted $target to empty output" >&2; return 1; }
+    [ -n "$adapted" ] || {
+        echo "Caddy adapted $target to empty output" >&2
+        printf '%s\n' "$target" >>"$CADDY_TEST_FAILURE_LOG"
+        return 1
+    }
     printf '%s\n' "$target" >>"$CADDY_TEST_ADAPT_LOG"
 }
 EOF
