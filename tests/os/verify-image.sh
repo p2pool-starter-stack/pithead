@@ -198,12 +198,13 @@ chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/conta
 chk "container storage on /data" 'grep -q "graphroot = \"/data/containers/storage\"" "$ROOT/etc/containers/storage.conf"'
 chk "wizard image baked (offline first boot)" 'ls "$ROOT"/opt/pithead/images/*.tar.gz'
 chk "installer + its whole toolset" '[ -x "$ROOT/usr/local/sbin/pithead-install" ] && [ -e "$ROOT/usr/sbin/sgdisk" ] && [ -e "$ROOT/usr/bin/jq" ]'
-chk "unused xxd package absent (#1380)" '[ -s "$ROOT/var/lib/dpkg/status" ] && ! grep -qxF "Package: xxd" "$ROOT/var/lib/dpkg/status"'
+chk "unused xxd package absent (#1380)" 'package_absent "$ROOT" xxd'
 chk "grub.cfg staged for installs" '[ -s "$ROOT/usr/share/pithead/grub.cfg" ]'
 chk "rauc daemon present (CLI alone cannot install)" '[ -f "$ROOT/usr/lib/systemd/system/rauc.service" ]'
 chk "rauc keyring baked" '[ -s "$ROOT/etc/rauc/keyring.pem" ]'
 chk "firstboot + sync units enabled" 'ls "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-firstboot.service "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-sync.service'
 chk "program tree at /opt/pithead" '[ -x "$ROOT/opt/pithead/pithead" ] && [ -s "$ROOT/opt/pithead/VERSION" ]'
+chk "unsupported RigForge tests absent (#1380)" '[ ! -e "$ROOT/opt/rigforge/tests" ]'
 
 echo "==> the built-in miner (local_miner on the appliance)"
 # The whole point of baking: nothing here can be installed after the image ships. A missing

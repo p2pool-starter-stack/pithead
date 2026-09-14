@@ -33,6 +33,13 @@ data_reset_repair_tools_present() { # <image-root> — 0 iff both tools are exec
         { [ -x "$root/usr/sbin/mkfs.ext4" ] || [ -x "$root/sbin/mkfs.ext4" ]; }
 }
 
+package_absent() { # <image-root> <package> — 0 iff a readable dpkg status has no exact package stanza
+    local status="$1/var/lib/dpkg/status" rc=0
+    [ -f "$status" ] && [ -s "$status" ] || return 1
+    grep -qxF "Package: $2" "$status" || rc=$?
+    [ "$rc" -eq 1 ]
+}
+
 # Compare the final exact wizard implementation in a single-image `docker save` archive. The Python
 # helper streams archive members without extracting paths and applies declared layers in order.
 wizard_server_matches() { # <container-archive> <expected-server.py>
