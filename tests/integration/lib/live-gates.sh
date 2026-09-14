@@ -15,6 +15,7 @@ run_image_upgrade() {
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
     local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs candidate_all_refs
+    if upgrade_tari_enabled; then UPGRADE_TARI_ENABLED=1; else UPGRADE_TARI_ENABLED=0; fi
     before_state="$(api_state)"
     before_rev="$(dashboard_image_revision)"
     before_images="$(compose_image_ids)"
@@ -40,7 +41,7 @@ run_image_upgrade() {
     before_all_refs="$(all_running_refs)" || before_all_refs=""
 
     if [ "$(jq_get "$before_state" '.sync.monero.state')" != "done" ] ||
-        [ "$(jq_get "$before_state" '.sync.tari.state')" != "done" ] ||
+        { [ "$UPGRADE_TARI_ENABLED" = 1 ] && [ "$(jq_get "$before_state" '.sync.tari.state')" != "done" ]; } ||
         ! chain_tip_valid "$before_monero_tip" || ! height_continues 1 "$before_tari" ||
         [ "$(jq_get "$before_state" '.proxy_workers')" -lt "$EXPECTED_WORKERS" ] 2>/dev/null ||
         [ "$(jq_get "$before_state" '.stratum.total_hashes')" -le 0 ] 2>/dev/null; then
@@ -50,12 +51,12 @@ run_image_upgrade() {
     fi
     it_pass "upgrade starts from synced chains and active mining"
 
-    before_tari_id="$(tari_block_identity "$before_tari")"
-    if [ -z "$before_monero_id" ] || [ -z "$before_tari_id" ]; then
+    if [ "$UPGRADE_TARI_ENABLED" = 1 ]; then before_tari_id="$(tari_block_identity "$before_tari")"; fi
+    if [ -z "$before_monero_id" ] || { [ "$UPGRADE_TARI_ENABLED" = 1 ] && [ -z "$before_tari_id" ]; }; then
         it_fail "pre-upgrade chain identities are readable" "could not read the Monero or Tari block hash; upgrade not attempted"
         return 0
     fi
-    it_pass "pre-upgrade Monero and Tari block identities captured"
+    it_pass "pre-upgrade chain identities captured"
 
     if ! revision_matches_sha "$before_rev" "$IMAGE_UPGRADE_FROM_SHA"; then
         it_fail "running image revision matches the declared old Pithead commit" \
@@ -151,7 +152,7 @@ run_image_upgrade() {
     fi
     wait_status_ok 300 || it_fail "stack recovered after image upgrade" "pithead status did not become healthy"
     wait_monero_synced 300 || it_fail "Monero resynchronized after image upgrade" "sync did not reach done"
-    wait_tari_synced 300 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || wait_tari_synced 300 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_for 240 5 "the exact pre-upgrade worker set" _pred_worker_set "$before_workers" || it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 360 || it_fail "hashes resumed after image upgrade" "stratum hashes stayed idle"
 
@@ -179,7 +180,7 @@ run_image_upgrade() {
         printf 'to_pithead_sha: %s\n' "$IMAGE_UPGRADE_TO_SHA"
         printf 'to_dashboard_revision: %s\n' "$after_rev"
         printf 'monero_after: %s %s\n' "$after_monero" "$after_monero_id"
-        printf 'tari_after: %s\n' "$(tari_block_identity "$(jq_get "$after_state" '.sync.tari.current')")"
+        [ "$UPGRADE_TARI_ENABLED" = 0 ] || printf 'tari_after: %s\n' "$(tari_block_identity "$(jq_get "$after_state" '.sync.tari.current')")"
         printf '%s\n' "$after_revisions"
         printf '%s\n' "$after_all_refs"
         printf '%s\n' "$after_refs"
@@ -203,26 +204,29 @@ run_image_upgrade() {
     fi
     assert_ne "the running first-party image set changed" "$after_images" "$before_images"
     assert_eq "Monero data path reused across image versions" "$(env_on_box MONERO_DATA_DIR)" "$before_monero_dir"
-    assert_eq "Tari data path reused across image versions" "$(env_on_box TARI_DATA_DIR)" "$before_tari_dir"
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || assert_eq "Tari data path reused across image versions" "$(env_on_box TARI_DATA_DIR)" "$before_tari_dir"
     assert_eq "persistent mounts stayed stable or moved to the candidate's copied internal state" \
         "$(normalized_stateful_mounts "$UPGRADE_CANDIDATE_DIR" "$(stateful_mounts)")" \
         "$(normalized_stateful_mounts "$UPGRADE_BASELINE_DIR" "$before_mounts")"
     assert_eq "captured Monero chain prefix survived the upgrade" "$(monero_block_identity "$((before_monero - 1))")" "$before_monero_id"
-    assert_eq "Tari chain identity survived the upgrade" "$(tari_block_identity "$before_tari")" "$before_tari_id"
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || assert_eq "Tari chain identity survived the upgrade" "$(tari_block_identity "$before_tari")" "$before_tari_id"
     if chain_tip_valid "$after_monero_tip" && height_continues "$before_monero" "$after_monero"; then
         it_pass "Monero retained the captured canonical prefix and did not regress"
     else
         it_fail "Monero retained the captured canonical prefix and did not regress" \
             "before [$before_monero], after [$after_monero]"
     fi
-    if height_continues "$before_tari" "$(jq_get "$after_state" '.sync.tari.current')"; then
+    if [ "$UPGRADE_TARI_ENABLED" = 0 ]; then
+        :
+    elif height_continues "$before_tari" "$(jq_get "$after_state" '.sync.tari.current')"; then
         it_pass "Tari retained the captured canonical prefix and did not regress"
     else
         it_fail "Tari retained the captured canonical prefix and did not regress" \
             "before [$before_tari], after [$(jq_get "$after_state" '.sync.tari.current')]"
     fi
-    if [ "$(jq_get "$after_state" '.sync.monero.state')" = "done" ] && [ "$(jq_get "$after_state" '.sync.tari.state')" = "done" ]; then
-        it_pass "both chains report synced after the image upgrade"
+    if [ "$(jq_get "$after_state" '.sync.monero.state')" = "done" ] &&
+        { [ "$UPGRADE_TARI_ENABLED" = 0 ] || [ "$(jq_get "$after_state" '.sync.tari.state')" = "done" ]; }; then
+        it_pass "required chains report synced after the image upgrade"
     else
         it_fail "both chains report synced after the image upgrade" "Monero or Tari sync state is not done"
     fi

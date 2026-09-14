@@ -5,10 +5,12 @@ LIVE_COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60d
 CANDIDATE_BUNDLE=""
 CANDIDATE_SIGNATURE=""
 TRUSTED_COSIGN_PUB=""
+TRUSTED_IMAGE_COSIGN_PUB=""
 UPGRADE_STAGE_DIR=""
 UPGRADE_BUNDLE_SNAPSHOT=""
 UPGRADE_SIGNATURE_SNAPSHOT=""
 UPGRADE_TRUSTED_KEY=""
+UPGRADE_IMAGE_TRUSTED_KEY=""
 UPGRADE_ROLLBACK_DIR=""
 UPGRADE_BASELINE_DIR=""
 UPGRADE_CANDIDATE_DIR=""
@@ -26,6 +28,7 @@ UPGRADE_BEFORE_MONERO=""
 UPGRADE_BEFORE_TARI=""
 UPGRADE_BEFORE_MONERO_ID=""
 UPGRADE_BEFORE_TARI_ID=""
+UPGRADE_TARI_ENABLED=1
 _UPGRADE_RESTORE_ARMED=0
 _UPGRADE_FOREIGN_TRAP=""
 
@@ -35,6 +38,10 @@ height_continues() {
     [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "${2:-}" =~ ^[0-9]+$ ]] && [ "$2" -ge "$1" ]
 }
 
+upgrade_tari_enabled() {
+    [ "$(jq_get "$BASELINE_CONFIG" '.tari.mode')" != "off" ]
+}
+
 validate_live_gate_args() {
     if [ "$RUN_IMAGE_UPGRADE" = "1" ]; then
         [ "$IT_MODE" = "local" ] || {
@@ -42,9 +49,9 @@ validate_live_gate_args() {
             exit 2
         }
         local file
-        for file in "$CANDIDATE_BUNDLE" "$CANDIDATE_SIGNATURE" "$TRUSTED_COSIGN_PUB"; do
+        for file in "$CANDIDATE_BUNDLE" "$CANDIDATE_SIGNATURE" "$TRUSTED_COSIGN_PUB" "${TRUSTED_IMAGE_COSIGN_PUB:-$TRUSTED_COSIGN_PUB}"; do
             case "$file" in /*) ;; *)
-                it_err "--image-upgrade requires --candidate-bundle with three absolute paths."
+                it_err "--image-upgrade requires absolute candidate bundle and trust-root paths."
                 exit 2
                 ;;
             esac
@@ -162,6 +169,12 @@ run_trusted_cosign() {
         -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" "$LIVE_COSIGN_IMAGE" "$@"
 }
 
+run_trusted_image_cosign() {
+    ensure_cosign_image || return 1
+    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+        -v "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro" "$LIVE_COSIGN_IMAGE" "$@"
+}
+
 extract_candidate_archive() { # <snapshot.tar.gz> <private-stage>
     python3 - "$1" "$2" <<'PY'
 import pathlib
@@ -188,10 +201,12 @@ prepare_candidate_bundle() {
     UPGRADE_BUNDLE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.tar.gz"
     UPGRADE_SIGNATURE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.sig"
     UPGRADE_TRUSTED_KEY="$UPGRADE_STAGE_DIR/trusted.pub"
+    UPGRADE_IMAGE_TRUSTED_KEY="$UPGRADE_STAGE_DIR/image-trusted.pub"
     (umask 077 && cp "$CANDIDATE_BUNDLE" "$UPGRADE_BUNDLE_SNAPSHOT" &&
         cp "$CANDIDATE_SIGNATURE" "$UPGRADE_SIGNATURE_SNAPSHOT" &&
-        cp "$TRUSTED_COSIGN_PUB" "$UPGRADE_TRUSTED_KEY") || return 1
-    chmod 400 "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_SIGNATURE_SNAPSHOT" "$UPGRADE_TRUSTED_KEY" || return 1
+        cp "$TRUSTED_COSIGN_PUB" "$UPGRADE_TRUSTED_KEY" &&
+        cp "${TRUSTED_IMAGE_COSIGN_PUB:-$TRUSTED_COSIGN_PUB}" "$UPGRADE_IMAGE_TRUSTED_KEY") || return 1
+    chmod 400 "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_SIGNATURE_SNAPSHOT" "$UPGRADE_TRUSTED_KEY" "$UPGRADE_IMAGE_TRUSTED_KEY" || return 1
     ensure_cosign_image || return 1
     docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
         -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" -v "$UPGRADE_BUNDLE_SNAPSHOT:/candidate.tar.gz:ro" \
@@ -217,7 +232,7 @@ prepare_candidate_bundle() {
     })" || return 1
     pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" || return 1
     while read -r _service ref; do
-        run_trusted_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
+        run_trusted_image_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
         docker pull -q "$ref" >/dev/null 2>&1 || return 1
         revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref" 2>/dev/null)"
         revision_matches_sha "$revision" "$IMAGE_UPGRADE_TO_SHA" || return 1
@@ -299,13 +314,13 @@ restore_upgrade_baseline() {
     [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed=1
     state="$(api_state)"
     [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed=1
-    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
     monero_tip="$(monero_chain_tip)"
     monero_height="${monero_tip%% *}"
     chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed=1
-    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
     [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed=1
-    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
+    [ "$UPGRADE_TARI_ENABLED" = 0 ] || [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
     [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed=1
     restored_workers="$(worker_names)"
     [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed=1

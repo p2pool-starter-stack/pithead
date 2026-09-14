@@ -68,6 +68,8 @@ MATRIX:
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
+  --candidate-image-key <trusted-cosign.pub>
+                         optional image trust root; defaults to --candidate-bundle's key.
   --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
                          controller/proxy/dashboard through one bounded XvB→P2Pool transition,
                          then restore the original config. Requires --safety-backup, miners, a
@@ -228,6 +230,14 @@ parse_args() {
             CANDIDATE_SIGNATURE="$3"
             TRUSTED_COSIGN_PUB="$4"
             shift 4
+            ;;
+        --candidate-image-key)
+            [ "$#" -ge 2 ] || {
+                it_err "--candidate-image-key requires <trusted-cosign.pub>."
+                exit 2
+            }
+            TRUSTED_IMAGE_COSIGN_PUB="$2"
+            shift 2
             ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1

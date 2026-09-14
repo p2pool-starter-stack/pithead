@@ -348,6 +348,29 @@ else
 fi
 
 if (
+    BASELINE_CONFIG='{"tari":{"mode":"off"}}'
+    ! upgrade_tari_enabled
+); then
+    it_pass "image upgrade does not require Tari when the baseline disables it"
+else
+    it_fail "image upgrade does not require Tari when the baseline disables it"
+fi
+
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    UPGRADE_IMAGE_TRUSTED_KEY="$td/image.pub"
+    : >"$UPGRADE_IMAGE_TRUSTED_KEY"
+    ensure_cosign_image() { :; }
+    docker() { printf '%s\n' "$*" >"$td/docker"; }
+    run_trusted_image_cosign verify --key /trusted.pub "image@sha256:$(printf 'a%.0s' {1..64})" &&
+        grep -Fq -- "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro" "$td/docker"
+); then
+    it_pass "candidate image verification uses its separate trust root"
+else
+    it_fail "candidate image verification uses its separate trust root"
+fi
+
+if (
     restore_calls=0 foreign_called=0
     restore_upgrade_baseline() {
         restore_calls=$((restore_calls + 1))
