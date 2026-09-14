@@ -166,7 +166,7 @@ phase_rig() {
     [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
         ok "pithead-boot owns a provisioned rig's boot" ||
         bad "pithead-boot did not run on the rig (its condition still excludes a machine with no config.json)"
-    _ssh "systemctl is-active --quiet pithead-firstboot" &&
+    unit_ran_this_boot pithead-firstboot &&
         bad "the first-boot wizard ran again on a provisioned rig" ||
         ok "the wizard window is closed on a provisioned rig (no setup page on every boot)"
     local failed_units
