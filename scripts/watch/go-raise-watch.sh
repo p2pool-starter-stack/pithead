@@ -20,11 +20,11 @@ classify_change() { # <module> <before> <after> <requested> <go-get-output> -> s
     [ "$after" = "$requested" ] || return 1
     if [ "$before" = "$after" ]; then
         printf 'obsolete\talready selected at %s without this entry\n' "$after"
-    elif detail=$(printf "%s\n" "$change" | grep -F "go: upgraded $module $before => $after" | head -1); then
+    elif detail=$(printf "%s\n" "$change" | grep -Fx "go: upgraded $module $before => $after" | head -1); then
         printf 'active\t%s\n' "$detail"
-    elif [ -z "$before" ] && detail=$(printf "%s\n" "$change" | grep -F "go: added $module $after" | head -1); then
+    elif [ -z "$before" ] && detail=$(printf "%s\n" "$change" | grep -Fx "go: added $module $after" | head -1); then
         printf 'active\t%s\n' "$detail"
-    elif detail=$(printf "%s\n" "$change" | grep -F "go: downgraded $module $before => $after" | head -1); then
+    elif detail=$(printf "%s\n" "$change" | grep -Fx "go: downgraded $module $before => $after" | head -1); then
         printf 'downgrade\t%s\n' "$detail"
     else
         return 1
@@ -192,6 +192,11 @@ EOF
     unknown_rc=0
     classify_change example.test/active v1.1.0 v1.2.0 v1.2.0 'unrecognized successful output' >/dev/null || unknown_rc=$?
     st 'an unrecognized successful mutation is unchecked' "$unknown_rc" 1
+    prefixed_rc=0
+    classify_change example.test/active v2.0.0 v1.0.0 v1.0.0 \
+        'go: module example.test/active is deprecated: go: upgraded example.test/active v2.0.0 => v1.0.0' \
+        >/dev/null || prefixed_rc=$?
+    st 'a wrapped upgrade diagnostic cannot conceal a downgrade' "$prefixed_rc" 1
     st 'the trailer distinguishes findings from failed measurements' \
         "$(grep -o 'obsolete=[0-9]* downgrade=[0-9]* checked=[0-9]* failed=[0-9]*' <<<"$out")" \
         'obsolete=1 downgrade=1 checked=3 failed=0'
