@@ -73,21 +73,26 @@ export CADDY_TEST_DOCKER
 CADDY_TEST_DOCKER="$(command -v docker)"
 export CADDY_TEST_IMAGE="$CADDY_IMAGE" CADDY_TEST_ATTEMPT_LOG="$TMP/attempted.log"
 export CADDY_TEST_ADAPT_LOG="$TMP/adapted.log" CADDY_TEST_FAILURE_LOG="$TMP/failed.log"
+: >"$CADDY_TEST_FAILURE_LOG"
 
 export STACK="$STACK_WITH_ADAPT"
 # The reused suites assert expected non-zero render paths; match tests/stack/run.sh's shell mode.
 set +e
-# shellcheck source=tests/stack/dashboard/test-dashboard.sh
-source "$ROOT/tests/stack/dashboard/test-dashboard.sh"
-# shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh
-source "$ROOT/tests/stack/dashboard/test-dashboard-onion.sh"
-# shellcheck source=tests/stack/appliance/test-appliance-caddyfile-optional-env.sh
-source "$ROOT/tests/stack/appliance/test-appliance-caddyfile-optional-env.sh"
-# shellcheck source=tests/stack/appliance/test-appliance-identity.sh
-source "$ROOT/tests/stack/appliance/test-appliance-identity.sh"
+run_suite() (
+    FAIL=0
+    # shellcheck source=/dev/null
+    source "$1"
+    [ "$FAIL" -eq 0 ]
+)
 
-[ "$FAIL" -eq 0 ] || {
-    echo "FAIL: $FAIL existing Caddyfile render assertion(s) failed" >&2
+suite_failures=0
+run_suite "$ROOT/tests/stack/dashboard/test-dashboard.sh" || ((suite_failures += 1))
+run_suite "$ROOT/tests/stack/dashboard/test-dashboard-onion.sh" || ((suite_failures += 1))
+run_suite "$ROOT/tests/stack/appliance/test-appliance-caddyfile-optional-env.sh" || ((suite_failures += 1))
+run_suite "$ROOT/tests/stack/appliance/test-appliance-identity.sh" || ((suite_failures += 1))
+
+[ "$suite_failures" -eq 0 ] || {
+    echo "FAIL: $suite_failures existing Caddyfile render suite(s) failed" >&2
     exit 1
 }
 attempted_count="$(wc -l <"$CADDY_TEST_ATTEMPT_LOG")"
