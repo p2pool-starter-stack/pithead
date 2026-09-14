@@ -208,9 +208,9 @@ fi
 out="$(tor_down_fixture --allow-tor-down)"
 waived_rc=$?
 if [ "$waived_rc" = 0 ] && [[ "$out" != *INCONCLUSIVE* ]]; then
-    it_pass "--allow-tor-down waives ONLY that control and treats firewall-allowed CGNAT as private (#563/#270)"
+    it_pass "--allow-tor-down waives ONLY that control and treats shared address space (CGNAT) as non-public (#563/#270)"
 else
-    it_fail "--allow-tor-down waives ONLY that control and treats firewall-allowed CGNAT as private (#563/#270)" "rc=$waived_rc"
+    it_fail "--allow-tor-down waives ONLY that control and treats shared address space (CGNAT) as non-public (#563/#270)" "rc=$waived_rc"
 fi
 
 # The Tor-egress verifier gates whether the gate will start containers at all, so a version that

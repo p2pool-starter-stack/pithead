@@ -75,8 +75,9 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
   dot to a `\x01` sentinel and restoring it at the end, and it neutralises any sentinel already in
   the input before doing so ([#1613](https://github.com/p2pool-starter-stack/pithead/issues/1613)):
   without that step the closing restore ran after every rule, so a `\x01` sitting inside what would
-  otherwise be a public quad came out as a dotted, routable address that no rule had inspected. What it keeps is exactly the set
-  `is_public_ip` calls private — loopback, RFC1918, link-local and CGNAT — because an artifact whose
+  otherwise be a public quad came out as a dotted, routable address that no rule had inspected.
+  What it keeps is exactly the set `is_public_ip` calls non-public — loopback, RFC1918, link-local
+  and shared address space (CGNAT) — because an artifact whose
   port map and container addresses have been stripped cannot be triaged, and because holding the two
   lists identical is what makes the coverage argument checkable rather than anecdotal.
   [#1582](https://github.com/p2pool-starter-stack/pithead/issues/1582) closed the flag-value and
