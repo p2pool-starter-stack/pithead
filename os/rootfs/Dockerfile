@@ -135,12 +135,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
 # hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
 ARG APT_INDEX_STAMP=0
+# gzip, libpcre2-8-0, libsqlite3-0 and perl-base: not new dependencies, already in the base image —
+# named here solely to pull the distro's current security build past the digest pin, the same
+# mechanism `openssl` above already relies on for the libssl3t64/openssl-provider-legacy pair
+# (CVE-2026-14456, #1438). These four are the same reddened dashboard/Dockerfile's CVE gate on
+# 2026-09-12 (#2103); the rootfs list named none of them, so nothing pulled them up. Not a base
+# digest bump: `debian:trixie-slim`'s current manifest is the exact digest pinned two lines above —
+# there is nothing newer to bump to (#2104).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
         jq openssl curl ca-certificates xxd iproute2 \
+        gzip libpcre2-8-0 libsqlite3-0 perl-base \
         fdisk gdisk parted e2fsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
