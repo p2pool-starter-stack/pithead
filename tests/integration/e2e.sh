@@ -122,7 +122,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     --remote-tari-host)
-        valid_remote_host "${2:-}" || die "$1 contains unsupported characters; use a hostname or IP address."
+        valid_remote_host "${2:-}" && [[ "$2" != *:* ]] || die "$1 contains unsupported characters; use a bare hostname or IPv4 address."
         REMOTE_NODE_ARGS+=("$1" "$2")
         REMOTE_NODE_VALUES+=("$2")
         shift 2

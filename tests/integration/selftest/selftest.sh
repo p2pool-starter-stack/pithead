@@ -71,11 +71,11 @@ resolve_overrides "tari.mode=remote"
 rc=$?
 assert_rc "tari remote skips without endpoint" "$rc" "1"
 assert_contains "skip names --remote-tari-host" "$SKIP_REASON" "--remote-tari-host"
-REMOTE_TARI_HOST="10.0.0.6:18142"
+REMOTE_TARI_HOST="10.0.0.6"
 resolve_overrides "tari.mode=remote"
 rc=$?
 assert_rc "tari remote ok with endpoint" "$rc" "0"
-assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6:18142"
+assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6"
 unset REMOTE_TARI_HOST
 # Payout confirmation (#381/#462/#942): the "payout_confirm=env" marker gates on
 # IT_MONERO_VIEW_KEY, is always stripped from RESOLVED, and folds in tari's pair only when BOTH

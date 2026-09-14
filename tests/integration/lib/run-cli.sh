@@ -34,8 +34,7 @@ MATRIX:
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
-  --remote-tari-host <h>  external Tari node endpoint for the tari.mode=remote scenario (#103;
-                         e.g. an already-synced Tari node on the LAN)
+  --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -189,9 +188,15 @@ parse_args() {
             ;;
         --remote-tari-host)
             if ! valid_remote_host "${2:-}"; then
-                it_err "--remote-tari-host contains unsupported characters. Use a hostname or IP address."
+                it_err "--remote-tari-host contains unsupported characters. Use a bare hostname or IPv4 address."
                 exit 2
             fi
+            case "$2" in
+            *:*)
+                it_err "--remote-tari-host takes a bare host or IPv4 address; Pithead renders tari.remote.grpc_port separately."
+                exit 2
+                ;;
+            esac
             REMOTE_TARI_HOST="$2"
             shift 2
             ;;
