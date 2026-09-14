@@ -132,22 +132,22 @@ jobs:
       - name: docker build ./${{ matrix.context }}
         run: docker build -t "pithead-${{ matrix.service }}:ci" "./${{ matrix.context }}"
       - uses: ./.github/actions/install-trivy # cached binary install, see #2214
+        with: {version: v0.74.0} # same literal as the version: below — the one live pin (#1290, #2214)
       - name: Scan image for CVEs (Trivy)
         # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .trivyignore.
         # Must stay green before v1.1 images publish (#282).
-        # cache: false is load-bearing (#1159): the DB cache is keyed `cache-trivy-$(date +%F)` and
-        # per-ref, so a branch's first run of the day freezes its DB until midnight — a gate whose
-        # answer depends on when its branch last ran is not a gate (on 2026-08-20 the identical
-        # dashboard image passed on one branch and failed on another 40s apart for that reason).
-        # Cost of a fresh download every run: 108.49 MiB/3.3s vs a ~997 MB/13.9s cache restore, and
-        # ~7.5 GB of the repo's 10 GB cache budget freed (92% near-duplicate copies of this one DB).
+        # cache: false is load-bearing (#1159): the DB cache is per-ref and day-scoped, so a
+        # branch's first run of the day freezes its DB until midnight — a gate whose answer
+        # depends on when it last ran is not a gate (on 2026-08-20 the identical dashboard image
+        # passed on one branch and failed on another 40s apart for that reason). Fresh-download
+        # cost: 108.49 MiB/3.3s vs a ~997 MB/13.9s cache restore, 7.5 GB of cache budget freed.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Explicit on purpose (#1290) — the action's default engine moves whenever the action is
-          # bumped, and scripts/watch/trivyignore-watch.sh's verdicts only mean something when it scans
-          # with the engine the gate runs. `make lint-trivy-parity` holds the two to one value.
+          # Explicit on purpose (#1290): the action's default engine drifts otherwise, and
+          # `make lint-trivy-parity` reads this line. Keep it equal to the install-trivy step's
+          # `version:` above — trivy-action itself never reads this one (skip-setup-trivy, #2214).
           version: v0.74.0
-          skip-setup-trivy: true # binary already installed above (#2214)
+          skip-setup-trivy: true # installs from the version: passed above, not this input (#2214)
           image-ref: pithead-${{ matrix.service }}:ci
           scanners: vuln
           severity: HIGH,CRITICAL
@@ -216,19 +216,19 @@ jobs:
           # mid-run.
           printf '%s\n' "$tag" >"sweep-$SERVICE.tag"
       - uses: ./.github/actions/install-trivy # cached binary install, see #2214
+        with: {version: v0.74.0} # same literal as the version: below — the one live pin (#1290, #2214)
       - name: Scan the published image by digest (Trivy)
         # Same scope as the gate above, and the same engine — but only because #1290's pin is on
-        # both steps. Read that as a dependency, not a coincidence: comparing this sweep's verdict
-        # against the rebuild's is the whole reason both exist, and two trivy releases apart is
-        # enough to make them disagree for reasons that have nothing to do with the images. If the
-        # step above ever loses its `version:`, this comparison stops meaning anything, and on
-        # nothing but `make lint-trivy-parity` will say so.
+        # both jobs' trivy-action steps, each read by `make lint-trivy-parity`. Comparing this
+        # sweep's verdict against the rebuild's is the whole reason both exist; each job also
+        # passes this same literal to its own install-trivy step above, which is what actually
+        # installs the engine that runs (skip-setup-trivy, #2214).
         #
         # trivy pulls the digest from the registry itself — nothing is built here.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
-          skip-setup-trivy: true # binary already installed above (#2214)
+          skip-setup-trivy: true # installs from the version: passed above, not this input (#2214)
           image-ref: ${{ steps.shipped.outputs.ref }}
           scanners: vuln
           severity: HIGH,CRITICAL

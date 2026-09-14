@@ -89,9 +89,10 @@ verdict that means something. The dashboard and frontend unit suites still run f
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
      checkout — issue #1105 Phase 2), `lint-trivy-parity` (every trivy-action step across
      `ci.yml`, `os-rootfs.yml` and `test-images.yml`, and `scripts/watch/trivyignore-watch.sh`,
-     must name one trivy engine version — issue #1290 — and each trivy-action step must be
-     preceded by a cached `./.github/actions/install-trivy` step and carry `skip-setup-trivy: true`,
-     so a transient GitHub Releases outage in the installer can't red every scan — issue #2214),
+     must name one trivy engine version — issue #1290 — and each workflow's count of trivy-action
+     steps, cached `./.github/actions/install-trivy` steps, and `skip-setup-trivy: true` lines must
+     match, so a transient GitHub Releases outage in the installer can't red every scan — issue
+     #2214),
      `lint-proto` (buf),
      `lint-toml` (taplo). The
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**

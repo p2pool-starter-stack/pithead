@@ -7,15 +7,20 @@ description: >
   populated for a version, a GitHub Releases hiccup in the installer no
   longer fails every scan that version runs; call this step first, then pass
   `skip-setup-trivy: true` to trivy-action so it reuses this binary instead
-  of re-running its own copy of the same installer. Version is pinned here
-  to match TRIVY_VERSION in scripts/watch/trivyignore-watch.sh and the
-  `version:` each call site passes trivy-action directly (`make
-  lint-trivy-parity` holds those three to each other, not to this file).
-  Until the cache has a hit, this still calls the same GitHub-Releases
-  installer the cache exists to avoid — so three attempts with a short
-  backoff, not one, because #2214's own outage window was itself minutes
-  long (rotated between an unrelated build 20 minutes apart) and a single
-  retry lands inside it as often as not.
+  of re-running its own copy of the same installer. This action holds NO
+  pin of its own: `version` is a required input, and every call site passes
+  it the exact literal it also gives trivy-action's own `version:`, the one
+  `make lint-trivy-parity` (#1290) reads — so that literal stays the single
+  live source, and this action can never drift from it into an unvalidated
+  second pin. Until the cache has a hit, this still calls the same
+  GitHub-Releases installer the cache exists to avoid — so three attempts
+  with a short backoff, not one, because #2214's own outage window was
+  itself minutes long (rotated between an unrelated build 20 minutes apart)
+  and a single retry lands inside it as often as not.
+inputs:
+  version:
+    description: "Trivy version to install, e.g. v0.74.0 — must match the caller's own trivy-action version: (#1290, #2214)"
+    required: true
 runs:
   using: composite
   steps:
@@ -23,7 +28,7 @@ runs:
       continue-on-error: true
       uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
       with:
-        version: v0.74.0
+        version: ${{ inputs.version }}
         cache: true
     - if: steps.attempt1.outcome == 'failure'
       run: sleep 15
@@ -33,7 +38,7 @@ runs:
       continue-on-error: true
       uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
       with:
-        version: v0.74.0
+        version: ${{ inputs.version }}
         cache: true
     - if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
       run: sleep 30
@@ -41,5 +46,5 @@ runs:
     - if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
       uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
       with:
-        version: v0.74.0
+        version: ${{ inputs.version }}
         cache: true
