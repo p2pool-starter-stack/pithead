@@ -10,7 +10,7 @@
 # never depend on the runner being able to resolve the box's dashboard hostname.
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
-
+source "${BASH_SOURCE[0]%/*}/lib/redact-it-password.sh"
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -31,18 +31,6 @@ it_log() { echo -e "${IT_GREEN}[ITEST]${IT_RESET} $1"; }
 it_warn() { echo -e "${IT_YELLOW}[ITEST]${IT_RESET} $1" >&2; }
 it_err() { echo -e "${IT_RED}[ITEST]${IT_RESET} $1" >&2; }
 it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
-
-# IT_DASHBOARD_PASSWORD (#2058) never renders onto the box, so none of the KEY=value/JSON
-# vocabulary below ever meets it — it is a harness-local credential the box side can't echo back.
-# But the harness holds the exact VALUE, so scrub it by literal match wherever text passes through
-# redact() or it_fail, independent of shape or key name. A no-op sed when the var is unset.
-redact_it_password() {
-    if [ -n "${IT_DASHBOARD_PASSWORD:-}" ]; then
-        sed "s/$(printf '%s' "$IT_DASHBOARD_PASSWORD" | sed 's/[][\.*^$\/]/\\&/g')/<redacted>/g"
-    else
-        cat
-    fi
-}
 
 # --- Secrets hygiene --------------------------------------------------------
 # Redact before anything reaches a log or the terminal. FIVE shapes: KEY=value and JSON "key": "value"
