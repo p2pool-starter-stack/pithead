@@ -121,12 +121,7 @@ run_sourced() {
 run_sourced_e() {
     local dir="$1"
     shift
-    (
-        cd "$dir" || return
-        # shellcheck disable=SC1090  # STACK path is dynamic by design
-        source "$STACK"
-        "$@"
-    )
+    bash -Eeuo pipefail -c 'cd "$1"; source "$2"; shift 2; "$@"' _ "$dir" "$STACK" "$@"
 }
 
 # Poll CHECK (a predicate function name) until it succeeds, but never past the point where PID
