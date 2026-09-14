@@ -125,7 +125,7 @@ _phase_install_restore() {
         rm -f "$target_disk" "$restore_archive"
         return 1
     }
-    expected_onion=$(printf '%s\n' "$fixture_env" | sed -n 's/^MONERO_ONION_ADDRESS=//p')
+    expected_onion=$(printf '%s\n' "$fixture_env" | sed -n 's/^DASHBOARD_ONION_ADDRESS=//p')
     expected_secrets=$(printf '%s\n' "$fixture_env" | grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' | sha256sum | cut -d' ' -f1)
     [ -n "$expected_wallet" ] && [ -n "$expected_onion" ] && [ -n "$expected_secrets" ] || {
         bad "restore leg: v1.20.0 fixture is missing its restore fingerprints"
@@ -367,13 +367,13 @@ _phase_install_restore() {
     local odeadline
     odeadline=$(($(date +%s) + 600))
     while [ "$(date +%s)" -lt "$odeadline" ]; do
-        new_onion=$(_ssh "grep MONERO_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
-        tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname 2>/dev/null" | tr -d '\r')
+        new_onion=$(_ssh "grep DASHBOARD_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
+        tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/dashboard/hostname 2>/dev/null" | tr -d '\r')
         [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && break
         sleep 15
     done
     # .env is an archive member load_preserved_state replays verbatim when non-empty (pithead:6155-6166),
-    # so new_onion == orig_onion proves only that the CONFIG FILE made the round trip — true even when
+    # so new_onion == expected_onion proves only that the CONFIG FILE made the round trip — true even when
     # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
     # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
     if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$expected_onion" ] && [ "$tor_hostname" = "$expected_onion" ]; then
