@@ -25,7 +25,8 @@
 #   name a provider assigns only inside a function reaches a domain file as an ordering dependency
 #   and not as a constant. The guard below states that single requirement explicitly.
 # - $BKC is assigned here, in the moved text, not inherited.
-# - The lib.sh helpers this domain calls (assert_contains, assert_eq, bad, ok, run_sourced) are
+# - The lib.sh helpers this domain calls (assert_contains, assert_eq, bad, ok, run_sourced,
+#   run_sourced_e) are
 #   likewise defined at lib.sh's top level.
 
 : "${SANDBOX:?}"
@@ -64,7 +65,7 @@ export FAKE_ARCHIVE="$BKC/fake-backups/pithead-backup-20260813-000000.tar.gz.enc
 : >"$SELF_LOG"
 : >"$PASS_LOG"
 printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$bid1" >"$BKC/req1.json"
-run_sourced "$SANDBOX" control_process_request "$BKC/req1.json" "$BKC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$BKC/req1.json" "$BKC" >/dev/null 2>&1
 assert_eq "backup runs the fixed 'backup -y' verb (never --no-encrypt)" "$(cat "$SELF_LOG")" "backup -y"
 assert_eq "backup result is applied" "$(jq -r .status "$BKC/results/$bid1.json")" "applied"
 pass1="$(cat "$PASS_LOG")"
@@ -102,7 +103,7 @@ export CONTROL_BACKUP_KIT_TTL_S=3
 : >"$SELF_LOG"
 : >"$PASS_LOG"
 printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$bid2" >"$BKC/req2.json"
-run_sourced "$SANDBOX" control_process_request "$BKC/req2.json" "$BKC" >/dev/null 2>&1 &
+run_sourced_e "$SANDBOX" control_process_request "$BKC/req2.json" "$BKC" >/dev/null 2>&1 &
 bg_pid=$!
 # The mid-flight read races the background write, so it waits on the condition rather than on a
 # fixed budget; why a tick budget is wrong is #1495's lesson and lives on wait_while_alive itself.
@@ -136,7 +137,7 @@ export CONTROL_BACKUP_KIT_TTL_S=0
 export BACKUP_FAIL=1
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$bid3" >"$BKC/req3.json"
-run_sourced "$SANDBOX" control_process_request "$BKC/req3.json" "$BKC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$BKC/req3.json" "$BKC" >/dev/null 2>&1
 assert_eq "a failed child backup is reported failed, not applied" \
     "$(jq -r .status "$BKC/results/$bid3.json")" "failed"
 assert_contains "the failure carries the child's own error tail" \
@@ -154,7 +155,7 @@ unset BACKUP_FAIL
 bid4="a0a0a0a0-0000-4000-8000-000000000004"
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"backup","actor":"admin"}\n' "$bid4" >"$BKC/req4.json"
-run_sourced "$SANDBOX" control_process_request "$BKC/req4.json" "$BKC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$BKC/req4.json" "$BKC" >/dev/null 2>&1
 assert_contains "an immediate second backup attempt is throttled" \
     "$(jq -r .error "$BKC/results/$bid4.json")" "less than 10 minutes"
 assert_eq "a throttled attempt never runs the child" "$(cat "$SELF_LOG")" ""
@@ -164,7 +165,7 @@ assert_eq "a throttled attempt never runs the child" "$(cat "$SELF_LOG")" ""
 # before the action even dispatches, so the container has no field to smuggle one through.
 bid5="a0a0a0a0-0000-4000-8000-000000000005"
 printf '{"id":"%s","action":"backup","actor":"admin","passphrase":"leaked"}\n' "$bid5" >"$BKC/req5.json"
-run_sourced "$SANDBOX" control_process_request "$BKC/req5.json" "$BKC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$BKC/req5.json" "$BKC" >/dev/null 2>&1
 assert_contains "a request carrying a passphrase field is refused outright (unexpected keys)" \
     "$(jq -r .error "$BKC/results/$bid5.json")" "unexpected keys"
 
