@@ -109,13 +109,10 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
     if out=$(dashboard_control_post "$route" "$body"); then
         rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        [ -n "$rid" ] || [ -n "$out" ] || rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     else
-        # The POST died in flight rather than being answered. A commit whose apply recreates
-        # containers restarts the dashboard underneath its own request, so the runner's answer can
-        # already be on disk while the response never arrives — measured on the bench (#2060): the
-        # guest's audit read `commit-confirmed -> applied` and its results directory held that id's
-        # document with {"status":"applied"}, while this function reported "the commit never
-        # returned". The id is not lost when that happens, because the CALLER sent it. Poll for it.
+        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
+        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
     # A server that ANSWERED without an id refused the request; that is a verdict, not a lost
