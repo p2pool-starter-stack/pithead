@@ -227,6 +227,7 @@ source "$RELEASE_LIB_DIR/bundle.sh"
 main() {
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
+    require_bench_tier4
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     if [ "$RESUME_PROMOTE" -eq 1 ]; then
         warn "--resume-promote: skipping build/stage. Re-staging to recover digests..."

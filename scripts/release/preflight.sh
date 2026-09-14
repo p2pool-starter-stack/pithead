@@ -7,6 +7,20 @@
 # elsewhere. Verify them here so a missing tool fails preflight with an actionable message, before any
 # build, instead of mid-gate.
 LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx)
+BENCH_TIER4_CONTEXT="bench-ci/tier4"
+
+require_bench_tier4() {
+    command -v gh >/dev/null 2>&1 ||
+        die "gh is required to read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+    local state
+    if ! state="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/status" \
+        --jq '.statuses | map(select(.context == "bench-ci/tier4")) | first | .state // empty')"; then
+        die "Could not read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
+    fi
+    [ "$state" = success ] ||
+        die "Release commit $GIT_COMMIT has no successful $BENCH_TIER4_CONTEXT status (got: ${state:-missing})."
+    ok "Bench tier-4 gate passed for $GIT_COMMIT."
+}
 
 check_release_toolchain() {
     local tool missing=()

@@ -148,6 +148,29 @@ tc_rc=$?
 assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
+echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
+bench_tier4_gate() { # <state>
+    local BENCH_STATUS="$1"
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034  # dynamic source; GIT_COMMIT is consumed by the sourced gate
+        source "$REL" 2>/dev/null
+        set +eu
+        GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        gh() { printf '%s\n' "$BENCH_STATUS"; }
+        require_bench_tier4
+    )
+}
+bench_ok="$(bench_tier4_gate success 2>&1)"
+assert_rc "a successful bench status permits the release" "$?" "0"
+assert_contains "the passing status names the exact release commit" "$bench_ok" "0123456789abcdef0123456789abcdef01234567"
+bench_missing="$(bench_tier4_gate '' 2>&1)"
+assert_rc "a missing bench status refuses the release" "$?" "1"
+assert_contains "the missing status refusal names the required context" "$bench_missing" "bench-ci/tier4"
+bench_failed="$(bench_tier4_gate failure 2>&1)"
+assert_rc "a failed bench status refuses the release" "$?" "1"
+assert_contains "the failed status is reported as failure" "$bench_failed" "got: failure"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
 # repoints `current`, which is what makes rollback possible. So asserting on the directory the run
