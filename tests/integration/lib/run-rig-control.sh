@@ -50,8 +50,9 @@ run_rigforge_control() {
         return 0
     fi
 
-    local have_host inject=0
-    have_host="$(printf '%s' "$BASELINE_CONFIG" | jq -r --arg n "$rig" 'first((.workers.list // [])[] | select(.name==$n) | .host) // empty' 2>/dev/null)"
+    local current_config have_host inject=0
+    current_config="$(rx 'cat config.json')"
+    have_host="$(printf '%s' "$current_config" | jq -r --arg n "$rig" 'first((.workers.list // [])[] | select(.name==$n) | .host) // empty' 2>/dev/null)"
     if [ -z "$have_host" ]; then
         if [ -n "$RIG_HOST" ] && [ -n "${IT_RIG_TOKEN:-}" ]; then
             inject=1
@@ -67,7 +68,7 @@ run_rigforge_control() {
 
     # Enable control while preserving any existing login.
     local ctrl_config
-    ctrl_config="$(printf '%s' "$BASELINE_CONFIG" | jq '.dashboard.control.enabled = true')"
+    ctrl_config="$(printf '%s' "$current_config" | jq '.dashboard.control.enabled = true')"
     if [ -z "$(env_on_box DASHBOARD_AUTH_HASH_B64)" ]; then
         ctrl_config="$(printf '%s' "$ctrl_config" | jq '.dashboard.auth = {username:"admin",password:"a tier4 rigforge-control passphrase"}')"
     fi
