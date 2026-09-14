@@ -24,40 +24,44 @@ setup_failure_state_retained() { # <wizard-state-json> <expected-wallet>
         .stage == "failed" and (.error | type == "string" and length > 0) and
         .config.monero.wallet_address == $m and .config.tari.mode == "local"' >/dev/null
 }
-# THE ARMING, and why it is a stub rather than an absence (#2050). All three of the wizard's
-# validations reach caddy_hash_password_b64, which greps the pinned caddy ref straight out of
-# docker-compose.yml. Removing the file therefore faults parse_and_validate_config — which has its
-# own recovery (the page reopens carrying the validator's message) and never calls setup at all.
-# The bench measured exactly that and read it as a hang: the harness sat out its 24x5s poll for a
-# credentials handoff that the validator path correctly never publishes, while the machine was
-# sitting on a reopened form. So the stub keeps the caddy line verbatim and makes everything after
-# it unparseable: validation passes unchanged, the handoff is published, and the first
-# `docker compose` that must actually READ the file — the `up` inside setup's stack_up, well past
-# the render_env that writes DEPLOYMENT_COMPLETED — refuses. That is a post-validation setup
-# failure, which is what this leg is named for.
-SETUP_FAULT_MARK=PITHEAD_OS_2050_STUB
+# THE ARMING (#2061, replacing #2050's). The old stub replaced docker-compose.yml wholesale with
+# an unparseable file (keeping only the caddy image line, for caddy_hash_password_b64), so it broke
+# EVERY `docker compose` call, including the tor-only one `provision_tor` runs at
+# 38-setup-command.sh:43 — three lines before DEPLOYMENT_COMPLETED=true (:44) and the render_env
+# that commits it (:45). Measured on a kept guest 2026-09-11: `setup` died at provision_tor's Tor
+# hidden-service wait, .env still carrying the bootstrap render_env's DEPLOYMENT_COMPLETED=false —
+# the marker was never set, so #2054's clear of it was never exercised.
+#
+# This arming instead retags ONLY the dashboard service's image to one that cannot exist or
+# verify, leaving every other service — "tor" included — untouched and the file still valid
+# Compose. `provision_tor` brings up `-d tor` alone and never looks at the dashboard's image, so it
+# succeeds and setup reaches both render_env calls and DEPLOYMENT_COMPLETED=true. The dashboard's
+# image is not needed again until stack_up's `docker compose up -d` (01-lifecycle.sh), well past
+# the marker: on a signed release build verify_release_images finds it no longer digest-pinned and
+# refuses before any pull; on an unsigned build the pull itself 404s. Either way stack_up's
+# `error()` is what actually fails the (setup) subshell the wizard is running — a post-marker
+# setup failure, which is what this leg is now named for.
+SETUP_FAULT_MARK=pithead-os-2061-nonexistent-tag
 restore_setup_fault() { _ssh "mv -f /run/pithead-os-1966-docker-compose.yml /data/pithead/docker-compose.yml &&
     test -s /data/pithead/docker-compose.yml && test ! -e /run/pithead-os-1966-docker-compose.yml &&
     ! grep -q $SETUP_FAULT_MARK /data/pithead/docker-compose.yml"; }
 provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-token>
     local ip="$1" jar="$2" old_token="$3" handoff="" state code new_token="" tries=0
     local live=/data/pithead/docker-compose.yml backup=/run/pithead-os-1966-docker-compose.yml
-    if _ssh "test -s '$live' && test ! -e '$backup' && mv '$live' '$backup' && test -s '$backup' && { echo '# $SETUP_FAULT_MARK'; grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$backup' | head -1 | sed 's/^/# /'; echo 'services: [ not a compose file'; } >'$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
-        ok "post-validation setup fault is armed: the Compose file still validates and cannot be started"
+    if _ssh "test -s '$live' && test ! -e '$backup' && cp '$live' '$backup' && test -s '$backup' && sed -i 's#pithead-dashboard:.*#pithead-dashboard:$SETUP_FAULT_MARK#' '$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
+        ok "post-marker setup fault is armed: the dashboard image cannot be pulled, but tor still starts"
     else
-        # The arm moves the real file BEFORE it writes and checks the stub, so a failure after
-        # that mv would leave the guest with no usable Compose file and nothing to put it back.
-        # Restore only over an absent file or our OWN stub — never over a file we did not replace,
+        # Restore only over an absent file or our OWN edit — never over a file we did not touch,
         # which is what a stale backup from an earlier run would otherwise be written onto.
         _ssh "test -e '$backup' && { test ! -s '$live' || grep -q $SETUP_FAULT_MARK '$live'; } && mv -f '$backup' '$live'" || true
-        bad "could not arm the disposable post-validation setup fault"
+        bad "could not arm the disposable post-marker setup fault"
         return 1
     fi
     code=$(provision_browser_submit "$ip" "$jar")
     if [ "$code" = "200" ]; then
         ok "the valid setup is accepted before the host-side fault fires"
     else
-        restore_setup_fault || bad "post-validation fault cleanup failed after submit refusal"
+        restore_setup_fault || bad "post-marker fault cleanup failed after submit refusal"
         bad "faulted setup was not accepted for host processing (HTTP ${code:-none})"
         return 1
     fi
@@ -68,25 +72,30 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         tries=$((tries + 1))
     done
     if [ "$tries" -ge 24 ]; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after handoff timeout"
+        restore_setup_fault || bad "post-marker fault cleanup failed after handoff timeout"
         bad "faulted setup never reached its credentials handoff"
         stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return 1
     fi
     if ! curl -fsSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after handoff refusal"
+        restore_setup_fault || bad "post-marker fault cleanup failed after handoff refusal"
         bad "faulted setup credentials could not be acknowledged"
         return 1
     fi
-    if ! _ssh "for i in \$(seq 60); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live' && exit 0; sleep 5; done; exit 1"; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after setup timeout"
+    # 25 minutes (seq 300 x 5s), not the old leg's 5: the fault now fires deep into setup — after
+    # Tor is fully provisioned, the Caddyfile and control-runner units are written, and stack_up has
+    # started pulling every first-party image — not at provision_tor's early 60s Tor timeout, and
+    # this same suite already budgets 1500s elsewhere (provision-initial.sh) for a first-time image
+    # pull to finish.
+    if ! _ssh "for i in \$(seq 300); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live' && exit 0; sleep 5; done; exit 1"; then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
         bad "the armed host setup fault never returned a recorded failure"
         return 1
     fi
     if restore_setup_fault; then
-        ok "post-validation setup fault cleanup restores the exact Compose file"
+        ok "post-marker setup fault cleanup restores the exact Compose file"
     else
-        bad "post-validation setup fault cleanup did not restore the Compose file"
+        bad "post-marker setup fault cleanup did not restore the Compose file"
         return 1
     fi
     tries=0
