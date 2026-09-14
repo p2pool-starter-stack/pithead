@@ -197,7 +197,7 @@ jobs:
           [ -n "$ver" ] || { echo "::error::main carries no VERSION — cannot tell what shipped"; exit 1; }
           tag="v$ver"
           # main's OWN .trivyignore, never develop's; tries the moved path, falls back to the
-          # pre-move root path until main carries this move (#2204), then drop the fallback.
+          # pre-move root path until main carries #1901's move (PR #2201), then drop the fallback.
           git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore
           repo="p2pool-starter-stack/pithead-$SERVICE"
           # The packages are public, so an anonymous pull token is enough — no registry secret
