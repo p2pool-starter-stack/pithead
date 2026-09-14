@@ -11,6 +11,7 @@ verify_src="$(sed -n '/^verify_load_worker() {$/,/^}$/p' "$LOAD_SRC")"
 restore_src="$(sed -n '/^restore_all() {$/,/^}$/p' "$SRC")"
 borrow_src="$(sed -n '/^borrow_miner() {$/,/^}$/p' "$SRC")"
 
+echo "== selftest: load worker stays opt-in, capped, baseline-relative, and cleanup-safe =="
 case "$load_src" in *'[ "$WORKERS" -ge 3 ]'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'--threads=1'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'LOAD_BASELINE_COUNT + 1'*) ;; *) exit 1 ;; esac
