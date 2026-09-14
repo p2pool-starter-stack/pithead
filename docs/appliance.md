@@ -16,12 +16,12 @@ manage the host.
   on the machine's screen and shrinks that reservation — mining runs slower and everything
   else runs squeezed, at every boot until the machine has 16 GB.
 - An internal SSD or NVMe with room for the chains. The stack budgets
-  about 120 GB for pruned Monero and about 200 GB for a local Tari node (measured chains:
-  roughly 100 GB and 150 GB in August 2026, and growing — the budget is the growth room), so
-  **400 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
-  system copies before your data starts, so a 350 GB disk leaves the chains short of their budget.
+  320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
+  **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
+  system copies before your data starts, so a 550 GB disk leaves the chains short of their budget.
   On a smaller disk, run pruned Monero and point Tari at a node you already have — the setup page
-  asks both questions, and that drops the requirement to about 140 GB. See
+  asks both questions. The 328 GiB stack budget is about 352 GB as SSD makers label it; add the
+  appliance's system partitions and round up, and the disk requirement is about 370 GB. See
   [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere) for the totals in
   every combination.
 - A wired ethernet connection. Wi-Fi is not supported.
@@ -235,7 +235,7 @@ Then a handful of choices, all with sensible defaults:
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
-| Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes about 200 GB out of the budget. |
+| Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
 | First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. |
@@ -243,8 +243,8 @@ Then a handful of choices, all with sensible defaults:
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
 with a default that is right for almost every home rig lives one level down, in **Advanced**,
-not on the quick form. Today that means the Monero chain size (a ~120 GB budget pruned vs.
-~320 GB full — only asked at all when this machine runs the node), the Healthchecks ping URL, and
+not on the quick form. Today that means Monero pruning (the disk budget is currently 320 GiB in
+either mode — only asked at all when this machine runs the node), the Healthchecks ping URL, and
 the time zone (detected from the machine unless set). They are still there to change, just not asked outright.
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as
