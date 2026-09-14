@@ -158,6 +158,48 @@ These are endpoint names, never values committed to the repository. Local-chain 
 continuity is outside this lean-storage gate and tracked by
 [#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
+The final summary carries the same missing/by-design/covered skip vocabulary as the integration
+harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
+re-implemented so the two tier-4 summaries read the same way (#2064). It prints the three buckets
+separately — scenarios, phases, legs — and the class breakdown under them in the integration
+summary's own wording, so the two can be compared line for line. A green `--phase all` ends with
+its five skip rows accounted like this:
+
+```
+os harness: <N> passed, 0 failed
+skipped: 0 scenarios, 0 phases, 5 legs
+  of which: 3 missing (an input would have run it), 1 by-design (this run's mode excludes it), 1 covered elsewhere
+```
+
+The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
+enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
+covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
+drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+and `--phase rig` prints that row alone.
+
+A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
+row or a folded-in early return. Which class it takes is decided by one question, and the answer
+is not a matter of taste: **could a different invocation of this same harness against this same
+box have covered it?**
+
+- `by-design` — no. A rig guest has no dashboard, control API or compose stack, so the
+  dashboard-scoped legs cannot apply to it under any phase. Recorded at phase entry, before the
+  first fallible step, because a fact known before anything runs must not be reported only by the
+  runs that get far enough to reach it.
+- `covered` — it was proven elsewhere in THIS run, and the reason says where. The update phase's
+  legs 1-3 never provision, so nothing pithead-boot owns runs there; leg 4 provisions the same
+  guest and asserts the commit verdict, so the row is recorded **after** leg 4, classed on what
+  leg 4 actually did. A leg 4 that returned early downgrades it to `missing` — a skip that claims
+  cover on a run where nothing covered it is worse than no skip at all.
+- `missing` — yes, and this is the only class that is a gap. The held-chain release, the
+  boot-menu version repair and the /data-floor restore (#2055 G1) are all pithead-boot's, all
+  unreachable from `--phase update`, and all proven by `--phase provision` or `--phase all`.
+  Calling them `by-design` would book a real, reachable gap as accepted.
+
+This is distinct from the remote-node row below, where a missing input stays a counted
+**failure**: the classes are for rows the configuration excludes, never for inputs the bench
+forgot.
+
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_MONERO_ZMQ_PORT`, `PITHEAD_OS_TARI_NODE_HOST`, and

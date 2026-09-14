@@ -75,6 +75,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
+# ONLY the it_skip_* vocabulary is wanted from this file (#2064): the missing/by-design/covered
+# classes the integration summary already prints (#1083/#1444), reused rather than re-invented so
+# the two tier-4 summaries read the same way. Its other export, assert_mining_state, is NOT for
+# this harness — it calls assert_num_ge/assert_num_gt, which live in tests/integration/lib.sh and
+# are deliberately not sourced here. it_warn/it_err, which the it_skip_* helpers call, are
+# lib/core.sh's.
+# shellcheck source=tests/integration/lib/skip-accounting.sh
+. "$SCRIPT_DIR/../integration/lib/skip-accounting.sh"
 # shellcheck source=tests/os/reinstall-prefill-submit-leg.sh
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
 # shellcheck source=tests/os/setup-failure-recovery-leg.sh
@@ -172,4 +180,17 @@ all)
 esac
 
 printf '\nos harness: \033[1;32m%d passed\033[0m, \033[1;31m%d failed\033[0m\n' "$PASS" "$FAIL"
+# The three buckets stay SEPARATE, and the breakdown under them is worded exactly as
+# tests/integration/lib/run-safety.sh's summary() words it (#1083/#1365), so the two tier-4
+# summaries compare line for line rather than nearly. Losing a whole phase is not the same size of
+# hole as losing one leg, which is why one summed number was the wrong shape. Only "missing" is a
+# gap; see skip-accounting.sh for what each class means.
+printf 'skipped: %d scenarios, %d phases, %d legs\n' \
+    "$IT_SKIPPED" "$IT_SKIPPED_PHASES" "$IT_SKIPPED_LEGS"
+printf "  of which: %d missing (an input would have run it), %d by-design (this run's mode excludes it), %d covered elsewhere\n" \
+    "$IT_SKIPPED_MISSING" "$IT_SKIPPED_BY_DESIGN" "$IT_SKIPPED_COVERED"
+if [ -n "$IT_SKIPPED_NAMES" ]; then
+    echo "did NOT run:" >&2
+    echo -e "$IT_SKIPPED_NAMES" >&2
+fi
 [ "$FAIL" -eq 0 ]

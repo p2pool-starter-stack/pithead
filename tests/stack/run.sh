@@ -7,12 +7,12 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
-
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
+# shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
@@ -51,10 +51,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain
 
 # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-cli.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-config.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
 
@@ -66,6 +64,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain
 
 # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
@@ -111,12 +111,12 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran te
 # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 
-# The approval gate (#33) — default-deny on security-sensitive changes — together with
-# workers.list[]'s add-only exception (#893) and the #122 SSRF floor on a newly appended entry's
-# host. The whole domain lives in the file and arms its own control sandbox (#1105 R13); this
-# stanza sits at the position the section has always run from.
+# The approval gate (#33): default-deny, workers.list[]'s add-only exception (#893), the #122 SSRF
+# floor; own sandbox (#1105 R13). The tier3 stanza is POSITION-LOCKED: gate_try()/$UUID5 (2026-09-13 perimeter audit).
 # shellcheck source=tests/stack/control/test-control-add-only-ssrf.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"

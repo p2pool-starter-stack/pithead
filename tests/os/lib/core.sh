@@ -9,6 +9,12 @@ bad() {
     printf '  \033[1;31m✗\033[0m %s\n' "$1"
 }
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
+# The two hooks tests/integration/lib/skip-accounting.sh calls on a skip (it_warn) and on an
+# invented class (it_err): defined here, in this vocabulary, rather than pulled in from
+# tests/integration/lib.sh, which drags in the whole integration harness's globals and secret
+# redaction to get two printf wrappers.
+it_warn() { printf '  \033[1;33m!\033[0m %s\n' "$1" >&2; }
+it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
