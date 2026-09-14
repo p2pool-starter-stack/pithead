@@ -36,8 +36,15 @@ data_reset_repair_tools_present() { # <image-root> — 0 iff both tools are exec
 package_absent() { # <image-root> <package> — 0 iff a readable dpkg status has no exact package stanza
     local status="$1/var/lib/dpkg/status" rc=0
     [ -f "$status" ] && [ -s "$status" ] || return 1
-    grep -qxF "Package: $2" "$status" || rc=$?
-    [ "$rc" -eq 1 ]
+    awk -v wanted="$2" 'BEGIN { RS=""; FS="\n" }
+        { package = status = 0
+          for (i = 1; i <= NF; i++) {
+              if ($i ~ /^Package: /) { package++; if ($i == "Package: " wanted) found = 1 }
+              if ($i ~ /^Status: /) status++
+          }
+          if (package != 1 || status != 1) malformed = 1 }
+        END { exit malformed || !NR ? 2 : found ? 1 : 0 }' "$status" || rc=$?
+    [ "$rc" -eq 0 ]
 }
 
 # Compare the final exact wizard implementation in a single-image `docker save` archive. The Python

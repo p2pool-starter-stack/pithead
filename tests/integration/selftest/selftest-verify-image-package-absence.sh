@@ -26,8 +26,8 @@ mkdir -p "$TMP/present/var/lib/dpkg"
 printf 'Package: xxd\nStatus: install ok installed\n' >"$TMP/present/var/lib/dpkg/status"
 check "an installed xxd package is rejected" "$TMP/present" 1
 
-mkdir -p "$TMP/malformed/var/lib/dpkg/status"
-printf 'not a status file\n' >"$TMP/malformed/var/lib/dpkg/status/entry"
+mkdir -p "$TMP/malformed/var/lib/dpkg"
+printf 'not a status stanza\n' >"$TMP/malformed/var/lib/dpkg/status"
 check "malformed status metadata is rejected, not mistaken for absence" "$TMP/malformed" 1
 
 echo "selftest-verify-image-package-absence: $IT_PASS passed, $IT_FAIL failed"
