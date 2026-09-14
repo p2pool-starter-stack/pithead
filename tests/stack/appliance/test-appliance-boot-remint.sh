@@ -193,20 +193,30 @@ unset BR RM FV COVER rm_out BOOTSCRIPT l_loop l_reset l_ready l_elif l_remint l_
 echo "== unit: provisioning_settled — the restore leg waits on the provisioning UNITS, not on podman ps (#1945) =="
 # The wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps`
 # shows a live stack; the helper settles only when neither pithead-firstboot nor pithead-boot is
-# `activating`. Driven with a stubbed `_ssh` answering the two probes the helper makes; PS_FLIP=1
-# turns the first `activating` reading into `inactive` on the next, so the poll itself is exercised.
+# `activating` AND at least one of them actually ran (#2055 G3 — is-active alone cannot tell a
+# correctly-skipped unit from one that never got the chance). Driven with a stubbed `_ssh`
+# answering the ActiveState/ConditionResult probes the helper makes; PS_FLIP=1 turns the first
+# `activating` reading into `inactive` (having run) on the next, so the poll itself is exercised.
+# ConditionResult is derived from ActiveState: any state other than `unknown`/empty counts as
+# "ran" here, since none of these cases are about the ConditionResult discrimination itself — that
+# is covered on its own in test-appliance-boot-verdicts.sh's provisioning_ran_verdict block.
 PS="$SANDBOX/ps1945"
 mkdir -p "$PS"
-ps_run() { # $1 is-active output (printf %b), $2 seconds, $3 settled|state
+ps_run() { # $1 ActiveState pair (printf %b, "<firstboot>\n<boot>\n"), $2 seconds, $3 settled|state
     rm -f "$PS/seen"
     (
         PS_ACT="$1" PROVISIONING_POLL_S=0
+        _ps_cond() { case "$1" in unknown | '') printf no ;; *) printf yes ;; esac }
         _ssh() {
             case "$*" in
-            *is-active*)
-                if [ "${PS_FLIP:-0}" = 1 ] && [ -f "$PS/seen" ]; then printf 'inactive\ninactive\n'; else
+            *ActiveState*)
+                if [ "${PS_FLIP:-0}" = 1 ] && [ -f "$PS/seen" ]; then
+                    printf 'inactive\ninactive\nyes\nyes\n'
+                else
                     touch "$PS/seen"
-                    printf '%b' "$PS_ACT"
+                    # shellcheck disable=SC2046,SC2086  # intentional split: exactly two ActiveState words
+                    set -- $(printf '%b' "$PS_ACT")
+                    printf '%s\n%s\n%s\n%s\n' "${1:-}" "${2:-}" "$(_ps_cond "${1:-}")" "$(_ps_cond "${2:-}")"
                 fi
                 ;;
             *error.txt*) printf '%s' "${PS_ERR:-}" ;;
@@ -235,11 +245,11 @@ assert_rc "a partial one-unit probe is not a settled machine" "$?" "1"
 PS_RC=255 ps_run 'inactive\ninact' 1 settled
 assert_rc "a transport-truncated two-word probe is not a settled machine" "$?" "1"
 ps_run 'unknown\nunknown\n' 1 settled
-assert_rc "two unknown unit states are not a settled machine" "$?" "1"
+assert_rc "two unknown unit states are not a settled machine (unknown is neither terminal nor a ran-signal)" "$?" "1"
 PS_FLIP=1 ps_run 'activating\ninactive\n' 5 settled
 assert_rc "activating on the first read, inactive on the next: settled after one poll" "$?" "0"
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
-assert_contains "the verdict names both units" "$ps_out" "units: activating inactive"
+assert_contains "the verdict names both units" "$ps_out" "units: one provisioning unit ran this boot (firstboot: activating/ran=yes, boot: inactive/ran=yes)"
 assert_contains "…and the wizard's spooled error when there is one" "$ps_out" "setup error: [ERROR] Stack failed to start"
 ps_out=$(ps_run 'inactive\ninactive\n' 0 state)
 assert_not_contains "an empty spool: no error claimed" "$ps_out" "setup error"
