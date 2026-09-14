@@ -210,6 +210,8 @@ assert_contains "control unit disables systemd's start-limit (no permanent wedge
     "$(cat "$PCE/units/pithead-control.service")" "StartLimitIntervalSec=0"
 assert_contains "control unit retries on failure instead of needing a new trigger" \
     "$(cat "$PCE/units/pithead-control.service")" "Restart=on-failure"
+assert_contains "control unit paces its retry (RestartSec) rather than spinning" \
+    "$(cat "$PCE/units/pithead-control.service")" "RestartSec=15"
 
 # THE ONE THAT NEARLY GOT AWAY, same shape as the engine-pin regression above: a unit written
 # before this fix existed matches on its glob, ExecStart and engine env alone, so a template-only
