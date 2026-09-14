@@ -31,7 +31,7 @@ assert_contains "doctor: a LOCAL Tari node with no onion still warns (#103)" "$d
 # #1770: appliance remedies differ by onion key. P2Pool blocks apply while its onion is missing;
 # the other three are re-created by the next dashboard-triggered apply. Keep the host's CLI remedy
 # pinned too: dr_warn_surface must not change its first argument.
-doctor_missing_onions() { # <PITHEAD_APPLIANCE> -> all four missing-onion doctor rows
+doctor_missing_onions() { # <PITHEAD_APPLIANCE> [pithead path] -> all four missing-onion doctor rows
     cat >"$DOC/.env" <<EOF
 MONERO_ONION_ADDRESS=placeholder
 TARI_ONION_ADDRESS=placeholder
@@ -43,28 +43,42 @@ DEPLOYMENT_COMPLETED=true
 HOST_IP=box.lan
 COMPOSE_PROFILES=local_node,local_tari
 EOF
-    (cd "$DOC" && PITHEAD_APPLIANCE="$1" PATH="$DOC/bin:$PATH" ./pithead doctor 2>&1 | sed -n '/Tor onion addresses/,/^$/p')
+    (cd "$DOC" && PITHEAD_APPLIANCE="$1" PATH="$DOC/bin:$PATH" "${2:-./pithead}" doctor 2>&1 | sed -n '/Tor onion addresses/,/^$/p')
 }
-onion_row() { # <doctor-output> <key>
-    printf '%s\n' "$1" | sed -n "/$2 /p"
+onion_message() { # <doctor-output> <key> -> warning text, without terminal formatting
+    printf '%s\n' "$1" | sed -n "s/^.*\($2.*\)$/\1/p"
+}
+host_remedy_for() { # <key>
+    if [ "$1" = DASHBOARD_ONION_ADDRESS ]; then
+        printf "%s is not provisioned yet — re-run './pithead setup' or './pithead apply'." "$1"
+    else
+        printf "%s is not provisioned (value: 'placeholder') — re-run './pithead setup' to generate Tor hidden services." "$1"
+    fi
+}
+host_remedies_match() { # <doctor-output>
+    local key
+    for key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS P2POOL_ONION_ADDRESS DASHBOARD_ONION_ADDRESS; do
+        [ "$(onion_message "$1" "$key")" = "$(host_remedy_for "$key")" ] || return 1
+    done
 }
 doc_host="$(doctor_missing_onions 0)"
 for onion_key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS P2POOL_ONION_ADDRESS DASHBOARD_ONION_ADDRESS; do
-    if [ "$onion_key" = DASHBOARD_ONION_ADDRESS ]; then
-        host_remedy="DASHBOARD_ONION_ADDRESS is not provisioned yet — re-run './pithead setup' or './pithead apply'."
-    else
-        host_remedy="$onion_key is not provisioned (value: 'placeholder') — re-run './pithead setup' to generate Tor hidden services."
-    fi
-    assert_contains "doctor: host keeps each onion key's full CLI remedy (#1770)" \
-        "$(onion_row "$doc_host" "$onion_key")" "$host_remedy"
+    assert_eq "doctor: host keeps each onion key's exact CLI remedy (#1770)" \
+        "$(onion_message "$doc_host" "$onion_key")" "$(host_remedy_for "$onion_key")"
 done
+host_remedies_match "$doc_host"
+assert_rc "doctor: exact host-remedy guard accepts production wording (#1770)" "$?" "0"
+sed 's/to generate Tor hidden services\./to generate Tor hidden services. MUTATION/' "$DOC/pithead" >"$DOC/pithead-host-remedy-mutant"
+mutant_host="$(doctor_missing_onions 0 "$DOC/pithead-host-remedy-mutant")"
+host_remedies_match "$mutant_host"
+assert_rc "doctor: appended host-remedy text trips the exact guard (#1770)" "$?" "1"
 doc_appliance="$(doctor_missing_onions 1)"
-p2pool_row="$(onion_row "$doc_appliance" P2POOL_ONION_ADDRESS)"
+p2pool_row="$(onion_message "$doc_appliance" P2POOL_ONION_ADDRESS)"
 assert_contains "doctor: appliance P2Pool onion says console access is required (#1770)" "$p2pool_row" "correcting this needs console access"
 assert_not_contains "doctor: appliance P2Pool onion does not promise dashboard regeneration (#1770)" "$p2pool_row" "saving any change from the dashboard provisions it"
 for onion_key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS DASHBOARD_ONION_ADDRESS; do
-    onion_remedy="$(onion_row "$doc_appliance" "$onion_key")"
+    onion_remedy="$(onion_message "$doc_appliance" "$onion_key")"
     assert_contains "doctor: each regenerable appliance onion names dashboard apply (#1770)" "$onion_remedy" "saving any change from the dashboard provisions it"
     assert_not_contains "doctor: no regenerable appliance onion requires console access (#1770)" "$onion_remedy" "correcting this needs console access"
 done
-unset DOC doc_remote doc_local doc_host doc_appliance onion_key host_remedy p2pool_row onion_remedy doctor_onions doctor_missing_onions onion_row
+unset DOC doc_remote doc_local doc_host mutant_host doc_appliance onion_key p2pool_row onion_remedy doctor_onions doctor_missing_onions onion_message host_remedy_for host_remedies_match
