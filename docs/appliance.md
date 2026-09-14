@@ -306,7 +306,10 @@ Most of the configuration stays editable from the dashboard afterwards — see
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
 password, per-rig worker entries) can be set **here, at install**, but not changed from the
 dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts. Changing them later does not mean reinstalling: write the new settings to a
+redirect your payouts or repoint a rig's control address and token to one it controls. A
+shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
+not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
 media and power-cycle the machine is authority over it already, so that channel may set anything,
