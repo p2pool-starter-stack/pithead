@@ -412,7 +412,7 @@ jobs:
         run: uvx zizmor@1.25.2 --offline .github/workflows/
 
   compose:
-    name: Compose hardening + generated Caddyfile parsing
+    name: Compose config + security hardening
     if: github.event_name != 'schedule' # scheduled runs are the CVE sweep — build-images only (#833)
     runs-on: ubuntu-latest
     timeout-minutes: 15
