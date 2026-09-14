@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
+# Self-test e2e.sh's real per-mode phase composition against stubbed SSH (#1364).
 #
-# Self-test e2e.sh's exact per-mode phase composition (#1364).
-#
-# It runs the REAL run_harness out of e2e.sh (extracted, then evaluated against stubbed ssh) and
-# reads the phase list off the command that would have been launched — not off a re-implementation
-# of the gate, which would pass happily while the shipped file said something else.
-#
-# Standalone (not sourced by selftest.sh) so it never touches selftest.sh's own file-budget
-# ceiling — same reasoning as selftest-rigforge-apply-settle.sh. Run directly, or via
-# `make test-integration-selftest`. No server, no bench, no rig.
-#
+# Standalone and pure: no server, bench or rig.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,8 +42,10 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and prega
         exec </dev/null
         MODE="$1" BORROW_MINER="$2" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
         SCENARIO="${4:-}" RIGFORGE_BOOTSTRAP_VERSION="${5:-}"
-        REMOTE_NODE_ARGS=()
+        HARNESS_ARGS=() REMOTE_NODE_ARGS=() REMOTE_NODE_VALUES=()
         [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_ARGS=(--remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example)
+        [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_VALUES=(node.example 28081 28083 tari.example)
+        [ -z "${STUB_HARNESS:-}" ] || HARNESS_ARGS=(--scenario "$STUB_HARNESS")
         # rig_supply's inputs (#1378). MINER_HOST is what RIG_HOST defaults to; the token comes off
         # the stubbed on_miner, so the empty-token path is reachable by passing "".
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME="" IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
@@ -169,7 +163,12 @@ assert_eq "check forwards the complete remote endpoint set" "$(phase_set "$REMOT
     "--check --no-mining-asserts --remote-monero-host --remote-monero-rpc-port --remote-monero-zmq-port --remote-tari-host 28081 28083 node.example tari.example "
 REMOTE_PREGATE="$(STUB_REMOTE=1 pregate_of targeted 0)"
 assert_contains "targeted readiness/check pregate receives the remote Monero host" "$REMOTE_PREGATE" "--remote-monero-host node.example"
+assert_contains "targeted pregate receives the remote Monero RPC port" "$REMOTE_PREGATE" "--remote-monero-rpc-port 28081"
+assert_contains "targeted pregate receives the remote Monero ZMQ port" "$REMOTE_PREGATE" "--remote-monero-zmq-port 28083"
 assert_contains "targeted readiness/check pregate receives the remote Tari host" "$REMOTE_PREGATE" "--remote-tari-host tari.example"
+FOCUSED_REMOTE="$(STUB_HARNESS=remote-pruned-main-secure-tari compose_phases targeted 0)"
+assert_eq "harness args replace the mode preset for a narrow bench job" "$(phase_set "$FOCUSED_REMOTE")" \
+    "--no-mining-asserts --scenario remote-pruned-main-secure-tari "
 
 echo "== --no-miner: no rig means no rig phases, and the mining asserts are skipped (#905) =="
 NOMINER="$(compose_phases targeted 0)"
@@ -439,7 +438,7 @@ echo "== the flag e2e.sh emits is one run.sh actually parses =="
 # (--rig-host <host>, --rig-control-port <port>), and a value is not something run.sh's parser sees.
 for flag in $(printf '%s %s %s %s %s %s' "$TARGETED" "$MATRIX" "$FOCUSED_MATRIX" "$CHECK" "$REMOTE_CHECK" "$NOMINER" | tr ' ' '\n' | grep '^--' | LC_ALL=C sort -u); do
     assert_eq "run.sh's arg parser accepts '$flag'" \
-        "$(grep -cE "^[[:space:]]*.*${flag}.*\)" "$RUN_SRC" | awk '{print ($1>0)?"yes":"no"}')" "yes"
+        "$(grep -cE "^[[:space:]]*([^#]*\|[[:space:]]*)?${flag}([[:space:]]*\|[^)]*)?\)" "$RUN_SRC" | awk '{print ($1>0)?"yes":"no"}')" "yes"
 done
 
 echo "== borrow_miner's recovery block, fired on known instances (#1178) =="

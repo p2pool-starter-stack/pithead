@@ -30,7 +30,7 @@ capture_launch() { # <rollback> <pools>
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
-        REMOTE_NODE_ARGS=()
+        HARNESS_ARGS=() REMOTE_NODE_ARGS=() REMOTE_NODE_VALUES=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         IT_RIG_TOKEN=tok IT_RIG_ROLLBACK_CHANGES="$1" IT_RIG_POOLS_PROBE="$2"
         # shellcheck disable=SC2034 # read by the eval'd real run_harness

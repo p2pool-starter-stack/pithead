@@ -1,16 +1,11 @@
 # shellcheck shell=bash
-# Shared library for the Pithead integration test harness (tests/integration/).
-# This file is *sourced*, never executed. It defines pure helpers (config rendering,
-# expectation derivation, redaction) plus thin I/O wrappers (run a command on the target,
-# poll for readiness) that the runner and the self-test build on. Keeping the pure logic
-# here lets tests/integration/selftest/selftest.sh exercise it without a real server.
-#
-# Target model: every command runs *on the box* — either over SSH or, with --local, directly.
-# Reads (dashboard JSON, pithead status) therefore behave identically in both modes, and we
-# never depend on the runner being able to resolve the box's dashboard hostname.
+# Shared integration helpers: pure config/expectation/redaction logic and thin target I/O.
+# Every target command runs over SSH or, with --local, directly on the box.
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
 
+valid_remote_host() { [[ -n "$1" && ${#1} -le 253 && "$1" != *[!A-Za-z0-9._:-]* ]]; }
+valid_tcp_port() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -33,14 +28,22 @@ it_err() { echo -e "${IT_RED}[ITEST]${IT_RESET} $1" >&2; }
 it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
 
 # --- Secrets hygiene --------------------------------------------------------
-# Redact before anything reaches a log or the terminal. FIVE shapes: KEY=value and JSON "key": "value"
-# share ONE key-SUFFIX vocabulary — add SPELLINGS to BOTH (#1587; #1590 case-insensitive JSON-side;
-# #1611, they had drifted); --flag by NAME; >=90 chars by SHAPE; --wallet/--merge-mine's next token by
-# POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
+# Redact secrets and private addresses before output (#1587/#1590/#1596/#1609/#1611/#1613).
 redact() {
     sed -E \
         -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
         -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
+}
+
+redact_remote_output() {
+    local line value
+    while IFS= read -r line; do
+        line="$(printf '%s\n' "$line" | redact)"
+        for value in "${REMOTE_NODE_VALUES[@]}"; do
+            [ -z "$value" ] || line="${line//"$value"/<redacted-endpoint>}"
+        done
+        printf '%s\n' "$line"
+    done
 }
 
 # --- Assertions -------------------------------------------------------------
@@ -121,12 +124,9 @@ render_scenario_config() {
     printf '%s' "$baseline_json" | jq "$program"
 }
 
-# Decide whether a scenario can run on this box, augmenting its overrides where needed (an alt
-# data dir for the prune axis, a remote endpoint for remote mode). On success sets RESOLVED to
-# the final override string and returns 0; on a missing prerequisite sets SKIP_REASON and
-# returns 1 — no silent drops, and never a prune flip on the canonical synced DB (which would
-# invalidate it). Reads the globals BASELINE_PRUNE / PRUNED_DATA_DIR / FULL_DATA_DIR /
-# REMOTE_MONERO_HOST (+_RPC_PORT/_ZMQ_PORT) / REMOTE_TARI_HOST / IT_MONERO_VIEW_KEY / IT_TARI_VIEW_KEY /
+# Resolve prerequisites without silently dropping rows or flipping the canonical DB. Reads
+# BASELINE_PRUNE / PRUNED_DATA_DIR / FULL_DATA_DIR / REMOTE_MONERO_HOST (+_RPC_PORT/_ZMQ_PORT) /
+# REMOTE_TARI_HOST / IT_MONERO_VIEW_KEY / IT_TARI_VIEW_KEY /
 # IT_TARI_SPEND_PUBLIC_KEY (all optional). Pure given those globals, so the self-test exercises it.
 RESOLVED=""
 SKIP_REASON=""
