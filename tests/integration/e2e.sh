@@ -52,7 +52,6 @@ SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
 BRANCH=""
-
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -172,7 +171,6 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o Ser
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
 on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
-
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
 MINER_CFG_BACKUP=""
@@ -569,7 +567,9 @@ borrow_miner() {
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
     repoint_miner || die "Failed to repoint the miner config."
-    wait_workers "$WORKERS" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
+    local baseline_workers=1
+    [ "$WORKERS" -lt 3 ] 2>/dev/null && baseline_workers="$WORKERS"
+    wait_workers "$baseline_workers" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
 }
 
 # --- Phase 4: deploy the branch ---------------------------------------------

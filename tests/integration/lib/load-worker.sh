@@ -16,8 +16,11 @@ start_load_worker() {
     LOAD_WORKER_CONFIG="/tmp/$LOAD_WORKER_NAME.json"
     LOAD_WORKER_LOG="/tmp/$LOAD_WORKER_NAME.log"
     LOAD_WORKER_METRICS="/tmp/$LOAD_WORKER_NAME.metrics"
-    bin="$(on_miner 'p=$(pgrep -xo xmrig 2>/dev/null || true); [ -z "$p" ] || readlink -f "/proc/$p/exe"; command -v xmrig 2>/dev/null' | head -n1)"
-    [ -n "$bin" ] || return 1
+    bin="$(on_miner "for b in $(quote_arg "${MINER_XMRIG_CONFIG%/*}/xmrig") \$(command -v xmrig 2>/dev/null); do [ -x \"\$b\" ] && { printf '%s\\n' \"\$b\"; break; }; done")"
+    [ -n "$bin" ] || {
+        warn "cannot find the borrowed rig's XMRig binary"
+        return 1
+    }
     on_miner "jq --arg name $(quote_arg "$LOAD_WORKER_NAME") '.pools[0].user = \$name' $(quote_arg "$MINER_XMRIG_CONFIG") > $(quote_arg "$LOAD_WORKER_CONFIG")" || return 1
     LOAD_WORKER_PID="$(on_miner "nohup $(quote_arg "$bin") --config $(quote_arg "$LOAD_WORKER_CONFIG") --threads=1 >$(quote_arg "$LOAD_WORKER_LOG") 2>&1 & echo \$!")"
     [[ "$LOAD_WORKER_PID" =~ ^[0-9]+$ ]] || return 1
