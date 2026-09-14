@@ -72,11 +72,16 @@ to a digest, so a CVE in the bytes users are running is caught after one.
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
 ([#1377](https://github.com/p2pool-starter-stack/pithead/issues/1377)).
-[`scheduled-run-watch.yml`](../../.github/workflows/scheduled-run-watch.yml) is that run's reader:
-it runs at 08:00 the same morning, reads the sweep's own run history, and keeps one tracking issue
-up to date with the result and the six most recent scheduled runs. Six rows rather than one because
-a single red says little and a streak says the gate has stopped being an instrument — the weekly
-link check was red for nine consecutive Mondays before anyone noticed
+[`scheduled-run-watch.yml`](../../.github/workflows/scheduled-run-watch.yml) is that run's reader.
+It runs every Monday at 08:00 UTC, enumerates every workflow with a declared `schedule:`, and reads
+each workflow's server-filtered scheduled-run history. The report marks a run LATE after 12 hours
+and MISSED after one full declared period. LATE is informational and MISSED is a reported finding;
+neither makes the watcher fail. A schedule with no history gets one full period from the commit that
+declared its cron before it can be MISSED. Every MISSED row names its nominal slot and links the runs
+that bound the gap; when the gap starts at the declaration boundary, it names that boundary and the
+first observed run. The issue also keeps the sweep result and its six most recent runs.
+Six rows rather than one because a single red says little and a streak says the gate has stopped
+being an instrument — the weekly link check was red for nine consecutive Mondays before anyone noticed
 ([#1419](https://github.com/p2pool-starter-stack/pithead/issues/1419)).
 
 It reports on every run, not only on failures. A notifier that speaks only when something breaks
@@ -85,9 +90,11 @@ or failed, and stamps the date of the last fully successful check. Its own run g
 the watch could not work out what happened: an unfinished sweep, a run history it could not read,
 and a failure whose jobs it could not name are all reported as unchecked, never as clean.
 
-What it does not cover is a scheduled run that never happens. GitHub drops scheduled runs under
-load, and a dropped run leaves no history to read, so the gap shows up to a person reading the
-table and to nothing else ([#1418](https://github.com/p2pool-starter-stack/pithead/issues/1418)).
+The watcher includes its own schedule in the table, but it cannot announce its own absence. A
+GitHub-wide schedule shutdown, including the 60-day inactivity case, stops both a target and its
+in-repository observer. The carried-forward successful-check stamp makes that gap readable to an
+observer outside GitHub. A bench nightly or developer tick is where that external assertion belongs;
+this workflow does not claim it ([#1418](https://github.com/p2pool-starter-stack/pithead/issues/1418)).
 
 ## Published images: GHCR, single-tag model
 

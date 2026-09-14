@@ -268,4 +268,4 @@ If this stack saved you time, donations to this XMR wallet are appreciated:
 Pithead's own code is provided "as-is" under the [MIT License](./LICENSE). Bundled
 third-party components keep their own licenses (two, `p2pool` and `xmrig-proxy`, are GPLv3,
 shipped unmodified as separate containers). See
-[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
+[`docs/THIRD_PARTY_LICENSES.md`](./docs/THIRD_PARTY_LICENSES.md).
