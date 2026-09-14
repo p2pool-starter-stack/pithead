@@ -114,19 +114,24 @@ phase_stack() {
         rm -f "$jar"
         return 1
     }
-    local cfg scode
+    local cfg scode sbody
     cfg=$(stack_browser_config "$WIZ_STATE" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
         bad "stack: remote-node config could not be shaped"
         rm -f "$jar"
         return 1
     }
+    sbody=$(mktemp)
     scode=$(curl -sSk -b "$jar" --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
-        "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
+        "https://$ip/submit" -o "$sbody" -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
-        bad "stack: remote-node config submit did not return 200 (got ${scode:-none})"
-        rm -f "$jar"
+        # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
+        # and 400s with the probe's own reason — surface it, not just the status code, since a
+        # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
+        bad "stack: remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        rm -f "$jar" "$sbody"
         return 1
     }
+    rm -f "$sbody"
     if [ -n "$th" ]; then
         ok "stack: remote-node config submitted (monero.mode=remote, tari.mode=remote)"
     else
