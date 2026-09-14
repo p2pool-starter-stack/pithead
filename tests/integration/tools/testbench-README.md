@@ -52,9 +52,10 @@ A workable layout (adjust to taste):
   dense and compacting it would reclaim nothing. An earlier version of this line promised
   "~95 GiB" and told you to compact anything reading ~250 GiB; that figure was never measured.
   **Do not use this chain as a normally pruned-node sizing reference.** Its source already had a
-  pruning seed, so Monero 0.18.5.0's `--copy-pruned-database` path copied `txs_prunable` and
-  `txs_prunable_tip` verbatim instead of running the prune routine
-  ([source](https://github.com/monero-project/monero/blob/v0.18.5.0/src/blockchain_utilities/blockchain_prune.cpp#L584-L627)).
+  pruning seed, so the bench tool's Monero 0.18.5.0 `--copy-pruned-database` path copied
+  `txs_prunable` and `txs_prunable_tip` verbatim instead of running the prune routine. That source
+  block is identical in the stack's pinned Monero 0.18.5.1
+  ([source](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_utilities/blockchain_prune.cpp#L584-L627)).
   The dense output proves what this source retained, not what a normal prune retains. A separate
   from-genesis pruned node also reached 285.8 GB, but its freelist was not measured, so its file
   size cannot distinguish live data from LMDB high-water space
