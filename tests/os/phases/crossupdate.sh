@@ -84,23 +84,39 @@ phase_crossupdate() {
     }
     ok "candidate installed into the spare slot"
 
-    _reboot_wait "$(_boot_spare_cmd)" 300 || {
-        bad "guest never returned after booting the candidate slot"
+    # NO harness mark-good, and no harness reboot after it (#2056 review, round 2): on a
+    # PROVISIONED machine the product owns the commit decision. pithead-boot's gate requires BOTH
+    # signals — the stack SERVING and `pithead doctor --json` passing — before it runs
+    # `rauc status mark-good` itself (os/overlay/pithead-boot). A harness commit pre-empts that
+    # decision and can interrupt the gate mid-loop, which would make this leg prove the updater
+    # mechanism again instead of the thing it exists for: that the candidate converges on state an
+    # older version wrote. So wait out the product's terminal verdict and assert on THAT — the same
+    # shape as the rig leg's self-commit assertion, read off the same grubenv record. The gate loops
+    # 90x10s after its own `pithead up`, so the budget here is deliberately generous.
+    info "waiting for pithead-boot's own commit gate (serving + doctor) to reach a terminal verdict"
+    local genv="" boot_verdict="" gate_tries=0
+    while [ "$gate_tries" -lt 150 ]; do
+        genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+        case "$genv" in *B_OK=1*B_TRY=0* | *B_TRY=0*B_OK=1*) break ;; esac
+        # The other terminal state: the gate gave up, said so on the console, and rebooted to fall
+        # back — so the line belongs to this boot or to the one before it.
+        boot_verdict=$(_ssh "{ journalctl -b -u pithead-boot --no-pager -o cat; journalctl -b -1 -u pithead-boot --no-pager -o cat; } 2>/dev/null | grep -a 'slot left uncommitted' | tail -1" 2>/dev/null | tr -d '\r')
+        [ -n "$boot_verdict" ] && break
+        sleep 10
+        gate_tries=$((gate_tries + 1))
+    done
+    case "$genv" in
+    *B_OK=1*B_TRY=0* | *B_TRY=0*B_OK=1*)
+        ok "pithead-boot's gate committed the candidate slot itself (B_OK=1 B_TRY=0) — serving + doctor, no harness hands"
+        ;;
+    *)
+        bad "the candidate slot was never committed by pithead-boot's gate${boot_verdict:+ — it reported: $boot_verdict} (grubenv: ${genv:-unreadable})"
+        # What the gate's own doctor run held on: it writes each round's verdict to /run, so the
+        # last one names the blocking check rather than leaving "never committed" unexplained.
+        info "  gate doctor fails: $(_ssh "jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")' /run/pithead-boot-doctor.json" 2>/dev/null | tr -d '\r' | cut -c1-300)"
         return
-    }
-    _ssh "$(_commit_cmd)" || {
-        bad "commit failed ($(_commit_cmd))"
-        return
-    }
-    ok "committed the cross-version update"
-    _reboot_wait reboot 300 || {
-        bad "guest never returned after the post-commit reboot"
-        return
-    }
-    _wait_ssh 240 || {
-        bad "guest SSH never came back after the cross-version update ($(_ssh_unreachable_reason "$ip"))"
-        return
-    }
+        ;;
+    esac
 
     local marker
     marker=$(_ssh cat /etc/pithead-test-marker)
@@ -121,10 +137,49 @@ phase_crossupdate() {
         bad "SSH host-key fingerprint changed across the cross-version update (old: ${hostkey_fp_old:-none}, new: ${hostkey_fp_new:-none})"
     fi
 
+    # Persistence half: the file the OLDER version wrote is still on /data after a whole-slot
+    # replacement. On its own this proves only that the slot swap left /data alone (#1091's lesson:
+    # a grep of a config file is not proof anything RUNS it), so the runtime half follows.
     if _ssh "grep -q \"$HARNESS_WALLET\" /data/pithead/config.json"; then
-        ok "the old version's provisioned config is still honoured after the update"
+        ok "the config the old version wrote survived the slot swap"
     else
-        bad "the old version's provisioned config did not survive the update"
+        bad "the config the old version wrote did not survive the slot swap"
+    fi
+
+    # Runtime half: the --wallet the CANDIDATE's own start path rendered into the p2pool container,
+    # read back out of live state with `podman inspect`. That is the older version's configuration
+    # being honoured by new code, which is the whole point of a cross-version leg. Same verdict
+    # helper (and same reasoning) the restore leg uses, so it is fixture-tested at tier 1.
+    names=""
+    deadline=$(($(date +%s) + 900))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
+        case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
+        sleep 15
+    done
+    local live_wallet="" wdeadline verdict
+    wdeadline=$(($(date +%s) + 180))
+    while [ "$(date +%s)" -lt "$wdeadline" ]; do
+        live_wallet=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}'" 2>/dev/null | jq -r 'index("--wallet") as $i | if $i == null then "" else .[$i+1] // "" end')
+        [ -n "$live_wallet" ] && [ "$live_wallet" != "Unknown" ] && [ "$live_wallet" != "null" ] && break
+        sleep 10
+    done
+    if verdict=$(restore_live_state_verdict "$names" "$live_wallet" "$HARNESS_WALLET"); then
+        ok "post-update runtime config: $verdict"
+    else
+        bad "post-update runtime config: $verdict"
+        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
+    fi
+
+    # The COMPLETE stack, judged by the product's own contract instead of a hand-written container
+    # list: `pithead doctor --json` is the exact command the boot gate runs, and it REFUSES a slot
+    # whose revenue containers are down while caddy keeps serving (#852). Sync-held miners (#35) are
+    # not failures to it, so this stays honest on a freshly converged guest rather than demanding a
+    # synced chain the leg cannot reach.
+    if _ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json >/dev/null 2>&1"; then
+        ok "the converged candidate passes the product's own doctor contract (the complete stack, not just a boot)"
+    else
+        bad "doctor refuses the converged candidate stack: $(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json 2>/dev/null | jq -r '[.checks[]? | select(.status==\"fail\") | .message] | join(\"; \")'" 2>/dev/null | tr -d '\r' | cut -c1-300)"
     fi
 
     # Transient healthcheck ephemera excluded, same as the reboot leg's check (provision-reboot.sh):
