@@ -27,11 +27,16 @@ OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$(mktemp)" PASS=0 FAIL=0 KEEP=1
 VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
 # shellcheck source=tests/os/lib/core.sh
 source "$HERE/lib/core.sh" || exit $?
+SSH_ERR="$SERIAL.ssh-error"
 _ssh_command_mutates_control 'systemctl stop pithead-control.path' || exit 1
 _ssh_command_mutates_control 'unit=pithead-control.service; systemctl disable --now "$unit"' || exit 1
 _ssh_command_mutates_control 'systemctl daemon-reload; systemctl start pithead-control.{path,service}' || exit 1
 ! _ssh_command_mutates_control 'systemctl is-active pithead-control.service' || exit 1
 ! _ssh_command_mutates_control 'journalctl -u pithead-control.service' || exit 1
+timeout() { return 124; }
+_ssh 'systemctl stop pithead-control.path' >/dev/null 2>&1
+[ "$?" -eq 125 ] && grep -Fq 'refused a pithead-control lifecycle mutation' "$SSH_ERR" || exit 1
+unset -f timeout
 # shellcheck source=tests/os/phases/boot.sh
 source "$HERE/phases/boot.sh" || exit $?
 # shellcheck source=tests/os/phases/update.sh
@@ -53,5 +58,5 @@ source "$HERE/phases/reset.sh" || exit $?
 trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
-rm -f "$SERIAL" "$SERIAL.failed"
+rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR"
 echo "os-run-modules: PASS"
