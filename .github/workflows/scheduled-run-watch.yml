@@ -42,8 +42,8 @@ on:
     - cron: "0 8 * * 1"
   workflow_dispatch:
 
-# Least privilege (#282). `actions: read` is what lets the job read ci.yml's own run history — it
-# is a read of this repo's Actions metadata and nothing else. `issues: write` is the job's one
+# Least privilege (#282). `actions: read` lets the job read this repo's scheduled-run histories
+# and nothing else. `issues: write` is the job's one
 # output: it never pushes, comments on a PR, or publishes.
 permissions:
   actions: read
