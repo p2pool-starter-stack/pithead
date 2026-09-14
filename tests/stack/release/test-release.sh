@@ -103,10 +103,16 @@ case "$(bash "$REL" --help 2>&1)" in
 *"set -euo pipefail"*) bad "release --help stops at the comment header" "leaked the script body into --help" ;;
 *) ok "release --help stops at the comment header" ;;
 esac
-CUT_DOC="$(sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md")"
-BRANCH_DOC="$(sed -n '/^### Branch mechanics/,/^### Pipeline:/p' "$ROOT/docs/dev/releasing.md")"
+CUT_DOC="$(
+    sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md" |
+        tr '\n' ' ' | tr -s ' '
+)"
+BRANCH_DOC="$(
+    sed -n '/^### Branch mechanics/,/^### Pipeline:/p' "$ROOT/docs/dev/releasing.md" |
+        tr '\n' ' ' | tr -s ' '
+)"
 assert_contains "release runbook sets the CHANGELOG heading date at the cut (#1828)" "$CUT_DOC" \
-    "heading's date to the current UTC date"
+    "set its heading to the current UTC date"
 assert_contains "appliance gates, builds and tag use the final cut commit (#1828)" "$CUT_DOC" \
     "Every gate, build and tag below uses that final cut commit"
 assert_contains "canonical release pipeline uses the final cut commit (#1828)" "$BRANCH_DOC" \
