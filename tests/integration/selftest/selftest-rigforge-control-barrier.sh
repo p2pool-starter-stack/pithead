@@ -58,6 +58,15 @@ assert_eq "a failed baseline write prevents apply from validating stale config" 
 assert_eq "nested read and failed cleanup are both visible" "$IT_FAIL" "2"
 early_ok=$([ "$rc" -eq 1 ] && [ ! -e "$TMP/write-called" ] && [ "$APPLIES" -eq 1 ] && [ "$IT_FAIL" -eq 2 ] && echo 1 || echo 0)
 
+echo "== an unreadable current config never reaches push_config =="
+IT_FAIL=0 PUSHES=0
+rx() { :; }
+push_config() { PUSHES=$((PUSHES + 1)); }
+run_rigforge_control >/dev/null 2>&1
+unreadable_rc=$?
+assert_eq "an unreadable current config returns nonzero" "$unreadable_rc" "1"
+assert_eq "an unreadable current config is never pushed" "$PUSHES" "0"
+
 echo "== a late RigForge assertion blocks later destructive phases =="
 IT_FAIL=0 RUN_RIGFORGE=0 RIGFORGE_BOOTSTRAP_VERSION=""
 BASELINE_CONFIG='{"dashboard":{"control":{"enabled":false}},"workers":{"api_port":8080,"list":[{"name":"rig1","host":"rig"}]}}'

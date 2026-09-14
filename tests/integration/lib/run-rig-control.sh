@@ -52,6 +52,10 @@ run_rigforge_control() {
 
     local current_config have_host inject=0
     current_config="$(rx 'cat config.json')"
+    if ! printf '%s' "$current_config" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        it_fail "read current config before RigForge control" "config.json is not a JSON object"
+        return 1
+    fi
     have_host="$(printf '%s' "$current_config" | jq -r --arg n "$rig" 'first((.workers.list // [])[] | select(.name==$n) | .host) // empty' 2>/dev/null)"
     if [ -z "$have_host" ]; then
         if [ -n "$RIG_HOST" ] && [ -n "${IT_RIG_TOKEN:-}" ]; then
