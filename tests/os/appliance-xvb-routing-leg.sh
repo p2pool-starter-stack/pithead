@@ -6,16 +6,17 @@
 _xvb_payload() { # <mode> -> base64 Python that calls the real controller actuator
     case "$1" in P2POOL | XVB) ;; *) return 2 ;; esac
     printf '%s\n' "import asyncio" "from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient" \
+        "from mining_dashboard.config.config import PROXY_API_PORT, PROXY_AUTH_TOKEN, PROXY_HOST" \
         "from mining_dashboard.service.storage_service import StateManager" \
         "from mining_dashboard.service.xvb.algo_service import AlgoService" \
-        "asyncio.run(AlgoService(StateManager(), XMRigProxyClient(), None).switch_miners('$1'))" |
+        "asyncio.run(AlgoService(StateManager(), XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN), None).switch_miners('$1'))" |
         base64 | tr -d '\n'
 }
 
 _xvb_guest_python() { _ssh "printf %s '$1' | base64 -d | podman exec -i dashboard python3 -"; }
 
 _xvb_proxy_pools() {
-    _ssh "podman exec dashboard python3 -c 'import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; print(json.dumps(XMRigProxyClient().get_config().get(\"pools\", [])))'"
+    _ssh "podman exec dashboard python3 -c 'import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_API_PORT, PROXY_AUTH_TOKEN, PROXY_HOST; print(json.dumps(XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_config().get(\"pools\", [])))'"
 }
 
 _xvb_real_tor_fetch() {
@@ -24,7 +25,7 @@ _xvb_real_tor_fetch() {
     _xvb_guest_python "$payload"
 }
 
-phase_provision_xvb_routing() { # <dashboard user> <dashboard password>
+phase_provision_xvb_routing() ( # <dashboard user> <dashboard password>
     # shellcheck disable=SC2034 # dashboard_curl reads these through dynamic scope.
     local DASH_USER="$1" DASH_PASS="$2" pools state rc=0
     info "provision leg — bounded XvB routing injection"
@@ -38,7 +39,7 @@ phase_provision_xvb_routing() { # <dashboard user> <dashboard password>
         bad "held xmrig-proxy could not start for the bounded XvB actuator injection"
         return
     }
-    trap '_ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true' RETURN
+    trap '_ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true' EXIT
     if ! _xvb_guest_python "$(_xvb_payload XVB)"; then
         bad "controller actuator could not switch the live proxy to XvB"
         return
@@ -70,9 +71,12 @@ phase_provision_xvb_routing() { # <dashboard user> <dashboard password>
         rc=1
     fi
     return "$rc"
-}
+)
 
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
-    [ -n "$(_xvb_payload XVB)" ] && [ -n "$(_xvb_payload P2POOL)" ] && ! _xvb_payload SPLIT >/dev/null || exit 1
+    payload="$(_xvb_payload XVB)"
+    [ -n "$payload" ] && [ -n "$(_xvb_payload P2POOL)" ] &&
+        printf '%s' "$payload" | base64 -d | grep -q 'XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)' &&
+        ! _xvb_payload SPLIT >/dev/null || exit 1
     echo "appliance-xvb-routing-leg self-test passed"
 fi
