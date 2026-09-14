@@ -44,8 +44,10 @@ control_units_owner_dir() {
 provision_control_runner() {
     [ "$OS_TYPE" == "Linux" ] || return 0
     command -v systemctl >/dev/null 2>&1 || return 0
-    local unit_dir
+    local unit_dir engine
     unit_dir=$(control_unit_dir)
+    # The engine this install was provisioned WITH, pinned into the unit below (#2059).
+    engine=$(container_engine)
     # Enablement must be --runtime wherever the units are runtime units: on the appliance's
     # read-only root, systemd cannot write the /etc symlink a persistent enable needs.
     local -a enable_args=(enable --now)
@@ -80,8 +82,14 @@ provision_control_runner() {
     # Already installed for this checkout — keep the routine apply sudo-free. (-F: both paths
     # are literals — versioned dirs carry dots (pithead-v1.9.3), and the glob star must not
     # read as a regex repeat.)
+    #
+    # The engine pin is part of the skip condition, not just the template (#2059). A unit written
+    # before that pin existed matches on its glob and ExecStart alone, so a template-only fix would
+    # be silently inert on every box already provisioned — including the one the defect was measured
+    # on. Falling through costs one sudo write, once, and then converges.
     if grep -qsF "PathExistsGlob=$CONTROL_DIR/requests/*.json" "$unit_dir/pithead-control.path" &&
-        grep -qsF "ExecStart=$PWD/pithead control-run-pending" "$unit_dir/pithead-control.service"; then
+        grep -qsF "ExecStart=$PWD/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
+        grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service"; then
         return 0
     fi
     # The grep above is an idempotence skip, not an ownership check. The removal branch got its
@@ -118,6 +126,21 @@ Description=pithead dashboard control runner (#33)
 Type=oneshot
 User=root
 WorkingDirectory=$PWD
+# Pin the engine (#2059). A systemd unit does NOT read /etc/environment — that is PAM, for login
+# shells — so the appliance image's own PITHEAD_ENGINE pin never reaches a unit, which is why
+# pithead-boot, pithead-firstboot and pithead-setup-again each set it explicitly. This unit is
+# rendered here rather than shipped in os/overlay/, and it was the one that did not.
+#
+# Without it container_engine() falls through to probing, and the probe prefers docker — which
+# EXISTS on the appliance, as podman-docker ships /usr/bin/docker as a shim onto podman. So every
+# dashboard-driven apply took the DOCKER branch on a podman/netavark box: it deleted the live
+# inet pithead_egress table and reinstalled the rules into DOCKER-USER, a chain netavark never
+# jumps to, leaving clearnet egress fail-open with the boot log reporting it enforced. That is
+# #855's failure mode arriving through the one path #855 did not cover.
+#
+# DETECTED, never hardcoded to podman: the same renderer runs on the DIY channel, where docker is
+# the correct answer. What the unit inherits is whatever the install itself was provisioned with.
+Environment=PITHEAD_ENGINE=$engine
 ExecStart=$PWD/pithead control-run-pending
 EOF
     sudo tee "$unit_dir/pithead-control.path" >/dev/null <<EOF

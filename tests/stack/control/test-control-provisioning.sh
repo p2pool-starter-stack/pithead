@@ -149,3 +149,71 @@ assert_contains "install: own drifted unit -> converged (rewritten in place)" \
 assert_contains "install: no units at all -> fresh install unaffected by the guard" \
     "$(pci_run - "$PCI/mine")" "sudo:tee $PCI/units/pithead-control.service"
 unset PCI pci_run out
+
+echo "== unit: the rendered control unit PINS the engine it was provisioned with (#2059) =="
+# The #2059 root cause, measured on the bench: pithead-control.service was the ONE pithead unit
+# with no PITHEAD_ENGINE. A systemd unit does not read /etc/environment (that is PAM), so the
+# appliance image's pin never reached it, container_engine() fell through to probing, and the probe
+# prefers `docker` — which EXISTS there as podman-docker's shim. Every dashboard-driven apply then
+# took the Docker branch on a podman/netavark box: it deleted the live `inet pithead_egress` table
+# and reinstalled into DOCKER-USER, a chain netavark never jumps to. Two doctor runs four seconds
+# apart on the same guest proved the variable: engine pinned -> exit 0, unpinned -> FAIL.
+#
+# These write for real (a sudo that execs) rather than recording calls, because the assertions are
+# about the unit's CONTENT, not about whether tee was reached.
+PCE="$SANDBOX/pce"
+mkdir -p "$PCE/units" "$PCE/bin" "$PCE/mine/data/control"
+printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$PCE/bin/uname"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$PCE/bin/systemctl"
+printf '#!/usr/bin/env bash\nexec "$@"\n' >"$PCE/bin/sudo"
+chmod +x "$PCE/bin/uname" "$PCE/bin/systemctl" "$PCE/bin/sudo"
+
+pce_run() { # <engine> — render into $PCE/units with PITHEAD_ENGINE pinned to <engine>
+    (
+        cd "$PCE/mine" || exit
+        PATH="$PCE/bin:$PATH"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        log() { :; }
+        PITHEAD_ENGINE="$1" PITHEAD_UNIT_DIR="$PCE/units" DASHBOARD_CONTROL_ENABLED=true \
+            CONTROL_DIR="$PCE/mine/data/control" provision_control_runner >/dev/null 2>&1
+    )
+}
+pce_seed_matching_path() { printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCE/mine" >"$PCE/units/pithead-control.path"; }
+
+rm -f "$PCE/units"/*
+pce_run podman
+assert_contains "control unit pins the engine on a podman install" \
+    "$(cat "$PCE/units/pithead-control.service")" "Environment=PITHEAD_ENGINE=podman"
+# DETECTED, not hardcoded: the same renderer runs on the DIY Docker channel, where docker is right.
+# A fix that pinned podman unconditionally would break every Docker host, and would pass a test
+# that only ever checked the appliance.
+rm -f "$PCE/units"/*
+pce_run docker
+assert_contains "control unit pins DOCKER on a docker install, not a hardcoded podman" \
+    "$(cat "$PCE/units/pithead-control.service")" "Environment=PITHEAD_ENGINE=docker"
+assert_not_contains "the docker render carries no podman pin" \
+    "$(grep '^Environment=' "$PCE/units/pithead-control.service")" "podman"
+
+# THE ONE THAT NEARLY GOT AWAY. The idempotence skip returns early when the .path glob and the
+# ExecStart both match — which a unit written BEFORE the pin existed does. So a template-only fix
+# is silently inert on every already-provisioned box, including the one the defect was measured on.
+# The pin is part of the skip condition for exactly this reason.
+rm -f "$PCE/units"/*
+pce_seed_matching_path
+printf '[Service]\nType=oneshot\nUser=root\nWorkingDirectory=%s\nExecStart=%s/pithead control-run-pending\n' \
+    "$PCE/mine" "$PCE/mine" >"$PCE/units/pithead-control.service"
+pce_run podman
+assert_contains "a pre-pin unit is RE-RENDERED, not skipped (the fix reaches existing installs)" \
+    "$(cat "$PCE/units/pithead-control.service")" "Environment=PITHEAD_ENGINE=podman"
+
+# Control for the row above: the skip must still hold once the unit is correct, or the "fix" is
+# just a deleted idempotence check that rewrites the unit on every apply.
+pce_seed_matching_path
+cp "$PCE/units/pithead-control.service" "$PCE/units/.before"
+pce_run podman
+assert_eq "an already-pinned unit is still skipped (idempotence not simply removed)" \
+    "$(cmp -s "$PCE/units/.before" "$PCE/units/pithead-control.service" && echo same || echo rewritten)" "same"
+unset PCE
+unset -f pce_run pce_seed_matching_path
