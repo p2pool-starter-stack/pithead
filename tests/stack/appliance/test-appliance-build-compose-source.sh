@@ -71,6 +71,8 @@ assert_eq "the tree path's stamp is the bare word" "$(cat "$CS/untagged/COMPOSE_
 printf 'services:\n  immutable: {image: example.invalid/app@sha256:%064d}\n' 3 >"$CS/external-compose.yml"
 cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/unmarked-file")"
 assert_contains "a normal build cannot replace the tagged compose with an explicit file" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/debug-file")"
+assert_contains "a normal debug build cannot replace the tagged compose with an explicit file" "$cs_out" "rc=1"
 cs_out="$(PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/release-file")"
 assert_contains "a shell-less release build cannot opt into synthetic compose staging" "$cs_out" "rc=1"
 cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/file")"
