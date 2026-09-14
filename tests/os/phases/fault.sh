@@ -181,17 +181,21 @@ phase_fault() {
         fi
         return
     fi
+    # The store check must come AFTER the wizard confirms it served: `_wait_ssh` only means sshd
+    # answered (gated on /data.mount, not on the wizard's own load_baked_images call), so checking
+    # the store immediately raced the repair-then-reload cycle load_baked_images runs before the
+    # wizard ever serves — and lost that race on the very first bench run (measured).
+    if _wait_setup_page 180; then
+        ok "D: install-from-stick still works afterwards — the wizard serves again"
+    else
+        bad "D: the wizard never served after recovering from the image-load cut — the box is not usable"
+    fi
     local broken
     broken=$(_ssh 'root=$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null); find "$root/overlay" -maxdepth 2 -name lower -size 0 -print -quit 2>/dev/null')
     if [ -z "$broken" ]; then
         ok "D: the image store repaired itself — no zero-length layer metadata left behind"
     else
         bad "D: the image store is still damaged after the cut: $broken"
-    fi
-    if _wait_setup_page 180; then
-        ok "D: install-from-stick still works afterwards — the wizard serves again"
-    else
-        bad "D: the wizard never served after recovering from the image-load cut — the box is not usable"
     fi
 }
 

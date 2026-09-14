@@ -58,8 +58,17 @@ _phase_provision_power_cut() {
     fi
 
     if [ -n "$height_before" ]; then
-        local height_after
-        height_after=$(_monerod_height)
+        # monerod's own container can still be starting up the instant the earlier checks above
+        # pass (they ask podman and curl, not the chain RPC), so a single-shot read here raced it
+        # and misread "not answering yet" as "went backwards". Poll the same way the miner and
+        # dashboard checks above do.
+        local height_after="" htries=0
+        while [ "$htries" -lt 18 ]; do
+            height_after=$(_monerod_height)
+            [ -n "$height_after" ] && break
+            sleep 10
+            htries=$((htries + 1))
+        done
         if [ -n "$height_after" ] && [ "$height_after" -ge "$height_before" ] 2>/dev/null; then
             ok "monerod reports height $height_after, at or past the pre-cut height $height_before"
         else
