@@ -301,7 +301,7 @@ report() {
 
     printf '%s\n\n' "Obsolete-.trivyignore-mute watch (#1174). Report-only — an obsolete mute is housekeeping, not a build failure."
     printf '%s\n\n' "Images scanned, no ignore file applied: $IMAGES"
-    printf '%s\n\n' "Engine: trivy $TRIVY_VERSION — the version ci.yml and os-rootfs.yml pass to install-trivy (parity checked before this run)."
+    printf '%s\n\n' "Engine: trivy $TRIVY_VERSION — the version every gate workflow passes to its install-trivy step, the one line that decides which engine scans (parity checked before this run)."
     printf '| finding ID | seen in any covered image | verdict |\n|---|---|---|\n%s' "$rows"
     if [ "$obsolete" -gt 0 ]; then
         printf '\n%s\n' "$obsolete of $checked mute(s) are OBSOLETE."
@@ -426,8 +426,8 @@ EOF
     rm -f "$f"
 
     # --- engine parity (#1290) --------------------------------------------------------------
-    # Fixtures mimic the real step shape: a `- name:` step, the pinned trivy-action `uses:` line,
-    # then a `with:` block with several keys.
+    # Fixtures mimic the real step shape after #2214: the install-trivy step carrying the gated
+    # `version:` check_parity reads, then a trivy-action step with skip-setup-trivy and no pin.
     pt_dir=$(mktemp -d)
     pt_write() { # <path> <version-line-or-empty, no leading spaces> <has-install-step:0|1>
         local path="$1" verline="$2" has="$3"
