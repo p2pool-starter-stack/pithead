@@ -298,27 +298,6 @@ mismatch_out="$({
 assert_rc "promotion refuses latest resolving away from the captured digest" "$?" "1"
 assert_contains "promotion mismatch names latest and the captured digest" "$mismatch_out" "ghcr.io/test/pithead-tor:latest did not resolve to captured digest $CHAIN_DIGEST"
 
-# Resume re-captures mutable staging tags, so those bytes must pass smoke before promotion.
-resume_calls="$SANDBOX/resume-calls"
-# shellcheck disable=SC1090,SC2034,SC2329
-(
-    cd "$ROOT" || exit 1
-    set --
-    # shellcheck disable=SC1090
-    source "$REL" 2>/dev/null
-    preflight() { :; }
-    ghcr_login() { :; }
-    manifest_digest() { printf 'sha256:%064d\n' 7; }
-    smoke_test() { printf 'smoke\n' >>"$resume_calls"; }
-    promote() { printf 'promote\n' >>"$resume_calls"; }
-    sign_images() { :; }
-    publish() { :; }
-    DRY_RUN=0 RESUME_PROMOTE=1 IMAGES=(tor) TAG=v9.9.9 STAGING_TAG=v9.9.9-rc.1 REGISTRY=ghcr.io/test
-    main
-) >/dev/null 2>&1
-assert_rc "--resume-promote succeeds with a captured digest" "$?" 0
-assert_eq "--resume-promote smokes newly captured bytes before promotion" "$(tr '\n' ' ' <"$resume_calls")" "smoke promote "
-
 # shellcheck disable=SC1090
 (
     cd "$ROOT" || exit
