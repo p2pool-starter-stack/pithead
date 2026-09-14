@@ -442,14 +442,16 @@ runs from the release-prep commit on `develop`, and `main` fast-forwards to the 
 `release.sh` publishes it. The steps here run from that same prep commit; both channels share
 one version and one GitHub Release.
 
-1. The release commit is green: `make lint && make test`, and `tests/os/run.sh --phase all`
-   on the bench. `make lint-sh` refuses to run on any shellcheck but the pinned one and names the
+1. On the cut date, set the top `CHANGELOG.md` heading's date to the current UTC date and commit
+   it. `release.sh` publishes that heading verbatim, so the tag must point to this dated commit.
+   Run `make lint && make test`, and `tests/os/run.sh --phase all` on that commit. `make lint-sh`
+   refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
    nothing — install the pin from [`release-server.md`](release-server.md#the-lintrelease-toolchain).
-2. Bump `VERSION`. The tag is `v<VERSION>` and every artifact derives from it —
-   `STACK_VERSION` is the single place the registry tag comes from. The compose file the image
-   ships comes from that tag whenever it already exists and from the tree only while it does not;
+2. Confirm `VERSION` was bumped in the same release commit. The tag is `v<VERSION>` and every
+   artifact derives from it — `STACK_VERSION` is the single place the registry tag comes from.
+   The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
 3. Build the image and bundle with the **release key**, never the throwaway `--dev` chain. Point

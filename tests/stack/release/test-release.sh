@@ -103,6 +103,11 @@ case "$(bash "$REL" --help 2>&1)" in
 *"set -euo pipefail"*) bad "release --help stops at the comment header" "leaked the script body into --help" ;;
 *) ok "release --help stops at the comment header" ;;
 esac
+CUT_DOC="$(sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md")"
+assert_contains "release runbook sets the CHANGELOG heading date at the cut (#1828)" "$CUT_DOC" \
+    "heading's date to the current UTC date"
+assert_contains "release tag points to the dated commit (#1828)" "$CUT_DOC" \
+    "the tag must point to this dated commit"
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
 # runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
 # empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template
