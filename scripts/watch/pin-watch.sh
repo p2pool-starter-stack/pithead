@@ -10,7 +10,8 @@
 # The pins come from scripts/release/release.sh's pin(), which is where the release notes read them from.
 # A second list is how the gap this closes opened in the first place.
 #
-# One question per component: is the pinned VERSION behind upstream's latest release?
+# Two questions for Tari, one for every other component: is the pinned VERSION behind upstream's
+# latest release, and would the pinned node's gRPC schema break the vendored dashboard client?
 #
 # NOT asked here, deliberately: whether an image pinned `tag@sha256:...` still has a digest that
 # corresponds to that tag. The digest is authoritative and the tag is decoration, so a bump that
@@ -118,6 +119,49 @@ comparable() { # <component> <owner/repo> <tag> -> the tag in that pin's spellin
     esac
 }
 
+tari_proto_ref() { # <node image pin> -> upstream tag
+    local ref="${1%%@*}"
+    ref="${ref##*:}"
+    ref="${ref%-mainnet}"
+    printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || return 1
+    printf '%s' "$ref"
+}
+run_buf() {
+    docker run --rm \
+        -v "$ROOT/dashboard/mining_dashboard/client/tari/proto:/workspace" \
+        --workdir /workspace bufbuild/buf:1.71.0@sha256:7f3e3dfb8650f39878625bbc9f2016a51a781693b209165671d5a61d11c74992 "$@"
+}
+check_tari_protos() { # <upstream tag> -> 0 compatible, 1 breaking drift, 2 unchecked
+    local against="https://github.com/tari-project/tari.git#tag=$1,subdir=applications/minotari_app_grpc/proto"
+    local rc=0
+    run_buf build "$against" >/dev/null 2>&1 || return 2
+    run_buf breaking . --against "$against" >/dev/null 2>&1 || rc=$?
+    # Buf reserves 100 for parseable file annotations; other failures mean the comparison did not run.
+    [ "$rc" -eq 100 ] && return 1
+    [ "$rc" -eq 0 ] || return 2
+}
+add_tari_proto_row() {
+    local raw ref rc=0
+    raw=$(tree_pin tari 2>/dev/null) || raw=""
+    if ! ref=$(tari_proto_ref "$raw"); then
+        row "tari gRPC schema" "\`f42e14d\`" "—" "**could not read the pinned node tag — NOT checked**"
+        failed=$((failed + 1))
+        return
+    fi
+    check_tari_protos "$ref" || rc=$?
+    case "$rc" in
+    0) row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "compatible" ;;
+    1)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**breaking drift**"
+        stale=$((stale + 1))
+        ;;
+    *)
+        row "tari gRPC schema" "\`f42e14d\`" "\`$ref\`" "**upstream schema fetch/build failed — NOT checked**"
+        failed=$((failed + 1))
+        ;;
+    esac
+}
+
 run_go_raise_watch() { bash "$ROOT/scripts/watch/go-raise-watch.sh"; }
 
 finish_report() {
@@ -203,6 +247,38 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
+    st "the Tari node pin selects the matching upstream proto tag" \
+        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa')" "v5.3.1"
+    st "a malformed Tari pin is refused" \
+        "$(tari_proto_ref 'quay.io/tarilabs/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
+    run_buf() {
+        case "$1" in
+        build)
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
+            return "${ST_BUF_BUILD_RC:-0}"
+            ;;
+        breaking)
+            [ "$2" = . ] && [ "$3" = --against ] && [ "$4" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
+            return "${ST_BUF_BREAKING_RC:-0}"
+            ;;
+        esac
+    }
+    tree_pin() { printf '%s' 'quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:aaaa'; }
+    row() { ST_ROW="$*"; }
+    proto_report() {
+        failed=0 stale=0 ST_ROW=""
+        add_tari_proto_row
+        printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
+    }
+    ST_BUF_BUILD_RC=0 ST_BUF_BREAKING_RC=0
+    st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
+    ST_BUF_BREAKING_RC=100
+    st "breaking Tari protos render drift in the weekly report" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v5.3.1\` **breaking drift**"
+    ST_BUF_BREAKING_RC=1
+    st "a failed comparison renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    ST_BUF_BUILD_RC=1 ST_BUF_BREAKING_RC=0
+    st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
     integration_root=$(mktemp -d)
     trap 'rm -rf "$integration_root"' EXIT
     mkdir -p "$integration_root/os/rootfs" "$integration_root/scripts/watch"
@@ -292,6 +368,8 @@ for component in $components; do
     fi
     row "$component" "\`$(norm "$raw")\`" "\`$(norm "$latest")\`" "$verdict"
 done
+
+add_tari_proto_row
 
 printf '%s\n\n' "Upstream currency for $lane, checked weekly by \`scripts/watch/pin-watch.sh\`. This never bumps anything."
 printf '| component | pinned | upstream latest | |\n|---|---|---|---|\n%s\n' "$rows"
