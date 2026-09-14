@@ -33,12 +33,14 @@ if [ -d "$d" ]; then stat -c "%d %i" "$d"; else printf missing; fi' 2>/dev/null 
 
 tari_container_present() { _ssh "podman ps -a --format '{{.Names}}' | grep -qx tari" 2>/dev/null; }
 
-# p2pool's launch argv, as the container is ACTUALLY running it — not the rendered .env. #1903's
-# entrypoint drops the --merge-mine triple on TARI_MODE=off, and only the live argv shows it.
+# P2Pool's final launch argv from the entrypoint's pre-exec record, not the configured argv from
+# container metadata. This fresh-chain KVM deliberately holds P2Pool stopped, so PID 1 is gone by
+# the time this leg runs; the launch record is emitted immediately before exec and survives that.
 p2pool_merge_mine_argv() {
     local argv
-    argv=$(_ssh "set -o pipefail; podman exec p2pool cat /proc/1/cmdline | tr '\\0' '\\n'" 2>/dev/null) || return 1
-    if printf '%s\n' "$argv" | grep -Eq '^--merge-mine(=|$)'; then
+    argv=$(_ssh "set -o pipefail; podman logs p2pool 2>&1 | grep -aF '[p2pool-entrypoint] launching:' | tail -n 1" 2>/dev/null) || return 1
+    [ -n "$argv" ] || return 1
+    if printf '%s\n' "$argv" | grep -Eq '(^| )--merge-mine(=| |$)'; then
         printf present
     else
         printf none
@@ -139,7 +141,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
     [ "$(tari_env TARI_MODE)" = "off" ] &&
         ! printf '%s' "$(tari_env COMPOSE_PROFILES)" | grep -q local_tari &&
         [ "$(tari_env TARI_REQUIRED)" = "false" ] &&
-        ok "off renders TARI_MODE=off, drops local_tari and releases the sync gate" || {
+        ok "off renders TARI_MODE=off and removes Tari from the sync gate" || {
         bad "off did not render as off (mode=$(tari_env TARI_MODE) profiles=$(tari_env COMPOSE_PROFILES) required=$(tari_env TARI_REQUIRED))"
         rc=1
     }
@@ -166,15 +168,11 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         rc=1
     fi
 
-    tries=0
-    while [ "$tries" -lt 30 ] && ! _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | grep -qx p2pool; do
-        tries=$((tries + 1))
-        sleep 4
-    done
-    if _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | grep -qx p2pool; then
-        ok "a machine that declined Tari keeps mining Monero"
+    if _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" &&
+        [ "$(_ssh "podman inspect p2pool --format '{{.State.Running}} {{.State.ExitCode}}'" 2>/dev/null | tr -d '\r')" = "false 0" ]; then
+        ok "fresh Monero sync still holds p2pool cleanly after Tari leaves the gate"
     else
-        bad "p2pool is not running after Tari was turned off — the sync gate never released"
+        bad "p2pool is not cleanly held by the remaining fresh-Monero sync gate"
         rc=1
     fi
     if ! argv=$(p2pool_merge_mine_argv); then
@@ -265,14 +263,14 @@ _tari_mode_self_test() {
         _ssh() {
             case "$*" in
             *stat\ -c*) printf '41 2111\n' ;;
-            */proc/1/cmdline*) printf 'p2pool\n--wallet\nfixture\n' ;;
+            *'podman logs p2pool'*) printf '[p2pool-entrypoint] launching: p2pool --wallet [redacted]\n' ;;
             *) return 1 ;;
             esac
         }
         [ "$(tari_data_fingerprint)" = '41 2111' ] && [ "$(p2pool_merge_mine_argv)" = none ]
     ) || f=$((f + 1))
     (
-        _ssh() { printf 'p2pool\n--merge-mine=tari://fixture\nwallet\n'; }
+        _ssh() { printf '[p2pool-entrypoint] launching: p2pool --merge-mine=tari://fixture [redacted]\n'; }
         [ "$(p2pool_merge_mine_argv)" = present ]
     ) || f=$((f + 1))
     # The leg is wired into the provision phase; a leg nobody calls proves nothing.

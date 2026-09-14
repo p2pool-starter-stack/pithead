@@ -91,6 +91,7 @@ _control_request_lost_response_self_test() (
         case "$*" in
         *'/api/control/result?id=rid-7'*)
             printf 'x' >>"$polls"
+            [ "$(wc -c <"$polls")" -gt 1 ] || return 52
             printf '{"id":"rid-7","status":"applied"}'
             ;;
         *)

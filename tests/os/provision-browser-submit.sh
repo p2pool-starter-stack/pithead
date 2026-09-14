@@ -135,7 +135,7 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null)
+        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
     done
     return 1
 }
