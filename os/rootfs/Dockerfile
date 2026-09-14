@@ -140,8 +140,8 @@ ARG APT_INDEX_STAMP=0
 # mechanism `openssl` above already relies on for the libssl3t64/openssl-provider-legacy pair
 # (CVE-2026-14456, #1438). These four are the same reddened dashboard/Dockerfile's CVE gate on
 # 2026-09-12 (#2103); the rootfs list named none of them, so nothing pulled them up. Not a base
-# digest bump: `debian:trixie-slim`'s current manifest is the exact digest pinned two lines above —
-# there is nothing newer to bump to (#2104).
+# digest bump: `debian:trixie-slim`'s current manifest is the exact digest the FROM line above
+# pins — there is nothing newer to bump to (#2104).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
