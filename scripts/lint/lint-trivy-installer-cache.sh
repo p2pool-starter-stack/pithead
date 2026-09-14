@@ -50,11 +50,20 @@ install_versions() {
 resolve_engine() {
     local wf="$1" vers pinned
     vers="$(install_versions "$wf" | sort -u)"
-    [ -n "$vers" ] || { echo "REFUSED: no install-trivy version: in $(basename "$wf")"; return 0; }
-    [ "$(printf '%s\n' "$vers" | wc -l)" -eq 1 ] || { echo "REFUSED: $(basename "$wf") passes more than one version"; return 0; }
+    [ -n "$vers" ] || {
+        echo "REFUSED: no install-trivy version: in $(basename "$wf")"
+        return 0
+    }
+    [ "$(printf '%s\n' "$vers" | wc -l)" -eq 1 ] || {
+        echo "REFUSED: $(basename "$wf") passes more than one version"
+        return 0
+    }
     # every version: handed to setup-trivy inside the composite must be the input, never a literal
     pinned="$(awk '/^runs:/ { inruns = 1 } inruns && /^[[:space:]]*version:[[:space:]]*/ && $0 !~ /\$\{\{[[:space:]]*inputs\.version[[:space:]]*\}\}/ { print }' "$INSTALL_ACTION")"
-    [ -z "$pinned" ] && { printf '%s\n' "$vers"; return 0; }
+    [ -z "$pinned" ] && {
+        printf '%s\n' "$vers"
+        return 0
+    }
     echo "REFUSED: install-trivy pins a version of its own; the caller's literal is decorative"
 }
 
