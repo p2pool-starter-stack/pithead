@@ -152,7 +152,10 @@ allow_set() { awk "/^$1='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" 
 # NAMED EXEMPTIONS with the reason each cannot run at tier 1. The four node-endpoint keys (#1888)
 # are gated on preflight_remote_nodes, a REAL dial at the staged address: the sandbox has no node to
 # answer it, so a round-trip here could only pass by defeating the probe that is the whole
-# compensating control for that tier. They are tier-4 work (tests/integration, tests/os) by nature.
+# compensating control for that tier. The round-trip itself is tier-4 work (tests/integration,
+# tests/os) by nature. What IS tier-1 now (#1924, below): the render-level invariant that makes
+# skipping that dial on a non-remote chain safe in the first place — a chain in local/off mode never
+# moves these four keys off their fixed placeholder no matter what *.remote.* carries.
 CONFIRM_TIER1_EXEMPT="MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS"
 uncovered() { # <space-separated key list> -> the keys with no round-trip, minus the exemptions
     local k out=''
@@ -171,6 +174,48 @@ assert_eq "every CONTROL_DASHBOARD_CONFIRM_KEYS key round-trips (or is exempt by
 for k in $CONFIRM_TIER1_EXEMPT; do
     assert_contains "exempt key $k is a real confirm key" " $(allow_set CONTROL_DASHBOARD_CONFIRM_KEYS) " " $k "
 done
+
+echo "== black-box: node-endpoint keys ignore remote.* on a non-remote chain (#1924) =="
+# 43-control-approval-and-preview.sh decides WHETHER TO PROBE from the changed porcelain key;
+# preflight_remote_nodes decides WHETHER TO DIAL from the staged chain MODE. Those are different
+# predicates, and an rc of 0 from the dial means either "every arm answered" or "no arm was dialled"
+# — the gate cannot tell those apart. The CONFIRM_TIER1_EXEMPT comment above argues the silent-skip
+# case can never be reached on a real config, because a non-remote chain's *.remote.* fields never
+# reach the render. That argument had nothing under tests/ pinning it; this does, against the
+# rendered .env rather than the render_env source.
+jq -n --arg w "$WALLET" '{
+    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",
+            remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
+    tari:{wallet_address:"'"$VALID_TARI"'",remote:{host:"evil.example.com",grpc_port:9}},
+    p2pool:{pool:"main"},
+    dashboard:{secure:true,host:"box.lan",
+               auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_eq "monero.remote.host is inert on a local monero chain" "$(env_now MONERO_NODE_HOST)" "172.28.0.26"
+assert_eq "monero.remote.rpc_port is inert on a local monero chain" "$(env_now MONERO_RPC_PORT)" "18081"
+assert_eq "monero.remote.zmq_port is inert on a local monero chain" "$(env_now MONERO_ZMQ_PORT)" "18083"
+assert_eq "tari.remote.host is inert on a local tari chain" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
+
+# tari.mode off renders the SAME fixed placeholder local does (#1855) — the escalation this issue's
+# provenance section checked and ruled out, pinned here instead of left as an argument.
+jq '.tari.mode="off"' "$C/config.json" >"$C/off.json"
+cp "$C/off.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_eq "tari.remote.host is inert when tari.mode is off" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
+
+# THE FIRING CONTROL: the SAME remote fields DO move the render once the chain actually IS remote —
+# proving the assertions above pin inertness on a non-remote chain, not that render_env ignores
+# remote.* everywhere, which would pass this whole section having tested nothing.
+jq -n --arg w "$WALLET" '{
+    monero:{mode:"remote",wallet_address:$w,node_username:"",node_password:"",
+            remote:{host:"evil.example.com",rpc_port:9,zmq_port:9}},
+    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"evil.example.com",grpc_port:9}},
+    p2pool:{pool:"main"},
+    dashboard:{secure:true,host:"box.lan",
+               auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+assert_eq "the same monero.remote.host moves the render once remote (firing control)" "$(env_now MONERO_NODE_HOST)" "evil.example.com"
+assert_eq "the same tari.remote.host moves the render once remote (firing control)" "$(env_now TARI_GRPC_ADDRESS)" "evil.example.com:9"
 
 echo "== black-box: the compose-profile token set is closed (#1929) =="
 # WHY THIS GUARD EXISTS. COMPOSE_PROFILES is on the confirm allowlist so that a tari.mode switch
