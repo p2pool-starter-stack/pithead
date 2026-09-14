@@ -145,7 +145,7 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
-    for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+    for _s in "${PUBLISHED_IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
     make_bundle "$WORKDIR/pithead.tar.gz" >/dev/null 2>&1
     cp "$WORKDIR/pithead/docker-compose.yml" "$SANDBOX/bundle-compose.yml" 2>/dev/null || true
     tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
@@ -212,6 +212,8 @@ assert_contains "manifest names the tari NODE pin (#1138)" "$(cat "$man_out" 2>/
     "- tari node: \`quay.io/tarilabs/minotari_node:"
 assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
     "- tari console wallet: \`quay.io/tarilabs/minotari_console_wallet:"
+assert_contains "manifest names the published appliance rootfs (#1353)" "$(cat "$man_out" 2>/dev/null)" \
+    "ghcr.io/p2pool-starter-stack/pithead-os-rootfs:v9.9.9"
 # The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
 # a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
 for svc in p2pool monero xmrig-proxy; do

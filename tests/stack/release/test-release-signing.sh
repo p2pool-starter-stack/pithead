@@ -36,11 +36,13 @@ sign_out="$(
     COSIGN_KEY="/release-box/cosign.key"
     export COSIGN_LOG="$SIGN/cosign.log"
     PATH="$SIGN/bin:$PATH"
-    for s in "${IMAGES[@]}"; do set_digest "$s" "ghcr.io/test/pithead-$s@sha256:feed$s"; done
+    for s in "${PUBLISHED_IMAGES[@]}"; do set_digest "$s" "ghcr.io/test/pithead-$s@sha256:feed$s"; done
     sign_images 2>&1
 )"
 assert_contains "sign stage announces itself" "$sign_out" "Sign the promoted digests"
-assert_eq "all 5 promoted digests signed" "$(grep -c '^\[cosign\] sign ' "$SIGN/cosign.log")" "5"
+assert_eq "all 6 promoted digests signed" "$(grep -c '^\[cosign\] sign ' "$SIGN/cosign.log")" "6"
+assert_contains "the published rootfs digest is signed" "$(cat "$SIGN/cosign.log")" \
+    "sign --key /release-box/cosign.key --tlog-upload=false --yes ghcr.io/test/pithead-os-rootfs@sha256:feedos-rootfs"
 assert_contains "signs the digest with the box key, no Rekor upload" "$(cat "$SIGN/cosign.log")" \
     "sign --key /release-box/cosign.key --tlog-upload=false --yes ghcr.io/test/pithead-dashboard@sha256:feeddashboard"
 assert_not_contains "never signs a mutable tag" "$(cat "$SIGN/cosign.log")" ":v"
@@ -57,7 +59,7 @@ sign_off_out="$(
     COSIGN_ENABLED=0
     export COSIGN_LOG="$SIGN/cosign-off.log"
     PATH="$SIGN/bin:$PATH"
-    for s in "${IMAGES[@]}"; do set_digest "$s" "ghcr.io/test/pithead-$s@sha256:feed$s"; done
+    for s in "${PUBLISHED_IMAGES[@]}"; do set_digest "$s" "ghcr.io/test/pithead-$s@sha256:feed$s"; done
     sign_images 2>&1
 )"
 assert_eq "signing off means no cosign invocations" "$(grep -c '^\[cosign\]' "$SIGN/cosign-off.log")" "0"

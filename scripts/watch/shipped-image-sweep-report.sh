@@ -54,7 +54,7 @@ SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (weekly report)"
 # two lists are checked against each other at run time rather than trusted: a service added to the
 # matrix and not here arrives as an unexpected file, one added here and not to the matrix arrives
 # as a missing leg, and BOTH exit 1. A silently shrinking sweep is the failure this guards.
-SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard"
+SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard os-rootfs"
 
 # Only fixable HIGH/CRITICAL are counted, the same scope ci.yml's gate uses (`ignore-unfixed`), and
 # the same scope every `.trivyignore` entry is written against. It is also the only scope that maps
@@ -283,7 +283,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a clean sweep says so" \
         "$(printf '%s' "$out" | grep -c 'No fixable HIGH/CRITICAL')" "1"
     st "every image appears in the summary" \
-        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "5"
+        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "6"
 
     # Findings are counted, and only the FIXABLE ones.
     found="$tmp/found"
@@ -409,7 +409,7 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(bash "${BASH_SOURCE[0]}" "$clean")" && rc=0 || rc=$?
     st "the clean path survives a real subprocess invocation" "$rc" "0"
     st "the subprocess renders the same table" \
-        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "5"
+        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "6"
     out="$(bash "${BASH_SOURCE[0]}" "$miss")" && rc=0 || rc=$?
     st "an incomplete sweep still exits 1 from a real subprocess" "$rc" "1"
 

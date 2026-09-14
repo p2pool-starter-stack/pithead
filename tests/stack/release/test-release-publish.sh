@@ -13,6 +13,54 @@ REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
 STACK_VERSION="v$(cat "$ROOT/VERSION")"
+echo "== unit: release rootfs publish guard refuses the debug SSH key (#1353) =="
+ROOTFS_GUARD="$SANDBOX/rootfs-publish-guard"
+mkdir -p "$ROOTFS_GUARD/release/etc" "$ROOTFS_GUARD/debug/etc" "$ROOTFS_GUARD/debug/root/.ssh"
+printf 'release\n' >"$ROOTFS_GUARD/release/etc/pithead-variant"
+printf 'release\n' >"$ROOTFS_GUARD/debug/etc/pithead-variant"
+printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug/root/.ssh/authorized_keys"
+tar -cf "$ROOTFS_GUARD/release.tar" -C "$ROOTFS_GUARD/release" etc
+tar -cf "$ROOTFS_GUARD/debug.tar" -C "$ROOTFS_GUARD/debug" etc root
+# shellcheck disable=SC1090
+(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    rootfs_publish_check "$ROOTFS_GUARD/release.tar"
+)
+assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
+# shellcheck disable=SC1090
+rootfs_guard_out="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    rootfs_publish_check "$ROOTFS_GUARD/debug.tar" 2>&1
+)"
+assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "1"
+assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
+assert_contains "the release build calls the rootfs producer" "$(cat "$REL_IMAGES")" "build_rootfs_image"
+# The weekly sweep pulls anonymously, while a release cut is logged in. A private first push would
+# pass every authenticated registry read and leave the sweep UNCHECKED, so drive the anonymous read.
+# shellcheck disable=SC1090
+anonymous_digest="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    curl() {
+        case "$*" in
+        *'https://ghcr.io/token?scope='*) printf '{"token":"fixture"}\n' ;;
+        *) printf 'Docker-Content-Digest: sha256:%064d\r\n' 7 ;;
+        esac
+    }
+    anonymous_ghcr_digest ghcr.io/p2pool-starter-stack/pithead-os-rootfs v2.0.0
+)"
+assert_eq "the public-package check resolves the rootfs anonymously" "$anonymous_digest" \
+    "sha256:$(printf '%064d' 7)"
+assert_contains "rootfs smoke refuses a private first GHCR push" "$(cat "$REL_IMAGES")" \
+    "New GHCR packages default to private"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
 # manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
 # seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
@@ -75,6 +123,7 @@ stage_push_out="$(
         source "$REL" 2>/dev/null
         DRY_RUN=0
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         REGISTRY="ghcr.io/test"
         REGISTRY_READ_RETRIES=1
         REGISTRY_READ_BACKOFF=0
@@ -104,6 +153,7 @@ resume_out="$(
         DRY_RUN=0
         RESUME_PROMOTE=1
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         TAG="v9.9.9"
         STAGING_TAG="v9.9.9-rc.1"
         REGISTRY="ghcr.io/test"

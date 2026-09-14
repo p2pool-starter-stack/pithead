@@ -72,7 +72,69 @@ build_images() {
         fi
         run "${args[@]}"
     done
-    ok "Built + pushed all 5 images for $PLATFORMS."
+    build_rootfs_image
+    ok "Built + pushed all 6 images for $PLATFORMS."
+}
+
+rootfs_publish_check() { # <exported-rootfs-tar>
+    local rootfs_tar="$1" variant listing
+    variant="$(tar -xOf "$rootfs_tar" etc/pithead-variant 2>/dev/null)" || {
+        echo "rootfs publish guard: cannot read etc/pithead-variant" >&2
+        return 1
+    }
+    [ "$variant" = release ] || {
+        echo "rootfs publish guard: variant is '$variant', not release" >&2
+        return 1
+    }
+    listing="$(tar -tf "$rootfs_tar")" || {
+        echo "rootfs publish guard: cannot list the exported rootfs" >&2
+        return 1
+    }
+    if grep -Fx 'root/.ssh/authorized_keys' <<<"$listing" >/dev/null; then
+        echo "rootfs publish guard: refusing a rootfs carrying the debug SSH key" >&2
+        return 1
+    fi
+}
+
+rootfs_image_check() { # <image-ref>
+    local ref="$1" check_dir cid rc=0
+    check_dir="$(mktemp -d)"
+    cid="$(docker create "$ref")" || rc=$?
+    [ "$rc" -ne 0 ] || docker export --output "$check_dir/root.tar" "$cid" || rc=$?
+    [ -z "$cid" ] || docker rm "$cid" >/dev/null || rc=$?
+    [ "$rc" -ne 0 ] || rootfs_publish_check "$check_dir/root.tar" || rc=$?
+    rm -r "$check_dir"
+    return "$rc"
+}
+
+anonymous_ghcr_digest() { # <ghcr-repo> <tag>
+    local path token
+    path="${1#ghcr.io/}"
+    token="$(curl -fsS "https://ghcr.io/token?scope=repository:$path:pull" | jq -er .token)" || return 1
+    curl -fsSI \
+        -H "Authorization: Bearer $token" \
+        -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+        "https://ghcr.io/v2/$path/manifests/$2" |
+        tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }'
+}
+
+build_rootfs_image() {
+    local repo dashboard_digest
+    repo="$(image_for os-rootfs)"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        run env PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@sha256:$(printf '%064d' 0)" os/build-image.sh
+        run docker push "$repo:$STAGING_TAG"
+        return
+    fi
+    dashboard_digest="$(manifest_digest "$(image_for dashboard):$STAGING_TAG")" ||
+        die "Could not resolve the staged dashboard digest needed by the appliance rootfs."
+    DOCKER_DEFAULT_PLATFORM="${PLATFORMS%%,*}" \
+        PITHEAD_ROOTFS_TAG="$repo:$STAGING_TAG" \
+        PITHEAD_WIZARD_IMAGE="$(image_for dashboard)@$dashboard_digest" \
+        os/build-image.sh
+    rootfs_publish_check os/build/pithead-root.tar ||
+        die "Refusing to push $repo:$STAGING_TAG: the exported rootfs is not the release variant."
+    docker push "$repo:$STAGING_TAG"
 }
 
 # --- Stage 4: stage (push to the RC tag, capture digests) -----------------------------------------
@@ -83,7 +145,7 @@ stage_push() {
     # sha that spans every built platform) — promote re-tags it by digest, so :vX.Y.Z and :latest point
     # at the exact bytes the smoke stage validates.
     local suffix repo digest
-    for suffix in "${IMAGES[@]}"; do
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         if [ "$DRY_RUN" -eq 1 ]; then
             set_digest "$suffix" "$repo@sha256:$(printf '%064d' 0)"
@@ -98,7 +160,7 @@ stage_push() {
         set_digest "$suffix" "$repo@$digest"
         log "  digest: $repo@$digest"
     done
-    ok "Captured $STAGING_TAG digests for all 5 images."
+    ok "Captured $STAGING_TAG digests for all 6 images."
 }
 
 ghcr_login() {
@@ -133,7 +195,7 @@ smoke_test() {
     fi
     # Validate the captured bytes, never the mutable staging tag.
     local suffix repo digest got
-    for suffix in "${IMAGES[@]}"; do
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
         is_digest_ref_for "$digest" "$repo" || die "Smoke: captured digest for $suffix is not a lowercase sha256 ref for $repo ('$digest')."
@@ -141,6 +203,20 @@ smoke_test() {
         # Pull the target platform explicitly so an arm64 build host can inspect an amd64-only release.
         run docker pull --quiet --platform "${PLATFORMS%%,*}" "$digest"
         if [ "$DRY_RUN" -eq 0 ]; then
+            if [ "$suffix" = os-rootfs ]; then
+                if [[ "$repo" = ghcr.io/* ]]; then
+                    got="$(anonymous_ghcr_digest "$repo" "$STAGING_TAG")" || true
+                    [ "$got" = "${digest##*@}" ] ||
+                        die "Smoke: $repo:$STAGING_TAG is not anonymously readable at the captured digest. New GHCR packages default to private; make pithead-os-rootfs public, then resume promotion."
+                fi
+                got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}} {{.Os}}/{{.Architecture}}' "$digest" 2>/dev/null || true)"
+                [ "$got" = "$STACK_VERSION ${PLATFORMS%%,*}" ] ||
+                    die "Smoke: $digest reports version/platform '$got', expected '$STACK_VERSION ${PLATFORMS%%,*}'."
+                rootfs_image_check "$digest" ||
+                    die "Smoke: $digest is not a shell-less release rootfs."
+                log "  $digest OK ($got, release variant)"
+                continue
+            fi
             got="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$digest" 2>/dev/null || true)"
             [ "$got" = "$STACK_VERSION" ] ||
                 die "Smoke: $digest reports version '$got', expected '$STACK_VERSION'."
@@ -172,7 +248,7 @@ promote() {
         die "Promotion cancelled — nothing user-facing was published."
     ghcr_login
     local suffix repo digest expected got tag_ref
-    for suffix in "${IMAGES[@]}"; do
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
         is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — run without --resume-promote, or stage first."
@@ -186,7 +262,7 @@ promote() {
             done
         fi
     done
-    ok "Promoted all 5 images to $TAG + latest."
+    ok "Promoted all 6 images to $TAG + latest."
 }
 
 # --- Stage 6b: sign the promoted digests (#376) ----------------------------------------------------
@@ -205,13 +281,13 @@ sign_images() {
     fi
     stage "6b/7 Sign the promoted digests (cosign, #376)"
     local suffix digest
-    for suffix in "${IMAGES[@]}"; do
+    for suffix in "${PUBLISHED_IMAGES[@]}"; do
         digest="$(get_digest "$suffix")"
         [ -n "$digest" ] || die "No staged digest for $suffix — nothing to sign."
         log "Signing $digest"
         run cosign sign --key "${COSIGN_KEY:-}" --tlog-upload=false --yes "$digest"
     done
-    ok "Signed all 5 promoted digests (verify with the committed cosign.pub)."
+    ok "Signed all 6 promoted digests (verify with the committed cosign.pub)."
 }
 
 # Detached signature for the install bundle (#376): the #59 dashboard upgrade downloads
