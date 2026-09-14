@@ -1,14 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-PUBLISH domain (#1105 Phase 1): what a cut DOES against a registry — the GHCR
-# read-after-push retry, the release-toolchain preflight, release-smoke's upgraded-install
-# resolution, pull-vs-build mode detection, and the bundle's macOS-xattr hygiene guard. Split from
-# test-release.sh, which keeps the side-effect-free helpers. Sourced by tests/stack/run.sh after it.
-#
-# The four script paths are re-derived here rather than inherited from test-release.sh, the same
-# reason test-release-signing.sh re-derives its own: a fragment that depends on an earlier
-# fragment's variables breaks silently when the suite is reordered, and `source "$REL" 2>/dev/null`
-# hides exactly that failure as a pile of "command not found".
+# Release-publish tests: registry retries, toolchain preflight, release smoke and bundle hygiene.
+# Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
@@ -63,8 +56,7 @@ assert_rc "a dot-prefixed debug-key member is also refused" "$?" "2"
 ) >/dev/null 2>&1
 assert_rc "an absolute debug-key member is also refused" "$?" "2"
 
-# Drive the real producer call site. Stubbing run supplies the producer's exported tar and records
-# registry writes; deleting or moving the guard after the push makes the keyed case red.
+# Drive the producer with a stubbed export and registry write so ordering mutations fail.
 drive_rootfs_build() { # <fixture-tar> <push-log>
     local source_tar="$1" push_log="$2"
     (
@@ -114,8 +106,7 @@ assert_contains "a failed push never exposes the final digest handoff" "$(cat "$
 assert_not_contains "a failed push does not finalize the digest handoff" "$(cat "$PUSH_LOG")" \
     "finalized=yes"
 unset -f drive_rootfs_build
-# The weekly sweep pulls anonymously, while a release cut is logged in. A private first push would
-# pass every authenticated registry read and leave the sweep UNCHECKED, so drive the anonymous read.
+# A private first push would pass authenticated reads but leave the anonymous sweep UNCHECKED.
 # shellcheck disable=SC1090
 anonymous_digest="$(
     cd "$ROOT" || exit
@@ -135,10 +126,8 @@ assert_eq "the public-package check resolves the rootfs anonymously" "$anonymous
 assert_contains "rootfs smoke refuses a private first GHCR push" "$(cat "$REL_IMAGES")" \
     "New GHCR packages default to private"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
-# manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
-# seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
-# retry is not only for empty reads: it loops until the EXPECTED digest appears, and the counter
-# proves it stayed bounded. Backoff is forced to 0 to keep the test instant.
+# GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
+# digest and stays bounded; zero backoff keeps the test instant.
 RETRY_CNT="$SANDBOX/inspect.count"
 # shellcheck disable=SC1090,SC2034  # dynamic source; REGISTRY_READ_* are read by the sourced retry helper
 retry_out="$(
