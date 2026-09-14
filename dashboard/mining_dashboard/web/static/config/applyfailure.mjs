@@ -94,6 +94,6 @@ export function applyFailure(result, appliance) {
   return [
     backupLine(result, appliance),
     logCaption(appliance),
-    ...failureLog(result.error, false, "apply"),
+    result.error ? html`<pre class="config-error-tail">${result.error}</pre>` : null,
   ];
 }
