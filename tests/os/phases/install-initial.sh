@@ -20,6 +20,15 @@ _phase_install_initial() {
     # The target: blank, larger than the source medium, so the grow assertions distinguish the
     # two disks beyond doubt.
     qemu-img create -f raw "$target_disk" 30G >/dev/null
+    # M4's wrong-disk guard: a disk holding unrelated data that must be OFFERED for erasure and
+    # left alone when the operator installs to the target instead. scsi (not virtio) because only
+    # scsi/usb carry an INQUIRY vendor/product — virtio-blk has no such field, so this is the only
+    # bus on which lsblk's MODEL column can ever be non-blank. serial= works on either bus, so the
+    # target also gets one; its MODEL stays "unknown" as a real NVMe/virtio target's often does.
+    local foreign_disk="/srv/code/bench-vm/pithead-foreign.img"
+    local foreign_serial="PHFOREIGN01" foreign_model="ForeignDisk" target_serial="PHTARGET01"
+    rm -f "$foreign_disk"
+    qemu-img create -f raw "$foreign_disk" 256M >/dev/null
     : >"$SERIAL"
     # The image rides a USB bus with removable=on — that is what makes the guest a faithful
     # analog of a user's stick: the host-side gate (installer_mode_available) keys on
@@ -30,7 +39,8 @@ _phase_install_initial() {
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import \
         --disk "path=$DISK,format=raw,bus=usb,removable=on,boot.order=1" \
-        --disk "path=$target_disk,format=raw,bus=virtio,boot.order=2" \
+        --disk "path=$target_disk,format=raw,bus=virtio,serial=$target_serial,boot.order=2" \
+        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
         bad "virt-install failed to define the installer VM"
@@ -43,6 +53,26 @@ _phase_install_initial() {
     }
     ok "image boots as removable media ($ip)"
 
+    # Plant the foreign disk's filesystem and sentinel before the inventory is read: M4 must
+    # prove a disk that already carries someone else's data is still correctly offered for
+    # erasure, not skipped for having a filesystem lsblk doesn't recognise as ours.
+    local foreign_dev foreign_hash
+    foreign_dev=$(_ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'")
+    [ -n "$foreign_dev" ] || {
+        bad "the foreign disk (serial $foreign_serial) is not visible to the guest"
+        return 1
+    }
+    foreign_hash=$(_ssh "mkfs.ext4 -q -F /dev/$foreign_dev >/dev/null &&
+        m=\$(mktemp -d) && mount /dev/$foreign_dev \"\$m\" &&
+        echo 'unrelated data on the other disk' >\"\$m/sentinel\" &&
+        sha256sum \"\$m/sentinel\" | cut -d' ' -f1 &&
+        umount \"\$m\"")
+    [ -n "$foreign_hash" ] || {
+        bad "could not plant the foreign disk's filesystem and sentinel"
+        return 1
+    }
+    ok "planted a foreign filesystem + sentinel on the second disk ($foreign_dev, $foreign_hash)"
+
     out=$(_ssh "pithead-install --list")
     if printf '%s' "$out" | cut -f1 | grep -qx "vda"; then
         ok "inventory offers the internal disk (vda)"
@@ -50,9 +80,19 @@ _phase_install_initial() {
         bad "inventory does not offer vda — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
         return 1
     fi
-    # The boot medium must never be a target. It shows up as sdX on the USB bus.
-    if printf '%s' "$out" | cut -f1 | grep -qE '^sd'; then
-        bad "inventory offers the boot medium itself"
+    if printf '%s' "$out" | grep -qF "$(printf '%s\t%s\tempty' "$foreign_model" "$foreign_serial")"; then
+        ok "inventory lists the foreign disk for erasure with its real model and serial"
+    else
+        bad "foreign disk row missing or wrong — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+        return 1
+    fi
+    # The boot medium must never be a target — checked by its actual name, not a bus-shaped guess:
+    # the foreign disk above rides the same scsi-class bus the USB stick does, so a blanket "no
+    # sdX" pattern would now reject a disk that is supposed to be offered.
+    local boot_name
+    boot_name=$(_ssh "lsblk -no PKNAME \$(findmnt -no SOURCE /) 2>/dev/null" | head -1)
+    if [ -n "$boot_name" ] && printf '%s' "$out" | cut -f1 | grep -qx "$boot_name"; then
+        bad "inventory offers the boot medium itself ($boot_name)"
         return 1
     fi
     ok "inventory excludes the disk the system booted from"
@@ -95,6 +135,18 @@ _phase_install_initial() {
         rm -f "$jar"
         return 1
     }
+    # M3, proven through the page the operator actually reads, not just the CLI: lsblk -> the
+    # host's spool -> this JSON is the whole pipeline the wizard's disk picker renders from.
+    local state_json
+    state_json=$(curl -fsSk -b "$jar" "https://$ip/api/wizard-state" 2>/dev/null)
+    if printf '%s' "$state_json" | jq -e --arg s "$foreign_serial" --arg m "$foreign_model" \
+        '.disks[]? | select(.serial == $s) | .model == $m and .state == "empty"' >/dev/null 2>&1; then
+        ok "wizard page state carries the foreign disk's real model and serial (lsblk -> spool -> page)"
+    else
+        bad "wizard page state missing/wrong foreign disk row: $(printf '%s' "$state_json" | cut -c1-200)"
+        rm -f "$jar"
+        return 1
+    fi
 
     body="monero_wallet=$HARNESS_WALLET&tari_wallet=$HARNESS_TARI&pool=mini&disk=vda&confirm=vda&wipe=keep"
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
@@ -133,12 +185,15 @@ _phase_install_initial() {
     fi
     vm_destroy_or_refuse || return
     # Boot from the TARGET alone — the stick is gone, exactly as the instructions tell the user.
+    # The foreign disk travels with it: M4's whole point is what it looks like AFTER the install,
+    # not just before.
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
         --import --disk "path=$target_disk,format=raw,bus=virtio" \
+        --disk "path=$foreign_disk,format=raw,bus=scsi,serial=$foreign_serial,vendor=Pithead,product=$foreign_model" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
         bad "virt-install failed to define the installed VM"
@@ -202,4 +257,27 @@ _phase_install_initial() {
         ok "consumed pre-seed removed from the installed system's ESP"
     fi
 
+    # ---- M4: the disk left alone stays alone -----------------------------------------------
+    # THE row this phase was missing: installing to vda must never touch the foreign disk. Found
+    # by serial again — the scsi bus is free to renumber it now that the USB stick is gone.
+    foreign_dev=$(_ssh "lsblk -rno NAME,SERIAL | awk -v s=\"$foreign_serial\" '\$2==s{print \$1; exit}'")
+    if [ -n "$foreign_dev" ] && _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" &&
+            [ \"\$(sha256sum \"\$m/sentinel\" | cut -d' ' -f1)\" = \"$foreign_hash\" ] &&
+            umount \"\$m\""; then
+        ok "the foreign disk still mounts and its sentinel is byte-identical — M4 holds"
+    else
+        bad "the foreign disk was touched, lost its filesystem, or its sentinel changed"
+    fi
+
+    # ---- negative control: prove the check above is not vacuous ----------------------------
+    # Deliberately install to the WRONG disk (the foreign one) and confirm the sentinel really
+    # does disappear — otherwise a broken mount/hash check above would report "untouched" no
+    # matter what a real wrong-disk bug did.
+    if [ -n "$foreign_dev" ] && _ssh "pithead-install --target /dev/$foreign_dev --yes" >/dev/null 2>&1 &&
+        ! _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null &&
+            test -e \"\$m/sentinel\""; then
+        ok "negative control: installing to the foreign disk destroys the sentinel (the untouched row fires)"
+    else
+        bad "negative control failed — installing to the foreign disk did not destroy the sentinel"
+    fi
 }

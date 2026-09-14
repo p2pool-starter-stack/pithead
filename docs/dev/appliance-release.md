@@ -322,10 +322,10 @@ token or a whole config from the stick's FAT partition **is** built — `pithead
 the target by `os/installer/pithead-install`, with the `install` and `media` phases covering it.
 What is still unbuilt is choosing the target disk headlessly — see KNOWN-ISSUES (#979).
 
-KVM analog: `--phase install` automates the mechanics of M3 and M5 (inventory, guards,
-copy completeness, target boot, and reinstall preserving `/data`). The manual cases remain
-about what KVM cannot fake — real firmware's boot order, a real USB controller, and a real
-internal disk.
+KVM analog: `--phase install` automates the mechanics of M3, M4 and M5 (inventory with real
+model/serial, the wrong-disk guard against a second virtio disk, copy completeness, target
+boot, and reinstall preserving `/data`). The manual cases remain about what KVM cannot fake
+— real firmware's boot order, a real USB controller, and a real internal disk.
 
 **M3 — install to disk.** From the browser, choose the internal disk. Confirm that the
 USB stick itself is **not offered**, that no disk is preselected, and that model, size and
