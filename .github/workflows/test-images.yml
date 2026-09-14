@@ -115,8 +115,6 @@ jobs:
           # the gate's answer starts depending on when the branch last ran.
           cache: "false"
       - name: Retry Scan image for CVEs (Trivy)
-        # See .github/actions/retry-trivy-scan (#2215): absorbs setup-trivy's transient install
-        # flake without a second full step definition here.
         if: matrix.service != 'test-runner' && steps.trivy-scan.outcome == 'failure'
         uses: ./.github/actions/retry-trivy-scan
         with:

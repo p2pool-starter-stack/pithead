@@ -111,8 +111,6 @@ jobs:
           trivyignores: .trivyignore
           cache: "false"
       - name: Retry Scan rootfs for CVEs (Trivy)
-        # See .github/actions/retry-trivy-scan (#2215): absorbs setup-trivy's transient install
-        # flake without a second full step definition here.
         if: steps.tree.outputs.present == 'true' && steps.trivy-scan.outcome == 'failure'
         uses: ./.github/actions/retry-trivy-scan
         with:

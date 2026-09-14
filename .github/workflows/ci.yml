@@ -10,7 +10,6 @@ on:
   # by resolved digest — a rebuild resolves apt at scan time and would hide archive fixes the
   # shipped bytes never got — and reports into a tracking issue rather than reddening, since a
   # fixable CVE in a shipped image asks for a patch release, a person's decision.
-  #
   # THIS cron block is the one that fires: `schedule:` reads from the DEFAULT branch only, and
   # `develop` is it. Change the cadence here, and prove it fired with `gh run list --json event` —
   # a schedule that never runs looks exactly like one that ran and found nothing (#1162).
@@ -96,10 +95,11 @@ jobs:
 
   build-images:
     # Build every build/* image, plus dashboard/ (moved out of build/, #1106), so a broken
-    # Dockerfile / COPY path / entrypoint / pinned-digest is caught in CI instead of at deploy time
-    # (#124) — previously only the dashboard test stage was built, so e.g. the Tor image's
+    # Dockerfile / COPY path / entrypoint / pinned-digest is caught in CI instead of at deploy
+    # time (#124). Previously only the dashboard test stage was built, so e.g. the Tor image's
     # entrypoint restructure (#180) shipped with no CI safety net. Tari is an upstream image (no
-    # Dockerfile here), so it's excluded; fail-fast: false so one broken image doesn't hide others.
+    # Dockerfile here), so it's excluded. fail-fast: false so one broken image doesn't hide the
+    # others; empty build-args keep the dashboard build working bare.
     name: Build image (${{ matrix.service }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -127,11 +127,15 @@ jobs:
         # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .trivyignore.
         # Must stay green before v1.1 images publish (#282).
         #
-        # cache: false is load-bearing (#1159): the DB cache key is per-ref and day-granular, so a
-        # branch's first run of the day freezes its database until midnight — on 2026-08-20 the
-        # identical dashboard image passed on one branch and failed on another 40s apart for this
-        # reason. Re-downloading costs 3.3s (108 MiB from mirror.gcr.io/aquasec/trivy-db) against
-        # the 13.9s a ~997 MB cache restore was taking, and frees ~7.5 GB of Actions cache budget.
+        # cache: false is load-bearing (#1159). The action caches the vulnerability database under
+        # `cache-trivy-$(date +%F)`, and Actions caches are immutable and scoped per ref — so the
+        # first run of the calendar day on a branch freezes that branch's database until midnight.
+        # On 2026-08-20 the identical dashboard image passed on one branch and failed on another 40
+        # seconds apart, because one restored a snapshot written at 00:15 and the other one written
+        # at 13:33. A gate whose answer depends on when its branch last started a run is not a gate.
+        # Measured cost of downloading it every time: 108.49 MiB from mirror.gcr.io/aquasec/trivy-db
+        # in 3.3s, against the 13.9s the ~997 MB cache restore was taking. It also returns ~7.5 GB of
+        # the repo's 10 GB Actions cache budget, which was 92% near-duplicate copies of this one DB.
         id: trivy-scan
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -148,7 +152,6 @@ jobs:
           trivyignores: .trivyignore
           cache: "false"
       - name: Retry Scan image for CVEs (Trivy)
-        # See .github/actions/retry-trivy-scan (#2215).
         if: steps.trivy-scan.outcome == 'failure'
         uses: ./.github/actions/retry-trivy-scan
         with:
@@ -156,17 +159,17 @@ jobs:
           trivyignores: .trivyignore
 
   sweep-shipped:
-    # The half of the Monday sweep that reports on what users are running (#1313): build-images
-    # above scans a rebuild of this branch, this scans the bytes on the registry.
+    # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
+    # above scans a rebuild of this branch; this scans the bytes on the registry.
     #
-    # Every leg resolves the published TAG to a DIGEST and scans that: a tag is a moving pointer,
-    # so "we scanned :v1.20.0" stops being a statement about any particular image the moment it
-    # moves, and the digest is the only reference naming the bytes a user pulled (printed in the
-    # report).
+    # Every leg resolves the published TAG to a DIGEST and scans the digest. That is not
+    # ceremony: a tag is a moving pointer, so "we scanned :v1.20.0" stops being a statement about
+    # any particular image the moment it moves, and the digest is the only reference that names
+    # the bytes a user pulled. The digest scanned is printed in the report.
     #
-    # fail-fast: false so one unreachable image does not hide the other four — a leg that fails
-    # still shows up, since the report job runs on `always()` and names any image it received no
-    # scan for as UNCHECKED rather than counting it as clean.
+    # fail-fast: false so one unreachable image does not hide the other four — and a leg that
+    # fails still shows up, because the report job runs on `always()` and names any image it
+    # received no scan for as UNCHECKED rather than counting it as clean.
     name: Shipped-image CVE sweep (${{ matrix.service }})
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -185,9 +188,10 @@ jobs:
           SERVICE: ${{ matrix.service }}
         run: |
           set -Eeuo pipefail
-          # The scheduled run checks out develop; `main` is a different ref a shallow clone does
-          # not carry, so fetch it rather than assume it is here — since #1076 `main` is a
-          # fast-forward pointer to the released tag, the only ref that knows what shipped.
+          # The scheduled run checks out develop. `main` is a different ref and a shallow clone
+          # does not carry it, so fetch it rather than assume it is here — since #1076 `main` is a
+          # fast-forward pointer to the released tag, and it is the only ref that knows what
+          # shipped.
           git fetch --no-tags --depth=1 origin main
           ver="$(git show origin/main:VERSION)"
           [ -n "$ver" ] || { echo "::error::main carries no VERSION — cannot tell what shipped"; exit 1; }
@@ -214,11 +218,14 @@ jobs:
           # mid-run.
           printf '%s\n' "$tag" >"sweep-$SERVICE.tag"
       - name: Scan the published image by digest (Trivy)
-        # Same scope/engine as the gate above, held equal by #1290's pin (`make lint-trivy-parity`)
-        # so comparing this sweep's verdict against the rebuild's means something. Trivy pulls the
-        # digest from the registry itself — nothing is built here.
-        id: trivy-scan
-        continue-on-error: true
+        # Same scope as the gate above, and the same engine — but only because #1290's pin is on
+        # both steps. Read that as a dependency, not a coincidence: comparing this sweep's verdict
+        # against the rebuild's is the whole reason both exist, and two trivy releases apart is
+        # enough to make them disagree for reasons that have nothing to do with the images. If the
+        # step above ever loses its `version:`, this comparison stops meaning anything, and on
+        # nothing but `make lint-trivy-parity` will say so.
+        #
+        # trivy pulls the digest from the registry itself — nothing is built here.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
@@ -232,16 +239,6 @@ jobs:
           exit-code: "0"
           trivyignores: main.trivyignore
           cache: "false"
-          format: json
-          output: sweep-${{ matrix.service }}.json
-      - name: Retry Scan the published image by digest (Trivy)
-        # See .github/actions/retry-trivy-scan (#2215): same transient install flake as the gate.
-        if: steps.trivy-scan.outcome == 'failure'
-        uses: ./.github/actions/retry-trivy-scan
-        with:
-          image-ref: ${{ steps.shipped.outputs.ref }}
-          trivyignores: main.trivyignore
-          exit-code: "0"
           format: json
           output: sweep-${{ matrix.service }}.json
       - name: Upload this image's scan output
@@ -258,11 +255,12 @@ jobs:
   sweep-shipped-report:
     # One tracking issue, edited in place — the pin-watch.yml / trivyignore-watch.yml posture. An
     # issue persists, is assignable, and lets a person write "held until the next cut, here's why"
-    # in a comment — a red square in the Actions tab cannot hold that conversation.
+    # in a comment. A red square in the Actions tab cannot hold that, and this finding's whole
+    # value is the conversation about whether to cut a patch release.
     name: Shipped-image CVE sweep — tracking issue
-    # always() so a failed scan leg still reports: no scan output means UNCHECKED, and saying so
-    # is the point — skipping the report on a partial sweep would leave the last good one standing
-    # as if it were current.
+    # always() so a failed scan leg still reports: an image with no scan output is UNCHECKED, and
+    # saying so is the entire point. Skipping the report on a partial sweep would leave the last
+    # good report standing as if it were current.
     if: always() && github.event_name == 'schedule'
     needs: sweep-shipped
     runs-on: ubuntu-latest
@@ -286,7 +284,8 @@ jobs:
         run: |
           set -uo pipefail
           # NOT `set -e`: an incomplete sweep is a result to publish, not a reason to publish
-          # nothing — the script exits 1, and that rc carries to the last step so it still fails.
+          # nothing. The script names the images it could not check and exits 1; the rc is
+          # carried to the last step so the run still fails loudly.
           bash scripts/watch/shipped-image-sweep-report.sh shipped-sweep >report.md
           rc=$?
           # An empty report is itself a failure to report — never publish silence.
@@ -298,8 +297,9 @@ jobs:
           RC: ${{ steps.report.outputs.rc }}
         run: |
           set -Eeuo pipefail
-          # The title is the upsert key and lives in the script — one spelling anywhere, since a
-          # second one here would file a second issue and keep both stale.
+          # The title is the upsert key and it lives in the script, so there is exactly one
+          # spelling of it anywhere. A second spelling here would file a second issue on the very
+          # next run and then keep both stale.
           TITLE="$(bash scripts/watch/shipped-image-sweep-report.sh --title)"
           body=$(cat report.md)
           # Exact title match over the open list, NOT `--search`: the search index lags issue

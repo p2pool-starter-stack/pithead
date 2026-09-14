@@ -4,19 +4,13 @@ description: >
   pinned tag through an undocumented, unauthenticated `github.com/.../releases/<tag>` JSON
   endpoint (not the GitHub API), which intermittently 404s on a tag that exists (#2215) —
   confirmed transient, not a withdrawn release: the same pin passes on a bare rerun with no code
-  change. Callers keep their own primary trivy-action step inline (parity-checked by
-  `make lint-trivy-parity`); this is only the fallback attempt, so its pin is kept in sync by hand.
+  change. The caller keeps its own primary trivy-action step inline (parity-checked by
+  `make lint-trivy-parity`); this is only the fallback attempt.
 inputs:
   image-ref:
     required: true
   trivyignores:
     required: true
-  exit-code:
-    default: "1"
-  format:
-    default: "table"
-  output:
-    default: ""
 runs:
   using: composite
   steps:
@@ -27,8 +21,6 @@ runs:
         scanners: vuln
         severity: HIGH,CRITICAL
         ignore-unfixed: true
-        exit-code: ${{ inputs.exit-code }}
+        exit-code: "1"
         trivyignores: ${{ inputs.trivyignores }}
         cache: "false"
-        format: ${{ inputs.format }}
-        output: ${{ inputs.output }}
