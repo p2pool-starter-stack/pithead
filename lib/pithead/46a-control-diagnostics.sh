@@ -61,9 +61,9 @@ readonly PITHEAD_DIAG_MAX_BYTES=65536
 control_diag_doctor() { # <id> <actor> <control-dir>
     local id="$1" actor="$2" cdir="$3"
     local results="$cdir/results" auditf="$cdir/audit/control.log"
-    local self="${PITHEAD_SELF:-$0}" out
+    local self="${PITHEAD_SELF:-$0}" out rc=0 status
     control_audit "$auditf" "$id" "$actor" "diag-doctor" "started"
-    # `|| true` is load-bearing. doctor EXITS NONZERO on an unhealthy box — by design, and that
+    # The guard is load-bearing. doctor EXITS NONZERO on an unhealthy box — by design, and that
     # report is exactly what this request exists to deliver. Capturing it bare let that exit kill
     # the runner mid-request under `set -e`: no result was ever written, the caller polled its full
     # deadline into silence, and the unit died with "pithead aborted unexpectedly (exit 1)". The
@@ -71,7 +71,7 @@ control_diag_doctor() { # <id> <actor> <control-dir>
     # provisioned appliance with monerod stopped: rc=1 with a valid 3.7 KB report carrying exit=1
     # and 32 structured checks — a result worth writing, not a reason to abort. `head -c` closing
     # the pipe early is the same hazard under pipefail.
-    out=$("$self" doctor --json 2>/dev/null | bundle_redact_log | head -c "$PITHEAD_DIAG_MAX_BYTES") || true
+    out=$("$self" doctor --json 2>/dev/null | bundle_redact_log | head -c "$PITHEAD_DIAG_MAX_BYTES") || rc=$?
     # A truncated document is not a document: report the failure rather than shipping half an
     # object the dashboard would fail to parse and render as "no data".
     if [ -z "$out" ] || ! printf '%s' "$out" | jq -e . >/dev/null 2>&1; then
@@ -79,8 +79,9 @@ control_diag_doctor() { # <id> <actor> <control-dir>
         control_audit "$auditf" "$id" "$actor" "diag-doctor" "failed"
         return 0
     fi
-    control_write_result "$results" "$id" "$(jq -n --argjson d "$out" '{status:"applied",doctor:$d,ts:(now|floor)}')"
-    control_audit "$auditf" "$id" "$actor" "diag-doctor" "applied"
+    [ "$rc" -eq 0 ] && status="applied" || status="failed"
+    control_write_result "$results" "$id" "$(jq -n --arg s "$status" --argjson d "$out" '{status:$s,doctor:$d,ts:(now|floor)}')"
+    control_audit "$auditf" "$id" "$actor" "diag-doctor" "$status"
 }
 
 # Bounded, redacted log tail for ONE allowlisted container (#943).
