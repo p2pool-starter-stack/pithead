@@ -103,6 +103,33 @@ mining_net_ipv6_bridge() {
 # The hook, not merely a rule: the failure #855 was about is a DROP sitting in a chain no packet
 # traverses, which is exactly what a base chain hooked at forward CANNOT be.
 #
+# Dotted-quad -> 32-bit int. `10#` forces base 10 so an octet like "08" (invalid octal) can't
+# make bash's arithmetic context choke or misparse.
+tor_egress_ip_to_int() { # <a.b.c.d>
+    local a b c d
+    IFS=. read -r a b c d <<<"$1"
+    echo $(((10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d))
+}
+
+# True (rc 0) iff <cidr1> and <cidr2> overlap at all. Aligned CIDR blocks can only be identical,
+# disjoint, or one nested inside the other — never partially overlapping — so masking BOTH
+# addresses to the SHORTER (larger-block) prefix and comparing catches every one of those shapes:
+# a foreign supernet containing our subnet, our subnet containing a narrower foreign rule, and an
+# exact match, while a genuinely disjoint foreign rule still compares unequal. A bare IP with no
+# `/prefix` is a /32, matching iptables' own reading of `-s a.b.c.d`.
+tor_egress_cidr_overlaps() { # <cidr1> <cidr2>
+    local ip1 p1 ip2 p2 minp mask
+    ip1="${1%%/*}"
+    p1="${1#*/}"
+    [ "$p1" != "$1" ] || p1=32
+    ip2="${2%%/*}"
+    p2="${2#*/}"
+    [ "$p2" != "$2" ] || p2=32
+    minp=$((p1 < p2 ? p1 : p2))
+    mask=$(((0xFFFFFFFF << (32 - minp)) & 0xFFFFFFFF))
+    [ "$(($(tor_egress_ip_to_int "$ip1") & mask))" = "$(($(tor_egress_ip_to_int "$ip2") & mask))" ]
+}
+
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
@@ -168,7 +195,7 @@ tor_egress_enforced() {
     # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
-    local line subnet
+    local line subnet foreign_net
     subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
     [ -n "$subnet" ] || subnet="172.28.0.0/24"
     while IFS= read -r line; do
@@ -178,20 +205,20 @@ tor_egress_enforced() {
         *"$TOR_EGRESS_TAG"*) continue ;;
         *)
             # A foreign rule only shadows if it TERMINATES the chain (ACCEPT/RETURN) *and* could
-            # match our traffic — unscoped, or scoped to our own subnet. DOCKER-USER is host-wide
-            # and shared with every other compose project (ufw-docker writes there), so flagging a
-            # rule that cannot match us would fire permanently on healthy hosts and desensitise the
-            # one time it matters. KNOWN GAP, stated rather than hidden: a `-s` SUPERNET containing
-            # our subnet is not recognised as overlapping, so it reads as harmless.
+            # match our traffic — unscoped, or CIDR-overlapping our subnet in either direction (a
+            # supernet containing us, or a narrower rule we contain). DOCKER-USER is host-wide and
+            # shared with every other compose project (ufw-docker writes there), so flagging a rule
+            # that cannot match us would fire permanently on healthy hosts and desensitise the one
+            # time it matters.
             case "$line" in
             *" -j ACCEPT" | *" -j RETURN" | *" -j ACCEPT "* | *" -j RETURN "*) ;;
             *) continue ;;
             esac
             case "$line" in
             *" -s "*)
-                # -F: $subnet is operator data (NETWORK_SUBNET), matched literally — a glob
-                # metacharacter in it must not change what this matches.
-                grep -qF -- " -s $subnet " <<<"$line " && return 5
+                foreign_net="${line#*" -s "}"
+                foreign_net="${foreign_net%% *}"
+                tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 5
                 continue
                 ;;
             *) return 5 ;;
