@@ -33,7 +33,7 @@ updates:
 
   # Base-image digests across every build/* Dockerfile (incl. the uv build image) plus
   # dashboard/Dockerfile (#1106, #833). This is the mechanism that clears base-distro CVEs — e.g.
-  # the openssl point-release accepted in .trivyignore. The appliance rootfs has its own entry
+  # the openssl point-release accepted in .config/trivyignore. The appliance rootfs has its own entry
   # below: a different base, a different policy note, and stakes worth their own group.
   - package-ecosystem: "docker"
     directories:
