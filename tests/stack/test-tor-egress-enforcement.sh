@@ -359,6 +359,12 @@ assert_eq "iptables: a NEGATED accept scoped to exactly our subnet -> still enfo
     "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/24 -j ACCEPT')" "0"
 assert_eq "iptables: a NEGATED accept on a DISJOINT subnet -> not provably enforced (matches us)" \
     "$(fgn_rc '-A DOCKER-USER ! -s 10.0.0.0/8 -j ACCEPT')" "5"
+# A negated rule NARROWER than our subnet (cp > mp) covers only PART of us — its own network
+# address can coincide with ours once masked to the negated rule's own (longer) prefix, which
+# would wrongly read as "contains" without the container/member prefix-order guard. It excludes
+# only that slice, so the rest of the mining subnet is exposed: this must still shadow.
+assert_eq "iptables: a NEGATED accept NARROWER than our subnet -> not provably enforced (exposes the rest)" \
+    "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/25 -j ACCEPT')" "5"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
 # Keying the "is this benign?" question on tor alone reported that as the first-boot case.
