@@ -76,6 +76,9 @@ else
     ok "doctor: host-remedy mutant applied (#1770)"
 fi
 mutant_host="$(doctor_missing_onions 0 "$DOC/pithead-host-remedy-mutant")"
+mutant_rc=$?
+assert_rc "doctor: host-remedy mutant runs successfully (#1770)" "$mutant_rc" "0"
+assert_contains "doctor: host-remedy mutant reaches doctor output (#1770)" "$mutant_host" "MUTATION"
 host_remedies_match "$mutant_host"
 assert_rc "doctor: appended host-remedy text trips the exact guard (#1770)" "$?" "1"
 doc_appliance="$(doctor_missing_onions 1)"
@@ -87,4 +90,4 @@ for onion_key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS DASHBOARD_ONION_ADDRESS
     assert_contains "doctor: each regenerable appliance onion names dashboard apply (#1770)" "$onion_remedy" "saving any change from the dashboard provisions it"
     assert_not_contains "doctor: no regenerable appliance onion requires console access (#1770)" "$onion_remedy" "correcting this needs console access"
 done
-unset DOC doc_remote doc_local doc_host mutant_host doc_appliance onion_key p2pool_row onion_remedy doctor_onions doctor_missing_onions onion_message host_remedy_for host_remedies_match
+unset DOC doc_remote doc_local doc_host mutant_host mutant_rc doc_appliance onion_key p2pool_row onion_remedy doctor_onions doctor_missing_onions onion_message host_remedy_for host_remedies_match
