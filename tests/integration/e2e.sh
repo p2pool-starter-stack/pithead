@@ -37,6 +37,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 source "$HERE/lib/restore-proof.sh" || exit $?
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" || exit $?
+source "$HERE/lib/harness-args.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -50,7 +51,7 @@ BORROW_MINER=1
 SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
-BRANCH=""
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
 
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -89,6 +90,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
+  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
   --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -122,6 +124,7 @@ while [ $# -gt 0 ]; do
         SCENARIO="$2"
         shift 2
         ;;
+    --harness-arg) HARNESS_ARGS+=("$2") && shift 2 ;;
     --bench)
         BENCH_HOST="$2"
         shift 2
@@ -159,7 +162,7 @@ done
 }
 case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
-[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO"
+[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
@@ -608,6 +611,7 @@ run_harness() {
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
+    phases="$phases${HARNESS_PHASE_ARGS:-}" # bench-ci's one-phase selection, after the mode's own (#2179)
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
