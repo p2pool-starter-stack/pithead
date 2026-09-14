@@ -186,7 +186,7 @@ integration_expected=$(
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name redact-it-password.sh \
+        ! -name redact-it-password.sh ! -name load-worker.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
         sed 's|^tests/integration/||'
 )
