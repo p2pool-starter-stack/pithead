@@ -8,6 +8,7 @@ source "$HERE/lib.sh"
 # shellcheck source=tests/integration/lib/live-gates.sh
 source "$HERE/lib/live-gates.sh"
 
+echo "== image upgrade separates bundle trust, image trust, and registries =="
 same_registry=$'tor registry.test/pithead-tor:v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndashboard registry.test/pithead-dashboard:v2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 mixed_registry=${same_registry/registry.test\/pithead-dashboard/two.test\/pithead-dashboard}
 [ "$(first_party_registry "$same_registry")" = registry.test ]
