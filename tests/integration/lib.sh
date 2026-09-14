@@ -76,7 +76,7 @@ it_pass() {
 it_fail() {
     IT_FAIL=$((IT_FAIL + 1))
     IT_FAILED_NAMES="${IT_FAILED_NAMES}\n    - ${IT_CURRENT_SCENARIO:-?}: $1"
-    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(printf '%s' "${2:-}" | redact_it_password)"
+    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact_it_password <<<"${2:-}")"
 }
 
 assert_eq() { if [ "$2" = "$3" ]; then it_pass "$1"; else it_fail "$1" "expected [$3], got [$2]"; fi; }
