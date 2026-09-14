@@ -20,7 +20,8 @@ manage the host.
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
   system copies before your data starts, so a 550 GB disk leaves the chains short of their budget.
   On a smaller disk, run pruned Monero and point Tari at a node you already have — the setup page
-  asks both questions, and that drops the requirement to about 370 GB. See
+  asks both questions. The 328 GiB stack budget is about 352 GB as SSD makers label it; add the
+  appliance's system partitions and round up, and the disk requirement is about 370 GB. See
   [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere) for the totals in
   every combination.
 - A wired ethernet connection. Wi-Fi is not supported.
