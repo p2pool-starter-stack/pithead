@@ -66,6 +66,7 @@ run_rigforge_control >/dev/null 2>&1
 unreadable_rc=$?
 assert_eq "an unreadable current config returns nonzero" "$unreadable_rc" "1"
 assert_eq "an unreadable current config is never pushed" "$PUSHES" "0"
+unreadable_ok=$([ "$unreadable_rc" -eq 1 ] && [ "$PUSHES" -eq 0 ] && echo 1 || echo 0)
 
 echo "== a late RigForge assertion blocks later destructive phases =="
 IT_FAIL=0 RUN_RIGFORGE=0 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -88,4 +89,4 @@ MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
 assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" '[ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]'
 printf '\nselftest-rigforge-control-barrier: PASS\n'
 # The forced failures above are product-counter stimuli, not selftest failures.
-[ "$early_ok" = 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]
+[ "$early_ok" = 1 ] && [ "$unreadable_ok" = 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]
