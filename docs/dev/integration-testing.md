@@ -75,8 +75,9 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
   dot to a `\x01` sentinel and restoring it at the end, and it neutralises any sentinel already in
   the input before doing so ([#1613](https://github.com/p2pool-starter-stack/pithead/issues/1613)):
   without that step the closing restore ran after every rule, so a `\x01` sitting inside what would
-  otherwise be a public quad came out as a dotted, routable address that no rule had inspected. What it keeps is exactly the set
-  `is_public_ip` calls private — loopback, RFC1918, link-local and CGNAT — because an artifact whose
+  otherwise be a public quad came out as a dotted, routable address that no rule had inspected.
+  What it keeps is exactly the set `is_public_ip` calls non-public — loopback, RFC1918, link-local
+  and shared address space (CGNAT) — because an artifact whose
   port map and container addresses have been stripped cannot be triaged, and because holding the two
   lists identical is what makes the coverage argument checkable rather than anecdotal.
   [#1582](https://github.com/p2pool-starter-stack/pithead/issues/1582) closed the flag-value and
@@ -520,9 +521,11 @@ and `--list` prints it).
   that second dial is the within-row control, without which a DROP and a bench with no route to the
   internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
-  checks state, not effect: `assert_egress_posture` samples the connections the apps *chose* to
-  make, so it reads clean on a fail-open box whose apps are all correctly Tor-configured, and
-  `verify_tor_egress_firewall` compares the installed ruleset to the applier's own render. Rules can
+  checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
+  to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
+  address and its poll count in the harness output; a clean sample still reads clean on a fail-open
+  box whose apps are all correctly Tor-configured. `verify_tor_egress_firewall` compares the
+  installed ruleset to the applier's own render. Rules can
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
   appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
