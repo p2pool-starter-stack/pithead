@@ -85,6 +85,8 @@ test("return action posts once, then follows the server back to the retained for
     reference: REF,
     disks: FAILED.disks,
     installer: false,
+    restoreMode: true,
+    restorePassphraseVisible: true,
   });
   const calls = [];
   const real = globalThis.fetch;
@@ -105,10 +107,11 @@ test("return action posts once, then follows the server back to the retained for
   assert.equal(app.state.cfg.monero.wallet_address, "4PAYOUT");
   assert.equal(app.state.chosen, "sda");
   assert.equal(app.state.confirm, "");
+  assert.equal(app.state.restoreMode, true);
+  assert.equal(app.state.restorePassphraseVisible, false);
   const form = renderToString(app.render());
-  assert.match(form, /Monero payout address/);
-  assert.match(form, /4PAYOUT/);
-  assert.match(form, /Adjusted for Pithead 2\.0/);
+  assert.match(form, /Restore from a backup/);
+  assert.match(form, /type="password"/);
 });
 
 test("return action says to reload if the reopened state cannot be fetched", async () => {

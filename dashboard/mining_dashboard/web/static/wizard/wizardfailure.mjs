@@ -52,6 +52,7 @@ export function restoredAttempt(server, current) {
 export async function backToSettings(app) {
   const res = await fetch("/retry", { method: "POST" });
   if (res.ok) {
+    app.setState({ restorePassphraseVisible: false });
     if (await app.loadState()) return true;
     app.setState({ error: "Settings reopened. Reload this page to continue." });
     return false;
