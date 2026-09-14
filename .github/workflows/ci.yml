@@ -384,10 +384,17 @@ jobs:
       - name: Scan git history for secrets (gitleaks, pinned by digest)
         # Run the binary via its pinned image (the gitleaks-action requires a license for org repos).
         # Accepted false positives live in .config/gitleaks.toml.
+        #
+        # --log-opts="HEAD" is load-bearing (#2204): gitleaks' git scan defaults to every ref
+        # reachable in the local clone, and fetch-depth: 0 above makes actions/checkout fetch
+        # +refs/heads/*:refs/remotes/origin/* — every OTHER open branch, not just this ref. Without
+        # the pin, an un-ignored secret-shaped fixture on any unrelated in-flight branch reds this
+        # PR's gate. HEAD here is the checked-out commit (this PR's merge ref), so the scan covers
+        # every commit reachable from it and nothing else.
         run: |
           docker run --rm -v "$PWD":/repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            git /repo --no-banner --redact --config /repo/.config/gitleaks.toml --gitleaks-ignore-path /repo/.config/gitleaksignore
+            git /repo --no-banner --redact --config /repo/.config/gitleaks.toml --gitleaks-ignore-path /repo/.config/gitleaksignore --log-opts="HEAD"
 
   zizmor:
     name: Workflow audit (zizmor)
