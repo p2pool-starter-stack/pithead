@@ -509,9 +509,9 @@ export class UpgradeControl extends Component {
 
   render() {
     const { update, enabled } = this.props;
-    if (!enabled || !update || !update.available) return null;
     const { phase, confirmText, result } = this.state;
-    const version = update.latest;
+    if ((!enabled || !update || !update.available) && phase !== "failed") return null;
+    const version = update?.latest;
     let modal = null;
     if (phase === "confirm") {
       modal = html`<div class="config-modal-backdrop">
