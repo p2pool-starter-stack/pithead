@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 # Scheduled-run watch (#1377, #1418).
-# The Monday run of ci.yml IS the CVE sweep: `build-images` rebuilds every image and scans the
-# rebuild (#833), `sweep-shipped` scans the published digests (#1313). A scheduled run has no pull
-# request, so nothing draws a person to it. This watcher is that run's reader.
-# REPORT-ONLY. A scheduled failure, LATE run or MISSED run is a finding. This watcher fails only
-# when its inputs are unreadable or incomplete; those paths say UNCHECKED rather than clean.
-# CADENCE. cadence.json names every schedule declared in the checked-out workflows and carries
-# server-filtered run history for each. A missing run becomes LATE after 12 hours and MISSED after
-# one full period. Both are report findings; only unreadable inputs make the watcher fail.
-# ONE UNWATCHED WATCHER REMAINS. This script can include its own workflow in the table, but a
-# GitHub-wide schedule shutdown also stops this run. The carried-forward success stamp makes that
-# absence readable to an observer outside GitHub; it cannot make the absence self-announcing.
+# The Monday ci.yml CVE sweep has no pull request; this watcher reports its schedule and result.
+# LATE/MISSED are findings; unreadable inputs are UNCHECKED. A GitHub-wide shutdown cannot self-announce.
 # Usage:
 #   scripts/watch/scheduled-run-watch.sh <dir>    Render the report for the JSON in <dir> on stdout.
 #                                           <dir>/cadence.json = declared schedules + run history
@@ -26,7 +17,6 @@
 
 set -Eeuo pipefail
 
-# The exact title is the issue-upsert key. Changing it files a second report.
 WATCH_ISSUE_TITLE="Scheduled CI run watch (weekly report)"
 
 HISTORY_ROWS=6
@@ -80,27 +70,28 @@ render_cadence() {
                 | if . > $now then . - 604800 else . end
             end;
         def interior_gap($runs; $p): reduce $runs[] as $after
-            ({previous: null, gap: null}; if .gap != null then . elif .previous != null and $after.slot - .previous.slot > $p.period then . + {gap: {slot: (.previous.slot + $p.period), before: .previous, after: $after}} else . + {previous: $after} end) | .gap;
+            ({previous: null, gaps: []}; if .previous == null or $after.slot - .previous.slot <= $p.period then . + {previous: $after} else .previous as $before | . + {gaps: (.gaps + [range($before.slot + $p.period; $after.slot; $p.period) | {slot: ., before: $before, after: $after}]), previous: $after} end) | .gaps;
         (.checkedAt | fromdateiso8601) as $now
         | [.workflows[] | . as $w | ($w | parts) as $p
             | [.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] as $valid
             | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
                  or ($valid | length) != ($w.runs | length)
+                 or ($valid | any((.databaseId | type) != "number" or (.url | type) != "string" or (.url | length) == 0))
                  or (.declaredAt | type) != "number" then
                 {workflow: .path, cron: .cron, last: "unknown", state: {kind: "unchecked"}}
               else (slot($now; $p)) as $latest
                 | (slot(($w.declaredAt // $now); $p)) as $before_declared
-                | (if $before_declared < ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
+                | (if $before_declared <= ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
                 | ([$valid[] | . + {slot: slot(.epoch; $p)} | select(.slot >= $first)] | sort_by(.slot) | group_by(.slot) | map(last)) as $observed
                 | ($observed | first) as $old | ($observed | last) as $new
-                | (if $old != null and $old.slot > $first then {slot: $first, before: null, after: $old} else interior_gap($observed; $p) end) as $gap
+                | (if $old != null and $old.slot > $first then [range($first; $old.slot; $p.period) | {slot: ., before: null, after: $old}] else interior_gap($observed; $p) end) as $gaps
                 | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"), state:
                    (if .path == ".github/workflows/scheduled-run-watch.yml" then {kind: "external"}
-                    elif $gap != null then $gap + {kind: "missed"}
-                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", slot: $first, before: null, after: null}
+                    elif ($gaps | length) > 0 then {kind: "missed", gaps: $gaps}
+                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", gaps: [{slot: $first, before: null, after: null}]}
                     elif $new == null and $now >= ($first + 43200) then {kind: "late"}
                     elif $new == null then {kind: "grace"}
-                    elif $new.slot < ($latest - $p.period) then {kind: "missed", slot: ($new.slot + $p.period), before: $new, after: null}
+                    elif $new.slot < ($latest - $p.period) then {kind: "missed", gaps: [{slot: ($new.slot + $p.period), before: $new, after: null}]}
                     elif $new.slot < $latest and $now >= ($latest + 43200) then {kind: "late"}
                     elif $new.slot < $latest then {kind: "grace"} else {kind: "ok"} end)}
               end]
@@ -113,7 +104,7 @@ render_cadence() {
     printf '| Workflow | Cron | Last observed run | Cadence |\n|---|---|---|---|\n'
     printf '%s' "$rows" | jq -r '
         def bound($run; $empty): if $run == null then $empty else "[\($run.databaseId)](\($run.url))" end;
-        def state: if .kind == "missed" then "**MISSED** `\(.slot | todateiso8601)` between \(bound(.before; "the declaration boundary")) and \(bound(.after; "no observed run"))" elif .kind == "unchecked" then "**UNCHECKED**" elif .kind == "external" then "external stamp only" elif .kind == "late" then "LATE" elif .kind == "grace" then "within 12h grace" else "ok" end;
+        def state: if .kind == "missed" then .gaps[] | "**MISSED** `\(.slot | todateiso8601)` between \(bound(.before; "the declaration boundary")) and \(bound(.after; "no observed run"))" elif .kind == "unchecked" then "**UNCHECKED**" elif .kind == "external" then "external stamp only" elif .kind == "late" then "LATE" elif .kind == "grace" then "within 12h grace" else "ok" end;
         .[] | "| `\(.workflow)` | `\(.cron)` | \(.last) | \(.state | state) |"'
     printf '\nMISSED means no run appeared for a full period after an expected slot. LATE is informational\n'
     printf 'after 12 hours; neither finding fails this report. UNCHECKED means the watch itself failed.\n\n'
@@ -140,8 +131,6 @@ render_report() {
         return 1
     fi
 
-    # Sort here rather than trusting gh to return newest-first: the ordering is not part of the
-    # documented contract, and a report that names the wrong run as "newest" is worse than none.
     runs="$(jq -c 'sort_by(.createdAt) | reverse' "$dir/runs.json" 2>/dev/null || true)"
     if [ -z "$runs" ] || [ "$runs" = "null" ] || [ "$(printf '%s' "$runs" | jq -r 'length')" = "0" ]; then
         printf 'UNCHECKED: the run history could not be parsed, or lists no scheduled run at all.\n'
@@ -231,7 +220,6 @@ if [ "${1:-}" = "--self-test" ]; then
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
 
-    # <dir> <conclusion-of-newest> [older-conclusions...]
     runs_fixture() {
         local dir="$1" i=0 c
         shift
@@ -256,7 +244,7 @@ if [ "${1:-}" = "--self-test" ]; then
         [ -n "$runs" ] || runs='[{"createdAt":"2026-09-14T06:00:00Z"}]'
         mkdir -p "$dir"
         jq -n --arg checkedAt "$checked" --arg cron "$cron" --argjson runs "$runs" \
-            '{checkedAt: $checkedAt, workflows: [{path: ".github/workflows/ci.yml", cron: $cron, declaredAt: ("2026-08-01T00:00:00Z" | fromdateiso8601), runs: $runs}]}' >"$dir/cadence.json"
+            '{checkedAt: $checkedAt, workflows: [{path: ".github/workflows/ci.yml", cron: $cron, declaredAt: ("2026-08-01T00:00:00Z" | fromdateiso8601), runs: ($runs | to_entries | map(.value + {databaseId: (.value.databaseId // .key), url: (.value.url // "https://x/\(.key)")}))}]}' >"$dir/cadence.json"
     }
     workflows="$tmp/workflows"
     mkdir -p "$workflows"
@@ -286,11 +274,22 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_cadence "$interior")"
     st "a recovered weekly run does not erase the missed interior slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
     st "an interior gap names its slot and bounding runs" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between [907](https://x/907) and [921](https://x/921)')" "1"
+    interior_many="$tmp/interior-many"
+    cadence_fixture "$interior_many" "2026-09-28T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":928,"url":"https://x/928","createdAt":"2026-09-28T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$interior_many/cadence.json" >"$interior_many/next" && mv "$interior_many/next" "$interior_many/cadence.json"
+    out="$(render_cadence "$interior_many")"
+    st "an interior recovery retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "an interior recovery names the later missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between [907](https://x/907) and [928](https://x/928)')" "1"
     recovered="$tmp/recovered"
     cadence_fixture "$recovered" "2026-09-29T08:00:00Z" "0 5 * * 1" '[{"databaseId":929,"url":"https://x/929","createdAt":"2026-09-29T07:00:00Z"}]'
     jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
     out="$(render_cadence "$recovered")"
-    st "a recovered first run retains missed declaration-boundary slots" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a recovered first run retains every missed declaration-boundary slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "a declaration boundary names the first missed slot and run" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration boundary includes later missed slots" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    jq '.workflows[0].declaredAt = ("2026-09-14T05:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
+    out="$(render_cadence "$recovered")"
+    st "a declaration exactly on a slot starts with the next slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
     fresh="$tmp/fresh"
     cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
     jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
@@ -315,6 +314,10 @@ if [ "${1:-}" = "--self-test" ]; then
     cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1" '[{"createdAt":"not-a-time"}]'
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "a malformed run timestamp is UNCHECKED" "$rc" "1"
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1"
+    jq '.workflows[0].runs[0].databaseId = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "run evidence without an ID fails closed" "$rc" "1"
 
     short="$tmp/short"
     runs_fixture "$short" success success
@@ -356,7 +359,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "an unfinished newest run fails rather than reading as passing" "$rc" "1"
     st "an unfinished run is not called a success" "$(printf '%s' "$out" | grep -c 'found nothing')" "0"
 
-    # Knowing a run failed but not WHICH job is a half-answer and must not read as a whole one.
     nojobs="$tmp/nojobs"
     runs_fixture "$nojobs" failure success
     out="$(render_report "$nojobs")" && rc=0 || rc=$?
@@ -374,9 +376,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$nofail")" && rc=0 || rc=$?
     st "a failed run whose jobs all passed fails rather than reporting nothing" "$rc" "1"
 
-    # Every case above calls render_report inside an `&&` list, where bash suppresses `set -e` for
-    # the whole dynamic extent of the call — so none of them can see an error-exit that only bites
-    # the way CI actually invokes this: bare, in its own process.
     out="$(bash "${BASH_SOURCE[0]}" "$ok")" && rc=0 || rc=$?
     st "the clean path survives a real subprocess invocation" "$rc" "0"
     out="$(bash "${BASH_SOURCE[0]}" "$red")" && rc=0 || rc=$?
@@ -384,7 +383,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(bash "${BASH_SOURCE[0]}" "$empty")" && rc=0 || rc=$?
     st "a refusal still exits 1 from a real subprocess" "$rc" "1"
 
-    # The title is the upsert key; a change here silently files a second issue for ever.
     st "--title prints the constant and nothing else" \
         "$(bash "${BASH_SOURCE[0]}" --title)" "$WATCH_ISSUE_TITLE"
 
