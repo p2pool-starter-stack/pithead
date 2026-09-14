@@ -28,7 +28,12 @@ _phase_install_initial() {
     local foreign_disk="/srv/code/bench-vm/pithead-foreign.img"
     local foreign_serial="PHFOREIGN01" foreign_model="ForeignDisk" target_serial="PHTARGET01"
     rm -f "$foreign_disk"
-    qemu-img create -f raw "$foreign_disk" 256M >/dev/null
+    # 5G, not a token size: the negative control at the end INSTALLS to this disk, and
+    # pithead-install's partition_fresh lays down a 256 MiB ESP plus a 4 GiB slot A. Anything
+    # under ~4.25 GiB makes sgdisk fail first, and the control would then be reporting a disk too
+    # small to partition rather than the wrong-disk guard it exists to test. Raw and sparse, so
+    # the extra size costs nothing until written.
+    qemu-img create -f raw "$foreign_disk" 5G >/dev/null
     : >"$SERIAL"
     # The image rides a USB bus with removable=on — that is what makes the guest a faithful
     # analog of a user's stick: the host-side gate (installer_mode_available) keys on
@@ -81,8 +86,12 @@ _phase_install_initial() {
         bad "inventory does not offer vda — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-120)"
         return 1
     fi
-    if printf '%s' "$out" | grep -qF "$(printf '%s\t%s\tempty' "$foreign_model" "$foreign_serial")"; then
-        ok "inventory lists the foreign disk for erasure with its real model and serial"
+    # Echo the row itself: whether libvirt's vendor/product really reaches lsblk's MODEL column
+    # is not knowable by inspection, so the log has to carry the observed evidence.
+    local foreign_row
+    foreign_row=$(printf '%s' "$out" | grep -F "$(printf '%s\t%s\tempty' "$foreign_model" "$foreign_serial")" | head -1)
+    if [ -n "$foreign_row" ]; then
+        ok "inventory lists the foreign disk for erasure with its real model and serial: $(printf '%s' "$foreign_row" | tr '\t' '|')"
     else
         bad "foreign disk row missing or wrong — got: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
         return 1
@@ -274,11 +283,20 @@ _phase_install_initial() {
     # Deliberately install to the WRONG disk (the foreign one) and confirm the sentinel really
     # does disappear — otherwise a broken mount/hash check above would report "untouched" no
     # matter what a real wrong-disk bug did.
-    if [ -n "$foreign_dev" ] && _ssh "pithead-install --target /dev/$foreign_dev --yes" >/dev/null 2>&1 &&
-        ! _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null &&
-            test -e \"\$m/sentinel\""; then
-        ok "negative control: installing to the foreign disk destroys the sentinel (the untouched row fires)"
+    local nc_out nc_rc=0
+    if [ -z "$foreign_dev" ]; then
+        bad "negative control: the foreign disk is not visible, so nothing was proven"
     else
-        bad "negative control failed — installing to the foreign disk did not destroy the sentinel"
+        # Keep the installer's own stderr: a refusal here (too small to partition, disk in use)
+        # is a different failure from a surviving sentinel, and the log must say which.
+        nc_out=$(_ssh "pithead-install --target /dev/$foreign_dev --yes 2>&1") || nc_rc=$?
+        if [ "$nc_rc" -ne 0 ]; then
+            bad "negative control: the installer refused the foreign disk (rc $nc_rc): $(printf '%s' "$nc_out" | tail -3 | tr '\n' ' ' | cut -c1-200)"
+        elif _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null &&
+            test -e \"\$m/sentinel\""; then
+            bad "negative control: the sentinel survived an install onto its OWN disk — the untouched row above proves nothing"
+        else
+            ok "negative control: installing to the foreign disk destroys the sentinel (the untouched row fires)"
+        fi
     fi
 }
