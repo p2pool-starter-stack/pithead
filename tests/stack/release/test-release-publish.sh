@@ -65,6 +65,12 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
         set --
         # shellcheck disable=SC1090
         source "$REL" 2>/dev/null
+        # The producer writes os/build/pithead-root.tar relative to the cwd. Drive it in a scratch
+        # tree: os/build is git-ignored and absent from a clean checkout (the real build-image.sh
+        # creates it), and a developer's own export must not be clobbered by a test run.
+        rm -rf "$SANDBOX/rootfs-producer"
+        mkdir -p "$SANDBOX/rootfs-producer/os/build"
+        cd "$SANDBOX/rootfs-producer" || exit
         DRY_RUN=0
         # shellcheck disable=SC2034  # consumed by the dynamically sourced build_rootfs_image
         PLATFORMS=linux/amd64
@@ -83,7 +89,6 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
                 command "$@"
             fi
         }
-        trap 'rm -f "$rootfs_tar" "$rootfs_tar.sha256" "$rootfs_tar.sha256.tmp"' EXIT
         build_rootfs_image
         [ -s "$rootfs_tar.sha256" ] && printf 'finalized=yes\n' >>"$PUSH_LOG"
     )
