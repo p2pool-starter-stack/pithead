@@ -126,6 +126,16 @@ assert_rc "a carried restore + a pre-existing config.json still runs setup on th
 assert_contains "...the carried-restore door was actually called, not skipped by the config.json guard" "$(cat "$RF_LOG")" "consume_preseed_restore-called"
 assert_eq "...and the restored config.json replaced the pre-existing one" "$(jq -r '.monero.wallet' "$SAWB/config.json")" "4restored"
 rm -f "$SAESP/pithead-restore.enc"
+
+echo "== unit: firstboot_wizard restores legacy remote-node settings without a new-node preflight (#2230) =="
+SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; return 1; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
+rm -f "$SAWB/config.json"
+mkdir -p "$SAWB/data/firstboot"
+: >"$RF_LOG"
+out=$(PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$SAWB" eval "$SAW_STUBS_LEGACY" 2>&1)
+assert_rc "a restored legacy remote-node config reaches setup" "$?" "0"
+assert_not_contains "the current new-node preflight does not reject the restored archive" "$(cat "$RF_LOG")" "preflight"
+assert_contains "the restored config reaches the credentials-handoff path" "$(cat "$RF_LOG")" "setup"
 unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE
 rm -rf "$SAWB" "$SAESP"
 echo "== unit: write_handoff_card — the credentials card is owner-only from its first byte (#1842) =="

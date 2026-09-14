@@ -360,10 +360,10 @@ firstboot_wizard() {
                 continue
             fi
             if [ "$rec" -eq 0 ] || firstboot_consume_spool "$spool"; then
-                # Reachability before commitment: a remote node that cannot be dialed fails HERE,
-                # on the page, with the attempt kept for editing — not minutes into provisioning.
+                # A new candidate must be reachable before commitment; a restored archive already
+                # passed its release's policy and must not be rejected by a later preflight (#2230).
                 local pf_err
-                if ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); then
+                if [ "$rec" -ne 0 ] && ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); then
                     printf '%s' "$pf_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
                     # Same bare-keep hazard as a rejected restore: the config candidate is gone,

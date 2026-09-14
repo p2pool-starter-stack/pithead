@@ -225,7 +225,8 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    ran from wherever the operator placed it). Backups with custom data paths, or whose members do
    not share one consistent root, need the administrative restore workflow.
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
-   call `firstboot_consume_spool` uses.
+   call `firstboot_consume_spool` uses. A valid restored remote-node configuration is not redialed
+   under a later release's new-configuration preflight policy.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
    validated generated secrets and Tor identity from the archived environment.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
