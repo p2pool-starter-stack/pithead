@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|stack|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -31,7 +31,14 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
-#   all     every phase above, in that order — media, fault and reset included since #1064
+#   stack   one stack suite, two channel harnesses (#2062, docs/dev/testing-strategy.md § J):
+#           provision a guest in remote-node mode (an already-synced bench node, so the sync gate
+#           clears and the guest can actually mine) and run tests/integration/run.sh — the DIY
+#           gate — against it: a non-destructive check, then fault-injection/hardening/
+#           auth-fail-closed, then the remote-safe scenario subset, then XvB routing. The first
+#           live remote-node coverage on either channel (#1446). Skips (by-design) without a
+#           reserved bench Monero node.
+#   all     every phase above, in that order — media, fault, reset and stack included since #1064/#2062
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -102,7 +109,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -136,6 +143,8 @@ source "$SCRIPT_DIR/phases/rig.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/stack.sh
+source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 require_host
 require_clean_bench
 case "$PHASE" in
@@ -147,6 +156,7 @@ rig) phase_rig ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
+stack) phase_stack ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
@@ -159,6 +169,7 @@ all)
     phase_media
     phase_fault
     phase_reset
+    phase_stack
     ;;
 *)
     echo "unknown phase: $PHASE" >&2

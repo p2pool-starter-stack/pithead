@@ -138,11 +138,21 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
+- **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
+  provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
+  already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
+  set) so the sync gate clears in minutes instead of never, then runs `tests/integration/run.sh` —
+  the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
+  (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
+  unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
+  --auth-fail-closed`, then the `remote-*` scenario subset, then `--xvb-routing-smoke`. The first
+  live remote-node coverage on either channel (#1446). Reuses the same reserved-node env vars as
+  the `provision` phase's remote-node consumer row below, and skips (by-design) without them.
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all eight phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
+including fault, reset and stack, and the full run is required once for every RC candidate.
 
 The provision phase's remote-node consumer row is mandatory and takes reserved, reachable test
 nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
