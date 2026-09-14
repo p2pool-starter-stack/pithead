@@ -165,6 +165,12 @@ smoke_resolve() { # <dir-as-given>
         _arg="$1"          # saved before `set --`, which release-smoke's own arg parser needs empty
         cd "$ROOT" || exit # its top level insists on a git repo, like the real invocation
         set --
+        # Model a host without gh. The sourceable path must still define its pure helpers; only a
+        # direct release-smoke run downloads assets and needs the CLI.
+        command() {
+            [ "$#" -eq 2 ] && [ "$1" = -v ] && [ "$2" = gh ] && return 1
+            builtin command "$@"
+        }
         # Sourced through a variable, never a literal path: shellcheck follows a literal that names
         # another file in the same invocation, and release-smoke pulls in release.sh, whose
         # `local tool missing=()` then collides with this file's own scalar `missing` (SC2178).
@@ -176,15 +182,15 @@ smoke_resolve() { # <dir-as-given>
 }
 # Handed the previous VERSIONED dir — the shape that produced the false red. It is unchanged by
 # design, so the answer has to come from the `current` beside it.
-assert_eq "a versioned dir resolves to where the upgrade actually landed" \
+assert_eq "without gh, a versioned dir resolves to where the upgrade actually landed" \
     "$(tr -d '[:space:]' <"$(smoke_resolve "$SMK/pithead-v1.18.1")/VERSION")" "1.19.0"
 # Handed the SYMLINK — resolved now, after the upgrade moved it. This is why the v1.19.2 cut did
 # not hit the false red, and it must keep working.
-assert_eq "the current symlink resolves to the new install" \
+assert_eq "without gh, the current symlink resolves to the new install" \
     "$(tr -d '[:space:]' <"$(smoke_resolve "$SMK/current")/VERSION")" "1.19.0"
 # Nothing moved: a box that is already on the target must resolve to itself, not wander off.
 ln -sfn "$SMK/pithead-v1.18.1" "$SMK/current"
-assert_eq "with current pointing at it, the same dir resolves to itself" \
+assert_eq "without gh, with current pointing at it, the same dir resolves to itself" \
     "$(smoke_resolve "$SMK/pithead-v1.18.1")" "$SMK/pithead-v1.18.1"
 # NOTE, measured rather than assumed: replacing the `readlink -f` with the raw argument leaves all
 # three assertions above GREEN. The sibling lookup is what fixes the false red; the readlink only
