@@ -219,8 +219,11 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    identical to `stack_restore`'s own pre-flight — BEFORE anything is extracted.
 2. Reject links, special files and members outside the appliance backup layout before
    extracting to a private staging tree. The accepted items are `config.json`, `.env`,
-   `Caddyfile`, and the `data/{tor,dashboard,monero,tari,p2pool}` trees under the install
-   directory. Backups with custom data paths need the administrative restore workflow.
+   `Caddyfile`, and the `data/{tor,dashboard,monero,tari,p2pool}` trees, all rooted at a single
+   directory found from where `config.json` sits in the archive — the box that made the backup's
+   own working directory, not necessarily this one (a supported prior release's Compose bundle
+   ran from wherever the operator placed it). Backups with custom data paths, or whose members do
+   not share one consistent root, need the administrative restore workflow.
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
    call `firstboot_consume_spool` uses.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
