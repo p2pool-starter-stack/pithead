@@ -321,8 +321,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
 # The special-parameter class has no live site beyond $@ — no label in tests/stack uses $* or $#.
-# They are seeded below anyway, so all three characters have a control that can fail rather than two
-# branches that pass by construction.
+# They are seeded below anyway, so all three characters have a control that can fail rather than a branch that passes by construction.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -335,6 +334,7 @@ test-appliance-identity.sh|1
 test-appliance-identity.sh|f
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
+test-appliance-setup.sh|c
 test-config.sh|2
 test-config.sh|bad_port
 test-config.sh|checked
