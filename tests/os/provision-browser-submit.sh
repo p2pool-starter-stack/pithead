@@ -147,7 +147,7 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
 control_result_payload() { # <result-json> [landed]
     [ -n "$1" ] || {
         if [ "${2:-}" = landed ]; then
-            printf 'interrupted after the requested change landed — no result file was written'
+            printf 'requested change landed, but no result file was written — runner completion is unknown'
         else
             printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
         fi
@@ -286,7 +286,7 @@ _recovery_self_test() {
     *) return 1 ;;
     esac
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
-    case "$(control_result_payload '' landed)" in *'interrupted after the requested change landed'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '' landed)" in *'change landed'*'completion is unknown'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"

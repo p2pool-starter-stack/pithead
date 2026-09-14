@@ -50,8 +50,18 @@ HARNESS_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivz
 # stalled handshake must read as "not ready yet" so the loop re-evaluates its own deadline, which is the whole
 # point of having one.
 _ssh() {
+    if _ssh_command_mutates_control "$@"; then
+        printf 'OS battery refused a pithead-control lifecycle mutation\n' >"$SSH_ERR"
+        return 125
+    fi
     timeout "${SSH_TIMEOUT:-5400}" ssh -i "$KEY" -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
+}
+_ssh_command_mutates_control() {
+    local command="$*" control_unit='pithead-control\.(path|service|\{(path,service|service,path)\})' mutating_verb='(^|[[:space:];|&])(start|stop|restart|reload|try-restart|reload-or-restart|kill|enable|disable|reenable|mask|unmask|preset|revert|edit|set-property|daemon-reload)([[:space:];|&]|$)'
+    [[ "$command" =~ $control_unit ]] || return 1
+    [[ "$command" =~ systemctl([[:space:]]|$) ]] || return 1
+    [[ "$command" =~ $mutating_verb ]]
 }
 _wait_ssh() { # $1 seconds — the definition of "not bricked"
     local deadline=$(($(date +%s) + $1)) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"

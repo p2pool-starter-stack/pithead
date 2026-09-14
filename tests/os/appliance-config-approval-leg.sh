@@ -287,9 +287,6 @@ _approval_self_test() {
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
-    # The removed fake-provider fixture stopped the path and service over SSH. That can SIGTERM a
-    # claimed request between applying it and writing its result, manufacturing a product failure.
-    ! grep -RE 'systemctl (stop|restart) pithead-control\.(path|service)' --include='*.sh' "$here" >/dev/null || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1
