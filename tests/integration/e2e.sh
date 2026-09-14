@@ -194,11 +194,11 @@ restore_all() {
     # --check deploys nothing, borrows nothing and takes no backup, so there is nothing to put
     # back — and an outer restore would mutate a bench this mode promised only to read.
     [ "$MODE" = "check" ] && return
-    stop_load_worker
+    stop_load_worker || RESTORE_PROOF_FAILED=1
     if [ "$KEEP" = "1" ]; then
         warn "--keep set: leaving the branch deployed on $BENCH_HOST and the miner repointed."
         warn "  Re-run without --keep, or restore by hand: canonical=$CANONICAL_DIR, miner cfg backup=$MINER_CFG_BACKUP"
-        return
+        return "$RESTORE_PROOF_FAILED"
     fi
     drain_harness_or_refuse
     parent_lock_checkpoint restore || {
@@ -649,7 +649,7 @@ run_harness() {
             harness_finished || die "Detached harness identity changed before it stopped."
             break
         fi
-        sleep 20
+        load_worker_wait_tick
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
         on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/      /' || true
