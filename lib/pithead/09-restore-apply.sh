@@ -24,21 +24,16 @@ restore_setup_config_path() {
     esac
 }
 
-# Same layout as restore_setup_items(), named relative to whatever directory the archive was
-# made from — a genuine older release's `pithead backup` ran from the operator's own working
-# directory, never this appliance's $PWD (#2181). restore_setup_root() finds that directory from
-# the archive itself; restore_setup_members() checks every member against these relative names
-# under the detected root, never against $PWD directly.
+# The accepted layout, named relative to whatever directory the archive was made from — a
+# genuine older release's `pithead backup` ran from the operator's own working directory, never
+# this appliance's $PWD (#2181). restore_setup_root() finds that directory from the archive
+# itself; restore_setup_members() and restore_apply() match/extract relative to it, never
+# assuming it is $PWD. restore_setup_config_path() maps the one path-shaped exception
+# ($CONFIG_FILE) to its destination on THIS box; every other item joins directly onto $PWD.
 restore_setup_relative_items() {
     printf '%s\n' "$CONFIG_FILE" "$ENV_FILE" "Caddyfile" \
         "data/tor/" "data/dashboard/" "data/monero/" \
         "data/tari/" "data/p2pool/"
-}
-
-restore_setup_items() {
-    printf '%s\n' "$(restore_setup_config_path)" "$PWD/$ENV_FILE" "$PWD/Caddyfile" \
-        "$PWD/data/tor/" "$PWD/data/dashboard/" "$PWD/data/monero/" \
-        "$PWD/data/tari/" "$PWD/data/p2pool/"
 }
 
 # The single absolute directory every member of a genuine backup shares — found from wherever
@@ -252,15 +247,15 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         return 1
     fi
     # Apply only the accepted files/data trees, from wherever the archive's own root staged them
-    # to their fixed destination on THIS box ($PWD, from restore_setup_items()) — the two lists
-    # share the same order, one relative name per line, so they zip one-to-one. Do not copy
-    # staging's ancestor directories onto /: their metadata is not part of the backup contract.
-    local item rel source dest copy_failed=0
-    while IFS=$'\t' read -r item rel; do
+    # to their fixed destination on THIS box ($PWD). Do not copy staging's ancestor directories
+    # onto /: their metadata is not part of the backup contract.
+    local rel source dest copy_failed=0
+    while IFS= read -r rel; do
         source="$tree/$root$rel"
         [ -e "$source" ] || continue
-        if [[ "$item" = */ ]]; then
-            dest="${item%/}"
+        case "$rel" in "$CONFIG_FILE") dest=$(restore_setup_config_path) ;; *) dest="$PWD/$rel" ;; esac
+        if [[ "$dest" = */ ]]; then
+            dest="${dest%/}"
             rm -rf -- "$dest"
             # The parent may not exist yet (#2051): prepare_directories runs inside setup(), which
             # the restore doors call AFTER this, so on a fresh machine `data/` is simply absent and
@@ -278,12 +273,12 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
                 break
             }
         else
-            restore_setup_publish_file "$source" "$item" || {
+            restore_setup_publish_file "$source" "$dest" || {
                 copy_failed=1
                 break
             }
         fi
-    done < <(paste -d $'\t' <(restore_setup_items) <(restore_setup_relative_items))
+    done < <(restore_setup_relative_items)
     if [ "$copy_failed" = 1 ]; then
         rm -rf "$tmp"
         printf 'could not apply the backup files' >"$errf"
