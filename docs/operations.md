@@ -237,7 +237,9 @@ on, and remove them when it is off:
   install directory. Fixed command, no parameters from the container. It retries on failure
   (`Restart=on-failure`, 15s) with systemd's own start-limit disabled, so a request that lands
   while the stack momentarily isn't fully set up — recovering from a setup fault, mid-apply — gets
-  picked up once it is, instead of leaving the runner wedged until a reboot (#2219).
+  picked up once it is, instead of leaving the runner wedged until a reboot (#2219). A stack that
+  never finishes setup keeps retrying every 15s rather than wedging — check `./pithead doctor` or
+  `systemctl status pithead-control.service` if requests never seem to land.
 
 The unit names are global to the host, so removal is ownership-checked: a checkout with the flag
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the

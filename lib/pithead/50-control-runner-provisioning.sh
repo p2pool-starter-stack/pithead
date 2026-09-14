@@ -136,7 +136,10 @@ Type=oneshot
 User=root
 WorkingDirectory=$PWD
 # Retries a transient "not fully set up yet" (or any other one-off failure) without waiting for
-# a new request to land — the request already queued is what needs the retry (#2219).
+# a new request to land — the request already queued is what needs the retry (#2219). 15s: a
+# genuinely-stuck box (setup never completes) retries forever at this pace rather than fast-spinning
+# — negligible cost either way for a sub-second oneshot — while staying well inside a dashboard
+# operator's patience for one apply to land.
 Restart=on-failure
 RestartSec=15
 # Pin the engine (#2059). A systemd unit does NOT read /etc/environment — that is PAM, for login
