@@ -65,8 +65,11 @@ phase_rigmedia() {
     }
 
     # Same faked pool as the rig phase (#796): this leg is about the STICK, not the network — the
-    # rig phase already carries the accepted-share gap.
-    body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rigmedia"
+    # rig phase already carries the accepted-share gap. disk=usb is the wizard's own "run from
+    # this stick" token (server.py's _submit_rig): the one disk value that is not an install
+    # target, so no install-request is ever published (dashboard/tests/web's own coverage of the
+    # same branch: test_run_from_this_stick_is_first_class_for_the_rig_role_only).
+    body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rigmedia&disk=usb"
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     rm -f "$jar"
     [ "$scode" = "200" ] || {
