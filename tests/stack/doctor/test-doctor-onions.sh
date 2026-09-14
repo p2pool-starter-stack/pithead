@@ -55,7 +55,7 @@ for onion_key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS P2POOL_ONION_ADDRESS DA
     else
         host_remedy="$onion_key is not provisioned (value: 'placeholder') — re-run './pithead setup' to generate Tor hidden services."
     fi
-    assert_contains "doctor: host keeps $onion_key's full CLI remedy (#1770)" \
+    assert_contains "doctor: host keeps each onion key's full CLI remedy (#1770)" \
         "$(onion_row "$doc_host" "$onion_key")" "$host_remedy"
 done
 doc_appliance="$(doctor_missing_onions 1)"
@@ -64,7 +64,7 @@ assert_contains "doctor: appliance P2Pool onion says console access is required 
 assert_not_contains "doctor: appliance P2Pool onion does not promise dashboard regeneration (#1770)" "$p2pool_row" "saving any change from the dashboard provisions it"
 for onion_key in MONERO_ONION_ADDRESS TARI_ONION_ADDRESS DASHBOARD_ONION_ADDRESS; do
     onion_remedy="$(onion_row "$doc_appliance" "$onion_key")"
-    assert_contains "doctor: appliance $onion_key says dashboard apply regenerates it (#1770)" "$onion_remedy" "saving any change from the dashboard provisions it"
-    assert_not_contains "doctor: appliance $onion_key does not require console access (#1770)" "$onion_remedy" "correcting this needs console access"
+    assert_contains "doctor: each regenerable appliance onion names dashboard apply (#1770)" "$onion_remedy" "saving any change from the dashboard provisions it"
+    assert_not_contains "doctor: no regenerable appliance onion requires console access (#1770)" "$onion_remedy" "correcting this needs console access"
 done
 unset DOC doc_remote doc_local doc_host doc_appliance onion_key host_remedy p2pool_row onion_remedy doctor_onions doctor_missing_onions onion_row
