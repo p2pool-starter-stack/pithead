@@ -187,7 +187,6 @@ CONTROL_VERDICT_BEFORE=""
 # Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
 # so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
     local rc=$?
@@ -567,11 +566,9 @@ borrow_miner() {
     on_miner "cp -a '$MINER_XMRIG_CONFIG' '$MINER_CFG_BACKUP'" || die "Failed to back up the miner config."
     step "miner config backed up → $MINER_CFG_BACKUP"
     repoint_miner || die "Failed to repoint the miner config."
-    local baseline_workers=1
-    [ "$WORKERS" -lt 3 ] 2>/dev/null && baseline_workers="$WORKERS"
+    local baseline_workers=1; [ "$WORKERS" -lt 3 ] 2>/dev/null && baseline_workers="$WORKERS"
     wait_workers "$baseline_workers" 180 || warn "proceeding, but the matrix's mining assertions may not pass with too few workers"
 }
-
 # --- Phase 4: deploy the branch ---------------------------------------------
 deploy_branch() {
     parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
@@ -663,7 +660,6 @@ run_harness() {
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/  /'
     return "${rc:-1}"
 }
-
 # --- Main -------------------------------------------------------------------
 main() {
     log "Pithead e2e — branch '$BRANCH' → $BENCH_HOST (mode=$MODE)$([ "$KEEP" = 1 ] && echo '  [--keep: no restore]')"
