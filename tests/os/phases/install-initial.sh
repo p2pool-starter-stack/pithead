@@ -284,10 +284,14 @@ _phase_install_initial() {
     # ---- M4: the disk left alone stays alone -----------------------------------------------
     # THE row this phase was missing: installing to vda must never touch the foreign disk. Found
     # by serial again — the scsi bus is free to renumber it now that the USB stick is gone.
+    # umount runs unconditionally once mount succeeds — a failed hash comparison must not skip
+    # it, or the negative control right below finds the disk still busy and reports "the
+    # installer refused the disk" instead of the real M4 violation this block exists to catch.
     foreign_dev=$(_dev_by_serial "$foreign_serial")
-    if [ -n "$foreign_dev" ] && _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" &&
-            [ \"\$(sha256sum \"\$m/sentinel\" | cut -d' ' -f1)\" = \"$foreign_hash\" ] &&
-            umount \"\$m\""; then
+    if [ -n "$foreign_dev" ] && _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" || exit 9
+            h=\$(sha256sum \"\$m/sentinel\" 2>/dev/null | cut -d' ' -f1)
+            umount \"\$m\"
+            [ \"\$h\" = \"$foreign_hash\" ]"; then
         ok "the foreign disk still mounts and its sentinel is byte-identical — M4 holds"
     else
         bad "the foreign disk was touched, lost its filesystem, or its sentinel changed"
