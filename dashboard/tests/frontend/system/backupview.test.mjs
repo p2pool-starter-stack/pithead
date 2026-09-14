@@ -160,11 +160,27 @@ test("BackupPanel kit phase reveals the passphrase exactly once, with download l
 
 test("BackupPanel failed phase labels the log on an appliance", () => {
   const c = inst({ enabled: true, appliance: true });
-  c.state = { phase: "failed", id: null, result: { status: "failed", error: "boom" } };
+  c.state = { phase: "failed", id: null, result: { status: "failed", log: "run ./pithead backup" } };
   const out = renderToString(c.render());
   assert.match(out, /Backup did not complete/);
   assert.match(out, /this machine's own log from the failed\s+backup/);
-  assert.match(out, /boom/);
+  assert.match(out, /\.\/pithead backup/);
+});
+
+test("BackupPanel keeps the raw log on a host without an appliance caption", () => {
+  const c = inst({ enabled: true, appliance: false });
+  c.state = { phase: "failed", id: null, result: { status: "failed", log: "run ./pithead backup" } };
+  const out = renderToString(c.render());
+  assert.match(out, /\.\/pithead backup/);
+  assert.doesNotMatch(out, /machine's own log/);
+});
+
+test("BackupPanel does not label an authored rejection as a machine log", () => {
+  const c = inst({ enabled: true, appliance: true });
+  c.state = { phase: "failed", id: null, result: { status: "rejected", error: "wait 10 minutes" } };
+  const out = renderToString(c.render());
+  assert.match(out, /wait 10 minutes/);
+  assert.doesNotMatch(out, /machine's own log/);
 });
 
 // #1854: the appliance has no shell, so the host-CLI remedy in the explainer above is advice its

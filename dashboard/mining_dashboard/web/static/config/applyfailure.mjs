@@ -53,26 +53,31 @@ function logCaption(appliance) {
 }
 
 export function failureLog(error, appliance, action) {
+  if (!error) return [];
   return [
     appliance
       ? html`<p class="text-muted text-xs">${`Below is this machine's own log from the failed ${action}. `}It
           is diagnostic detail: any commands it names run on the machine itself and
           cannot be run from here.</p>`
       : null,
-    error ? html`<pre class="config-error-tail">${error}</pre>` : null,
+    html`<pre class="config-error-tail">${error}</pre>`,
   ];
 }
 
 export function previewFailure(error, appliance) {
-  const log = typeof error === "object";
-  const text = log ? error.text : error;
+  const log = error && error.log;
+  const text = log || error;
   return html`<div class="card"><p class="status-bad">Configuration preview did not complete.</p>
       ${log ? failureLog(text, appliance, "config preview") : html`<p>${text}</p>`}</div>`;
 }
 
 export function upgradeFailure(result, appliance) {
   return [
-    ...failureLog(result.error || "The host runner reported a failure.", appliance, "upgrade"),
+    result.error ? html`<p class="status-bad">${result.error}</p>` : null,
+    ...failureLog(result.log, appliance, "upgrade"),
+    !result.error && !result.log
+      ? html`<p class="status-bad">The host runner reported a failure.</p>`
+      : null,
     !appliance && result.recovery ? html`<p class="status-bad">${result.recovery}</p>` : null,
     result.backup
       ? appliance

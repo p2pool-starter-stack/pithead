@@ -276,7 +276,7 @@ export class ConfigView extends Component {
       if (out.status === "rejected") {
         this.setState({
           phase: "form",
-          error: { text: out.error || "The host runner rejected the config." },
+          error: out.log ? { log: out.log } : out.error || "The host runner rejected the config.",
         });
         return;
       }

@@ -125,14 +125,14 @@ export class BackupPanel extends Component {
   }
 
   renderFailed(result) {
+    const error = result && result.error;
+    const log = result && result.log;
     return html`<div class="card">
         <h3>Backup</h3>
         <p class="status-bad">Backup did not complete.</p>
-        ${failureLog(
-          (result && result.error) || "The host runner reported a failure.",
-          this.props.appliance,
-          "backup",
-        )}
+        ${error ? html`<p class="status-bad">${error}</p>` : null}
+        ${failureLog(log, this.props.appliance, "backup")}
+        ${!error && !log ? html`<p class="status-bad">The host runner reported a failure.</p>` : null}
         <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", result: null })}>Close</button>
     </div>`;
   }

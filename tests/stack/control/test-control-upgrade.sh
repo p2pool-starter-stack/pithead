@@ -451,7 +451,7 @@ upgrade_intent "$UUPG" "v9.9.9"
 (cd "$UPG" && PATH="$UPG/bin:$PATH" NEW_PITHEAD_FAIL=1 CURL_LOG="$UPG/curl.log" CURL_API_RESPONSE="$UPGB/api.json" \
     CURL_BUNDLE="$UPGB/bundle.tar.gz" ./pithead control-run-pending >/dev/null 2>&1)
 assert_eq "failed upgrade run reports failed" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "failed"
-assert_not_contains "failed upgrade log does not contain host-only recovery" "$(jq -r '.error' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
+assert_not_contains "failed upgrade log does not contain host-only recovery" "$(jq -r '.log' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
 assert_contains "failed upgrade carries host-only recovery separately" "$(jq -r '.recovery' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
 assert_contains "failed upgrade audited" "$(cat "$UPGAUDIT" 2>/dev/null)" "\"action\":\"upgrade\",\"status\":\"failed\""
 # #637: the failure result names the pre-upgrade config/.env copies, and they exist on disk.
@@ -672,7 +672,7 @@ vrun NEW_PITHEAD_FAIL=1 >/dev/null
 assert_eq "failed fresh-dir upgrade reports failed" "$(jq -r '.status' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "failed"
 # The runner derives its paths from `pwd -P`, so on macOS the /var/folders sandbox reports as
 # /private/var/... — assert on the path's tail, not the unresolved $VNEW.
-assert_not_contains "failed fresh-dir log does not contain host-only recovery" "$(jq -r '.error' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
+assert_not_contains "failed fresh-dir log does not contain host-only recovery" "$(jq -r '.log' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
 assert_contains "failed fresh-dir recovery points at the new dir" "$(jq -r '.recovery' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "/deploy629/pithead-v9.9.9 && ./pithead upgrade"
 assert_eq "failed fresh-dir upgrade leaves the old install intact" "$(cat "$VUPG/VERSION")" "1.3.1"
 assert_eq "failed fresh-dir upgrade wrote the result to the new spool too" "$(jq -r '.status' "$VNEW/data/control/results/$UUPG.json" 2>/dev/null)" "failed"

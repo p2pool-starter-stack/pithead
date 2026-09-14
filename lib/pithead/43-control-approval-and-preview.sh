@@ -307,7 +307,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "previewed" "$(porcelain_keys "$out")"
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
-        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"
         rm -f "$staged"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
     fi
