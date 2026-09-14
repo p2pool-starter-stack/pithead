@@ -33,6 +33,7 @@ PY
 )
 
 mkdir -p "$out"
+out=$(cd "$out" && pwd)
 base="https://github.com/p2pool-starter-stack/pithead/releases/download/$TAG"
 curl -fsSLo "$work/pithead.tar.gz" "$base/pithead.tar.gz"
 curl -fsSLo "$work/pithead.tar.gz.sig" "$base/pithead.tar.gz.sig"
