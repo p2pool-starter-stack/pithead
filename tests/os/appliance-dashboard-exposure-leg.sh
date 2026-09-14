@@ -5,7 +5,7 @@ DASHBOARD_TEST_GLOBAL_V6="2001:db8:2070::1"
 DASHBOARD_TEST_FALLBACK_ULA="fd00:2070::1"
 
 dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v4> <ula-v6> <global-v6> <pinned-site>
-    local caddy="$1" sockets="$2" curl_rc="$3" doctor="$4" lan="$5" ula="$6" global="$7" site="$8" binds line
+    local caddy="$1" sockets="$2" curl_rc="$3" doctor="$4" lan="$5" ula="$6" global="$7" site="$8" binds line local_addr
     case "$caddy" in *"$global"*)
         echo "Caddyfile publishes the global address ($global)"
         return 1
@@ -37,13 +37,14 @@ dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v
     done
     while IFS= read -r line; do
         case "$line" in *caddy*) ;; *) continue ;; esac
-        case "$line" in
-        *" $global:443 "* | *" [$global]:443 "*)
+        local_addr=$(awk '{print $4}' <<<"$line")
+        case "$local_addr" in
+        "$global":* | "[$global]":*)
             echo "Caddy listens on the global address ($global)"
             return 1
             ;;
-        *" 0.0.0.0:443 "* | *" [::]:443 "* | *" *:443 "*)
-            echo "Caddy owns a wildcard :443 listener"
+        \*:* | 0.0.0.0:* | "[::]":* | :::*)
+            echo "Caddy owns a wildcard listener"
             return 1
             ;;
         esac
@@ -83,10 +84,13 @@ stage_dashboard_exposure_addresses() {
 }
 
 phase_provision_dashboard_exposure() {
-    local caddy sockets curl_rc=0 doctor verdict
+    local caddy sockets curl_rc=1 doctor verdict
     caddy=$(_ssh "cat /data/pithead/Caddyfile" 2>/dev/null) || caddy=""
     sockets=$(_ssh "ss -Hltnp" 2>/dev/null) || sockets=""
-    _ssh "curl -ksS --connect-timeout 3 -m 5 -o /dev/null 'https://[$DASHBOARD_TEST_GLOBAL_V6]/'" >/dev/null 2>&1 || curl_rc=$?
+    if _ssh "curl -ksS --connect-timeout 3 -m 5 -o /dev/null 'https://[$DASHBOARD_TEST_GLOBAL_V6]/'" >/dev/null 2>&1 ||
+        _ssh "curl -sS --connect-timeout 3 -m 5 -o /dev/null 'http://[$DASHBOARD_TEST_GLOBAL_V6]/'" >/dev/null 2>&1; then
+        curl_rc=0
+    fi
     doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
     if verdict=$(dashboard_exposure_verdict "$caddy" "$sockets" "$curl_rc" "$doctor" \
         "$DASHBOARD_TEST_LAN_V4" "$DASHBOARD_TEST_ULA_V6" "$DASHBOARD_TEST_GLOBAL_V6" "$PROVISION_DASHBOARD_HOST"); then

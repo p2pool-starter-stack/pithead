@@ -143,27 +143,26 @@ check_dashboard_answers() {
 # reopened a wildcard/public socket. Judge the listener the kernel reports, not only the rendered
 # Caddyfile, because a stale running process is the exposure that matters (#1021/#2070).
 dashboard_public_listener_verdict() { # <ss-output> <public-ips> <port>
-    local rows="$1" public_ips="$2" port="$3" line local_addr public_ip seen=0
+    local rows="$1" public_ips="$2" port="$3" line local_addr public_ip seen_expected=0
     while IFS= read -r line; do
         case "$line" in *caddy*) ;; *) continue ;; esac
         local_addr=$(awk '{print $4}' <<<"$line")
-        case "$local_addr" in *:"$port") ;; *) continue ;; esac
-        seen=1
         case "$local_addr" in
-        "*:$port" | "0.0.0.0:$port" | "[::]:$port" | ":::$port")
-            printf 'fail:wildcard listener %s\n' "$local_addr"
+        \*:* | 0.0.0.0:* | "[::]":* | :::*)
+            printf 'fail:wildcard listener\n'
             return 1
             ;;
         esac
         for public_ip in $public_ips; do
-            case "$local_addr" in "$public_ip:$port" | "[$public_ip]:$port")
-                printf 'fail:public listener %s\n' "$local_addr"
+            case "$local_addr" in "$public_ip":* | "[$public_ip]":*)
+                printf 'fail:public listener\n'
                 return 1
                 ;;
             esac
         done
+        case "$local_addr" in *:"$port") seen_expected=1 ;; esac
     done <<<"$rows"
-    [ "$seen" = 1 ] || {
+    [ "$seen_expected" = 1 ] || {
         printf 'missing\n'
         return 2
     }
@@ -195,7 +194,7 @@ check_dashboard_public_listener() {
     case "$verdict" in
     ok) dr_ok "Dashboard listener excludes every public host address." ;;
     missing) dr_info "Dashboard public-listener check skipped — no Caddy listener found on :$port." ;;
-    *) dr_fail_surface "Dashboard is listening on a public host address ($verdict) — set dashboard.expose_public_ip=false and run './pithead apply'." "The dashboard is listening on a public host address ($verdict). This machine is meant to serve it only on LAN and private IPv6 addresses." ;;
+    *) dr_fail_surface "Dashboard has a public listener — set dashboard.expose_public_ip=false and run './pithead apply'." "The dashboard has a public listener. This machine is meant to serve it only on LAN and private IPv6 addresses." ;;
     esac
     return 0
 }
