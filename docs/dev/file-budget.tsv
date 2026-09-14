@@ -68,7 +68,7 @@ tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	507
-tests/stack/run.sh	440
+tests/stack/run.sh	407
 tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476

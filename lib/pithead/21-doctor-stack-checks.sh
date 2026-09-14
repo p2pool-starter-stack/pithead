@@ -32,7 +32,16 @@ check_tor_running() {
 # doctor (#383): verify the #270 fail-closed egress rules are ACTUALLY installed while the stack
 # runs. `down` removes them, and a host reboot silently drops them while `restart: unless-stopped`
 # brings every container back — that reboot gap is the state this catches. Read-only: `sudo -n`
-# never prompts; every can't-check path degrades to an info line, only a confirmed absence FAILs.
+# never prompts.
+#
+# "Every can't-check path degrades to an info line" was the rule here, and it is what let a
+# fail-open appliance mark its own A/B slot good (#2059). os/overlay/pithead-boot gates the commit
+# on this exit code precisely because doctor "FAILs on a missing egress firewall" — but a podman
+# host with no `nft` on PATH took the info door, doctor exited 0, and a leaking slot committed.
+#
+# "I cannot READ the rules" (no passwordless sudo) and "there ARE no rules, because the tool that
+# installs them is absent" are not the same verdict, and only the first is an honest unknown. The
+# second is a certainty that nothing is dropping, so it FAILs like any other confirmed absence.
 check_egress_firewall_installed() {
     local enabled
     enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
@@ -48,55 +57,35 @@ check_egress_firewall_installed() {
         dr_info "Tor-egress firewall check skipped — the tor container isn't running."
         return 0
     fi
-    if [ "$(container_engine)" = "podman" ]; then
-        check_egress_firewall_nft
-    else
-        check_egress_firewall_iptables
+    # Single-sourced with apply (lib/pithead/02-tor-egress.sh): the same tor_egress_enforced()
+    # that an install proves itself with is what reports here, so doctor and the boot log can no
+    # longer disagree about what "installed" means — the disagreement #855 shipped.
+    local rc=0 how="nftables (inet $TOR_EGRESS_NFT_TABLE)" reread="sudo nft list table inet $TOR_EGRESS_NFT_TABLE"
+    if [ "$(container_engine)" != "podman" ]; then
+        how="iptables ($TOR_EGRESS_TAG in DOCKER-USER)"
+        reread="sudo iptables -S DOCKER-USER | grep $TOR_EGRESS_TAG"
     fi
+    tor_egress_enforced || rc=$?
+    case "$rc" in
+    0) dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how." ;;
+    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
+    2) dr_fail_surface "Tor-only egress CANNOT be enforced — the $how backend's command is not installed on this host, so nothing is dropping clearnet dials from the stack. Install it and run './pithead up', or set network.tor_egress_firewall=false to acknowledge running without it." "Tor-only egress CANNOT be enforced on this machine — the firewall command it needs is missing, so clearnet dials from the stack are not being dropped." ;;
+    # #855's own failure mode, and the one a presence-only check cannot see: the rules are there and
+    # nothing traverses them. The stack is up by the time this runs, so the engine has had its chance
+    # to add the jump — its absence is a live fail-open, not the first-boot ordering apply tolerates.
+    4) dr_fail_surface "Tor-only egress rules are present in DOCKER-USER but NOTHING JUMPS TO IT — the chain is orphaned, so clearnet dials from the stack are NOT being dropped. This is what a container engine that does not add the FORWARD jump (or a firewall manager that removed it) leaves behind. Run './pithead up' to reinstall, and check that the engine manages iptables." "Tor-only egress rules exist but are not being applied to traffic — the firewall chain is not connected, so clearnet dials from the stack are not being dropped. Restarting this machine reinstalls them." ;;
+    # Reachable and present, but a foreign rule sits above our DROP. Not proof of a leak — proof we
+    # cannot rule one out — so it is a WARN, not the FAIL a confirmed absence gets. Saying "installed"
+    # here would be the exact unearned claim this check exists to stop.
+    # FAIL, not WARN. os/overlay/pithead-boot gates the A/B commit on doctor's EXIT CODE, and only
+    # dr_fail moves it — so a WARN here would commit a slot whose enforcement is, by this check's own
+    # wording, unproven. That is the "an ambiguous readback passes the gate silently" class #2059
+    # exists to close, one severity level down. The walk only reaches here for a rule that could
+    # actually match the mining subnet, so this does not fire on an unrelated neighbour rule.
+    5) dr_fail_surface "Tor-egress rules are installed, but a rule that is not ours sits ABOVE the DROP in DOCKER-USER — iptables is first-match-wins, so the DROP may never be reached and clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." "Tor-egress rules are installed, but another firewall rule takes precedence over them, so clearnet egress cannot be confirmed as blocked on this machine." ;;
+    *) dr_info_surface "Tor-egress firewall check skipped — reading the rules needs passwordless sudo. Verify manually: '$reread'." "Tor-egress firewall check skipped — the firewall rules could not be read on this machine." ;;
+    esac
     return 0
-}
-
-# Appliance/netavark probe. The failure this whole fix is about — a DROP that exists in a chain no
-# packet traverses — is exactly what a base chain hooked at forward CANNOT be: if the table carries a
-# `hook forward` chain with a `drop`, forwarded packets DO pass through it. So we assert the hook and
-# the drop, not merely that some rule exists somewhere.
-check_egress_firewall_nft() {
-    local ruleset
-    if ! command -v nft >/dev/null 2>&1; then
-        dr_info "Tor-egress firewall check skipped — no nftables."
-        return 0
-    fi
-    # `nft list table` returns rc 1 both when the table is missing AND when sudo -n is refused; a
-    # cheap `list tables` probe (succeeds whether or not our table exists) tells the two apart, so a
-    # sudo refusal can't masquerade as a missing firewall (a false FAIL).
-    if ! sudo -n nft list tables >/dev/null 2>&1; then
-        dr_info_surface "Tor-egress firewall check skipped — reading nftables needs passwordless sudo. Verify manually: 'sudo nft list table inet $TOR_EGRESS_NFT_TABLE'." "Tor-egress firewall check skipped — the nftables rules could not be read on this machine."
-        return 0
-    fi
-    ruleset=$(sudo -n nft list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || ruleset=""
-    if printf '%s\n' "$ruleset" | grep -q 'hook forward' && printf '%s\n' "$ruleset" | grep -qw drop; then
-        dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via nftables (inet $TOR_EGRESS_NFT_TABLE)."
-    else
-        dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them."
-    fi
-}
-
-# DIY/Docker probe: the tagged rules in DOCKER-USER, which Docker's FORWARD jump traverses.
-check_egress_firewall_iptables() {
-    local rules
-    if ! command -v iptables >/dev/null 2>&1; then
-        dr_info "Tor-egress firewall check skipped — no iptables."
-        return 0
-    fi
-    if ! rules=$(sudo -n iptables -S DOCKER-USER 2>/dev/null); then
-        dr_info_surface "Tor-egress firewall check skipped — reading iptables needs passwordless sudo. Verify manually: 'sudo iptables -S DOCKER-USER | grep $TOR_EGRESS_TAG'." "Tor-egress firewall check skipped — the iptables rules could not be read on this machine."
-        return 0
-    fi
-    if printf '%s\n' "$rules" | grep -qF -- "$TOR_EGRESS_TAG"; then
-        dr_ok "Tor-only egress firewall rules are installed — clearnet dials from the stack are fail-closed."
-    else
-        dr_fail_surface "Tor-only egress firewall rules are MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall rules are MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them."
-    fi
 }
 
 # doctor (#383): something must actually LISTEN on the stratum port while xmrig-proxy runs — the

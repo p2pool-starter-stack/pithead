@@ -43,7 +43,12 @@ by channel:
   survives netavark reprogramming its own table.
 
 `pithead doctor` reads whichever mechanism the running engine uses and checks the drop is in a chain
-that is actually hooked at forward, so it cannot report enforced while the rules are orphaned.
+that is actually hooked at forward, so it cannot report enforced while the rules are orphaned. The
+install reads the same live state back before it reports success, so "Tor-only egress enforced" in
+the log means the rules were found in the kernel, not that the install command exited zero. A host
+whose engine has no firewall backend installed at all cannot enforce anything, so `doctor` FAILs
+there rather than skipping the check — on the appliance that is what stops a slot with no firewall
+from committing itself as healthy.
 
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
@@ -64,6 +69,20 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
   plaintext leg p2pool uses.
 - Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections.
+
+**Known limitation, Docker (DIY) channel only** (tracked in
+[pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)): the enforcement
+check above walks `DOCKER-USER` looking for a rule that would shadow our DROP, but it only
+recognizes a foreign rule as shadowing when that rule is unscoped or scoped to exactly the mining
+subnet. A foreign rule scoped to a *wider* network that happens to contain the mining subnet —
+written by something else that shares the chain, such as ufw-docker or a second Compose project —
+is not recognized, so `pithead doctor` can report "Tor-only egress enforced" while that wider rule
+is actually the one deciding. This only matters if something else on the same host also writes
+rules into `DOCKER-USER`; the podman/netavark appliance path does not have this gap. To check for
+it by hand, run `sudo iptables -S DOCKER-USER` and look above the `pithead-tor-egress`-tagged
+`DROP` line: if any `ACCEPT` or `RETURN` rule there is scoped with `-s` to a network wider than
+your mining subnet, that rule can shadow the DROP no matter what `doctor` reports. If you find one,
+narrow or remove it — `pithead` cannot do this for you.
 
 ---
 
