@@ -104,15 +104,48 @@ _phase_install_restore() {
         rm -f "$target_disk"
         return 1
     }
-    local orig_onion
-    orig_onion=$(_ssh "grep MONERO_ONION_ADDRESS /data/pithead/.env" | cut -d= -f2)
+    # The source's real archive keeps the existing same-version export exercised. The restore
+    # itself must consume the checked-in supported-N-1 artifact, never download it at test time.
+    local n1_dir="$SCRIPT_DIR/fixtures/v1.20.0" fixture_env expected_wallet expected_onion expected_secrets
+    [ -s "$n1_dir/v1.20.0-backup.tar.gz.enc" ] && [ -s "$n1_dir/passphrase" ] && [ -s "$n1_dir/wallet" ] || {
+        bad "restore leg: checked-in v1.20.0 backup fixture is incomplete"
+        rm -f "$target_disk" "$restore_archive"
+        return 1
+    }
+    cp "$n1_dir/v1.20.0-backup.tar.gz.enc" "$restore_archive" || {
+        bad "restore leg: could not stage the checked-in v1.20.0 backup fixture"
+        rm -f "$target_disk" "$restore_archive"
+        return 1
+    }
+    restore_pass=$(tr -d '\r\n' <"$n1_dir/passphrase")
+    expected_wallet=$(tr -d '\r\n' <"$n1_dir/wallet")
+    fixture_env=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$n1_dir/passphrase" \
+        -in "$restore_archive" 2>/dev/null | tar -xOzf - --wildcards '*/.env') || {
+        bad "restore leg: could not inspect the v1.20.0 fixture's encrypted state"
+        rm -f "$target_disk" "$restore_archive"
+        return 1
+    }
+    expected_onion=$(printf '%s\n' "$fixture_env" | sed -n 's/^MONERO_ONION_ADDRESS=//p')
+    expected_secrets=$(printf '%s\n' "$fixture_env" | grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' | sha256sum | cut -d' ' -f1)
+    [ -n "$expected_wallet" ] && [ -n "$expected_onion" ] && [ -n "$expected_secrets" ] || {
+        bad "restore leg: v1.20.0 fixture is missing its restore fingerprints"
+        rm -f "$target_disk" "$restore_archive"
+        return 1
+    }
+    local target_chain_sentinel="n1-target-chain-sentinel"
+    _ssh "printf '%s\\n' keep-this-chain-data > /data/pithead/data/monero/$target_chain_sentinel" || {
+        bad "restore leg: could not plant the target chain-data sentinel before the N-1 restore"
+        rm -f "$target_disk" "$restore_archive"
+        return 1
+    }
+    ok "restore leg: staged the signed v1.20.0 encrypted fixture and planted target chain data"
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
     vm_destroy_or_refuse || return
 
-    local restore_target="/srv/code/bench-vm/pithead-restore-target.img"
-    rm -f "$restore_target"
-    qemu-img create -f raw "$restore_target" 30G >/dev/null
+    # Restore onto the existing appliance disk: wipe=keep must preserve its chain data while
+    # the N-1 archive supplies configuration and secrets.
+    local restore_target="$target_disk"
     img=$(_build_image v1) || {
         bad "restore leg: image build failed"
         # shellcheck disable=SC2154  # shared through the assembled runner scope
@@ -255,11 +288,19 @@ _phase_install_restore() {
         rm -f "$target_disk" "$restore_archive" "$restore_target"
         return 1
     fi
-    if _ssh "grep -q \"$HARNESS_WALLET\" /data/pithead/config.json"; then
-        ok "restore leg: restored machine carries the ORIGINAL wallet address, not a fresh one"
+    if _ssh "grep -q \"$expected_wallet\" /data/pithead/config.json"; then
+        ok "restore leg: restored machine carries the v1.20.0 wallet address, not a fresh one"
     else
-        bad "restore leg: restored machine's config does not carry the original wallet"
+        bad "restore leg: restored machine's config does not carry the v1.20.0 wallet"
     fi
+    local restored_secrets
+    restored_secrets=$(_ssh "grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1")
+    [ "$restored_secrets" = "$expected_secrets" ] &&
+        ok "restore leg: restored RPC, dashboard-auth and onion-client secrets match the v1.20.0 fixture" ||
+        bad "restore leg: restored RPC, dashboard-auth or onion-client secrets differ from the v1.20.0 fixture"
+    _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
+        ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
+        bad "restore leg: fixture or pre-restore target chain sentinel is missing after restore"
     # #2051: the source machine asserts this (above), the RESTORED machine never did — so "the
     # stack never came up" could not tell a provisioning that never finished from one that
     # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
@@ -303,7 +344,7 @@ _phase_install_restore() {
         done
         ;;
     esac
-    if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$HARNESS_WALLET"); then
+    if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
         ok "restore leg: $verdict"
     else
         bad "restore leg: $verdict"
@@ -335,10 +376,10 @@ _phase_install_restore() {
     # so new_onion == orig_onion proves only that the CONFIG FILE made the round trip — true even when
     # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
     # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
-    if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$orig_onion" ] && [ "$tor_hostname" = "$orig_onion" ]; then
-        ok "restore leg: restored machine kept the ORIGINAL Tor identity, not a regenerated one"
+    if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$expected_onion" ] && [ "$tor_hostname" = "$expected_onion" ]; then
+        ok "restore leg: restored machine kept the v1.20.0 Tor identity, not a regenerated one"
     else
-        bad "restore leg: onion identity not restored (.env: $orig_onion -> ${new_onion:-none}, Tor's own hostname: ${tor_hostname:-none})"
+        bad "restore leg: v1.20.0 onion identity not restored"
     fi
     phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
     rm -f "$target_disk" "$restore_archive" "$restore_target"
