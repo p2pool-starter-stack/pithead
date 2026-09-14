@@ -128,7 +128,7 @@ verify_tarball_commit() {
 # one rule. Tar listings may prefix members with ./; an absolute member is equally unsafe.
 verify_release_rootfs_tar() { # $1 = tarball path
     local tarball="$1" variant listing normalized
-    variant="$(tar -xOf "$tarball" etc/pithead-variant 2>/dev/null)" || {
+    variant="$(command tar -xOf "$tarball" etc/pithead-variant 2>/dev/null)" || {
         echo "rootfs release guard: cannot read etc/pithead-variant" >&2
         return 2
     }
@@ -136,7 +136,7 @@ verify_release_rootfs_tar() { # $1 = tarball path
         echo "rootfs release guard: variant is '$variant', not release" >&2
         return 2
     }
-    listing="$(tar -tf "$tarball")" || {
+    listing="$(command tar -tf "$tarball")" || {
         echo "rootfs release guard: cannot list $tarball" >&2
         return 2
     }

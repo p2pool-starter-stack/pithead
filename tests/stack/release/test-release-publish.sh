@@ -25,6 +25,8 @@ tar --transform='s|root/.ssh/authorized_keys|root/./.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-inner-dot.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar --transform='s|root/.ssh/authorized_keys|.//root/.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-dot-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|//root/.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar -cf "$ROOTFS_GUARD/debug-link.tar" -C "$ROOTFS_GUARD/debug-link" etc root keys
 rootfs_guard() {
     (
@@ -33,9 +35,6 @@ rootfs_guard() {
         # shellcheck disable=SC1090
         source "$REL" 2>/dev/null
         set +eu
-        if [ "$1" = absolute-member-fixture.tar ]; then
-            tar() { [ "$1" = -xOf ] && printf 'release\n' || printf '//root/.ssh/authorized_keys\n'; }
-        fi
         verify_release_rootfs_tar "$1"
     )
 }
@@ -44,12 +43,10 @@ assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
 rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
 assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
-for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-link; do
+for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
 done
-rootfs_guard absolute-member-fixture.tar >/dev/null 2>&1
-assert_rc "an absolute debug-key member is refused" "$?" "2"
 unset -f rootfs_guard
 
 # Drive the producer with a stubbed export and registry write so ordering mutations fail.
@@ -62,6 +59,7 @@ drive_rootfs_build() { # <fixture-tar> <push-log>
         # shellcheck disable=SC1090
         source "$REL" 2>/dev/null
         DRY_RUN=0
+        # shellcheck disable=SC2034  # consumed by the dynamically sourced build_rootfs_image
         PLATFORMS=linux/amd64
         STAGING_TAG=v2.0.0-rc.1
         rootfs_tar=os/build/pithead-root.tar
