@@ -22,8 +22,10 @@
 # never a `git worktree`: the battery runs as root, and a root-made commit leaves root-owned
 # objects in the .git every worktree on the box shares. The export has no git, so build-image
 # stamps BUILD_COMMIT `unknown-dirty` and mkbundle needs PITHEAD_STALE_TARBALL_OK=1; os-update
-# reads neither — only [meta.pithead]. It is signed with THIS tree's dev key (copied in) so the
-# keyring baked into the guest's slots accepts it.
+# reads neither — only [meta.pithead]. The build names the copied tree's compose file explicitly,
+# so its COMPOSE_SOURCE stamp records that synthetic input by hash instead of consulting a git
+# origin the export does not have. It is signed with THIS tree's dev key (copied in) so the keyring
+# baked into the guest's slots accepts it.
 
 FLOOR_FALLBACK_VERSION=99.0.0
 
@@ -40,7 +42,8 @@ _build_bundle_stamped() {
             (
                 cd "$wt" &&
                     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$marker" \
-                    PITHEAD_ROOTFS_TAG="pithead-os-rootfs-$marker" os/build-image.sh &&
+                    PITHEAD_ROOTFS_TAG="pithead-os-rootfs-$marker" PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml" \
+                        os/build-image.sh &&
                     PITHEAD_STALE_TARBALL_OK=1 PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$floor" \
                         os/rauc/mkbundle.sh --dev
             ) &&

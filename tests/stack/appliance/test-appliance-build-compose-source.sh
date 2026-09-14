@@ -116,6 +116,7 @@ cs_out="$(
 assert_contains "a failed remote tag query is refused, not read as tag absence" "$cs_out" "rc=1"
 assert_contains "the remote-query refusal names the uncertainty" "$cs_out" "could not determine whether tag v0.0.9 exists"
 assert_eq "the remote-query failure stages nothing" "$(ls "$CS/remote-error" 2>/dev/null)" ""
+assert_contains "the synthetic floor-fallback build explicitly stages its copied compose file" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml"'
 
 echo "== unit: build-image --stage-only parses, and stops after staging, before the first docker step (#1215) =="
 # The CI rootfs scan runs the Dockerfile itself, so it needs the staging without the build. The
