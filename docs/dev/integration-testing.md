@@ -556,8 +556,9 @@ For one representative config:
 ### RigForge control (`--rigforge-control`)
 
 The dashboard↔RigForge WRITE surfaces that only a real rig with its `:8082` control API opted in
-can prove — the tier-2 fake covers the `:8081` read only. It enables `dashboard.control`, pins the
-borrowed rig in `workers.list[]` (#506; its token seen inside the container only as the
+can prove — the tier-2 fake covers the `:8081` read only. It derives the temporary control config
+from the just-proven scenario, then enables `dashboard.control` and pins the borrowed rig in
+`workers.list[]` (#506; its token seen inside the container only as the
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
 carrying that key is migrated to `workers.list[]` before the legs run), and drives five legs, each
