@@ -104,7 +104,6 @@ export function renderSetup(app) {
         <p><button type="button" class="wizard-link"
             onClick=${() => app.setState({ restoreMode: true, error: "" })}>
             Restoring an existing Pithead? Upload its backup instead.</button></p>
-        <${Err}>${error}<//>
         ${app.state.probing && html`<${NodeProbeProgress} config=${cfg} />`}
         <${NodeProbeReport} report=${app.state.nodeProbe}>Setup does not continue while a
         check is failing. Correct the address below and submit again.<//>
@@ -297,7 +296,8 @@ export function renderSetup(app) {
 
             ${
               diskPicked &&
-              html`<button type="submit" class="btn-toggle active" disabled=${(!rig && !!jsonError) || app.state.submitting}>
+              html`<${Err}>${error}<//>
+              <button type="submit" class="btn-toggle active" disabled=${(!rig && !!jsonError) || app.state.submitting}>
                 ${
                   app.state.submitting
                     ? app.state.probing

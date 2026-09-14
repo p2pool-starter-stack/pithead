@@ -18,6 +18,10 @@ test("an empty pool address is stopped client-side with a named reason", async (
   globalThis.fetch = real;
   assert.equal(fetched, false);
   assert.match(inst.state.error, /pool address/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Enter the pool address") > out.indexOf("Stratum password"));
+  assert.ok(out.indexOf("Enter the pool address") < out.indexOf("Apply"));
   restore();
 });
 
@@ -90,12 +94,33 @@ test("before a disk is chosen, the page asks ONLY that", async () => {
 
 test("restore section: names what a restore does and asks for the archive + passphrase", () => {
   const out = renderToString(
-    html`<${RestoreSection} file=${null} passphrase="" onFile=${() => {}} onPassphrase=${() => {}} />`,
+    html`<${RestoreSection} file=${null} passphrase="" passphraseVisible=${false}
+      onFile=${() => {}} onPassphrase=${() => {}} onPassphraseVisible=${() => {}} />`,
   );
   assert.match(out, /Restore from a backup/);
   assert.match(out, /emergency-kit passphrase/);
   assert.match(out, /type="file"/);
   assert.match(out, /type="password"/);
+  assert.match(out, /Show passphrase/);
+});
+
+const findVNode = (vnode, type) => {
+  if (!vnode || typeof vnode !== "object") return null;
+  if (Array.isArray(vnode)) return vnode.map((child) => findVNode(child, type)).find(Boolean);
+  return vnode.type === type ? vnode : findVNode(vnode.props?.children, type);
+};
+
+test("the show-passphrase control reveals and masks the entered passphrase", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  inst.setState({ restoreMode: true, restorePassphrase: "fixture-pw" });
+  const section = findVNode(inst.renderRestore(), RestoreSection);
+  section.props.onPassphraseVisible({ target: { checked: true } });
+  assert.match(renderToString(inst.render()), /type="text" value="fixture-pw"/);
+  findVNode(inst.renderRestore(), RestoreSection).props.onPassphraseVisible({
+    target: { checked: false },
+  });
+  assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
+  restore();
 });
 
 test("the setup form offers a toggle into restore mode, and back again", async () => {
@@ -116,6 +141,7 @@ test("restore mode on the installer asks for the disk before revealing the uploa
   inst.setState({ restoreMode: true });
   const before = renderToString(inst.render());
   assert.match(before, /Target disk/);
+  assert.match(before, /Choose the disk first; the upload fields appear once you pick/);
   assert.doesNotMatch(before, /Restore from a backup/);
   inst.setState({ chosen: "nvme0n1" });
   const after = renderToString(inst.render());
@@ -136,6 +162,10 @@ test("submitRestore refuses with no file chosen, client-side, before any fetch",
   globalThis.fetch = real;
   assert.equal(fetched, false);
   assert.match(inst.state.error, /Choose a backup archive/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Choose a backup archive") < out.indexOf("Restore and provision"));
+  assert.ok(out.indexOf("Choose a backup archive") > out.indexOf("Show passphrase"));
   restore();
 });
 

@@ -42,6 +42,7 @@ export class WizardApp extends Component {
     restoreMode: false,
     restoreFile: null,
     restorePassphrase: "",
+    restorePassphraseVisible: false,
     status: "",
     handoff: null,
   };
