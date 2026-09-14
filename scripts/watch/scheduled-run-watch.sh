@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# Scheduled-run watch (#1377, #1418).
-# The Monday ci.yml CVE sweep has no pull request; this watcher reports its schedule and result.
-# LATE/MISSED are findings; unreadable inputs are UNCHECKED. A GitHub-wide shutdown cannot self-announce.
+# Scheduled-run watch (#1377, #1418): LATE/MISSED are findings; unreadable inputs are UNCHECKED.
 # Usage:
-#   scripts/watch/scheduled-run-watch.sh <dir>    Render the report for the JSON in <dir> on stdout.
-#                                           <dir>/cadence.json = declared schedules + run history
-#                                           <dir>/runs.json  = gh run list --json ... (an array)
-#                                           <dir>/jobs.json  = gh run view --json jobs (an object)
-#                                           rc 1 if the watch could not do its job.
+#   scripts/watch/scheduled-run-watch.sh <dir>    Render <dir>/cadence.json, runs.json and jobs.json; rc 1 if unchecked.
 #   scripts/watch/scheduled-run-watch.sh --title  Print the tracking issue's title, nothing else.
-#   scripts/watch/scheduled-run-watch.sh --schedules <workflow-dir>
-#                                           Print path<TAB>cron for every declared schedule.
-#   scripts/watch/scheduled-run-watch.sh --self-test
-#                                           Drive the render and every refusal above through
-#                                           fixtures. No network, no gh.
+#   scripts/watch/scheduled-run-watch.sh --schedules <workflow-dir>  Print path<TAB>cron for every declared schedule.
+#   scripts/watch/scheduled-run-watch.sh --self-test  Drive fixtures. No network, no gh.
 
 set -Eeuo pipefail
 
@@ -77,6 +68,7 @@ render_cadence() {
             | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
                  or ($valid | length) != ($w.runs | length)
                  or ($valid | any((.databaseId | type) != "number" or (.url | type) != "string" or (.url | length) == 0))
+                 or (.path | type) != "string" or (.path | length) == 0
                  or (.declaredAt | type) != "number" then
                 {workflow: .path, cron: .cron, last: "unknown", state: {kind: "unchecked"}}
               else (slot($now; $p)) as $latest
@@ -281,12 +273,13 @@ if [ "${1:-}" = "--self-test" ]; then
     st "an interior recovery retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
     st "an interior recovery names the later missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between [907](https://x/907) and [928](https://x/928)')" "1"
     recovered="$tmp/recovered"
-    cadence_fixture "$recovered" "2026-09-29T08:00:00Z" "0 5 * * 1" '[{"databaseId":929,"url":"https://x/929","createdAt":"2026-09-29T07:00:00Z"}]'
+    cadence_fixture "$recovered" "2026-10-06T08:00:00Z" "0 5 * * 1" '[{"databaseId":929,"url":"https://x/929","createdAt":"2026-10-06T07:00:00Z"}]'
     jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
     out="$(render_cadence "$recovered")"
-    st "a recovered first run retains every missed declaration-boundary slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "a recovered first run retains every missed declaration-boundary slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "3"
     st "a declaration boundary names the first missed slot and run" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
     st "a declaration boundary includes later missed slots" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration boundary includes the third missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-28T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
     jq '.workflows[0].declaredAt = ("2026-09-14T05:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
     out="$(render_cadence "$recovered")"
     st "a declaration exactly on a slot starts with the next slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
@@ -318,6 +311,14 @@ if [ "${1:-}" = "--self-test" ]; then
     jq '.workflows[0].runs[0].databaseId = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
     out="$(render_cadence "$unknown")" && rc=0 || rc=$?
     st "run evidence without an ID fails closed" "$rc" "1"
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1"
+    jq '.workflows[0].runs[0].url = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "run evidence without a URL fails closed" "$rc" "1"
+    cadence_fixture "$unknown"
+    jq '.workflows[0].path = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "a missing workflow path fails closed" "$rc" "1"
 
     short="$tmp/short"
     runs_fixture "$short" success success
