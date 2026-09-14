@@ -26,6 +26,7 @@ def test_safe_config_is_all_tor(_posture):
         "firewall": True,
         "leaks": 0,
         "blocked_by_firewall": 0,
+        "unverified": 0,
         "all_tor": True,
         "level": "ok",
         "label": "All egress via Tor",

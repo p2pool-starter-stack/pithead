@@ -239,7 +239,8 @@
       "firewall": true,
       "label": "All egress via Tor",
       "leaks": 0,
-      "level": "ok"
+      "level": "ok",
+      "unverified": 0
     }
   },
   "energy": {
@@ -656,7 +657,8 @@
       "firewall": true,
       "label": "All egress via Tor",
       "leaks": 0,
-      "level": "ok"
+      "level": "ok",
+      "unverified": 0
     }
   },
   "update": {

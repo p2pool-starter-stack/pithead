@@ -5,6 +5,7 @@ split out of it — the graph as data, plus the per-request marking of which nod
 machine's own.
 """
 
+from mining_dashboard.config import config
 from mining_dashboard.service.network import egress
 from mining_dashboard.service.network.topology_graph import (
     CLEARNET,
@@ -19,6 +20,14 @@ from mining_dashboard.service.network.topology_graph import (
 # one that matters most: both nodes are away from this machine but by DIFFERENT routes, so a
 # marking that collapses "not local" to a single shared answer still has to get both right.
 _COMBOS = ((LOCAL, LOCAL), (LAN, LOCAL), (LOCAL, CLEARNET), (UNKNOWN, LAN))
+
+
+def test_tari_mode_not_an_address_prefix_decides_locality(monkeypatch):
+    monkeypatch.setattr(config, "TARI_MODE", "remote")
+    monkeypatch.setattr(config, "TARI_GRPC_ADDRESS", "172.28.0.example:18142")
+    assert config.tari_is_local() is False
+    monkeypatch.setattr(config, "TARI_MODE", "local")
+    assert config.tari_is_local() is True
 
 
 def test_only_the_relocatable_nodes_carry_a_location():

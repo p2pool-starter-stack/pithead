@@ -68,10 +68,8 @@ def low_ram_floor_gb(monero_local: bool, tari_local: bool) -> float:
 
 
 def tari_is_local() -> bool:
-    """The tari gRPC target sits inside the stack's own subnet — same split the Monero side
-    draws with LOCAL_MONERO_HOST, derived because no LOCAL_TARI_HOST env exists."""
-    prefix = ".".join(LOCAL_MONERO_HOST.split(".")[:3]) + "."
-    return TARI_GRPC_ADDRESS.split(":")[0].startswith(prefix)
+    """Whether this box runs the Tari node, from the operator's authoritative mode."""
+    return TARI_MODE == "local"
 
 
 def monero_is_local() -> bool:

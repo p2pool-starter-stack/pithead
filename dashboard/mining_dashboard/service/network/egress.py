@@ -34,6 +34,7 @@ from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re
     LOCAL,
     TOPOLOGY_NODES,
     TOR,
+    UNKNOWN,
     edge,
     ext_node,
     node_route,
@@ -171,25 +172,15 @@ def compute_egress_posture(
             "name": "dashboard",
             "firewalled": False,  # host-networked — bypasses the #270 DOCKER-USER firewall
             "conns": [
-                # XvB stats fetch — unconditionally socks5h over Tor (#163/#701); xvb.tor only
-                # governs the xmrig-proxy donation dial above, never this fetch.
                 {"to": "XvB stats (xmrvsbeast.com)", "route": TOR if xvb_enabled else INACTIVE},
                 {"to": "update check (github)", "route": TOR},  # socks5h, #224
-                # Healthchecks.io dead-man's-switch ping — always over Tor when a URL is set (#79).
                 {"to": "Healthchecks.io ping", "route": TOR if healthchecks_enabled else INACTIVE},
-                # Telegram bot (alerts + command long-poll) — always over Tor when on (#121/#340).
                 {"to": "Telegram bot", "route": TOR if telegram_enabled else INACTIVE},
-                # XMR/XTM price feed (#520) — always over Tor when opted in (energy.price_feed).
                 {
                     "to": "price feed (coingecko.com)",
                     "route": TOR if price_feed_enabled else INACTIVE,
                 },
-                # Webhook/ntfy alert sinks (#380) — Tor by default; ``notifications.tor: false``
-                # to an all-private-IP endpoint set is the LAN carve-out (local, not a leak).
                 {"to": "alert sinks (webhook / ntfy)", "route": sinks},
-                # XvB standby pull (#249) — a backup pulls the primary's controller state. onion or
-                # any non-private source rides Tor (like every read above); only a private-IP-literal
-                # primary is a LAN hop (local). Never clearnet, so it can't leak the backup's IP.
                 {"to": "XvB standby pull (backup ← primary)", "route": standby},
                 {"to": "Tor egress probe", "route": TOR if tor_auto_heal else INACTIVE},
                 *(
@@ -208,8 +199,12 @@ def compute_egress_posture(
 
     leaks = 0  # clearnet egress that actually exposes the host IP
     blocked = 0  # clearnet route a container is configured for, but the firewall DROPs it
+    unverified = 0  # direct hostname route whose exposure cannot be classified without DNS
     for comp in components:
         for conn in comp["conns"]:
+            if conn["route"] == UNKNOWN:
+                unverified += 1
+                continue
             if conn["route"] != CLEARNET:
                 continue
             if comp.get("firewalled", False) and firewall:
@@ -220,6 +215,10 @@ def compute_egress_posture(
 
     if leaks:
         label = f"{leaks} clearnet egress path(s) exposing your IP"
+        if unverified:
+            label += f"; {unverified} path(s) unverified"
+    elif unverified:
+        label = f"{unverified} egress path(s) unverified; Tor-only status cannot be confirmed"
     elif blocked:
         label = f"All egress via Tor ({blocked} clearnet path(s) blocked by the egress firewall)"
     else:
@@ -231,8 +230,9 @@ def compute_egress_posture(
             "firewall": firewall,
             "leaks": leaks,
             "blocked_by_firewall": blocked,
-            "all_tor": leaks == 0,
-            "level": "ok" if leaks == 0 else "warn",
+            "unverified": unverified,
+            "all_tor": leaks == 0 and unverified == 0,
+            "level": "ok" if leaks == 0 and unverified == 0 else "warn",
             "label": label,
         },
     }

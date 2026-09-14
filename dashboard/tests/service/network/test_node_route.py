@@ -130,21 +130,30 @@ def test_the_classifier_returns_only_declared_routes():
 
 
 @pytest.mark.parametrize("firewall", [True, False])
-@pytest.mark.parametrize("route", [LAN, UNKNOWN])
-def test_a_lan_or_unknown_node_hop_moves_neither_security_counter(route, firewall, _posture):
+def test_a_lan_node_hop_moves_neither_security_counter(firewall, _posture):
     # `leaks` is defined at its own declaration as "clearnet egress that actually exposes the host
     # IP". A node on your own LAN does not expose it, so counting one would be inventing a leak —
-    # and inventing a leak is as wrong as hiding one. `unknown` must not be counted either: we do
-    # not know that it leaks, and the diagram carries that doubt where the count cannot.
+    # and inventing a leak is as wrong as hiding one.
     #
     # Asserted with the firewall BOTH ways on purpose. `blocked_by_firewall` is the other half of
     # the same branch, so a route that wrongly counted as clearnet would show up in exactly one of
     # these two rows depending on the firewall — one row alone would miss half the mistake.
-    summary = _posture(monero_route=route, firewall=firewall)["summary"]
+    summary = _posture(monero_route=LAN, firewall=firewall)["summary"]
     assert summary["leaks"] == 0
     assert summary["blocked_by_firewall"] == 0
     assert summary["all_tor"] is True
     assert summary["level"] == "ok"
+
+
+@pytest.mark.parametrize("firewall", [True, False])
+def test_an_unknown_node_hop_refuses_to_claim_all_traffic_uses_tor(firewall, _posture):
+    summary = _posture(monero_route=UNKNOWN, firewall=firewall)["summary"]
+    assert summary["leaks"] == 0
+    assert summary["blocked_by_firewall"] == 0
+    assert summary["unverified"] == 2
+    assert summary["all_tor"] is False
+    assert summary["level"] == "warn"
+    assert summary["label"] == "2 egress path(s) unverified; Tor-only status cannot be confirmed"
 
 
 @pytest.mark.parametrize("firewall", [True, False])

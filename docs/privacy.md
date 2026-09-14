@@ -160,7 +160,8 @@ literal draws as **LAN**: the hop leaves this machine but stays on your network,
 expose your IP and is not counted as a leak. Any other IP literal draws as **clearnet** and is
 counted. A hostname draws as **Unverified** because the diagram will not resolve it and create a
 DNS egress on every render. A remote node never gets the local daemon's Tor P2P edge or initial-sync
-edge; those describe a node this machine runs. Unverified is not counted as a leak either.
+edge; those describe a node this machine runs. Unverified is not counted as a proven leak, but it
+makes the shared security summary warn instead of claiming all egress uses Tor.
 
 The two **ingress** hops draw as **Incoming**: mining traffic into xmrig-proxy and HTTPS into
 Caddy, with their sources grouped under **Clients**. This keeps client connections distinct from
