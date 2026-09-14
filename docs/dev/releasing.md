@@ -116,7 +116,7 @@ Releases are cut on a private build/test server that runs the full Monero and fu
 every gate is green.
 
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
-> runners (and what does run free on every PR), and the safe self-hosted-runner setup are covered
+> runners (and what does run free on every PR), and how bench-ci owns the release gate are covered
 > in [Release / Validation Server](release-server.md).
 
 ### Branch mechanics

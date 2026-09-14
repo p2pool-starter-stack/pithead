@@ -418,8 +418,8 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   stratum port scoped to the LAN ([workers › firewall](../workers.md#firewall)); the dashboard
   stays on localhost behind Caddy and the monerod RPC on localhost (both asserted by
   `--readiness`). Nothing else should be reachable from the internet.
-- Untrusted code. The runner only runs trusted code (see above). Prefer ephemeral/JIT runners;
-  don't share the runner with private repos.
+- Untrusted code. Keep GitHub Actions off this box. Bench-ci runs only the exact SHA selected for
+  the release gate and owns the reservation and cleanup.
 - Least privilege. A dedicated unprivileged user; the stack already runs least-privilege
   containers (`no-new-privileges`, `cap_drop`, read-only roots, scoped Docker socket proxies,
   regression-guarded in `tests/stack/standalone/test_compose.sh`).

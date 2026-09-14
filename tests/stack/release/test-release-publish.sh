@@ -154,12 +154,12 @@ bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-
     (
         cd "$ROOT" || exit
         set --
+        export BENCH_CI_APP_ID="${3-4242}" BENCH_CI_APP_SLUG="${4-bench-ci}"
         # shellcheck disable=SC1090  # dynamic source
         source "$REL" 2>/dev/null
         set +eu
         # shellcheck disable=SC2034  # consumed by the sourced gate
         GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
-        export BENCH_CI_APP_ID="${3-4242}" BENCH_CI_APP_SLUG="${4-bench-ci}"
         gh() {
             case "$2" in
             apps/bench-ci) printf '{"id":%s}\n' "$BENCH_RESOLVED_APP_ID" ;;
