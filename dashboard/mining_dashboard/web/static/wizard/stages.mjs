@@ -1,6 +1,6 @@
 import { html } from "../app/preact.mjs";
 import { rigCardFields, rigCardNote } from "../workers/rigcardlogic.mjs";
-import { Err, Field, Note } from "./wizardparts.mjs";
+import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
 export const Gate = ({ error, onSubmit }) => html`<div class="card">
     <p>Enter the one-time token shown on this machine's console or terminal.</p>
@@ -64,13 +64,12 @@ export const InstallSection = ({
     ${
       picked &&
       picked.state === "pithead-with-data" &&
-      html`<${Field} label="It holds a previous install — what happens to its data?">
-        <select value=${wipe} onChange=${onWipe}>
-            <option value="keep">Keep everything — settings, wallets and the synced chains (default)</option>
-            <option value="data">Fresh start, keep the blockchains — settings and wallets are wiped</option>
-            <option value="all">Wipe everything — the chains re-download from scratch</option>
-        </select>
-    <//>`
+      html`<${RadioField} label="It holds a previous install — what happens to its data?"
+        name="wipe" value=${wipe} onChange=${onWipe} options=${[
+          ["keep", "Keep everything", "Keep settings, wallets and the synced chains (default)."],
+          ["data", "Fresh start", "Keep the blockchains; wipe settings and wallets."],
+          ["all", "Wipe everything", "Download the chains again from scratch."],
+        ]} />`
     }
     ${
       picked &&

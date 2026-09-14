@@ -82,6 +82,10 @@ stratum TLS and the stratum password (`p2pool.stratum_tls`, `p2pool.stratum_pass
 client authentication (`dashboard.onion.client_auth`), the XvB raffle switch (`xvb.*`), energy
 pricing (`dashboard.energy.*`), and notification webhooks (`notifications.webhooks`).
 
+The web wizard leaves both payout-address inputs empty on a new machine; the example strings in
+`config.reference.json` are documentation, not saved answers. Questions with two to four answers
+show every answer as a radio choice. The target-disk inventory remains a select list.
+
 ---
 
 ## Configuration reference

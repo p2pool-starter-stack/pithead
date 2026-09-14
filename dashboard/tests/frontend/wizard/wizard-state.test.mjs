@@ -61,6 +61,22 @@ test("a host rejection returns to the form with the reason and the submitted ans
   restore();
 });
 
+test("reference wallet examples never become input values", async () => {
+  const reference = {
+    monero: { wallet_address: "your_monero_wallet_address", prune: true },
+    tari: { wallet_address: "your_tari_wallet_address", mode: "local" },
+    p2pool: { pool: "mini" },
+  };
+  const { inst, restore } = await appOn([
+    stateFor("setup", { config: structuredClone(reference), reference }),
+  ]);
+  assert.equal(inst.state.cfg.monero.wallet_address, "");
+  assert.equal(inst.state.cfg.tari.wallet_address, "");
+  const out = renderToString(inst.render());
+  assert.doesNotMatch(out, /your_(monero|tari)_wallet_address/);
+  restore();
+});
+
 test("in-progress edits are not clobbered by a later poll of the server's copy", async () => {
   // The form polls while open; the operator's half-typed address must survive it.
   const { inst, restore } = await appOn([stateFor("setup")]);
