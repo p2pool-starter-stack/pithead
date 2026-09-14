@@ -383,15 +383,11 @@ jobs:
           fetch-depth: 0  # full history so the scan covers every commit, not just the tip
       - name: Scan git history for secrets (gitleaks, pinned by digest)
         # Run the binary via its pinned image (the gitleaks-action requires a license for org repos).
-        # Accepted false positives live in .gitleaks.toml.
-        # --log-opts restricts the scan to HEAD's own history: gitleaks defaults to `--all`,
-        # which walks every ref the fetch-depth:0 checkout pulled in (every open branch), so an
-        # un-ignored secret-shaped fixture on an unrelated branch reds this job (#2204).
+        # Accepted false positives live in .gitleaks.toml. --log-opts=HEAD avoids gitleaks' default --all scan of every branch fetch-depth:0 pulled in, which reds unrelated PRs (#2204).
         run: |
           docker run --rm -v "$PWD":/repo \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            git /repo --no-banner --redact --config /repo/.gitleaks.toml \
-            --log-opts="--full-history --diff-filter=tuxdb HEAD"
+            git /repo --no-banner --redact --config /repo/.gitleaks.toml --log-opts="--full-history --diff-filter=tuxdb HEAD"
 
   zizmor:
     name: Workflow audit (zizmor)
