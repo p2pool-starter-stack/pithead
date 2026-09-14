@@ -35,8 +35,8 @@ class MoneroClient:
         timeout=5,
     ):
         self.url = url.rstrip("/") + "/get_info"
-        # No creds (e.g. a remote node deployment) → send unauthenticated; the request
-        # will simply fail and the caller falls back to log scraping.
+        # No creds (e.g. a public remote node) → send unauthenticated. Failed requests fall back
+        # to log scraping.
         self._auth = HTTPDigestAuth(username, password) if username else None
         self.timeout = timeout
 
