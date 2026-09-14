@@ -85,8 +85,6 @@ test("return action posts once, then follows the server back to the retained for
     reference: REF,
     disks: FAILED.disks,
     installer: false,
-    restoreMode: true,
-    restorePassphraseVisible: true,
   });
   const calls = [];
   const real = globalThis.fetch;
@@ -107,11 +105,35 @@ test("return action posts once, then follows the server back to the retained for
   assert.equal(app.state.cfg.monero.wallet_address, "4PAYOUT");
   assert.equal(app.state.chosen, "sda");
   assert.equal(app.state.confirm, "");
+  const form = renderToString(app.render());
+  assert.match(form, /Monero payout address/);
+  assert.match(form, /4PAYOUT/);
+  assert.match(form, /Adjusted for Pithead 2\.0/);
+});
+
+test("failed-install recovery remasks a retained restore passphrase", async () => {
+  const app = new WizardApp({});
+  stubSetState(app);
+  Object.assign(app.state, restoredAttempt(FAILED, app.state), {
+    stage: "failed",
+    error: FAILED.error,
+    cfg: FAILED.config,
+    reference: REF,
+    disks: FAILED.disks,
+    installer: false,
+    restoreMode: true,
+    restorePassphraseVisible: true,
+  });
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) =>
+    String(url) === "/retry"
+      ? { ok: true, status: 200 }
+      : { ok: true, status: 200, json: async () => ({ ...FAILED, stage: "installer", error: null }) };
+  await backToSettings(app);
+  globalThis.fetch = real;
   assert.equal(app.state.restoreMode, true);
   assert.equal(app.state.restorePassphraseVisible, false);
-  const form = renderToString(app.render());
-  assert.match(form, /Restore from a backup/);
-  assert.match(form, /type="password"/);
+  assert.match(renderToString(app.render()), /type="password"/);
 });
 
 test("return action says to reload if the reopened state cannot be fetched", async () => {
