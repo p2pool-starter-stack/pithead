@@ -1,11 +1,11 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
-phase_rig_media() {
-    info "phase: rig-media (M14, #1829 — a rig that boots the stick and never installs)"
+phase_rigmedia() {
+    info "phase: rigmedia (M14, #1829 — a rig that boots the stick and never installs)"
     # The install phase's own boot shape (image on a removable USB bus, boot.order=1) beside a
     # blank internal disk — but here the internal disk is the thing under test BY STAYING BLANK:
     # a rig that answers RigForge must never touch it, unlike the install phase's own target.
-    local img target_disk="/srv/code/bench-vm/pithead-rig-media-target.img" token jar body scode empty_before empty_after
+    local img target_disk="/srv/code/bench-vm/pithead-rigmedia-target.img" token jar body scode empty_before empty_after
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
@@ -27,13 +27,13 @@ phase_rig_media() {
         --disk "path=$target_disk,format=raw,bus=virtio,boot.order=2" \
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "virt-install failed to define the rig-media VM"
+        bad "virt-install failed to define the rigmedia VM"
         rm -f "$target_disk"
         return
     }
     _wait_dhcp_ip 120
     _wait_ssh 240 || {
-        bad "rig-media guest never answered SSH (ip: ${ip:-none})"
+        bad "rigmedia guest never answered SSH (ip: ${ip:-none})"
         rm -f "$target_disk"
         return
     }
@@ -66,7 +66,7 @@ phase_rig_media() {
 
     # Same faked pool as the rig phase (#796): this leg is about the STICK, not the network — the
     # rig phase already carries the accepted-share gap.
-    body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rig-media"
+    body="role=rig&rig_pool=127.0.0.1:22&rig_worker=kvm-rigmedia"
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     rm -f "$jar"
     [ "$scode" = "200" ] || {

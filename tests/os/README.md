@@ -123,7 +123,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
   everything except this.
-- **rig-media** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
+- **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
   stick, no containers, volatile journald, an unaided reboot returns it mining, and the blank
@@ -145,7 +145,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rig-media|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
 including fault and reset, and the full run is required once for every RC candidate.

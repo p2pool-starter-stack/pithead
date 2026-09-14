@@ -383,8 +383,8 @@ wizard's rig card and role select, that a rig submits toward a pool (against a f
 it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, and
 the A/B update leg committing on a rig. It proves none of an accepted share at a real coordinator,
 MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, or a power cut on a
-rig. M14 — run-from-USB, never installed — is now the `rig-media` KVM phase
-(`tests/os/phases/rig-media.sh`, #2069): it boots the image as removable media beside a blank
+rig. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+(`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
 internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
 no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
 untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
