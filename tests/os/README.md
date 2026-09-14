@@ -96,7 +96,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   separate injected post-validation setup fault must open a recoverable failed page and retry
   with those values. The successful wizard submission names the appliance `fixture-box`; the
   running kernel, rendered dashboard address, served certificate and active mDNS service must all
-  agree on that identity. After provisioning, the dashboard drives a benign apply, a typed approval
+  agree on that identity. The guest carries an unrouted documentation-range global IPv6 address
+  and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
+  refused global curl and dashboard-listener doctor verdict must agree that no global address is
+  served. Doctor's separate stratum public-IP row remains a WARN. The dashboard then
+  drives a benign apply, a typed approval
   and its missing-token refusal, structured doctor output, a capped/redacted p2pool log tail and
   the wallet-log refusal, then an encrypted backup; the stack and dashboard must answer again after
   the backup. Doctor must still return every structured row as an applied diagnostic when its own

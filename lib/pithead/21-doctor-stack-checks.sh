@@ -139,6 +139,67 @@ check_dashboard_answers() {
     return 0
 }
 
+# Appliance-only counterpart to check_dashboard_answers: the app may answer while Caddy has
+# reopened a wildcard/public socket. Judge the listener the kernel reports, not only the rendered
+# Caddyfile, because a stale running process is the exposure that matters (#1021/#2070).
+dashboard_public_listener_verdict() { # <ss-output> <public-ips> <port>
+    local rows="$1" public_ips="$2" port="$3" line local_addr public_ip seen=0
+    while IFS= read -r line; do
+        case "$line" in *caddy*) ;; *) continue ;; esac
+        local_addr=$(awk '{print $4}' <<<"$line")
+        case "$local_addr" in *:"$port") ;; *) continue ;; esac
+        seen=1
+        case "$local_addr" in
+        "*:$port" | "0.0.0.0:$port" | "[::]:$port" | ":::$port")
+            printf 'fail:wildcard listener %s\n' "$local_addr"
+            return 1
+            ;;
+        esac
+        for public_ip in $public_ips; do
+            case "$local_addr" in "$public_ip:$port" | "[$public_ip]:$port")
+                printf 'fail:public listener %s\n' "$local_addr"
+                return 1
+                ;;
+            esac
+        done
+    done <<<"$rows"
+    [ "$seen" = 1 ] || {
+        printf 'missing\n'
+        return 2
+    }
+    printf 'ok\n'
+}
+
+check_dashboard_public_listener() {
+    is_appliance || return 0
+    if [ "$(normalize_bool "$(env_get DASHBOARD_EXPOSE_PUBLIC_IP 2>/dev/null)")" = true ]; then
+        dr_info "Dashboard public-listener check skipped — opted in (dashboard.expose_public_ip=true)."
+        return 0
+    fi
+    if ! command -v ip >/dev/null 2>&1 || ! command -v ss >/dev/null 2>&1; then
+        dr_info "Dashboard public-listener check skipped — 'ip' and 'ss' are required (Linux-only)."
+        return 0
+    fi
+    local public_ips port rows verdict
+    public_ips=$(host_public_ips)
+    if [ -z "$public_ips" ]; then
+        dr_ok "No public host address is available for the dashboard to expose."
+        return 0
+    fi
+    port=$(env_get HOST_PORT 2>/dev/null)
+    if [ -z "$port" ]; then
+        [ "$(normalize_bool "$(env_get DASHBOARD_SECURE 2>/dev/null)")" = true ] && port=443 || port=80
+    fi
+    rows=$(ss -Hltnp 2>/dev/null)
+    verdict=$(dashboard_public_listener_verdict "$rows" "$public_ips" "$port")
+    case "$verdict" in
+    ok) dr_ok "Dashboard listener excludes every public host address." ;;
+    missing) dr_info "Dashboard public-listener check skipped — no Caddy listener found on :$port." ;;
+    *) dr_fail_surface "Dashboard is listening on a public host address ($verdict) — set dashboard.expose_public_ip=false and run './pithead apply'." "The dashboard is listening on a public host address ($verdict). This machine is meant to serve it only on LAN and private IPv6 addresses." ;;
+    esac
+    return 0
+}
+
 # The revenue-path containers, split by how they behave during a fresh node's DAYS-LONG initial
 # sync (#35). This split is the whole reason the commit gate can tell "still syncing" (fine, commit)
 # from "crashed" (revert):
