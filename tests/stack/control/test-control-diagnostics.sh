@@ -255,7 +255,13 @@ assert_not_contains "the raw onion address is ABSENT from the whole result file"
 # limit, so 70000 bytes on ONE line satisfies any line cap and only the byte cap stops it.
 lid4="b1b1b1b1-0000-4000-8000-000000000042"
 export DIAG_LOG_BIG=1
-diag_run "$(diag_req "$lid4" diag-logs ',"container":"tor","lines":1')"
+diag_req "$lid4" diag-logs ',"container":"tor","lines":1' >/dev/null
+# The cap closes the pipe while docker still writes. Under the runner's production errexit and
+# pipefail settings that SIGPIPE must not prevent the applied result from being recorded.
+PATH="$DGC/bin:$PATH" run_sourced_e "$SANDBOX" \
+    control_process_request "$DGC/req-$lid4.json" "$DGC" >/dev/null 2>&1
+assert_eq "the capped single-line result is still recorded as applied under errexit" \
+    "$(jq -r .status "$DGC/results/$lid4.json" 2>/dev/null)" "applied"
 assert_eq "one 70000-byte line is cut at the byte cap, which no line cap could have bounded" \
     "$(jq -r '.lines | length' "$DGC/results/$lid4.json")" "65536"
 unset DIAG_LOG_BIG
