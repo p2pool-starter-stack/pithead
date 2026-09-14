@@ -16,25 +16,6 @@ dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v
         return 1
         ;;
     esac
-    binds=$(printf '%s\n' "$caddy" | grep '^    bind ' || true)
-    for address in "$lan" "$ula"; do
-        case " $binds " in *" $address "*) ;; *)
-            echo "Caddyfile bind lines omit $address"
-            return 1
-            ;;
-        esac
-    done
-    case "$binds" in *"$global"*)
-        echo "Caddyfile binds the global address ($global)"
-        return 1
-        ;;
-    esac
-    for endpoint in "$lan:443" "[$ula]:443"; do
-        printf '%s\n' "$sockets" | grep -F " $endpoint " | grep -q caddy || {
-            echo "Caddy is not listening on $endpoint"
-            return 1
-        }
-    done
     while IFS= read -r line; do
         case "$line" in *caddy*) ;; *) continue ;; esac
         local_addr=$(awk '{print $4}' <<<"$line")
@@ -49,6 +30,25 @@ dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v
             ;;
         esac
     done <<<"$sockets"
+    for endpoint in "$lan:443" "[$ula]:443"; do
+        printf '%s\n' "$sockets" | grep -F " $endpoint " | grep -q caddy || {
+            echo "Caddy is not listening on $endpoint"
+            return 1
+        }
+    done
+    binds=$(printf '%s\n' "$caddy" | grep '^    bind ' || true)
+    for address in "$lan" "$ula"; do
+        case " $binds " in *" $address "*) ;; *)
+            echo "Caddyfile bind lines omit $address"
+            return 1
+            ;;
+        esac
+    done
+    case "$binds" in *"$global"*)
+        echo "Caddyfile binds the global address ($global)"
+        return 1
+        ;;
+    esac
     [ "$curl_rc" != 0 ] || {
         echo "the dashboard answered on the global address ($global)"
         return 1
