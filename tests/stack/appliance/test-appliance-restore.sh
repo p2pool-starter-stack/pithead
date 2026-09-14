@@ -180,6 +180,7 @@ printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
 # content on each side is what makes this a real collision test: same filenames as the archive
 # above, so restore_apply's `cp -a -n` (no-clobber) is what the assertions below actually exercise
 # — remove the `-n` and the archive's content would win here instead, and they would go red.
+mkdir -p "$RS/data/monero" "$RS/data/tari" "$RS/data/p2pool" # the target's chain dirs; only `wipe=keep` leaves them behind, and this fixture is a fresh $RS
 printf 'MONERO-CHAIN-TARGET\n' >"$RS/data/monero/lmdb-sentinel"
 printf 'TARI-CHAIN-TARGET\n' >"$RS/data/tari/db-sentinel"
 printf 'P2POOL-CHAIN-TARGET\n' >"$RS/data/p2pool/db-sentinel"
