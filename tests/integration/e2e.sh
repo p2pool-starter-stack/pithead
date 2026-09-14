@@ -50,8 +50,8 @@ BORROW_MINER=1
 SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
+REMOTE_NODE_ARGS=()
 BRANCH=""
-
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -93,6 +93,8 @@ OPTIONS:
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
+  --remote-monero-host <h> [--remote-monero-rpc-port <p>] [--remote-monero-zmq-port <p>]
+  --remote-tari-host <h>  pass external node endpoints through to the live harness
   --skip-preflight  skip the bench-chains-synced pre-flight
   --keep            don't restore at the end (leave the branch deployed + miner repointed — debugging)
   -h, --help        this help
@@ -133,6 +135,10 @@ while [ $# -gt 0 ]; do
     --no-miner)
         BORROW_MINER=0
         shift
+        ;;
+    --remote-monero-host | --remote-monero-rpc-port | --remote-monero-zmq-port | --remote-tari-host)
+        REMOTE_NODE_ARGS+=("$1" "$2")
+        shift 2
         ;;
     --skip-preflight)
         SKIP_PREFLIGHT=1
@@ -595,7 +601,7 @@ deploy_branch() {
 
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
-    local phases rearm_id rearm_request rearm_ack
+    local phases remote_args="" rearm_id rearm_request rearm_ack
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
     rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
@@ -608,19 +614,17 @@ run_harness() {
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
-    # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
-    # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
-    # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
+    [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
+    # RigForge read and write phases need the real rig supplied here (#1364/#1378).
     if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
         phases="$phases --rigforge --rigforge-control --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
     fi
-    # #905: no borrowed miner means no worker will ever appear — tell the harness to SKIP its two
-    # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
+    # No borrowed miner means the two mining assertions must skip (#905).
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases $no_mining"
+    phases="$phases$remote_args $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     step "phases: $phases  (workers=$WORKERS)"
     local rollback_b64 pools_b64
@@ -628,7 +632,7 @@ run_harness() {
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$no_mining" || return 1
+        harness_pregate "$remote_args $no_mining" || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."

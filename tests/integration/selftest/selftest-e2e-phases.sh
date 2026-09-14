@@ -38,34 +38,25 @@ assert_eq "the extraction is the whole function (opens and closes)" \
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
 
-# --- Drive it with ssh stubbed out ----------------------------------------------------------
-# Every on_bench call is recorded; the harness is told its run finished immediately with rc 0, so
-# the poll loop never sleeps. The one call we read back is the `nohup ./.e2e-run.sh` launch, which
-# carries the phase list verbatim — the same string the bench would have executed.
-# Two things bite a stub here, and both cost a debugging pass.
-#   * e2e.sh pipes the token INTO the launch call (`printf ... | on_bench ...`), and a pipeline runs
-#     its right-hand function in a SUBSHELL — a stub recording into a variable captures nothing.
-#     Record into files, which outlive it.
-#   * The stub's `cat` must never be able to block. If a mutation removes the pipe, an unredirected
-#     `cat` reads the SCRIPT's stdin and hangs forever, which reads as a mutation that "survived"
-#     rather than one that killed. The subshell takes its stdin from /dev/null so it gets EOF.
-drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "STDIN\t<piped>"
-    local launch lf sf
-    lf="$(mktemp)" sf="$(mktemp)"
+# --- Drive the real function with ssh stubbed out ------------------------------------------
+# Files outlive the pipeline subshell and /dev/null keeps an unpiped stub from hanging.
+drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and pregate records
+    local launch lf sf pf
+    lf="$(mktemp)" sf="$(mktemp)" pf="$(mktemp)"
     # SC2034/SC2329: the config vars and the log/step/warn/ok/die/on_bench stubs below are all read
     # and called by the eval'd run_harness, which shellcheck cannot follow into.
     # shellcheck disable=SC2034,SC2329
     launch="$(
-        # Nothing in here may read the SCRIPT's stdin: an unpiped `cat` in the stub would hang, and
-        # a hang reads as a mutation that survived. A pipeline still supplies its own stdin.
         exec </dev/null
         MODE="$1" BORROW_MINER="$2" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
         SCENARIO="${4:-}" RIGFORGE_BOOTSTRAP_VERSION="${5:-}"
+        REMOTE_NODE_ARGS=()
+        [ "${STUB_REMOTE:-0}" != 1 ] || REMOTE_NODE_ARGS=(--remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example)
         # rig_supply's inputs (#1378). MINER_HOST is what RIG_HOST defaults to; the token comes off
         # the stubbed on_miner, so the empty-token path is reachable by passing "".
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME="" IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
         STUB_TOKEN="${3-s3cr3t-tok3n}" FAIL_PRECHECK="${6:-}"
-        LAUNCH_FILE="$lf" STDIN_FILE="$sf"
+        LAUNCH_FILE="$lf" STDIN_FILE="$sf" PREGATE_FILE="$pf"
         on_miner() { case "$1" in *".NAME"*) printf rig1 ;; *) printf '%s' "$STUB_TOKEN" ;; esac }
         log() { :; }
         step() { :; }
@@ -79,21 +70,23 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
         }
         on_bench() {
             case "$1" in
-            # The launch command names the done-marker too (it rm -f's it first), so match the
-            # launch FIRST — reversing these two makes every phase assertion pass vacuously.
             *nohup*)
                 printf '%s' "$1" >"$LAUNCH_FILE"
                 cat >"$STDIN_FILE"
                 echo 4242
                 ;;
-            *"tests/integration/run.sh"*--readiness*) [ "$FAIL_PRECHECK" != readiness ] || return 1 ;;
-            *"tests/integration/run.sh"*" --check"*) [ "$FAIL_PRECHECK" != check ] || return 1 ;;
+            *"tests/integration/run.sh"*--readiness*)
+                printf '%s\n' "$1" >>"$PREGATE_FILE"
+                [ "$FAIL_PRECHECK" != readiness ] || return 1
+                ;;
+            *"tests/integration/run.sh"*" --check"*)
+                printf '%s\n' "$1" >>"$PREGATE_FILE"
+                [ "$FAIL_PRECHECK" != check ] || return 1
+                ;;
             # rig_supply's proof dial; the unreachable-rig path is driven separately by rc_of.
             *curl*Authorization*) return 0 ;;
             *borrow-rearm.request*) return 1 ;;
             *e2e-harness.done*)
-                # `test -f <done>` (the poll) and `cat <done>` (the exit code) share this substring;
-                # answering 0 to both ends the loop on its first pass with a clean harness result.
                 echo 0
                 return 0
                 ;;
@@ -102,15 +95,10 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
         }
         eval "$HARNESS_SRC"
         run_harness >/dev/null 2>&1
-        # The one line worth keeping. A run that never reaches the launch yields an empty capture,
-        # which fails the exact-set assertions loudly rather than reporting a stale answer.
         :
     )"
-    # An empty capture means the harness never reached the launch. It is not swallowed: every
-    # assertion below is an exact-set or exact-string match, so "" fails loudly rather than reading
-    # as a clean answer.
-    launch="$(printf 'LAUNCH\t%s\nSTDIN\t%s\n' "$(cat "$lf")" "$(cat "$sf")")"
-    rm -f "$lf" "$sf"
+    launch="$(printf 'LAUNCH\t%s\nSTDIN\t%s\nPREGATE\t%s\n' "$(cat "$lf")" "$(cat "$sf")" "$(tr '\n' ' ' <"$pf")")"
+    rm -f "$lf" "$sf" "$pf"
     printf '%s\n' "$launch"
 }
 
@@ -120,6 +108,10 @@ launch_of() { # <mode> <borrow> [token] -> the raw launch command string
 
 stdin_of() { # <mode> <borrow> [token] -> what e2e.sh piped into the launch call
     drive_harness "$@" | sed -n 's/^STDIN\t//p'
+}
+
+pregate_of() { # <mode> <borrow> [token] -> the inline readiness/check commands
+    drive_harness "$@" | sed -n 's/^PREGATE\t//p'
 }
 
 compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh would launch run.sh with
@@ -168,6 +160,16 @@ assert_eq "check launches EXACTLY --check — no destructive phase may ever join
 assert_contains "check drives the LIVE checkout, not the undeployed e2e one" "$(launch_of check 0)" "/srv/code/pithead-live"
 assert_eq "a failed readiness read refuses the destructive launch" "$(launch_of targeted 1 '' '' '' readiness)" ""
 assert_eq "a failed live check refuses the destructive launch" "$(launch_of targeted 1 '' '' '' check)" ""
+
+echo "== remote-node endpoints reach both the pregate and detached harness (#1446) =="
+out=$(bash "$E2E_SRC" candidate --remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example --help 2>&1)
+assert_rc "e2e.sh accepts the complete remote endpoint set" "$?" "0"
+REMOTE_CHECK="$(STUB_REMOTE=1 compose_phases check 0)"
+assert_eq "check forwards the complete remote endpoint set" "$(phase_set "$REMOTE_CHECK")" \
+    "--check --no-mining-asserts --remote-monero-host --remote-monero-rpc-port --remote-monero-zmq-port --remote-tari-host 28081 28083 node.example tari.example "
+REMOTE_PREGATE="$(STUB_REMOTE=1 pregate_of targeted 0)"
+assert_contains "targeted readiness/check pregate receives the remote Monero host" "$REMOTE_PREGATE" "--remote-monero-host node.example"
+assert_contains "targeted readiness/check pregate receives the remote Tari host" "$REMOTE_PREGATE" "--remote-tari-host tari.example"
 
 echo "== --no-miner: no rig means no rig phases, and the mining asserts are skipped (#905) =="
 NOMINER="$(compose_phases targeted 0)"
@@ -433,13 +435,11 @@ assert_eq "the token reaches curl on stdin, as a -K config" \
 assert_eq "the dial tells curl to read that config from stdin" "$(contains "$DIAL" '-K -')" "yes"
 
 echo "== the flag e2e.sh emits is one run.sh actually parses =="
-# run.sh's parser ends in `-*) die "Unknown option"`, so a phase e2e.sh invents is not a no-op —
-# it kills the whole harness run. Assert the handshake rather than trusting the two files agree.
 # grep '^--' so the loop reads FLAGS only: since #1378 the list also carries their VALUES
 # (--rig-host <host>, --rig-control-port <port>), and a value is not something run.sh's parser sees.
-for flag in $(printf '%s %s %s %s %s' "$TARGETED" "$MATRIX" "$FOCUSED_MATRIX" "$CHECK" "$NOMINER" | tr ' ' '\n' | grep '^--' | LC_ALL=C sort -u); do
+for flag in $(printf '%s %s %s %s %s %s' "$TARGETED" "$MATRIX" "$FOCUSED_MATRIX" "$CHECK" "$REMOTE_CHECK" "$NOMINER" | tr ' ' '\n' | grep '^--' | LC_ALL=C sort -u); do
     assert_eq "run.sh's arg parser accepts '$flag'" \
-        "$(grep -cE "^[[:space:]]*(\-\-[a-z-]+ \| )*${flag}\)" "$RUN_SRC" | awk '{print ($1>0)?"yes":"no"}')" "yes"
+        "$(grep -cE "^[[:space:]]*.*${flag}.*\)" "$RUN_SRC" | awk '{print ($1>0)?"yes":"no"}')" "yes"
 done
 
 echo "== borrow_miner's recovery block, fired on known instances (#1178) =="

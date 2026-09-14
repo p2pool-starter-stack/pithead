@@ -189,7 +189,8 @@ tests/integration/run.sh --local --dir /home/miner/pithead --lifecycle
 
 # A single scenario (see --list for names)
 tests/integration/run.sh --host miner@10.0.0.5 --scenario remote-main-secure-tari \
-    --remote-monero-host 10.0.0.5:18081
+    --remote-monero-host node.example --remote-monero-rpc-port 28081 \
+    --remote-monero-zmq-port 28083 --remote-tari-host tari.example
 
 # Cover the OPPOSITE prune mode. The box mines one mode against its live chain; the other is
 # skipped unless you supply a chain for it (it's otherwise covered by the fake mini-stack). A
@@ -220,8 +221,8 @@ Useful flags (full list in `run.sh --help`):
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
 | `--no-mining-asserts` | Skip the two mining assertions — workers online ≥ `--workers` and stratum total hashes > 0 — with a logged notice, for a box that has no miner connected. Every other assertion stays binding. `e2e.sh --no-miner` passes this automatically ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)). |
-| `--remote-monero-host <h>` | External node endpoint for the `remote` scenario. |
-| `--remote-tari-host <h>` | External Tari node endpoint for the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)) — an already-synced Tari node, same shape as `--remote-monero-host`. |
+| `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
+| `--remote-tari-host <h>` | External Tari node host for the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)) — an already-synced Tari node, same shape as `--remote-monero-host`. `e2e.sh` accepts and forwards it too. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
 | `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
