@@ -62,6 +62,8 @@ export PITHEAD_CADDY_IMAGE="$CADDY_IMAGE" PITHEAD_CADDY_ADAPT_LOG="$TMP/adapted.
 source "$ROOT/tests/stack/lib.sh"
 trap 'rm -rf "$SANDBOX" "$TMP"' EXIT
 export STACK="$STACK_WITH_ADAPT"
+# The reused suites assert expected non-zero render paths; match tests/stack/run.sh's shell mode.
+set +e
 # shellcheck source=tests/stack/dashboard/test-dashboard.sh
 source "$ROOT/tests/stack/dashboard/test-dashboard.sh"
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh
