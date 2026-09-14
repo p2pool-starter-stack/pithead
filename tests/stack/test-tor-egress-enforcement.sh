@@ -365,24 +365,30 @@ assert_eq "iptables: a NEGATED accept on a DISJOINT subnet -> not provably enfor
 # only that slice, so the rest of the mining subnet is exposed: this must still shadow.
 assert_eq "iptables: a NEGATED accept NARROWER than our subnet -> not provably enforced (exposes the rest)" \
     "$(fgn_rc '-A DOCKER-USER ! -s 172.28.0.0/25 -j ACCEPT')" "5"
-# This codebase's own `iptables -S` rendering always places `-m comment --comment "..."` ahead of
-# `-s`, so the `--comment` clause is now stripped before any `-s`/`! -s` search runs — closing a
-# live fail-open a security review reproduced: without the strip, a foreign rule's OWN comment
-# text embedding a PARSEABLE negated CIDR (one that doesn't error out, unlike a truncated one) was
-# the FIRST " -s " occurrence and hijacked BOTH the extracted value AND the negated/plain branch,
-# not just the value as an earlier version of this fix claimed. `0.0.0.0/0` in the comment is
-# chosen deliberately: read as a genuine negated match, `! -s 0.0.0.0/0` trivially "contains"
-# everything (cp=0), so the OLD code called the REAL rule below — a plain ACCEPT scoped to exactly
-# our subnet — safe. Reverting just the comment-strip reproduces rc 0 here; this is the control
-# that must fail without the fix, not one that coincidentally lands on rc 5 either way.
-assert_eq "iptables: a plain accept on our subnet with a comment embedding a parseable '! -s 0.0.0.0/0' -> not provably enforced" \
+# #2117 follow-through: the `-s` scan is gone. Three cuts of this check searched the raw rule
+# text for `" -s "` and each lost to a free-text match value containing it, so the walk now
+# TOKENISES the line (honouring libxtables' quoting) and reads `-s` only as a bare token. These
+# three are the reviewer's reproductions: each returns 0 against the scan-shaped code — a live
+# fail-open, a plain ACCEPT on our own subnet called "enforced" — and 5 against the tokeniser. The
+# `0.0.0.0/0` payload is deliberate: read as a real negated match it trivially "contains"
+# everything, which is what made the scan call the actual rule safe.
+assert_eq "iptables: a SECOND -m comment carrying the payload -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment "a" -m comment --comment "b ! -s 0.0.0.0/0 x" -s 172.28.0.0/24 -j ACCEPT')" "5"
+assert_eq "iptables: a comment with an ESCAPED quote before the payload -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment "a\" ! -s 0.0.0.0/0 x" -s 172.28.0.0/24 -j ACCEPT')" "5"
+assert_eq "iptables: the payload in -m string --string, which no comment strip ever covered -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m string --string "! -s 0.0.0.0/0 x" --algo bm -s 172.28.0.0/24 -j ACCEPT')" "5"
+# The single-comment case the earlier strip did cover, kept so the tokeniser is held to it too.
+assert_eq "iptables: a plain accept on our subnet with a comment embedding '! -s ' -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -m comment --comment "note ! -s 0.0.0.0/0 x" -s 172.28.0.0/24 -j ACCEPT')" "5"
-# Kept as a secondary case: a comment CIDR that gets truncated by the extraction's own
-# cut-at-next-space step (no trailing word before the closing quote) errors out in
-# tor_egress_ip_to_int rather than parsing — still lands on rc 5, but via the guard's fail-safe
-# `[ ... ] || return 1`, not by reading the real rule correctly. Both must hold.
-assert_eq "iptables: a plain accept on our subnet with a comment embedding a truncating '! -s 10.0.0.0/8' -> not provably enforced" \
-    "$(fgn_rc '-A DOCKER-USER -m comment --comment "note ! -s 10.0.0.0/8" -s 172.28.0.0/24 -j ACCEPT')" "5"
+# Unreadable is SHADOWING, never harmless: a rule we cannot parse is a rule we cannot clear. All
+# three read as "enforced" under the scan, the last by leaning on where a bash arithmetic error fell.
+assert_eq "iptables: an UNTERMINATED quote -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment "oops -s 1.2.3.4 -j ACCEPT')" "5"
+assert_eq "iptables: a -s value that is not a CIDR -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -s 999.1.2.3/24 -j ACCEPT')" "5"
+assert_eq "iptables: TWO -s on one rule (we cannot say which decides) -> not provably enforced" \
+    "$(fgn_rc '-A DOCKER-USER -s 10.0.0.0/8 -s 172.28.0.0/24 -j ACCEPT')" "5"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
 # Keying the "is this benign?" question on tor alone reported that as the first-boot case.

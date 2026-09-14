@@ -111,6 +111,27 @@ tor_egress_ip_to_int() { # <a.b.c.d>
     echo $(((10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d))
 }
 
+# Is this a dotted-quad IPv4 with an optional /0..32 prefix? Asked EXPLICITLY, before any
+# containment math runs. The math reads a malformed value as a bash arithmetic error, and which
+# side of the verdict that error happens to land on is an accident of `[` semantics, not a
+# security argument — a review found the walk resting on exactly that. An explicit verdict here
+# is what lets BOTH branches fail closed on a value we cannot parse.
+tor_egress_valid_cidr() { # <a.b.c.d[/prefix]>
+    local v="$1" ip p o a b c d extra
+    ip="${v%%/*}"
+    p="${v#*/}"
+    [ "$p" != "$v" ] || p=32
+    case "$p" in '' | *[!0-9]*) return 1 ;; esac
+    [ "$((10#$p))" -le 32 ] || return 1
+    IFS=. read -r a b c d extra <<<"$ip"
+    [ -z "$extra" ] || return 1
+    for o in "$a" "$b" "$c" "$d"; do
+        case "$o" in '' | *[!0-9]*) return 1 ;; esac
+        [ "$((10#$o))" -le 255 ] || return 1
+    done
+    return 0
+}
+
 # True (rc 0) iff <cidr1> and <cidr2> overlap at all. Aligned CIDR blocks can only be identical,
 # disjoint, or one nested inside the other — never partially overlapping — so masking BOTH
 # addresses to the SHORTER (larger-block) prefix and comparing catches every one of those shapes:
@@ -146,6 +167,141 @@ tor_egress_cidr_contains() { # <container> <member>
     [ "$cp" -le "$mp" ] || return 1
     mask=$(((0xFFFFFFFF << (32 - cp)) & 0xFFFFFFFF))
     [ "$(($(tor_egress_ip_to_int "$cip") & mask))" = "$(($(tor_egress_ip_to_int "$mip") & mask))" ]
+}
+
+# Tokenise one `iptables -S` rule line the way libxtables writes it: whitespace-separated tokens,
+# where a value that needs it is written as a double-quoted run with `\"` and `\\` escapes. Prints
+# one token per line, prefixed `b:` when it was written bare and `q:` when any of it came out of a
+# quoted run. The caller needs that distinction: a quoted value is a value however much it spells
+# a flag, which is the whole reason `-m string --string "! -s 0.0.0.0/0 x"` could not be read by
+# any amount of substring scanning.
+#
+# rc 1 = the line cannot be read unambiguously (an unterminated quote, a trailing backslash). The
+# caller reads that as shadowing: a rule we cannot parse is a rule we cannot clear.
+tor_egress_tokenise() { # <rule line>
+    local line="$1" n i=0 c tok="" have=0 quoted=0 closed
+    n=${#line}
+    while [ "$i" -lt "$n" ]; do
+        c="${line:$i:1}"
+        case "$c" in
+        [[:space:]])
+            if [ "$have" = 1 ]; then
+                if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
+                tok=""
+                have=0
+                quoted=0
+            fi
+            i=$((i + 1))
+            ;;
+        '"')
+            i=$((i + 1))
+            have=1
+            quoted=1
+            closed=0
+            while [ "$i" -lt "$n" ]; do
+                c="${line:$i:1}"
+                if [ "$c" = '\' ]; then
+                    i=$((i + 1))
+                    [ "$i" -lt "$n" ] || return 1
+                    tok="$tok${line:$i:1}"
+                    i=$((i + 1))
+                    continue
+                fi
+                if [ "$c" = '"' ]; then
+                    closed=1
+                    i=$((i + 1))
+                    break
+                fi
+                tok="$tok$c"
+                i=$((i + 1))
+            done
+            [ "$closed" = 1 ] || return 1
+            ;;
+        *)
+            tok="$tok$c"
+            have=1
+            i=$((i + 1))
+            ;;
+        esac
+    done
+    if [ "$have" = 1 ]; then
+        if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
+    fi
+    return 0
+}
+
+# Can this foreign DOCKER-USER rule decide a packet our DROP is meant to decide? rc 0 = yes, or we
+# cannot prove otherwise; rc 1 = no, it cannot match the mining subnet. EVERY uncertain answer is
+# rc 0: a line the tokeniser refuses, a `-s` value that is not a CIDR, a second `-s`, a flag whose
+# value never arrived, or no `-s` at all (an unscoped ACCEPT matches everything, us included).
+#
+# TOKENS, not a substring scan — and not a scan with the quoted values stripped out first either.
+# Three cuts of this check searched the raw line for `" -s "`, and each lost to a free-text match
+# value containing it: `--comment` first, then `--comment` again past a strip that removed only
+# the first clause (and only `--comment`), then `-m string --string`, which no amount of
+# comment-stripping ever covered. There is no scan-shaped fix: ANY quoted value ahead of `-s`
+# hijacks a positional search. Read left to right instead, where `-s` counts only as a bare token
+# of its own, negation is a bare `!` immediately before it, and a quoted value is exactly one
+# token that is never mistaken for the flag it spells.
+tor_egress_rule_shadows() { # <rule line> <subnet>
+    local line="$1" subnet="$2" tokens tok kind want="" seen=0 negated=0 prev="" foreign_net="" target=""
+    tokens=$(tor_egress_tokenise "$line") || return 0
+    while IFS= read -r tok; do
+        kind="${tok%%:*}"
+        tok="${tok#*:}"
+        if [ -n "$want" ]; then
+            case "$want" in
+            s) foreign_net="$tok" ;;
+            j) target="$tok" ;;
+            esac
+            want=""
+            prev=""
+            continue
+        fi
+        # A quoted token is a value. It can open nothing, negate nothing, and target nothing.
+        if [ "$kind" = q ]; then
+            prev=""
+            continue
+        fi
+        case "$tok" in
+        '!') prev='!' ;;
+        -s | --source | --src)
+            [ "$seen" = 0 ] || return 0 # two sources on one rule: we cannot say which one decides
+            seen=1
+            negated=0
+            [ "$prev" != '!' ] || negated=1
+            want=s
+            prev=""
+            ;;
+        -j | --jump | -g | --goto)
+            want=j
+            prev=""
+            ;;
+        *) prev="" ;;
+        esac
+    done <<<"$tokens"
+    [ -z "$want" ] || return 0 # a flag whose value never arrived
+    # Only a rule that TERMINATES the chain can take the verdict away from our DROP. A foreign
+    # LOG (or a foreign DROP) leaves the packet to the rules below it, ours included.
+    case "$target" in
+    ACCEPT | RETURN) ;;
+    *) return 1 ;;
+    esac
+    # DOCKER-USER is host-wide and shared with every other compose project (ufw-docker writes
+    # there), so a rule that cannot match us must NOT be called shadowing, or the verdict fires
+    # permanently on healthy hosts and stops meaning anything the one time it matters.
+    [ "$seen" = 1 ] || return 0
+    tor_egress_valid_cidr "$foreign_net" || return 0
+    tor_egress_valid_cidr "$subnet" || return 0
+    if [ "$negated" = 1 ]; then
+        # A NEGATED accept matches every packet whose source is OUTSIDE <cidr> — the opposite test
+        # from a plain match. It shadows unless the mining subnet sits ENTIRELY inside <cidr>:
+        # a disjoint `! -s <unrelated>` matches OUR subnet precisely because it is disjoint.
+        tor_egress_cidr_contains "$foreign_net" "$subnet" && return 1
+        return 0
+    fi
+    tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 0
+    return 1
 }
 
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
@@ -213,7 +369,7 @@ tor_egress_enforced() {
     # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
-    local line subnet foreign_net negated search_line before after
+    local line subnet
     subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
     [ -n "$subnet" ] || subnet="172.28.0.0/24"
     while IFS= read -r line; do
@@ -221,59 +377,7 @@ tor_egress_enforced() {
         -N* | -P*) continue ;;
         *"$TOR_EGRESS_TAG"*" -j DROP"*) break ;;
         *"$TOR_EGRESS_TAG"*) continue ;;
-        *)
-            # A foreign rule only shadows if it TERMINATES the chain (ACCEPT/RETURN) *and* could
-            # match our traffic — unscoped, or CIDR-overlapping our subnet in either direction (a
-            # supernet containing us, or a narrower rule we contain). DOCKER-USER is host-wide and
-            # shared with every other compose project (ufw-docker writes there), so flagging a rule
-            # that cannot match us would fire permanently on healthy hosts and desensitise the one
-            # time it matters.
-            case "$line" in
-            *" -j ACCEPT" | *" -j RETURN" | *" -j ACCEPT "* | *" -j RETURN "*) ;;
-            *) continue ;;
-            esac
-            # Strip a `-m comment --comment "..."` clause BEFORE any `-s`/`! -s` search. This
-            # codebase's own `iptables -S` rendering always places `--comment` ahead of `-s`, so a
-            # foreign rule's own comment text containing a token like `! -s <cidr> ` was the FIRST
-            # occurrence in the raw line and hijacked BOTH the extracted CIDR and the negated/plain
-            # branch — not just the value, as an earlier version of this fix claimed (a security
-            # review reproduced a live fail-open: `-m comment --comment "note ! -s 0.0.0.0/0 x"
-            # -s <our-subnet> -j ACCEPT`, a plain ACCEPT exactly matching the mining subnet, read
-            # as "enforced" because the comment's fake negated 0.0.0.0/0 was evaluated instead of
-            # the real rule). Search the comment-stripped `search_line`, never the raw `$line`.
-            search_line="$line"
-            case "$search_line" in
-            *'--comment "'*)
-                before="${search_line%%'--comment "'*}"
-                after="${search_line#*'--comment "'}"
-                after="${after#*'"'}"
-                search_line="$before$after"
-                ;;
-            esac
-            case "$search_line" in
-            *" -s "*)
-                foreign_net="${search_line#*" -s "}"
-                foreign_net="${foreign_net%% *}"
-                # `iptables -S` renders a negated source as `! -s <cidr>` (the `!` precedes the
-                # flag). A NEGATED accept matches every packet whose source is OUTSIDE <cidr> —
-                # the opposite test from a plain match: it shadows our DROP unless the mining
-                # subnet sits entirely inside <cidr>, not merely overlaps it. Missing this let a
-                # disjoint `! -s <unrelated-cidr>` — which matches OUR subnet precisely because
-                # it's disjoint from it — read as harmless. Positional on `search_line` (the text
-                # immediately before the matched `-s`), not a whole-line search — the comment strip
-                # above is what makes that positional check trustworthy.
-                negated=0
-                case "${search_line%%" -s "*}" in *"!") negated=1 ;; esac
-                if [ "$negated" = 1 ]; then
-                    tor_egress_cidr_contains "$foreign_net" "$subnet" || return 5
-                else
-                    tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 5
-                fi
-                continue
-                ;;
-            *) return 5 ;;
-            esac
-            ;;
+        *) tor_egress_rule_shadows "$line" "$subnet" && return 5 ;;
         esac
     done <<<"$out"
     # REACHABILITY AND PRECEDENCE, not just presence. #855 was a DROP in a chain no packet traverses, and
