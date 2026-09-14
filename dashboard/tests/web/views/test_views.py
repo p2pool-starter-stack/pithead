@@ -498,6 +498,16 @@ class TestEgressTopology:
         assert st["topology"]["summary"]["level"] == "warn"
         assert st["egress"]["summary"]["leaks"] >= 1
 
+    def test_unverified_route_never_claims_tor_only_or_clearnet(
+        self, _data, _state_mgr, monkeypatch
+    ):
+        _set_egress_config(monkeypatch, MONERO_NODE_HOST="node.example.com")
+        badge = build_state(_data(), _state_mgr(), "all")["badges"][-1]
+        assert badge["variant"] == "warn"
+        assert "unverified" in badge["text"]
+        assert "Tor-only status cannot be confirmed" in badge["text"]
+        assert "clearnet" not in badge["text"]
+
     def test_remote_monerod_is_reflected_in_the_payload(self, _data, _state_mgr, monkeypatch):
         # #1350: a private-addressed remote monerod is a LAN hop and charges neither counter; a
         # public one is clearnet, blocked not leaked. Both hops read — they used to disagree.
