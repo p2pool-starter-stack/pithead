@@ -101,6 +101,7 @@ test("restore section: names what a restore does and asks for the archive + pass
   assert.match(out, /emergency-kit passphrase/);
   assert.match(out, /type="file"/);
   assert.match(out, /type="password"/);
+  assert.match(out, /autocomplete="off" autocorrect="off" autocapitalize="off"/);
   assert.match(out, /Show passphrase/);
 });
 

@@ -116,7 +116,8 @@ export const RestoreSection = ({
     ${file && html`<p class="text-muted">${file.name} (${Math.round(file.size / 1024)} KB)</p>`}
     <${Field} label="Passphrase">
         <input type=${passphraseVisible ? "text" : "password"} value=${passphrase} onInput=${onPassphrase}
-            autocomplete="off" placeholder="the emergency-kit passphrase" />
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck=${false}
+            placeholder="the emergency-kit passphrase" />
     <//>
     <label><input type="checkbox" checked=${passphraseVisible}
         onChange=${onPassphraseVisible} /> Show passphrase</label>
