@@ -10,8 +10,7 @@
 # The pins come from scripts/release/release.sh's pin(), which is where the release notes read them from.
 # A second list is how the gap this closes opened in the first place.
 #
-# Two questions for Tari, one for every other component: is the pinned VERSION behind upstream's
-# latest release, and would the pinned node's gRPC schema break the vendored dashboard client?
+# Two questions for Tari: is the pinned VERSION behind upstream, and would its gRPC schema break the vendored client?
 #
 # NOT asked here, deliberately: whether an image pinned `tag@sha256:...` still has a digest that
 # corresponds to that tag. The digest is authoritative and the tag is decoration, so a bump that
@@ -77,7 +76,6 @@ norm() {
 }
 
 # The one lookup, wrapped so a failure is a COUNTED failure and never a quiet "current".
-
 latest_release() { # <owner/repo> -> tag on stdout, rc 1 on any failure
     local tag
     tag=$(gh api "repos/$1/releases/latest" --jq .tag_name 2>/dev/null) || return 1
@@ -100,7 +98,6 @@ latest_release() { # <owner/repo> -> tag on stdout, rc 1 on any failure
 # but a CONFIDENT one — the row reads `stale`, `failed` stays 0, the run exits 0 and stamps itself
 # fully successful. A watcher that has stopped working then looks exactly like one with nothing to
 # report, which is the defect this script's own header says it exists to prevent.
-
 comparable() { # <component> <owner/repo> <tag> -> the tag in that pin's spelling, rc 1 on failure
     local sha
     case "$1" in
@@ -132,10 +129,10 @@ run_buf() {
         --workdir /workspace bufbuild/buf:1.71.0@sha256:7f3e3dfb8650f39878625bbc9f2016a51a781693b209165671d5a61d11c74992 "$@"
 }
 check_tari_protos() { # <upstream tag> -> 0 compatible, 1 breaking drift, 2 unchecked
-    local against="https://github.com/tari-project/tari.git#tag=$1,subdir=applications/minotari_app_grpc/proto"
-    local rc=0
-    run_buf build "$against" >/dev/null 2>&1 || return 2
-    run_buf breaking . --against "$against" >/dev/null 2>&1 || rc=$?
+    local upstream="https://github.com/tari-project/tari.git#tag=$1,subdir=applications/minotari_app_grpc/proto" rc=0
+    run_buf build . >/dev/null 2>&1 || return 2
+    run_buf build "$upstream" >/dev/null 2>&1 || return 2
+    run_buf breaking "$upstream" --against . >/dev/null 2>&1 || rc=$?
     # Buf reserves 100 for parseable file annotations; other failures mean the comparison did not run.
     [ "$rc" -eq 100 ] && return 1
     [ "$rc" -eq 0 ] || return 2
@@ -161,9 +158,7 @@ add_tari_proto_row() {
         ;;
     esac
 }
-
 run_go_raise_watch() { bash "$ROOT/scripts/watch/go-raise-watch.sh"; }
-
 finish_report() {
     local raise_rc=0
     if [ -f "$ROOT/os/rootfs/Dockerfile" ]; then
@@ -254,11 +249,12 @@ if [ "${1:-}" = "--self-test" ]; then
     run_buf() {
         case "$1" in
         build)
+            [ "$2" = . ] && return "${ST_LOCAL_BUILD_RC:-0}"
             [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
-            return "${ST_BUF_BUILD_RC:-0}"
+            return "${ST_UPSTREAM_BUILD_RC:-0}"
             ;;
         breaking)
-            [ "$2" = . ] && [ "$3" = --against ] && [ "$4" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] || return 3
+            [ "$2" = "https://github.com/tari-project/tari.git#tag=v5.3.1,subdir=applications/minotari_app_grpc/proto" ] && [ "$3" = --against ] && [ "$4" = . ] || return 3
             return "${ST_BUF_BREAKING_RC:-0}"
             ;;
         esac
@@ -270,14 +266,18 @@ if [ "${1:-}" = "--self-test" ]; then
         add_tari_proto_row
         printf '%s|%s|%s' "$failed" "$stale" "$ST_ROW"
     }
-    ST_BUF_BUILD_RC=0 ST_BUF_BREAKING_RC=0
+    ST_LOCAL_BUILD_RC=0 ST_UPSTREAM_BUILD_RC=0 ST_BUF_BREAKING_RC=0
     st "matching Tari protos render current in the weekly report" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
     ST_BUF_BREAKING_RC=100
-    st "breaking Tari protos render drift in the weekly report" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v5.3.1\` **breaking drift**"
+    st "a node-side deletion renders breaking drift" "$(proto_report)" "0|1|tari gRPC schema \`f42e14d\` \`v5.3.1\` **breaking drift**"
+    ST_BUF_BREAKING_RC=0
+    st "a node-side addition stays compatible" "$(proto_report)" "0|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` compatible"
     ST_BUF_BREAKING_RC=1
     st "a failed comparison renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
-    ST_BUF_BUILD_RC=1 ST_BUF_BREAKING_RC=0
+    ST_UPSTREAM_BUILD_RC=1 ST_BUF_BREAKING_RC=0
     st "a failed upstream build renders unchecked in the weekly report" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
+    ST_UPSTREAM_BUILD_RC=0 ST_LOCAL_BUILD_RC=100
+    st "a local parse failure renders unchecked, not drift" "$(proto_report)" "1|0|tari gRPC schema \`f42e14d\` \`v5.3.1\` **upstream schema fetch/build failed — NOT checked**"
     st "the real weekly report invokes the Tari proto row" "$(grep -c '^add_tari_proto_row$' "$0")" "1"
     integration_root=$(mktemp -d)
     trap 'rm -rf "$integration_root"' EXIT
