@@ -9,9 +9,13 @@ STACK_VERSION="v$(cat "$ROOT/VERSION")"
 echo "== unit: release rootfs publish guard refuses the debug SSH key (#1353) =="
 ROOTFS_GUARD="$SANDBOX/rootfs-publish-guard"
 mkdir -p "$ROOTFS_GUARD/release/etc" "$ROOTFS_GUARD/debug/etc" "$ROOTFS_GUARD/debug/root/.ssh"
+mkdir -p "$ROOTFS_GUARD/debug-link/etc" "$ROOTFS_GUARD/debug-link/root" "$ROOTFS_GUARD/debug-link/keys"
 printf 'release\n' >"$ROOTFS_GUARD/release/etc/pithead-variant"
 printf 'release\n' >"$ROOTFS_GUARD/debug/etc/pithead-variant"
 printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug/root/.ssh/authorized_keys"
+printf 'release\n' >"$ROOTFS_GUARD/debug-link/etc/pithead-variant"
+printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug-link/keys/authorized_keys"
+ln -s ../keys "$ROOTFS_GUARD/debug-link/root/.ssh"
 tar -cf "$ROOTFS_GUARD/release.tar" -C "$ROOTFS_GUARD/release" etc
 tar -cf "$ROOTFS_GUARD/debug.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar -cf "$ROOTFS_GUARD/debug-dot.tar" -C "$ROOTFS_GUARD/debug" .
@@ -21,6 +25,7 @@ tar --transform='s|root/.ssh/authorized_keys|root/./.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-inner-dot.tar" -C "$ROOTFS_GUARD/debug" etc root
 tar --transform='s|root/.ssh/authorized_keys|.//root/.ssh/authorized_keys|' \
     -cf "$ROOTFS_GUARD/debug-dot-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar -cf "$ROOTFS_GUARD/debug-link.tar" -C "$ROOTFS_GUARD/debug-link" etc root keys
 rootfs_guard() {
     (
         cd "$ROOT" || exit
@@ -39,7 +44,7 @@ assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
 rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
 assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
 assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
-for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute; do
+for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-link; do
     rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
     assert_rc "$unsafe_tar debug-key member is refused" "$?" "2"
 done

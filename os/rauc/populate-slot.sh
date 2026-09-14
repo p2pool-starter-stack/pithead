@@ -149,7 +149,7 @@ verify_release_rootfs_tar() { # $1 = tarball path
         echo "rootfs release guard: refusing a rootfs with an ambiguous tar member" >&2
         return 2
     fi
-    if grep -Eq '^root/\.ssh/authorized_keys$' <<<"$normalized"; then
+    if grep -Eq '(^|/)authorized_keys2?$' <<<"$normalized"; then
         echo "rootfs release guard: refusing a rootfs carrying the debug SSH key" >&2
         return 2
     fi
