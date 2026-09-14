@@ -199,13 +199,57 @@ accept/reject — which only a real xmrig-proxy binary can prove.
 
 The flashed image is the second distribution channel, and it follows the same rule as
 everything else: logic at tier 1, reality at tier 4 — there is no separate model for it.
-Tier 4 has one meaning (what only reality proves) and two harnesses, one per channel: the
-live matrix for a DIY install, the KVM battery (`tests/os/run.sh`, see
-[`tests/os/README.md`](../../tests/os/README.md)) for the flashed image. The battery needs
-KVM + libvirt + root — the bench, not CI — and is the release gate for the image
-([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below it:
-static assertions against the built rootfs (variant stamp, baked units, watchdog config),
+Tier 4 has one meaning (what only reality proves) and one stack suite, two channel harnesses:
+`tests/integration/run.sh` (the live matrix, what the release gate runs against a DIY install)
+IS the stack-behaviour suite — containers, config hot-apply, fault injection, XvB routing,
+secret preservation, backup/restore — it just only ever pointed at one of the two channels the
+product ships. The KVM battery (`tests/os/run.sh`, see
+[`tests/os/README.md`](../../tests/os/README.md)) drives the flashed image through the same
+kind of behaviour from the other side: podman through the docker shim, read-only root, the
+stack in `/data/pithead`, the control runner as a systemd unit. Neither harness is a subset of
+the other — the battery's `provision` phase provisions in LOCAL node mode, so a scratch KVM disk
+can never hold a synced chain and everything behind the sync gate (`tests/os/phases/provision-initial.sh`)
+never runs there; the `stack` phase (#2062) closes part of that gap by provisioning a guest in
+REMOTE node mode against an already-synced bench node and running the live matrix against it.
+The battery needs KVM + libvirt + root — the bench, not CI — and is the release gate for the
+image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below
+it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
+
+Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
+15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
+`--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
+`--image-upgrade`, and it had never once run against the appliance runtime before the `stack`
+phase. The battery carries 433 assertions, ~72 of them about the running stack, and by design is
+blind to everything behind the sync gate — a scratch guest on a local node never syncs, so
+nothing downstream of "released" ran there. The parity table below classifies every gap a `✗`
+names: `by-design` means structurally inapplicable to that channel — a scratch KVM guest cannot
+hold a chain, so a local-node battery row cannot exercise prune/full-DB switching or a real
+clearnet-egress surface, and a borrowed physical RigForge rig never targets the `stack` phase's
+remote-node coordinator — and `missing` means nothing about the channel rules it out, only that
+no harness runs it there yet. Both classes and the `by-design`/`covered`/`missing` three-way
+split come from the live matrix's own skip accounting
+(`tests/integration/lib/skip-accounting.sh`, #1365/#1083); the `stack` phase surfaces that same
+three-bucket summary from each of its live-matrix invocations in the battery's own output rather
+than inventing an appliance-side vocabulary next to it.
+
+| Behaviour | DIY gate (`tests/integration`) | Appliance gate (`tests/os`) |
+|---|---|---|
+| Containers up, `pithead status` verdicts | ✓ | ✓ |
+| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
+| Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
+| Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
+| XvB over Tor, XvB routing | ✓ | ✗ missing — added via `--xvb-routing-smoke` in the `stack` phase (#2062) |
+| Shares / hashes flowing end to end | ✓ | ✗ missing (behind the sync gate; see #2063) |
+| Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | ✗ missing (one wizard config, one benign edit, one hostname change) — the `stack` phase (#2062) adds the remote-safe subset |
+| Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
+| Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
+| Node down → reject workers → readmit | ✓ (fault injection) | ✗ missing — added via `--fault-injection` in the `stack` phase (#2062) |
+| Tor / dashboard fault recovery | ✓ | partial (backup restart) |
+| RigForge worker apply / upgrade | ✓ (borrowed physical rig) | ✗ by-design (the rig guest never targets a coordinator in the `stack` phase's remote-node topology) |
+| OS update through the dashboard, A/B commit, migration hold | n/a | ✓ |
+| Boot, install, media channel, power-cut faults, factory reset | n/a | ✓ |
+| Remote-node mode, live | ✗ (zero routine coverage, #1446) | partial (the node-consumer row: preflight, p2pool arguments, chain_id probe — not mining) — the `stack` phase (#2062) is the first live remote-node coverage on either channel |
 
 | Situation | Trigger | Tier |
 |---|---|---|
