@@ -674,7 +674,7 @@ main() {
     fi
     local hrc=0
     run_harness || hrc=$?
-    [ "$hrc" -ne 0 ] || verify_load_worker || hrc=1
+    verify_load_worker || hrc=1
     # restore_all runs via the EXIT trap.
     echo ""
     if [ "$hrc" -eq 0 ]; then
