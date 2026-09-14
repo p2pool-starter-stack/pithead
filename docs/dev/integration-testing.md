@@ -75,8 +75,9 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
   dot to a `\x01` sentinel and restoring it at the end, and it neutralises any sentinel already in
   the input before doing so ([#1613](https://github.com/p2pool-starter-stack/pithead/issues/1613)):
   without that step the closing restore ran after every rule, so a `\x01` sitting inside what would
-  otherwise be a public quad came out as a dotted, routable address that no rule had inspected. What it keeps is exactly the set
-  `is_public_ip` calls private — loopback, RFC1918, link-local and CGNAT — because an artifact whose
+  otherwise be a public quad came out as a dotted, routable address that no rule had inspected.
+  What it keeps is exactly the set `is_public_ip` calls non-public — loopback, RFC1918, link-local
+  and shared address space (CGNAT) — because an artifact whose
   port map and container addresses have been stripped cannot be triaged, and because holding the two
   lists identical is what makes the coverage argument checkable rather than anecdotal.
   [#1582](https://github.com/p2pool-starter-stack/pithead/issues/1582) closed the flag-value and
@@ -214,7 +215,7 @@ Useful flags (full list in `run.sh --help`):
 | `--host <user@host>` / `--local` | Drive the box over SSH, or a stack on this machine. |
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
-| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. |
+| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
 | `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (synced chains reusable, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
@@ -520,9 +521,11 @@ and `--list` prints it).
   that second dial is the within-row control, without which a DROP and a bench with no route to the
   internet are the same observation. On the `network.tor_egress_firewall=false` row the dial must
   SUCCEED and no `pithead-tor-egress`-tagged rule may be installed. Every other firewall leg here
-  checks state, not effect: `assert_egress_posture` samples the connections the apps *chose* to
-  make, so it reads clean on a fail-open box whose apps are all correctly Tor-configured, and
-  `verify_tor_egress_firewall` compares the installed ruleset to the applier's own render. Rules can
+  checks state, not effect: `assert_egress_posture` samples the public connections the apps *chose*
+  to make, excluding the firewall's four accepted non-public ranges. A failure retains each remote
+  address and its poll count in the harness output; a clean sample still reads clean on a fail-open
+  box whose apps are all correctly Tor-configured. `verify_tor_egress_firewall` compares the
+  installed ruleset to the applier's own render. Rules can
   be installed, canonical, and in a chain no forwarded packet traverses — which is exactly how the
   appliance shipped fail-open. This suite covers the Docker/`DOCKER-USER` backend; the
   podman/netavark backend's live coverage is `tests/os/appliance-egress-leg.sh` in the KVM battery.
