@@ -4,6 +4,13 @@ _rigmedia_remove_target() { # <path> — retain evidence under --keep
     [ "$KEEP" -eq 1 ] || rm -f "$1"
 }
 
+_rigmedia_stage_image() { # <image> <scratch-disk>
+    cp "$1" "$2" || {
+        bad "could not stage the removable-media image"
+        return 1
+    }
+}
+
 _rigmedia_hash() { # <path>
     local result
     result=$(sha256sum "$1") || return 1
@@ -17,6 +24,40 @@ _rigmedia_containers() {
     printf '%s\n' "${names//$'\n'/ }"
 }
 
+_rigmedia_before_hash() { # <target>
+    _rigmedia_hash "$1" || {
+        bad "could not hash the blank internal target disk"
+        _rigmedia_fail_cleanup "$1"
+        return 1
+    }
+}
+
+_rigmedia_after_hash() { # <target>
+    _rigmedia_hash "$1" || {
+        bad "could not hash the internal target disk after the rig run"
+        _rigmedia_remove_target "$1"
+        return 1
+    }
+}
+
+_rigmedia_containers_or_cleanup() { # <target>
+    _rigmedia_containers || {
+        bad "could not list containers after stick-run rig handoff"
+        _rigmedia_fail_cleanup "$1"
+        return 1
+    }
+}
+
+_rigmedia_journal_or_cleanup() { # <target>
+    local journal
+    journal=$(_ssh 'systemd-analyze cat-config systemd/journald.conf 2>/dev/null | grep -c "^Storage=volatile"') || {
+        bad "could not inspect journald after stick-run rig handoff"
+        _rigmedia_fail_cleanup "$1"
+        return 1
+    }
+    printf '%s\n' "$journal"
+}
+
 _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
     if [ "$KEEP" -eq 1 ]; then
         virsh destroy "$VM" >/dev/null 2>&1 || {
@@ -26,6 +67,13 @@ _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
     else
         vm_destroy_or_refuse
     fi
+}
+
+_rigmedia_quiesce_or_cleanup() { # <target>
+    _rigmedia_quiesce || {
+        _rigmedia_fail_cleanup "$1"
+        return 1
+    }
 }
 
 _rigmedia_fail_cleanup() { # <target> — retain a stopped inspectable guest under --keep
@@ -50,7 +98,7 @@ phase_rigmedia() {
     # The install phase's own boot shape (image on a removable USB bus, boot.order=1) beside a
     # blank internal disk — but here the internal disk is the thing under test BY STAYING BLANK:
     # a rig that answers RigForge must never touch it, unlike the install phase's own target.
-    local img target_disk="/srv/code/bench-vm/pithead-rigmedia-target.img" token jar body scode card empty_before empty_after
+    local img target_disk="/srv/code/bench-vm/pithead-rigmedia-target.img" token jar body scode card empty_before empty_after journal
 
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
@@ -58,7 +106,7 @@ phase_rigmedia() {
     }
     vm_destroy_or_refuse || return
     rm -f "$target_disk"
-    cp "$img" "$DISK"
+    _rigmedia_stage_image "$img" "$DISK" || return
     qemu-img resize "$DISK" 16G >/dev/null 2>&1 || {
         bad "could not size the removable-media disk"
         _rigmedia_fail_cleanup "$target_disk"
@@ -69,11 +117,7 @@ phase_rigmedia() {
         _rigmedia_fail_cleanup "$target_disk"
         return
     }
-    empty_before=$(_rigmedia_hash "$target_disk") || {
-        bad "could not hash the blank internal target disk"
-        _rigmedia_fail_cleanup "$target_disk"
-        return
-    }
+    empty_before=$(_rigmedia_before_hash "$target_disk") || return
     : >"$SERIAL"
     kvm_preflight || {
         _rigmedia_fail_cleanup "$target_disk"
@@ -172,17 +216,14 @@ phase_rigmedia() {
         bad "the running miner is not the baked prebuilt"
     fi
     local names
-    names=$(_rigmedia_containers) || {
-        bad "could not list containers after stick-run rig handoff"
-        _rigmedia_fail_cleanup "$target_disk"
-        return
-    }
+    names=$(_rigmedia_containers_or_cleanup "$target_disk") || return
     if [ -z "${names// /}" ]; then
         ok "no compose containers remain after stick-run rig handoff"
     else
         bad "a stick-run rig started containers: '$names'"
     fi
-    [ "$(_ssh 'systemd-analyze cat-config systemd/journald.conf 2>/dev/null | grep -c "^Storage=volatile"')" != "0" ] &&
+    journal=$(_rigmedia_journal_or_cleanup "$target_disk") || return
+    [ "$journal" != "0" ] &&
         ok "journald is volatile on a stick-run rig" ||
         bad "journald is still persistent on a stick-run rig"
 
@@ -196,14 +237,8 @@ phase_rigmedia() {
         ok "the stick-run rig returned mining unaided after a reboot" ||
         bad "the stick-run rig did not return mining after the reboot"
 
-    _rigmedia_quiesce || {
-        return
-    }
-    empty_after=$(_rigmedia_hash "$target_disk") || {
-        bad "could not hash the internal target disk after the rig run"
-        _rigmedia_remove_target "$target_disk"
-        return
-    }
+    _rigmedia_quiesce_or_cleanup "$target_disk" || return
+    empty_after=$(_rigmedia_after_hash "$target_disk") || return
     [ "$empty_after" = "$empty_before" ] &&
         ok "the empty target disk is still empty — a stick-run rig never touched it" ||
         bad "the target disk changed even though the rig never installed to it"
