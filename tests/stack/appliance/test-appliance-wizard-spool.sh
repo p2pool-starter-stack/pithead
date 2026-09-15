@@ -51,6 +51,24 @@ run_sourced "$WSS" eval 'bash() { printf "{}" >"$WSS/spool/config.json"; }; firs
 assert_rc "config acceptance promotes the validated snapshot" "$?" 0
 assert_eq "the promoted config is the snapshot, not the replaced request" "$(jq -c . "$WSS/config.json")" '{"fixture":true}'
 assert_eq "accepted config is private" "$(stat -c '%a' "$WSS/config.json")" 600
+
+mk_tmpdir WBK
+mkdir -p "$WBK/preseed"
+WBK_STUBS='machine_role() { echo pithead; }; setup_again_mode() { return 1; }
+installer_mode_available() { return 1; }; consume_preseed_restore() { return 1; }; consume_preseed_config() { return 2; }
+boot_is_removable() { return 1; }; _console() { :; }; container_engine() { echo true; }
+export_build_provenance() { PITHEAD_REGISTRY=fixture; STACK_VERSION=dev; }; load_baked_images() { :; }
+stage_wizard_spool() { mkdir -p "$1"; echo fingerprint; }; preseed_token() { echo pit-fixture; }
+wizard_keep_requested() { return 1; }; wizard_spool_has() { return 1; }; firstboot_consume_rig() { return 2; }
+firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { printf "{}" >config.json; return 0; }
+preflight_remote_nodes() { :; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }
+wizard_spool_publish() { :; }; warn() { :; }; log() { :; }; bash() { cp config.json config.json.bak-1x; return 1; }
+sleep() { exit 7; }; firstboot_wizard'
+PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS" >/dev/null 2>&1
+assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
+assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
+rm -rf "$WBK"
+unset WBK WBK_STUBS
 echo "== unit: wizard submission policy and reusable-media lifecycle =="
 # Invalid host syntax is rejected before any network command is constructed. The timeout stub
 # succeeding is a control: the old format-only predicate would accept this request.
