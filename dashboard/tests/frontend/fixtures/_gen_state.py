@@ -13,7 +13,10 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from mining_dashboard.config import config
 from mining_dashboard.web.views import header, views
+
+config.TARI_MODE = "remote"
 
 # Pin everything machine- or time-dependent so the fixture regenerates identically on any box.
 # build_state stamps last_update via time.localtime(time.time()) and the chart x-axis is

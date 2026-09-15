@@ -5,6 +5,7 @@ split out of it — the graph as data, plus the per-request marking of which nod
 machine's own.
 """
 
+from mining_dashboard.config import config
 from mining_dashboard.service.network import egress
 from mining_dashboard.service.network.topology_graph import (
     CLEARNET,
@@ -21,6 +22,14 @@ from mining_dashboard.service.network.topology_graph import (
 _COMBOS = ((LOCAL, LOCAL), (LAN, LOCAL), (LOCAL, CLEARNET), (UNKNOWN, LAN))
 
 
+def test_tari_mode_not_an_address_prefix_decides_locality(monkeypatch):
+    monkeypatch.setattr(config, "TARI_MODE", "remote")
+    monkeypatch.setattr(config, "TARI_GRPC_ADDRESS", "172.28.0.example:18142")
+    assert config.tari_is_local() is False
+    monkeypatch.setattr(config, "TARI_MODE", "local")
+    assert config.tari_is_local() is True
+
+
 def test_only_the_relocatable_nodes_carry_a_location():
     # monerod and tari are the only nodes an operator can run somewhere else. Every other node is
     # always this machine's own, so it carries no `remote` key at all — the diagram then has one
@@ -32,6 +41,8 @@ def test_only_the_relocatable_nodes_carry_a_location():
         nodes = {n["id"]: n for n in topology_nodes(monero_route=mono, tari_route=tari)}
         assert nodes["monerod"]["remote"] is (mono != LOCAL), (mono, tari)
         assert nodes["tari"]["remote"] is (tari != LOCAL), (mono, tari)
+        assert nodes["monerod"]["route"] == mono
+        assert nodes["tari"]["route"] == tari
         assert sorted(i for i, n in nodes.items() if "remote" in n) == ["monerod", "tari"]
 
 
@@ -66,3 +77,8 @@ def test_the_served_graph_carries_each_node_s_real_location(monkeypatch):
     nodes = {n["id"]: n for n in egress.topology_from_config()["nodes"]}
     assert nodes["monerod"]["remote"] is False
     assert nodes["tari"]["remote"] is True
+
+
+def test_the_served_graph_omits_tari_when_merge_mining_is_off(monkeypatch):
+    monkeypatch.setattr(egress.config, "TARI_MODE", "off")
+    assert "tari" not in {n["id"] for n in egress.topology_from_config()["nodes"]}

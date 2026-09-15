@@ -1,8 +1,8 @@
 # Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
 # second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin this output byte-for-byte at tier 1: they are the
-# unit set the #78 spike ran live, so a change here that drifts from them needs a bench re-proof,
-# not just a green diff. Spike-proven rules baked in: Notify=healthy services carry
+# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
+# drift needs a bench re-proof. Spike-proven rules baked in:
+# Notify=healthy services carry
 # TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
 # start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
 # tmpfs options use mode= (podman rejects uid=/gid=).
@@ -371,8 +371,7 @@ EOF
     case ",$profiles," in
     *,tari_payout_confirm,*) payout_env="$payout_env TARI_PAYOUT_CONFIRM_ENABLED=true TARI_WALLET_GRPC_ADDRESS=127.0.0.1:18143" ;;
     esac
-    # The three dashboard-onion values ride on the dashboard unit as they do on the compose
-    # service (#1880): the header shows the .onion URL from them (#1853). Display-only; the
+    # Dashboard-onion values ride on this unit as on compose (#1880/#1853). Display-only; the
     # client keys are never passed in, so the container cannot hand out what opens the onion (#1896).
     cat >"$outdir/dashboard.container" <<EOF
 [Unit]
@@ -382,6 +381,7 @@ ContainerName=dashboard
 Image=$reg/pithead-dashboard:$ver
 Network=host
 Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
+Environment=$(_qenvq TARI_MODE)
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/app/stats:ro
 Volume=$(_qenv DASHBOARD_DATA_DIR):/data
 Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state

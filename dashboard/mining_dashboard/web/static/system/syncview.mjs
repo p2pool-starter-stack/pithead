@@ -8,6 +8,7 @@
 // move carries no helper with it and leaves no partial family behind.
 
 import { html } from "../app/preact.mjs";
+import { nodeLocation } from "./statcards.mjs";
 
 export function Gauge({ percent, state }) {
   const inner =
@@ -63,7 +64,8 @@ export function SyncView({ sync }) {
                 <${Gauge} percent=${sync.tari.percent} state=${sync.tari.state} />
                 <div class="status-text">
                     Synced: ${sync.tari.current} / ${sync.tari.target}<br/>
-                    <small>(${sync.tari.remaining} blocks left)</small>
+                    <small>(${sync.tari.remaining} blocks left)</small><br/>
+                    <small class="text-muted">${nodeLocation(sync.tari.local)}${sync.tari.local == null ? "" : " node"}</small>
                 </div>
             </div>
         </div>

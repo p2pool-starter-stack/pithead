@@ -68,10 +68,8 @@ def low_ram_floor_gb(monero_local: bool, tari_local: bool) -> float:
 
 
 def tari_is_local() -> bool:
-    """The tari gRPC target sits inside the stack's own subnet — same split the Monero side
-    draws with LOCAL_MONERO_HOST, derived because no LOCAL_TARI_HOST env exists."""
-    prefix = ".".join(LOCAL_MONERO_HOST.split(".")[:3]) + "."
-    return TARI_GRPC_ADDRESS.split(":")[0].startswith(prefix)
+    """Whether this box runs the Tari node, from the operator's authoritative mode."""
+    return TARI_MODE == "local"
 
 
 def monero_is_local() -> bool:
@@ -332,6 +330,7 @@ DOCKER_TIMEOUT = int(os.environ.get("DOCKER_TIMEOUT", 5))
 # start the miner as soon as monerod is synced (Tari finishes in the background), and keep
 # the operational dashboard — with a "Tari syncing" indicator — instead of the takeover
 # screen (Issue #51).
+TARI_MODE = os.environ.get("TARI_MODE", "local").strip().lower()
 TARI_REQUIRED = os.environ.get("TARI_REQUIRED", "true").strip().lower() == "true"
 
 # Container the dashboard stops/starts to reject/readmit workers on a monerod outage.
