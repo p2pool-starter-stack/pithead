@@ -261,7 +261,8 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
                 # Chain data survives this box's own `keep` policy (#2195): a restore must not
                 # force a resync, so the archive's tree is MERGED into whatever already sits here
                 # instead of replacing it — an existing file wins on a name collision, and files
-                # only the archive has are added alongside it.
+                # only the archive has are added alongside it. See docs/operations.md's
+                # "Restore collision rules" for why this differs from `pithead restore`.
                 mkdir -p -- "$dest" || {
                     copy_failed=1
                     break

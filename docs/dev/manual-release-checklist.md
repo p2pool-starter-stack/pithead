@@ -61,7 +61,7 @@ not yet merged. Until it is, this whole battery is a human procedure.
 
 Needs hands, every time:
 
-- **M1 — flash and boot** from a real stick with Secure Boot in its real state.
+- **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
 - **M8 — power cut during the update's write phase.** Pull the plug at the wall.
 - **M10 — power cut during normal mining.** Same, while the stack is live.
 

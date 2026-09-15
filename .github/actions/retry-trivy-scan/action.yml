@@ -16,7 +16,7 @@ runs:
   steps:
     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
-        version: v0.74.0
+        version: v0.73.0
         image-ref: ${{ inputs.image-ref }}
         scanners: vuln
         severity: HIGH,CRITICAL
