@@ -446,13 +446,13 @@ assert_eq "failed bundle download reports failed" "$(jq -r '.status' "$UPGRESULT
 assert_contains "download failure says the stack keeps running" "$(jq -r '.error' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "keeps running"
 assert_eq "download failure extracts nothing" "$(cat "$UPG/VERSION")" "1.3.1"
 
-# `pithead upgrade` itself fails after extraction: status failed, error points at the host CLI.
 reset_upgrade_state
 upgrade_intent "$UUPG" "v9.9.9"
 (cd "$UPG" && PATH="$UPG/bin:$PATH" NEW_PITHEAD_FAIL=1 CURL_LOG="$UPG/curl.log" CURL_API_RESPONSE="$UPGB/api.json" \
     CURL_BUNDLE="$UPGB/bundle.tar.gz" ./pithead control-run-pending >/dev/null 2>&1)
 assert_eq "failed upgrade run reports failed" "$(jq -r '.status' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "failed"
-assert_contains "failed upgrade points at the host CLI" "$(jq -r '.error' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
+assert_not_contains "failed upgrade log does not contain host-only recovery" "$(jq -r '.log' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
+assert_eq "failed upgrade separates recovery and omits error" "$(jq -r '[(.recovery | contains("./pithead upgrade")), has("error")] | @tsv' "$UPGRESULTS/$UUPG.json" 2>/dev/null)" $'true\tfalse'
 assert_contains "failed upgrade audited" "$(cat "$UPGAUDIT" 2>/dev/null)" "\"action\":\"upgrade\",\"status\":\"failed\""
 # #637: the failure result names the pre-upgrade config/.env copies, and they exist on disk.
 upg_bak="$(jq -r '.backup // ""' "$UPGRESULTS/$UUPG.json" 2>/dev/null)"
@@ -665,15 +665,15 @@ assert_contains "fresh-dir result names the old dir as the rollback copy (#637)"
     ok "fresh-dir path takes no file snapshots — the old dir IS the restore point (#637)" ||
     bad "fresh-dir path takes no file snapshots — the old dir IS the restore point (#637)" "found .bak-upgrade-* in $VUPG"
 
-# The new release's upgrade fails: both spools say failed, the error points at the NEW dir for
-# the host-side finish, and the old install keeps running — still intact for rollback.
+# The new release's upgrade fails in the new dir; the old install stays intact for rollback.
 reset_v629_state
 printf '{"id":"%s","action":"upgrade","actor":"admin","version":"v9.9.9"}\n' "$UUPG" >"$VUPG/data/control/requests/$UUPG.json"
 vrun NEW_PITHEAD_FAIL=1 >/dev/null
 assert_eq "failed fresh-dir upgrade reports failed" "$(jq -r '.status' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "failed"
 # The runner derives its paths from `pwd -P`, so on macOS the /var/folders sandbox reports as
 # /private/var/... — assert on the path's tail, not the unresolved $VNEW.
-assert_contains "failed fresh-dir upgrade points at the new dir" "$(jq -r '.error' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "/deploy629/pithead-v9.9.9 && ./pithead upgrade"
+assert_not_contains "failed fresh-dir log does not contain host-only recovery" "$(jq -r '.log' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" "./pithead upgrade"
+assert_eq "failed fresh-dir recovery points at the new dir and omits error" "$(jq -r '[(.recovery | contains("/deploy629/pithead-v9.9.9 && ./pithead upgrade")), has("error")] | @tsv' "$VUPG/data/control/results/$UUPG.json" 2>/dev/null)" $'true\tfalse'
 assert_eq "failed fresh-dir upgrade leaves the old install intact" "$(cat "$VUPG/VERSION")" "1.3.1"
 assert_eq "failed fresh-dir upgrade wrote the result to the new spool too" "$(jq -r '.status' "$VNEW/data/control/results/$UUPG.json" 2>/dev/null)" "failed"
 assert_contains "failed fresh-dir result still names the rollback dir (#637)" \
