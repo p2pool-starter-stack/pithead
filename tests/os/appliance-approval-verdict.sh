@@ -129,7 +129,7 @@ _control_request_lost_response_self_test() (
             printf 'x' >>"$polls"
             printf '{"id":"rid-7","status":"applied"}'
             ;;
-        *) cat >/dev/null ;;
+        *) cat >/dev/null; printf '\n000' ;;
         esac
     }
     result=$(dashboard_control_request commit "$body" 30) || return 1

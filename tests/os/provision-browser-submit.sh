@@ -111,7 +111,9 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
-            [[ $response_code =~ ^2 ]] || return 1
+            # curl writes 000 when no HTTP response reached it. That is transport loss, not a
+            # server refusal, so the request id in the caller's body remains pollable.
+            [ "$response_code" = 000 ] || [[ $response_code =~ ^2 ]] || return 1
         fi
         rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
         # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
