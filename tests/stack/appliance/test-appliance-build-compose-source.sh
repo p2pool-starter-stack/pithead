@@ -394,6 +394,3 @@ assert_not_contains "the appliance excludes Monero image-build sources" "$CS_DF"
 assert_not_contains "the Dockerfile no longer copies the tree's compose file" "$CS_DF" 'VERSION docker-compose.yml'
 assert_contains "verify-image compares against what the stamp resolves to, not the tree" "$CS_VI" 'compose_reference "$ROOT" "$COMPOSE_REF"'
 assert_not_contains "verify-image's old tree comparison is gone" "$CS_VI" 'docker-compose.yml" ./docker-compose.yml'
-
-# shellcheck source=tests/stack/appliance/test-appliance-image-signature.sh
-source "$ROOT/tests/stack/appliance/test-appliance-image-signature.sh"

@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 
 echo "== unit: appliance image signature pins (#1891) =="
 SIG="$SANDBOX/appliance-signature"
