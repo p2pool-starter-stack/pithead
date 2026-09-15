@@ -25,10 +25,10 @@ case "$load_src" in *'umask 077'*'mktemp -d'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'-eq $((LOAD_BASELINE_COUNT + 1))'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'owned()'*'cleanup-failed'*'kill -KILL'*'trap fail EXIT'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'jq -er'*'LOAD_SHARES_BEFORE" =~ ^[0-9]+$'*'stop_load_worker'*) ;; *) exit 1 ;; esac
-case "$sample_src" in *'docker compose ps --services --status running'*'LOAD_SAW_RECOVERY=1'*'LOAD_SAW_FAILOVER=1'*'LOAD_PEAK_CPU='*'LOAD_PEAK_RSS='*) ;; *) exit 1 ;; esac
+case "$sample_src" in *'docker compose ps --services --status running'*'LOAD_SAW_RECOVERY=1'*'LOAD_SAW_FAILOVER=1'*'LOAD_METRICS_SAMPLED=1'*'LOAD_PEAK_CPU='*'LOAD_PEAK_RSS='*) ;; *) exit 1 ;; esac
 case "$verify_src" in *'[ "$names" = "$expected" ]'*'all('*'. >= 0'*) ;; *) exit 1 ;; esac
 case "$verify_src" in *'.accepted | tonumber?'*'quote_arg "$clone_shares"'*'[ "$clone_shares" -gt 0 ]'*) ;; *) exit 1 ;; esac
-case "$verify_src" in *'load worker evidence:'*'multi-worker-metrics.json'*'[ "$names" = "$expected" ]'*'LOAD_SAW_READY'*'LOAD_SAW_FAILOVER'*'LOAD_SAW_RECOVERY'*) ;; *) exit 1 ;; esac
+case "$verify_src" in *'sample_load_worker'*'load worker evidence:'*'process_sampled'*'multi-worker-metrics.json'*'[ "$names" = "$expected" ]'*'LOAD_SAW_READY'*'LOAD_SAW_FAILOVER'*'LOAD_SAW_RECOVERY'*) ;; *) exit 1 ;; esac
 case "$verify_src" in *'LOAD_METRICS_SAMPLED" = 1'*) exit 1 ;; esac
 grep -Fqx '    [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null' <<<"$verify_src" || exit 1
 case "$stop_src" in *'pithead-e2e-load\.'*'cleanup-failed'*'/proc/'*'kill -TERM'*'rm -rf'*) ;; *) exit 1 ;; esac
