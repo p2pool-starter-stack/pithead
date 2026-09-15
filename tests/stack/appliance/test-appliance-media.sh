@@ -1,23 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Appliance media domain (#1105 Phase 1, appliance lane): the physical-presence config channel
-# (#786 sub-issue D) — a FAT stick carrying pithead-config.json, consumed on the boot leg by
-# os/overlay/pithead-media-config. Nine sections cover removable-partition discovery, finding and
-# merging the staged file (settings the stick does not name keep their running values), validating
-# it through the same engine the pre-seed path uses, the masked diff that still shows the wallet in
-# full, the abort/apply confirm gate with no real 60s wait, consuming the file off the medium
-# (deleted, never renamed), and main()'s identical-config short-circuit against a real apply.
-# Sourced by tests/stack/run.sh.
-#
-# The block is contiguous and its source stanza sits at its exact former position, so execution
-# order is unchanged — a pure relocation, not a regrouping.
-#
-# Re-derivations: none. $SANDBOX, $ROOT and the VALID_* address fixtures come from lib.sh; every
-# other name is assigned here — $MC and the seven $STICK* trees beneath it, $RUN_CFG, $MOUNT_SRC,
-# $MOUNT_LOG — and the media_* and _secret_paths_json functions come from
-# $ROOT/os/overlay/pithead-media-config, which each section sources for itself rather than relying
-# on an ambient one. Every write in the file lands under $MC ($SANDBOX/media-config): nothing
-# touches the ambient $V, $C or $STACK, and nothing outside this file reads what it creates.
+# Appliance media domain: the FAT-stick config channel, from discovery and merge through
+# validation, masked confirmation, application, and removal from the medium (#786 sub-issue D).
+# $SANDBOX, $ROOT and VALID_* come from lib.sh. Everything else stays under $MC, and each section
+# sources os/overlay/pithead-media-config rather than relying on ambient functions.
 
 echo "== unit: pithead-media-config — physical-presence media channel (#786 sub-issue D) =="
 # Source the boot leg (functions only — its main is guarded) and drive its pieces with stubbed
@@ -53,12 +39,7 @@ EOF
 printf '#!/usr/bin/env bash\nexit 0\n' >"$MC/bin/umount"
 chmod +x "$MC/bin/lsblk" "$MC/bin/mount" "$MC/bin/umount"
 
-# A merged config that carries dashboard.auth.password sends media_validate_config's fresh bash
-# into parse_and_validate_config's caddy hash branch, which greps docker-compose.yml at CWD for
-# the pinned image and shells out to `docker run`. Give this section the #8 auth tests' hash-
-# answering docker stub plus a caddy-pinned one-line compose fixture, and run those legs from
-# $MC — the hash lands on the stub, never on a real (network-reaching) docker or the repo's
-# compose file.
+# Keep password hashing on the docker stub with a caddy-pinned Compose fixture; no real engine runs.
 make_stubs "$MC/bin"
 printf 'image: caddy:0.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000\n' >"$MC/docker-compose.yml"
 
@@ -180,6 +161,23 @@ rc=$(
     echo $?
 )
 assert_eq "an invalid candidate is rejected, not installed" "$rc" "1"
+
+jq '.dashboard.workers=[{"name":"legacy-rig","token":"fixture-secret"}]' "$MC/good.json" >"$MC/legacy-good.json"
+legacy_validated=$(
+    export PITHEAD_MEDIA_BIN="$MC/pithead"
+    source "$ROOT/os/overlay/pithead-media-config"
+    TMPDIR="$MC" media_validate_config "$MC/legacy-good.json"
+)
+rm -f "$legacy_validated"
+jq '.monero.wallet_address="nope"' "$MC/legacy-good.json" >"$MC/legacy-bad.json"
+rc=$(
+    export PITHEAD_MEDIA_BIN="$MC/pithead"
+    source "$ROOT/os/overlay/pithead-media-config"
+    TMPDIR="$MC" media_validate_config "$MC/legacy-bad.json" >/dev/null 2>&1
+    echo $?
+)
+assert_eq "a legacy invalid candidate is rejected" "$rc" "1"
+assert_eq "media validation copies leave no migration backup" "$(find "$MC" -name '*.bak-1x' -print -quit)" ""
 
 echo "== unit: media_config_diff / media_config_identical (masked, wallet shown in full) =="
 cat >"$MC/changed.json" <<EOF
