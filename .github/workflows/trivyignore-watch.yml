@@ -2,9 +2,9 @@ name: Trivyignore mute watch
 
 # Weekly obsolete-mute report (#1174). REPORT-ONLY — the pin-watch.sh posture: never a gate,
 # because a cleared mute is housekeeping, not a build failure. The script never edits
-# `.trivyignore` and never opens a PR; this workflow's one output is a tracking issue.
+# `.config/trivyignore` and never opens a PR; this workflow's one output is a tracking issue.
 #
-# Why this exists at all: the weekly CVE sweep (#833) scans WITH `.trivyignore` applied, so a
+# Why this exists at all: the weekly CVE sweep (#833) scans WITH `.config/trivyignore` applied, so a
 # muted finding is invisible to it by construction — a mute that outlives its finding rots
 # silently. scripts/watch/trivyignore-watch.sh rebuilds every covered image exactly the way the gate
 # does, scans them with NO ignore file, and names an ID obsolete only when it is absent from ALL
@@ -13,7 +13,7 @@ name: Trivyignore mute watch
 # This file lives on the DEFAULT branch on purpose: a `schedule:` is read from the default branch
 # only — pin-watch.yml's header carries the history of learning that the hard way (#1048, #1064,
 # #1146). The job runs on `develop`, which carries the script and every image the shared
-# `.trivyignore` covers, the appliance rootfs included (its twin branch was retired into develop on
+# `.config/trivyignore` covers, the appliance rootfs included (its twin branch was retired into develop on
 # 2026-09-06), so the union check is built from the whole covered set.
 on:
   schedule:
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The triggering ref: on the schedule that is `develop`, the one tree holding the script
-          # AND every image the shared `.trivyignore` covers (see the header).
+          # AND every image the shared `.config/trivyignore` covers (see the header).
           persist-credentials: false
       - name: Build and scan the covered images, no ignore file applied
         id: report
@@ -55,7 +55,7 @@ jobs:
       - name: Publish it to the tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: "Obsolete .trivyignore mutes (weekly report)"
+          TITLE: "Obsolete .config/trivyignore mutes (weekly report)"
           RC: ${{ steps.report.outputs.rc }}
         run: |
           set -Eeuo pipefail

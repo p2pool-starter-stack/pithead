@@ -130,7 +130,7 @@ jobs:
           # at all — with skip-setup-trivy it never installs, so a version: there would be inert.
           version: v0.74.0
       - name: Scan image for CVEs (Trivy)
-        # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .trivyignore.
+        # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .config/trivyignore.
         # Must stay green before v1.1 images publish (#282).
         # cache: false is load-bearing (#1159): the DB cache is per-ref and day-scoped, so a
         # branch's first run of the day freezes its DB until midnight — a gate whose answer
@@ -147,14 +147,14 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
           cache: "false"
       - name: Retry Scan image for CVEs (Trivy)
         if: steps.trivy-scan.outcome == 'failure'
         uses: ./.github/actions/retry-trivy-scan
         with:
           image-ref: pithead-${{ matrix.service }}:ci
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
 
   sweep-shipped:
     # The half of the Monday sweep that reports on what users are running (#1313). `build-images`
@@ -180,7 +180,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Resolve the shipped tag to a digest, and take main's own .trivyignore
+      - name: Resolve the shipped tag to a digest, and take main's own .config/trivyignore
         id: shipped
         env:
           SERVICE: ${{ matrix.service }}
@@ -194,9 +194,9 @@ jobs:
           ver="$(git show origin/main:VERSION)"
           [ -n "$ver" ] || { echo "::error::main carries no VERSION — cannot tell what shipped"; exit 1; }
           tag="v$ver"
-          # main's OWN .trivyignore, never develop's. A mute added after the cut would otherwise
+          # main's OWN .config/trivyignore, never develop's. A mute added after the cut would otherwise
           # silence a finding in an image whose review never saw that mute.
-          git show origin/main:.trivyignore >main.trivyignore
+          git show origin/main:.config/trivyignore >main.trivyignore
           repo="p2pool-starter-stack/pithead-$SERVICE"
           # The packages are public, so an anonymous pull token is enough — no registry secret
           # enters this workflow.

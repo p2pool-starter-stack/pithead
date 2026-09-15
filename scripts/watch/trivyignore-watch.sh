@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
-# .trivyignore obsolete-mute watch (#1174).
+# .config/trivyignore obsolete-mute watch (#1174).
 #
-# Nothing today checks whether a `.trivyignore` entry's finding still exists anywhere. Two
+# Nothing today checks whether a `.config/trivyignore` entry's finding still exists anywhere. Two
 # sentences in the file itself used to claim the weekly CVE sweep (#833) does — it does not: the
-# sweep passes `trivyignores: .trivyignore` to trivy (os-rootfs.yml, ci.yml), and trivy's ignore
+# sweep passes `trivyignores: .config/trivyignore` to trivy (os-rootfs.yml, ci.yml), and trivy's ignore
 # file filters matching findings OUT of the report before the sweep ever sees them. A muted finding
 # is invisible to the sweep by construction, so a mute that outlives the finding it was written for
 # rots silently — which is exactly how the two mutes #1153 found stale survived until someone
 # checked by hand.
 #
 # REPORT-ONLY. The `pin-watch.sh` posture: never a gate, because a cleared mute is housekeeping, not
-# a build failure. It never edits `.trivyignore` and never opens a PR.
+# a build failure. It never edits `.config/trivyignore` and never opens a PR.
 #
-# THE TRAP, found while writing #1174: `.trivyignore` is SHARED across both lanes and covers
+# THE TRAP, found while writing #1174: `.config/trivyignore` is SHARED across both lanes and covers
 # SEVERAL images. A per-image "does this ID still show up" check is worse than no check, because it
 # produces a confident, WRONG deletion list — seven IDs looked dead scanning the appliance rootfs
 # alone, and some of those were live dashboard-image mutes. An entry is obsolete only when it is
@@ -63,7 +63,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IGNOREFILE="$ROOT/.trivyignore"
+IGNOREFILE="$ROOT/.config/trivyignore"
 
 # The CVE-gate workflows whose install-trivy steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
@@ -75,7 +75,7 @@ GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs
 TRIVY_VERSION="0.74.0"
 TRIVY_IMAGE="aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969" # TRIVY_VERSION above
 
-# Same severity/fixability scope as the gate (ci.yml, os-rootfs.yml): .trivyignore only ever holds
+# Same severity/fixability scope as the gate (ci.yml, os-rootfs.yml): .config/trivyignore only ever holds
 # entries that would otherwise block on THAT scope, so scanning any wider scope here would report
 # an ID as "still live" off a finding the gate itself would never have seen in the first place.
 SEVERITY="HIGH,CRITICAL"
@@ -122,7 +122,7 @@ scan_image() {
     return 0
 }
 
-# <ignorefile> -> one finding ID per line, comments and blank lines stripped. `.trivyignore`'s
+# <ignorefile> -> one finding ID per line, comments and blank lines stripped. `.config/trivyignore`'s
 # entries are bare IDs (CVE-.../GHSA-...) one per line; an inline note, if one is ever added, would
 # be a second whitespace-separated field, so only the first field is taken.
 ignored_ids() {
@@ -299,7 +299,7 @@ report() {
     done
     rm -f "$all_ids"
 
-    printf '%s\n\n' "Obsolete-.trivyignore-mute watch (#1174). Report-only — an obsolete mute is housekeeping, not a build failure."
+    printf '%s\n\n' "Obsolete .config/trivyignore mute watch (#1174). Report-only — an obsolete mute is housekeeping, not a build failure."
     printf '%s\n\n' "Images scanned, no ignore file applied: $IMAGES"
     printf '%s\n\n' "Engine: trivy $TRIVY_VERSION — the version every gate workflow passes to its install-trivy step, the one line that decides which engine scans (parity checked before this run)."
     printf '| finding ID | seen in any covered image | verdict |\n|---|---|---|\n%s' "$rows"
@@ -352,7 +352,7 @@ if [ "${1:-}" = "--self-test" ]; then
 
     fixture_ignorefile=$(mktemp)
     cat >"$fixture_ignorefile" <<'EOF'
-# fixture .trivyignore for the self-test
+# fixture .config/trivyignore for the self-test
 CVE-TRAP
 CVE-LIVE-ROOTFS
 CVE-PLANTED
