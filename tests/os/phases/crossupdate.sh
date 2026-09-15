@@ -84,6 +84,14 @@ phase_crossupdate() {
     }
     ok "candidate installed into the spare slot"
 
+    # Boot the candidate: RAUC arms the GRUB try-counter at install, so a plain reboot lands on
+    # the spare slot (core.sh's own note on _boot_spare_cmd). This is the ONLY harness-driven
+    # reboot left in this leg — it puts the candidate in charge of its own boot, nothing more.
+    _reboot_wait "$(_boot_spare_cmd)" 300 || {
+        bad "guest never returned after booting the candidate slot"
+        return
+    }
+
     # NO harness mark-good, and no harness reboot after it (#2056 review, round 2): on a
     # PROVISIONED machine the product owns the commit decision. pithead-boot's gate requires BOTH
     # signals — the stack SERVING and `pithead doctor --json` passing — before it runs
