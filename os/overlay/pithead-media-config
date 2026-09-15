@@ -126,10 +126,11 @@ media_validate_config() { # <candidate-json>
         return 1
     }
     if err=$(PITHEAD_CONFIG_FILE="$tmp" bash -c "source '$PITHEAD_BIN' && parse_and_validate_config" 2>&1); then
+        rm -f "${tmp}.bak-1x"
         printf '%s' "$tmp"
         return 0
     fi
-    rm -f "$tmp"
+    rm -f "$tmp" "${tmp}.bak-1x"
     printf '%s' "$err" | tail -n 1 | tr -d '[:cntrl:]' | tail -c 200 >&2
     return 1
 }

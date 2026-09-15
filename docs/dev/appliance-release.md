@@ -306,10 +306,9 @@ on a physical box before publishing an image. Record the results in the release 
 Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wired
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
-**M1 — flash and boot.** Write the image to the USB stick. Boot the target from it with
-Secure Boot **enabled**, then again **disabled**. Expected: reaches userspace both times,
-or fails with a legible message on Secure Boot rather than a blank screen. *KVM cannot
-see this: the harness disables Secure Boot because our GRUB is unsigned.*
+**M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
+then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred past
+2.0.0 to `v2.x - post-GA` (#2187); the KVM boot row records the current failure.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
@@ -377,16 +376,21 @@ obvious way: a mains outage took the build bench down overnight and it was still
 the morning.
 
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
-rig power-loss and update, and run-from-USB. They stay a manual procedure today — see
+rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
 [the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) does not yet cover them: it proves the
 wizard's rig card and role select, that a rig submits toward a pool (against a faked listener, so
 it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, and
 the A/B update leg committing on a rig. It proves none of an accepted share at a real coordinator,
-MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, a power cut on a
-rig, or booting the rig role from the stick without installing to disk. No bench release e2e
-scenario for the rig role exists yet either. Converting what KVM can prove, and naming a bench e2e
-for the rest, is tracked as #1886's first gap; the numbering here stays stable so old release
-records still point at the same steps once that lands.
+MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, or a power cut on a
+rig. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+(`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
+internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
+no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
+untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
+reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
+rig role exists yet. Converting M11–M13, and naming a bench e2e for what KVM cannot prove, is
+tracked as #1886's first gap; the numbering here stays stable so old release records still point
+at the same steps once that lands.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
@@ -498,7 +502,7 @@ one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M11–M14 for any release touching the rig role, M15 and M16) on
+4. Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
    real hardware. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
