@@ -17,7 +17,7 @@ description: >
   SCAN, not a failed install — it never runs if this step fails.
 inputs:
   version:
-    description: "Trivy engine to install, e.g. v0.74.0 — THE pin: `make lint-trivy-parity` reads the caller's literal (#1290, #2214)"
+    description: "Trivy engine to install, e.g. v0.73.0 — THE pin: `make lint-trivy-parity` reads the caller's literal (#1290, #2214)"
     required: true
 runs:
   using: composite

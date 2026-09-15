@@ -72,8 +72,8 @@ GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs
 # The ONE source of truth for the scanning engine (#1290) — the parity contract is in the header.
 # Digest-pinned (repo convention, #135/#373) rather than `:latest`, so a run today and a run next
 # month scan with the same trivy and the same vulnerability-DB client.
-TRIVY_VERSION="0.74.0"
-TRIVY_IMAGE="aquasec/trivy@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969" # TRIVY_VERSION above
+TRIVY_VERSION="0.73.0"
+TRIVY_IMAGE="aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c" # TRIVY_VERSION above
 
 # Same severity/fixability scope as the gate (ci.yml, os-rootfs.yml): .config/trivyignore only ever holds
 # entries that would otherwise block on THAT scope, so scanning any wider scope here would report
@@ -133,7 +133,7 @@ ignored_ids() {
 
 # -> the pinned $TRIVY_IMAGE's own reported version on stdout, rc 1 if docker fails to run it or
 # the output has no `Version: ` line to parse. Real trivy output's first line is exactly
-# "Version: 0.74.0"; only the FIRST matching line counts.
+# "Version: $TRIVY_VERSION"; only the FIRST matching line counts.
 engine_version() {
     local out ver
     out="$(docker run --rm "$TRIVY_IMAGE" --version 2>/dev/null)" || return 1
@@ -186,7 +186,7 @@ gate_versions() {
 # only if every file in $GATE_WORKFLOWS produced at least one install-trivy step AND every one of
 # those steps' versions is EXACTLY `v$TRIVY_VERSION` — no loose `v`-stripped comparison, because
 # the real chain (install-trivy -> setup-trivy -> trivy's own install.sh) builds its release URL
-# from the declared value verbatim: a bare `0.74.0` 404s where `v0.74.0` resolves, so a bare value
+# from the declared value verbatim: a bare value 404s where its v-prefixed form resolves, so a bare value
 # is a real mismatch, not a cosmetic one. A file that yields no step at all (missing file, or no
 # install-trivy `uses:` line) is a failure on its own — a parity check that cannot find its target
 # must go red, not silently skip it.
@@ -453,8 +453,8 @@ EOF
     # (a) both at TRIVY_VERSION -> rc 0
     ci_a="$pt_dir/ci-a.yml"
     os_a="$pt_dir/os-a.yml"
-    pt_write "$ci_a" "version: v0.74.0" 1
-    pt_write "$os_a" "version: v0.74.0" 1
+    pt_write "$ci_a" "version: v$TRIVY_VERSION" 1
+    pt_write "$os_a" "version: v$TRIVY_VERSION" 1
     GATE_WORKFLOWS="$ci_a $os_a"
     pp_rc=0
     check_parity >/dev/null || pp_rc=$?
@@ -464,7 +464,7 @@ EOF
     ci_b="$pt_dir/ci-b.yml"
     os_b="$pt_dir/os-b.yml"
     pt_write "$ci_b" "version: v0.70.0" 1
-    pt_write "$os_b" "version: v0.74.0" 1
+    pt_write "$os_b" "version: v$TRIVY_VERSION" 1
     GATE_WORKFLOWS="$ci_b $os_b"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
@@ -476,7 +476,7 @@ EOF
     ci_c="$pt_dir/ci-c.yml"
     os_c="$pt_dir/os-c.yml"
     pt_write "$ci_c" "" 1
-    pt_write "$os_c" "version: v0.74.0" 1
+    pt_write "$os_c" "version: v$TRIVY_VERSION" 1
     GATE_WORKFLOWS="$ci_c $os_c"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
@@ -488,7 +488,7 @@ EOF
     ci_d="$pt_dir/ci-d.yml"
     os_d="$pt_dir/os-d.yml"
     pt_write "$ci_d" "" 0
-    pt_write "$os_d" "version: v0.74.0" 1
+    pt_write "$os_d" "version: v$TRIVY_VERSION" 1
     GATE_WORKFLOWS="$ci_d $os_d"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
@@ -498,11 +498,11 @@ EOF
 
     # (e) a bare version value (no leading v) is a MISMATCH, not accepted (#1290 fix 3): the real
     # chain (trivy-action -> setup-trivy -> trivy's install.sh) builds its release URL from the
-    # declared value verbatim, so bare "0.74.0" 404s where "v0.74.0" resolves.
+    # declared value verbatim, so a bare value 404s where its v-prefixed form resolves.
     ci_e="$pt_dir/ci-e.yml"
     os_e="$pt_dir/os-e.yml"
-    pt_write "$ci_e" "version: 0.74.0" 1
-    pt_write "$os_e" "version: v0.74.0" 1
+    pt_write "$ci_e" "version: $TRIVY_VERSION" 1
+    pt_write "$os_e" "version: v$TRIVY_VERSION" 1
     GATE_WORKFLOWS="$ci_e $os_e"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
@@ -521,7 +521,7 @@ EOF
             "      - name: Unrelated step that happens to also take a version input" \
             "        uses: some/other-action@0123456789abcdef0123456789abcdef01234567" \
             "        with:" \
-            "          version: v0.74.0"
+            "          version: v$TRIVY_VERSION"
     } >"$ci_f"
     GATE_WORKFLOWS="$ci_f $os_a"
     pp_rc=0
@@ -538,7 +538,7 @@ EOF
     preflight >/dev/null 2>&1 || pf_rc=$?
     st "preflight: measured engine != TRIVY_VERSION -> rc 1" "$pf_rc" "1"
 
-    engine_version() { printf '0.74.0'; }
+    engine_version() { printf '%s' "$TRIVY_VERSION"; }
     pf_rc=0
     preflight >/dev/null 2>&1 || pf_rc=$?
     st "preflight: measured engine matches + parity OK -> rc 0" "$pf_rc" "0"
@@ -569,9 +569,9 @@ EOF
     rm -rf "$pt_dir"
 
     # (h) engine_version's own parsing of `docker ... --version` output
-    docker() { printf 'Version: 0.74.0\nVulnerability DB:\n  Version: 2\n'; }
+    docker() { printf 'Version: %s\nVulnerability DB:\n  Version: 2\n' "$TRIVY_VERSION"; }
     st "engine_version parses the first top-level Version: line" \
-        "$(engine_version)" "0.74.0"
+        "$(engine_version)" "$TRIVY_VERSION"
 
     docker() { printf 'Vulnerability DB:\n  Version: 2\n'; }
     ev_rc=0

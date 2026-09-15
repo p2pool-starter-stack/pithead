@@ -89,7 +89,7 @@ jobs:
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         if: steps.tree.outputs.present == 'true'
         with:
-          version: v0.74.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
       - name: Scan rootfs for CVEs (Trivy)
         if: steps.tree.outputs.present == 'true'
         # Same gate as ci.yml's image scan: actionable (fixable) HIGH/CRITICAL only; accepted

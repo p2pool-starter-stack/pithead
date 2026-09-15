@@ -128,7 +128,7 @@ jobs:
           # THE live pin, and the only one: this literal is what gets installed, and it is the
           # line `make lint-trivy-parity` reads (#1290). trivy-action below declares no version:
           # at all — with skip-setup-trivy it never installs, so a version: there would be inert.
-          version: v0.74.0
+          version: v0.73.0
       - name: Scan image for CVEs (Trivy)
         # Gate on actionable (fixable) HIGH/CRITICAL only; accepted findings live in .config/trivyignore.
         # Must stay green before v1.1 images publish (#282).
@@ -217,7 +217,7 @@ jobs:
           printf '%s\n' "$tag" >"sweep-$SERVICE.tag"
       - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
         with:
-          version: v0.74.0 # THE live pin, read by `make lint-trivy-parity` — see build-images (#1290)
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see build-images (#1290)
       - name: Scan the published image by digest (Trivy)
         # Same scope as the gate above, and the same engine — but only because #1290's pin is on
         # both jobs' install-trivy steps, each read by `make lint-trivy-parity`. Comparing this

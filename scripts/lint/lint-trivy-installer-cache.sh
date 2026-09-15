@@ -158,14 +158,14 @@ if [ "${1:-}" = "--self-test" ]; then
             echo "    - uses: aquasecurity/setup-trivy@0000000000000000000000000000000000000000"
             echo "      with:"
             [ "$2" = "1" ] && echo "        version: \${{ inputs.version }}"
-            [ "$2" = "0" ] && echo "        version: v0.74.0"
+            [ "$2" = "0" ] && echo "        version: v0.73.0"
             echo "        cache: true"
         } >"$1"
     }
     ok_a="$tmp/ci.yml"
     ok_b="$tmp/os-rootfs.yml"
     ok_c="$tmp/test-images.yml"
-    for f in "$ok_a" "$ok_b" "$ok_c"; do write_file "$f" 1 1 v0.74.0; done
+    for f in "$ok_a" "$ok_b" "$ok_c"; do write_file "$f" 1 1 v0.73.0; done
     INSTALL_ACTION="$tmp/install.yml"
     write_composite "$INSTALL_ACTION" 1
     RETRY_ACTION="$tmp/retry.yml"
@@ -175,14 +175,14 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(check_installer_cache)" || rc=$?
     st "whole chain intact -> rc 0" "$rc" "0"
     st "names the engine the gated literal decides" \
-        "$(printf '%s\n' "$out" | grep -c 'ci.yml: 1 scan step(s), engine v0.74.0')" "1"
+        "$(printf '%s\n' "$out" | grep -c 'ci.yml: 1 scan step(s), engine v0.73.0')" "1"
 
     # THE bump test: follow the gate's own Fix: hint on the gated line, and the engine that is
     # actually installed moves with it. That is the property three review rounds were about.
-    st "before the bump, the caller installs v0.74.0" "$(resolve_engine "$ok_a")" "v0.74.0"
+    st "before the bump, the caller installs v0.73.0" "$(resolve_engine "$ok_a")" "v0.73.0"
     write_file "$ok_a" 1 1 v0.75.0
     st "bumping the gated version: moves the engine that actually runs" "$(resolve_engine "$ok_a")" "v0.75.0"
-    write_file "$ok_a" 1 1 v0.74.0
+    write_file "$ok_a" 1 1 v0.73.0
 
     # ... and it only moves it while the composite forwards the input. A literal pin there would
     # make the gated line decorative — exactly the defect this shape replaced — so refuse.
@@ -194,32 +194,32 @@ if [ "${1:-}" = "--self-test" ]; then
     st "and that refusal fails the gate" "$rc" "1"
     write_composite "$INSTALL_ACTION" 1
 
-    write_file "$ok_a" 0 1 v0.74.0
+    write_file "$ok_a" 0 1 v0.73.0
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "missing install step -> rc 1" "$rc" "1"
     st "missing install step -> names the 1-vs-0 mismatch" \
         "$(printf '%s\n' "$out" | grep -c 'ci.yml: MISMATCH — 1 trivy-action step(s), 0 install-trivy step(s)')" "1"
     st "missing install step -> still reports the other two files" \
-        "$(printf '%s\n' "$out" | grep -c 'engine v0.74.0')" "2"
+        "$(printf '%s\n' "$out" | grep -c 'engine v0.73.0')" "2"
     st "missing install step -> prints the Fix: hint" "$(printf '%s\n' "$out" | grep -c '^Fix: ')" "1"
 
-    write_file "$ok_a" 1 0 v0.74.0
+    write_file "$ok_a" 1 0 v0.73.0
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "missing skip-setup-trivy -> rc 1" "$rc" "1"
     st "missing skip-setup-trivy -> names the 0 skip line(s)" \
         "$(printf '%s\n' "$out" | grep -c '0 skip-setup-trivy: true line(s)')" "1"
 
-    write_file "$ok_a" 1 1 v0.74.0 v0.74.0
+    write_file "$ok_a" 1 1 v0.73.0 v0.73.0
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "an inert version: in the scan step -> rc 1" "$rc" "1"
     st "an inert version: is named as such, not as a mismatch" \
         "$(printf '%s\n' "$out" | grep -c 'ci.yml: INERT PIN — 1 version: line(s)')" "1"
-    write_file "$ok_a" 1 1 v0.74.0
+    write_file "$ok_a" 1 1 v0.73.0
 
-    printf 'runs:\n  steps:\n    - with:\n        version: v0.74.0\n' >"$RETRY_ACTION"
+    printf 'runs:\n  steps:\n    - with:\n        version: v0.73.0\n' >"$RETRY_ACTION"
     rc=0
     out="$(check_installer_cache)" || rc=$?
     st "a second pin in retry-trivy-scan -> rc 1" "$rc" "1"
