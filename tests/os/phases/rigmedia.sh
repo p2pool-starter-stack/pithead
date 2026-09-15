@@ -26,6 +26,8 @@ _rigmedia_fail_cleanup() { # <target> — retain a stopped inspectable guest und
             bad "could not quiesce the rigmedia VM for --keep"
             return 1
         fi
+    else
+        vm_destroy_or_refuse || return 1
     fi
     _rigmedia_remove_target "$1"
 }
@@ -167,7 +169,6 @@ phase_rigmedia() {
         bad "the stick-run rig did not return mining after the reboot"
 
     _rigmedia_quiesce || {
-        _rigmedia_remove_target "$target_disk"
         return
     }
     empty_after=$(sha256sum "$target_disk" | cut -d' ' -f1)

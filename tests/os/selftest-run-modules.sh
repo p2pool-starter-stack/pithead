@@ -55,7 +55,10 @@ for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore
     bad() { bads=$((bads + 1)); }
     vm_destroy_or_refuse() {
         actions+="undefine "
-        [ "$vm_destroy_ok" = 1 ]
+        [ "$vm_destroy_ok" = 1 ] || {
+            bad "the prior test VM survived teardown"
+            return 1
+        }
     }
     virsh() {
         case "$1" in
@@ -83,8 +86,9 @@ for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore
     _rigmedia_quiesce && _rigmedia_remove_target target || exit 1
     [ "$actions" = "undefine rm:target " ]
     actions="" vm_destroy_ok=0
-    ! _rigmedia_quiesce && _rigmedia_remove_target target || exit 1
-    [ "$actions" = "undefine rm:target " ] || exit 1
+    ! _rigmedia_quiesce || exit 1
+    [ "$actions" = "undefine " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
     actions=""
     KEEP=1
     _rigmedia_fail_cleanup target || exit 1
@@ -92,9 +96,13 @@ for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore
     actions="" destroy_ok=0
     ! _rigmedia_fail_cleanup target || exit 1
     [ "$actions" = "destroy " ]
-    actions="" destroy_ok=1 list_ok=1 KEEP=0
+    actions="" bads=0 destroy_ok=1 list_ok=1 vm_destroy_ok=1 KEEP=0
     _rigmedia_fail_cleanup target || exit 1
-    [ "$actions" = "rm:target " ] || exit 1
+    [ "$actions" = "undefine rm:target " ] || exit 1
+    actions="" vm_destroy_ok=0
+    ! _rigmedia_fail_cleanup target || exit 1
+    [ "$actions" = "undefine " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
     actions="" KEEP=1 list_ok=0
     ! _rigmedia_fail_cleanup target || exit 1
     [ -z "$actions" ]
