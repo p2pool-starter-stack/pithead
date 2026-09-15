@@ -159,17 +159,39 @@ phase_fault() {
         bad "D: could not boot a fresh guest for the image-load fault"
         return
     }
-    if wait_serial "Loading this build's container images" 180; then
-        ok "D: first-boot image load started"
-    else
+    if ! wait_serial "Loading this build's container images" 180; then
         bad "D: the first-boot image load never started — cannot exercise the cut"
         return
     fi
-    sleep 5
-    virsh destroy "$VM" >/dev/null 2>&1 || true
+    _wait_ssh 120 || {
+        bad "D: SSH never came up while the first-boot image load ran"
+        return
+    }
+    local before deadline=$(($(date +%s) + 120))
+    before=$(_boot_id) || {
+        bad "D: could not read the boot id before the image-load cut"
+        return
+    }
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        _ssh "pgrep -f 'podman.*load' >/dev/null" && break
+        sleep 1
+    done
+    if _ssh "pgrep -f 'podman.*load' >/dev/null"; then
+        ok "D: first-boot image load is active"
+    else
+        bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
+        return
+    fi
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "D: could not cut power during the image load"
+        return
+    }
     sleep 3
-    virsh start "$VM" >/dev/null 2>&1 || true
-    if _wait_ssh 300; then
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "D: could not restore power after the image-load cut"
+        return
+    }
+    if _wait_new_boot "$before" 300; then
         ok "D: survived a power cut mid image load — booted"
     else
         # A clean refusal is an acceptable outcome too (#2067c: "repairs the store or refuses with
