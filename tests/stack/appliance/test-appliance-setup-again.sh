@@ -132,11 +132,11 @@ SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() {
 rm -f "$SAWB/config.json"
 mkdir -p "$SAWB/data/firstboot"
 : >"$RF_LOG"
-out=$(PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$SAWB" eval "$SAW_STUBS_LEGACY" 2>&1)
+out=$(PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_LEGACY" 2>&1)
 assert_rc "a restored legacy remote-node config reaches setup" "$?" "0"
 assert_not_contains "the current new-node preflight does not reject the restored archive" "$(cat "$RF_LOG")" "preflight"
 assert_contains "the restored config reaches the credentials-handoff path" "$(cat "$RF_LOG")" "setup"
-unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE
+unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE SAW_STUBS_LEGACY
 rm -rf "$SAWB" "$SAESP"
 echo "== unit: write_handoff_card — the credentials card is owner-only from its first byte (#1842) =="
 # The card carries the login or the rig's control token. Both controls remove what a lazy fix would
