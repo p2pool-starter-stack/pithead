@@ -1,4 +1,5 @@
 import logging
+import os
 
 import requests
 
@@ -6,8 +7,8 @@ from mining_dashboard.config.config import TOR_SOCKS_PROXY
 
 logger = logging.getLogger("TelegramNotifier")
 
-# Telegram Bot API base. Overridable in tests so we never touch the network.
-TELEGRAM_API_BASE = "https://api.telegram.org"
+# Telegram Bot API base. An env override lets the mini-stack exercise the real transport.
+TELEGRAM_API_BASE = os.environ.get("TELEGRAM_API_BASE", "https://api.telegram.org").strip()
 
 
 class TelegramNotifier:
