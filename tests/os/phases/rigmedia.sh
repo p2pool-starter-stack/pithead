@@ -24,37 +24,9 @@ _rigmedia_containers() {
     printf '%s\n' "${names//$'\n'/ }"
 }
 
-_rigmedia_before_hash() { # <target>
-    _rigmedia_hash "$1" || {
-        bad "could not hash the blank internal target disk"
-        _rigmedia_fail_cleanup "$1"
-        return 1
-    }
-}
-
-_rigmedia_after_hash() { # <target>
-    _rigmedia_hash "$1" || {
-        bad "could not hash the internal target disk after the rig run"
-        _rigmedia_remove_target "$1"
-        return 1
-    }
-}
-
-_rigmedia_containers_or_cleanup() { # <target>
-    _rigmedia_containers || {
-        bad "could not list containers after stick-run rig handoff"
-        _rigmedia_fail_cleanup "$1"
-        return 1
-    }
-}
-
-_rigmedia_journal_or_cleanup() { # <target>
+_rigmedia_journal() {
     local journal
-    journal=$(_ssh 'systemd-analyze cat-config systemd/journald.conf 2>/dev/null | grep -c "^Storage=volatile"') || {
-        bad "could not inspect journald after stick-run rig handoff"
-        _rigmedia_fail_cleanup "$1"
-        return 1
-    }
+    journal=$(_ssh 'systemd-analyze cat-config systemd/journald.conf 2>/dev/null | grep -c "^Storage=volatile"') || return 1
     printf '%s\n' "$journal"
 }
 
@@ -117,7 +89,11 @@ phase_rigmedia() {
         _rigmedia_fail_cleanup "$target_disk"
         return
     }
-    empty_before=$(_rigmedia_before_hash "$target_disk") || return
+    if ! empty_before=$(_rigmedia_hash "$target_disk"); then
+        bad "could not hash the blank internal target disk"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    fi
     : >"$SERIAL"
     kvm_preflight || {
         _rigmedia_fail_cleanup "$target_disk"
@@ -216,13 +192,21 @@ phase_rigmedia() {
         bad "the running miner is not the baked prebuilt"
     fi
     local names
-    names=$(_rigmedia_containers_or_cleanup "$target_disk") || return
+    if ! names=$(_rigmedia_containers); then
+        bad "could not list containers after stick-run rig handoff"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    fi
     if [ -z "${names// /}" ]; then
         ok "no compose containers remain after stick-run rig handoff"
     else
         bad "a stick-run rig started containers: '$names'"
     fi
-    journal=$(_rigmedia_journal_or_cleanup "$target_disk") || return
+    if ! journal=$(_rigmedia_journal); then
+        bad "could not inspect journald after stick-run rig handoff"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    fi
     [ "$journal" != "0" ] &&
         ok "journald is volatile on a stick-run rig" ||
         bad "journald is still persistent on a stick-run rig"
@@ -238,7 +222,11 @@ phase_rigmedia() {
         bad "the stick-run rig did not return mining after the reboot"
 
     _rigmedia_quiesce_or_cleanup "$target_disk" || return
-    empty_after=$(_rigmedia_after_hash "$target_disk") || return
+    if ! empty_after=$(_rigmedia_hash "$target_disk"); then
+        bad "could not hash the internal target disk after the rig run"
+        _rigmedia_remove_target "$target_disk"
+        return
+    fi
     [ "$empty_after" = "$empty_before" ] &&
         ok "the empty target disk is still empty — a stick-run rig never touched it" ||
         bad "the target disk changed even though the rig never installed to it"
