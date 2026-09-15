@@ -12,6 +12,11 @@ _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
     fi
 }
 
+_rigmedia_fail_cleanup() { # <target> — retain a stopped inspectable guest under --keep
+    [ "$KEEP" -ne 1 ] || virsh destroy "$VM" >/dev/null 2>&1 || true
+    _rigmedia_remove_target "$1"
+}
+
 phase_rigmedia() {
     info "phase: rigmedia (M14, #1829 — a rig that boots the stick and never installs)"
     # The install phase's own boot shape (image on a removable USB bus, boot.order=1) beside a
@@ -28,7 +33,7 @@ phase_rigmedia() {
     cp "$img" "$DISK"
     qemu-img resize "$DISK" 16G >/dev/null 2>&1 || {
         bad "could not size the removable-media disk"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     qemu-img create -f raw "$target_disk" 30G >/dev/null
@@ -44,13 +49,13 @@ phase_rigmedia() {
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
         bad "virt-install failed to define the rigmedia VM"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     _wait_dhcp_ip 120
     _wait_ssh 240 || {
         bad "rigmedia guest never answered SSH (ip: ${ip:-none})"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     ok "image boots as removable media ($ip)"
@@ -64,12 +69,12 @@ phase_rigmedia() {
     done
     [ -n "$token" ] || {
         bad "no one-time token ever appeared on the console"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     _wait_setup_page 120 || {
         bad "wizard gate never served"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     jar=$(mktemp)
@@ -77,7 +82,7 @@ phase_rigmedia() {
         grep -q "wizard_session" "$jar" || {
         bad "token was not accepted"
         rm -f "$jar"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
 
@@ -91,7 +96,7 @@ phase_rigmedia() {
     [ "$scode" = "200" ] || {
         bad "rig submit did not return 200 (got ${scode:-none})"
         rm -f "$jar"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     ok "rig role submitted through the wizard, no install offered"
@@ -105,14 +110,14 @@ phase_rigmedia() {
     [ "$tries" -lt 24 ] || {
         bad "no rig card appeared on the page"
         rm -f "$jar"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     scode=$(curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "rig card acknowledgement did not return 200 (got ${scode:-none})"
         rm -f "$jar"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     rm -f "$jar"
@@ -141,7 +146,7 @@ phase_rigmedia() {
     info "reboot leg — the stick-run rig must come back mining, no hands"
     _reboot_wait reboot 300 || {
         bad "the stick-run rig never returned from the reboot"
-        _rigmedia_remove_target "$target_disk"
+        _rigmedia_fail_cleanup "$target_disk"
         return
     }
     _rig_mining_up 24 &&
