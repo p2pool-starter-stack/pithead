@@ -26,11 +26,12 @@ if [ "${1:-}" = "--self-test" ]; then
     exit 0
 fi
 
-# Prose docs only. Exclude the style guide itself (it lists the words), the changelog (a historical
-# record), the verbatim Contributor Covenant, and vendored/third-party markdown. (The generated
-# test-inventory is git-ignored now, so `git ls-files` never surfaces it — no exclusion needed, #414.)
+# Prose docs only. Exclude the style guide itself (it lists the words), the changelog and its
+# archive (a historical record), the verbatim Contributor Covenant, and vendored/third-party
+# markdown. (The generated test-inventory is git-ignored now, so `git ls-files` never surfaces it —
+# no exclusion needed, #414.)
 files=$(git ls-files '*.md' |
-    grep -vxE 'docs/dev/STYLE\.md|CHANGELOG\.md|THIRD_PARTY_LICENSES\.md|CODE_OF_CONDUCT\.md' |
+    grep -vxE 'docs/dev/STYLE\.md|CHANGELOG\.md|docs/changelog-archive\.md|docs/THIRD_PARTY_LICENSES\.md|CODE_OF_CONDUCT\.md' |
     grep -vE '^docs/research/' | # verbatim research records: quoted sources and audit trails, not house prose
     grep -vE '(^|/)(vendor|node_modules)/' || true)
 

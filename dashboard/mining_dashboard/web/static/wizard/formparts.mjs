@@ -34,13 +34,25 @@ export function renderRigFields(app) {
 }
 
 export function renderRestore(app) {
-  const { error, installer, disks, chosen, confirm, wipe, restorePassphrase, submitting } =
-    app.state;
+  const {
+    error,
+    installer,
+    disks,
+    chosen,
+    confirm,
+    wipe,
+    restorePassphrase,
+    restorePassphraseVisible,
+    submitting,
+  } = app.state;
   const diskPicked = !installer || Boolean(chosen);
   return html`<div class="card">
         <p>Upload an encrypted Pithead backup instead of filling in the form below. The machine
-        decrypts, validates and provisions itself from what it restores.</p>
-        <${Err}>${error}<//>
+        decrypts, validates and provisions itself from what it restores.${
+          installer && !diskPicked
+            ? " Choose the disk first; the upload fields appear once you pick."
+            : ""
+        }</p>
         <form onSubmit=${app.submitRestore}>
             ${
               installer &&
@@ -53,14 +65,19 @@ export function renderRestore(app) {
             ${
               diskPicked &&
               html`<${RestoreSection} file=${app.state.restoreFile} passphrase=${restorePassphrase}
+                passphraseVisible=${restorePassphraseVisible}
                 onFile=${(e) => app.setState({ restoreFile: e.target.files[0] || null })}
-                onPassphrase=${(e) => app.setState({ restorePassphrase: e.target.value })} />
+                onPassphrase=${(e) => app.setState({ restorePassphrase: e.target.value })}
+                onPassphraseVisible=${(e) =>
+                  app.setState({ restorePassphraseVisible: e.target.checked })} />
+            <${Err}>${error}<//>
             <button type="submit" class="btn-toggle active" disabled=${submitting}>
                 ${submitting ? "Validating…" : "Restore and provision"}</button>`
             }
         </form>
         <button type="button" class="wizard-link"
-            onClick=${() => app.setState({ restoreMode: false, error: "" })}>
+            onClick=${() =>
+              app.setState({ restoreMode: false, restorePassphraseVisible: false, error: "" })}>
             ${restoreBackLabel(app.state.savedRole, app.state.setUpAgain)}</button>
     </div>`;
 }

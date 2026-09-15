@@ -485,9 +485,10 @@ Three things bound what the comparison claims, and each bound is deliberate:
 - **It judges only keys this dashboard has set.** What it compares against is a record of the
   changes we pushed, not a copy of the rig's config, so a hand-edit to a key we have never applied
   has nothing to disagree with. The second check below is what covers that case.
-- **It never compares pool passwords.** RigForge strips the pool password and TLS fingerprint before
-  serving its config, so the dashboard strips them from its own side too. A changed pool password
-  would otherwise read as drift on every rig, forever. This comparison cannot see one either way.
+- **It never compares pool passwords.** RigForge serves a stored credential as a marker, never the
+  value, and the dashboard strips both sides so the marker cannot read as drift. A changed pool
+  password would otherwise read as drift on every rig, forever. This comparison cannot see one
+  either way.
 - **It says nothing while a change is in flight.** A change that has been sent and not yet settled
   is not in the applied record, though the rig may already be running it, so the comparison is held
   back until the outcome lands rather than reporting a key we ourselves just set.
