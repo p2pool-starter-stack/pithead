@@ -70,7 +70,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | `p2pool.stratum_tls` (#261): a live TLS handshake on the published stratum port, served cert matches the pinned fingerprint | config → live dial | 1 ✅ (render) · 4 ▶ (server-side handshake; a real xmrig client with `pools[].tls:true` stays deferred, see Known gaps) |
 | `network.tor_egress_firewall=true` (#270/#855/#2059), the **default**: the kernel actually DROPs a direct clearnet dial from a `mining_net` container, on both backends | config → live kernel | 1 ✅ (rendered iptables + nft rulesets) · 4 ▶ (real dial dropped, with a same-container dial through Tor's SOCKS as the within-row control — Docker backend in `run.sh`, netavark backend in the KVM battery) |
 | `network.tor_egress_firewall=false` (#270): the opt-out actually opens a direct clearnet dial, not just that no rule installed | config → live kernel | 1 ✅ (stubbed iptables installs no rule) · 4 ▶ (real dial succeeds) |
-| `monero.view_key` / `tari.view_key` (#381/#462): payout-confirmation wallet-rpc/tari-wallet wiring live | config → live | 4 ▶ (needs `IT_MONERO_VIEW_KEY`/`IT_TARI_VIEW_KEY`+`IT_TARI_SPEND_PUBLIC_KEY`; a confirmed payout landing is real-money real-time, not e2e-reachable) |
+| `monero.view_key` / `tari.view_key` (#381/#462): payout-confirmation wallet-rpc/tari-wallet wiring | config → fake wallets → persisted state + configured webhook | 3 ✅ (`mini-stack`: one confirmed payout reaches `/api/state` and one alert; replay, empty-wallet, and disabled/no-dial controls for both chains, #2267) · 4 ▶ (needs `IT_MONERO_VIEW_KEY`/`IT_TARI_VIEW_KEY`+`IT_TARI_SPEND_PUBLIC_KEY`; a confirmed payout landing is real-money real-time, not e2e-reachable) |
 
 ### B. Sync lifecycle (#35)
 
@@ -393,7 +393,7 @@ Not yet covered. The road to full production confidence.
 
 - First green run on real hardware. ✅ Two of the three real-environment tiers are green: the live
   harness `--check` (tier 4 read path, 22/22 against a synced, mining box) and the fake-daemon
-  mini-stack (tier 3, 11/11 on a real Docker host). Between them they surfaced and fixed four bugs:
+  mini-stack (tier 3, 12/12 on a real Docker host). Between them they surfaced and fixed four bugs:
   the dashboard pruned/full label (#32); the harness's three over-strict assertions (monero-synced,
   conns, prune display); the fake Tari binding gRPC to loopback; and the mini-stack's
   container-name/port isolation. Still pending: the full destructive config matrix run on the box
