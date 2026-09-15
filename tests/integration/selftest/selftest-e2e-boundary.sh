@@ -49,6 +49,7 @@ echo "== --workers is validated before it reaches the remote shell commands it's
 rejected_before_ssh_flag "a non-numeric --workers never reaches SSH" --workers 'bad'
 rejected_before_ssh_flag "metacharacters in --workers never reach SSH" --workers '1;touch'
 rejected_before_ssh_flag "a negative --workers never reaches SSH" --workers '-1'
+rejected_before_ssh_flag "zero --workers never reaches SSH" --workers '0'
 # Positive control: the guard rejects bad values without also rejecting good ones.
 rm -f "$MARKER"
 env PATH="$TMP:/usr/bin:/bin" SSH_MARKER="$MARKER" BENCH_HOST=bench MINER_HOST=rig \

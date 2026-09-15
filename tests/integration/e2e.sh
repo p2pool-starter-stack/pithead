@@ -89,7 +89,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
+  --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
@@ -163,7 +163,7 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
-[[ "$WORKERS" =~ ^[0-9]+$ ]] || die "--workers must be a non-negative integer (got '$WORKERS')."
+[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)

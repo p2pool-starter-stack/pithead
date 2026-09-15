@@ -125,7 +125,7 @@ assert_doctor_ok() {
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_log "   doctor: egress firewall opted out — skipping that OK line"
     else
-        assert_contains "doctor: egress firewall installed (#383)" "$out" "egress firewall is installed"
+        assert_contains "doctor: egress firewall installed (#383)" "$out" "egress firewall rules are installed"
     fi
     assert_contains "doctor: stratum :3333 listening (#383)" "$out" "workers can connect"
     assert_contains "doctor: dashboard answers (#383)" "$out" "answers on 127.0.0.1:8000"
