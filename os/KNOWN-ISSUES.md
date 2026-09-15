@@ -393,14 +393,14 @@ not proven.
 - **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
   KVM battery now measures this rather than leaving it an unread flag: every other guest in
   `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
-  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and asserts whether userspace is
-  reached. It is not: **that row is RED by design and stays red until signing lands.** The image
+  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and records whether userspace is
+  reached. It is not: **that measured deferred limitation does not fail the boot phase.** The image
   installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
   kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
   chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
   harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
-  the measured outcome plainly instead of special-casing a pass, so the same row goes green with
-  no test change when a signed chain exists. A guest that cannot even be DEFINED — no OVMF
+  the measured outcome plainly for 2.0.0, while later versions fail a non-boot. A guest that
+  cannot even be DEFINED — no OVMF
   secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
   read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
   keys is still the manual battery's M-row above (#2044).
