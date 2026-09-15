@@ -55,7 +55,7 @@ jobs:
       - name: Publish it to the tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: "Obsolete .trivyignore mutes (weekly report)"
+          TITLE: "Obsolete .config/trivyignore mutes (weekly report)"
           RC: ${{ steps.report.outputs.rc }}
         run: |
           set -Eeuo pipefail

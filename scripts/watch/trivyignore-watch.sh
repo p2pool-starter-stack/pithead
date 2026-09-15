@@ -41,11 +41,12 @@
 #
 # THE PARITY CONTRACT (#1290). TRIVY_VERSION below is the one place that declares which trivy
 # engine this script's own scan uses. `--check-parity` (wired into `make lint-trivy-parity`) holds
-# every image-scan trivy-action `version:` input, and the pinned image's own measured version, to
-# that one value — it does not prove what trivy-action resolves a declared input to at run time,
-# only that every caller and this script declare the same one; what the action
-# does with a declared input is upstream's contract. A dependabot bump of trivy-action that silently
-# moves the action's own UNDECLARED default is exactly the drift this catches.
+# the gate workflows' `./.github/actions/install-trivy` `version:` input, and the pinned image's own
+# measured version, to that one value. Those literals are read because they are the lines that
+# DECIDE the engine: every trivy-action step there passes `skip-setup-trivy: true`, so it installs
+# nothing and declares no version at all (#2214). Grading a trivy-action `version:` instead would
+# grade a value the action never resolves — the defect #2214's review caught, and the shape
+# scripts/lint/lint-trivy-installer-cache.sh now holds in place.
 #
 # Usage:
 #   scripts/watch/trivyignore-watch.sh              Build + scan every covered image with NO ignore file
@@ -55,8 +56,8 @@
 #   scripts/watch/trivyignore-watch.sh --self-test  Drive the union/report logic against fixture scan
 #                                              output. No docker, no network, no image builds.
 #   scripts/watch/trivyignore-watch.sh --check-parity
-#                                              Check every image-scan trivy-action step pins
-#                                              `version:` to TRIVY_VERSION (#1290). No
+#                                              Check that every gate workflow's install-trivy step
+#                                              pins `version:` to TRIVY_VERSION (#1290). No
 #                                              docker, no network. Exit code is the check's own rc.
 
 set -Eeuo pipefail
@@ -64,9 +65,9 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IGNOREFILE="$ROOT/.config/trivyignore"
 
-# The CVE-gate workflows and retry action whose trivy-action steps must stay pinned to TRIVY_VERSION (#1290).
+# The CVE-gate workflows whose install-trivy steps must stay pinned to TRIVY_VERSION (#1290).
 # Overridable so --self-test can point this at fixture files instead.
-GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml $ROOT/.github/actions/retry-trivy-scan/action.yml"
+GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs.yml $ROOT/.github/workflows/test-images.yml"
 
 # The ONE source of truth for the scanning engine (#1290) — the parity contract is in the header.
 # Digest-pinned (repo convention, #135/#373) rather than `:latest`, so a run today and a run next
@@ -141,13 +142,13 @@ engine_version() {
     printf '%s' "$ver"
 }
 
-# $GATE_WORKFLOWS -> one `<basename>\t<version>` line per trivy-action step found, in file order.
+# $GATE_WORKFLOWS -> one `<basename>\t<version>` line per install-trivy step found, in file order.
 # `<version>` is MISSING when the step has no `version:` key in its `with:` block, or NOFILE when
 # the workflow file itself does not exist. A single awk state machine per file: a line that starts
-# (optional list-item marker aside) with `uses:` naming aquasecurity/trivy-action@ opens a step —
-# anchored to line-start so a commented-out `# uses: ...` cannot open a phantom step; a `version:`
-# key inside it is captured with any trailing inline comment stripped; the next list item
-# (`- ...`, i.e. the next step) or EOF closes the step and emits it.
+# (optional list-item marker aside) with `uses:` naming ./.github/actions/install-trivy opens a
+# step — anchored to line-start so a commented-out `# uses: ...` cannot open a phantom step; a
+# `version:` key inside it is captured with any trailing inline comment stripped; the next list
+# item (`- ...`, i.e. the next step) or EOF closes the step and emits it.
 gate_versions() {
     local f base
     for f in $GATE_WORKFLOWS; do
@@ -158,7 +159,7 @@ gate_versions() {
         fi
         awk -v file="$base" '
             function emit() { print file "\t" (ver == "" ? "MISSING" : ver) }
-            /^[[:space:]]*(-[[:space:]]+)?uses:.*aquasecurity\/trivy-action@/ {
+            /^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*\.\/\.github\/actions\/install-trivy([[:space:]]|$)/ {
                 if (instep) emit()
                 instep = 1; ver = ""
                 next
@@ -181,13 +182,13 @@ gate_versions() {
     done
 }
 
-# -> one line per trivy-action step describing whether its `version:` matches $TRIVY_VERSION, rc 0
-# only if every file in $GATE_WORKFLOWS produced at least one trivy-action step AND every one of
+# -> one line per install-trivy step describing whether its `version:` matches $TRIVY_VERSION, rc 0
+# only if every file in $GATE_WORKFLOWS produced at least one install-trivy step AND every one of
 # those steps' versions is EXACTLY `v$TRIVY_VERSION` — no loose `v`-stripped comparison, because
-# the real chain (trivy-action -> setup-trivy -> trivy's own install.sh) builds its release URL
-# from the declared value verbatim: a bare value 404s where its v-prefixed form resolves, so it is
-# a real mismatch, not a cosmetic one. A file that yields no step at all (missing file, or no
-# trivy-action `uses:` line) is a failure on its own — a parity check that cannot find its target
+# the real chain (install-trivy -> setup-trivy -> trivy's own install.sh) builds its release URL
+# from the declared value verbatim: a bare value 404s where its v-prefixed form resolves, so a bare value
+# is a real mismatch, not a cosmetic one. A file that yields no step at all (missing file, or no
+# install-trivy `uses:` line) is a failure on its own — a parity check that cannot find its target
 # must go red, not silently skip it.
 check_parity() {
     local gv f base lf lver fail=0 any
@@ -201,29 +202,29 @@ check_parity() {
             [ "$lver" = "NOFILE" ] && continue
             any=1
             if [ "$lver" = "MISSING" ]; then
-                echo "$base: MISSING — no version: input, trivy-action installs its own default (that is the #1290 defect)"
+                echo "$base: MISSING — no version: input, install-trivy has no default to fall back on (that is the #1290 defect)"
                 fail=1
                 continue
             fi
             if [ "$lver" = "v$TRIVY_VERSION" ]; then
-                echo "$base: trivy-action version $lver matches the watch ($TRIVY_VERSION)"
+                echo "$base: install-trivy version $lver matches the watch ($TRIVY_VERSION)"
             elif [ "$lver" = "$TRIVY_VERSION" ]; then
-                echo "$base: MISMATCH — trivy-action version $lver is not v$TRIVY_VERSION (setup-trivy resolves the value verbatim; it must carry the v)"
+                echo "$base: MISMATCH — install-trivy version $lver is not v$TRIVY_VERSION (setup-trivy resolves the value verbatim; it must carry the v)"
                 fail=1
             else
-                echo "$base: MISMATCH — trivy-action version $lver, watch scans $TRIVY_VERSION"
+                echo "$base: MISMATCH — install-trivy version $lver, watch scans $TRIVY_VERSION"
                 fail=1
             fi
         done <<<"$gv"
 
         if [ "$any" -eq 0 ]; then
-            echo "$base: NO trivy-action step found — the parity check cannot see the gate"
+            echo "$base: NO install-trivy step found — the parity check cannot see the gate"
             fail=1
         fi
     done
 
     if [ "$fail" -eq 1 ]; then
-        echo "Fix: set every trivy-action version: to exactly v$TRIVY_VERSION (the leading v is required), or bump TRIVY_VERSION (and the pinned digest above) together."
+        echo "Fix: set every install-trivy version: to exactly v$TRIVY_VERSION (the leading v is required), or bump TRIVY_VERSION (and the pinned digest above) together."
     fi
     return "$fail"
 }
@@ -300,7 +301,7 @@ report() {
 
     printf '%s\n\n' "Obsolete .config/trivyignore mute watch (#1174). Report-only — an obsolete mute is housekeeping, not a build failure."
     printf '%s\n\n' "Images scanned, no ignore file applied: $IMAGES"
-    printf '%s\n\n' "Engine: trivy $TRIVY_VERSION — the version every image-scan caller passes to trivy-action (parity checked before this run)."
+    printf '%s\n\n' "Engine: trivy $TRIVY_VERSION — the version every gate workflow passes to its install-trivy step, the one line that decides which engine scans (parity checked before this run)."
     printf '| finding ID | seen in any covered image | verdict |\n|---|---|---|\n%s' "$rows"
     if [ "$obsolete" -gt 0 ]; then
         printf '\n%s\n' "$obsolete of $checked mute(s) are OBSOLETE."
@@ -326,7 +327,7 @@ if [ "${1:-}" = "--self-test" ]; then
             st_fail=1
         fi
     }
-    st "check_parity: includes the retry scan action" "$(check_parity | grep -c "^action.yml: trivy-action version v$TRIVY_VERSION matches")" "1"
+
     st "ignored_ids strips comments and blank lines" \
         "$(
             f=$(mktemp)
@@ -425,10 +426,10 @@ EOF
     rm -f "$f"
 
     # --- engine parity (#1290) --------------------------------------------------------------
-    # Fixtures mimic the real step shape: a `- name:` step, the pinned trivy-action `uses:` line,
-    # then a `with:` block with several keys.
+    # Fixtures mimic the real step shape after #2214: the install-trivy step carrying the gated
+    # `version:` check_parity reads, then a trivy-action step with skip-setup-trivy and no pin.
     pt_dir=$(mktemp -d)
-    pt_write() { # <path> <version-line-or-empty, no leading spaces> <has-trivy-step:0|1>
+    pt_write() { # <path> <version-line-or-empty, no leading spaces> <has-install-step:0|1>
         local path="$1" verline="$2" has="$3"
         {
             printf '%s\n' "name: fixture" "jobs:" "  scan:" "    steps:" \
@@ -436,14 +437,14 @@ EOF
                 "        with:" \
                 "          persist-credentials: false"
             if [ "$has" = "1" ]; then
-                printf '%s\n' "      - name: Scan image for CVEs (Trivy)" \
-                    "        uses: aquasecurity/trivy-action@0123456789abcdef0123456789abcdef01234567 # v0.36.0" \
+                printf '%s\n' "      - uses: ./.github/actions/install-trivy" \
                     "        with:"
                 [ -n "$verline" ] && printf '          %s\n' "$verline"
-                printf '%s\n' "          image-ref: pithead-example:ci" \
-                    "          scanners: vuln" \
-                    "          severity: HIGH,CRITICAL" \
-                    "          exit-code: \"1\""
+                printf '%s\n' "      - name: Scan image for CVEs (Trivy)" \
+                    "        uses: aquasecurity/trivy-action@0123456789abcdef0123456789abcdef01234567 # v0.36.0" \
+                    "        with:" \
+                    "          skip-setup-trivy: true" \
+                    "          image-ref: pithead-example:ci"
             fi
             printf '%s\n' "      - name: Another step" "        run: echo done"
         } >"$path"
@@ -483,7 +484,7 @@ EOF
     st "check_parity: omitted version reports MISSING" \
         "$(printf '%s' "$pp_out" | grep -c "ci-c.yml: MISSING")" "1"
 
-    # (d) a fixture with no trivy-action step at all -> rc 1, "NO trivy-action step found"
+    # (d) a fixture with no install-trivy step at all -> rc 1, "NO install-trivy step found"
     ci_d="$pt_dir/ci-d.yml"
     os_d="$pt_dir/os-d.yml"
     pt_write "$ci_d" "" 0
@@ -491,13 +492,13 @@ EOF
     GATE_WORKFLOWS="$ci_d $os_d"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
-    st "check_parity: a workflow with no trivy-action step -> rc 1" "$pp_rc" "1"
+    st "check_parity: a workflow with no install-trivy step -> rc 1" "$pp_rc" "1"
     st "check_parity: names the step-less file" \
-        "$(printf '%s' "$pp_out" | grep -c "ci-d.yml: NO trivy-action step found")" "1"
+        "$(printf '%s' "$pp_out" | grep -c "ci-d.yml: NO install-trivy step found")" "1"
 
     # (e) a bare version value (no leading v) is a MISMATCH, not accepted (#1290 fix 3): the real
     # chain (trivy-action -> setup-trivy -> trivy's install.sh) builds its release URL from the
-    # declared value verbatim, so a bare value 404s where the v-prefixed form resolves.
+    # declared value verbatim, so a bare value 404s where its v-prefixed form resolves.
     ci_e="$pt_dir/ci-e.yml"
     os_e="$pt_dir/os-e.yml"
     pt_write "$ci_e" "version: $TRIVY_VERSION" 1
@@ -509,12 +510,11 @@ EOF
     st "check_parity: bare-form MISMATCH names the reason" \
         "$(printf '%s' "$pp_out" | grep -c "must carry the v")" "1"
 
-    # (f) a LATER step's version: must not be attributed to the trivy step
+    # (f) a LATER step's version: must not be attributed to the install-trivy step
     ci_f="$pt_dir/ci-f.yml"
     {
         printf '%s\n' "name: fixture" "jobs:" "  scan:" "    steps:" \
-            "      - name: Scan image for CVEs (Trivy)" \
-            "        uses: aquasecurity/trivy-action@0123456789abcdef0123456789abcdef01234567 # v0.36.0" \
+            "      - uses: ./.github/actions/install-trivy" \
             "        with:" \
             "          image-ref: pithead-example:ci" \
             "          scanners: vuln" \
@@ -526,7 +526,7 @@ EOF
     GATE_WORKFLOWS="$ci_f $os_a"
     pp_rc=0
     pp_out=$(check_parity) || pp_rc=$?
-    st "check_parity: a later step's version: is not attributed to the trivy step" \
+    st "check_parity: a later step's version: is not attributed to the install-trivy step" \
         "$(printf '%s' "$pp_out" | grep -c "ci-f.yml: MISSING")" "1"
     st "check_parity: (f) fails overall" "$pp_rc" "1"
 
