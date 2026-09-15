@@ -50,6 +50,8 @@ source "$HERE/phases/reset.sh" || exit $?
 trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
+preflight_cleanup="$(sed -n '/kvm_preflight || {/,/^    }/p' "$HERE/phases/rigmedia.sh")"
+grep -Fq '_rigmedia_fail_cleanup "$target_disk"' <<<"$preflight_cleanup" || exit 1
 (
     actions="" bads=0 destroy_ok=1 list_ok=1 vm_destroy_ok=1
     bad() { bads=$((bads + 1)); }

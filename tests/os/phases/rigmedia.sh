@@ -54,7 +54,10 @@ phase_rigmedia() {
     qemu-img create -f raw "$target_disk" 30G >/dev/null
     empty_before=$(sha256sum "$target_disk" | cut -d' ' -f1)
     : >"$SERIAL"
-    kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
+    kvm_preflight || {
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    }
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
         --osinfo debian12 \
         --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
@@ -150,7 +153,7 @@ phase_rigmedia() {
     local names
     names=$(_ssh "podman ps -a --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
     if [ -z "${names// /}" ]; then
-        ok "no compose stack was started on the stick-run rig"
+        ok "no compose containers remain after stick-run rig handoff"
     else
         bad "a stick-run rig started containers: '$names'"
     fi
