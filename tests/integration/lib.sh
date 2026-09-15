@@ -10,6 +10,7 @@
 # never depend on the runner being able to resolve the box's dashboard hostname.
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
+source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"
 source "${BASH_SOURCE[0]%/*}/lib/redact-it-password.sh"
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
@@ -31,7 +32,6 @@ it_log() { echo -e "${IT_GREEN}[ITEST]${IT_RESET} $1"; }
 it_warn() { echo -e "${IT_YELLOW}[ITEST]${IT_RESET} $1" >&2; }
 it_err() { echo -e "${IT_RED}[ITEST]${IT_RESET} $1" >&2; }
 it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
-
 # --- Secrets hygiene --------------------------------------------------------
 # Redact before anything reaches a log or the terminal. FIVE shapes: KEY=value and JSON "key": "value"
 # share ONE key-SUFFIX vocabulary — add SPELLINGS to BOTH (#1587; #1590 case-insensitive JSON-side;
