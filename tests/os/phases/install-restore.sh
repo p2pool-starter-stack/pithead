@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+source "$SCRIPT_DIR/restore-fixture-fingerprints.sh"
 _phase_install_restore() {
     # ---- restore-at-setup leg (#909, #786 sub-issue B) -----------------------------------
-    # A genuine encrypted backup pulled off a live, fully-provisioned machine seeds a
-    # totally fresh disk through the wizard's upload path instead of the config form — the
+    # A genuine encrypted backup is uploaded through the wizard's restore path instead of the
+    # config form onto a keep-preserved appliance disk — the
     # disaster-recovery loop #908 (export) opens and this closes. Real archive, real upload
     # over curl -F, real decrypt+extract on the guest, and the identity (wallet, Tor onion)
     # must survive — proof the "restored config drives provisioning as if pre-seeded" promise
@@ -104,242 +105,292 @@ _phase_install_restore() {
         rm -f "$target_disk"
         return 1
     }
-    local orig_onion
-    orig_onion=$(_ssh "grep MONERO_ONION_ADDRESS /data/pithead/.env" | cut -d= -f2)
-    _ssh "systemctl poweroff" 2>/dev/null || true
-    sleep 8
-    vm_destroy_or_refuse || return
+    # Restore the source archive first, then the checked-in supported-N-1 artifact. This retains
+    # the existing same-version KVM coverage while proving the operator upgrade path separately.
+    local source_archive="$restore_archive"
+    restore_fixture_fingerprints || {
+        bad "restore leg: source or v1.20.0 archive is missing required restore fingerprints"
+        rm -f "$target_disk" "$restore_archive" "${RESTORE_N1_ARCHIVE:-}"
+        return 1
+    }
+    local expected_wallet expected_onion expected_secrets expected_config
+    local restore_case restore_target target_chain_sentinel
+    for restore_case in same-version n1; do
+        case "$restore_case" in
+        same-version)
+            restore_archive="$source_archive"
+            expected_wallet="$HARNESS_WALLET"
+            expected_onion="$RESTORE_SOURCE_ONION"
+            expected_secrets="$RESTORE_SOURCE_SECRETS"
+            expected_config="$RESTORE_SOURCE_CONFIG"
+            target_chain_sentinel=""
+            ok "restore leg: restoring the source archive through the same-version wizard path"
+            ;;
+        n1)
+            restore_archive="$RESTORE_N1_ARCHIVE"
+            restore_pass=$(tr -d '\r\n' <"$RESTORE_N1_DIR/passphrase")
+            expected_wallet="$RESTORE_N1_WALLET"
+            expected_onion="$RESTORE_N1_ONION"
+            expected_secrets="$RESTORE_N1_SECRETS"
+            expected_config="$RESTORE_N1_CONFIG"
+            target_chain_sentinel="n1-target-chain-sentinel"
+            _ssh "printf '%s\\n' keep-this-chain-data > /data/pithead/data/monero/$target_chain_sentinel" || {
+                bad "restore leg: could not plant the target chain-data sentinel before the N-1 restore"
+                rm -f "$target_disk" "$restore_archive" "$RESTORE_N1_ARCHIVE"
+                return 1
+            }
+            ok "restore leg: staged the signed v1.20.0 encrypted fixture and planted target chain data"
+            ;;
+        esac
+        _ssh "systemctl poweroff" 2>/dev/null || true
+        sleep 8
+        vm_destroy_or_refuse || return
 
-    local restore_target="/srv/code/bench-vm/pithead-restore-target.img"
-    rm -f "$restore_target"
-    qemu-img create -f raw "$restore_target" 30G >/dev/null
-    img=$(_build_image v1) || {
-        bad "restore leg: image build failed"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    cp "$img" "$DISK"
-    qemu-img resize "$DISK" 16G >/dev/null 2>&1 || true
-    : >"$SERIAL"
-    kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
-        --osinfo debian12 \
-        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
-        --import \
-        --disk "path=$DISK,format=raw,bus=usb,removable=on,boot.order=1" \
-        --disk "path=$restore_target,format=raw,bus=virtio,boot.order=2" \
-        --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "restore leg: virt-install failed for the fresh installer boot"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    _wait_dhcp_ip 120
-    _wait_ssh 240 || {
-        bad "restore leg: installer guest never answered SSH"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    _ssh "for i in \$(seq 36); do [ -s /data/pithead/data/firstboot/disks.tsv ] && exit 0; sleep 5; done; exit 1" || {
-        bad "restore leg: installer never reached installer mode"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    token=""
-    tries2=0
-    while [ -z "$token" ] && [ "$tries2" -lt 40 ]; do
-        token=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
-        [ -n "$token" ] || sleep 3
-        tries2=$((tries2 + 1))
-    done
-    [ -n "$token" ] || {
-        bad "restore leg: no one-time token on the installer console"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    _wait_setup_page 120 || {
-        bad "restore leg: wizard never served its gate page"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    jar=$(mktemp)
-    curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null &&
-        grep -q "wizard_session" "$jar" || {
-        bad "restore leg: auth failed"
-        rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    # The combined leg: ONE upload carries the archive, its passphrase, AND the disk choice —
-    # the same _gate_install_request every other installer submission takes.
-    scode=$(curl -sSk -b "$jar" \
-        -F "archive=@$restore_archive" -F "passphrase=$restore_pass" \
-        -F "disk=vda" -F "confirm=vda" -F "wipe=keep" \
-        "https://$ip/submit-restore" -o /dev/null -w '%{http_code}' 2>/dev/null)
-    [ "$scode" = "200" ] || {
-        bad "restore leg: upload did not return 200 (got ${scode:-none})"
-        rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    ok "restore leg: uploaded the backup archive instead of the form"
-    local rhandoff=""
-    tries2=0
-    while [ "$tries2" -lt 24 ]; do
-        rhandoff=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
-        printf '%s' "$rhandoff" | grep -q '"password"' && break
-        sleep 5
-        tries2=$((tries2 + 1))
-    done
-    [ "$tries2" -lt 24 ] || {
-        bad "restore leg: no credentials card after the restore — the restored config never drove provisioning"
-        rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    ok "restore leg: the restored config drove provisioning to a credentials card"
-    # Captured for the live-state check below (#1091) — the restored machine's OWN generated
-    # login, not the source machine's, since a keep-reinstall would have kept the old one.
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
-    DASH_USER=$(printf '%s' "$rhandoff" | jq -r '.username // "admin"')
-    # shellcheck disable=SC2034  # shared through the assembled runner scope
-    DASH_PASS=$(printf '%s' "$rhandoff" | jq -r '.password // ""')
-    curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
-    rm -f "$jar"
-    tries2=0
-    while [ "$tries2" -lt 60 ]; do
-        [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ] && break
-        sleep 5
-        tries2=$((tries2 + 1))
-    done
-    if [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ]; then
-        ok "restore leg: installed and switched itself off"
-    else
-        bad "restore leg: never powered off after the ack"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    fi
-    vm_destroy_or_refuse || return
-    : >"$SERIAL"
-    kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
-    virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
-        --osinfo debian12 \
-        --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
-        --import --disk "path=$restore_target,format=raw,bus=virtio" \
-        --network network=default,model=virtio --graphics none \
-        --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
-        bad "restore leg: virt-install failed for the restored machine"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    _wait_dhcp_ip 120
-    _wait_ssh 300 || {
-        bad "restore leg: restored machine never answered SSH"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    }
-    ok "restore leg: the restored machine boots from the fresh disk"
-    # The carried restore lands during firstboot and .env only exists once render has run —
-    # wait for provisioning, don't race it.
-    if _ssh "for i in \$(seq 90); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
-        ok "restore leg: the carried archive provisioned the machine — config.json is back"
-    else
-        bad "restore leg: no config.json ever appeared — the carried restore never landed"
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        rm -f "$target_disk" "$restore_archive" "$restore_target"
-        return 1
-    fi
-    if _ssh "grep -q \"$HARNESS_WALLET\" /data/pithead/config.json"; then
-        ok "restore leg: restored machine carries the ORIGINAL wallet address, not a fresh one"
-    else
-        bad "restore leg: restored machine's config does not carry the original wallet"
-    fi
-    # #2051: the source machine asserts this (above), the RESTORED machine never did — so "the
-    # stack never came up" could not tell a provisioning that never finished from one that
-    # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
-    # #2043 dump below carries ConditionResult for that half.
-    local rswait=900
-    if provisioning_settled 900; then
-        ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
-    else
-        bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
-        # Still activating after 900 s means containers are not coming, and a second 900 s here
-        # would spend half an hour re-measuring a symptom whose cause the row above just named.
-        rswait=0
-    fi
-    # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
-    # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
-    # the stack never came back up on the restored config. So wait for the stack to actually come
-    # up, then require a value sourced from the restored config to appear in LIVE state: the
-    # --wallet argument the stack's own start path rendered into the p2pool container, read off
-    # the container as created (#1662: p2pool's stratum stats, the earlier source, exist only once
-    # a SYNCED monerod hands it a block template, which a restored guest never has in this window).
-    # The verdict (restore_live_state_verdict) is fixture-tested at tier 1 (tests/stack/run.sh).
-    local rsnames="" live_wallet="" verdict
-    local rsdeadline
-    # Read at least ONCE whatever the budget is: with rswait 0 a head-tested loop would never run
-    # and the verdict would report `podman ps: 'none'` for a machine nobody asked.
-    rsdeadline=$(($(date +%s) + rswait))
-    while :; do
-        rsnames=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-        case "$rsnames" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
-        [ "$(date +%s)" -lt "$rsdeadline" ] || break
-        sleep 15
-    done
-    case "$rsnames" in
-    *dashboard*caddy* | *caddy*dashboard*)
-        local lwdeadline
-        lwdeadline=$(($(date +%s) + 180))
-        while [ "$(date +%s)" -lt "$lwdeadline" ]; do
-            live_wallet=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}'" 2>/dev/null | jq -r 'index("--wallet") as $i | if $i == null then "" else .[$i+1] // "" end')
-            [ -n "$live_wallet" ] && [ "$live_wallet" != "Unknown" ] && [ "$live_wallet" != "null" ] && break
-            sleep 10
-        done
-        ;;
-    esac
-    if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$HARNESS_WALLET"); then
-        ok "restore leg: $verdict"
-    else
-        bad "restore leg: $verdict"
-        # The dump belongs HERE and not inside restore_live_state_verdict: that function's stdout
-        # is its message (`verdict=$(...)`), so an _ssh read inside it would be captured as the
-        # verdict text instead of printed.
-        stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
-        # A stack that never came up won't answer the identity check below either — stop here
-        # rather than burn its 600s timeout on a machine already known to be broken.
-        case "$rsnames" in
-        *dashboard*caddy* | *caddy*dashboard*) ;;
-        *)
+        # Restore onto the existing appliance disk: wipe=keep must preserve its chain data while
+        # the N-1 archive supplies configuration and secrets.
+        restore_target="$target_disk"
+        img=$(_build_image v1) || {
+            bad "restore leg: image build failed"
             # shellcheck disable=SC2154  # shared through the assembled runner scope
             rm -f "$target_disk" "$restore_archive" "$restore_target"
             return 1
+        }
+        cp "$img" "$DISK"
+        qemu-img resize "$DISK" 16G >/dev/null 2>&1 || true
+        : >"$SERIAL"
+        kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
+        virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+            --osinfo debian12 \
+            --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
+            --import \
+            --disk "path=$DISK,format=raw,bus=usb,removable=on,boot.order=1" \
+            --disk "path=$restore_target,format=raw,bus=virtio,boot.order=2" \
+            --network network=default,model=virtio --graphics none \
+            --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
+            bad "restore leg: virt-install failed for the fresh installer boot"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        _wait_dhcp_ip 120
+        _wait_ssh 240 || {
+            bad "restore leg: installer guest never answered SSH"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        _ssh "for i in \$(seq 36); do [ -s /data/pithead/data/firstboot/disks.tsv ] && exit 0; sleep 5; done; exit 1" || {
+            bad "restore leg: installer never reached installer mode"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        token=""
+        tries2=0
+        while [ -z "$token" ] && [ "$tries2" -lt 40 ]; do
+            token=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
+            [ -n "$token" ] || sleep 3
+            tries2=$((tries2 + 1))
+        done
+        [ -n "$token" ] || {
+            bad "restore leg: no one-time token on the installer console"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        _wait_setup_page 120 || {
+            bad "restore leg: wizard never served its gate page"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        jar=$(mktemp)
+        curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null &&
+            grep -q "wizard_session" "$jar" || {
+            bad "restore leg: auth failed"
+            rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        # The combined leg: ONE upload carries the archive, its passphrase, AND the disk choice —
+        # the same _gate_install_request every other installer submission takes.
+        scode=$(curl -sSk -b "$jar" \
+            -F "archive=@$restore_archive" -F "passphrase=$restore_pass" \
+            -F "disk=vda" -F "confirm=vda" -F "wipe=keep" \
+            "https://$ip/submit-restore" -o /dev/null -w '%{http_code}' 2>/dev/null)
+        [ "$scode" = "200" ] || {
+            bad "restore leg: upload did not return 200 (got ${scode:-none})"
+            rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        ok "restore leg: uploaded the backup archive instead of the form"
+        local rhandoff=""
+        tries2=0
+        while [ "$tries2" -lt 24 ]; do
+            rhandoff=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/handoff" 2>/dev/null)
+            printf '%s' "$rhandoff" | grep -q '"password"' && break
+            sleep 5
+            tries2=$((tries2 + 1))
+        done
+        [ "$tries2" -lt 24 ] || {
+            bad "restore leg: no credentials card after the restore — the restored config never drove provisioning"
+            rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        ok "restore leg: the restored config drove provisioning to a credentials card"
+        # Captured for the live-state check below (#1091) — the restored machine's OWN generated
+        # login, not the source machine's, since a keep-reinstall would have kept the old one.
+        # shellcheck disable=SC2034  # shared through the assembled runner scope
+        DASH_USER=$(printf '%s' "$rhandoff" | jq -r '.username // "admin"')
+        # shellcheck disable=SC2034  # shared through the assembled runner scope
+        DASH_PASS=$(printf '%s' "$rhandoff" | jq -r '.password // ""')
+        curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
+        rm -f "$jar"
+        tries2=0
+        while [ "$tries2" -lt 60 ]; do
+            [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ] && break
+            sleep 5
+            tries2=$((tries2 + 1))
+        done
+        if [ "$(virsh domstate "$VM" 2>/dev/null)" = "shut off" ]; then
+            ok "restore leg: installed and switched itself off"
+        else
+            bad "restore leg: never powered off after the ack"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        fi
+        vm_destroy_or_refuse || return
+        : >"$SERIAL"
+        kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
+        virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
+            --osinfo debian12 \
+            --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
+            --import --disk "path=$restore_target,format=raw,bus=virtio" \
+            --network network=default,model=virtio --graphics none \
+            --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
+            bad "restore leg: virt-install failed for the restored machine"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        _wait_dhcp_ip 120
+        _wait_ssh 300 || {
+            bad "restore leg: restored machine never answered SSH"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        ok "restore leg: the restored machine boots from the fresh disk"
+        # The carried restore lands during firstboot and .env only exists once render has run —
+        # wait for provisioning, don't race it.
+        if _ssh "for i in \$(seq 90); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
+            ok "restore leg: the carried archive provisioned the machine — config.json is back"
+        else
+            bad "restore leg: no config.json ever appeared — the carried restore never landed"
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        fi
+        if _ssh "grep -q \"$expected_wallet\" /data/pithead/config.json"; then
+            ok "restore leg: restored machine carries the v1.20.0 wallet address, not a fresh one"
+        else
+            bad "restore leg: restored machine's config does not carry the v1.20.0 wallet"
+        fi
+        # #2051: the source machine asserts this (above), the RESTORED machine never did — so "the
+        # stack never came up" could not tell a provisioning that never finished from one that
+        # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
+        # #2043 dump below carries ConditionResult for that half.
+        local rswait=900
+        if provisioning_settled 900; then
+            ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
+        else
+            bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
+            # Still activating after 900 s means containers are not coming, and a second 900 s here
+            # would spend half an hour re-measuring a symptom whose cause the row above just named.
+            rswait=0
+        fi
+        # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
+        # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
+        # the stack never came back up on the restored config. So wait for the stack to actually come
+        # up, then require a value sourced from the restored config to appear in LIVE state: the
+        # --wallet argument the stack's own start path rendered into the p2pool container, read off
+        # the container as created (#1662: p2pool's stratum stats, the earlier source, exist only once
+        # a SYNCED monerod hands it a block template, which a restored guest never has in this window).
+        # The verdict (restore_live_state_verdict) is fixture-tested at tier 1 (tests/stack/run.sh).
+        local rsnames="" live_wallet="" verdict
+        local rsdeadline
+        # Read at least ONCE whatever the budget is: with rswait 0 a head-tested loop would never run
+        # and the verdict would report `podman ps: 'none'` for a machine nobody asked.
+        rsdeadline=$(($(date +%s) + rswait))
+        while :; do
+            rsnames=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
+            case "$rsnames" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
+            [ "$(date +%s)" -lt "$rsdeadline" ] || break
+            sleep 15
+        done
+        case "$rsnames" in
+        *dashboard*caddy* | *caddy*dashboard*)
+            local lwdeadline
+            lwdeadline=$(($(date +%s) + 180))
+            while [ "$(date +%s)" -lt "$lwdeadline" ]; do
+                live_wallet=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}'" 2>/dev/null | jq -r 'index("--wallet") as $i | if $i == null then "" else .[$i+1] // "" end')
+                [ -n "$live_wallet" ] && [ "$live_wallet" != "Unknown" ] && [ "$live_wallet" != "null" ] && break
+                sleep 10
+            done
             ;;
         esac
-    fi
-    local new_onion="" tor_hostname=""
-    local odeadline
-    odeadline=$(($(date +%s) + 600))
-    while [ "$(date +%s)" -lt "$odeadline" ]; do
-        new_onion=$(_ssh "grep MONERO_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
-        tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname 2>/dev/null" | tr -d '\r')
-        [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && break
-        sleep 15
+        if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
+            ok "restore leg: $verdict"
+        else
+            bad "restore leg: $verdict"
+            # The dump belongs HERE and not inside restore_live_state_verdict: that function's stdout
+            # is its message (`verdict=$(...)`), so an _ssh read inside it would be captured as the
+            # verdict text instead of printed.
+            stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
+            # A stack that never came up won't answer the identity check below either — stop here
+            # rather than burn its 600s timeout on a machine already known to be broken.
+            case "$rsnames" in
+            *dashboard*caddy* | *caddy*dashboard*) ;;
+            *)
+                # shellcheck disable=SC2154  # shared through the assembled runner scope
+                rm -f "$target_disk" "$restore_archive" "$restore_target"
+                return 1
+                ;;
+            esac
+        fi
+        local restored_config restored_secrets
+        restored_config=$(_ssh "jq -c '{monero: (.monero | {mode, wallet_address, node_username, node_password, remote}), tari: (.tari | {mode, wallet_address, remote}), p2pool: (.p2pool | {pool, stratum_password}), dashboard: (.dashboard | {auth, onion, control, energy})}' /data/pithead/config.json | sha256sum | cut -d' ' -f1")
+        [ "$restored_config" = "$expected_config" ] &&
+            ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
+            bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
+        restored_secrets=$(_ssh "[ \$(grep -Ec '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env) = 4 ] && grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1")
+        [ "$restored_secrets" = "$expected_secrets" ] &&
+            ok "restore leg: restored RPC, dashboard-auth and onion-client secrets match the v1.20.0 fixture" ||
+            bad "restore leg: restored RPC, dashboard-auth or onion-client secrets differ from the v1.20.0 fixture"
+        if [ -n "$target_chain_sentinel" ]; then
+            _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
+                ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
+                bad "restore leg: fixture or pre-restore target chain sentinel is missing after restore"
+        fi
+        local new_onion="" tor_hostname=""
+        local odeadline
+        odeadline=$(($(date +%s) + 600))
+        while [ "$(date +%s)" -lt "$odeadline" ]; do
+            new_onion=$(_ssh "grep DASHBOARD_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
+            tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/dashboard/hostname 2>/dev/null" | tr -d '\r')
+            [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && break
+            sleep 15
+        done
+        # .env is an archive member load_preserved_state replays verbatim when non-empty (pithead:6155-6166),
+        # so new_onion == expected_onion proves only that the CONFIG FILE made the round trip — true even when
+        # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
+        # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
+        if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$expected_onion" ] && [ "$tor_hostname" = "$expected_onion" ]; then
+            ok "restore leg: restored machine kept the v1.20.0 Tor identity, not a regenerated one"
+        else
+            bad "restore leg: v1.20.0 onion identity not restored"
+        fi
     done
-    # .env is an archive member load_preserved_state replays verbatim when non-empty (pithead:6155-6166),
-    # so new_onion == orig_onion proves only that the CONFIG FILE made the round trip — true even when
-    # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
-    # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
-    if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$orig_onion" ] && [ "$tor_hostname" = "$orig_onion" ]; then
-        ok "restore leg: restored machine kept the ORIGINAL Tor identity, not a regenerated one"
-    else
-        bad "restore leg: onion identity not restored (.env: $orig_onion -> ${new_onion:-none}, Tor's own hostname: ${tor_hostname:-none})"
-    fi
     phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
-    rm -f "$target_disk" "$restore_archive" "$restore_target"
+    rm -f "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
 }
