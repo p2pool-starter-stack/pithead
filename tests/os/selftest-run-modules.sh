@@ -11,7 +11,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info it_warn it_err have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset'
+expected_functions='ok bad info it_warn it_err have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -102,6 +102,22 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     [ "$(_rigmedia_journal)" = 1 ] || exit 1
     ssh_ok=0
     ! _rigmedia_containers || exit 1
+    actions="" bads=0 KEEP=0 vm_destroy_ok=1 hash_ok=0
+    ! _rigmedia_before_hash_or_cleanup target || exit 1
+    [ "$actions" = "undefine rm:target " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
+    actions="" bads=0
+    ! _rigmedia_after_hash_or_cleanup target || exit 1
+    [ "$actions" = "rm:target " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
+    hash_ok=1 actions="" bads=0
+    ! _rigmedia_containers_or_cleanup target || exit 1
+    [ "$actions" = "undefine rm:target " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
+    actions="" bads=0
+    ! _rigmedia_journal_or_cleanup target || exit 1
+    [ "$actions" = "undefine rm:target " ] || exit 1
+    [ "$bads" -eq 1 ] || exit 1
     ssh_ok=1
     actions="" bads=0
     KEEP=1
@@ -142,6 +158,19 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     actions="" KEEP=1 list_ok=0
     ! _rigmedia_fail_cleanup target || exit 1
     [ -z "$actions" ]
+) || exit 1
+(
+    bads=0 KEEP=0
+    _build_image() { printf 'image\n'; }
+    vm_destroy_or_refuse() { :; }
+    rm() { :; }
+    cp() { :; }
+    qemu-img() {
+        case "$1" in resize) : ;; create) return 1 ;; esac
+    }
+    bad() { bads=$((bads + 1)); }
+    phase_rigmedia
+    [ "$bads" -eq 1 ]
 ) || exit 1
 rm -f "$SERIAL" "$SERIAL.failed"
 echo "os-run-modules: PASS"
