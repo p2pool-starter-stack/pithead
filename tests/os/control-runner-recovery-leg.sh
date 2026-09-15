@@ -18,6 +18,14 @@
 GUEST_ENV=/data/pithead/.env
 _control_recovery_nrestarts() { _ssh "systemctl show -p NRestarts --value pithead-control.service" 2>/dev/null | tr -d '\r\n'; }
 _control_recovery_status() { dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$1" 2>/dev/null | jq -r '.status // "pending"' 2>/dev/null; }
+# Best-effort clear of the fault THIS leg injected. Never swallowed with `|| true`: a restore that
+# silently fails leaves the guest deliberately faulted (DEPLOYMENT_COMPLETED=false) for every phase
+# that runs after this one, and a swallowed failure gives no signal that THIS leg is why they broke.
+_control_recovery_restore() {
+    _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'" && return 0
+    bad "control-runner recovery: could not clear the injected fault — the guest is left with DEPLOYMENT_COMPLETED=false; every phase after this one is now suspect"
+    return 1
+}
 phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password>
     # shellcheck disable=SC2034 # DASH_USER/DASH_PASS: read by dashboard_curl (sibling file) via dynamic scope
     local ip="$1" DASH_USER="$2" DASH_PASS="$3" cfg rid restarts0 restarts1 status deadline
@@ -33,12 +41,12 @@ phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password
     cfg=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null | jq -c '.dashboard.energy.cost_per_kwh = 0.21')
     rid=$(dashboard_control_post preview "$(dashboard_config_body "$cfg")" | jq -r '.id // ""' 2>/dev/null)
     if [ -z "$rid" ]; then
-        _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'" || true
+        _control_recovery_restore
         bad "control-runner recovery: the faulted preview never queued (no id)"
         return
     fi
     if [ "$(_control_recovery_status "$rid")" = "previewed" ]; then
-        _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'" || true
+        _control_recovery_restore
         bad "control-runner recovery: the preview resolved while DEPLOYMENT_COMPLETED was false — the fault never took"
         return
     fi
@@ -50,15 +58,12 @@ phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password
         sleep 3
     done
     if ! [ "${restarts1:-0}" -gt "${restarts0:-0}" ] 2>/dev/null; then
-        _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'" || true
+        _control_recovery_restore
         bad "control-runner recovery: the runner never retried the faulted request (NRestarts stayed at ${restarts0:-0}) — the #2219 fix did not engage"
         return
     fi
     ok "control-runner retries a transient setup-fault rejection on its own (NRestarts ${restarts0:-0} -> $restarts1)"
-    _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'" || {
-        bad "control-runner recovery: could not clear the fault"
-        return
-    }
+    _control_recovery_restore || return
     deadline=$(($(date +%s) + 45))
     status=pending
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -146,6 +151,33 @@ _control_recovery_self_test() {
         printf 'the recovered path did not report both oks cleanly (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
         f=$((f + 1))
     }
+    unset -f _ssh dashboard_curl dashboard_control_post
+
+    # A restore that itself fails (the guest is left DEPLOYMENT_COMPLETED=false) must be its own
+    # visible bad, not a swallowed `|| true` — otherwise every phase after this one fails for an
+    # unrelated reason with no signal that this leg's cleanup is why.
+    env_state=true
+    _ssh() {
+        case "$1" in
+        "grep -qx 'DEPLOYMENT_COMPLETED=true' '$GUEST_ENV'") [ "$env_state" = true ] ;;
+        "sed -i 's/^DEPLOYMENT_COMPLETED=true/DEPLOYMENT_COMPLETED=false/' '$GUEST_ENV'") env_state=false ;;
+        "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'") return 1 ;; # restore itself is broken
+        "systemctl show -p NRestarts --value pithead-control.service") echo 0 ;;
+        esac
+    }
+    dashboard_curl() { echo '{"status":"pending"}'; }
+    dashboard_control_post() { echo '{"id":"stuck"}'; }
+    PASS=0 FAIL=0
+    local out_file
+    out_file=$(mktemp)
+    phase_provision_control_recovery 1.2.3.4 u p >"$out_file"
+    if [ "$FAIL" -eq 2 ] && [ "$PASS" -eq 0 ] && grep -q "could not clear the injected fault" "$out_file"; then
+        :
+    else
+        printf 'a failed restore was not reported on its own (pass=%s fail=%s out=%s)\n' "$PASS" "$FAIL" "$(cat "$out_file")" >&2
+        f=$((f + 1))
+    fi
+    rm -f "$out_file"
     unset -f _ssh dashboard_curl dashboard_control_post
 
     if [ "$f" -ne 0 ]; then
