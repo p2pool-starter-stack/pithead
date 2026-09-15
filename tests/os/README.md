@@ -123,6 +123,12 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
   everything except this.
+- **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
+  media beside a blank internal disk (the install phase's own boot shape, USB bus,
+  `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
+  stick, no containers, volatile journald, an unaided reboot returns it mining, and the blank
+  disk stays byte-for-byte untouched. Reaching the wizard again from a stick-run rig needs the
+  bootloader path (#1318) and is not this leg's job.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
@@ -139,9 +145,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all eight phases,
+the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
 including fault and reset, and the full run is required once for every RC candidate.
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
