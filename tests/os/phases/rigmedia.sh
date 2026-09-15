@@ -4,6 +4,19 @@ _rigmedia_remove_target() { # <path> — retain evidence under --keep
     [ "$KEEP" -eq 1 ] || rm -f "$1"
 }
 
+_rigmedia_hash() { # <path>
+    local result
+    result=$(sha256sum "$1") || return 1
+    printf '%s\n' "${result%% *}"
+}
+
+_rigmedia_containers() {
+    local names
+    names=$(_ssh "podman ps -a --format '{{.Names}}'") || return 1
+    names=${names//$'\r'/}
+    printf '%s\n' "${names//$'\n'/ }"
+}
+
 _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
     if [ "$KEEP" -eq 1 ]; then
         virsh destroy "$VM" >/dev/null 2>&1 || {
@@ -51,8 +64,16 @@ phase_rigmedia() {
         _rigmedia_fail_cleanup "$target_disk"
         return
     }
-    qemu-img create -f raw "$target_disk" 30G >/dev/null
-    empty_before=$(sha256sum "$target_disk" | cut -d' ' -f1)
+    qemu-img create -f raw "$target_disk" 30G >/dev/null || {
+        bad "could not create the blank internal target disk"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    }
+    empty_before=$(_rigmedia_hash "$target_disk") || {
+        bad "could not hash the blank internal target disk"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    }
     : >"$SERIAL"
     kvm_preflight || {
         _rigmedia_fail_cleanup "$target_disk"
@@ -151,7 +172,11 @@ phase_rigmedia() {
         bad "the running miner is not the baked prebuilt"
     fi
     local names
-    names=$(_ssh "podman ps -a --format '{{.Names}}'" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+    names=$(_rigmedia_containers) || {
+        bad "could not list containers after stick-run rig handoff"
+        _rigmedia_fail_cleanup "$target_disk"
+        return
+    }
     if [ -z "${names// /}" ]; then
         ok "no compose containers remain after stick-run rig handoff"
     else
@@ -174,7 +199,11 @@ phase_rigmedia() {
     _rigmedia_quiesce || {
         return
     }
-    empty_after=$(sha256sum "$target_disk" | cut -d' ' -f1)
+    empty_after=$(_rigmedia_hash "$target_disk") || {
+        bad "could not hash the internal target disk after the rig run"
+        _rigmedia_remove_target "$target_disk"
+        return
+    }
     [ "$empty_after" = "$empty_before" ] &&
         ok "the empty target disk is still empty — a stick-run rig never touched it" ||
         bad "the target disk changed even though the rig never installed to it"
