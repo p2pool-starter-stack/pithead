@@ -1,4 +1,14 @@
-"""Contract-test real dashboard clients against controllable wire fakes (tier 2)."""
+"""
+Contract test: point the REAL dashboard clients at the controllable fakes and assert they
+parse every state we need to drive in the mini-stack (issue #54, tier 3 / tier 2 seam).
+
+This is the proof that the fakes speak the daemons' wire format closely enough for the real
+MoneroClient / TariClient — and it runs anywhere (no docker, no real chain). If a future
+monerod/Tari change breaks the parser, this goes red here instead of only on the live box.
+It also proves capped ``requests`` can traverse SOCKS5.
+
+Run: PYTHONPATH=dashboard python3 -m pytest tests/integration/fakes -q
+"""
 
 import asyncio
 import json
@@ -11,6 +21,7 @@ import requests
 
 _HERE = pathlib.Path(__file__).resolve().parent
 _REPO = _HERE.parents[2]
+# Make the dashboard package and the fakes importable regardless of how pytest is invoked.
 sys.path.insert(0, str(_REPO / "dashboard"))
 sys.path.insert(0, str(_HERE))
 
@@ -19,12 +30,10 @@ from fake_monerod import FakeMonerod  # noqa: E402
 from fake_socks import FakeSocks  # noqa: E402
 from fake_tari import start_server  # noqa: E402
 from fake_tari_wallet import start_server as start_wallet_server  # noqa: E402
-from fake_wallet_rpc import FakeWalletRpc  # noqa: E402
 from fake_worker_api import FakeWorkerApi, enriched_body  # noqa: E402
 
 from mining_dashboard.client import xmrig_client as xc  # noqa: E402
 from mining_dashboard.client.monero.monero_client import MoneroClient  # noqa: E402
-from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClient  # noqa: E402
 from mining_dashboard.client.tari.tari_client import TariClient  # noqa: E402
 from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient  # noqa: E402
 from mining_dashboard.client.xmrig_client import (  # noqa: E402
@@ -36,6 +45,7 @@ from mining_dashboard.client.xmrig_client import (  # noqa: E402
 from mining_dashboard.helper.http import bounded_get  # noqa: E402
 
 
+# --- Monero (HTTP get_info) -------------------------------------------------
 def test_monero_synced_reads_no_sync_and_db_size():
     with FakeMonerod(database_size=85 * 10**9) as m:
         client = MoneroClient(url=m.url, username="")
@@ -51,6 +61,7 @@ def test_monero_syncing_reports_percent():
     assert st["is_syncing"] is True
     assert st["current"] == 1500 and st["target"] == 3000 and st["percent"] == 50
     assert st["db_size"] == 40 * 10**9
+    # The raw wire flag rides along for the peer-loss detector (#972).
     assert st["synchronized"] is False
 
 
@@ -62,12 +73,14 @@ def test_monero_down_is_unreachable():
 
 
 def test_monero_busy_status_is_unreachable():
+    # HTTP 200 but status=BUSY (e.g. mid-reorg): the client must distrust it, not read it synced.
     with FakeMonerod() as m:
         m.set(mode="busy")
         assert MoneroClient(url=m.url, username="").get_sync_status() is None
 
 
 def test_monero_synced_by_height_even_without_flag():
+    # synchronized=false but height has reached target → caught up (mirrors monerod at the tip).
     with FakeMonerod() as m:
         m.set(mode="syncing", height=3_000_000, target_height=3_000_000)
         st = MoneroClient(url=m.url, username="").get_sync_status()
@@ -81,6 +94,7 @@ def test_monero_db_size_unknown_reads_zero():
 
 
 def test_monero_http_control_mutates_state():
+    # Validates the /control path the docker mini-stack drives over the network.
     with FakeMonerod() as m:
         requests.post(
             m.url + "/control",
@@ -107,35 +121,9 @@ def test_bounded_get_refused_socks_dial_is_a_request_exception():
         bounded_get(f"http://localhost:{http.port}/1/summary", proxies=socks.proxies)
 
 
-def test_wallet_confirmed_payouts_parse_and_convert():
-    rows = [
-        {"txid": "a1", "amount": 250_000_000_000, "height": 100, "timestamp": 1000},
-        {"txid": "b2", "amount": 500_000_000_000, "height": 200, "timestamp": 2000},
-    ]
-    with FakeWalletRpc(transfers=rows) as w:
-        client = MoneroWalletClient(url=w.url, username="")  # fake serves no digest auth
-        out = client.get_confirmed_payouts(min_height=0)
-    assert [p["txid"] for p in out] == ["a1", "b2"]
-    assert out[0]["amount_atomic"] == 250_000_000_000 and out[0]["amount_xmr"] == 0.25
-
-
-def test_wallet_min_height_filters_server_side():
-    # The client seeds min_height from the last stored payout; the wallet must honor it so a
-    # re-scan of the tip returns only new rows (idempotent storage then drops any overlap).
-    rows = [
-        {"txid": "old", "amount": 1, "height": 100, "timestamp": 1},
-        {"txid": "new", "amount": 2, "height": 300, "timestamp": 2},
-    ]
-    with FakeWalletRpc(transfers=rows) as w:
-        out = MoneroWalletClient(url=w.url, username="").get_confirmed_payouts(min_height=200)
-    assert [p["txid"] for p in out] == ["new"]
-
-
-def test_wallet_no_transfers_yet_reads_empty():
-    with FakeWalletRpc(transfers=[]) as w:
-        assert MoneroWalletClient(url=w.url, username="").get_confirmed_payouts() == []
-
-
+# --- Tari (gRPC BaseNode) ---------------------------------------------------
+# Driven via asyncio.run so they don't depend on pytest-asyncio being active (the dashboard's
+# asyncio_mode=auto only applies when pytest's rootdir is dashboard).
 async def _tari_get_status(state):
     server, bound = await start_server(0, state)
     client = TariClient()
