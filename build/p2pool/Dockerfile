@@ -8,7 +8,8 @@ ARG P2POOL_HASH=893691726b0218fe1883a7a326e2c69db4eb228fc72ba00c8adfa6be85b8a415
 # (node RPC/ZMQ) and the Tari base node (merge-mine gRPC) so those intra-stack legs stay DIRECT while
 # --socks5 routes only the sidechain/merge-mine P2P over Tor (p2pool proxies everything but loopback
 # when --socks5 is set, so a private Docker IP would otherwise be dialled through Tor and rejected).
-RUN apt-get update && apt-get install -y \
+# Retry mirror-sync failures with 5s then 10s backoff (#1802).
+RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     wget ca-certificates libgomp1 socat \
     && rm -rf /var/lib/apt/lists/*
 
