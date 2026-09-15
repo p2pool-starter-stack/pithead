@@ -80,7 +80,7 @@ is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 pin_first_party_images() { # <compose-file> <registry> <stack-version>
     local compose="$1" registry="$2" version="$3" svc digest
     for svc in tor monero p2pool xmrig-proxy dashboard; do
-        digest="$(docker manifest inspect --verbose "${registry}/pithead-${svc}:${version}" 2>/dev/null | jq -r '.Descriptor.digest // empty')"
+        digest="$(docker manifest inspect --verbose "${registry}/pithead-${svc}:${version}" 2>/dev/null | jq -r 'if type == "array" then .[0].Descriptor.digest else .Descriptor.digest end // empty')"
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
             return 1

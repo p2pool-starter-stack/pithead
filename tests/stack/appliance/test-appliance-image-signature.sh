@@ -18,6 +18,14 @@ printf '%s\n' \
     pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
 )
 assert_eq "all five provision pulls are immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
+(
+    export PITHEAD_BUILD_IMAGE_TEST=1
+    set --
+    source "$ROOT/os/build-image.sh"
+    docker() { printf '[{"Descriptor":{"digest":"sha256:%064d"}}]\n' 2; }
+    pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
+)
+assert_eq "array-shaped manifest output keeps all five immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
 
 source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
 printf 'image: example.invalid/pithead-tor:v9@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
