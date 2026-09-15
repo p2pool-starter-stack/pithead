@@ -6,7 +6,10 @@ _rigmedia_remove_target() { # <path> — retain evidence under --keep
 
 _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
     if [ "$KEEP" -eq 1 ]; then
-        virsh destroy "$VM" >/dev/null 2>&1
+        virsh destroy "$VM" >/dev/null 2>&1 || {
+            bad "could not quiesce the rigmedia VM for --keep"
+            return 1
+        }
     else
         vm_destroy_or_refuse
     fi
@@ -164,6 +167,7 @@ phase_rigmedia() {
         bad "the stick-run rig did not return mining after the reboot"
 
     _rigmedia_quiesce || {
+        _rigmedia_remove_target "$target_disk"
         return
     }
     empty_after=$(sha256sum "$target_disk" | cut -d' ' -f1)
