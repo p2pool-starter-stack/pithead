@@ -14,6 +14,7 @@
 #    4. Tari down (required)      → dashboard REJECTS workers (stops itest-xmrig-proxy) (#31)
 #    5. Tari back                 → dashboard READMITS workers
 #    6. monerod down              → dashboard REJECTS workers (#31/#564)
+#    +. alert sinks (#2263)       → Telegram, webhook, and ntfy receive the real down edge
 #    7. monerod back              → dashboard READMITS workers (#564)
 #    8. monerod busy/mid-reorg    → dashboard REJECTS, then READMITS on recovery
 #    9. monerod + Tari both down  → REJECTS; recovering only one does NOT readmit; both does
@@ -103,6 +104,32 @@ wait_hc() { # wait_hc <label> <ere-pattern> [timeout]
         }
         [ "$(date +%s)" -ge "$end" ] && {
             c_bad "$label" "no line matching /$pat/ in the ping log (got: $(hc_pings | tr '\n' ' '))"
+            return 1
+        }
+        sleep 1
+    done
+}
+
+sink_requests() { compose exec -T fake-sink cat /tmp/requests.log 2>/dev/null; }
+wait_sink_alerts() {
+    local timeout=40 end
+    end=$(($(date +%s) + timeout))
+    while :; do
+        if sink_requests | python3 -c '
+import json, sys
+rows = [json.loads(line) for line in sys.stdin if line.strip()]
+paths = {"/botitest-token/sendMessage", "/webhook", "/ntfy"}
+alerts = [row for row in rows if row["method"] == "POST" and "Monero node is DOWN" in row["body"]]
+assert paths == {row["path"] for row in alerts}
+assert len(alerts) == len(paths)
+ntfy = next(row for row in alerts if row["path"] == "/ntfy")
+assert ntfy.get("headers", {}).get("Authorization") == "Bearer itest-token"
+'; then
+            c_ok "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert"
+            return 0
+        fi
+        [ "$(date +%s)" -ge "$end" ] && {
+            c_bad "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert" "$(sink_requests | tr '\n' ' ')"
             return 1
         }
         sleep 1
@@ -216,6 +243,7 @@ if [ "$(cstate itest-p2pool)" = "running" ]; then
 else
     c_bad "Tari outage (required) leaves itest-p2pool running" "itest-p2pool is '$(cstate itest-p2pool)'"
 fi
+wait_sink_alerts
 
 # 5. Tari recovers — restores steady state for the scenarios below. Nothing to readmit: Tari
 #    never rejected workers in the first place.
@@ -278,7 +306,7 @@ assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy runni
 #     cycle rather than a live toggle.
 log "scenario 11: Tari-optional — sync gate releases on monerod alone; Tari outage does not reject workers"
 compose down -v --remove-orphans >/dev/null 2>&1 || true
-TARI_REQUIRED=false compose up -d >/dev/null 2>&1
+TARI_REQUIRED=false TELEGRAM_ENABLED=false NOTIFY_WEBHOOK_URLS='' NTFY_URL='' compose up -d >/dev/null 2>&1
 api_up=0
 for _ in $(seq 1 30); do
     if compose exec -T dashboard python3 -c \
@@ -294,6 +322,13 @@ set_monerod synced
 assert_state "Tari-optional: released itest-xmrig-proxy running" itest-xmrig-proxy running 90
 set_tari down
 assert_stays "Tari-optional: itest-xmrig-proxy keeps mining through a Tari outage" itest-xmrig-proxy running 8
+set_monerod down
+assert_state "Tari-optional: monerod outage still rejects workers" itest-xmrig-proxy exited 90
+if [ -z "$(sink_requests)" ]; then
+    c_ok "disabled alert sinks make no requests"
+else
+    c_bad "disabled alert sinks make no requests" "$(sink_requests | tr '\n' ' ')"
+fi
 
 echo ""
 log "mini-stack: $PASS passed, $FAIL failed"

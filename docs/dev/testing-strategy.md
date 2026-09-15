@@ -98,6 +98,13 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Stop/start fails → retry next cycle (idempotent) | docker error | 1 ✅ |
 | `dashboard.fail_closed` (#490): default off never holds on an unrecoverable failure (alert-only); `true` holds (reusing #35's stop/start), releases once it clears (not a one-way latch), no-op before the sync gate releases | `is_db_unrecoverable() ∨ containers.is_confirmed_bad("dashboard")` | 1 ✅ · 3 ▶ |
 
+### C1. Outbound third-party integrations
+
+| Situation | Trigger | Tier |
+|---|---|---|
+| Healthchecks.io liveness ping reaches the configured receiver | dashboard loop | 3 ▶ (`fake_hc`) |
+| Telegram, webhook, and ntfy receive a configured node-down alert; disabled sinks make no request | monerod down / disabled configuration | 3 ▶ (`fake_sink`) |
+
 ### D. Container health verdicts (`pithead status`)
 
 | Situation | Trigger | Tier |
