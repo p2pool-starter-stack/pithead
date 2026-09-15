@@ -50,6 +50,14 @@ source "$ROOT/lib/run-rig-control.sh" || exit $?
 source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
+checked=""
+pithead() { printf '%s\n' 'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed'; }
+env_on_box() { [ "$1" = TOR_EGRESS_FIREWALL ] && echo true; }
+assert_rc() { [ "$2" = "$3" ]; }
+assert_contains() { checked+="$3"; [[ "$2" == *"$3"* ]]; }
+assert_doctor_ok
+[[ "$checked" == *'egress firewall is installed'* ]] || exit 1
+
 detail="$({
     source "$ROOT/lib.sh"
     env_on_box() { case "$1" in MONERO_CLEARNET_SYNC | TARI_CLEARNET_SYNC) echo false ;; NETWORK_PREFIX) echo 172.28.0 ;; esac }
