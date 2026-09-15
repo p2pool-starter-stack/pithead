@@ -91,7 +91,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
-  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)). Before the successful attempt, an
+  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
+  The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
+  path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
+  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
+  until their chains sync.
+  Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
   separate injected post-validation setup fault must open a recoverable failed page and retry
   with those values. The successful wizard submission names the appliance `fixture-box`; the
