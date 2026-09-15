@@ -111,11 +111,16 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         response_code=${out##*$'\n'}
         if [[ $response_code =~ ^[0-9]{3}$ ]]; then
             out=${out%$'\n'*}
-            # curl writes 000 when no HTTP response reached it. That is transport loss, not a
-            # server refusal, so the request id in the caller's body remains pollable.
-            [ "$response_code" = 000 ] || [[ $response_code =~ ^2 ]] || return 1
+            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
+            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
+            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
         fi
-        rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        if [[ $response_code =~ ^5 ]]; then
+            # A failing proxy can name another request; the fresh preview id in the caller wins.
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        else
+            rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        fi
         # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
         # or malformed successful response. Only an explicit JSON error is a real refusal; the
         # caller's id still names a request the host may complete, so poll it.

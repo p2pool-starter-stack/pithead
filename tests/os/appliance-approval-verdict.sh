@@ -136,6 +136,49 @@ _control_request_lost_response_self_test() (
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
     rm -f "$polls"
+    # A plain 5xx from the restarting proxy can follow an accepted request, so poll its fresh id.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *) cat >/dev/null; printf 'temporarily unavailable\n503' ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # The proxy may return a JSON error document too; its 5xx status still leaves the outcome open.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *) cat >/dev/null; printf '{"error":"temporarily unavailable"}\n503' ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A proxy's id is not the committed preview's id; a 5xx must still poll the caller's request.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *'/api/control/result?id='*) printf '{"status":"rejected"}' ;;
+        *) cat >/dev/null; printf '{"id":"other-request","error":"temporarily unavailable"}\n503' ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
     # An id-less HTTP refusal is not a dropped 2xx reply: never poll a possibly stale request id.
     dashboard_curl() {
         case "$*" in
