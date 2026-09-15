@@ -94,8 +94,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
   The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
   path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
-  existing route actuator from P2Pool to XvB and back. This bounded injection proves appliance
-  wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
+  existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
+  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
   until their chains sync.
   Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
