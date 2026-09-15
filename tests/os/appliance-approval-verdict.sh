@@ -22,11 +22,17 @@
 # legs are the ones that can still disagree — what the commit returned, and whether the audit row
 # is the one for THIS request. The audit leg is spelled out here rather than delegated, because
 # the verdict it used to call (approval_audit_verdict) went with the Telegram leg.
-approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
-    local result="$1" audit="$2" rid="$3" apply audit_v
+approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
+    local result="$1" audit="$2" rid="$3" landed="${4:-}" apply audit_v
     apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
         apply="unparseable: ${result:0:120}"
-    [ -n "$result" ] || apply="no result — the commit never returned"
+    if [ -z "$result" ]; then
+        if [ "$landed" = landed ]; then
+            apply="requested hostname change landed, but no result file was written — runner completion is unknown"
+        else
+            apply="no result — the commit never returned"
+        fi
+    fi
     # stderr suppressed: on a malformed audit jq writes a parse error, and the row's own `if`
     # already ran this check once — a second copy would land mid-payload, where it reads like a
     # harness crash rather than part of the evidence.
@@ -193,6 +199,9 @@ _approval_bind_payload_self_test() {
     # `unbound` CONTAINS `bound`, so the absence check has to carry the field prefix or it matches
     # the very failure it is meant to exclude.
     case "$out" in *'audit=bound'*) f=$((f + 1)) ;; esac
+    # A lost result file is not a failed commit when the caller has already observed its identity.
+    out=$(approval_bind_payload '' "$audit" "$rid" landed)
+    case "$out" in *'requested hostname change landed, but no result file was written — runner completion is unknown'*'audit=bound'*) ;; *) f=$((f + 1)) ;; esac
     out=$(approval_bind_payload '{"status":' "$audit" "$rid")
     case "$out" in *'apply=unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
     # A malformed audit must produce a payload and NOTHING on stderr.

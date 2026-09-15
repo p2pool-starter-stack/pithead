@@ -144,9 +144,13 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
 # guest. An empty result is its own sentence: `dashboard_control_request` returns nothing both
 # when the POST was refused and when the request never left pending before its deadline, and a
 # row that printed the same thing for that as for a rejected apply would hide the difference.
-control_result_payload() { # <result-json>
+control_result_payload() { # <result-json> [landed]
     [ -n "$1" ] || {
-        printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        if [ "${2:-}" = landed ]; then
+            printf 'requested change landed, but no result file was written — runner completion is unknown'
+        else
+            printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        fi
         return 0
     }
     printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
@@ -154,7 +158,7 @@ control_result_payload() { # <result-json>
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
+    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names live_state
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "post-provision control: live config could not be read"
         return
@@ -175,7 +179,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
         ok "post-provision benign setting applies through the dashboard control runner"
     else
-        bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision benign control request did not complete ($(control_result_payload "$result" "$live_state"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
@@ -216,7 +222,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
         ok "post-provision disruptive setting applies with typed approval"
     else
-        bad "post-provision approved setting did not land ($(control_result_payload "$result"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision approved control request did not complete ($(control_result_payload "$result" "$live_state"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
         return
     fi
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
@@ -278,6 +286,7 @@ _recovery_self_test() {
     *) return 1 ;;
     esac
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '' landed)" in *'change landed'*'completion is unknown'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"

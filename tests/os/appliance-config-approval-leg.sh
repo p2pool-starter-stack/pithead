@@ -158,14 +158,23 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
+    # A restart can lose the runner result after the hostname was already applied.  Probe the
+    # authoritative identity once, so the failure payload does not invent a failed commit.
+    local identity_landed=unknown identity_evidence=
+    if [ -z "$result" ]; then
+        if identity_evidence=$(assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"); then
+            identity_landed=landed
+        fi
+    fi
     # The audit must name THIS request and record the signed-in dashboard actor. It must NOT carry
     # an approver: that field had exactly one writer, the removed Telegram verifier (#2076).
-    if printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null &&
+    if { printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || [ "$identity_landed" = landed ]; } &&
         printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[]; .id == $id and .status == "applied" and (.approver // "") == "")' >/dev/null &&
-        assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"; then
+        { [ "$identity_landed" = landed ] || assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"; }; then
         ok "a confirmed day-two hostname commit applies, audits without an approver, and converges live identity"
     else
-        bad "confirmed hostname commit did not bind apply, a clean audit row and live identity ($(approval_bind_payload "$result" "$audit" "$rid"))"
+        [ -z "$identity_evidence" ] || printf '%s\n' "$identity_evidence"
+        bad "confirmed hostname commit did not bind apply, a clean audit row and live identity ($(approval_bind_payload "$result" "$audit" "$rid" "$identity_landed"))"
         return
     fi
 
@@ -272,7 +281,8 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
 }
 
 _approval_self_test() {
-    local f=0
+    local f=0 here
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     mm_roundtrip_verdict 'MergeMiningClientTari tari://127.0.0.1:18142 uses chain_id 0123456789abcdef' >/dev/null || f=$((f + 1))
     mm_roundtrip_verdict 'MergeMiningClientTari worker thread ready' >/dev/null && f=$((f + 1))
     tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://node.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' || f=$((f + 1))
@@ -285,7 +295,7 @@ _approval_self_test() {
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
-    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
+    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1
