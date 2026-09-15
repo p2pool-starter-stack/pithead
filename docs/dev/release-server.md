@@ -38,49 +38,23 @@ So the split is clean:
 The hosted runners catch most regressions before merge. The dedicated server proves what only
 real chains can, and it is the blocking pre-release gate.
 
-## Validating PRs on the dedicated server (possible, but security-loaded)
+## Validating protected updates
 
-You can register the server as a GitHub Actions self-hosted runner so Actions dispatches the
-tier-4 job to it (self-hosted minutes don't count against anything, also free). But there is a
-sharp edge, and it's the single most important thing on this page:
+The dedicated server is not a GitHub Actions self-hosted runner. Tier 4 runs through bench-ci,
+which owns the reservation, runs the full suite against an exact SHA, and publishes
+`bench-ci/tier4` through its dedicated GitHub App. The release lane requires that status from the
+App's numeric id. Once bench-ci provides the App id, a repository administrator must add the same
+context and App `integration_id` to the `main` ruleset.
 
 > NOTE: GitHub explicitly recommends against self-hosted runners on public repositories. Any
 > user can open a pull request, and a malicious PR can run arbitrary code on the runner. The
 > server holds real wallet payout addresses, Tor onion private keys, and RPC credentials, so a
 > compromised runner is a key-theft / persistent-backdoor event, not a flaky build.
 
-The safe rule: the keyed server only ever runs code you trust. Concretely:
-
-- Do not trigger tier-4 on `pull_request` (and never on a fork PR). "Require approval" only
-  gates starting the run; once it starts, the PR's code still executes on the box.
-- Configure a protected `release-server` environment with required maintainers. The workflow
-  must also restrict deployment branches to the protected default branch: that platform check runs
-  before a branch-supplied job can reach the runner. The workflow additionally fails non-default
-  dispatches and checks out the dispatch's immutable SHA, but that in-workflow check is only
-  defense in depth and is not a trust boundary. Without the environment deployment-branch rule,
-  the workflow is unsafe and must not be dispatched. Stage candidate release artifacts
-  separately. Run a pre-merge exact-head gate from the operator shell under the hardware claim/lock
-  protocol, never by executing a PR's workflow on this keyed runner.
-- Set the repository variable `RELEASE_GATE_ACTORS` to a comma-separated maintainer allowlist;
-  both the original dispatch actor and any rerun actor must be listed.
-  Provision `/etc/pithead-release/cosign.pub` as a root-owned, non-symlink copy of the reviewed
-  repository key; the workflow refuses any other trust-root path or content.
-- Register the runner as ephemeral / just-in-time (one job, then auto-removed) in its own runner
-  group, isolated from any private repos.
-- Keep the runner least-privilege: a dedicated unprivileged user, the box runs nothing else
-  sensitive, and ideally the runner reaches the stack only through `pithead`/`docker`, not the
-  raw key files.
-
-This is how the workflow ships.
-[`.github/workflows/release-gate.yml`](../../.github/workflows/release-gate.yml) runs only on
-`workflow_dispatch`, behind the protected `release-server` environment on a
-`[self-hosted, pithead-release]` runner. It fails a non-default ref and checks out the immutable
-default-branch dispatch SHA, verifies the actor allowlist and fixed root-owned release key, and
-never accepts a candidate branch or later-moving branch tip. It never runs automatically on a PR
-or push; a trigger that arrives before its runner is
-how `main` ends up wearing a gate that never ran (#1048). Since releases fast-forward `main`
-at publish time, a `push` trigger would also fire *after* the release it was meant to gate —
-any future automation belongs on the ref being cut, not on `main`.
+The checked-in
+[`release-gate.yml`](../../.github/workflows/release-gate.yml) keeps `workflow_dispatch` as an
+operator tool, but no runner is registered for it. It is not the protected-update gate and never
+runs on pull requests or pushes.
 
 ## Provisioning the server
 
@@ -444,8 +418,8 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   stratum port scoped to the LAN ([workers › firewall](../workers.md#firewall)); the dashboard
   stays on localhost behind Caddy and the monerod RPC on localhost (both asserted by
   `--readiness`). Nothing else should be reachable from the internet.
-- Untrusted code. The runner only runs trusted code (see above). Prefer ephemeral/JIT runners;
-  don't share the runner with private repos.
+- Untrusted code. Keep GitHub Actions off this box. Bench-ci runs only the exact SHA selected for
+  the release gate and owns the reservation and cleanup.
 - Least privilege. A dedicated unprivileged user; the stack already runs least-privilege
   containers (`no-new-privileges`, `cap_drop`, read-only roots, scoped Docker socket proxies,
   regression-guarded in `tests/stack/standalone/test_compose.sh`).
@@ -491,7 +465,7 @@ compose hardening, config rendering, dashboard tests.
 | Gap (not tested live) | Worth filling before release? |
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
-| Protected pre-release gate: the self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
+| Protected pre-release gate | Pending bench-ci commit-status publication and the administrator-set `main` rule; `release.sh` requires `bench-ci/tier4` from the configured GitHub App id. |
 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), which is blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. |
 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
@@ -501,5 +475,5 @@ compose hardening, config rendering, dashboard tests.
 | Real Tari merge-mined block acceptance | Low. Probabilistic; rely on template/connectivity checks. |
 | Fault injection over SSH: no recorded live evidence | Low-Medium. The faults already use the shared SSH/local target wrapper; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) tracks the focused remote quoting, cleanup, and restoration proof. |
 
-Recommended before release: record the new combined upgrade/XvB run and wire the protected
-self-hosted gate when a runner exists. The remaining rows are explicit residual gaps.
+Recommended before release: record the new combined upgrade/XvB run. The remaining rows are
+explicit residual gaps.

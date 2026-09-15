@@ -138,7 +138,7 @@ with the stated IPv4-TCP/bridge-network limit, not a residual gap.
 | # | Gap (not tested live) | Worth filling before release? |
 |---|---|---|
 | 1 | Full (unpruned) Monero mode live — a pruned bench can't cover it | Low. Stack code paths don't differ by prune mode (it's monerod-internal); fakes/config cover it. A multi-day full sync isn't justified. |
-| 2 | Protected pre-release gate — a self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
+| 2 | Protected release gate | Pending bench-ci commit-status publication and the administrator-set `main` rule; `release.sh` requires `bench-ci/tier4` from the configured App id. |
 | 3 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. |
 | 4 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
 | 5 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
@@ -148,8 +148,7 @@ with the stated IPv4-TCP/bridge-network limit, not a residual gap.
 | 9 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
 | 10 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) owns a focused remote quoting/cleanup/restoration proof. |
 
-**Recommended before release:** record the combined upgrade/XvB run, then automate the protected
-gate when a self-hosted runner exists. The rest are nice-to-have.
+**Recommended before release:** record the combined upgrade/XvB run. The rest are nice-to-have.
 
 ## Notes for AI agents
 

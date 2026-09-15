@@ -97,6 +97,7 @@ resume_out="$(
         set --
         source "$REL" 2>/dev/null
         preflight() { :; }
+        require_bench_tier4() { :; }
         ghcr_login() { :; }
         promote() { :; }
         sign_images() { :; }
@@ -148,6 +149,52 @@ tc_rc=$?
 assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
+echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
+bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug]
+    local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"
+    local BENCH_EXPECTED_APP_ID="${3-4242}" BENCH_APP_SLUG="${4-bench-ci}"
+    (
+        cd "$ROOT" || exit
+        set --
+        export BENCH_CI_APP_ID="$BENCH_EXPECTED_APP_ID" BENCH_CI_APP_SLUG="$BENCH_APP_SLUG"
+        # shellcheck disable=SC1090  # dynamic source
+        source "$REL" 2>/dev/null
+        set +eu
+        # shellcheck disable=SC2034  # consumed by the sourced gate
+        GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        gh() {
+            case "$2" in
+            apps/bench-ci) printf '{"id":%s}\n' "$BENCH_RESOLVED_APP_ID" ;;
+            repos/p2pool-starter-stack/pithead/commits/0123456789abcdef0123456789abcdef01234567/statuses\?per_page=100)
+                printf '%s\n' "$BENCH_STATUSES"
+                ;;
+            *) return 64 ;;
+            esac
+        }
+        require_bench_tier4
+    )
+}
+bench_ok="$(bench_tier4_gate '[{"context":"other","state":"success","creator":{"login":"bench-ci[bot]"}},{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 2>&1)"
+assert_rc "a successful bench status permits the release" "$?" "0"
+assert_contains "the passing status names the exact release commit" "$bench_ok" "0123456789abcdef0123456789abcdef01234567"
+bench_missing="$(bench_tier4_gate '[]' 2>&1)"
+assert_rc "a missing bench status refuses the release" "$?" "1"
+assert_contains "the missing status refusal names the required context" "$bench_missing" "bench-ci/tier4"
+bench_failed="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"failure","creator":{"login":"bench-ci[bot]"}}]' 2>&1)"
+assert_rc "a failed bench status refuses the release" "$?" "1"
+assert_contains "the failed status is reported as failure" "$bench_failed" "got: failure"
+bench_forged="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"other-app[bot]"}}]' 2>&1)"
+assert_rc "the same context from another actor refuses the release" "$?" "1"
+assert_contains "the forged status cannot impersonate the required App" "$bench_forged" "from GitHub App 4242"
+bench_wrong_app="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 9999 2>&1)"
+assert_rc "an App slug resolving to the wrong id refuses the release" "$?" "1"
+assert_contains "the App-id mismatch names both ids" "$bench_wrong_app" "id 9999, expected 4242"
+bench_no_app_id="$(bench_tier4_gate '[]' 4242 '' 2>&1)"
+assert_rc "an unpinned App id refuses the release" "$?" "1"
+assert_contains "the missing App-id refusal names its setting" "$bench_no_app_id" "BENCH_CI_APP_ID"
+bench_bad_slug="$(bench_tier4_gate '[]' 4242 4242 'Bench CI!' 2>&1)"
+assert_rc "an invalid App slug refuses the release" "$?" "1"
+assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "BENCH_CI_APP_SLUG"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
 # repoints `current`, which is what makes rollback possible. So asserting on the directory the run

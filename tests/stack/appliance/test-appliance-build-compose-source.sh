@@ -307,6 +307,7 @@ resume_calls="$SANDBOX/resume-calls"
     # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     preflight() { :; }
+    require_bench_tier4() { printf 'bench\n' >>"$resume_calls"; }
     ghcr_login() { :; }
     manifest_digest() { printf 'sha256:%064d\n' 7; }
     smoke_test() { printf 'smoke\n' >>"$resume_calls"; }
@@ -317,7 +318,7 @@ resume_calls="$SANDBOX/resume-calls"
     main
 ) >/dev/null 2>&1
 assert_rc "--resume-promote succeeds with a captured digest" "$?" 0
-assert_eq "--resume-promote smokes newly captured bytes before promotion" "$(tr '\n' ' ' <"$resume_calls")" "smoke promote "
+assert_eq "--resume-promote requires the bench gate before publishing" "$(tr '\n' ' ' <"$resume_calls")" "bench smoke promote "
 
 # shellcheck disable=SC1090
 (
