@@ -92,6 +92,7 @@ assert_absent "remote hostname is masked from console output" "$out" "node.examp
 assert_contains "remote port remains useful evidence" "$out" "28081"
 assert_contains "masked console output retains a useful marker" "$out" "<redacted-endpoint>"
 
+# shellcheck disable=SC2034 # read by redact_remote_output in the sourced helper
 REMOTE_NODE_HOSTS=()
 out=$(printf 'ordinary output\n' | redact_remote_output)
 assert_contains "empty remote-host array is safe" "$out" "ordinary output"
