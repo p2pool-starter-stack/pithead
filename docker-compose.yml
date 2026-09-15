@@ -654,8 +654,9 @@ services:
       - TZ=${DASHBOARD_TZ:-Etc/UTC}
       - MONERO_NODE_HOST=${MONERO_NODE_HOST:-172.28.0.26}
       # monerod get_info RPC creds (Issue #29): the dashboard reads sync height/target over
-      # 127.0.0.1:18081 (reachable via network_mode: host) using digest auth, instead of
-      # scraping docker logs. Only used for a local node; harmless for remote-node setups.
+      # the local or remote endpoint rendered from config.json, using digest auth instead of
+      # scraping docker logs.
+      - MONERO_RPC_URL=${MONERO_RPC_URL:-http://127.0.0.1:18081}
       - MONERO_NODE_USERNAME=${MONERO_NODE_USERNAME}
       - MONERO_NODE_PASSWORD=${MONERO_NODE_PASSWORD}
       # Whether the local node prunes — shown as Pruned/Full in the Monero panel (Issue #32).

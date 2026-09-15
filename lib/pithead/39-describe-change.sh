@@ -379,8 +379,8 @@ describe_change() {
     PAYOUT_SCAN_HEIGHT)
         msg="Payout wallet restore height: $old → $new — only affects a first-time wallet creation."
         ;;
-    WALLET_RPC_USERNAME | MONERO_WALLET_RPC_URL)
-        # Fixed internal values that co-change with the view key toggle; keep the preview to one line.
+    MONERO_RPC_URL | WALLET_RPC_USERNAME | MONERO_WALLET_RPC_URL)
+        # Derived/fixed values whose source keys already carry the preview; keep it to one line.
         msg=""
         ;;
     TARI_VIEW_KEY)

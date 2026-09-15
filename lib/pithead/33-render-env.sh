@@ -6,17 +6,19 @@ render_env() {
     log "Rendering environment configuration ($target)..."
 
     # Mode → host / ports / compose profile
-    local mono_host rpc_port zmq_port profiles
+    local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
         mono_host="${NETWORK_PREFIX}.26"
         rpc_port="18081"
         zmq_port="18083"
+        mono_rpc_url="http://127.0.0.1:18081"
         profiles="local_node"
     else
         # Reuse the parse-time validated globals — the validated value IS the rendered value.
         mono_host="$MONERO_REMOTE_HOST"
         rpc_port="$MONERO_REMOTE_RPC_PORT"
         zmq_port="$MONERO_REMOTE_ZMQ_PORT"
+        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
         profiles="" # Empty profile disables local monerod
     fi
 
@@ -455,6 +457,7 @@ MONERO_OUT_PEERS=$(dotenv_render_value "$out_peers")
 MONERO_RPC_BIND=$(dotenv_render_value "$rpc_bind")
 MONERO_ZMQ_BIND=$(dotenv_render_value "$zmq_bind")
 MONERO_NODE_HOST=$(dotenv_render_value "$mono_host")
+MONERO_RPC_URL=$(dotenv_render_value "$mono_rpc_url")
 MONERO_RPC_PORT=$(dotenv_render_value "$rpc_port")
 MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")

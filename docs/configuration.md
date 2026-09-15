@@ -506,6 +506,8 @@ To connect to an external Monero node instead of running one locally, set `moner
   only clearnet path off this box is Tor.
 - If the remote node requires RPC authentication, set `monero.node_username` / `node_password`
   to match it; otherwise leave them out.
+- `apply` writes the selected local or remote endpoint to `.env` as `MONERO_RPC_URL`; scripts that
+  need the active node's RPC should read that value instead of reconstructing it from `config.json`.
 - Before a dashboard endpoint change is committed, the trusted host repeats the Monero checks:
   the name must resolve only to addresses allowed by `network.tor_egress_firewall`, `get_info`
   must be a bounded, usable reply with that Digest login, and ZMQ must complete a ZMTP publisher
