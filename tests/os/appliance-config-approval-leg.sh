@@ -21,7 +21,8 @@ APPROVAL_RESTORE_SNAPSHOT=""
 # passed, which is what made the failures read as the runner losing results.
 dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
     printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
-        -H 'X-Pithead-Control: 1' --data-binary @- "https://$ip/api/control/$1" 2>/dev/null
+        -H 'X-Pithead-Control: 1' --data-binary @- -w '\n%{http_code}' \
+        "https://$ip/api/control/$1" 2>/dev/null
 }
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
 

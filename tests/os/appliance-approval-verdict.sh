@@ -103,13 +103,113 @@ _control_request_lost_response_self_test() (
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
     rm -f "$polls"
+    # A queued request is likewise not final: the API supplies its id with `accepted`, and the
+    # next result poll is the only response that tells whether the apply completed.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"rid-7","status":"accepted"}'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A reset connection can look successful to curl while carrying no response body. The caller's
+    # id remains authoritative unless the server explicitly returned an error document.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '\n000'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A plain 5xx from the restarting proxy can follow an accepted request, so poll its fresh id.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf 'temporarily unavailable\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # The proxy may return a JSON error document too; its 5xx status still leaves the outcome open.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '{"error":"temporarily unavailable"}\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A proxy's id is not the committed preview's id; a 5xx must still poll the caller's request.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *'/api/control/result?id='*) printf '{"status":"rejected"}' ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"other-request","error":"temporarily unavailable"}\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # An id-less HTTP refusal is not a dropped 2xx reply: never poll a possibly stale request id.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*) printf 'x' >>"$polls" ;;
+        *)
+            cat >/dev/null
+            printf 'forbidden\n403'
+            ;;
+        esac
+    }
+    dashboard_control_request commit "$body" 30 >/dev/null 2>&1 && return 1
+    [ ! -s "$polls" ] || return 1
     # A body with no id of its own has nothing to fall back to and must still fail fast.
     dashboard_curl() {
         cat >/dev/null
         return 52
     }
     dashboard_control_request diag-doctor '{}' 30 >/dev/null 2>&1 && return 1
-    # And a server that ANSWERED without an id refused: fail fast, do not poll the deadline out.
+    # An explicit server refusal without an id must still fail fast, not poll the deadline out.
     dashboard_curl() {
         cat >/dev/null
         printf '{"error":"Missing X-Pithead-Control header."}'

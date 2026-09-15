@@ -86,6 +86,13 @@ jq '.telegram.enabled=false' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "an APPROVAL-tier key still commits with the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 assert_eq "the approval-tier change landed" "$(jq -r '.telegram.enabled' "$C/config.json")" "false"
+# A hostname changes the appliance's certificate and mDNS identity. It is approval-tier rather
+# than host-only: a bare hostname is validated before render and this route is the appliance's
+# only day-two path. The envelope control below reddens if HOST_IP falls back to default-deny.
+jq '.dashboard.host="next-box"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+assert_eq "an approval-gated dashboard hostname commits with the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "the approval-gated dashboard hostname landed" "$(jq -r '.dashboard.host' "$C/config.json")" "next-box"
 # ...and the alarm toggles on that same channel stay physical-presence-only, envelope or not.
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
