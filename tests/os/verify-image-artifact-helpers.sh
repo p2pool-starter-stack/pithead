@@ -30,13 +30,10 @@ compose_matches_source() { # <image-root> <reference-file>
     local actual="$2.actual" expected="$2.expected" registry line pattern='${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}' rc
     sed -E 's/@sha256:[0-9a-f]{64}//g' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
     registry=$(sed -n 's/^PITHEAD_REGISTRY=//p' "$1/etc/environment" 2>/dev/null)
-    if [ -n "$registry" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            printf '%s\n' "${line//"$pattern"/$registry}"
-        done <"$2" >"$expected" || return 1
-    else
-        cp "$2" "$expected" || return 1
-    fi
+    registry="${registry:-ghcr.io/p2pool-starter-stack}"
+    while IFS= read -r line || [ -n "$line" ]; do
+        printf '%s\n' "${line//"$pattern"/$registry}"
+    done <"$2" >"$expected" || return 1
     cmp -s "$actual" "$expected"
     rc=$?
     rm -f "$actual" "$expected"

@@ -202,8 +202,8 @@ configuration. Missing node inputs are a counted failure, never a skipped releas
 
 `tests/os/verify-image.sh` is the cheapest gate and runs without KVM — it mounts a built image
 read-only and checks that no test material shipped, that every baked fix is in the artifact, and
-that the boot path's files sit where the firmware and GRUB will look. For a debug registry build,
-it compares the shipped compose after the deliberate registry expansion and immutable digest pins.
+that the boot path's files sit where the firmware and GRUB will look. It resolves the registry
+expression provisioning uses, then compares the shipped compose after immutable digest pins.
 
 ```bash
 sudo tests/os/verify-image.sh os/rauc/build/system.img          # release: test artifacts REFUSED
