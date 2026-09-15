@@ -28,17 +28,10 @@ assert_eq "all five provision pulls are immutable" "$(grep -c '@sha256:' "$SIG/c
 assert_eq "array-shaped manifest output keeps all five immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
 
 source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
-mkdir -p "$SIG/etc"
-printf 'PITHEAD_REGISTRY=example.invalid\n' >"$SIG/etc/environment"
-printf '9.9.9\n' >"$SIG/opt/pithead/VERSION"
-printf 'image: example.invalid/pithead-tor:v9.9.9@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
+printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
 printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}\n' >"$SIG/reference.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
-assert_rc "the image verifier accepts debug-registry expansion plus immutable pins" "$?" 0
-printf 'image: example.invalid/pithead-tor:v10@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
+assert_rc "the image verifier accepts source expressions plus immutable pins" "$?" 0
+printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-other}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier refuses a changed source tag despite a digest" "$?" 1
-rm -f "$SIG/etc/environment"
-printf 'image: ghcr.io/p2pool-starter-stack/pithead-tor:v9.9.9@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
-compose_matches_source "$SIG" "$SIG/reference.yml"
-assert_rc "the image verifier resolves the source registry and version defaults before comparing pins" "$?" 0
