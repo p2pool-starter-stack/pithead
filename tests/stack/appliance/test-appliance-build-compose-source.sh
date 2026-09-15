@@ -307,6 +307,7 @@ resume_calls="$SANDBOX/resume-calls"
     # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     preflight() { :; }
+    require_bench_tier4() { :; }
     ghcr_login() { :; }
     manifest_digest() { printf 'sha256:%064d\n' 7; }
     smoke_test() { printf 'smoke\n' >>"$resume_calls"; }

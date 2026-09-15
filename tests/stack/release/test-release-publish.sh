@@ -97,6 +97,7 @@ resume_out="$(
         set --
         source "$REL" 2>/dev/null
         preflight() { :; }
+        require_bench_tier4() { :; }
         ghcr_login() { :; }
         promote() { :; }
         sign_images() { :; }
@@ -151,10 +152,11 @@ assert_contains "error points at the provisioning doc" "$tc_out" "release-server
 echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
 bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug]
     local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"
+    local BENCH_EXPECTED_APP_ID="${3-4242}" BENCH_APP_SLUG="${4-bench-ci}"
     (
         cd "$ROOT" || exit
         set --
-        export BENCH_CI_APP_ID="${3-4242}" BENCH_CI_APP_SLUG="${4-bench-ci}"
+        export BENCH_CI_APP_ID="$BENCH_EXPECTED_APP_ID" BENCH_CI_APP_SLUG="$BENCH_APP_SLUG"
         # shellcheck disable=SC1090  # dynamic source
         source "$REL" 2>/dev/null
         set +eu
