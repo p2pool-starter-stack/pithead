@@ -193,7 +193,8 @@ _build_image() {
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
     # benches through caching bugs, and this layer catches the next one before a 25-minute
     # phase runs against it.
-    PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
+    PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}" \
+        tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
         echo "verify-image failed on the freshly built image (see /tmp/os-fault-build.log)" >&2
         return 1
     }

@@ -622,8 +622,8 @@ osh_all="$(printf '%s' "$OSH" | sed -n '/^all)/,/^    ;;/p')"
 for ph in boot update install provision rig media fault reset; do
     assert_contains "--phase all runs phase_$ph" "$osh_all" "phase_$ph"
 done
-assert_contains "the battery's own build pins the commit verify-image checks against" "$OSH" \
-    'PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh'
+assert_contains "the battery pins the commit and passes the debug registry key to verify-image" "$OSH" \
+    'PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"'
 VIS="$(cat "$ROOT/tests/os/verify-image.sh")"
 # Wiring the guard on is only half of it: the two ends have to speak the same shape. build-image.sh
 # stamps `git rev-parse HEAD` — the FULL sha — and the harness first handed over `--short`, so the
