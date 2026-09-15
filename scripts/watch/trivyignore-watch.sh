@@ -185,8 +185,8 @@ gate_versions() {
 # only if every file in $GATE_WORKFLOWS produced at least one trivy-action step AND every one of
 # those steps' versions is EXACTLY `v$TRIVY_VERSION` — no loose `v`-stripped comparison, because
 # the real chain (trivy-action -> setup-trivy -> trivy's own install.sh) builds its release URL
-# from the declared value verbatim: a bare `0.74.0` 404s where `v0.74.0` resolves, so a bare value
-# is a real mismatch, not a cosmetic one. A file that yields no step at all (missing file, or no
+# from the declared value verbatim: a bare value 404s where its v-prefixed form resolves, so it is
+# a real mismatch, not a cosmetic one. A file that yields no step at all (missing file, or no
 # trivy-action `uses:` line) is a failure on its own — a parity check that cannot find its target
 # must go red, not silently skip it.
 check_parity() {
