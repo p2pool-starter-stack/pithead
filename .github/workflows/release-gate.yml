@@ -1,8 +1,7 @@
-name: Release gate (self-hosted, manual dispatch only)
+name: Release gate (manual dispatch only)
 
 # Tier-4 end-to-end validation against the REAL synced Monero + Tari nodes — the pre-release
-# gate (#54). It runs on the dedicated, self-hosted release server (which holds real wallet /
-# onion keys), so it MUST only ever run code we trust.
+# gate (#54). This retained manual tool has no registered runner and is not the protected gate.
 #
 # DISPATCH ONLY. This workflow does not gate `main` and does not claim to (#1048). It carried a
 # `push: [main]` trigger behind an `if:` that no repo variable ever set, so every merge to main
@@ -53,7 +52,7 @@ concurrency:
   group: release-gate
   cancel-in-progress: false
 
-# Least privilege (#282): this runs on a self-hosted box holding real keys — keep the token read-only.
+# Least privilege (#282): retain a read-only token if an operator dispatches this manual tool.
 permissions:
   contents: read
 
@@ -61,8 +60,7 @@ jobs:
   release-gate:
     name: Tier-4 live matrix (real nodes)
     environment: release-server
-    # Register the server with these labels: `pithead-release` scopes the gate to the dedicated
-    # box; prefer an ephemeral / just-in-time runner in its own runner group.
+    # Legacy selector retained with the manual tool. No runner is registered for these labels.
     runs-on: [self-hosted, pithead-release]
     steps:
       - name: Refuse non-default dispatches (defense in depth)
