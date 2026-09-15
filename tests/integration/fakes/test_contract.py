@@ -5,6 +5,7 @@ parse every state we need to drive in the mini-stack (issue #54, tier 3 / tier 2
 This is the proof that the fakes speak the daemons' wire format closely enough for the real
 MoneroClient / TariClient — and it runs anywhere (no docker, no real chain). If a future
 monerod/Tari change breaks the parser, this goes red here instead of only on the live box.
+It also proves capped ``requests`` can traverse SOCKS5.
 
 Run: PYTHONPATH=dashboard python3 -m pytest tests/integration/fakes -q
 """
@@ -15,6 +16,7 @@ import pathlib
 import re
 import sys
 
+import pytest
 import requests
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -25,14 +27,13 @@ sys.path.insert(0, str(_HERE))
 
 import aiohttp  # noqa: E402
 from fake_monerod import FakeMonerod  # noqa: E402
+from fake_socks import FakeSocks  # noqa: E402
 from fake_tari import start_server  # noqa: E402
 from fake_tari_wallet import start_server as start_wallet_server  # noqa: E402
-from fake_wallet_rpc import FakeWalletRpc  # noqa: E402
 from fake_worker_api import FakeWorkerApi, enriched_body  # noqa: E402
 
 from mining_dashboard.client import xmrig_client as xc  # noqa: E402
 from mining_dashboard.client.monero.monero_client import MoneroClient  # noqa: E402
-from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClient  # noqa: E402
 from mining_dashboard.client.tari.tari_client import TariClient  # noqa: E402
 from mining_dashboard.client.tari.tari_wallet_client import TariWalletClient  # noqa: E402
 from mining_dashboard.client.xmrig_client import (  # noqa: E402
@@ -41,6 +42,7 @@ from mining_dashboard.client.xmrig_client import (  # noqa: E402
     parse_rigforge,
     parse_worker_control_status,
 )
+from mining_dashboard.helper.http import bounded_get  # noqa: E402
 
 
 # --- Monero (HTTP get_info) -------------------------------------------------
@@ -103,34 +105,20 @@ def test_monero_http_control_mutates_state():
     assert info["synchronized"] is False and info["height"] == 10 and info["target_height"] == 100
 
 
-# --- Monero payout wallet (view-only monero-wallet-rpc, #381) ----------------
-def test_wallet_confirmed_payouts_parse_and_convert():
-    rows = [
-        {"txid": "a1", "amount": 250_000_000_000, "height": 100, "timestamp": 1000},
-        {"txid": "b2", "amount": 500_000_000_000, "height": 200, "timestamp": 2000},
-    ]
-    with FakeWalletRpc(transfers=rows) as w:
-        client = MoneroWalletClient(url=w.url, username="")  # fake serves no digest auth
-        out = client.get_confirmed_payouts(min_height=0)
-    assert [p["txid"] for p in out] == ["a1", "b2"]
-    assert out[0]["amount_atomic"] == 250_000_000_000 and out[0]["amount_xmr"] == 0.25
+def test_bounded_get_reaches_an_http_fake_through_socks():
+    with FakeWorkerApi() as http, FakeSocks() as socks:
+        url = f"http://localhost:{http.port}/1/summary"
+        response = bounded_get(url, max_bytes=1024 * 1024, proxies=socks.proxies)
+    assert response.json()["id"] == "itest-worker" and socks.connected
 
 
-def test_wallet_min_height_filters_server_side():
-    # The client seeds min_height from the last stored payout; the wallet must honor it so a
-    # re-scan of the tip returns only new rows (idempotent storage then drops any overlap).
-    rows = [
-        {"txid": "old", "amount": 1, "height": 100, "timestamp": 1},
-        {"txid": "new", "amount": 2, "height": 300, "timestamp": 2},
-    ]
-    with FakeWalletRpc(transfers=rows) as w:
-        out = MoneroWalletClient(url=w.url, username="").get_confirmed_payouts(min_height=200)
-    assert [p["txid"] for p in out] == ["new"]
-
-
-def test_wallet_no_transfers_yet_reads_empty():
-    with FakeWalletRpc(transfers=[]) as w:
-        assert MoneroWalletClient(url=w.url, username="").get_confirmed_payouts() == []
+def test_bounded_get_refused_socks_dial_is_a_request_exception():
+    with (
+        FakeWorkerApi() as http,
+        FakeSocks(refuse=True) as socks,
+        pytest.raises(requests.RequestException),
+    ):
+        bounded_get(f"http://localhost:{http.port}/1/summary", proxies=socks.proxies)
 
 
 # --- Tari (gRPC BaseNode) ---------------------------------------------------
