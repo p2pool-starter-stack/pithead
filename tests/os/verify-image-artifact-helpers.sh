@@ -27,12 +27,14 @@ compose_reference() { # <image-root> <out-file>
 }
 
 compose_matches_source() { # <image-root> <reference-file>
-    local actual="$2.actual" expected="$2.expected" registry line pattern='${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}' rc
+    local actual="$2.actual" expected="$2.expected" registry version line registry_pattern='${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}' version_pattern='${STACK_VERSION:-dev}' rc
     sed -E 's/@sha256:[0-9a-f]{64}//g' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
     registry=$(sed -n 's/^PITHEAD_REGISTRY=//p' "$1/etc/environment" 2>/dev/null)
     registry="${registry:-ghcr.io/p2pool-starter-stack}"
+    version="v$(tr -d ' \t\r\n' <"$1/opt/pithead/VERSION")" || return 1
     while IFS= read -r line || [ -n "$line" ]; do
-        printf '%s\n' "${line//"$pattern"/$registry}"
+        line="${line//"$registry_pattern"/$registry}"
+        printf '%s\n' "${line//"$version_pattern"/$version}"
     done <"$2" >"$expected" || return 1
     cmp -s "$actual" "$expected"
     rc=$?
