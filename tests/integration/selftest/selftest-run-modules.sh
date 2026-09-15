@@ -54,7 +54,10 @@ checked=""
 pithead() { printf '%s\n' 'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed'; }
 env_on_box() { [ "$1" = TOR_EGRESS_FIREWALL ] && echo true; }
 assert_rc() { [ "$2" = "$3" ]; }
-assert_contains() { checked+="$3"; [[ "$2" == *"$3"* ]]; }
+assert_contains() {
+    checked+="$3"
+    [[ "$2" == *"$3"* ]]
+}
 assert_doctor_ok
 [[ "$checked" == *'egress firewall is installed'* ]] || exit 1
 
