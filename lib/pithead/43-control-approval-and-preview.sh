@@ -11,6 +11,10 @@ _control_host_remedy() {
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 worker_sensitive=0
+    if control_never_path_changed "$staged"; then
+        printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
+        return 1
+    fi
     # Fail closed if we cannot re-derive the change set (the staged config was validated at
     # preview, so a dry-run failure here means something changed — refuse).
     if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>/dev/null); then
@@ -90,10 +94,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     local committable_re approval_re bad hit
     committable_re=$(control_committable_re)
     bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
-    if control_never_path_changed "$staged"; then
-        printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
-        return 1
-    fi
     if [ "${bad:-0}" -gt 0 ]; then
         hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
         printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
