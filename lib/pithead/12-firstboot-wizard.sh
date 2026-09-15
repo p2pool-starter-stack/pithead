@@ -360,10 +360,10 @@ firstboot_wizard() {
                 continue
             fi
             if [ "$rec" -eq 0 ] || firstboot_consume_spool "$spool"; then
-                # A new candidate must be reachable before commitment; a restored archive already
-                # passed its release's policy and must not be rejected by a later preflight (#2230).
+                # Every candidate keeps the address safety floor; a restored archive skips only
+                # the later release's live reachability probe (#2230).
                 local pf_err
-                if [ "$rec" -ne 0 ] && ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); then
+                if ! pf_err=$(remote_node_addresses_allowed "$PWD/config.json") || { [ "$rec" -ne 0 ] && ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); }; then
                     printf '%s' "$pf_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
                     # Same bare-keep hazard as a rejected restore: the config candidate is gone,
