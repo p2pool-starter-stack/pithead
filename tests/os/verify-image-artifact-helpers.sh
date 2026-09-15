@@ -28,7 +28,7 @@ compose_reference() { # <image-root> <out-file>
 
 compose_matches_source() { # <image-root> <reference-file>
     local actual="$2.actual" rc
-    sed -E 's/@sha256:[0-9a-f]{64}//g' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
+    sed -E '/pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):/s/@sha256:[0-9a-f]{64}//' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
     cmp -s "$actual" "$2"
     rc=$?
     rm -f "$actual"

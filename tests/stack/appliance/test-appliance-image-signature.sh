@@ -29,9 +29,12 @@ assert_eq "array-shaped manifest output keeps all five immutable" "$(grep -c '@s
 
 source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
 printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
-printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}\n' >"$SIG/reference.yml"
+printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$SIG/opt/pithead/docker-compose.yml"
+printf '%s\n' \
+    'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}' \
+    'image: caddy:2.11.4@sha256:0000000000000000000000000000000000000000000000000000000000000003' >"$SIG/reference.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
-assert_rc "the image verifier accepts source expressions plus immutable pins" "$?" 0
+assert_rc "the image verifier removes only first-party digest pins" "$?" 0
 printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-other}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier refuses a changed source tag despite a digest" "$?" 1
