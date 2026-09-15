@@ -60,7 +60,7 @@ checks remain hands-on until #1022 can collect the scripted and attested results
 
 Needs hands, every time:
 
-- **M1 — flash and boot** from a real stick with Secure Boot in its real state.
+- **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
 - **M4 — the wrong-disk guard**, which needs a second physical disk holding unrelated data.
 
 The power-cut items are the ones that justify the whole appliance design (A/B slots, the
