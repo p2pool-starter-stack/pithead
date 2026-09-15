@@ -1,5 +1,17 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+_rigmedia_remove_target() { # <path> — retain evidence under --keep
+    [ "$KEEP" -eq 1 ] || rm -f "$1"
+}
+
+_rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
+    if [ "$KEEP" -eq 1 ]; then
+        virsh destroy "$VM" >/dev/null 2>&1
+    else
+        vm_destroy_or_refuse
+    fi
+}
+
 phase_rigmedia() {
     info "phase: rigmedia (M14, #1829 — a rig that boots the stick and never installs)"
     # The install phase's own boot shape (image on a removable USB bus, boot.order=1) beside a
@@ -16,7 +28,7 @@ phase_rigmedia() {
     cp "$img" "$DISK"
     qemu-img resize "$DISK" 16G >/dev/null 2>&1 || {
         bad "could not size the removable-media disk"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     qemu-img create -f raw "$target_disk" 30G >/dev/null
@@ -32,13 +44,13 @@ phase_rigmedia() {
         --network network=default,model=virtio --graphics none \
         --serial "file,path=$SERIAL" --noautoconsole >/dev/null 2>&1 || {
         bad "virt-install failed to define the rigmedia VM"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     _wait_dhcp_ip 120
     _wait_ssh 240 || {
         bad "rigmedia guest never answered SSH (ip: ${ip:-none})"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     ok "image boots as removable media ($ip)"
@@ -52,19 +64,20 @@ phase_rigmedia() {
     done
     [ -n "$token" ] || {
         bad "no one-time token ever appeared on the console"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     _wait_setup_page 120 || {
         bad "wizard gate never served"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     jar=$(mktemp)
     curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null &&
         grep -q "wizard_session" "$jar" || {
         bad "token was not accepted"
-        rm -f "$jar" "$target_disk"
+        rm -f "$jar"
+        _rigmedia_remove_target "$target_disk"
         return
     }
 
@@ -77,7 +90,8 @@ phase_rigmedia() {
     scode=$(curl -sSk -b "$jar" --data "$body" "https://$ip/submit" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "rig submit did not return 200 (got ${scode:-none})"
-        rm -f "$jar" "$target_disk"
+        rm -f "$jar"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     ok "rig role submitted through the wizard, no install offered"
@@ -90,13 +104,15 @@ phase_rigmedia() {
     done
     [ "$tries" -lt 24 ] || {
         bad "no rig card appeared on the page"
-        rm -f "$jar" "$target_disk"
+        rm -f "$jar"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     scode=$(curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null -w '%{http_code}' 2>/dev/null)
     [ "$scode" = "200" ] || {
         bad "rig card acknowledgement did not return 200 (got ${scode:-none})"
-        rm -f "$jar" "$target_disk"
+        rm -f "$jar"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     rm -f "$jar"
@@ -125,20 +141,19 @@ phase_rigmedia() {
     info "reboot leg — the stick-run rig must come back mining, no hands"
     _reboot_wait reboot 300 || {
         bad "the stick-run rig never returned from the reboot"
-        rm -f "$target_disk"
+        _rigmedia_remove_target "$target_disk"
         return
     }
     _rig_mining_up 24 &&
         ok "the stick-run rig returned mining unaided after a reboot" ||
         bad "the stick-run rig did not return mining after the reboot"
 
-    vm_destroy_or_refuse || {
-        rm -f "$target_disk"
+    _rigmedia_quiesce || {
         return
     }
     empty_after=$(sha256sum "$target_disk" | cut -d' ' -f1)
     [ "$empty_after" = "$empty_before" ] &&
         ok "the empty target disk is still empty — a stick-run rig never touched it" ||
         bad "the target disk changed even though the rig never installed to it"
-    rm -f "$target_disk"
+    _rigmedia_remove_target "$target_disk"
 }
