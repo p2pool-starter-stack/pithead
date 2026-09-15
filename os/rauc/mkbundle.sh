@@ -63,6 +63,7 @@ trap 'umount "$WORK/mnt" 2>/dev/null || true; rm -rf "$WORK"' EXIT
     exit 2
 }
 verify_tarball_commit "$TARBALL" || exit $?
+[ "$DEV" -eq 1 ] || verify_guarded_rootfs_tar "$TARBALL" || exit $?
 
 # The bundle is signed with this key and RAUC verifies it against the keyring baked at image build.
 # A release bundle must name the key explicitly; --dev auto-generates a labelled throwaway.
@@ -75,7 +76,7 @@ mkdir -p "$WORK/bundle" "$WORK/mnt"
 truncate -s 4G "$WORK/rootfs.ext4"
 mkfs.ext4 -q -L system "$WORK/rootfs.ext4"
 mount -o loop "$WORK/rootfs.ext4" "$WORK/mnt"
-tar -xf "$TARBALL" -C "$WORK/mnt"
+extract_rootfs_tar "$TARBALL" "$WORK/mnt"
 populate_slot "$WORK/mnt"
 # The build variant, read from the rootfs the bundle actually ships so the stamp cannot drift
 # from the payload: debug (SSH baked) or release (shell-less). Carried as bundle metadata so

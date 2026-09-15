@@ -15,7 +15,7 @@ Rugix candidate is preserved on the `reference/rugix-candidate` branch.
 
 | Artifact | Built by | Contents |
 |---|---|---|
-| `os/build/pithead-root.tar` | `os/build-image.sh` | the OS as a container build, exported |
+| `pithead-os-rootfs:vX.Y.Z` + `os/build/pithead-root.tar` | `scripts/release/release.sh` | the published OS container image and its exported rootfs |
 | `pithead-os-vX.Y.Z.img` | `os/rauc/mkimage.sh` | bootable image: ESP + slot A only |
 | `pithead-os-vX.Y.Z.raucb` | `os/rauc/mkbundle.sh` | signed A/B update bundle |
 
@@ -449,8 +449,8 @@ runs from the release-prep commit on `develop`, and `main` fast-forwards to the 
 `release.sh` publishes it. The steps here run from that same prep commit; both channels share
 one version and one GitHub Release.
 
-1. The release commit is green: `make lint && make test`, and `tests/os/run.sh --phase all`
-   on the bench. `make lint-sh` refuses to run on any shellcheck but the pinned one and names the
+1. The release commit is green: `make lint && make test`. `make lint-sh` refuses to run on any
+   shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
    nothing — install the pin from [`release-server.md`](release-server.md#the-lintrelease-toolchain).
@@ -459,14 +459,19 @@ one version and one GitHub Release.
    ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
-3. Build the image and bundle with the **release key**, never the throwaway `--dev` chain. Point
-   both `mkimage.sh` and `mkbundle.sh` at it and omit `--dev` — a release build refuses to run
-   without an explicit key, so there is no silent-dev-cert path:
+3. Run the release pipeline with `--draft`. It builds and publishes `pithead-os-rootfs:vX.Y.Z` by
+   digest, refuses a rootfs carrying the debug SSH key, and leaves the exact exported bytes in
+   `os/build/pithead-root.tar` with its `.sha256` handoff. The production image and bundle builders
+   require that digest and refuse a changed or debug-keyed tar. Do not run `os/build-image.sh`
+   again: rebuilding would re-resolve apt and make the published rootfs differ from the appliance.
+4. Build the image and bundle from that tar with the **release key**, never the throwaway `--dev`
+   chain. Point both scripts at it and omit `--dev` — a release build refuses to run without an
+   explicit key, so there is no silent-dev-cert path:
 
    ```bash
    export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem
    export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
-   os/build-image.sh && sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
+   sudo -E os/rauc/mkimage.sh && sudo -E os/rauc/mkbundle.sh
    ```
 
    Key generation, storage, the trust model and the rotation runbook are in
@@ -496,17 +501,17 @@ one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M11–M14 for any release touching the rig role, M15 and M16) on
-   real hardware. Record results. The human half of a
+5. Run `tests/os/run.sh --phase all`, then the manual battery (M1–M10, M11–M14 for any release
+   touching the rig role, M15 and M16) on real hardware. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
    this list.
-5. Attach image + bundle + checksums to the version's GitHub Release **while it is still a
+6. Attach image + bundle + checksums to the version's GitHub Release **while it is still a
    draft** (the DIY cut opens it with `release.sh --draft`), then publish once everything is
    attached. Published release assets are immutable — v1.18.0 burned its tag this way — so
    the release publishes exactly once, with both channels' artifacts aboard. The bundle's
    signature is what devices verify.
-6. `main` fast-forwards to the tag automatically when `release.sh` publishes; if the push was
+7. `main` fast-forwards to the tag automatically when `release.sh` creates the draft; if the push was
    refused, run the command it prints (see
    [After publishing](manual-release-checklist.md#after-publishing)).
 

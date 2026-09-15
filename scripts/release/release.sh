@@ -6,7 +6,7 @@
 #
 #   1. Preflight      clean tree, read VERSION, ensure the tag isn't already released, resolve pins
 #   2. Test gate      `make test` (+ the #54 integration matrix, unless skipped) — blocking
-#   3. Build          build the 5 first-party images with OCI labels + the release version baked in
+#   3. Build          build the 5 stack images plus the appliance rootfs
 #   4. Stage          push to a staging tag (:vX.Y.Z-rc.N) on GHCR and capture immutable digests
 #   5. Smoke          pull the STAGED images back and verify they resolve to the right version
 #   6. Promote        re-tag the smoke-tested digests to :vX.Y.Z + :latest (no rebuild) and push
@@ -52,9 +52,10 @@ set -euo pipefail
 REGISTRY="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}"
 IMAGE_PREFIX="${PITHEAD_IMAGE_PREFIX:-pithead-}"
 
-# The 5 first-party images, by build-dir / image-name suffix (build context = "build/<suffix>",
+# The 5 stack images, by build-dir / image-name suffix (build context = "build/<suffix>",
 # published image = "$REGISTRY/${IMAGE_PREFIX}<suffix>"). The compose service for "monero" is "monerod". dashboard is the one exception — build context "dashboard/" at the repo root (#1106) — see build_images() below.
 IMAGES=(tor monero p2pool xmrig-proxy dashboard)
+PUBLISHED_IMAGES=("${IMAGES[@]}" os-rootfs)
 
 # Target platform(s) for the published images. linux/amd64 ONLY: the bundled binaries are x86_64
 # (monero/p2pool/xmrig-proxy ship `linux-x64`, and xmrig-proxy has NO arm64 build at all — so an arm64
@@ -232,7 +233,7 @@ main() {
         warn "--resume-promote: skipping build/stage. Re-staging to recover digests..."
         ghcr_login
         local suffix repo digest
-        for suffix in "${IMAGES[@]}"; do
+        for suffix in "${PUBLISHED_IMAGES[@]}"; do
             repo="$(image_for "$suffix")"
             # #557: same errexit-unreachable shape as stage_push above — a bare assignment aborts
             # under errexit once retries are exhausted, before this die() fires.

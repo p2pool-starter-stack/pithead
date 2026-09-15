@@ -45,6 +45,7 @@ TARBALL="os/build/pithead-root.tar"
     exit 2
 }
 verify_tarball_commit "$TARBALL" || exit $?
+[ "$DEV" -eq 1 ] || verify_guarded_rootfs_tar "$TARBALL" || exit $?
 
 # The keyring baked into slot A is the fleet's update trust root. Resolve it before anything heavy
 # so a release build with no key stops immediately, not after minutes of imaging.
@@ -83,7 +84,7 @@ mkfs.ext4 -q -L system-a "${LOOP}p2"
 echo "==> populating slot A from the shared rootfs tarball"
 mkdir -p /mnt/rauc-sys /mnt/rauc-esp
 mount "${LOOP}p2" /mnt/rauc-sys
-tar -xf "$TARBALL" -C /mnt/rauc-sys
+extract_rootfs_tar "$TARBALL" /mnt/rauc-sys
 populate_slot /mnt/rauc-sys
 
 echo "==> bootloader"

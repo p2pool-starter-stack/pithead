@@ -2,9 +2,9 @@ name: OS rootfs scan
 
 # Build the appliance rootfs (os/rootfs/Dockerfile) and Trivy-scan it (#833). The appliance's
 # Debian userland — podman, netavark, openssl, the kernel — is frozen at bake time and has no
-# apt at runtime, so this scan is the eye on the base OS between releases. Runs on PRs that
-# touch os/ and weekly on a schedule; a red scheduled run in the Actions tab is the alert, the
-# lychee.yml posture. It is its own workflow (not a build-images matrix entry in ci.yml)
+# apt at runtime, so this rebuild catches fixable CVEs before a cut. The shipped-image sweep in
+# ci.yml scans the published rootfs digest after a cut. Runs on PRs that touch os/ and weekly on a
+# schedule. It is its own workflow (not a build-images matrix entry in ci.yml)
 # because the xmrig prebuild makes this the slowest image in the repo — the paths filter keeps
 # it off stack-only PRs.
 #
@@ -92,9 +92,8 @@ jobs:
         # findings live in .config/trivyignore with a rationale and how they clear.
         #
         # cache: false for the reason spelled out over ci.yml's scan (#1159) — this is the repo's
-        # other trivy call site. It matters more here: the appliance's Debian userland is baked and
-        # has no apt at runtime, so this scan is the only eye on podman, netavark, openssl and the
-        # kernel between releases, and since #1162 that eye is finally open on a schedule.
+        # other trivy call site. The appliance userland is baked, so this is the pre-release half
+        # of the rootfs CVE gate.
         id: trivy-scan
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

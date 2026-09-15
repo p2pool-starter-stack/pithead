@@ -177,7 +177,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [monero, p2pool, tor, xmrig-proxy, dashboard]
+        service: [monero, p2pool, tor, xmrig-proxy, dashboard, os-rootfs]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

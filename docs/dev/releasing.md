@@ -65,9 +65,10 @@ different from one with nothing to say.
 ## The Monday sweep, and who reads it
 
 CI runs a weekly CVE sweep on Mondays at 05:00 UTC from `develop`. It answers two questions with
-two jobs: `build-images` rebuilds every image from the branch and scans the rebuild, so a fixable
-CVE is caught before a cut; `sweep-shipped` scans the images already published, each tag resolved
-to a digest, so a CVE in the bytes users are running is caught after one.
+two jobs: `build-images` rebuilds the stack images from the branch and scans them, while
+`os-rootfs.yml` does the same for the appliance rootfs, so a fixable CVE is caught before a cut;
+`sweep-shipped` scans all six images already published, each tag resolved to a digest, so a CVE in
+the bytes users are running is caught after one.
 
 A scheduled run has no pull request, so nothing draws a person to its result. On 2026-08-17 the
 rebuild scan went red and nobody was told for seven days
@@ -101,11 +102,11 @@ this workflow does not claim it ([#1418](https://github.com/p2pool-starter-stack
 Images are published to GitHub Container Registry (`ghcr.io/p2pool-starter-stack/*`). Public
 images pull without a Docker Hub-style rate limit.
 
-The stack is multi-container. Every built image (`pithead-dashboard`, `pithead-p2pool`,
-`pithead-xmrig-proxy`, `pithead-monero`, `pithead-tor`) is published, all tagged with the single
-stack version, and compose references one `${STACK_VERSION}`. `docker compose pull` fetches the
-set with one knob, replacing the "git pull + rebuild" upgrade path. The version is the bundle,
-not the layers.
+The stack is multi-container. Every stack image (`pithead-dashboard`, `pithead-p2pool`,
+`pithead-xmrig-proxy`, `pithead-monero`, `pithead-tor`) and the appliance rootfs
+(`pithead-os-rootfs`) is published, all tagged with the single product version. Compose references
+one `${STACK_VERSION}` for the five images it runs. `docker compose pull` fetches that set with one
+knob, replacing the "git pull + rebuild" upgrade path. The version is the bundle, not the layers.
 
 ## Release process
 
@@ -155,17 +156,24 @@ Release notes, where operators actually read it. The branch model itself is in
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
    the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
-3. Build: build the first-party images with the pinned upstream versions baked in and OCI labels
+3. Build: build the five stack images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge
    ([#58](https://github.com/p2pool-starter-stack/pithead/issues/58)); a release build must pass
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
-   `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds.
+   `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds. Then build the
+   appliance rootfs with that staged dashboard digest baked in. Its push guard reads the exported
+   rootfs and refuses any artifact carrying the debug SSH key. It records that tar's SHA-256; the
+   production appliance image and RAUC bundle refuse any other export.
 4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
-   immutable digests. Nothing user-facing points here yet.
-5. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
-   reports the release version in its OCI label, and carries every target platform (the v1.0.0
-   wrong-arch guard). This validates the bytes actually pushed, not the local build — but it does
+   immutable digests. Nothing user-facing points here yet. The first `pithead-os-rootfs` push
+   creates a private package because that is GHCR's default. Change that package's visibility to
+   public and resume the release; the smoke gate refuses promotion until an anonymous pull resolves
+   to the captured digest.
+5. Staging smoke test (gate): pull each staged image back from GHCR. Verify the stack images report
+   the release version in their OCI labels and carry every target platform (the v1.0.0 wrong-arch
+   guard); verify the rootfs is amd64, stamped `release`, and carries no root SSH key. This validates
+   the bytes actually pushed, not the local build — but it does
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
@@ -173,8 +181,8 @@ Release notes, where operators actually read it. The branch model itself is in
 6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
-7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign each
-   promoted manifest-list digest and the install bundle with the key on the release server. See
+7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign all six
+   promoted digests and the install bundle with the key on the release server. See
    [Signed releases](#signed-releases).
 8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
    (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`

@@ -259,6 +259,10 @@ apt_index_stamp=0
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
 if ! docker build -f os/rootfs/Dockerfile -t "$ROOTFS_TAG" \
+    --label "org.opencontainers.image.title=Pithead OS rootfs" \
+    --label "org.opencontainers.image.version=${STACK_VERSION#v}" \
+    --label "org.opencontainers.image.revision=$BUILD_COMMIT" \
+    --label "org.opencontainers.image.source=https://github.com/p2pool-starter-stack/pithead" \
     --build-arg PITHEAD_TEST_SSH_PUBKEY="${PITHEAD_TEST_SSH_PUBKEY:-}" \
     --build-arg PITHEAD_TEST_MARKER="${PITHEAD_TEST_MARKER:-}" \
     --build-arg PITHEAD_UPDATER="${PITHEAD_UPDATER:-rauc}" \

@@ -184,6 +184,40 @@ rm -rf "$VTC_TMP"
 unset -f mk_vtc_fixture vtc vtc_norepo
 unset VTC_TMP VTC_HEAD_SHA VTC_HEAD
 
+# --- production rootfs handoff guard. The release push records the guarded tar's digest; both
+# non-dev consumers require that exact tar and refuse debug SSH access even after a same-commit
+# rebuild. This is a pure tar fixture because the refusal happens before image construction.
+echo "== unit: os/rauc production rootfs handoff guard =="
+mk_tmpdir RGT_TMP
+mkdir -p "$RGT_TMP/root/etc"
+printf 'release\n' >"$RGT_TMP/root/etc/pithead-variant"
+tar -cf "$RGT_TMP/root.tar" -C "$RGT_TMP/root" etc
+sha256sum "$RGT_TMP/root.tar" | awk '{print $1}' >"$RGT_TMP/root.tar.sha256"
+rgt() {
+    (
+        # shellcheck disable=SC1090
+        . "$ROOT/os/rauc/populate-slot.sh"
+        set +e
+        verify_guarded_rootfs_tar "$1" 2>"$RGT_TMP/err"
+        echo "rc=$?"
+    )
+}
+assert_eq "the guarded release export is accepted" "$(rgt "$RGT_TMP/root.tar")" "rc=0"
+rm "$RGT_TMP/root.tar.sha256"
+assert_eq "a production build refuses an unrecorded export" "$(rgt "$RGT_TMP/root.tar")" "rc=2"
+assert_contains "the refusal names the missing digest handoff" "$(cat "$RGT_TMP/err")" ".sha256"
+sha256sum "$RGT_TMP/root.tar" | awk '{print $1}' >"$RGT_TMP/root.tar.sha256"
+printf 'changed\n' >>"$RGT_TMP/root.tar"
+assert_eq "a production build refuses an export changed after publication" "$(rgt "$RGT_TMP/root.tar")" "rc=2"
+assert_contains "the refusal names the post-push change" "$(cat "$RGT_TMP/err")" "changed after"
+assert_contains "mkimage requires the guarded rootfs handoff" "$(cat "$ROOT/os/rauc/mkimage.sh")" \
+    'verify_guarded_rootfs_tar "$TARBALL"'
+assert_contains "mkbundle requires the guarded rootfs handoff" "$(cat "$ROOT/os/rauc/mkbundle.sh")" \
+    'verify_guarded_rootfs_tar "$TARBALL"'
+rm -rf "$RGT_TMP"
+unset RGT_TMP
+unset -f rgt
+
 # --- mkbundle metadata validation (fails fast, before the multi-minute image build) ---
 echo "== unit: mkbundle compatibility-metadata validation =="
 out=$(cd "$ROOT" && PITHEAD_DATA_MIGRATION=maybe bash os/rauc/mkbundle.sh /dev/null 2>&1)

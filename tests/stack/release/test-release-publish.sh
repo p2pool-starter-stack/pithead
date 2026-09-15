@@ -1,23 +1,139 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Release-PUBLISH domain (#1105 Phase 1): what a cut DOES against a registry — the GHCR
-# read-after-push retry, the release-toolchain preflight, release-smoke's upgraded-install
-# resolution, pull-vs-build mode detection, and the bundle's macOS-xattr hygiene guard. Split from
-# test-release.sh, which keeps the side-effect-free helpers. Sourced by tests/stack/run.sh after it.
-#
-# The four script paths are re-derived here rather than inherited from test-release.sh, the same
-# reason test-release-signing.sh re-derives its own: a fragment that depends on an earlier
-# fragment's variables breaks silently when the suite is reordered, and `source "$REL" 2>/dev/null`
-# hides exactly that failure as a pile of "command not found".
+# Release-publish tests: registry retries, toolchain preflight, release smoke and bundle hygiene.
+# Paths are re-derived so this fragment remains independent of suite order.
 REL="$ROOT/scripts/release/release.sh"
 REL_IMAGES="$ROOT/scripts/release/images.sh"
 REL_BUNDLE="$ROOT/scripts/release/bundle.sh"
 STACK_VERSION="v$(cat "$ROOT/VERSION")"
+echo "== unit: release rootfs publish guard refuses the debug SSH key (#1353) =="
+ROOTFS_GUARD="$SANDBOX/rootfs-publish-guard"
+mkdir -p "$ROOTFS_GUARD/release/etc" "$ROOTFS_GUARD/debug/etc" "$ROOTFS_GUARD/debug/root/.ssh"
+mkdir -p "$ROOTFS_GUARD/debug-link/etc" "$ROOTFS_GUARD/debug-link/root" "$ROOTFS_GUARD/debug-link/keys"
+printf 'release\n' >"$ROOTFS_GUARD/release/etc/pithead-variant"
+printf 'release\n' >"$ROOTFS_GUARD/debug/etc/pithead-variant"
+printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug/root/.ssh/authorized_keys"
+printf 'release\n' >"$ROOTFS_GUARD/debug-link/etc/pithead-variant"
+printf 'ssh-ed25519 fixture\n' >"$ROOTFS_GUARD/debug-link/keys/authorized_keys"
+ln -s ../keys "$ROOTFS_GUARD/debug-link/root/.ssh"
+tar -cf "$ROOTFS_GUARD/release.tar" -C "$ROOTFS_GUARD/release" etc
+tar -cf "$ROOTFS_GUARD/debug.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar -cf "$ROOTFS_GUARD/debug-dot.tar" -C "$ROOTFS_GUARD/debug" .
+tar --transform='s|root/.ssh/authorized_keys|root//.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-double.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|root/./.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-inner-dot.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|.//root/.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-dot-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar --transform='s|root/.ssh/authorized_keys|//root/.ssh/authorized_keys|' \
+    -cf "$ROOTFS_GUARD/debug-absolute.tar" -C "$ROOTFS_GUARD/debug" etc root
+tar -cf "$ROOTFS_GUARD/debug-link.tar" -C "$ROOTFS_GUARD/debug-link" etc root keys
+rootfs_guard() {
+    local tarball="$1"
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        set +eu
+        verify_release_rootfs_tar "$tarball"
+    )
+}
+rootfs_guard "$ROOTFS_GUARD/release.tar"
+assert_rc "a release rootfs with no debug key passes the push guard" "$?" "0"
+rootfs_guard_out="$(rootfs_guard "$ROOTFS_GUARD/debug.tar" 2>&1)"
+assert_rc "a debug rootfs carrying the SSH key is refused before push" "$?" "2"
+assert_contains "the refusal names the debug SSH key" "$rootfs_guard_out" "refusing a rootfs carrying the debug SSH key"
+TAR_OPTIONS='--exclude=*/authorized_keys' rootfs_guard "$ROOTFS_GUARD/debug.tar" >/dev/null 2>&1
+assert_rc "inherited tar exclusions cannot hide the debug SSH key" "$?" "2"
+mkdir "$ROOTFS_GUARD/extracted"
+# shellcheck disable=SC1090
+(cd "$ROOT" && set -- && source "$REL" 2>/dev/null && TAR_OPTIONS='--transform=s#etc/pithead-variant#root/.ssh/authorized_keys#' extract_rootfs_tar "$ROOTFS_GUARD/release.tar" "$ROOTFS_GUARD/extracted")
+assert_eq "inherited tar transforms cannot create an authorized_keys file" "$([ -e "$ROOTFS_GUARD/extracted/root/.ssh/authorized_keys" ] && echo yes || echo no)" "no"
+assert_eq "the hermetic extraction keeps the original member" "$([ -e "$ROOTFS_GUARD/extracted/etc/pithead-variant" ] && echo yes || echo no)" "yes"
+for unsafe_tar in debug-dot debug-double debug-inner-dot debug-dot-absolute debug-absolute debug-link; do
+    rootfs_guard "$ROOTFS_GUARD/$unsafe_tar.tar" >/dev/null 2>&1
+    assert_rc "an unsafe debug-key member is refused" "$?" "2"
+done
+unset -f rootfs_guard
+# Drive the producer with a stubbed export and registry write so ordering mutations fail.
+drive_rootfs_build() { # <fixture-tar> <push-log>
+    local source_tar="$1" push_log="$2"
+    (
+        export SOURCE_TAR="$source_tar" PUSH_LOG="$push_log"
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        # The producer writes os/build/pithead-root.tar relative to the cwd. Drive it in a scratch
+        # tree: os/build is git-ignored and absent from a clean checkout (the real build-image.sh
+        # creates it), and a developer's own export must not be clobbered by a test run.
+        rm -rf "$SANDBOX/rootfs-producer"
+        mkdir -p "$SANDBOX/rootfs-producer/os/build"
+        cd "$SANDBOX/rootfs-producer" || exit
+        DRY_RUN=0
+        # shellcheck disable=SC2034  # consumed by the dynamically sourced build_rootfs_image
+        PLATFORMS=linux/amd64
+        STAGING_TAG=v2.0.0-rc.1
+        rootfs_tar=os/build/pithead-root.tar
+        manifest_digest() { printf 'sha256:%064d\n' 4; }
+        run() {
+            if [[ "$*" == *os/build-image.sh ]]; then
+                cp "$SOURCE_TAR" "$rootfs_tar"
+            elif [ "$1 $2" = "docker push" ]; then
+                printf 'push=%s final=%s temporary=%s\n' "$3" \
+                    "$([ -e "$rootfs_tar.sha256" ] && echo yes || echo no)" \
+                    "$([ "$(cat "$rootfs_tar.sha256.tmp")" = "$(sha256sum "$rootfs_tar" | awk '{print $1}')" ] && echo exact || echo bad)" >>"$PUSH_LOG"
+                [ "${PUSH_FAIL:-0}" -eq 0 ]
+            else
+                command "$@"
+            fi
+        }
+        build_rootfs_image
+        [ -s "$rootfs_tar.sha256" ] && printf 'finalized=yes\n' >>"$PUSH_LOG"
+    )
+}
+PUSH_LOG="$ROOTFS_GUARD/pushes"
+: >"$PUSH_LOG"
+drive_rootfs_build "$ROOTFS_GUARD/debug-dot.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "the producer refuses a keyed export" "$?" "1"
+assert_eq "the keyed export is refused before any registry push" "$(wc -l <"$PUSH_LOG" | tr -d ' ')" "0"
+drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "the producer accepts a release export" "$?" "0"
+assert_contains "the push starts with only a temporary digest handoff" "$(cat "$PUSH_LOG")" \
+    "final=no temporary=exact"
+assert_contains "a successful push atomically finalizes the digest handoff" "$(cat "$PUSH_LOG")" \
+    "finalized=yes"
+: >"$PUSH_LOG"
+PUSH_FAIL=1 drive_rootfs_build "$ROOTFS_GUARD/release.tar" "$PUSH_LOG" >/dev/null 2>&1
+assert_rc "a failed rootfs registry push fails the producer" "$?" "1"
+assert_contains "a failed push never exposes the final digest handoff" "$(cat "$PUSH_LOG")" \
+    "final=no temporary=exact"
+assert_not_contains "a failed push does not finalize the digest handoff" "$(cat "$PUSH_LOG")" \
+    "finalized=yes"
+unset -f drive_rootfs_build
+# A private first push would pass authenticated reads but leave the anonymous sweep UNCHECKED.
+# shellcheck disable=SC1090
+anonymous_digest="$(
+    cd "$ROOT" || exit
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    curl() {
+        case "$*" in
+        *'https://ghcr.io/token?scope='*) printf '{"token":"fixture"}\n' ;;
+        *) printf 'Docker-Content-Digest: sha256:%064d\r\n' 7 ;;
+        esac
+    }
+    anonymous_ghcr_digest ghcr.io/p2pool-starter-stack/pithead-os-rootfs v2.0.0
+)"
+assert_eq "the public-package check resolves the rootfs anonymously" "$anonymous_digest" \
+    "sha256:$(printf '%064d' 7)"
+assert_contains "rootfs smoke refuses a private first GHCR push" "$(cat "$REL_IMAGES")" \
+    "New GHCR packages default to private"
 echo "== unit: release.sh registry read retries GHCR read-after-push lag (#429) =="
-# manifest_digest reads a tag GHCR just accepted, which can 404 or serve a STALE digest for a few
-# seconds (read-after-push lag) — this killed stage-4 digest capture twice on the v1.3.1 cut. So the
-# retry is not only for empty reads: it loops until the EXPECTED digest appears, and the counter
-# proves it stayed bounded. Backoff is forced to 0 to keep the test instant.
+# GHCR can briefly 404 or serve a stale digest after push. Prove the retry reaches the expected
+# digest and stays bounded; zero backoff keeps the test instant.
 RETRY_CNT="$SANDBOX/inspect.count"
 # shellcheck disable=SC1090,SC2034  # dynamic source; REGISTRY_READ_* are read by the sourced retry helper
 retry_out="$(
@@ -60,7 +176,6 @@ assert_contains "exhausted retries -> empty digest (caller dies)" "$exhaust_out"
 # The smoke stage's raw manifest read has the same read-after-push exposure — wire it through the retry.
 assert_contains "smoke stage reads the captured digest via retry_registry_read (#429)" \
     "$(cat "$REL_IMAGES")" 'retry_registry_read buildx_inspect "$digest" --raw'
-
 # #557: the test above disables errexit (`set +eu`, right after sourcing) to observe the bare helper
 # in isolation, which happens to mask a real bug in stage_push itself: the bare
 # `digest="$(manifest_digest ...)"` assignment aborts under release.sh's own `set -euo pipefail`
@@ -75,6 +190,7 @@ stage_push_out="$(
         source "$REL" 2>/dev/null
         DRY_RUN=0
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         REGISTRY="ghcr.io/test"
         REGISTRY_READ_RETRIES=1
         REGISTRY_READ_BACKOFF=0
@@ -104,6 +220,7 @@ resume_out="$(
         DRY_RUN=0
         RESUME_PROMOTE=1
         IMAGES=(tor)
+        PUBLISHED_IMAGES=(tor)
         TAG="v9.9.9"
         STAGING_TAG="v9.9.9-rc.1"
         REGISTRY="ghcr.io/test"

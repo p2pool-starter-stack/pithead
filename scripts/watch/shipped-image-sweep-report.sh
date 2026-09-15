@@ -1,37 +1,11 @@
 #!/usr/bin/env bash
+# Shipped-image CVE sweep report (#1313). The workflow resolves each release tag to a digest and
+# scans published bytes; this script only renders those artifacts. Rebuilding here would resolve
+# apt again and could hide a CVE carried by the release.
 #
-# Shipped-image CVE sweep report (#1313).
-#
-# The Monday sweep in ci.yml rebuilds every image from the branch and scans the rebuild. That
-# cannot answer the question users care about. A rebuild resolves apt at scan time, so it picks up
-# archive fixes the published image never got — the sweep goes green while the bytes people are
-# running still carry the CVE. It also scans the default branch, not the release. This report
-# covers the other half: the images published at cut time, promoted by digest with no rebuild
-# (release.sh stage 6 is `buildx imagetools create`, a re-tag), scanned exactly as published.
-#
-# REPORT-ONLY, and that posture is deliberate. A CVE in a shipped image is a fact to act on — it
-# means "consider cutting a patch release", a decision a person makes — not a build to fail. The
-# run goes red only when the sweep itself could not do its job.
-#
-# WHAT THIS SCRIPT IS. It does no scanning and touches no network. ci.yml's `sweep-shipped` matrix
-# resolves each published tag to a digest, scans that digest with trivy, and uploads two files per
-# image; this script reads that directory and renders the tracking-issue body. Keeping the render
-# out of the workflow is what makes it testable — `--self-test` drives every failure mode below
-# through fixtures with no docker, no network, and no GitHub.
-#
-# INCOMPLETE IS NEVER CLEAN. Every refusal below exits 1 and says UNCHECKED in the report rather
-# than printing a reassuring zero. This is the defect class the whole currency lane exists for: a
-# watcher with nothing to say and a watcher that has quietly died look identical from the Actions
-# tab, and "0 findings" off a partial run is the most expensive kind of false green.
-#
-#   - the artifact directory is missing, or holds no scan output at all
-#   - an expected image produced no report (its matrix leg failed)
-#   - an unexpected image appeared (ci.yml's matrix and SWEPT_IMAGES below have drifted)
-#   - a report cannot be parsed
-#   - a report names an artifact that is NOT a digest reference, so the run cannot honestly claim
-#     it scanned published bytes rather than a moving tag
-#   - a report's artifact is a different image than the leg it arrived as
-#   - the legs disagree about which release tag they swept (a cut landed mid-run)
+# Findings are report-only because they ask for a patch-release decision. An incomplete or
+# malformed sweep exits 1 and reports UNCHECKED, never a reassuring zero. The self-test covers
+# missing and unexpected legs, bad report structure, tag drift, and wrong image/tag references.
 #
 # Usage:
 #   scripts/watch/shipped-image-sweep-report.sh <dir>   Render the report for the artifacts in <dir> on
@@ -54,7 +28,7 @@ SWEEP_ISSUE_TITLE="Shipped-image CVE sweep (weekly report)"
 # two lists are checked against each other at run time rather than trusted: a service added to the
 # matrix and not here arrives as an unexpected file, one added here and not to the matrix arrives
 # as a missing leg, and BOTH exit 1. A silently shrinking sweep is the failure this guards.
-SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard"
+SWEPT_IMAGES="monero p2pool tor xmrig-proxy dashboard os-rootfs"
 
 # Only fixable HIGH/CRITICAL are counted, the same scope ci.yml's gate uses (`ignore-unfixed`), and
 # the same scope every `.config/trivyignore` entry is written against. It is also the only scope that maps
@@ -67,18 +41,14 @@ usage() {
     sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-# --- render helpers ---------------------------------------------------------------------------
-
 # Shorten a digest for the summary table; the full value is printed in the per-image section, so
 # nothing is lost. `sha256:5da0208411…` is enough to eyeball against `docker inspect` output.
 short_digest() {
     printf '%s…' "${1:0:20}"
 }
 
-# Every HIGH/CRITICAL row in a trivy JSON report, as TSV: id, severity, package, installed, fixed.
-# `.Results[]?` and `.Vulnerabilities[]?` are both optional-indexed on purpose — a clean image
-# reports Results with no Vulnerabilities key at all, which is a legitimate zero, not a parse
-# failure. A genuinely unreadable file fails in render_report() before this runs.
+# Every HIGH/CRITICAL row as TSV. render_report validates Results; a missing Vulnerabilities key is
+# a legitimate clean target.
 findings_tsv() {
     jq -r '
         [ .Results[]? | .Vulnerabilities[]? ]
@@ -139,7 +109,13 @@ render_report() {
             continue
         fi
 
-        if ! ref="$(jq -er '.ArtifactName' "$file" 2>/dev/null)"; then
+        if ! ref="$(jq -er '
+            select((.Results | type) == "array")
+            | select(all(.Results[]; (type == "object") and (.Vulnerabilities == null or
+                ((.Vulnerabilities | type) == "array" and all(.Vulnerabilities[]; type == "object")))))
+            | select(any(.Results[]; .Class == "os-pkgs" and (.Target | type) == "string" and (.Target | length) > 0))
+            | .ArtifactName
+        ' "$file" 2>/dev/null)"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
 "
             problems="${problems}- \`$svc\`'s scan report could not be parsed. This image is UNCHECKED, not clean.
@@ -160,18 +136,22 @@ render_report() {
             continue
         fi
 
-        if [ -s "$tagfile" ]; then
-            tag="$(tr -d '[:space:]' <"$tagfile")"
-            if [ -z "$tag_seen" ]; then
-                tag_seen="$tag"
-            elif [ "$tag" != "$tag_seen" ]; then
-                tag_conflict=1
-            fi
+        if [ ! -s "$tagfile" ] || ! tag="$(tr -d '[:space:]' <"$tagfile")" || [ -z "$tag" ]; then
+            summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
+"
+            problems="${problems}- \`$svc\` produced no release-tag metadata. This image is UNCHECKED, not clean.
+"
+            rc=1
+            continue
+        fi
+        if [ -z "$tag_seen" ]; then
+            tag_seen="$tag"
+        elif [ "$tag" != "$tag_seen" ]; then
+            tag_conflict=1
         fi
 
-        # Captured, not piped in from a process substitution: a jq failure inside `< <(...)` is
-        # invisible to `set -e`, so a report whose Results array is malformed would render as a
-        # confident zero. Same rule as everywhere else here — unreadable is UNCHECKED.
+        # Capture the jq result: process-substitution failures are invisible to `set -e`, and an
+        # unreadable Results array must be UNCHECKED rather than a confident zero.
         local tsv
         if ! tsv="$(findings_tsv "$file")"; then
             summary="${summary}| \`pithead-$svc\` | — | **UNCHECKED** |
@@ -264,7 +244,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fixture() {
         mkdir -p "$1"
         jq -n --arg a "$3" --argjson v "$4" \
-            '{ArtifactName: $a, Results: [{Target: "t", Vulnerabilities: $v}]}' \
+            '{ArtifactName: $a, Results: [{Target: "t", Class: "os-pkgs", Vulnerabilities: $v}]}' \
             >"$1/sweep-$2.json"
         printf 'v1.20.0\n' >"$1/sweep-$2.tag"
     }
@@ -283,7 +263,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a clean sweep says so" \
         "$(printf '%s' "$out" | grep -c 'No fixable HIGH/CRITICAL')" "1"
     st "every image appears in the summary" \
-        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "5"
+        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "6"
 
     # Findings are counted, and only the FIXABLE ones.
     found="$tmp/found"
@@ -311,7 +291,6 @@ if [ "${1:-}" = "--self-test" ]; then
         "$(printf '%s' "$out" | grep -c 'CVE-2026-3')" "0"
     st "the finding's own digest is named in full" \
         "$(printf '%s' "$out" | grep -c "Scanned \`$(ref_for dashboard 5)\`")" "1"
-
     # Every refusal. Each must exit 1 AND say UNCHECKED — a quiet zero is the bug.
     miss="$tmp/miss"
     i=1
@@ -323,16 +302,11 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a leg that did not finish fails the run" "$rc" "1"
     st "the missing image reads UNCHECKED, never clean" \
         "$(printf '%s' "$out" | grep -c '`pithead-tor` | — | \*\*UNCHECKED\*\*')" "1"
-    # On the PROBLEM TEXT, not just the UNCHECKED row. The missing-file guard and the
-    # unparseable-report guard below it emit an identical summary row and an identical rc, so an
-    # assertion on either of those passes whichever guard fired — deleting the missing-file check
-    # outright left this whole block green until it was checked by mutation. Each guard is now
-    # named by the one sentence only it writes.
+    # Assert each guard's unique diagnosis; their summary row and rc are otherwise identical.
     st "the missing leg is diagnosed as a leg that did not finish" \
         "$(printf '%s' "$out" | grep -c 'produced no scan report; its matrix leg did not finish')" "1"
     st "a missing leg is not misreported as an unparseable one" \
         "$(printf '%s' "$out" | grep -c 'could not be parsed')" "0"
-
     extra="$tmp/extra"
     i=1
     for s in $SWEPT_IMAGES; do
@@ -358,8 +332,35 @@ if [ "${1:-}" = "--self-test" ]; then
     st "an unparseable report is not misreported as a missing leg" \
         "$(printf '%s' "$out" | grep -c 'its matrix leg did not finish')" "0"
 
-    # The load-bearing one. If the digest resolve fell through and trivy scanned a TAG, the run
-    # must not claim it swept published bytes — that is #1313's own defect, one level in.
+    malformed="$tmp/malformed"
+    cp -R "$clean" "$malformed"
+    jq 'del(.Results)' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a report without a Results array fails the run" "$rc" "1"
+    st "a structurally incomplete report reads UNCHECKED" \
+        "$(printf '%s' "$out" | grep -c 'could not be parsed')" "1"
+    jq '.Results = [null]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a non-object Results entry is UNCHECKED" "$rc" "1"
+    jq '.Results = [{Vulnerabilities: [null]}]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a non-object vulnerability entry is UNCHECKED" "$rc" "1"
+    jq '.Results = []' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "an empty Results array is UNCHECKED" "$rc" "1"
+    jq '.Results = [{Target: "language-pkgs", Class: "lang-pkgs", Vulnerabilities: []}]' "$clean/sweep-monero.json" >"$malformed/sweep-monero.json"
+    out="$(render_report "$malformed")" && rc=0 || rc=$?
+    st "a report without an OS-package result is UNCHECKED" "$rc" "1"
+
+    notag="$tmp/notag"
+    cp -R "$clean" "$notag"
+    rm "$notag/sweep-monero.tag"
+    out="$(render_report "$notag")" && rc=0 || rc=$?
+    st "missing release-tag metadata fails the run" "$rc" "1"
+    st "missing release-tag metadata reads UNCHECKED" \
+        "$(printf '%s' "$out" | grep -c 'produced no release-tag metadata')" "1"
+
+    # If digest resolution fell through and trivy scanned a tag, the run must say UNCHECKED.
     tagref="$tmp/tagref"
     i=1
     for s in $SWEPT_IMAGES; do
@@ -402,14 +403,13 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$empty")" && rc=0 || rc=$?
     st "an empty artifact directory fails the run" "$rc" "1"
 
-    # Every case above calls render_report inside an `&&` list, where bash suppresses `set -e`
-    # for the whole dynamic extent of the call — so none of them can see an error-exit that only
+    # Calls above suppress errexit through `&&`, so drive both paths through a real subprocess.
     # bites the way CI actually invokes this: bare, in its own process. Drive the green path
     # through a real subprocess once, or the suite is proving the logic and not the script.
     out="$(bash "${BASH_SOURCE[0]}" "$clean")" && rc=0 || rc=$?
     st "the clean path survives a real subprocess invocation" "$rc" "0"
     st "the subprocess renders the same table" \
-        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "5"
+        "$(printf '%s' "$out" | grep -c '^| `pithead-')" "6"
     out="$(bash "${BASH_SOURCE[0]}" "$miss")" && rc=0 || rc=$?
     st "an incomplete sweep still exits 1 from a real subprocess" "$rc" "1"
 

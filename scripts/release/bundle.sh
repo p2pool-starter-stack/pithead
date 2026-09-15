@@ -68,7 +68,7 @@ write_manifest() {
         printf '## Ingredients — Pithead %s\n\n' "$TAG"
         printf -- '- **Version:** %s\n- **Commit:** `%s`\n- **Built:** %s\n\n' "$STACK_VERSION" "$GIT_COMMIT" "$BUILD_DATE"
         printf '### Published images (`%s`, tags `%s` + `latest`)\n\n' "$REGISTRY" "$TAG"
-        for suffix in "${IMAGES[@]}"; do
+        for suffix in "${PUBLISHED_IMAGES[@]}"; do
             repo="$(image_for "$suffix")"
             dg="$(get_digest "$suffix")"
             printf -- '- `%s`\n  - digest: `%s`\n' "$repo:$TAG" "${dg:-<not staged>}"

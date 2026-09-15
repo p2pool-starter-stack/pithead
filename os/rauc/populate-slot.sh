@@ -96,7 +96,7 @@ render_bundle_manifest() { # $1 os_version, $2 variant, $3 data_migration, $4 mi
 # commits, with PITHEAD_STALE_TARBALL_OK=1 as the explicit escape for a deliberate stale rebuild.
 verify_tarball_commit() {
     local tarball="$1" stamped head
-    stamped=$(tar -xOf "$tarball" opt/pithead/BUILD_COMMIT 2>/dev/null) || stamped=""
+    stamped=$(TAR_OPTIONS='' command tar -xOf "$tarball" opt/pithead/BUILD_COMMIT 2>/dev/null) || stamped=""
     [ -n "$stamped" ] || stamped="(no BUILD_COMMIT stamp in the tarball)"
 
     if ! head=$(_working_tree_commit); then
@@ -122,6 +122,61 @@ verify_tarball_commit() {
         "working tree is now at $head — rerun os/build-image.sh, or set PITHEAD_STALE_TARBALL_OK=1" \
         "to use it anyway" >&2
     return 2
+}
+
+# Release rootfs content is checked here so the registry push, initial image and update bundle use
+# one rule. Tar listings may prefix members with ./; an absolute member is equally unsafe.
+verify_release_rootfs_tar() { # $1 = tarball path
+    local tarball="$1" variant listing normalized
+    variant="$(TAR_OPTIONS='' command tar -xOf "$tarball" etc/pithead-variant 2>/dev/null)" || {
+        echo "rootfs release guard: cannot read etc/pithead-variant" >&2
+        return 2
+    }
+    [ "$variant" = release ] || {
+        echo "rootfs release guard: variant is '$variant', not release" >&2
+        return 2
+    }
+    listing="$(TAR_OPTIONS='' command tar -tf "$tarball")" || {
+        echo "rootfs release guard: cannot list $tarball" >&2
+        return 2
+    }
+    normalized="$(sed -E 's#^(\./)+##' <<<"$listing")"
+    if grep -Eq '^/' <<<"$normalized"; then
+        echo "rootfs release guard: refusing a rootfs with an absolute tar member" >&2
+        return 2
+    fi
+    if grep -Eq '(^|/)(\.|\.\.)/|//' <<<"$normalized"; then
+        echo "rootfs release guard: refusing a rootfs with an ambiguous tar member" >&2
+        return 2
+    fi
+    if grep -Eq '(^|/)authorized_keys2?$' <<<"$normalized"; then
+        echo "rootfs release guard: refusing a rootfs carrying the debug SSH key" >&2
+        return 2
+    fi
+}
+
+extract_rootfs_tar() { # $1 = tarball, $2 = destination
+    TAR_OPTIONS='' command tar -xf "$1" -C "$2"
+}
+
+# A non-dev image or bundle must consume the exact export guarded immediately before publication.
+verify_guarded_rootfs_tar() { # $1 = tarball path
+    local tarball="$1" expected actual
+    verify_release_rootfs_tar "$tarball" || return $?
+    [ -s "$tarball.sha256" ] || {
+        echo "rootfs release guard: missing $tarball.sha256 from the guarded registry push" >&2
+        return 2
+    }
+    expected="$(tr -d '[:space:]' <"$tarball.sha256")"
+    [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "rootfs release guard: malformed digest in $tarball.sha256" >&2
+        return 2
+    }
+    actual="$(sha256sum "$tarball" | awk '{print $1}')" || return 2
+    [ "$actual" = "$expected" ] || {
+        echo "rootfs release guard: $tarball changed after the guarded registry push" >&2
+        return 2
+    }
 }
 
 # The working tree's commit, with build-image.sh's exact -dirty suffix. These scripts normally run
