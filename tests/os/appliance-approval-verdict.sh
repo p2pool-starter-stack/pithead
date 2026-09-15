@@ -129,7 +129,10 @@ _control_request_lost_response_self_test() (
             printf 'x' >>"$polls"
             printf '{"id":"rid-7","status":"applied"}'
             ;;
-        *) cat >/dev/null; printf '\n000' ;;
+        *)
+            cat >/dev/null
+            printf '\n000'
+            ;;
         esac
     }
     result=$(dashboard_control_request commit "$body" 30) || return 1
@@ -143,7 +146,10 @@ _control_request_lost_response_self_test() (
             printf 'x' >>"$polls"
             printf '{"id":"rid-7","status":"applied"}'
             ;;
-        *) cat >/dev/null; printf 'temporarily unavailable\n503' ;;
+        *)
+            cat >/dev/null
+            printf 'temporarily unavailable\n503'
+            ;;
         esac
     }
     result=$(dashboard_control_request commit "$body" 30) || return 1
@@ -157,7 +163,10 @@ _control_request_lost_response_self_test() (
             printf 'x' >>"$polls"
             printf '{"id":"rid-7","status":"applied"}'
             ;;
-        *) cat >/dev/null; printf '{"error":"temporarily unavailable"}\n503' ;;
+        *)
+            cat >/dev/null
+            printf '{"error":"temporarily unavailable"}\n503'
+            ;;
         esac
     }
     result=$(dashboard_control_request commit "$body" 30) || return 1
@@ -172,7 +181,10 @@ _control_request_lost_response_self_test() (
             printf '{"id":"rid-7","status":"applied"}'
             ;;
         *'/api/control/result?id='*) printf '{"status":"rejected"}' ;;
-        *) cat >/dev/null; printf '{"id":"other-request","error":"temporarily unavailable"}\n503' ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"other-request","error":"temporarily unavailable"}\n503'
+            ;;
         esac
     }
     result=$(dashboard_control_request commit "$body" 30) || return 1
@@ -183,7 +195,10 @@ _control_request_lost_response_self_test() (
     dashboard_curl() {
         case "$*" in
         *'/api/control/result?id=rid-7'*) printf 'x' >>"$polls" ;;
-        *) cat >/dev/null; printf 'forbidden\n403' ;;
+        *)
+            cat >/dev/null
+            printf 'forbidden\n403'
+            ;;
         esac
     }
     dashboard_control_request commit "$body" 30 >/dev/null 2>&1 && return 1
