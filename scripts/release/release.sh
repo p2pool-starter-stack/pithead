@@ -28,7 +28,7 @@
 #   --skip-smoke         Skip the staged-image smoke verification.
 #   --draft              Create the GitHub Release as a DRAFT (held for review; publish it by hand).
 #   --resume-promote     Skip build/stage; promote the already-staged digests (retry after a smoke pass).
-#   --allow-dirty        Don't require a clean git working tree (for local experimentation only).
+#   --allow-dirty        Permit a dirty tree for --dry-run only.
 #   --unsigned           Publish WITHOUT cosign signatures. One-click upgrades refuse an unsigned
 #                        release once cosign.pub is committed — deliberate, loud, and rarely right.
 #   -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
@@ -229,6 +229,7 @@ main() {
     preflight
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     if [ "$RESUME_PROMOTE" -eq 1 ]; then
+        require_clean_release_tree
         warn "--resume-promote: skipping build/stage. Re-staging to recover digests..."
         ghcr_login
         local suffix repo digest
@@ -243,12 +244,15 @@ main() {
         done
     else
         test_gate
+        require_clean_release_tree
         build_images
         stage_push
     fi
     smoke_test
+    require_clean_release_tree
     promote
     sign_images # #376 — signs the digests promote re-tagged; --resume-promote reaches this too
+    require_clean_release_tree
     publish
 
     printf '\n'
