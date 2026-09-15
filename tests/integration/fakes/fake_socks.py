@@ -11,19 +11,30 @@ class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+def _read(sock, size):
+    data = bytearray()
+    while len(data) < size:
+        if not (chunk := sock.recv(size - len(data))):
+            raise ConnectionError("short SOCKS request")
+        data.extend(chunk)
+    return bytes(data)
+
+
 class _Handler(socketserver.BaseRequestHandler):
     def handle(self):
         client = self.request
-        client.recv(2)
-        client.recv(1)
+        _, methods = _read(client, 2)
+        _read(client, methods)
         client.sendall(b"\x05\x00")
-        _, _, _, kind = client.recv(4)
+        _, _, _, kind = _read(client, 4)
         if kind == 1:
-            address = socket.inet_ntoa(client.recv(4))
+            address = socket.inet_ntoa(_read(client, 4))
         else:
-            address = client.recv(client.recv(1)[0]).decode()
-        port = int.from_bytes(client.recv(2), "big")
-        if self.server.owner.refuse:
+            address = _read(client, _read(client, 1)[0]).decode()
+        port = int.from_bytes(_read(client, 2), "big")
+        owner = self.server.owner
+        owner.connected = True
+        if owner.refuse:
             client.sendall(b"\x05\x05\x00\x01" + b"\x00" * 6)
             return
         try:
@@ -44,6 +55,7 @@ class FakeSocks:
 
     def __init__(self, refuse=False):
         self.refuse = refuse
+        self.connected = False
         self._server = _Server(("127.0.0.1", 0), _Handler)
         self._server.owner = self
         self.host, self.port = self._server.server_address

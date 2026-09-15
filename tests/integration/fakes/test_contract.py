@@ -93,9 +93,9 @@ def test_monero_http_control_mutates_state():
 
 def test_bounded_get_reaches_an_http_fake_through_socks():
     with FakeWorkerApi() as http, FakeSocks() as socks:
-        url = f"http://{http.host}:{http.port}/1/summary"
+        url = f"http://localhost:{http.port}/1/summary"
         response = bounded_get(url, max_bytes=1024 * 1024, proxies=socks.proxies)
-    assert response.json()["id"] == "itest-worker"
+    assert response.json()["id"] == "itest-worker" and socks.connected
 
 
 def test_bounded_get_refused_socks_dial_is_a_request_exception():
@@ -104,7 +104,7 @@ def test_bounded_get_refused_socks_dial_is_a_request_exception():
         FakeSocks(refuse=True) as socks,
         pytest.raises(requests.RequestException),
     ):
-        bounded_get(f"http://{http.host}:{http.port}/1/summary", proxies=socks.proxies)
+        bounded_get(f"http://localhost:{http.port}/1/summary", proxies=socks.proxies)
 
 
 def test_wallet_confirmed_payouts_parse_and_convert():
