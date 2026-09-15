@@ -106,9 +106,20 @@ dashboard_curl() {
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
     if out=$(dashboard_control_post "$route" "$body"); then
+        response_code=${out##*$'\n'}
+        if [[ $response_code =~ ^[0-9]{3}$ ]]; then
+            out=${out%$'\n'*}
+            [[ $response_code =~ ^2 ]] || return 1
+        fi
         rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
+        # or malformed successful response. Only an explicit JSON error is a real refusal; the
+        # caller's id still names a request the host may complete, so poll it.
+        if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        fi
     else
         # The POST died in flight rather than being answered. A commit whose apply recreates
         # containers restarts the dashboard underneath its own request, so the runner's answer can
@@ -118,8 +129,7 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         # returned". The id is not lost when that happens, because the CALLER sent it. Poll for it.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # A server that ANSWERED without an id refused the request; that is a verdict, not a lost
-    # response, and it must stay fast rather than polling a deadline out.
+    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
