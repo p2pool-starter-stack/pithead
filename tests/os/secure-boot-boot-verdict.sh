@@ -8,18 +8,21 @@
 # `grub-efi-amd64` and an unsigned kernel, with no sbsign/mokutil/enrolled-key tooling anywhere in
 # the repo (filed as p2pool-starter-stack/pithead#2187), so the expected — and today CORRECT —
 # verdict is that shim refuses to chainload the unsigned bootloader and the guest never reaches
-# userspace. This is a genuine `bad`, not a special-cased pass: #2187 defers signing past 2.0.0 to
-# `v2.x - post-GA`, when the same check can reach userspace and flip green with no test-file change.
+# userspace. #2187 defers that measured non-boot only for 2.0.0; a later version treats it as a
+# regression, so the deferral cannot hide a post-GA Secure Boot failure.
 
 # $1 = 1 if virt-install successfully defined+started the guest, 0/empty otherwise (e.g. no
 #      matching OVMF secure-boot firmware on the host — an environment gap, not this appliance's)
 # $2 = 1 if a userspace banner appeared on serial within the boot window, 0/empty otherwise
-# $3 = 1 while Secure Boot's measured non-boot is the accepted deferred policy, 0 once signing
-#      support is required
+# $3 = image VERSION; only 2.0.0 carries Secure Boot's accepted deferred policy
 # Prints the verdict line on stdout; exit 0 = booted or the documented deferred state, 1 =
 # unmeasured firmware or a required Secure Boot boot failure.
+secure_boot_deferred() { # $1 = image VERSION; only 2.0.0 carries the accepted deferral (#2187)
+    [ "$1" = 2.0.0 ]
+}
+
 secure_boot_boot_verdict() {
-    local defined="$1" booted="$2" deferred="$3"
+    local defined="$1" booted="$2" version="$3"
     if [ "$defined" != 1 ]; then
         echo "could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
         return 1
@@ -28,7 +31,7 @@ secure_boot_boot_verdict() {
         echo "the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
         return 0
     fi
-    if [ "$deferred" = 1 ]; then
+    if secure_boot_deferred "$version"; then
         echo "the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — measured, deferred past 2.0.0 to v2.x - post-GA"
         return 0
     fi

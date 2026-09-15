@@ -139,8 +139,7 @@ _secure_boot_guest_leg() {
     if [ "$defined" = 1 ] && wait_serial "login:|Debian GNU/Linux|Pithead setup wizard" 180; then
         booted=1
     fi
-    # #2187 defers signing beyond 2.0.0. Flip this to 0 with that work so a later non-boot fails.
-    if verdict=$(secure_boot_boot_verdict "$defined" "$booted" 1); then
+    if verdict=$(secure_boot_boot_verdict "$defined" "$booted" "$(tr -d ' \t\r\n' <VERSION)"); then
         ok "$verdict"
     else
         bad "$verdict"
