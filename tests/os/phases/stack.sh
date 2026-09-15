@@ -15,7 +15,15 @@
 # docs/dev/testing-strategy.md § J's parity matrix (#2062) names exactly what this phase adds over
 # `provision`: the 15-scenario config matrix's remote-safe subset, fault injection, hardening,
 # auth-fail-closed, and XvB routing — all against the appliance channel for the first time.
-STACK_INTEGRATION_RUN="$SCRIPT_DIR/../../integration/run.sh"
+# SCRIPT_DIR is the runner's own directory (tests/os), not this file's: run.sh *sources* the
+# phase files, so BASH_SOURCE never points here. One `..` reaches tests/, which is where the
+# integration runner lives; two reached the repo root and every assertion below died with
+# exit 127 before it ran (#2254).
+STACK_INTEGRATION_RUN="$SCRIPT_DIR/../integration/run.sh"
+[ -x "$STACK_INTEGRATION_RUN" ] || {
+    echo "stack: integration runner not found or not executable at $STACK_INTEGRATION_RUN" >&2
+    return 1 2>/dev/null || exit 1
+}
 
 # Shape the wizard's served config for remote-node mode. Mirrors provision_browser_config
 # (tests/os/provision-browser-submit.sh) but for the Both-role remote-node answers instead of the
