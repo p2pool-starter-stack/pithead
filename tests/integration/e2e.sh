@@ -22,7 +22,6 @@
 #
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
 # See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
-
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
@@ -75,7 +74,6 @@ die() {
     printf '%b ✗%b %s\n' "$C_RED" "$C_RESET" "$*" >&2
     exit 1
 }
-
 usage() {
     cat <<EOF
 Run a branch end-to-end against a live test bench, then restore everything.
@@ -637,16 +635,17 @@ run_harness() {
     harness_prepare "$rearm_id" || harness_fail "Failed to record harness launch intent." || return 1
     HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || harness_fail "Failed to launch the harness." || return 1
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || harness_fail "Harness launch returned an invalid PID." || return 1
-    # Poll the done-marker, printing a heartbeat tail of the log.
-    local rc="" waited=0
-    while :; do
+    # Poll the done-marker, printing a heartbeat tail of the log. A failed poll is not "running".
+    local rc="" waited=0 state
+    while [ "$waited" -lt 7200 ]; do
         if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
             step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
             repoint_miner || harness_fail "Failed to reapply the borrowed-pool fixture." || return 1
             wait_workers "$WORKERS" 180 || harness_fail "Borrowed miner did not reconnect after pool re-arm." || return 1
             printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || harness_fail "Failed to acknowledge the borrowed-pool fixture." || return 1
         fi
-        if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
+        state="$(on_bench "test -f '$E2E_DIR/results/e2e-harness.done' && echo done || echo running")" || harness_fail "Failed to poll the detached harness." || return 1
+        if [ "$state" = "done" ]; then
             rc="$(on_bench "cat '$E2E_DIR/results/e2e-harness.done'")"
             harness_finished || harness_fail "Detached harness identity changed before it stopped." || return 1
             break
@@ -656,6 +655,7 @@ run_harness() {
         step "harness running… ${waited}s — latest:"
         on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/      /' || true
     done
+    [ -n "$rc" ] || harness_fail "Detached harness did not finish within two hours." || return 1
     echo ""
     log "Harness finished (exit $rc). Full log:"
     on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/  /'

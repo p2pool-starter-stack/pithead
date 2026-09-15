@@ -651,6 +651,9 @@ that never settles stays `accepted` and reds as well. The one answer the wait mu
 upstream reads as terminal and gets named by the assertion rather than timing out and being
 reported as a row that never settled.
 
+The detached e2e harness polls its completion marker with a two-hour bound. A failed bench poll is
+an error, not evidence that the harness is still running, so cleanup and load-worker evidence run.
+
 ### The abort-safe unwind
 
 Every leg above restores what it changed when it finishes. That covers a leg that *fails*; it does

@@ -26,7 +26,6 @@ RUN_SRC="$HERE/../lib/run-cli.sh"
 
 assert_eq "rig-supply.sh actually defines rig_supply (#1378)" \
     "$(type -t rig_supply)" "function"
-
 # --- Extract run_harness from the shipped e2e.sh --------------------------------------------
 # Fail CLOSED: if a refactor moves or renames the function this must go red, never silently stop
 # testing. A self-test whose subject quietly evaporates is the exact shape of gate this file exists
@@ -37,7 +36,10 @@ assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$HARNESS_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_harness() { } "
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
-
+assert_contains "the done-marker poll fails on a lost bench connection and is bounded" \
+    "$HARNESS_SRC" 'while [ "$waited" -lt 7200 ]; do'
+assert_contains "the done-marker poll returns through cleanup on a bench error" \
+    "$HARNESS_SRC" 'harness_fail "Failed to poll the detached harness."'
 # --- Drive it with ssh stubbed out ----------------------------------------------------------
 # Every on_bench call is recorded; the harness is told its run finished immediately with rc 0, so
 # the poll loop never sleeps. The one call we read back is the `nohup ./.e2e-run.sh` launch, which
@@ -91,6 +93,7 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
             # rig_supply's proof dial; the unreachable-rig path is driven separately by rc_of.
             *curl*Authorization*) return 0 ;;
             *borrow-rearm.request*) return 1 ;;
+            *"&& echo done"*) echo "done" ;;
             *e2e-harness.done*)
                 # `test -f <done>` (the poll) and `cat <done>` (the exit code) share this substring;
                 # answering 0 to both ends the loop on its first pass with a clean harness result.
@@ -113,20 +116,16 @@ drive_harness() { # <mode> <borrow_miner> [rig-token] -> "LAUNCH\t<cmd>" then "S
     rm -f "$lf" "$sf"
     printf '%s\n' "$launch"
 }
-
 launch_of() { # <mode> <borrow> [token] -> the raw launch command string
     drive_harness "$@" | sed -n 's/^LAUNCH\t//p'
 }
-
 stdin_of() { # <mode> <borrow> [token] -> what e2e.sh piped into the launch call
     drive_harness "$@" | sed -n 's/^STDIN\t//p'
 }
-
 compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh would launch run.sh with
     # Everything between the runner's positional args and the trailing redirect is the phase list.
     launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
 }
-
 has_phase() { # <phase-list> <flag> -> "yes" | "no"
     case " $1 " in *" $2 "*) echo yes ;; *) echo no ;; esac
 }
@@ -398,6 +397,7 @@ dial_of() { # -> the argv rig_supply's proof dial hands to curl on the bench
     local f
     f="$(mktemp)"
     (
+        # shellcheck disable=SC2034 # consumed by the eval'd real rig_supply.
         MINER_HOST=rig1 RIG_HOST="" RIG_NAME=rig1 IT_RIG_TOKEN="" RIGFORGE_CONFIG=/opt/rigforge/config.json
         BENCH_HOST=bench DIAL_FILE="$f"
         warn() { :; }
