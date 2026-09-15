@@ -24,20 +24,29 @@
 # stamps BUILD_COMMIT `unknown-dirty` and mkbundle needs PITHEAD_STALE_TARBALL_OK=1; os-update
 # reads neither — only [meta.pithead]. The build names the copied tree's compose file explicitly,
 # so its COMPOSE_SOURCE stamp records that synthetic input by hash instead of consulting a git
-# origin the export does not have. It is signed with THIS tree's dev key (copied in) so the keyring
+# origin the export does not have. It uses THIS tree's resolved signing material so the keyring
 # baked into the guest's slots accepts it.
+
+# Resolve the same signer that _build_image used for the guest. A bench may supply an explicit
+# signer, in which case the gitignored dev-cert directory is correctly absent from the checkout.
+# Source the shared resolver rather than assuming that implementation detail here.
+# shellcheck source=os/rauc/populate-slot.sh
+. "$SCRIPT_DIR/../../os/rauc/populate-slot.sh"
 
 FLOOR_FALLBACK_VERSION=99.0.0
 
 # $1 marker, $2 stamped version, $3 minimum_os_version -> prints the bundle path (outside
 # os/rauc/build, so _build_bundle's `find | head -1` in a later phase can never pick it up).
 _build_bundle_stamped() {
-    local marker="$1" version="$2" floor="$3" wt out
+    local marker="$1" version="$2" floor="$3" wt out cert key keyring
+    resolve_signing_material 1 || return 1
+    cert="$(cd "$(dirname "$RAUC_CERT")" && pwd -P)/$(basename "$RAUC_CERT")" || return 1
+    key="$(cd "$(dirname "$RAUC_KEY")" && pwd -P)/$(basename "$RAUC_KEY")" || return 1
+    keyring="$(cd "$(dirname "$RAUC_KEYRING")" && pwd -P)/$(basename "$RAUC_KEYRING")" || return 1
     wt=$(mktemp -d /tmp/pithead-floor-fallback.XXXXXX) || return 1
     out=/tmp/os-floor-fallback-$marker.raucb
     {
         git archive HEAD | tar -x -C "$wt" &&
-            mkdir -p "$wt/os/rauc" && cp -a os/rauc/certs "$wt/os/rauc/" &&
             printf '%s\n' "$version" >"$wt/VERSION" &&
             (
                 cd "$wt" &&
@@ -45,6 +54,7 @@ _build_bundle_stamped() {
                     PITHEAD_ROOTFS_TAG="pithead-os-rootfs-$marker" PITHEAD_OS_SYNTHETIC_COMPOSE=1 \
                     PITHEAD_OS_COMPOSE_FILE="$PWD/docker-compose.yml" os/build-image.sh &&
                     PITHEAD_STALE_TARBALL_OK=1 PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION="$floor" \
+                        PITHEAD_RAUC_CERT="$cert" PITHEAD_RAUC_KEY="$key" PITHEAD_RAUC_KEYRING="$keyring" \
                         os/rauc/mkbundle.sh --dev
             ) &&
             cp "$wt/os/rauc/build/update.raucb" "$out"

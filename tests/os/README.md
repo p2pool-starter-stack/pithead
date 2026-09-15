@@ -113,8 +113,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   until the slot commits, then start, with the pending marker consumed. After it, the floor-fallback
   leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating bundle stamped with a version no
   release carries. Its copied build tree opts into the harness-only synthetic compose path, names
-  its compose file explicitly and records the file hash in `COMPOSE_SOURCE`, so the build does not
-  need a git origin. The resulting slot cannot bring the stack up and falls back uncommitted: the
+  its compose file explicitly, uses the resolved signing material, and records the file hash in
+  `COMPOSE_SOURCE`, so the build does not need a git origin or a local dev-key directory. The
+  resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
   failed-update premise.

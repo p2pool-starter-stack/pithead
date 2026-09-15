@@ -123,6 +123,8 @@ assert_contains "a failed remote tag query is refused, not read as tag absence" 
 assert_contains "the remote-query refusal names the uncertainty" "$cs_out" "could not determine whether tag v0.0.9 exists"
 assert_eq "the remote-query failure stages nothing" "$(ls "$CS/remote-error" 2>/dev/null)" ""
 assert_contains "the floor-fallback build opts into synthetic compose staging" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_OS_SYNTHETIC_COMPOSE=1'
+assert_contains "the floor-fallback build resolves its signing material before staging" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'resolve_signing_material 1'
+assert_contains "the floor-fallback build passes resolved signing material to its copied-tree bundle" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_RAUC_KEYRING="$keyring"'
 
 echo "== unit: build-image --stage-only parses, and stops after staging, before the first docker step (#1215) =="
 # The CI rootfs scan runs the Dockerfile itself, so it needs the staging without the build. The
