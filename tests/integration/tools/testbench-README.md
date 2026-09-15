@@ -51,6 +51,17 @@ A workable layout (adjust to taste):
   pages out of 67,605,667, and `pages_used * 4096` equals the file size exactly, so the file is
   dense and compacting it would reclaim nothing. An earlier version of this line promised
   "~95 GiB" and told you to compact anything reading ~250 GiB; that figure was never measured.
+  This copy alone does not establish normal pruned-node sizing: source and copy were both measured
+  with `pruning_seed=384` ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)), so
+  `--copy-pruned-database` copied `txs_prunable` and `txs_prunable_tip` verbatim instead of running
+  the prune routine
+  ([source](https://github.com/monero-project/monero/blob/v0.18.5.1/src/blockchain_utilities/blockchain_prune.cpp#L584-L627)).
+  The user-facing budget instead follows the independent node that enabled pruning at genesis and
+  consumed 285.8 GB after syncing. Its first-start log enters the zero-seed branch that creates the
+  seed and aborts initialization if pruning fails; synchronization then continued from genesis. A
+  direct freelist read would classify its pages but would not reduce the disk space `data.mdb`
+  occupies. This bench's dense 276.9 GB copy corroborates that footprint
+  ([#1502](https://github.com/p2pool-starter-stack/pithead/issues/1502)).
 - **`MDB_VERSION_MISMATCH` from a system LMDB tool is the lock-file format, not a patched data
   format, and not corruption.** It appears while monerod holds the environment; the same tool
   opens an idle copy of the same chain. Measured here on monerod 0.18.5.1, where both DBs read
@@ -114,11 +125,12 @@ failure rolls the box back (down → restore → up). See `docs/dev/integration-
 
 **Validated live (Tier 4):** the config matrix (remote/local node, dashboard secure/insecure, Tari
 required/optional, RPC LAN access, XvB on/off) applied and asserted on real synced chains;
-lifecycle (restart, secret-preserving `apply`, backup→restore round-trip); node-down failover and
-recovery; release readiness; pruned monerod (the common production config).
-Recorded evidence includes the #274 no-clearnet verdict during Tor-down fault and recovery. The
-steady-state IPv4 TCP bridge observation and #206 running XvB-over-Tor wiring check exist, and the branch e2e precheck
-now invokes `--check` separately after `--readiness`; their first exact-head record is pending.
+lifecycle (restart, secret-preserving `apply`, same-version backup→restore round-trip); node-down failover and
+recovery; release readiness; pruned monerod (the common production config); and the privacy egress
+assertions. [#274](https://github.com/p2pool-starter-stack/pithead/issues/274) promoted the persistent direct-IPv4-TCP bridge-container observation, and [#206](https://github.com/p2pool-starter-stack/pithead/issues/206)
+added the running XvB-over-Tor configuration assertion. Together with the historical live evidence
+from [#274](https://github.com/p2pool-starter-stack/pithead/issues/274), privacy egress is covered,
+with the stated IPv4-TCP/bridge-network limit, not a residual gap.
 
 **Covered without a real chain:** client↔daemon contract tests, the fake-daemon mini-stack
 (including full-prune behavior), compose hardening, config rendering, dashboard unit/frontend tests.
@@ -126,11 +138,15 @@ now invokes `--check` separately after `--readiness`; their first exact-head rec
 | # | Gap (not tested live) | Worth filling before release? |
 |---|---|---|
 | 1 | Full (unpruned) Monero mode live — a pruned bench can't cover it | Low. Stack code paths don't differ by prune mode (it's monerod-internal); fakes/config cover it. A multi-day full sync isn't justified. |
-| 2 | Automated PR gate — a self-hosted runner is manual/opt-in | Medium-high, high-impact. Wire the live harness as a required check on protected `main` only (never fork PRs). |
-| 3 | Exact-head privacy/upgrade/XvB combined hardware record | Medium. Run `--check`; `--image-upgrade` proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. `--xvb-routing-smoke` runs the wallet-bearing fetch in a Tor-only internal network and polls a real controller/proxy transition. Egress observation skips only for explicit clearnet initial sync; a requested XvB transition with no share fails. |
-| 4 | Multi-worker scale — the harness assumes ~2 workers | Medium. For perf confidence add a load-gen worker and assert proxy routing/hashrate. Not a blocker. |
-| 5 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
-| 6 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; issue #2000 owns a focused remote quoting/cleanup/restoration proof. |
+| 2 | Protected pre-release gate — a self-hosted runner is manual/opt-in | Medium-high, high-value. Keep `workflow_dispatch` restricted to the protected default branch and approved actors; it is not a required PR check. |
+| 3 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves signed-bundle image identity, exact mounts, chain anchors, durable DB state, secrets, workers/mining, and exact old-release restoration. |
+| 4 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
+| 5 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |
+| 6 | XvB route record | Medium. Run the gate tracked by [#1998](https://github.com/p2pool-starter-stack/pithead/issues/1998). The routing transition has no recorded live proof. |
+| 7 | Caddy-fronted `/metrics` with dashboard authentication | Medium. Needs `IT_DASHBOARD_PASSWORD` (env; the box's real dashboard login plaintext) — see `docs/dev/integration-testing.md`'s `--check` row for the exact bench-ci knob. Tracked by [#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058), open until an operator sets it and a run shows the leg executing. |
+| 8 | Multi-worker scale — the harness assumes ~2 workers | Medium. For perf confidence add a load-gen worker and assert proxy routing/hashrate; [#1999](https://github.com/p2pool-starter-stack/pithead/issues/1999) tracks it. |
+| 9 | Real Tari merge-mined block acceptance | Low. Finding a block is probabilistic; rely on template/connectivity checks. |
+| 10 | Fault injection over SSH — implementation exists, recorded evidence does not | Low-Medium. The faults already route through `rx`; [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000) owns a focused remote quoting/cleanup/restoration proof. |
 
 **Recommended before release:** record the combined upgrade/XvB run, then automate the protected
 gate when a self-hosted runner exists. The rest are nice-to-have.

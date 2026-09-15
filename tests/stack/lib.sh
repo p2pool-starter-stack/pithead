@@ -116,14 +116,26 @@ run_sourced() {
     )
 }
 
+# Run a sourced function with pithead's production shell options intact. Control-runner tests use
+# this variant so an unguarded failure aborts the request exactly as it does in the systemd unit.
+run_sourced_e() {
+    local dir="$1"
+    shift
+    bash -Eeuo pipefail -c 'cd "$1"; source "$2"; shift 2; "$@"' _ "$dir" "$STACK" "$@"
+}
+
 # Poll CHECK (a predicate function name) until it succeeds, but never past the point where PID
 # has already exited -- callers learn "the process gave up trying" rather than counting ticks
 # that a loaded box may not owe it (#1495: a fixed 200x0.05s budget reddened the #1342 mutation-
 # lock test under concurrent runs). `kill -0` reads bash's own job table, so it flips the instant
-# the backgrounded job dies, no explicit reap needed. Returns 1 if PID dies before CHECK succeeds.
+# the backgrounded job dies, no explicit reap needed. Re-check CHECK then: it may have succeeded
+# between the loop condition and the liveness probe. Returns 1 only if it is still unsatisfied.
 wait_while_alive() { # <pid> <check-fn-name>
     while ! "$2"; do
-        kill -0 "$1" 2>/dev/null || return 1
+        kill -0 "$1" 2>/dev/null || {
+            "$2"
+            return
+        }
         sleep 0.05
     done
 }

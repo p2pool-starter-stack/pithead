@@ -108,3 +108,34 @@ assert_mining_state() { # <skip: 0|1> <workers> <hashes> <expected-workers>
     assert_num_ge "workers online (>= $4)" "${2:-0}" "$4"
     assert_num_gt "stratum total hashes > 0" "${3:-0}" 0
 }
+
+# --- The static census, shared by every harness that sources this file ---------------------------
+# Both tier-4 harnesses' own selftests run this census over their own file tree
+# (tests/integration/selftest/selftest-skip-accounting.sh, tests/os/selftest-skip-accounting.sh):
+# no skip may leave through a bare it_warn (by wording or by the warn-then-return SHAPE — see the
+# two functions), and no it_skip_* call site may invent a class outside by-design/covered/missing.
+# One copy rather than one per harness: two regexes that are meant to agree is two places for them
+# to quietly stop agreeing.
+skip_census_wording() { # <file> -> skip warnings that never reach a counter
+    grep -n 'it_warn' "$1" |
+        grep -Ei 'skipp(ed|ing)' |
+        grep -v 'it_warn "SKIPPED scenario' |
+        grep -v 'it_warn "▲ SKIPPED WHOLE PHASE' |
+        grep -v 'it_warn "skipped leg'
+}
+# `--keep:` is the one legitimate warn-then-return: a deliberate cleanup skipped on purpose, not
+# coverage lost. Allowlisted by name rather than a looser regex, so a NEW warn-then-return has to
+# be looked at by a human before it can be waved through.
+skip_census_shape() { # <file> -> warn-then-return-0 sites that are not counted skips
+    awk '
+        /it_warn/ { w = NR; t = $0; next }
+        w && NF {
+            if ($0 ~ /^[[:space:]]*return 0[[:space:]]*$/ && t !~ /--keep:/) print w ": " t
+            w = 0
+        }
+    ' "$1"
+}
+skip_census_class() { # <file> -> it_skip_* call sites whose trailing class argument is not one of the three
+    grep -nE 'it_skip_(scenario|phase|leg) .*"[a-z-]+"[[:space:]]*$' "$1" |
+        grep -vE '"(by-design|covered|missing)"[[:space:]]*$'
+}

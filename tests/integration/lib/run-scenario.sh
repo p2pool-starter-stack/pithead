@@ -41,7 +41,7 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
     case "$(egress_verdict "$out")" in
     ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
-    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$(printf '%s' "$out" | grep -E 'LEAK|✗' | head -4)" ;;
+    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
     *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
     esac
 }
@@ -125,7 +125,7 @@ assert_doctor_ok() {
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_log "   doctor: egress firewall opted out — skipping that OK line"
     else
-        assert_contains "doctor: egress firewall installed (#383)" "$out" "egress firewall rules are installed"
+        assert_contains "doctor: egress firewall installed (#383)" "$out" "egress firewall is installed"
     fi
     assert_contains "doctor: stratum :3333 listening (#383)" "$out" "workers can connect"
     assert_contains "doctor: dashboard answers (#383)" "$out" "answers on 127.0.0.1:8000"
