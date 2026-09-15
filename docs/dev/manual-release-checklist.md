@@ -62,9 +62,12 @@ not yet merged. Until it is, this whole battery is a human procedure.
 Needs hands, every time:
 
 - **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
-- **M4 — the wrong-disk guard**, which needs a second physical disk holding unrelated data.
 - **M8 — power cut during the update's write phase.** Pull the plug at the wall.
 - **M10 — power cut during normal mining.** Same, while the stack is live.
+
+M4's mechanics (the wrong-disk guard) now have a KVM analog — see
+[appliance-release.md](appliance-release.md) — so only the real-hardware disk-controller
+cases still need a physical second disk.
 
 The power-cut items are the ones that justify the whole appliance design (A/B slots, the
 health-gated commit, the migration hold). They have never been proven on real hardware.
