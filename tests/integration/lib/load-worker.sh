@@ -8,7 +8,7 @@ worker_names() {
 }
 
 start_load_worker() {
-    [ "$WORKERS" -ge 3 ] 2>/dev/null || return 0
+    [ "$WORKERS" -eq 3 ] 2>/dev/null || return 0
     local baseline bin stamp names expected deadline identity
     baseline="$(worker_names)" || return 1
     [ -n "$baseline" ] || return 1
@@ -119,7 +119,7 @@ verify_load_worker() {
     step "load worker evidence: aggregate=${hashes}H/s accepted=${shares} clone_accepted=${clone_shares} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s"
     on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$hashes") $(quote_arg "$shares") $(quote_arg "$clone_shares") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
     [ "$names" = "$expected" ] || return 1
-    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) == $workers and all($r[]; . >= 0)) | $r | add | select(. > 0)' >/dev/null || return 1
+    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) == $workers and all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || return 1
     [ "$shares" -gt "$LOAD_SHARES_BEFORE" ] 2>/dev/null && [ "$clone_shares" -gt 0 ] 2>/dev/null || return 1
     [ "$LOAD_SAW_READY" = 1 ] && [ "$LOAD_SAW_FAILOVER" = 1 ] && [ "$LOAD_SAW_RECOVERY" = 1 ] || return 1
 }
