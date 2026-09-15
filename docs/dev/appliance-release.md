@@ -177,7 +177,9 @@ container that stayed unhealthy for good (#1098). `os/build-image.sh` therefore 
 `/opt/pithead/COMPOSE_SOURCE` (`tag NAME SHA`, or `tree`) and prints it. What that costs: a compose
 change on the branch is not exercised on the appliance until the next cut, where the tag does not
 exist yet and the tree is the source. A clone that has not fetched the tag is refused rather than
-silently built the old way; `git fetch --tags` clears it.
+silently built the old way; `git fetch --tags` clears it. Only the appliance battery's synthetic
+bundle fixture may opt into an explicit compose file; ordinary builds cannot replace the tag or
+tree source.
 
 `--dev` auto-generates a throwaway `CN=pithead-dev` signing key for the bench. A release build
 omits it and must name the real key instead (`PITHEAD_RAUC_CERT` + `PITHEAD_RAUC_KEY`) — see
