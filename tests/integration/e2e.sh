@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # output globals are consumed by sourced helpers
 #
 # e2e.sh — one-command Tier-4 end-to-end run of a branch against a live test bench.
 #
@@ -166,7 +167,6 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
-
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
@@ -174,7 +174,6 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o Ser
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
 on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
-
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
 MINER_CFG_BACKUP=""
@@ -191,7 +190,6 @@ CONTROL_VERDICT_BEFORE=""
 # Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
 # so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
     local rc=$?
@@ -310,7 +308,6 @@ restore_all() {
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
 trap restore_all EXIT
-
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
@@ -320,7 +317,6 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
 # tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
 # the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as

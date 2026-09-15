@@ -216,7 +216,7 @@ Useful flags (full list in `run.sh --help`):
 | `--host <user@host>` / `--local` | Drive the box over SSH, or a stack on this machine. |
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
-| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. |
+| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
 | `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (synced chains reusable, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
@@ -561,8 +561,8 @@ can prove — the tier-2 fake covers the `:8081` read only. It enables `dashboar
 borrowed rig in `workers.list[]` (#506; its token seen inside the container only as the
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
-carrying that key is migrated to `workers.list[]` before the legs run), and drives five legs, each
-self-skipping loudly without its prerequisite:
+carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
+as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows:
 
 - Read with a populated masked descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)):
   `api_ok` and the enriched feed still resolve — the guard for the v1.5.2 regression, where the
@@ -581,10 +581,11 @@ self-skipping loudly without its prerequisite:
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.
-- **Three writable keys are deliberately never driven, and this is a decision rather than a gap.**
+- **Two writable keys are deliberately never driven, and this is a decision rather than a gap.**
   `autotune` would start a real tuning run — it moves hashrate and thermals and may not settle
   inside the leg. `watchdog` would remove thermal protection from a rig mining at its temperature
-  ceiling. `pools` cannot be round-tripped from the rig's own reading at all: RigForge serves a
+  ceiling. Each refusal has its own `[by-design]` leg row. `pools` cannot be round-tripped from the
+  rig's own reading at all: RigForge serves a
   stored `pass` or `tls-fingerprint` as the `{"__secret__": true}` marker and never the value, and
   the dashboard drops the marker again on the way back, so the value that comes back is lossy — and
   `pass` is the stack's stratum password
@@ -599,11 +600,14 @@ self-skipping loudly without its prerequisite:
   operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
   guessed value risks a real `rejected` instead of proving the round trip). Self-skips if the
   dashboard has never applied a `pools` value to this rig before (nothing to safely restore).
+  An absent probe or restorable original is a `[missing]` row, never a pass or an unexplained gate
+  failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
   `config.json` hand-edit shows up in the masked prefill (with the token still masked).
 - Auto-rollback ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517), rigforge#236):
   a change the rig rolls back is recorded as `rolled_back` in the worker-apply result and history.
+  An absent `IT_RIG_ROLLBACK_CHANGES` is a `[missing]` row with the required input named.
 
 ### Settling an apply that comes back `accepted`
 
