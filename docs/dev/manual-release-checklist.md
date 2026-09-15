@@ -54,20 +54,25 @@ image; never hand one to a user.
 
 ## The manual hardware battery (M1–M10)
 
-Defined in [appliance-release.md](appliance-release.md). Run it on a physical box and record the
-results in the release issue. Today every item is driven by hand; a harness that automates the
-parts a script can reach, and demands typed attestation for the rest, is tracked as #1022 and is
-not yet merged. Until it is, this whole battery is a human procedure.
+Defined in [appliance-release.md](appliance-release.md). Run its remaining hardware-only checks on a physical box and record the
+results in the release issue. The KVM battery covers the scriptable parts noted below; the physical
+checks remain hands-on until #1022 can collect the scripted and attested results together.
 
 Needs hands, every time:
 
 - **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
 - **M4 — the wrong-disk guard**, which needs a second physical disk holding unrelated data.
-- **M8 — power cut during the update's write phase.** Pull the plug at the wall.
-- **M10 — power cut during normal mining.** Same, while the stack is live.
 
 The power-cut items are the ones that justify the whole appliance design (A/B slots, the
-health-gated commit, the migration hold). They have never been proven on real hardware.
+health-gated commit, the migration hold). Two are now in the KVM battery — a virtual disk cannot
+show USB-stick media damage or the firmware's Restore-on-AC-Power-Loss setting, so the box coming
+back **by itself** after the plug is pulled still needs hands on real hardware:
+
+- **M8 — power cut during the update's write phase.** *Covered by: `fault` phase Fault A
+  (destroy mid-write, `tests/os/phases/fault.sh`) — pull the plug at the wall on real hardware to
+  confirm Restore on AC Power Loss, not the write itself.*
+- **M10 — power cut during normal mining.** *Covered by: `provision` phase's power-cut leg
+  (M10, #2067, `tests/os/phases/provision-power-cut.sh`) — same caveat.*
 
 ### Install-path cases worth walking deliberately
 
@@ -87,9 +92,9 @@ health-gated commit, the migration hold). They have never been proven on real ha
 Defined in [appliance-release.md](appliance-release.md). Required for any release that touches
 the rig role. The `rig` KVM phase only proves the wizard's
 rig card, role select, a submit toward a faked pool listener, volatile journald, a plain reboot,
-and the A/B update leg — so these four stay hands-on until #1886's first gap converts what it can
-and names a bench e2e for the rest. Each row below names the check that replaces it once that
-lands.
+a power cut, and the A/B update leg — so these three stay hands-on until #1886's first gap
+converts what it can and names a bench e2e for the rest. Each row below names the check that
+replaces it once that lands.
 
 - **M11 — rig install and mine.** Flash the same stick; boot a rig-class loaner (never a
   production-only rig); choose RigForge; point it at a real coordinator. Expected: the rig card
@@ -105,9 +110,10 @@ lands.
   phase exercises this today.*
 - **M13 — rig power loss and rig update.** Cut power at the wall with the rig mining; it must
   return mining unaided (Restore on AC power loss). Then install the release bundle on the rig and
-  confirm it comes back mining on the new slot and self-commits. *Replaced by: a power-cut leg on
-  the rig phase — the KVM phase already covers the update/slot-commit half with a plain reboot,
-  not a power cut, so only the power-loss half of this row is still open.*
+  confirm it comes back mining on the new slot and self-commits. *Covered by: the `rig` phase's
+  power-cut leg (#2067, `tests/os/phases/rig.sh`) proves the return-mining-unaided fact off a real
+  `virsh destroy`, and the phase's existing update leg proves the install/self-commit half. What
+  stays manual is Restore on AC Power Loss itself — a firmware setting a virtual disk cannot show.*
 - **M14 — run-from-USB rig.** Boot the stick, choose RigForge, do **not** install to disk.
   Expected: it mines from the stick; a reboot returns it mining; reaching the wizard again needs
   the bootloader path (#1318). *Replaced by: a stick-root boot leg — the KVM phase always boots the

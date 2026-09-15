@@ -115,14 +115,24 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   release carries, so its slot cannot bring the stack up and falls back uncommitted: the previous
   slot's boot must put the `/data` floor back from the record the raise left, and the same fall-back
   with the record deleted must leave the floor alone and make `os-update` refuse with the
-  failed-update premise.
+  failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
+  provisioned stack is live — every earlier power cut in the battery landed on a bare guest
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Asserts every
+  container returns, the image store stays runnable (the #1029 class — present, digest-matched
+  and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
+  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
+  rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
+  a first version.
 - **rig** — answer `RigForge` on the same page and prove the other machine this image installs:
   it mines from the baked binary with no compile and no clearnet, starts no containers at all,
   and takes an A/B update — install, boot, self-commit on the miner running, persistence —
   exactly like a coordinator. (Uncommitted fallback is the update phase's to prove: a
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
-  everything except this.
+  everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
+  #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
+  `virsh destroy` and that the slot is still committed afterwards.
 - **media** — the physical-presence configuration channel (#786 sub-issue D): provisions via the
   ESP pre-seed path, then attaches a second removable stick carrying a changed `config.json` and
   reboots. Asserts the exact diff appears on the console (the changed wallet address in full, a
@@ -130,7 +140,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
-  disqualifying.
+  disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
+  its very first boot is loading the baked container images from the archive — the interrupted
+  write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
+  is the same as #1029 itself: the next boot either repairs the image store or refuses with a
+  legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — the shell-less box's last resort, never before run against a real disk: a
   provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
   marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
