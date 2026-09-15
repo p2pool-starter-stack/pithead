@@ -132,7 +132,7 @@ ignored_ids() {
 
 # -> the pinned $TRIVY_IMAGE's own reported version on stdout, rc 1 if docker fails to run it or
 # the output has no `Version: ` line to parse. Real trivy output's first line is exactly
-# "Version: 0.74.0"; only the FIRST matching line counts.
+# "Version: $TRIVY_VERSION"; only the FIRST matching line counts.
 engine_version() {
     local out ver
     out="$(docker run --rm "$TRIVY_IMAGE" --version 2>/dev/null)" || return 1
