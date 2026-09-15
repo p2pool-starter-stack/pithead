@@ -594,6 +594,15 @@ only validated generated secrets and Tor identity are retained from the archived
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
+#### Restore collision rules
+
+The restore door determines which copy wins when both the archive and destination have a file at
+the same path. `./pithead restore` is an explicit recovery command on an already deployed box, so
+the archive replaces the destination's file. The appliance wizard's restore-at-setup path instead
+preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool`: a `wipe=keep`
+install may already have synced chain data, and replacing it would force a resync. It still adds
+files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
+
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from. On a machine laid out differently (another user, another install
 > directory), the files land in the old box's directory tree — not the install you ran `restore`

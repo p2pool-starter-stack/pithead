@@ -8,8 +8,8 @@
 # `grub-efi-amd64` and an unsigned kernel, with no sbsign/mokutil/enrolled-key tooling anywhere in
 # the repo (filed as p2pool-starter-stack/pithead#2187), so the expected — and today CORRECT —
 # verdict is that shim refuses to chainload the unsigned bootloader and the guest never reaches
-# userspace. This is a genuine `bad`, not a special-cased pass: once #2187 lands real signing, the
-# same check starts reaching userspace and flips green with no test-file change required.
+# userspace. This is a genuine `bad`, not a special-cased pass: #2187 defers signing past 2.0.0 to
+# `v2.x - post-GA`, when the same check can reach userspace and flip green with no test-file change.
 
 # $1 = 1 if virt-install successfully defined+started the guest, 0/empty otherwise (e.g. no
 #      matching OVMF secure-boot firmware on the host — an environment gap, not this appliance's)
@@ -26,6 +26,6 @@ secure_boot_boot_verdict() {
         echo "the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
         return 0
     fi
-    echo "the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — this is the current, tracked state, not a battery defect; the row goes green the day #2187's signing lands"
+    echo "the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — this is the current, tracked state, not a battery defect; signing is deferred past 2.0.0 to v2.x - post-GA"
     return 1
 }
