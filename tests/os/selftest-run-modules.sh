@@ -160,16 +160,23 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     [ -z "$actions" ]
 ) || exit 1
 (
-    bads=0 KEEP=0
+    bads=0 create_called=0 KEEP=0
     _build_image() { printf 'image\n'; }
     vm_destroy_or_refuse() { :; }
     rm() { :; }
     cp() { :; }
     qemu-img() {
-        case "$1" in resize) : ;; create) return 1 ;; esac
+        case "$1" in
+        resize) : ;;
+        create)
+            create_called=1
+            return 1
+            ;;
+        esac
     }
     bad() { bads=$((bads + 1)); }
     phase_rigmedia
+    [ "$create_called" -eq 1 ] || exit 1
     [ "$bads" -eq 1 ]
 ) || exit 1
 rm -f "$SERIAL" "$SERIAL.failed"
