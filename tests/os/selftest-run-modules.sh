@@ -51,9 +51,18 @@ trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
 (
-    actions=""
+    actions="" destroy_ok=1
+    bad() { :; }
     vm_destroy_or_refuse() { actions+="undefine "; }
-    virsh() { actions+="$1 "; }
+    virsh() {
+        case "$1" in
+        list) printf '%s\n' "$VM" ;;
+        destroy)
+            actions+="destroy "
+            [ "$destroy_ok" = 1 ]
+            ;;
+        esac
+    }
     rm() { actions+="rm:$2 "; }
     KEEP=1
     _rigmedia_quiesce && _rigmedia_remove_target target || exit 1
@@ -65,6 +74,9 @@ for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore
     actions=""
     KEEP=1
     _rigmedia_fail_cleanup target || exit 1
+    [ "$actions" = "destroy " ]
+    actions="" destroy_ok=0
+    ! _rigmedia_fail_cleanup target || exit 1
     [ "$actions" = "destroy " ]
 ) || exit 1
 rm -f "$SERIAL" "$SERIAL.failed"

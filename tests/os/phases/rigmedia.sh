@@ -13,7 +13,17 @@ _rigmedia_quiesce() { # stop the guest; --keep retains its definition and disks
 }
 
 _rigmedia_fail_cleanup() { # <target> — retain a stopped inspectable guest under --keep
-    [ "$KEEP" -ne 1 ] || virsh destroy "$VM" >/dev/null 2>&1 || true
+    local domains
+    [ "$KEEP" -ne 1 ] || {
+        domains=$(virsh list --all --name) || {
+            bad "could not inspect the rigmedia VM for --keep"
+            return 1
+        }
+        if grep -Fxq "$VM" <<<"$domains" && ! virsh destroy "$VM" >/dev/null 2>&1; then
+            bad "could not quiesce the rigmedia VM for --keep"
+            return 1
+        fi
+    }
     _rigmedia_remove_target "$1"
 }
 
