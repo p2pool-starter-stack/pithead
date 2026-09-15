@@ -124,7 +124,9 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | running | downloading | installing | "") ;;
+        # The control API can acknowledge a queued request before the root runner starts it.
+        # `accepted` still carries the request id, so it is a polling state, not a verdict.
+        pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             printf '%s' "$out"
             return 0

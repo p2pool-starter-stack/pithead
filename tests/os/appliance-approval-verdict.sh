@@ -103,6 +103,24 @@ _control_request_lost_response_self_test() (
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
     rm -f "$polls"
+    # A queued request is likewise not final: the API supplies its id with `accepted`, and the
+    # next result poll is the only response that tells whether the apply completed.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"rid-7","status":"accepted"}'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
     # A body with no id of its own has nothing to fall back to and must still fail fast.
     dashboard_curl() {
         cat >/dev/null
