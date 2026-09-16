@@ -203,12 +203,18 @@ on, the host renders a **pre-masked copy** of the config into the control spool 
 secret leaf (node credentials, the stratum and dashboard passwords, the Telegram token, the
 Healthchecks ping URL) already replaced by a sentinel — and the editor form prefills from that
 copy, mounted read-only. An untouched secret rides back to the host as the same sentinel, and the
-host swaps it for the live value when it stages the intent, so the container never holds a secret
-the operator didn't just type into the form. A full backend compromise of the dashboard container
-can therefore read masked config, results, and the audit log, and ask to replace any value below
-the physical-presence boundary. It still cannot read an existing masked secret. Host-side staged
-copies, which do carry merged secrets, live outside every mount and are written mode 600. Treat the
-container as semi-trusted and keep the onion behind Tor client authorization: the request spool is
-a mutation-request surface.
+host swaps it for the live value when it stages the intent, so the editor and browser never receive
+the existing value from this path. Endpoint-coupled sentinels are restored only while their worker,
+Monero RPC, or ntfy destination is unchanged; a repoint requires an explicit credential. Host-side
+staged copies, which do carry merged secrets, live outside every mount and are written mode 600.
+
+This masking is not a process-isolation claim. The running dashboard necessarily receives the
+runtime credentials it consumes — node authentication, the fleet worker bearer, notification
+tokens and capability URLs — through its environment, plus derived per-worker read credentials.
+A full backend compromise can read those values, rewrite the dashboard database, suppress its
+notifiers, and ask to replace any configuration value below the physical-presence boundary. Treat
+the container as semi-trusted and keep the onion behind Tor client authorization: the request
+spool is a mutation-request surface, while masking protects the editor/browser and raw-config
+mount boundary.
 
 Report any gap in these.

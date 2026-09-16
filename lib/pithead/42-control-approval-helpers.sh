@@ -23,6 +23,45 @@ control_never_path_changed() { # <staged-file>
     return 1
 }
 
+# Return the first masked capability whose destination changed in a preview request. A sentinel may
+# preserve an existing secret, but it must never let the browser redirect that secret somewhere new.
+control_masked_binding_error() { # <request-file>
+    jq -r --slurpfile live "$CONFIG_FILE" --slurpfile ref "$REFERENCE_CONFIG" '
+        def sentinel: type == "object" and .__secret__ == true;
+        def full($cfg): $ref[0] * $cfg;
+        def global_worker_context($cfg):
+          (full($cfg) | .workers // {}) as $w
+          | if ($w.api_auth // "none") != "token" then []
+            else [["fleet", ($w.api_port // 8080)]]
+              + [($w.list // [])[]?
+                 | select((.token // "") == "")
+                 | ["worker", (.name // ""), (.host // ""), (.port // ($w.api_port // 8080))]]
+            end;
+        def monero_rpc_endpoint($cfg):
+          full($cfg) | [(.monero.mode // "local"), (.monero.remote.host // ""),
+                        (.monero.remote.rpc_port // 18081)];
+        .config as $candidate
+        | [
+            if (($candidate.workers.api_token | sentinel)
+                and (((global_worker_context($candidate) - global_worker_context($live[0])) | length) > 0))
+            then "workers.api_token is masked while a new worker endpoint would receive it — enter the shared token explicitly"
+            else empty end,
+            if ((($candidate.notifications.ntfy.token | sentinel)
+                 and (($candidate.notifications.ntfy.url | sentinel) | not)
+                 and ((full($candidate).notifications.ntfy.url // "") != "")
+                 and ((full($candidate).notifications.ntfy.url // "")
+                      != (full($live[0]).notifications.ntfy.url // ""))))
+            then "notifications.ntfy.url changed while its token was masked — enter the token for the new URL explicitly"
+            else empty end,
+            if (((($candidate.monero.node_username | sentinel)
+                  or ($candidate.monero.node_password | sentinel))
+                 and ((full($candidate).monero.mode // "local") == "remote")
+                 and (monero_rpc_endpoint($candidate) != monero_rpc_endpoint($live[0]))))
+            then "the Monero RPC endpoint changed while its credentials were masked — enter the credentials for the new endpoint explicitly"
+            else empty end
+          ] | .[0] // empty' "$1" 2>/dev/null
+}
+
 # Typed payout confirmation for a sensitive dashboard commit (#2076). The dashboard collects the
 # last characters of a new payout address and the host re-checks them against the STAGED file, so a
 # fat-fingered or truncated paste cannot reach an unrecoverable field. This is typo protection, not

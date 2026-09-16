@@ -1000,11 +1000,15 @@ The flow mirrors the CLI's `apply`:
 1. The form/textarea is prefilled from a pre-masked copy of `config.json` the host renders into the
    control spool ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)). Secrets (the
    dashboard password, the Telegram bot token, node RPC credentials, the stratum password) show as
-   "set — leave blank to keep"; their values never enter the dashboard container, let alone the
-   browser — leaving one untouched sends a sentinel back (the Advanced pane shows it as a
-   `__secret__` marker and carries it verbatim), blanking a previously-edited secret field
-   restores the sentinel rather than setting an empty value, and the host swaps in the live
-   value when it stages the change.
+   "set — leave blank to keep"; their values never enter the editor or browser through this mount.
+   Leaving one untouched sends a sentinel back (the Advanced pane shows it as a `__secret__` marker
+   and carries it verbatim), blanking a previously-edited secret field restores the sentinel rather
+   than setting an empty value, and the host swaps in the live value when it stages the change. That
+   reuse is bound to the existing destination: repointing a worker, the Monero RPC endpoint, or an
+   ntfy URL requires entering its associated credential for the new destination. The running
+   dashboard still receives the runtime credentials it needs for node probes, worker reads, and
+   notifications, so a full backend compromise can read those environment values; masking is the
+   editor/browser and raw-config boundary, not process isolation.
 2. **Save & preview changes** stages the edited config on the host, which dry-runs it and returns
    the same change preview `./pithead apply` prints — one row per changed setting, disruptive rows
    (⚠) styled as warnings. A config that fails validation is rejected here with pithead's own
@@ -1072,9 +1076,12 @@ proportionate to shell trust. A confirmed move from the dashboard is instead hel
 **allowlist**: the new location must sit under the stack's own data root (the install dir's
 `data/`) or the dedicated parent shared by Monero, Tari, P2Pool, and Tor (#455). A move to any other
 absolute path — another user's home, another service's volume, or a broad parent such as
-`/var/lib` — is refused even with the typed `APPLY` and stays host-CLI only. This is the one place a
-confirmed data-dir move differs from `./pithead apply`: the destination path is narrowed, because
-the move is now reachable at dashboard trust rather than shell trust.
+`/var/lib` — is refused even with the typed `APPLY` and stays host-CLI only. The same applies below
+the dashboard database, clearnet-state mount, or internal control spool: the dashboard can write
+the first two and the request leg of the third, so none may become an ancestor of a root-owned data
+move. This is the one place a confirmed data-dir move differs from `./pithead apply`: the
+destination path is narrowed, because the move is now reachable at dashboard trust rather than
+shell trust.
 
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.

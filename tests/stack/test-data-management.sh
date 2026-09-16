@@ -116,25 +116,39 @@ jq -n --arg id "$UUID7" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",a
 run_pending >/dev/null
 assert_eq "out-of-root Tor data-dir move is refused" "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
 assert_contains "Tor move uses the data-root allowlist" "$(jq -r '.error' "$RESULTS/$UUID7.json")" "outside the stack data root"
-# (3) A destination below the dashboard's writable data directory is refused even when its current
+# (3) A destination below any dashboard-writable host directory is refused even when its current
 # symlink target is inside the allowlist. Otherwise the container could swap that ancestor to an
 # arbitrary host path after validation but before root-owned mkdir/chown.
 DASHBOARD_ROOT="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
-mkdir -p "$DASHBOARD_ROOT" "$C/data/symlink-target"
-ln -s "$C/data/symlink-target" "$DASHBOARD_ROOT/pivot"
-preview_move "$DASHBOARD_ROOT/pivot/monero"
+CONTROL_ROOT="$(run_sourced "$C" env_get_file "$C/.env" CONTROL_DIR)"
+CLEARNET_ROOT="$(run_sourced "$C" env_get_file "$C/.env" CLEARNET_STATE_DIR)"
+mkdir -p "$DASHBOARD_ROOT" "$CONTROL_ROOT/requests" "$CLEARNET_ROOT" "$C/data/symlink-target"
+WRITABLE_CASE=0
+for WRITABLE_ROOT in "$DASHBOARD_ROOT" "$CONTROL_ROOT/requests" "$CLEARNET_ROOT"; do
+    WRITABLE_CASE=$((WRITABLE_CASE + 1))
+    ln -s "$C/data/symlink-target" "$WRITABLE_ROOT/pivot"
+    preview_move "$WRITABLE_ROOT/pivot/monero"
+    printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+    run_pending >/dev/null
+    assert_eq "dashboard-writable ancestor $WRITABLE_CASE is refused despite APPLY" \
+        "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
+    assert_contains "writable-ancestor $WRITABLE_CASE refusal names the boundary" \
+        "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "dashboard-writable"
+    rm -f "$WRITABLE_ROOT/pivot"
+done
+# The rest of the control spool is host-only but also cannot become service data.
+preview_move "$CONTROL_ROOT/results/monero"
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
 run_pending >/dev/null
-assert_eq "dashboard-writable ancestor is refused despite the APPLY token" \
+assert_eq "internal control directory is refused despite the APPLY token" \
     "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
-assert_contains "writable-ancestor refusal names the dashboard data directory" \
-    "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "dashboard data directory"
+assert_contains "internal control refusal names the boundary" \
+    "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "internal or dashboard-writable"
 if [ ! -e "$C/data/symlink-target/monero" ]; then
     ok "refused symlinked move touched no target"
 else
     bad "refused symlinked move touched no target" "target exists"
 fi
-rm -f "$DASHBOARD_ROOT/pivot"
 # (4) Co-location under a broad system root does not authorize its sibling services.
 cp "$C/.env" "$C/.env.before-broad-root"
 sed -E \

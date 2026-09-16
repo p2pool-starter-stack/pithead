@@ -301,9 +301,9 @@ export function nestSection(section) {
 }
 
 // Editable-set membership (#613): `_editable_keys` contains ordinary direct-commit paths and
-// `_confirm_keys` contains the remaining schema paths that need typed confirmation. Physical-
-// presence paths are absent from both. A missing/empty set fails CLOSED — nothing is marked
-// editable — rather than defaulting to "everything editable".
+// `_confirm_keys` contains paths that need typed confirmation. Approval paths arrive separately;
+// physical-presence paths are absent from all three. A missing/empty set fails CLOSED — nothing is
+// marked editable — rather than defaulting to "everything editable".
 //
 // `confirmKeys` is `_confirm_keys` (#719): the operationally-disruptive paths the gate WILL commit,
 // but only behind a type-to-confirm. They render editable (not greyed) and carry `confirm: true` so

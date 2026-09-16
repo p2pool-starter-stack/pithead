@@ -13,9 +13,10 @@ echo "== black-box: confirmed worker secrets and dial targets stay bound (#1959)
 jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
-    workers:{api_port:8080,api_auth:"none",api_token:"",list:[
+    workers:{api_port:8080,api_auth:"token",api_token:"fleet-token",list:[
       {name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]},
-    notifications:{webhooks:["https://example.com/hook"]},
+    notifications:{webhooks:["https://example.com/hook"],
+                   ntfy:{url:"https://ntfy.example/old",token:"ntfy-token"}},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
@@ -47,8 +48,50 @@ assert_contains "ordinary LAN address on this host is refused" \
     "$(jq -r '.error // ""' "$RESULTS/$UUID5.json")" "resolves inside this host"
 
 GUARD_UUID="19191919-1959-4959-8959-191919191959"
+# A masked fleet bearer cannot acquire a new recipient through a tokenless worker descriptor.
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_token={"__secret__":true}
+      | .workers.list += [{name:"global-rig",host:"192.168.1.52"}])}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "tokenless worker cannot inherit a masked fleet bearer" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "fleet bearer refusal asks for the shared token" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "workers.api_token"
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_token="replacement-fleet-token"
+      | .workers.list += [{name:"global-rig",host:"192.168.1.52"}])}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "tokenless worker with an explicit fleet bearer is previewed" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "previewed"
+
+# An ntfy bearer and Monero RPC credentials are likewise bound to their current destinations.
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .notifications.ntfy.url="https://ntfy.example/new"
+      | .notifications.ntfy.token={"__secret__":true})}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "ntfy repoint cannot reuse a masked bearer" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "ntfy repoint asks for the replacement token" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "new URL"
+
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .monero.mode="remote"
+      | .monero.remote={host:"node.example",rpc_port:18081,zmq_port:18083}
+      | .monero.node_username={"__secret__":true}
+      | .monero.node_password={"__secret__":true})}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "Monero repoint cannot reuse masked RPC credentials" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "Monero repoint asks for replacement credentials" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "new endpoint"
+
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_token={"__secret__":true}
       | .workers.list[0].host="192.168.1.51"
       | .workers.list[0].token={"__secret__":true})}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
@@ -59,6 +102,7 @@ assert_contains "worker repoint asks for the replacement token" \
 
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_token={"__secret__":true}
       | .workers.list[0].host="192.168.1.51"
       | .workers.list[0].token="replacement-token")}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null

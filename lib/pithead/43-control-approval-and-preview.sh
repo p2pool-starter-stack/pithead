@@ -189,10 +189,19 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
+    local binding_error
+    if ! binding_error=$(control_masked_binding_error "$file"); then
+        binding_error="could not verify masked secrets against their destinations"
+    fi
+    if [ -n "$binding_error" ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$binding_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     # The "blank secret keeps the live value" merge happens HERE, host-side (#440): the request
-    # arrives with {"__secret__":true} sentinels for untouched secrets (the container never held
-    # the real values — it prefills from the pre-masked copy), and each sentinel is swapped for
-    # the live config.json value at staging. A sentinel for a secret that is not actually set
+    # arrives with {"__secret__":true} sentinels for secrets hidden from the editor/browser, and
+    # each sentinel is swapped for the live config.json value at staging. A sentinel for a secret
+    # that is not actually set
     # collapses to "" rather than leaking a dict into config.json. The staged copy therefore
     # carries merged secrets: it lives in host-only staged/ — never mounted — and is pinned
     # owner-only so a co-tenant on the host can't read secrets from it (#33 hardening). Created

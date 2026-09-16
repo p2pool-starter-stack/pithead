@@ -12,7 +12,8 @@
 # is the list this sentence must match; check it there before trusting this one.
 # Outcomes land in results/ and an audit line in audit/, both mounted read-only in the container —
 # as is masked/, the pre-masked config copy the editor form prefills from (#440); the raw
-# config.json is never mounted, so the container holds no secret it wasn't given.
+# config.json is never mounted, so the editor/browser receives no existing secret from that path.
+# Runtime credentials the dashboard consumes still enter its process environment.
 # No string from the container is ever executed or interpolated into a command; the candidate
 # config crosses the boundary only as a FILE handed to `apply` via PITHEAD_CONFIG_FILE.
 
@@ -276,12 +277,13 @@ _control_worker_curl_pin() { # <host> <port>
 }
 
 # Dashboard-confirmed data moves stay inside roots the host already uses. Canonicalize symlinks,
-# and reject a destination below the dashboard's writable data directory even when its current
-# target is safe: the container could otherwise swap that ancestor before root-owned mkdir/chown.
+# and reject internal or dashboard-writable ancestors even when their current target is safe: the
+# container could otherwise swap one before root-owned mkdir/chown.
 control_validate_data_dir_destinations() { # <staged-file>
-    local staged="$1" cur shared_root dashboard_root dashboard_root_lex
-    local monero_dir tari_dir p2pool_dir tor_dir
+    local staged="$1" cur root shared_root
+    local monero_dir tari_dir p2pool_dir tor_dir control_dir
     local -a allowed_roots=("$PWD/data")
+    local -a reserved_paths=() reserved_roots=()
     # A single service under /var/lib/monero must not authorize sibling /var/lib trees. Only the
     # co-located root used by all four host services (#455) can extend the dashboard allowlist, and
     # never when that parent is itself one of assert_safe_dir's broad roots.
@@ -300,11 +302,23 @@ control_validate_data_dir_destinations() { # <staged-file>
         shared_root=$(realpath -m -- "$shared_root" 2>/dev/null) || shared_root=""
         [ -n "$shared_root" ] && ! _data_dir_is_broad_root "$shared_root" && allowed_roots+=("$shared_root")
     fi
+    # The dashboard can replace a symlink below either read-write state mount between this check
+    # and root's later mkdir/chown; the control spool must not overlap service data either. Record
+    # lexical and canonical forms so neither an existing symlink nor a post-check swap can escape.
     cur=$(env_get DASHBOARD_DATA_DIR)
-    dashboard_root=$(realpath -m -- "$cur" 2>/dev/null) || dashboard_root=""
-    dashboard_root_lex=$(realpath -ms -- "$cur" 2>/dev/null) || dashboard_root_lex=""
+    [ -n "$cur" ] && reserved_paths+=("$cur")
+    control_dir=$(env_get CONTROL_DIR)
+    [ -n "$control_dir" ] && reserved_paths+=("$control_dir")
+    cur=$(env_get CLEARNET_STATE_DIR)
+    [ -n "$cur" ] && reserved_paths+=("$cur")
+    for cur in "${reserved_paths[@]}"; do
+        root=$(realpath -ms -- "$cur" 2>/dev/null) || root=""
+        [ -n "$root" ] && reserved_roots+=("$root")
+        root=$(realpath -m -- "$cur" 2>/dev/null) || root=""
+        [ -n "$root" ] && reserved_roots+=("$root")
+    done
 
-    local ddpath dest dest_real dest_lex root root_real ok_root changed_paths
+    local ddpath dest dest_real dest_lex root_real ok_root changed_paths
     changed_paths=$(control_changed_config_paths "$staged")
     for ddpath in monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir; do
         printf '%s\n' "$changed_paths" | grep -qxF "$ddpath" || continue
@@ -318,20 +332,18 @@ control_validate_data_dir_destinations() { # <staged-file>
             printf 'this move sends %s to a path the host cannot resolve safely. %s' "$ddpath" "$(_control_host_remedy)"
             return 1
         fi
-        if [ -n "$dashboard_root_lex" ]; then
-            case "$dest_lex/" in "$dashboard_root_lex"/*)
-                printf 'this move sends %s below the dashboard data directory, which the dashboard can modify — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
+        for root in "${reserved_roots[@]}"; do
+            case "$dest_lex/" in "$root"/*)
+                printf 'this move sends %s below an internal or dashboard-writable host directory — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
                 return 1
                 ;;
             esac
-        fi
-        if [ -n "$dashboard_root" ]; then
-            case "$dest_real/" in "$dashboard_root"/*)
-                printf 'this move sends %s below the dashboard data directory, which the dashboard can modify — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
+            case "$dest_real/" in "$root"/*)
+                printf 'this move sends %s through an internal or dashboard-writable host directory — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
                 return 1
                 ;;
             esac
-        fi
+        done
         ok_root=0
         for root in "${allowed_roots[@]}"; do
             root_real=$(realpath -m -- "$root" 2>/dev/null) || continue

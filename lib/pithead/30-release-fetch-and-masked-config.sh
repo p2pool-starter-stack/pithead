@@ -160,8 +160,9 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
 # Render the pre-masked prefill copy (#440): the live config with every SET secret leaf replaced
 # by the {"__secret__":true} sentinel, written atomically to <control-dir>/masked/config.json.
 # The dashboard serves the Configuration form from THIS file (mounted read-only) — the raw
-# config.json is never mounted into the container, so a full container compromise reads masked
-# config, results, and the audit log, nothing more. An EMPTY secret stays empty, so the UI can
+# config.json is never mounted into the container, so this path exposes only masked config,
+# results, and the audit log. Runtime credentials the dashboard consumes are a separate process-
+# environment boundary. An EMPTY secret stays empty, so the UI can
 # tell "set — leave blank to keep" from "not set". World-readable on purpose (it holds no secret
 # values; the container reads it as $APP_UID); best-effort, so a render hiccup degrades to a
 # stale prefill, never a failed apply.

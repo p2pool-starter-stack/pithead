@@ -5,10 +5,12 @@ prefill the editor form, writes typed JSON intents into the requests/ spool — 
 single writable leg — and reads results back from the read-only results/ mount. The host-side
 runner (``pithead control-run-pending``) re-validates and executes; nothing here runs a command.
 
-Secrets never enter the container: the host masks every set secret to the ``{"__secret__": true}``
-sentinel before the copy is mounted (the raw config.json is not mounted at all), a proposal
-carries the sentinel back for an untouched secret, and the host swaps it for the live value when
-it stages the intent. ``read_config`` re-applies the same masking as defense-in-depth.
+Existing secret values never enter the editor/browser through this path: the host masks every set
+secret to the ``{"__secret__": true}`` sentinel before the copy is mounted (the raw config.json is
+not mounted at all), a proposal carries the sentinel back for an untouched secret, and the host
+swaps it for the live value when it stages the intent. The running dashboard still receives the
+runtime credentials it consumes through its environment. ``read_config`` re-applies masking as
+defense-in-depth before serving configuration.
 """
 
 import asyncio
