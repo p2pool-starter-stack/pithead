@@ -39,6 +39,10 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
+physical_presence_password_refusal_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+}
+
 tari_endpoint_roundtrip_verdict() { # <p2pool-startup-log> <expected-host:port>
     local plain
     plain=$(printf '%s\n' "$1" | mm_strip_ansi)
@@ -303,6 +307,13 @@ _approval_bind_payload_self_test() {
         return 1
     }
     printf 'approval-bind-payload self-test passed\n'
+}
+
+_physical_presence_password_refusal_self_test() {
+    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
+    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
+    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+    return 0
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then

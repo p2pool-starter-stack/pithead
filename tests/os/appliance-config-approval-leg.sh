@@ -175,13 +175,15 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
-    if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null &&
-        dashboard_curl -fsSk -m 8 "https://$ip/api/config" >/dev/null 2>&1; then
-        ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
-    else
-        bad "physical-presence-only config crossed approval or replaced the live dashboard login"
+    if ! physical_presence_password_refusal_verdict "$result"; then
+        bad "host approval did not refuse the physical-presence-only dashboard-password edit ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
         return
     fi
+    if ! sensitive_live_config >/dev/null; then
+        bad "physical-presence refusal left the authenticated dashboard login unreadable after 20 retries"
+        return
+    fi
+    ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
 
     if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ] || [ -z "$th" ] || [ -z "$grpc" ]; then
         bad "reserved-node inputs are missing — set PITHEAD_OS_MONERO_NODE_HOST/RPC_PORT/ZMQ_PORT and PITHEAD_OS_TARI_NODE_HOST/GRPC_PORT for the required consumer proof"
@@ -285,6 +287,7 @@ _approval_self_test() {
     # check dies as a missing command rather than a verdict.
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
+    _physical_presence_password_refusal_self_test || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
