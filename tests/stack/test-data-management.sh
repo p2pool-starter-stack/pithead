@@ -74,7 +74,7 @@
 : "${C:?}" "${CTRL_LOG:?}" "${SANDBOX:?}" "${WALLET:?}" "${VALID_TARI:?}" "${UUID3:?}" "${REQS:?}" "${RESULTS:?}" "${STAGED:?}"
 
 echo "== black-box: a dashboard-confirmed data-dir move is allowlisted to the stack data root (#728) =="
-# #719 made the four *_DATA_DIR moves confirm-gated. assert_safe_dir is a BLOCKLIST, so a
+# #719/#1959 made the five configured *_DATA_DIR moves confirm-gated. assert_safe_dir is a BLOCKLIST, so a
 # confirmed move could target any non-blocklisted absolute path (another user's home, another
 # service's volume). control_approval_gate now narrows the DESTINATION to an allowlist for
 # control-channel moves: only under the stack data root ($C/data) or a parent it already uses.
@@ -107,6 +107,14 @@ assert_contains "refusal names the data-root allowlist" "$(jq -r '.error' "$RESU
 # (test 1), never the refused out-of-root path.
 assert_eq "refused move did not touch config.json" "$(jq -r '.monero.data_dir // empty' "$C/config.json")" "$C/data/monero-v2"
 [ ! -f "$STAGED/$UUID7.json" ] && ok "refused out-of-root move cleared from staged" || bad "refused out-of-root move cleared from staged" "still staged"
+# Tor joined the fallback confirm tier in #1959 and must receive the same destination guard.
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID7" --arg dd "$EVIL_DIR" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0] | .tor.data_dir=$dd)}' >"$REQS/$UUID7.json"
+run_pending >/dev/null
+jq -n --arg id "$UUID7" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID7.json"
+run_pending >/dev/null
+assert_eq "out-of-root Tor data-dir move is refused" "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+assert_contains "Tor move uses the data-root allowlist" "$(jq -r '.error' "$RESULTS/$UUID7.json")" "outside the stack data root"
 # (3) The SAME path from the HOST shell still applies — the tighter rule is control-only.
 jq -n --arg w "$WALLET" --arg dd "$EVIL_DIR" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",data_dir:$dd},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},

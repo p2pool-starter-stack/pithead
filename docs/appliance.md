@@ -232,7 +232,7 @@ Then a handful of choices, all with sensible defaults:
 
 | Question | Default | When to change it |
 |---|---|---|
-| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. It cannot be turned on from the dashboard afterwards — the Configuration view does not carry this switch; set the machine up again from the boot menu to change it. |
+| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
@@ -304,11 +304,11 @@ it on. An install that had already reported success is safe on the disk.)
 
 Reference settings stay editable from the dashboard afterwards — see
 [configuration](configuration.md). Security-sensitive changes, including payout destinations,
-require the signed-in operator to review the full values and complete the confirmation step.
+require the signed-in operator to review full non-secret values and complete the confirmation step.
 Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
 mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
-toggles remain configuration-stick-only. Per-rig worker descriptors also use the stick because
-they are not fields in the reference form. See
+toggles remain configuration-stick-only. Per-rig worker descriptors use the Configuration view's
+JSON editor and the same confirmation step, after host-side target checks. See
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved

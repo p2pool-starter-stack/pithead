@@ -22,17 +22,10 @@
 # below; every other schema-backed env change is promoted to confirmation by the host preview and
 # gate. Physical-presence paths remain refused before that classification.
 #
-# WHY THE THIRD LIST IS NAMED RATHER THAN "EVERYTHING ELSE" (2026-09-13 perimeter audit). #1978 replaced this refusal
-# with approval_required=1 so that every reference-configuration leaf had SOME route; at the time
-# that route was #338's Telegram tap, a second identity. #2076 removed the tap and left the typed
-# envelope alone in that tier, which the container writes itself — so "everything else" had become
-# self-approvable, wallets included, against what SECURITY.md and docs/appliance.md promise
-# operators. The tier is now a SHORT NAMED LIST and a key nobody enumerated fails closed again.
-# READ THIS BEFORE ADDING TO IT: the envelope is typo protection, NOT a second identity
-# (42-control-approval-helpers.sh says so in its own words), so a key here is committable by a
-# compromised dashboard container. Admit only what the confirm tier's criterion admits —
-# expensive-but-recoverable, not a breach — and never a credential, a payout destination, or a
-# switch that turns a security control off.
+# #1959 deliberately restores confirmation as the fallback for schema-backed values. This accepts
+# that a compromised dashboard can supply its own actor, APPLY token, envelope and payout suffix;
+# the prompts prevent operator mistakes, not hostile requests. The physical-presence paths below
+# and the schema/SSRF/data-root/reachability validators remain host-enforced boundaries.
 #
 # The checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
 # runs — nothing is trusted from the container's request or its (host-written but container-visible)
@@ -42,23 +35,10 @@
 # media-only set below remains outside all of it: no browser approval makes one of those changes
 # committable. Echoes a reason on refusal.
 
-# The env keys committable from the dashboard: operational tuning only, and only keys whose value
-# is derived from a validated enum, boolean, or number — never a free-form string that reaches a
-# command line, URL, or credential. Everything else — wallets, auth, onion exposure, the control
-# channel itself, Tor egress/clearnet toggles, binds, node RPC credentials, the XvB pool URL
-# and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
-# WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
-# TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
-# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
-# TARI_WALLET_BIRTHDAY moved to the confirm-gated set below (2026-08 audit reclassification):
-# they're wallet-creation metadata, not a secret, and a wrong value only re-scans from a different
-# height on the wallet's NEXT creation — recoverable, not destructive.
-# Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
-# (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
-# CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
-# the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
-# lost its write surface, not its job of telling the operator their payout wallet just changed.
-# Space-separated exact env-key names.
+# The direct-commit env keys: bounded operational tuning that needs neither APPLY nor the approval
+# envelope. Every other schema-backed value falls through to confirmation. WALLET_CHANGED and
+# CLEARNET_EXPOSED remain physical-presence-only because they are the detection controls for the
+# sensitive changes that #1959 now permits. Space-separated exact env-key names.
 #
 # NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
 # event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
@@ -82,107 +62,24 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_PAYOUT_CONFIRMED TELEGRAM_EVENT_CONTAINER_UNHEALTHY
     TELEGRAM_EVENT_RAFFLE_WIN'
 
-# The confirm-gated editable set (#719): operationally-disruptive env keys the dashboard MAY commit
-# behind a type-to-confirm — NOT the security perimeter (wallets, keys, credentials, onion,
-# tor_egress_firewall, dashboard.control.enabled, stratum password, per-rig hosts/tokens all stay
-# host-only DEST). Type-to-confirm is UX FRICTION, not a security control: a compromised dashboard
-# that can set a field can also fill the confirm box, so this set is strictly the "expensive but
-# recoverable, not a breach" class — a data-dir move (re-sync), a stratum-port repoint (rigs
-# reconnect), a clearnet-sync enable (host IP exposed during IBD, auto-reverts), a prune enable
-# (reclaims disk), or a Tor-load repoint (MONERO_OUT_PEERS: bounded 8-1024 at validation and
-# instantly reversible, but the biggest steady-state knob on the shared Tor daemon's CPU — 2026-08
-# security review placed it here, not free-commit). The same review REVERTED three keys the
-# configurability audit had proposed: PROXY_DONATE_LEVEL (docs/privacy.md's own words — donate
-# traffic bypasses the Tor socks5, and a self-approving container could divert up to 99% of
-# revenue silently), and PAYOUT_SCAN_HEIGHT / TARI_WALLET_BIRTHDAY (a future-dated value lands at
-# the NEXT wallet creation and silently defeats the payout-confirmation tamper evidence — not the
-# recoverable class this tier is for). All three stay host-only. describe_change flags
-# each CONFIRM only in its in-scope DIRECTION — the flag carries the direction (prune DISABLE, TOR
-# data-dir move, etc. still emit DEST and stay refused); this list is the static allowlist the
-# gate's default-deny pass consults and the UI mirrors (control_service.CONFIRM_ENV_KEY_PATHS,
-# drift-guarded like CONTROL_DASHBOARD_EDITABLE_KEYS).
-# The four node-endpoint keys (#1888) are the 2026-09 addition, on the operator's ruling, and they
-# are the reason to read this tier's boundary carefully rather than by analogy. They are NOT a
-# data-dir move: repointing monerod's or the Tari base node's address moves TRUST, not disk — the
-# stack believes the chain data, block templates and share heights whatever answers there. They are
-# not free-commit either, for exactly that reason. They sit here because the change is INSTANTLY
-# REVERSIBLE by the same route (type APPLY, put the old address back) and because it is the one
-# perimeter entry an appliance operator must be able to make: there is no host shell on an
-# appliance, so "edit config.json and run apply" is not a remedy, it is a dead end (#786/#1821).
-# The compensating control is not the typed token — that is friction, as this comment says above —
-# it is the host-side REACHABILITY PROBE the approval gate runs on the STAGED endpoint before it
-# accepts one (43-control-approval-and-preview.sh, #1889's preflight_remote_nodes): a dashboard
-# cannot silently park a chain on a node that is not there. The RPC LOGIN CREDENTIALS for a remote
-# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) are deliberately NOT here — those are secrets,
-# not address identity, and they stay host-only DEST with the rest of the credentials above.
-# TARI_MODE (#1929) joins on the same reasoning as the endpoints, one step further: it decides
-# WHETHER this host merge-mines at all and whether the bundled Tari node runs. It is the expensive-
-# but-recoverable class this tier is for — the container stops, its chain data on disk is KEPT
-# (remove_deactivated_profile_containers removes the container, never the data dir), and the same
-# route reverses it. It is NOT a payout change and NOT a credential: declining to merge-mine cannot
-# redirect a reward, only stop earning one, and the Tari payout ADDRESS stays where it was, outside
-# this tier. Turning Tari ON toward a remote node still drags TARI_GRPC_ADDRESS in with it, so the
-# reachability probe below fires on exactly the direction that parks a chain on a third-party node.
-# MONERO_MODE is deliberately NOT here: Monero is the chain this stack exists to mine, and stopping
-# monerod is not "expensive but recoverable", it is the stack ceasing to do its job.
-#
-# COMPOSE_PROFILES rides in WITH it, and that pairing is the part to read carefully, because this
-# var is NOT tari's alone — it also carries local_node (monero's node switch) and the two
-# payout_confirm tokens. Listing it is unavoidable: tari.mode moves the local_tari token, so every
-# mode switch renders a COMPOSE_PROFILES diff, and while it was unlisted the default-deny pass
-# counted it and sent the switch to the Telegram tier — the exact dead end #1929 exists to remove
-# for an appliance with no Telegram channel. What keeps that from widening monero's door is that
-# this allowlist is only the FIRST of two gates: describe_change still flags a local_node flip DEST
-# (39-describe-change.sh), and a DEST row sets approval_required whatever the allowlist says, so a
-# monero node switch still needs the second identity. The view-key toggles that move the
-# payout_confirm tokens are likewise held by their own unlisted keys AND their own DEST rows.
-# So the pair below is, today, exactly the tari.mode switch and nothing else.
-# THE STANDING RISK IS A NEW TOKEN. A profile added later whose drivers are all allowlisted and
-# whose rows are all INFO would become confirm-committable for free, silently. That is why
-# tests/stack/control/test-control-editable-allowlist.sh pins the EXACT token set render_env can
-# emit: adding one reddens there and forces this comment to be re-read rather than inherited.
-CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR
+# Explicit confirm keys (#719) tell the form which existing operational fields need APPLY and retain
+# their direction-specific preview copy. Unlisted schema-backed values receive the same treatment
+# dynamically at preview and commit. Node endpoints also run the host-side reachability probe; data
+# directories keep the tighter destination allowlist. COMPOSE_PROFILES rides with tari.mode and the
+# exact rendered token set stays pinned by test-control-editable-allowlist.sh.
+CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
-# The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
-# approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
-# because the envelope backing it is container-writable — see the warning in this file's header.
-# It exists at all because #1978's "every leaf has a route" is a real goal for an appliance with no
-# host shell; what the 2026-09-13 perimeter audit removed is the "everything not otherwise listed" rule that silently swept
-# the entire security perimeter into it once #2076 took the second identity away.
-#
-# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential:
-# TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED switch a channel #2076 made READ-ONLY, so neither
-# can be used to commit anything, and both are instantly reversible by the same route. The two
-# tamper alarms on that channel are NOT here and never may be: they sit in
-# CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
-# unnoticed. TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not here either — repointing the alarm is
-# silencing it by another name.
-#
-# XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
-# "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
-# endpoint (33-render-env.sh) — and 39-describe-change.sh classifies it as a secret configuration
-# value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
-# host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
-#
-# dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
-# all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
-# config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
-# config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
-# round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
-# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
-# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
-# the "documented exception" this file used to carve out for it contradicted that promise instead
-# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
-# that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
-# Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
-# lists above; a key added here without its path there is invisible in the editor, and a path added
-# there without its key here is offered to the operator and then refused host-side.
-# Space-separated exact env-key names.
+# Legacy approval-envelope keys. The container can write this envelope, so it is confirmation
+# metadata rather than a second identity. The two tamper alarms remain in NEVER_PATHS. Config-only
+# sensitive values such as price_feed and workers.list are named directly in the gate.
 CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
+
+# Config-path distinctions hidden inside a direct env row. P2POOL_FLAGS also carries p2pool.pool,
+# which remains ordinary, so the host checks the changed source path before accepting that row.
+CONTROL_DASHBOARD_CONFIRM_PATHS='p2pool.clearnet'
 
 # One alternation for the named tiers; preview and gate treat every non-match as confirmed.
 control_committable_re() {

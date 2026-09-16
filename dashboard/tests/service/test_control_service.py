@@ -309,14 +309,10 @@ class TestEditableKeys:
         assert "xvb.donation_level" in cfg["_editable_keys"]
         # 2026-08 audit reclassification: same risk class as their already-editable siblings.
         assert "telegram.events.raffle_win" in cfg["_editable_keys"]
-        # 2026-08 security review: out_peers is confirm-gated (Tor-load knob); donate_level and
-        # the payout restore points stay host-only entirely.
+        # Named confirm metadata is present even when no reference file is available.
         assert "monero.out_peers" in cfg["_confirm_keys"]
         assert "monero.out_peers" not in cfg["_editable_keys"]
         assert "proxy.donate_level" not in cfg["_editable_keys"]
-        assert "proxy.donate_level" not in cfg["_confirm_keys"]
-        assert "monero.payout_scan_height" not in cfg["_confirm_keys"]
-        assert "tari.payout_scan_birthday" not in cfg["_confirm_keys"]
         assert "telegram.commands.enabled" not in cfg["_editable_keys"]
         assert cfg["_editable_keys"] == sorted(cfg["_editable_keys"])  # stable, deterministic order
 
@@ -334,8 +330,10 @@ class TestEditableKeys:
         cfg = control_service.read_config()
         assert "telegram.events.wallet_changed" not in cfg["_editable_keys"]
         assert "telegram.events.wallet_changed" not in cfg["_approval_keys"]
+        assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
         assert "telegram.events.clearnet_exposed" not in cfg["_editable_keys"]
         assert "telegram.events.clearnet_exposed" not in cfg["_approval_keys"]
+        assert "telegram.events.clearnet_exposed" not in cfg["_confirm_keys"]
         assert "telegram.events.node_down" in cfg["_editable_keys"]  # a normal event IS editable
 
 
@@ -361,11 +359,6 @@ def test_editable_keys_have_no_intra_repo_drift():
 
 
 class TestConfirmKeys:
-    """read_config's ``_confirm_keys`` field (#719): the operationally-disruptive config paths the
-    control gate commits behind a type-to-confirm, mirroring pithead's CONTROL_DASHBOARD_CONFIRM_KEYS
-    the same underscore-metadata way ``_editable_keys`` mirrors the editable allowlist. The UI marks
-    these editable-with-confirm instead of greying them host-only."""
-
     def test_confirm_keys_served_on_read_config(self, spool):
         cfg = control_service.read_config()
         for path in (
@@ -382,32 +375,39 @@ class TestConfirmKeys:
             assert path in cfg["_confirm_keys"], path
         assert cfg["_confirm_keys"] == sorted(cfg["_confirm_keys"])  # stable, deterministic order
 
-    def test_perimeter_stays_out_of_the_confirm_set(self, spool):
-        # The confirm-gated set is strictly the "expensive but recoverable" class — never the
-        # security perimeter, and never a plain editable key (that would demand needless friction).
+    def test_perimeter_joins_confirm_while_physical_and_free_paths_do_not(self, spool, monkeypatch):
+        reference = {
+            **CONFIG,
+            "monero": {**CONFIG["monero"], "view_key": ""},
+            "network": {"tor_egress_firewall": True},
+            "tor": {"data_dir": "auto"},
+            "dashboard": {
+                **CONFIG["dashboard"],
+                "control": {"enabled": True},
+            },
+        }
+        reference_path = spool / "reference.json"
+        reference_path.write_text(json.dumps(reference))
+        monkeypatch.setattr(control_service.config, "HOST_REFERENCE_PATH", str(reference_path))
         cfg = control_service.read_config()
         for path in (
             "monero.wallet_address",
             "monero.view_key",
-            "dashboard.auth.password",
             "network.tor_egress_firewall",
             "dashboard.control.enabled",
-            "tor.data_dir",  # only the four SERVICE data dirs are in scope, not tor's
-            "p2pool.pool",  # a freely-editable key, not confirm-gated
+            "tor.data_dir",
         ):
-            assert path not in cfg["_confirm_keys"], path
+            assert path in cfg["_confirm_keys"], path
+        assert "dashboard.auth.password" not in cfg["_confirm_keys"]
+        assert "p2pool.pool" not in cfg["_confirm_keys"]
 
     def test_confirm_and_editable_sets_are_disjoint(self, spool):
-        # A key is either free-to-commit or confirm-gated, never both — the UI picks one affordance.
         cfg = control_service.read_config()
         assert not (set(cfg["_confirm_keys"]) & set(cfg["_editable_keys"]))
 
 
 def test_confirm_keys_have_no_intra_repo_drift():
-    """#719 (mirrors the #613 EDITABLE_ENV_KEY_PATHS check): CONFIRM_ENV_KEY_PATHS is a second copy
-    of pithead's CONTROL_DASHBOARD_CONFIRM_KEYS, kept in sync only by this test. Drift means the
-    dashboard either greys out a field the gate would confirm-commit, or shows one editable-with-
-    confirm that the gate silently refuses at Save."""
+    """Keep the dashboard's explicit confirm map aligned with pithead's list (#719)."""
     import re
     from pathlib import Path
 

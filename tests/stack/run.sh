@@ -325,7 +325,7 @@ else
 
     # The appliance wording NAMES which of these dirs the dashboard can repoint, so it is a claim
     # about CONTROL_DASHBOARD_CONFIRM_KEYS -- and its first draft ("no dashboard control relocates a
-    # data directory") was false for four of the five keys the check fires on. Derive both sets from
+    # data directory") was false for the keys the check fires on. Derive both sets from
     # the shipped artifact, so an allowlist change reds HERE and names the string to rewrite.
     _dd_in_set() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac }
     _dd_repointable() {
@@ -335,10 +335,8 @@ else
     }
     _dd_sites=$(sed -n 's/^ *for var in \(.*_DATA_DIR\); do$/\1/p' "$STACK")
     _dd_all=${_dd_sites%%$'\n'*}
-    # THE GUARD THAT EARNS ITS PLACE, replacing one that could not: reseeding TOR_DATA_DIR was
-    # strictly REDUNDANT, its pass condition being exactly what the CANNOT row asserts, so it could
-    # never red alone. A second site above either live extractor would otherwise feed these rows a
-    # stale list. Sed drops a `for ...; do` line with a trailing comment, and the existing uniqueness guard reds.
+    # A second site above either live extractor would otherwise feed these rows a stale list. Sed
+    # drops a `for ...; do` line with a trailing comment, and the existing uniqueness guard reds.
     # Only awk's closing-quote trailing-comment over-read remains unguarded; it does not change today's output.
     assert_eq "the data-dir key list comes from exactly one site (#1776)" "$(printf '%s\n' "$_dd_sites" | grep -c .)" "1"
     assert_eq "the confirm-key allowlist comes from exactly one site (#1816)" "$(grep -c "^CONTROL_DASHBOARD_CONFIRM_KEYS='" "$STACK")" "1"
@@ -346,19 +344,15 @@ else
         tr -d "\n'" | sed "s/^CONTROL_DASHBOARD_CONFIRM_KEYS=//;s/  */ /g;s/^ //")
     assert_eq "the dirs doctor warns about that the dashboard CAN repoint (#1776)" \
         "$(_dd_repointable "$_dd_all" "$_dd_conf")" \
-        "MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR"
-    assert_eq "the dirs doctor warns about that it CANNOT (#1776)" \
+        "MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR"
+    assert_eq "no warned-about data dir remains outside dashboard confirmation (#1776)" \
         "$(_dd_repointable "$_dd_all" "$(printf '%s' "$_dd_all" | tr ' ' '\n' | grep -vxF -f <(printf '%s' "$_dd_conf" | tr ' ' '\n') | tr '\n' ' ')")" \
-        "TOR_DATA_DIR"
-    # ...and that the wording actually carries both halves. If either row above reds, THIS is the
-    # string that has to be rewritten, so name it here rather than only in the assertion text.
+        ""
+    # ...and that the wording actually carries the dashboard route. If either row above reds, THIS
+    # is the string that has to be rewritten, so name it here rather than only in the assertion text.
     case "$_dd_appl" in
-    *"repointed from the config page"*) ok "the appliance wording offers the dashboard route (#1776)" ;;
-    *) bad "the appliance wording offers the dashboard route (#1776)" "no config-page route in: $_dd_appl" ;;
-    esac
-    case "$_dd_appl" in
-    *"tor data dir cannot"*) ok "the appliance wording excepts the one dir that cannot (#1776)" ;;
-    *) bad "the appliance wording excepts the one dir that cannot (#1776)" "TOR_DATA_DIR is on neither allowlist and the wording does not say so: $_dd_appl" ;;
+    *"all five data dirs can be repointed from Configuration"*) ok "the appliance wording offers the dashboard route (#1776)" ;;
+    *) bad "the appliance wording offers the dashboard route (#1776)" "no Configuration route in: $_dd_appl" ;;
     esac
 fi
 

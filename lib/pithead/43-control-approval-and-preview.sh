@@ -17,10 +17,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'could not re-validate the staged change host-side — refusing to commit'
         return 1
     fi
-    # A config.json block that never renders to .env emits ZERO porcelain rows, so the default-deny
-    # pass can neither see nor refuse it: each is handled HERE by name (worker descriptors are
-    # refused outright below; dashboard.energy and local_miner.enabled are ordinary, #504/2026-09-13
-    # perimeter audit round 2, bar dashboard.energy.price_feed). A NEW one MUST add its own line.
+    # A config.json block that never renders to .env emits ZERO porcelain rows, so each is handled
+    # HERE by name. Worker descriptors confirm after their SSRF guard; dashboard.energy and
+    # local_miner.enabled are ordinary, bar dashboard.energy.price_feed. A NEW one MUST add a line.
     #
     # The per-worker descriptors — workers.list[] (#506) — carry per-rig hosts and API tokens
     # (exactly the "free-form string that reaches a URL or credential" class the allowlist exists to
@@ -29,10 +28,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # later by the closed-schema check below, as an unknown key like any other typo.
     #
     # Every descriptor change is sensitive: an append introduces a new remote host and token;
-    # repointing or reordering changes an existing trust relationship — a credential change, which
-    # SECURITY.md promises is never dashboard-committable. Refused outright below, same as
-    # wallets/firewall/control-channel — not routed through approval_required's self-written
-    # envelope, the only route left once #2076 took the second identity away.
+    # repointing or reordering changes an existing trust relationship. #1959 moves it behind the
+    # same typed confirmation as the other sensitive settings, after the SSRF floor below.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         (.workers.list // []) == ($live[0].workers.list // [])
         ' "$staged" >/dev/null 2>&1; then
@@ -95,16 +92,16 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         approval_required=1
         needs_confirm=1
     fi
+    if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then
+        approval_required=1
+        needs_confirm=1
+    fi
+    if [ "$worker_sensitive" -eq 1 ]; then
+        approval_required=1
+        needs_confirm=1
+    fi
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
-    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), so approval_required (the
-    # self-written envelope) is the same self-approval shape closed above for wallets/firewall/
-    # control-channel. Refused, host-CLI-only, same as the rest — #1959 tracks a real second
-    # identity a future approval tier could rejoin.
-    if [ "$worker_sensitive" -eq 1 ]; then
-        printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
-        return 1
-    fi
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
     # Electricity price feeds are remote control inputs, unlike the local display currency and
     # fixed-price values beside them. They join the same sensitive class even though dashboard.energy
@@ -112,7 +109,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
         approval_required=1
     fi
-    # Data-dir destination allowlist (#728). #719 made the four *_DATA_DIR moves confirm-gated, so a
+    # Data-dir destination allowlist (#728). All five configured *_DATA_DIR moves confirm, so a
     # dashboard operator who types APPLY can now RELOCATE a service's data dir. assert_safe_dir — the
     # host-shell guard — is a BLOCKLIST: it refuses the catastrophic roots (/, $HOME, bare mounts, …)
     # but passes any OTHER absolute path. At host-shell trust that is proportionate (a shell already
@@ -129,12 +126,12 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # default that is under a data root by construction. assert_safe_dir still runs at apply time.
     local -a allowed_roots=("$PWD/data")
     local dvar cur
-    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR; do
+    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
         cur=$(env_get "$dvar")
         [ -n "$cur" ] && allowed_roots+=("$(dirname "$cur")")
     done
     local ddpath dest root ok_root
-    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir dashboard.data_dir; do
+    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir; do
         dest=$(jq -r --arg p "$ddpath" 'getpath($p/".") // empty' "$staged" 2>/dev/null)
         # Skip only values resolve_default turns into an in-root stack default — its EXACT set,
         # not a DYNAMIC_* wildcard (which would also swallow a bogus DYNAMIC_FOO that resolve_default
@@ -181,8 +178,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
             return 1
         fi
     fi
-    # Typed payout confirmation, checked only after every host-only perimeter, typed-confirmation,
-    # and endpoint-reachability check has passed.
+    # Typed payout confirmation, checked after physical-presence, typed-confirmation and endpoint
+    # reachability checks have passed.
     if [ "$approval_required" -eq 1 ]; then
         local reason
         if ! reason=$(control_validate_approval "$staged" "$actor" "$approval" "$porcelain"); then
@@ -256,8 +253,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Unlisted scalar reference leaves confirm; worker descriptor arrays remain refused.
-        local approval_required=false committable_re approval_re bad hit worker_changed=0
+        # Unlisted reference values confirm; worker descriptor arrays join after their SSRF guard.
+        local approval_required=false committable_re approval_re bad worker_changed=0
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
@@ -267,15 +264,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"this change includes a physical-presence-only setting; use a configuration stick",ts:(now|floor)}')"
             rm -f "$errf"; control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"; return 0
         fi
-        if [ "$worker_changed" -eq 1 ]; then
-            hit='workers.list (a worker descriptor'"'"'s host and API token is a credential change)'
-            control_write_result "$cdir/results" "$id" "$(jq -n --arg e "this change alters a security-sensitive setting ($hit) that is not committable from the dashboard. $(_control_host_remedy)" '{status:"rejected",error:$e,ts:(now|floor)}')"
-            # The staged intent STAYS (unlike a validation failure) so a commit attempt still
-            # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
-            rm -f "$errf"
-            control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
-            return 0
-        fi
         if [ "${bad:-0}" -gt 0 ]; then
             approval_required=true
             out=$(printf '%s\n' "$out" | awk -F'\t' -v re="$committable_re" '
@@ -283,29 +271,39 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 NF && $2 !~ ("^(" re ")$") {$1="CONFIRM"}
                 {print}')
         fi
+        if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then
+            approval_required=true
+            out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
+        fi
+        if [ "$worker_changed" -eq 1 ]; then
+            approval_required=true
+            out+="${out:+$'\n'}"$'CONFIRM\tworkers.list\tWorker descriptors (host, ports, credentials or membership) are changing.'
+        fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
         if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
             printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
             approval_required=true
         fi
         result=$(printf '%s\n' "$out" | jq -R -s --argjson approval_required "$approval_required" \
+            --argjson secret_paths "$CONTROL_SECRET_PATHS" --slurpfile ref "$REFERENCE_CONFIG" \
             --slurpfile live "$CONFIG_FILE" --slurpfile staged "$staged" '
+            def dotted($p): $p | map(tostring) | join(".");
+            def hidden($p):
+              any($secret_paths[]; . == $p)
+              or $p[0:2] == ["workers","list"]
+              or $p[0:2] == ["notifications","webhooks"];
+            ($ref[0] * $live[0]) as $live_full
+            | ($ref[0] * $staged[0]) as $staged_full
+            |
             [split("\n")[] | select(length > 0) | split("\t") | {flag: .[0], key: .[1], msg: (.[2:] | join("\t"))}]
             | {status: "previewed", changes: .,
                destructive: (map(.flag == "DEST" or .flag == "CONFIRM") | any),
                approval_required: $approval_required,
-               preview_values: ([
-                 ["monero.wallet_address", "Monero payout"],
-                 ["tari.wallet_address", "Tari payout"],
-                 ["xvb.url", "XvB endpoint"],
-                 ["monero.remote.host", "Monero node host"],
-                 ["monero.remote.rpc_port", "Monero RPC port"],
-                 ["monero.remote.zmq_port", "Monero ZMQ port"],
-                 ["tari.remote.host", "Tari node host"],
-                 ["tari.remote.grpc_port", "Tari gRPC port"]
-               ] | map(.[0] as $p | ($p / ".") as $path
-                   | select(($live[0] | getpath($path)) != ($staged[0] | getpath($path)))
-                   | {key:$p, label:.[1], old:($live[0] | getpath($path)), new:($staged[0] | getpath($path))})),
+               preview_values: ([$ref[0] | paths(type != "object" and type != "array") as $path
+                   | select(hidden($path) | not)
+                   | select(($live_full | getpath($path)) != ($staged_full | getpath($path)))
+                   | {key:dotted($path), label:dotted($path),
+                      old:($live_full | getpath($path)), new:($staged_full | getpath($path))}]),
                payout_confirmations: (reduce ["monero", "tari"][] as $c ({};
                  (($c + ".wallet_address") / ".") as $p
                  | if ($live[0] | getpath($p)) != ($staged[0] | getpath($p))

@@ -133,15 +133,15 @@ roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
 roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"
+roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
 # already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
 # "applies" with no typed APPLY because there is nothing for the confirm gate to see. That is how
-# this row read green while proving nothing; only the no-token half above caught it. ENABLE is also
-# the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
-# so a baseline that does not start pruned cannot exercise this key through the gate.
+# this row read green while proving nothing; only the no-token half above caught it. Use the enabling
+# direction here so the explicit CONFIRM row, not the generic destructive path, covers the key.
 roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="

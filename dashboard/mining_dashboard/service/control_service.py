@@ -105,22 +105,19 @@ def _deep_merge(base, override):
 
 
 # Env-var -> config-path(s) map (#613), mirroring pithead's CONTROL_DASHBOARD_EDITABLE_KEYS — the
-# commit gate's ACTUAL allowlist and the single source of truth for what the control channel will
-# commit. Surfaced to the browser as ``_editable_keys`` below so the Configuration view greys out
-# everything else up front rather than letting an operator edit a host-only field and learn at Save.
+# commit gate's direct-commit allowlist. Surfaced as ``_editable_keys``; every remaining reference
+# leaf is classified into confirmation unless it is physical-presence-only.
 #
-# An env var may derive from MORE than one config path (P2POOL_FLAGS folds in ``p2pool.pool`` and
-# ``p2pool.clearnet``), so this mirrors render_env's real derivation, not the prose in pithead's own
-# allowlist comment. The gate works on RENDERED ENV VARS, not config paths: a path feeding an
-# allowlisted var IS committable however host-only it sounds. (CONFIRM_ENV_KEY_PATHS documents the
-# one deliberate exception, where a NARROWER map is the safe direction.)
+# An env var may derive from more than one config path. P2POOL_FLAGS carries both the ordinary pool
+# choice and sensitive p2pool.clearnet; only the pool path belongs here, while the host gate names
+# p2pool.clearnet as a source-path confirmation exception.
 #
 # Drift-guarded (mirrors #515's WORKER_WRITABLE_KEYS check, see
 # test_editable_keys_have_no_intra_repo_drift below): a test regexes CONTROL_DASHBOARD_EDITABLE_KEYS
 # out of the pithead script and asserts its env-var names equal this map's keys, so an allowlist edit
 # without a matching map edit fails CI loudly instead of silently drifting the greyed set.
 EDITABLE_ENV_KEY_PATHS = {
-    "P2POOL_FLAGS": ("p2pool.pool", "p2pool.clearnet"),
+    "P2POOL_FLAGS": ("p2pool.pool",),
     "P2POOL_PORT": ("p2pool.pool",),
     "XVB_ENABLED": ("xvb.enabled",),
     "XVB_DONATION_LEVEL": ("xvb.donation_level",),
@@ -177,9 +174,8 @@ EDITABLE_ENV_KEY_PATHS = {
 
 # dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
 # straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
-# it (#504). Fold it in as the map's one special-case addition. Worker descriptors (workers.list[],
-# #506) are the OTHER config.json-only case but are REFUSED outright (per-rig hosts/tokens), so they
-# never get an editable path — and buildSections never renders an array as a field anyway (#172).
+# it (#504). Fold it in as the map's one special-case addition. Worker descriptors use the JSON
+# surface because buildSections does not render arrays as individual fields (#172).
 _ENERGY_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
@@ -195,27 +191,22 @@ def _editable_paths():
     return sorted(paths)
 
 
-# Env-var -> config-path map for the CONFIRM-gated set (#719), mirroring pithead's
-# CONTROL_DASHBOARD_CONFIRM_KEYS the same way EDITABLE_ENV_KEY_PATHS mirrors the editable allowlist
-# Every otherwise-unclassified reference leaf is dashboard-committable behind confirmation. The
-# gate is still the
-# authority: describe_change decides per-DIRECTION whether a change is CONFIRM (a data-dir move, a
-# stratum-port repoint, a clearnet-sync ENABLE, a prune ENABLE) or stays a host-only DEST (prune
-# DISABLE, a TOR data-dir move), so a field here can still be refused at commit in its heavy
-# direction — the same edit-then-maybe-refuse tradeoff the issue accepts for MONERO_PRUNE.
+# Env-var -> config-path map for the explicit CONFIRM-gated set (#719), mirroring pithead's
+# CONTROL_DASHBOARD_CONFIRM_KEYS. Every otherwise-unclassified reference leaf also confirms. The
+# gate remains the
+# authority: describe_change decides per-direction whether the preview is CONFIRM or DEST, and both
+# require the typed confirmation; physical-presence paths are checked separately.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),
     "P2POOL_DATA_DIR": ("p2pool.data_dir",),
+    "TOR_DATA_DIR": ("tor.data_dir",),
     "DASHBOARD_DATA_DIR": ("dashboard.data_dir",),
     "STRATUM_PORT": ("p2pool.stratum_port",),
     "MONERO_CLEARNET_SYNC": ("monero.clearnet_initial_sync",),
     "TARI_CLEARNET_SYNC": ("tari.clearnet_initial_sync",),
     "MONERO_PRUNE": ("monero.prune",),
-    # 2026-08 security review: bounded (8-1024) and instantly reversible, but the biggest
-    # steady-state knob on the shared Tor daemon's CPU — confirm-gated, not free-commit. That review
-    # kept proxy.donate_level and the two payout restore points host-only (donate traffic bypasses
-    # the Tor socks5; a future-dated restore point defeats payout-confirmation tamper evidence).
+    # Bounded (8-1024) and reversible, but the biggest steady-state knob on the shared Tor daemon.
     "MONERO_OUT_PEERS": ("monero.out_peers",),
     # Node endpoints (#1888) are confirm-gated and host-probed.
     "MONERO_NODE_HOST": ("monero.remote.host",),

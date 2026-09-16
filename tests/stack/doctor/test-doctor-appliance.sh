@@ -58,6 +58,8 @@ assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("
 assert_eq "doctor --json counters match verdict lines" \
     "$(jq -r '(.summary.ok + .summary.warn + .summary.fail) == ([.checks[] | select(.status != "info")] | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
+assert_eq "all dashboard payout remedies point at Configuration + confirmation (#1959)" \
+    "$(grep -c 'payout address.*Open Configuration.*complete the confirmation step' "$STACK")" "5"
 out=$(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --bogus 2>&1 || true)
 assert_contains "doctor rejects unknown options" "$out" "Unknown option"
 # support-bundle: chmod-600 tarball; doctor.json inside; .env secrets redacted by key pattern —

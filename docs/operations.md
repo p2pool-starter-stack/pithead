@@ -503,9 +503,9 @@ data root:
   the version dir — no data moves with the code. Installs that pre-date this carry the dashboard
   data at the old in-install default (`./data/dashboard`); the first `upgrade` (or `apply`)
   moves it to the shared root automatically, stops the dashboard for the move, and verifies the
-  database arrived. An explicit `dashboard.data_dir` is never touched — a warning names the
-  leftover instead — and data at *both* locations stops the run rather than guessing which
-  database is live.
+  database arrived. An explicit `dashboard.data_dir` change moves that same live directory too,
+  preserving history and the payout-wallet alarm baseline. Data at *both* locations stops the run
+  rather than guessing which database is live.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 

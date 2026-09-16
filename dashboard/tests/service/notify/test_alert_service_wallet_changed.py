@@ -1,4 +1,7 @@
 # ruff: noqa: F403, F405
+import shutil
+
+from mining_dashboard.service.storage_service import StateManager
 from tests.service.notify._alert_service_support import *  # noqa: F403
 
 
@@ -54,6 +57,18 @@ class TestWalletChanged:
         svc2 = _svc(kv_get=get, kv_set=put)  # fresh service, same storage
         assert _ev(svc2, observed_wallet=_W_A) == []  # unchanged wallet stays silent
         assert _keys(_ev(svc2, observed_wallet=_W_B)) == [AlertService.EVT_WALLET_CHANGED]
+
+    def test_baseline_survives_data_directory_move(self, tmp_path):
+        old, new = tmp_path / "old", tmp_path / "new"
+        old.mkdir()
+        state = StateManager(db_path=old / "mining_data.db")
+        state.set_kv("payout_wallet", _W_A)
+        state._conn.close()
+        shutil.move(old, new)
+
+        moved = StateManager(db_path=new / "mining_data.db")
+        svc = _svc(kv_get=moved.get_kv, kv_set=moved.set_kv)
+        assert _keys(_ev(svc, observed_wallet=_W_B)) == [AlertService.EVT_WALLET_CHANGED]
 
     def test_without_kv_hooks_is_noop(self):
         # Default construction (no storage injected) leaves the tripwire off rather than crashing.

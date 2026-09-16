@@ -119,6 +119,8 @@ apply() {
     [ "$porcelain" -eq 1 ] && [ "$dry_run" -eq 0 ] && error "--porcelain only makes sense with --dry-run."
 
     require_env
+    local old_dashboard_dir
+    old_dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
     if [ "$dry_run" -eq 1 ]; then
         apply_dry_run "$porcelain"
         return 0
@@ -214,6 +216,10 @@ apply() {
         # committing the rendered .env is where apply starts mutating.
         mutation_lock_acquire apply
         lock_held=1
+        if [ -n "$old_dashboard_dir" ] && [ "$old_dashboard_dir" != "$DASHBOARD_DIR" ] &&
+            [ ! -f "${ENV_FILE}.dashboard-data-from" ]; then
+            (umask 077 && printf '%s\n' "$old_dashboard_dir" >"${ENV_FILE}.dashboard-data-from")
+        fi
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -282,7 +288,7 @@ apply() {
     # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
-    migrate_dashboard_data
+    migrate_dashboard_data "$old_dashboard_dir"
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).

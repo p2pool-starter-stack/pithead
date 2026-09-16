@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -60,8 +61,7 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
 
 
 def test_every_reference_leaf_is_intentionally_classified(config_paths):
-    """A leaf is free, confirm, approval, or host-only -- and host-only is now a real answer for
-    most of the schema rather than the empty set it effectively was between #1978 and the 2026-09-13 perimeter audit."""
+    """Every scalar leaf is free, confirmed or approval metadata unless physically restricted."""
     cfg = control_service.read_config()
     classes = {
         **{p: "free" for p in cfg["_editable_keys"]},
@@ -77,3 +77,24 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert "dashboard.auth.password" not in classes
     assert "telegram.events.wallet_changed" not in classes
     assert not any(p.startswith("ssh.") for p in classes)
+
+
+def test_repository_reference_has_no_unrouted_scalar_leaf():
+    reference = json.loads((Path(__file__).parents[3] / "config.reference.json").read_text())
+    free = control_service._editable_paths()
+    explicit = control_service._confirm_paths(
+        {"monero": {"mode": "remote"}, "tari": {"mode": "remote"}}
+    )
+    approval = config_operations.approval_paths(reference, reference, free, explicit)
+    confirmed = config_operations.confirmed_paths(reference, free, explicit, approval)
+    classified = set(free) | set(explicit) | set(approval) | set(confirmed)
+    assert "p2pool.clearnet" in confirmed
+    assert "p2pool.clearnet" not in free
+    unrouted = set(config_operations.leaf_paths(reference)) - classified
+    assert unrouted == {
+        "dashboard.auth.password",
+        "telegram.events.wallet_changed",
+        "telegram.events.clearnet_exposed",
+        "ssh.enabled",
+        "ssh.authorized_key",
+    }

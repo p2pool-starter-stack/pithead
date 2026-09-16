@@ -5,7 +5,7 @@
 # written (wallet address forms and their checksums, the two worker shapes, energy, the /24 subnet
 # rule), the closed-schema invariant keeping config.reference.json a superset of every path pithead
 # reads plus the core-key shortlist that must stay inside it (#561/#502/#529), describe_change's
-# per-key classification of an apply into INFO / CONFIRM / host-only DEST rows and its rule that no
+# per-key classification of an apply into INFO / CONFIRM / destructive DEST rows and its rule that no
 # secret value ever reaches the preview (#719/#152/#121/#380), `pithead render` rebuilding the whole
 # derived layer in place (#790), and the subnet-collision diagnosis a failed compose network is
 # translated into (#180).
@@ -20,8 +20,8 @@
 # test-control-editable-allowlist.sh by #1105 R14); and render-quadlet parity, an appliance test.
 
 echo "== unit: describe_change =="
-# Monero prune (#719): DISABLE (on → off) forces a full re-sync, host-only DEST; ENABLE (off → on)
-# reclaims disk, an operator-intent op — now confirm-gated (CONFIRM), not a flat host-only refuse.
+# Monero prune (#719): DISABLE (on → off) forces a full re-sync (DEST); ENABLE (off → on)
+# reclaims disk (CONFIRM). Both require confirmation from the dashboard.
 assert_contains "prune disable is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 1 0)" "DEST"
 assert_contains "prune enable is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 0 1)" "CONFIRM"
 assert_contains "rpc lan is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_RPC_BIND 127.0.0.1 0.0.0.0)" "DEST"
@@ -109,11 +109,10 @@ assert_contains "empty to local_node is a LOCAL switch" "$(run_sourced "$SANDBOX
 assert_contains "local_node to empty is a REMOTE switch" "$(run_sourced "$SANDBOX" describe_change COMPOSE_PROFILES local_node "")" "REMOTE Monero node"
 assert_contains "wallet is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_WALLET_ADDRESS a b)" "DEST"
 assert_contains "xvb url is INFO" "$(run_sourced "$SANDBOX" describe_change XVB_POOL_URL a b)" "INFO"
-# Data-dir moves (#719): the four service dirs are confirm-gated (an expensive re-sync, not a
-# breach); every OTHER data dir (e.g. TOR_DATA_DIR) stays host-only DEST.
+# Data-dir moves (#719/#1959) are confirm-gated.
 assert_contains "monero data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "dashboard data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_DATA_DIR /a /b)" "CONFIRM"
-assert_contains "tor data_dir stays DEST" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "DEST"
+assert_contains "tor data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "tari mem is INFO" "$(run_sourced "$SANDBOX" describe_change TARI_MEM_LIMIT 2048m 4g)" "INFO"
 # Healthchecks.io (#79): the ping URL is the on/off switch AND a capability secret. Setting it says
 # ENABLED, clearing it says DISABLED — and the value must NEVER be echoed into the apply preview.

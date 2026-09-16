@@ -23,16 +23,29 @@ jq -n --arg w "$WALLET" \
                control:{enabled:true}}}' >"$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_contains "perimeter baseline applied from the host CLI" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
+# The wallet-change alarm baseline lives in the dashboard DB. Bundle its data-dir move with the
+# payout change below: losing this row would let the restarted dashboard seed the new address as
+# its first observation and suppress the alarm.
+LIVE_DASHBOARD_DIR="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
+MOVED_DASHBOARD_DIR="$C/data/dashboard-moved"
+mkdir -p "$LIVE_DASHBOARD_DIR"
+python3 -c 'import sqlite3,sys
+db=sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)"); db.execute("INSERT OR REPLACE INTO kv_store VALUES (?,?)", ("payout_wallet",sys.argv[2])); db.commit()' \
+    "$LIVE_DASHBOARD_DIR/mining_data.db" "$WALLET"
 
 # The payout destination. The suffix is CORRECT on purpose: a wrong one would prove only that the
 # typo check works, which was never the question. This is the case that used to APPLY.
-jq --arg w "$ATTACKER_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
+jq --arg w "$ATTACKER_WALLET" --arg d "$MOVED_DASHBOARD_DIR" \
+    '.monero.wallet_address=$w | .dashboard.data_dir=$d' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "payout swap is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout_suffixes:{monero:$s}}')"
 assert_eq "confirmed payout swap applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$ATTACKER_WALLET"
 assert_contains ".env carries the confirmed payout address" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$ATTACKER_WALLET"
+assert_eq "bundled dashboard-data move preserves the payout alarm baseline" \
+    "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$MOVED_DASHBOARD_DIR/mining_data.db")" "$WALLET"
+if [ -e "$LIVE_DASHBOARD_DIR" ]; then bad "bundled dashboard-data move removes the old path" "still exists"; else ok "bundled dashboard-data move removes the old path"; fi
 
 # Switching the control channel off is how an attacker locks the operator out of the remedy.
 jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
@@ -54,12 +67,49 @@ assert_eq "tor-egress-firewall disable is refused without confirmation" "$(jq -r
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "confirmed tor-egress-firewall disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 
-# A view key reveals every incoming payout amount and time — a secret, never a tier.
-jq '.monero.view_key="deadbeef"' "$C/config.json" >"$C/cand.json"
+# A view key reveals every incoming payout amount and time, so it confirms rather than direct-commits.
+MONERO_VIEW_KEY=$(printf '1%.0s' {1..64})
+jq --arg k "$MONERO_VIEW_KEY" '.monero.view_key=$k' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "monero view-key set is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "confirmed monero view-key set applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+
+confirm_scalar() { # <label> <jq-filter> <read-filter> <expected>
+    local label="$1" filter="$2" read_filter="$3" expected="$4"
+    jq "$filter" "$C/config.json" >"$C/cand.json"
+    gate_try "$C/cand.json"
+    assert_eq "$label refuses without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+    gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+    assert_eq "$label applies with confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+    assert_eq "$label lands in config.json" "$(jq -r "$read_filter" "$C/config.json")" "$expected"
+}
+
+echo "== black-box: each moved perimeter class confirms and applies (#1959) =="
+confirm_scalar "stratum password" '.p2pool.stratum_password="rotated-secret"' '.p2pool.stratum_password' "rotated-secret"
+confirm_scalar "stratum bind" '.p2pool.stratum_bind="127.0.0.1"' '.p2pool.stratum_bind' "127.0.0.1"
+confirm_scalar "XvB endpoint" '.xvb.url="eu.xmrvsbeast.com:4247"' '.xvb.url' "eu.xmrvsbeast.com:4247"
+confirm_scalar "XvB Tor route" '.xvb.tor=false' '.xvb.tor' "false"
+confirm_scalar "dashboard host" '.dashboard.host="confirmed.lan"' '.dashboard.host' "confirmed.lan"
+confirm_scalar "dashboard username" '.dashboard.auth.username="operator"' '.dashboard.auth.username' "operator"
+confirm_scalar "dashboard onion" '.dashboard.onion.enabled=true' '.dashboard.onion.enabled' "true"
+confirm_scalar "dashboard onion client-auth" '.dashboard.onion.client_auth=false' '.dashboard.onion.client_auth' "false"
+confirm_scalar "Monero node credentials" '.monero.node_username="rpc-user" | .monero.node_password="rpc-secret"' '.monero.node_username + ":" + .monero.node_password' "rpc-user:rpc-secret"
+confirm_scalar "Monero RPC and ZMQ binds" '.monero.rpc_lan_access=true | .monero.zmq_lan_access=true' '(.monero.rpc_lan_access|tostring) + ":" + (.monero.zmq_lan_access|tostring)' "true:true"
+confirm_scalar "Tari gRPC bind" '.tari.grpc_lan_access=true' '.tari.grpc_lan_access' "true"
+confirm_scalar "healthchecks endpoint" '.healthchecks.ping_url="https://example.com/ping"' '.healthchecks.ping_url' "https://example.com/ping"
+confirm_scalar "Telegram destination" '.telegram.bot_token="654321:confirmed-ABC_def" | .telegram.chat_id="2222"' '.telegram.bot_token + ":" + .telegram.chat_id' "654321:confirmed-ABC_def:2222"
+confirm_scalar "ntfy destination" '.notifications.ntfy={url:"https://ntfy.example/topic",token:"ntfy-secret"}' '.notifications.ntfy.url + ":" + .notifications.ntfy.token' "https://ntfy.example/topic:ntfy-secret"
+unset -f confirm_scalar
+
+TARI_VIEW_KEY=$(printf '2%.0s' {1..64})
+TARI_SPEND_KEY=$(printf '3%.0s' {1..64})
+jq --arg v "$TARI_VIEW_KEY" --arg s "$TARI_SPEND_KEY" '.tari.view_key=$v | .tari.spend_public_key=$s' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "Tari payout-confirmation keys refuse without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+assert_eq "Tari payout-confirmation keys apply with confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+assert_eq "Tari private view key lands in config.json" "$(jq -r '.tari.view_key' "$C/config.json")" "$TARI_VIEW_KEY"
 
 # POSITIVE CONTROL. The tier was narrowed, not emptied: without this row every assertion above
 # would also pass if the envelope path had been broken outright rather than scoped, and a gate

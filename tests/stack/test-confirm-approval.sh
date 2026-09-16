@@ -1,11 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Control-channel confirm-gate domain (#1105 Phase 1, appliance lane): the sections that prove an
-# in-scope disruptive change cannot land on a plain commit, and that the typed APPLY token which
-# unlocks it is scoped to the change itself rather than to the perimeter. A disruptive edit staged
-# without the token is held; the same edit with the typed APPLY applies; and with that token in
-# hand a DEST-flagged perimeter change — clearnet exposure, a prune disable — is still refused
-# (#719, with #713's refusal wording naming the host apply path rather than the stale #338).
+# in-scope disruptive change cannot land on a plain commit. A disruptive edit staged without the
+# token is held; the same edit with typed APPLY applies; sensitive values additionally require the
+# confirmation-envelope shape (#719/#1959).
 # Since #2076 it also holds the sensitive class's typed payout-confirmation envelope (the Telegram
 # approval tap that used to follow it is gone), and, last in the file, the removed-key migration
 # that keeps this same gate from false-rejecting an upgrading operator's config.json.
@@ -30,18 +28,6 @@
 #   This domain drives the control channel repeatedly through `pithead apply -y` and run_pending
 #   against the shared spool, and it opens by establishing a clean applied baseline that its own
 #   later assertions and the sections after it read back.
-#   The coupling that DOES bite here is write-side, and it has a recorded firing: the rig-worker
-#   token-mask cluster moved with a re-derived $C, its applies wrote EXTRA result files into the
-#   shared results dir, and a still-in-run.sh assertion counting that dir went red. That is
-#   pollution of a counted directory — a different mechanism from anything being reset.
-#   RETRACTED (#1105 R12): that firing's stated MECHANISM does not reproduce at the tip — the
-#   apply path writes nothing into results/ unless is_appliance(), which no sandbox run
-#   satisfies. The RED was real; WHY is not established, and the full re-derivation is in
-#   test-rig-worker.sh's header. This domain's position-lock rests on what it READS, not on it.
-#
-# Re-derivations, audited over this WHOLE file, this header included. The audit script is
-# lane-local and is NOT in this repo, so nothing below rests on it: each claim is written to be
-# re-derived here with git and grep alone, and should be treated as a claim to check.
 # - $REQS, $RESULTS, $STAGED and $AUDIT are NOT the builder's. They are assigned by the
 #   control-run-pending section, in test-control-core.sh, sourced before this stanza — an ordering
 #   dependency, same class as any other. They are deliberately NOT seeded here: each is a plain
@@ -167,26 +153,37 @@ assert_contains "confirmed change records the signed-in actor" "$(grep '"action"
 # verifier. An audit row that carries one would mean the removed leg came back.
 assert_not_contains "no commit records an approver" "$(cat "$AUDIT")" '"approver":"tg-'
 
-# An existing worker descriptor is no longer a hidden host-only exception: the JSON pane can
-# repoint it, but only through the same approval identity, and the audit names the schema path.
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.auth.username="operator")}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "auth preview is offered for confirmation" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "previewed"
+assert_eq "auth preview shows the full old username" \
+    "$(jq -r '.preview_values[] | select(.key=="dashboard.auth.username") | .old' "$RESULTS/$UUID3.json")" "admin"
+assert_eq "auth preview shows the full new username" \
+    "$(jq -r '.preview_values[] | select(.key=="dashboard.auth.username") | .new' "$RESULTS/$UUID3.json")" "operator"
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "confirmed auth username applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+
+# Worker descriptors use the JSON pane and the same typed confirmation as other sensitive values.
 jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]}' "$C/config.json" >"$C/config.worker" && mv "$C/config.worker" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "worker repoint preview is rejected, not previewed for approval (2026-09-13 perimeter audit round 2)" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "worker repoint refusal names workers.list" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "workers.list"
-jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+assert_eq "worker repoint is previewed for confirmation" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "previewed"
+assert_eq "worker repoint preview is destructive" "$(jq -r '.destructive' "$RESULTS/$UUID3.json")" "true"
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "a self-written envelope does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
+assert_eq "confirmed worker repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "config.json carries the repointed worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.51"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
 jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "worker append preview is rejected, not previewed for approval" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
-jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
+assert_eq "worker append is previewed for confirmation" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "previewed"
+jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "a self-written envelope does not commit a worker append" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
-assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '[.workers.list[] | select(.name=="rig-2")] | length' "$C/config.json")" "0"
+assert_eq "confirmed worker append applies" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "applied"
+assert_eq "config.json gains the rig-2 descriptor" "$(jq -r '[.workers.list[] | select(.name=="rig-2")] | length' "$C/config.json")" "1"
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
@@ -215,6 +212,14 @@ jq -n --arg new "$BAD_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:
 run_pending >/dev/null
 assert_eq "invalid payout address is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_contains "invalid payout preview names its checksum" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "checksum"
+BAD_TARI="${VALID_TARI%?}B"
+jq -n --arg w "$WALLET" --arg tari "$BAD_TARI" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
+    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
+    tari:{wallet_address:$tari}, p2pool:{pool:"mini"},
+    dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "invalid Tari payout is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "invalid Tari preview names its checksum" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "checksum"
 jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -282,16 +287,14 @@ run_pending >/dev/null
 assert_eq "confirmed price-feed change applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
 assert_eq "confirmed price feed landed" "$(jq -r '.dashboard.energy.price_feed' "$C/config.json")" "true"
 
-# A webhook URL reaches a remote endpoint — the class of healthchecks.ping_url, always host-only
-# here. the 2026-09-13 perimeter audit returned NOTIFY_WEBHOOK_URLS there: it had been swept into the unnamed approval tier,
-# so a container could repoint every stack notification behind an envelope it wrote itself.
+# A webhook URL reaches a remote endpoint and therefore joins typed confirmation.
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .notifications.webhooks=["https://example.com/hook"])}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "webhook repoint is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_eq "config.json gains no webhook" "$(jq -r '.notifications.webhooks // [] | length' "$C/config.json")" "0"
+assert_eq "confirmed webhook repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "config.json gains the webhook" "$(jq -r '.notifications.webhooks // [] | length' "$C/config.json")" "1"
 
 # Scalar arrays have one dashboard field path; the audit must collapse element indexes to it or the
 # history reconciler mislabels a dashboard edit as a later host edit. Asserted on
