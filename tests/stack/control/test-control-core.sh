@@ -253,7 +253,7 @@ jq -n --arg w "$WALLET" --arg id "$UUID2" '{id:$id, action:"preview", actor:"x",
     dashboard:{auth:{password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID2.json"
 run_pending >/dev/null
 assert_eq "invalid candidate config is rejected" "$(jq -r '.status' "$RESULTS/$UUID2.json" 2>/dev/null)" "rejected"
-assert_contains "rejection carries pithead's validation error" "$(jq -r '.error' "$RESULTS/$UUID2.json" 2>/dev/null)" "p2pool.pool"
+assert_contains "rejection carries pithead's validation log" "$(jq -r '.log' "$RESULTS/$UUID2.json" 2>/dev/null)" "p2pool.pool"
 [ ! -f "$STAGED/$UUID2.json" ] && ok "rejected candidate is not left staged" || bad "rejected candidate is not left staged" "staged file present"
 
 # Commit without a staged intent → rejected (preview first).
