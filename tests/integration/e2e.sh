@@ -11,15 +11,13 @@
 #   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
 #      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
 #      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even
-#      on failure or Ctrl-C (an EXIT trap). The synced chains are never touched. The restore then
-#      PROVES the live stack matches the on-disk config (#971): a credential marker baked into a
-#      running container must equal the on-disk .env's line, and monerod must answer a host-side
-#      authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
+#      (an EXIT trap). The synced chains are never touched. The restore then PROVES the live stack matches the on-disk
+#      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
+#      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
-# The Compose project name is pinned to "pithead", so the e2e checkout and the canonical checkout
-# drive the SAME containers + the SAME shared chains — they are two code copies of one stack, run
-# one at a time, not two stacks. That's why borrow→test→restore is a code/image swap, not a re-sync.
+# The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
+# code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
 #
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
 # See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
@@ -35,7 +33,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" || exit $?
 # shellcheck source=tests/integration/lib/detached-harness.sh
-source "$HERE/lib/detached-harness.sh" || exit $?
+source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -51,7 +49,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH=""
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -88,6 +86,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
+  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
   --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -122,6 +121,7 @@ while [ $# -gt 0 ]; do
         SCENARIO="$2"
         shift 2
         ;;
+    --harness-arg) HARNESS_ARGS+=("$2") && shift 2 ;;
     --bench)
         BENCH_HOST="$2"
         shift 2
@@ -163,7 +163,7 @@ done
 }
 case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
-[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO"
+[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
@@ -620,7 +620,7 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases$remote_args $no_mining"
+    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}" # bench-ci's one-phase selection, after the mode's own (#2179)
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     local rollback_b64 pools_b64
