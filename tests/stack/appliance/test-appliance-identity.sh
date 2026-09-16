@@ -81,6 +81,9 @@ grep -q "PasswordAuthentication=no" "$SSHSB/units/ssh.service.d/pithead.conf" 2>
 ssh_run release '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
 [ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
     ok "release -> carried SSH config cannot create runtime access" || bad "release -> carried SSH config cannot create runtime access" "residue"
+ssh_run unknown '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
+[ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
+    ok "unknown variant -> carried SSH config cannot create runtime access" || bad "unknown variant -> carried SSH config cannot create runtime access" "residue"
 unset SSHSB ssh_run
 VSB="$SANDBOX/vsb"
 mkdir -p "$VSB"
@@ -273,7 +276,6 @@ assert_contains "the real LAN address is still there" "$ast_out" "192.168.1.50"
 unset -f ast_names
 rm -rf "$AST"
 unset AST ast_out
-
 echo "== unit: check_appliance_cert excludes proxy_net's gateway live, engine reachable (#reboot-leg-fix) =="
 # pithead-boot's real sequence: render (which mints the certificate, appliance_mint_cert) runs
 # BEFORE \`up\` — neither compose bridge exists yet, so the minted certificate never covers either
@@ -331,13 +333,11 @@ out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "doctor after \`up\` still says the cert covers every name" "$out" "covers every name"
 assert_not_contains "doctor after \`up\` does not FAIL a healthy, pre-\`up\`-minted cert" "$out" "FAIL"
 assert_not_contains "the engine answered, so no WARN is owed either" "$out" "WARN"
-
 # A GENUINE mismatch must still FAIL — this fix must not neuter #1141's own coverage check. An
 # address that is neither the base, localhost, nor a confirmed bridge gateway is a real gap.
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1 10.55.55.55" doctor)
 assert_contains "a genuinely uncovered LAN address still FAILs (#1141 not neutered)" "$out" "FAIL"
 assert_contains "the FAIL names the real gap" "$out" "10.55.55.55"
-
 echo "== unit: check_appliance_cert WARNs (never FAILs) when the engine can't be asked — the security-review blocker =="
 # Demonstrated live by the reviewer with a stubbed daemon-unreachable docker: bridge INTERFACES
 # outlive an engine blip, so hostname -I keeps reporting both gateways whether or not the engine is

@@ -37,7 +37,9 @@ import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
 const editableCandidate = (cfg) =>
   JSON.parse(
     JSON.stringify(cfg, (key, value) =>
-      key.startsWith("_") || key === "__proto__" || key === "constructor" ? undefined : value,
+      key.startsWith("_") || key === "ssh" || key === "__proto__" || key === "constructor"
+        ? undefined
+        : value,
     ),
   );
 
@@ -46,20 +48,16 @@ export { editableCandidate, PreviewModal };
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
 const POLL_MAX = 90; // 3 minutes — a commit recreates containers, which can take a while
-// #1071: 45 minutes. The old 900s ceiling sat BELOW what the host runner is allowed to spend before
-// the image pull even starts — 60s on the release API, 900s on the bundle over Tor, 120s on the
-// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still
-// ahead of it and was reported as a failure. No constant can be provably enough (the pull is
+// #1071: 45 minutes. The old 900s ceiling sat BELOW image-pull bounds: 60s on the release API, 900s on the bundle over Tor, 120s on the
+// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still ahead of it and was reported as a failure. No constant can be provably enough (the pull is
 // unbounded), which is why the message below no longer claims the upgrade failed.
 const UPGRADE_POLL_MAX = 1350;
-
 // Poll /api/control/result until a terminal result lands; shared by the Configuration view, the
 // Upgrade button (#59), and the Backup card (#908). `skip` ignores an intermediate status under
 // the same id (the still-present "previewed" result while a commit runs; "running" while an
 // upgrade or backup runs). Commit/upgrade/backup all briefly recreate or stop+restart the stack
 // — commit/upgrade take the dashboard container itself down, backup takes the whole compose
-// project down and back up — so a fetch here can transiently fail: a dropped connection (proxy
-// down too, for backup) or a 502/503/504 (proxy up, upstream mid-restart, #622). Ride both out
+// project down and back up — so a fetch here can transiently fail: a dropped connection (proxy down too, for backup) or a 502/503/504 (proxy up, upstream mid-restart, #622). Ride both out
 // and keep polling until the result file answers.
 export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   for (let i = 0; i < max; i++) {
@@ -92,11 +90,9 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
 }
 
 const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
-// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review
-// modal makes you type APPLY. The tooltip sets that expectation up front.
+// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
 const APPROVAL_TITLE = "Editable — this sensitive change is recorded under your signed-in identity";
-
 // `full` (#529): the pinned Core card mixes fields from several sections, so its rows need the
 // FULL dotted key ("monero.wallet_address") to stay unambiguous. A natural section keeps the
 // shorter relative label ONLY while all its fields share one top-level key (its heading then says
@@ -106,8 +102,7 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 //
 // `field.editable` (#613): a physical-presence-only field renders disabled, with no
 // onChange/onInput wired, so it cannot enter the form's staged edits. Preact skips an event prop
-// entirely when it is
-// `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
+// entirely when it is `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
 const Field = ({ field, value, onEdit, full }) => {
   const editable = field.editable !== false;
   const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
@@ -443,6 +438,11 @@ export class ConfigView extends Component {
               the desired configuration; services that stayed running may still use the earlier settings.</p></div>`
             : null
         }
+        ${
+          this.state.cfg?.ssh
+            ? html`<div class="card"><p class="status-warn">SSH settings from an older configuration are ignored and are not saved from this page.</p></div>`
+            : null
+        }
         ${this.renderForm(core, groups)}
         ${this.renderJson(editText, jsonError, busy)}
         <div class="config-actions">
@@ -473,8 +473,7 @@ export class ConfigView extends Component {
 
 // POST the upgrade intent, then wait out the whole run. Exported for node --test — this network
 // flow is the logic; UpgradeControl only maps its outcome onto UI state. The server answers 202
-// straight away (the upgrade recreates the dashboard container itself), so the real outcome
-// arrives via pollResult, skipping the intermediate "running" result and riding out the restart.
+// straight away, so the real outcome arrives via pollResult, skipping "running" and the restart.
 export async function runUpgrade(version) {
   const res = await fetch("/api/control/upgrade", {
     method: "POST",

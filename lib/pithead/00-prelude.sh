@@ -101,7 +101,7 @@ appliance_variant() {
         return
     }
     variant=$(tr -d ' \t\r\n' <"$variant_file")
-    printf '%s' "${variant:-release}"
+    [ "$variant" = debug ] && printf debug || printf release
 }
 
 # Detect whether we're being sourced (e.g. by the test suite). When sourced we only define

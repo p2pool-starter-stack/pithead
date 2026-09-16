@@ -15,6 +15,20 @@ test("editableCandidate drops prototype-control keys", () => {
   assert.deepEqual(out.network, { mtu: 1500 });
 });
 
+test("carried SSH configuration is warned about and not proposed", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ ssh: { enabled: true }, network: { mtu: 1500 } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.match(renderToString(view.render()), /SSH settings from an older configuration are ignored/);
+});
+
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,
 // restoring the globals afterwards.
 async function withFastPoll(fetchStub, fn) {
