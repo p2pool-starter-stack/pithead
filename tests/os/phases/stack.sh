@@ -46,7 +46,10 @@ _stack_run_integration() { # <label> <extra args...>
     shift
     out=$(mktemp)
     # shellcheck disable=SC2154  # shared through the assembled runner scope
-    "$STACK_INTEGRATION_RUN" --host "root@$ip" --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
+    # The DIY gate's own SSH defaults to ssh-agent/default identities (tests/integration/run.sh's
+    # IT_SSH_OPTS carries no -i); the KVM guest only trusts the os battery's test key ($KEY,
+    # baked in via PITHEAD_TEST_SSH_PUBKEY), so it must be named explicitly with --identity.
+    "$STACK_INTEGRATION_RUN" --host "root@$ip" --identity "$KEY" --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "DIY gate vs. appliance channel: $label"
