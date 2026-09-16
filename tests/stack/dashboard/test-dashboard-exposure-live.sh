@@ -96,7 +96,7 @@ render_onion_caddy() { # <expose-public>
         appliance_mint_cert() { return 1; }
         hostname() { printf '%s %s.1 %s %s\n' "$lan" "$network_prefix" "$global" "$ula"; }
         DASHBOARD_SECURE=true DASHBOARD_HOST=pithead.local HOST_IP=pithead.local NETWORK_PREFIX="$network_prefix" \
-            DASHBOARD_AUTH_HASH_B64='$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' \
+            DASHBOARD_AUTH_USER=admin DASHBOARD_AUTH_HASH_B64='$2y$14$UNITTESTbcrypthashvalue000000000000000000000000000000' \
             DASHBOARD_ONION_ENABLED=true DASHBOARD_EXPOSE_PUBLIC_IP="$1" generate_caddyfile >/dev/null 2>&1
         cat Caddyfile
     )
