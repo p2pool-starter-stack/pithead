@@ -33,8 +33,9 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
 	bash scripts/install-test-tools.sh --self-test
 
-test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
+test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
@@ -161,9 +162,11 @@ lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, o
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
 	bash scripts/build-pithead.sh --self-test
 
-lint-trivy-parity: ## Fail if ci.yml's and os-rootfs.yml's trivy-action steps drift from the version scripts/watch/trivyignore-watch.sh scans with (#1290)
+lint-trivy-parity: ## Fail if a gate workflow's install-trivy version: (the one line that decides the engine) drifts from the version scripts/watch/trivyignore-watch.sh scans with (#1290), or if the cached-installer shape that makes it the only pin breaks (#2214)
 	bash scripts/watch/trivyignore-watch.sh --self-test
 	bash scripts/watch/trivyignore-watch.sh --check-parity
+	bash scripts/lint/lint-trivy-installer-cache.sh --self-test
+	bash scripts/lint/lint-trivy-installer-cache.sh
 
 lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/proto/buf.yaml)
 	cd dashboard/mining_dashboard/client/tari/proto && \

@@ -88,9 +88,18 @@ verdict that means something. The dashboard and frontend unit suites still run f
      comment), `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
-     checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE
-     gate's two trivy-action steps and `scripts/watch/trivyignore-watch.sh` must name one trivy engine
-     version — issue #1290), `lint-proto` (buf),
+     checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE gate installs trivy once per
+     job via `./.github/actions/install-trivy`, and that step's `version:` is the only line that
+     decides which engine scans — every trivy-action step passes `skip-setup-trivy: true` and
+     declares no version of its own. The gate holds those literals across `ci.yml`,
+     `os-rootfs.yml` and `test-images.yml`, and `scripts/watch/trivyignore-watch.sh`, to one
+     trivy engine version — issue #1290 — and holds the shape that keeps that meaningful: per
+     workflow, the counts of trivy-action steps, `install-trivy` steps and `skip-setup-trivy: true`
+     lines must match, no `version:` may reappear in a trivy-action step where nothing would
+     resolve it, and neither `install-trivy` nor `retry-trivy-scan` may carry a pin of its own —
+     so the cached installer keeps a transient GitHub Releases outage from redding every scan,
+     issue #2214),
+     `lint-proto` (buf),
      `lint-toml` (taplo). The
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking
@@ -189,6 +198,17 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 - Target the `develop` branch and fill out the PR template.
 - Link the issue your PR addresses (e.g. `Closes #123`).
 - Make sure `make test` passes; CI runs the same checks.
+- For a PR targeting `develop`, read merge readiness from `mergeable` and
+  `mergeStateStatus`, never from the check rollup. Run:
+
+  ```bash
+  gh pr view <number> --repo p2pool-starter-stack/pithead --json mergeable,mergeStateStatus
+  ```
+
+  Documentation alone does not close this gap: a conflicting PR can still report every check
+  green unless repository rules block it. Track that separate enforcement work in
+  [issue #2237](https://github.com/p2pool-starter-stack/pithead/issues/2237).
+
 - A PR into `develop` merges on green required checks plus the `adversarial-review`
   status recorded on its head SHA by a session that did not author it, human-driven
   or automated; see [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). The

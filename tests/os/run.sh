@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -35,8 +35,12 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
-#   all     every phase above, in that order — media, fault and reset included since #1064;
-#           rigmedia added since #2069
+#   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
+#           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
+#           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
+#           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
+#   all     every phase above except crossupdate, in that order — media, fault and reset included
+#           since #1064; rigmedia added since #2069
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -93,6 +97,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/reinstall-prefill-submit-leg.sh"
 # shellcheck source=tests/os/setup-failure-recovery-leg.sh
 . "$SCRIPT_DIR/setup-failure-recovery-leg.sh"
+# shellcheck source=tests/os/control-runner-recovery-leg.sh
+. "$SCRIPT_DIR/control-runner-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
@@ -153,6 +159,8 @@ source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/crossupdate.sh
+source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 require_host
 require_clean_bench
 case "$PHASE" in
@@ -165,6 +173,7 @@ rigmedia) phase_rigmedia ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
+crossupdate) phase_crossupdate ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
