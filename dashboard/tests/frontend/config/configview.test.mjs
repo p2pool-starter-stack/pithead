@@ -1,12 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
-import { PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { ConfigView, editableCandidate, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
+
+test("editableCandidate drops prototype-control keys", () => {
+  const out = editableCandidate(JSON.parse('{"__proto__":{"polluted":true},"constructor":{"polluted":true},"network":{"mtu":1500}}'));
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+  assert.equal(Object.hasOwn(out, "constructor"), false);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.deepEqual(out.network, { mtu: 1500 });
+});
 
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,
 // restoring the globals afterwards.

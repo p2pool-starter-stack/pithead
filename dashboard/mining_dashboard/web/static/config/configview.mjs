@@ -19,7 +19,6 @@
 // closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
 // sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
 // sentinel — "blank means keep" survives the model change.
-
 import { Component, html } from "../app/preact.mjs";
 import { applyFailure } from "./applyfailure.mjs";
 import {
@@ -36,9 +35,13 @@ import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
 
 const editableCandidate = (cfg) =>
-  JSON.parse(JSON.stringify(cfg, (key, value) => (key.startsWith("_") ? undefined : value)));
+  JSON.parse(
+    JSON.stringify(cfg, (key, value) =>
+      key.startsWith("_") || key === "__proto__" || key === "constructor" ? undefined : value,
+    ),
+  );
 
-export { PreviewModal };
+export { editableCandidate, PreviewModal };
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
@@ -168,7 +171,6 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
-
   async load() {
     try {
       const res = await fetch("/api/config");
@@ -230,7 +232,6 @@ export class ConfigView extends Component {
     }
     this.setState({ editText: text, jsonError: null, candidate: staged.config });
   }
-
   // Fill the JSON textarea from a local file (#529, mirrors WorkerInspect.onFilePick, #518) — a
   // FileReader read, never an upload; the operator still reviews and clicks Save like any other
   // JSON-mode edit.

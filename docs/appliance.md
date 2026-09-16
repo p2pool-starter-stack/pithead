@@ -542,9 +542,9 @@ place.
 Insert a stick carrying a `pithead-config.json` and reboot: the machine validates it, shows
 the exact change on the console, and applies it after a countdown — no password, no browser,
 no keyboard required. This is the same file format the setup wizard reads (see [setting it up
-without a monitor](#setting-it-up-without-a-monitor)), and it can change **any** setting,
-including the ones the dashboard never exposes: the SSH toggle, the dashboard login password,
-and the Telegram alert channel's own identity. That is deliberate. Whoever can insert media
+without a monitor](#setting-it-up-without-a-monitor)), and it can change settings the dashboard
+never exposes, including the dashboard login password and the Telegram alert channel's own
+identity. That is deliberate. Whoever can insert media
 and power the machine off and on already has full authority over it — a shell at the console
 proves the same thing today — so this channel makes that authority usable instead of assuming
 you have a monitor and a working password. It is the recovery path when the dashboard password
