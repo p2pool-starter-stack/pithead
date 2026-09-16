@@ -17,12 +17,10 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'could not re-validate the staged change host-side — refusing to commit'
         return 1
     fi
-    # Two config.json blocks never render to .env — the dashboard reads them straight off its
-    # config.json mount (load_worker_endpoints + load_energy_config; these are the ONLY two), so the
-    # env-diff allowlist below can't see either. Each config.json-only block must be handled here by
-    # name or a commit could silently change it: existing worker descriptor changes require
-    # approval, while dashboard.energy is ordinary (#504). Every OTHER config path renders to .env and is gated by the allowlist, so a
-    # change there is caught below — a NEW config.json-only block, though, MUST add its own line.
+    # A config.json block that never renders to .env emits ZERO porcelain rows, so the default-deny
+    # pass can neither see nor refuse it: each is handled HERE by name (worker descriptors are
+    # refused outright below; dashboard.energy and local_miner.enabled are ordinary, #504/2026-09-13
+    # perimeter audit round 2, bar dashboard.energy.price_feed). A NEW one MUST add its own line.
     #
     # The per-worker descriptors — workers.list[] (#506) — carry per-rig hosts and API tokens
     # (exactly the "free-form string that reaches a URL or credential" class the allowlist exists to
@@ -30,10 +28,11 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # outright; 2.0.0 removed it (#1832), so a staged config carrying it is now refused one step
     # later by the closed-schema check below, as an unknown key like any other typo.
     #
-    # Every descriptor change is sensitive: an append introduces a new remote host and access token,
-    # while repointing, deleting, or reordering changes an existing trust relationship. Adoption may
-    # still pre-fill the descriptor, but committing it is classified sensitive (#1959) — which
-    # since #2076 means the typed confirmation envelope, not a second identity.
+    # Every descriptor change is sensitive: an append introduces a new remote host and token;
+    # repointing or reordering changes an existing trust relationship — a credential change, which
+    # SECURITY.md promises is never dashboard-committable. Refused outright below, same as
+    # wallets/firewall/control-channel — not routed through approval_required's self-written
+    # envelope, the only route left once #2076 took the second identity away.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
         (.workers.list // []) == ($live[0].workers.list // [])
         ' "$staged" >/dev/null 2>&1; then
@@ -84,22 +83,33 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change adds config keys not in the schema (%s) — refusing to commit. %s' "$unknown" "$(_control_host_remedy)"
         return 1
     fi
-    # Default-deny: refuse if any changed env key is NOT on the editable allowlist, whatever its
-    # flag says. Refusal keys off a violation COUNT, not the matched text, so a blank or
-    # malformed porcelain row (empty KEY column) still refuses instead of slipping past an
-    # emptiness test.
-    # The allowlist now spans BOTH the free-to-commit editable set and the confirm-gated set (#719):
-    # a change to any other key still fails closed here. The CONFIRM set only gets PAST this pass —
-    # it still has to clear the DEST perimeter and satisfy the typed-confirmation check below.
-    local editable_re bad
-    editable_re=$(printf '%s %s' "$CONTROL_DASHBOARD_EDITABLE_KEYS" "$CONTROL_DASHBOARD_CONFIRM_KEYS" | tr -s ' \n' '|')
-    bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$editable_re" || true)
+    # Default-deny across ALL THREE committable tiers (control_committable_re, 42-), whatever a row's
+    # flag says: a key in none of them fails closed HERE with a refusal, not a demand for an envelope
+    # the container writes itself. Keyed off a violation COUNT so a blank row still refuses; past it,
+    # a CONFIRM/APPROVAL key still clears DEST, the typed APPLY and the envelope.
+    local committable_re approval_re bad hit
+    committable_re=$(control_committable_re)
+    bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
     if control_never_path_changed "$staged"; then
         printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
         return 1
     fi
-    [ "${bad:-0}" -gt 0 ] && approval_required=1
-    [ "$worker_sensitive" -eq 1 ] && approval_required=1
+    if [ "${bad:-0}" -gt 0 ]; then
+        hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
+        printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
+        return 1
+    fi
+    # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
+    approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
+    [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
+    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), so approval_required (the
+    # self-written envelope) is the same self-approval shape closed above for wallets/firewall/
+    # control-channel. Refused, host-CLI-only, same as the rest — #1959 tracks a real second
+    # identity a future approval tier could rejoin.
+    if [ "$worker_sensitive" -eq 1 ]; then
+        printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
+        return 1
+    fi
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
     # Electricity price feeds are remote control inputs, unlike the local display currency and
     # fixed-price values beside them. They join the same sensitive class even though dashboard.energy
@@ -250,13 +260,32 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        local approval_required=false editable_re
-        editable_re=$(printf '%s %s' "$CONTROL_DASHBOARD_EDITABLE_KEYS" "$CONTROL_DASHBOARD_CONFIRM_KEYS" | tr -s ' \n' '|')
-        if printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qvxE "$editable_re" ||
-            printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
-            approval_required=true
-        fi
+        # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
+        # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
+        # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.
+        local approval_required=false committable_re approval_re bad hit worker_changed=0
+        committable_re=$(control_committable_re)
+        bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
+            worker_changed=1
+        fi
+        if [ "${bad:-0}" -gt 0 ] || [ "$worker_changed" -eq 1 ]; then
+            if [ "$worker_changed" -eq 1 ]; then
+                hit='workers.list (a worker descriptor'"'"'s host and API token is a credential change)'
+            else
+                hit=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
+                hit="${hit:-unparseable change row}"
+            fi
+            control_write_result "$cdir/results" "$id" "$(jq -n --arg e "this change alters a security-sensitive setting ($hit) that is not committable from the dashboard. $(_control_host_remedy)" '{status:"rejected",error:$e,ts:(now|floor)}')"
+            # The staged intent STAYS (unlike a validation failure) so a commit attempt still
+            # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
+            rm -f "$errf"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+            return 0
+        fi
+        approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
+        if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
+            printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
             approval_required=true
         fi
         result=$(printf '%s\n' "$out" | jq -R -s --argjson approval_required "$approval_required" \
@@ -283,9 +312,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                    then .[$c] = (($staged[0] | getpath($p) // "") | if length > 8 then .[-8:] else . end)
                    else . end)),
                ts: (now | floor)}')
-        if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
-            result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"workers.list",msg:"Worker descriptors (hosts and access tokens) changed — confirm to proceed."}] | .approval_required = true')
-        fi
         # #504: dashboard.energy is config.json-only (never rendered to .env), so an energy-only
         # edit produces no porcelain row. Surface it as a normal committable INFO change so the UI
         # arms Apply and the commit lands it in config.json. The approval gate allowlists exactly
@@ -303,11 +329,18 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"dashboard.energy.price_feed",msg:"Electricity price feed endpoint changed — the host will contact this remote source for operating-cost data."}] | .approval_required = true')
         fi
+        # local_miner.enabled (2026-09-13 perimeter audit round 2): also config.json-only, no
+        # porcelain row. Ordinary like dashboard.energy — a documented dashboard toggle
+        # (docs/workers.md), not a security control — but named explicitly rather than left
+        # unaccounted for, which is the exact gap that let it bypass classification entirely.
+        if ! jq -e --slurpfile live "$CONFIG_FILE" '(.local_miner.enabled // false) == ($live[0].local_miner.enabled // false)' "$staged" >/dev/null 2>&1; then
+            result=$(printf '%s' "$result" | jq '.changes += [{flag:"INFO",key:"local_miner.enabled",msg:"The co-located local miner toggle changed."}]')
+        fi
         control_write_result "$cdir/results" "$id" "$result"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "previewed" "$(porcelain_keys "$out")"
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
-        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"
         rm -f "$staged"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
     fi

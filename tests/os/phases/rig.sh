@@ -12,6 +12,13 @@ _rig_mining_up() { # <tries>, 10 s apart — 0 once the xmrig unit is active wit
 
 phase_rig() {
     info "phase: rig (the OTHER machine this image installs — mines instead of coordinating)"
+    # Recorded at phase ENTRY, before the first build or boot: the dashboard-scoped legs (hostname
+    # identity, diagnostics, tari-mode switch, egress backstop — all phase_provision_* in
+    # appliance-*-leg.sh) cannot apply to a rig whatever this run goes on to do, and a fact known
+    # before anything runs must not be reported only by the runs that get far enough to reach it.
+    # A guest that dies at the image build and one that finishes the phase enumerate the same row.
+    it_skip_leg "hostname identity, diagnostics, tari-mode switch and egress backstop legs" \
+        "a rig has no dashboard, no control API and no compose stack at all to assert any of these against" by-design
     # One image, two machines. Every other phase proves the coordinator; this one proves that
     # answering "RigForge" produces a box with no stack at all, mining the baked binary without
     # compiling or reaching the network, that takes an A/B update exactly like a coordinator. A
@@ -155,11 +162,13 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
-    # WHICH unit owns the boot is the whole R4 fork: the wizard's window is closed, pithead-boot runs.
-    [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
+    # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
+    # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
+    # that the boot unit, rather than the condition-skipped wizard, ran this boot.
+    provisioning_settled 60 && [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
         ok "pithead-boot owns a provisioned rig's boot" ||
-        bad "pithead-boot did not run on the rig (its condition still excludes a machine with no config.json)"
-    _ssh "systemctl is-active --quiet pithead-firstboot" &&
+        bad "pithead-boot did not finish active on the provisioned rig boot"
+    unit_ran_this_boot pithead-firstboot &&
         bad "the first-boot wizard ran again on a provisioned rig" ||
         ok "the wizard window is closed on a provisioned rig (no setup page on every boot)"
     local failed_units

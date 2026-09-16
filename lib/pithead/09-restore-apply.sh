@@ -24,10 +24,41 @@ restore_setup_config_path() {
     esac
 }
 
-restore_setup_items() {
-    printf '%s\n' "$(restore_setup_config_path)" "$PWD/$ENV_FILE" "$PWD/Caddyfile" \
-        "$PWD/data/tor/" "$PWD/data/dashboard/" "$PWD/data/monero/" \
-        "$PWD/data/tari/" "$PWD/data/p2pool/"
+# The accepted layout, named relative to whatever directory the archive was made from — a
+# genuine older release's `pithead backup` ran from the operator's own working directory, never
+# this appliance's $PWD (#2181). restore_setup_root() finds that directory from the archive
+# itself; restore_setup_members() and restore_apply() match/extract relative to it, never
+# assuming it is $PWD. restore_setup_config_path() maps the one path-shaped exception
+# ($CONFIG_FILE) to its destination on THIS box; every other item joins directly onto $PWD.
+restore_setup_relative_items() {
+    printf '%s\n' "$CONFIG_FILE" "$ENV_FILE" "Caddyfile" \
+        "data/tor/" "data/dashboard/" "data/monero/" \
+        "data/tari/" "data/p2pool/"
+}
+
+# The single absolute directory every member of a genuine backup shares — found from wherever
+# `config.json` sits, since that item is always present and never a directory. Requires exactly
+# one match: a backup with config.json at two different depths is not one this codebase ever
+# produces, so more than one is corruption or an attack, not a layout to guess between. An
+# already-absolute $CONFIG_FILE (only a single-invocation validation override, never the wizard
+# restore path) has no archive-relative root to detect.
+restore_setup_root() { # <tar name listing>
+    case "$CONFIG_FILE" in /*) return 1 ;; esac
+    local member root="" hits=0
+    while IFS= read -r member; do
+        case "$member" in
+        "$CONFIG_FILE")
+            root=""
+            hits=$((hits + 1))
+            ;;
+        */"$CONFIG_FILE")
+            root="${member%"$CONFIG_FILE"}"
+            hits=$((hits + 1))
+            ;;
+        esac
+    done <<<"$1"
+    [ "$hits" -eq 1 ] || return 1
+    printf '%s' "$root"
 }
 
 restore_setup_archive_within_limits() { # <names-file> <verbose-file> [max-members] [max-bytes]
@@ -53,23 +84,26 @@ restore_setup_publish_file() { # <source> <destination>
     fi
 }
 
-restore_setup_members() { # <tar name listing>
-    local member item accepted directory
+restore_setup_members() { # <tar name listing> <root, from restore_setup_root>
+    local member item accepted directory root="$2"
     while IFS= read -r member; do
         case "$member" in '' | /* | *\\* | . | ./* | */./* | */. | *//* | ../* | */../* | */..) return 1 ;; esac
         directory=0
         [[ "$member" = */ ]] && directory=1
         member="${member%/}"
+        case "$member" in
+        "$root"*) member="${member#"$root"}" ;;
+        *) return 1 ;; # a member outside the archive's own single root is a mixed or forged layout
+        esac
         accepted=0
         while IFS= read -r item; do
-            item="${item#/}"
             if [[ "$item" = */ ]]; then
                 [[ "$member" = "$item"* ]] && accepted=1
                 [[ "$member" = "${item%/}" && "$directory" = 1 ]] && accepted=1
             elif [ "$member" = "$item" ] && [ "$directory" = 0 ]; then
                 accepted=1
             fi
-        done < <(restore_setup_items)
+        done < <(restore_setup_relative_items)
         [ "$accepted" = 1 ] || return 1
     done <<<"$1"
 }
@@ -84,7 +118,7 @@ restore_setup_members() { # <tar name listing>
 # line in <errfile>. Never deletes <archive> — the callers own their files.
 restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
     local archive="$1" pass="$2" errf="$3" cfg_dest="${4:-}"
-    local size magic encrypted=0 tmp plain tree staged_cfg config_path err
+    local size magic encrypted=0 tmp plain tree staged_cfg err root
 
     # Server-side cap already refused an oversize upload before it reached the spool; checked
     # again here so a file dropped by any other means gets the same honest refusal.
@@ -154,7 +188,14 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         return 1
     fi
 
-    if ! restore_setup_members "$rnames"; then
+    # An older supported release's `pithead backup` ran from the operator's own working
+    # directory, not this appliance's $PWD (#2181) — so members are matched against the
+    # archive's OWN single root, found from where config.json sits, not against $PWD.
+    root=$(restore_setup_root "$rnames") || {
+        printf 'archive contains files outside the appliance backup layout — refusing to restore' >"$errf"
+        return 1
+    }
+    if ! restore_setup_members "$rnames" "$root"; then
         printf 'archive contains files outside the appliance backup layout — refusing to restore' >"$errf"
         return 1
     fi
@@ -173,9 +214,9 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
     fi
 
     # The archive stores paths relative to "/" (same convention `stack_backup`/`stack_restore`
-    # use), so the staged config lands at exactly $PWD/$CONFIG_FILE underneath $tmp.
-    config_path=$(restore_setup_config_path)
-    staged_cfg="$tree$config_path"
+    # use), so the staged config lands at exactly "$root$CONFIG_FILE" underneath $tmp/tree —
+    # $root is the archive's own working directory, which need not be this box's $PWD.
+    staged_cfg="$tree/$root$CONFIG_FILE"
     if [ ! -f "$staged_cfg" ] || ! jq -e . "$staged_cfg" >/dev/null 2>&1; then
         rm -rf "$tmp"
         printf 'archive does not contain a usable configuration' >"$errf"
@@ -200,42 +241,63 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         rm -rf "$tmp"
         return 0
     fi
-    if ! restore_canonicalize_derived "$staged_cfg" "$tree$PWD/$ENV_FILE" "$tree$PWD/Caddyfile"; then
+    if ! restore_canonicalize_derived "$staged_cfg" "$tree/$root$ENV_FILE" "$tree/${root}Caddyfile"; then
         rm -rf "$tmp"
         printf 'archive contains invalid generated identity or secret state' >"$errf"
         return 1
     fi
-    # Apply only the accepted files/data trees. Do not copy staging's ancestor directories
+    # Apply only the accepted files/data trees, from wherever the archive's own root staged them
+    # to their fixed destination on THIS box ($PWD). Do not copy staging's ancestor directories
     # onto /: their metadata is not part of the backup contract.
-    local item source dest copy_failed=0
-    while IFS= read -r item; do
-        source="$tree$item"
+    local rel source dest copy_failed=0
+    while IFS= read -r rel; do
+        source="$tree/$root$rel"
         [ -e "$source" ] || continue
-        if [[ "$item" = */ ]]; then
-            dest="${item%/}"
-            rm -rf -- "$dest"
-            # The parent may not exist yet (#2051): prepare_directories runs inside setup(), which
-            # the restore doors call AFTER this, so on a fresh machine `data/` is simply absent and
-            # `mv -T` fails ENOENT on the first tree item. That aborted the whole apply with
-            # config.json and .env already written — a partial restore the caller then read as a
-            # valid pre-seed, with the carried DEPLOYMENT_COMPLETED never cleared because the clear
-            # sits past the failure. Measured on the bench: the machine refused setup as already
-            # provisioned and ran zero containers.
-            mkdir -p -- "$(dirname -- "$dest")" || {
-                copy_failed=1
-                break
-            }
-            mv -T -- "$source" "$dest" || {
-                copy_failed=1
-                break
-            }
+        case "$rel" in "$CONFIG_FILE") dest=$(restore_setup_config_path) ;; *) dest="$PWD/$rel" ;; esac
+        if [[ "$dest" = */ ]]; then
+            dest="${dest%/}"
+            case "$rel" in
+            data/monero/ | data/tari/ | data/p2pool/)
+                # Chain data survives this box's own `keep` policy (#2195): a restore must not
+                # force a resync, so the archive's tree is MERGED into whatever already sits here
+                # instead of replacing it — an existing file wins on a name collision, and files
+                # only the archive has are added alongside it. See docs/operations.md's
+                # "Restore collision rules" for why this differs from `pithead restore`.
+                mkdir -p -- "$dest" || {
+                    copy_failed=1
+                    break
+                }
+                cp -a -n -- "$source"/. "$dest"/ || {
+                    copy_failed=1
+                    break
+                }
+                ;;
+            *)
+                rm -rf -- "$dest"
+                # The parent may not exist yet (#2051): prepare_directories runs inside setup(),
+                # which the restore doors call AFTER this, so on a fresh machine `data/` is simply
+                # absent and `mv -T` fails ENOENT on the first tree item. That aborted the whole
+                # apply with config.json and .env already written — a partial restore the caller
+                # then read as a valid pre-seed, with the carried DEPLOYMENT_COMPLETED never
+                # cleared because the clear sits past the failure. Measured on the bench: the
+                # machine refused setup as already provisioned and ran zero containers.
+                mkdir -p -- "$(dirname -- "$dest")" || {
+                    copy_failed=1
+                    break
+                }
+                mv -T -- "$source" "$dest" || {
+                    copy_failed=1
+                    break
+                }
+                ;;
+            esac
         else
-            restore_setup_publish_file "$source" "$item" || {
+            restore_setup_publish_file "$source" "$dest" || {
                 copy_failed=1
                 break
             }
         fi
-    done < <(restore_setup_items)
+    done < <(restore_setup_relative_items)
     if [ "$copy_failed" = 1 ]; then
         rm -rf "$tmp"
         printf 'could not apply the backup files' >"$errf"

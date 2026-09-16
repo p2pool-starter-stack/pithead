@@ -185,6 +185,7 @@ _phase_provision_initial_body() {
         bad "no os_update in /api/state — the appliance has no reachable OS-update control"
     fi
     phase_provision_control_regressions "$pv_user" "$pv_pass"
+    phase_provision_control_recovery "$ip" "$pv_user" "$pv_pass"
     phase_provision_hostname_regressions "$pv_user" "$pv_pass"
     phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad "sensitive appliance regression phase aborted before completing required checks"
     # ---- local-miner leg (#796): enable -> xmrig up -> wired to the machine's own stratum ---

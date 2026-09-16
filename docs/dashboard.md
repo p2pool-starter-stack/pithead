@@ -485,9 +485,10 @@ Three things bound what the comparison claims, and each bound is deliberate:
 - **It judges only keys this dashboard has set.** What it compares against is a record of the
   changes we pushed, not a copy of the rig's config, so a hand-edit to a key we have never applied
   has nothing to disagree with. The second check below is what covers that case.
-- **It never compares pool passwords.** RigForge strips the pool password and TLS fingerprint before
-  serving its config, so the dashboard strips them from its own side too. A changed pool password
-  would otherwise read as drift on every rig, forever. This comparison cannot see one either way.
+- **It never compares pool passwords.** RigForge serves a stored credential as a marker, never the
+  value, and the dashboard strips both sides so the marker cannot read as drift. A changed pool
+  password would otherwise read as drift on every rig, forever. This comparison cannot see one
+  either way.
 - **It says nothing while a change is in flight.** A change that has been sent and not yet settled
   is not in the applied record, though the rig may already be running it, so the comparison is held
   back until the outcome lands rather than reporting a key we ourselves just set.
@@ -1278,10 +1279,11 @@ The card names both halves a restore needs: the encrypted archive, and the kit t
 passphrase opening it. Neither half is any use without the other, and setting a machine up later
 asks for that same pair.
 
-On the appliance the card drops the host-side remedy the other builds print. Turning the control
-channel back on means editing `config.json` and running `./pithead apply`, and an appliance
-operator has no shell for either, so there the card says backup returns with the control channel
-rather than naming a file they cannot open.
+On the appliance the card drops the host-side remedy the other builds print. If the machine was
+set up without a dashboard login, it points at **Set up again** in the boot menu instead of
+`config.json` or `./pithead apply`. If a backup attempt fails, the card keeps the error tail but
+labels it as the machine's own backup log, so commands in that log do not read as instructions for
+the browser.
 
 ## Upgrading from the dashboard
 
@@ -1342,10 +1344,12 @@ later ride out the restart.
 The button never appears on a source checkout — the runner refuses the request there, since a dev
 install updates with `git pull`. If the upgrade fails, the result says so in the view: a failed
 release lookup or bundle download changes nothing; a failure during `pithead upgrade` leaves
-containers that were not yet recreated on the previous images, and finishing up is one
-`./pithead upgrade` on the host. There is no automatic rollback — the images of the previous
-release stay on disk, and `docker compose` state is recoverable the same way as a failed
-CLI upgrade. The result names the restore point ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
+containers that were not yet recreated on the previous images. On a host, the result keeps the
+recovery command separate from the upgrade log. On an appliance, the card labels the tail as the
+machine's own log and does not show the host-only command or backup paths. There is no automatic
+rollback — the images of the previous release stay on disk, and `docker compose` state is
+recoverable the same way as a failed CLI upgrade. The host result names the restore point
+([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
 on the versioned layout, the previous `pithead-vX.Y.Z` dir; in place, the pre-upgrade
 `config.json`/`.env` copies.
 
