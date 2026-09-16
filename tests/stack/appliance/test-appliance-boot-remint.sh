@@ -269,7 +269,9 @@ RIG_PHASE="$ROOT/tests/os/phases/rig.sh"
 rig_boot_window=$(sed -n '/info "reboot leg/,/unit_ran_this_boot/p' "$RIG_PHASE")
 rig_order=$(printf '%s\n' "$rig_boot_window" | awk '
     /provisioning_settled 60/ && /systemctl is-active pithead-boot/ {
-        print index($0, "provisioning_settled 60") < index($0, "systemctl is-active pithead-boot") ? "settled-first" : "active-first"
+        wait=index($0, "provisioning_settled 60")
+        active=index($0, "systemctl is-active pithead-boot")
+        print (wait < active ? "settled-first" : "active-first")
     }
 ')
 if [ "$rig_order" = settled-first ]; then
