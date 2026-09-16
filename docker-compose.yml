@@ -632,8 +632,9 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads masked config,
-      # results, and the audit log, nothing else (see SECURITY.md).
+      # The raw config.json is never mounted. A compromised dashboard can still read credentials
+      # supplied to its own runtime environment; this boundary protects the host config, staged
+      # intents, results and audit log from direct container writes (see SECURITY.md).
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the

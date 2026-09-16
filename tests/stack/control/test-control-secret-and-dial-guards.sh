@@ -89,6 +89,19 @@ assert_eq "Monero repoint cannot reuse masked RPC credentials" \
 assert_contains "Monero repoint asks for replacement credentials" \
     "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "new endpoint"
 
+# A per-worker bearer whose port inherits workers.api_port is bound to that effective port, not
+# merely to the absent raw .port leaf.
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_port=8081
+      | .workers.api_token="replacement-fleet-token"
+      | .workers.list[0].token={"__secret__":true})}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "inherited worker port cannot repoint a masked per-worker bearer" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "inherited-port refusal asks for the per-worker token" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "worker endpoint"
+
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0]
       | .workers.api_token={"__secret__":true}

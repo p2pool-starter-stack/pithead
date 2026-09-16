@@ -91,6 +91,11 @@ preview_move() {                             # <monero.data_dir>
         dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID7.json"
     run_pending >/dev/null
 }
+preview_dashboard_move() { # <dashboard.data_dir>
+    jq -n --slurpfile live "$C/config.json" --arg id "$UUID7" --arg dd "$1" \
+        '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.data_dir=$dd)}' >"$REQS/$UUID7.json"
+    run_pending >/dev/null
+}
 # (1) A move UNDER the stack data root, confirmed with APPLY, is allowed and lands.
 preview_move "$C/data/monero-v2"
 assert_contains "in-root data-dir move previews a CONFIRM row" "$(jq -r '.changes[].flag' "$RESULTS/$UUID7.json" 2>/dev/null)" "CONFIRM"
@@ -144,6 +149,46 @@ assert_eq "internal control directory is refused despite the APPLY token" \
     "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
 assert_contains "internal control refusal names the boundary" \
     "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "internal or dashboard-writable"
+# Mounting the shared parent would expose every sibling to the dashboard. A cross-over with a live
+# service remains forbidden even if the same candidate moves that service elsewhere.
+preview_dashboard_move "$C/data"
+printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+run_pending >/dev/null
+assert_eq "dashboard cannot mount the shared data ancestor" \
+    "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+assert_contains "shared data ancestor refusal names the overlap" \
+    "$(jq -r '.error' "$RESULTS/$UUID7.json")" "overlap"
+TOR_ROOT="$(run_sourced "$C" env_get_file "$C/.env" TOR_DATA_DIR)"
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID7" --arg old "$TOR_ROOT" --arg new "$C/data/tor-v2" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.data_dir=$old | .tor.data_dir=$new)}' >"$REQS/$UUID7.json"
+run_pending >/dev/null
+printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+run_pending >/dev/null
+assert_eq "dashboard cannot take a live service directory while repointing it" \
+    "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+assert_contains "live service cross-over names the protected root" \
+    "$(jq -r '.error' "$RESULTS/$UUID7.json")" "live.tor"
+
+# Internal log and TLS roots are siblings under the allowlisted data parent, but never service data.
+for INTERNAL_ROOT in "$(run_sourced "$C" env_get_file "$C/.env" CADDY_LOG_DIR)" \
+    "$(run_sourced "$C" env_get_file "$C/.env" PROXY_TLS_DIR)"; do
+    preview_move "$INTERNAL_ROOT/monero"
+    printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+    run_pending >/dev/null
+    assert_eq "internal log/TLS root is refused" "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+done
+
+# Older .env files lack newer internal-root keys; the runtime defaults remain protected.
+cp "$C/.env" "$C/.env.with-internal-roots"
+sed -E '/^(CONTROL_DIR|CLEARNET_STATE_DIR)=/d' "$C/.env.with-internal-roots" >"$C/.env"
+for INTERNAL_ROOT in "$C/data/control" "$C/data/clearnet-state"; do
+    preview_move "$INTERNAL_ROOT/monero"
+    printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+    run_pending >/dev/null
+    assert_eq "missing env key does not unprotect the runtime root" \
+        "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+done
+mv "$C/.env.with-internal-roots" "$C/.env"
 if [ ! -e "$C/data/symlink-target/monero" ]; then
     ok "refused symlinked move touched no target"
 else

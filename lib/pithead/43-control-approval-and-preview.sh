@@ -175,15 +175,16 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # Restoring the old bearer by name after host/port/control_port changed would send a secret the
     # container never knew to a destination it chose. Make the operator provide the replacement.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
-        def endpoint: [(.host // null), (.port // null), (.control_port // null)];
+        def endpoint($api_port): [(.host // null), (.port // $api_port), (.control_port // 8082)];
         (reduce (($live[0].workers.list // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
             then .[$w.name] = $w else . end)) as $live_workers
+        | [(.config.workers.api_port // 8080), ($live[0].workers.api_port // 8080)] as [$candidate_api_port, $live_api_port]
         | all(.config.workers.list[]?;
             if (.token | type) == "object" and .token.__secret__ == true
             then (.name | type) == "string"
               and ($live_workers[.name] | type) == "object"
-              and endpoint == ($live_workers[.name] | endpoint)
+              and endpoint($candidate_api_port) == ($live_workers[.name] | endpoint($live_api_port))
             else true end)' "$file" >/dev/null 2>&1; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a worker endpoint changed while its token was masked — enter the token for the new endpoint explicitly",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
@@ -251,7 +252,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
         # Unlisted reference values confirm; worker descriptor arrays join after their SSRF guard.
-        local approval_required=false committable_re approval_re bad worker_changed=0
+        local approval_required=false committable_re approval_re bad worker_changed=0 config_confirm_paths
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
@@ -270,9 +271,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 NF && $2 !~ ("^(" re ")$") {$1="CONFIRM"}
                 {print}')
         fi
-        if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then
+        if config_confirm_paths=$(control_changed_config_paths "$staged" | grep -xF "$CONTROL_DASHBOARD_CONFIRM_PATHS" || true) && [ -n "$config_confirm_paths" ]; then
             approval_required=true
-            out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
+            out=$(control_mark_config_confirm_rows "$config_confirm_paths" "$out")
         fi
         if [ "$worker_changed" -eq 1 ]; then
             approval_required=true

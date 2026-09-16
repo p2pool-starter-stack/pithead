@@ -196,6 +196,25 @@ assert_eq "monero.remote.rpc_port is inert on a local monero chain" "$(env_now M
 assert_eq "monero.remote.zmq_port is inert on a local monero chain" "$(env_now MONERO_ZMQ_PORT)" "18083"
 assert_eq "tari.remote.host is inert on a local tari chain" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
 
+# Inert endpoints still appear as confirmed settings in the editor. They carry no porcelain env
+# row until the chain enters remote mode, so the host must gate their source paths directly.
+jq '.monero.remote.host="stored.example.com" | .tari.remote.grpc_port=10' "$C/config.json" >"$C/cand.json"
+jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$C/data/control/requests/$UUID5.json"
+run_pending >/dev/null
+assert_eq "inactive Monero endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="monero.remote.host") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+assert_eq "inactive Tari endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="tari.remote.grpc_port") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+gate_try "$C/cand.json"
+assert_eq "inactive endpoints are refused without typed APPLY" \
+    "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+gate_try "$C/cand.json" APPLY
+assert_eq "inactive endpoints apply behind typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+assert_eq "confirmed inactive Monero endpoint is stored" "$(jq -r '.monero.remote.host' "$C/config.json")" "stored.example.com"
+assert_eq "confirmed inactive Tari endpoint is stored" "$(jq -r '.tari.remote.grpc_port' "$C/config.json")" "10"
+assert_eq "confirmed inactive Monero endpoint stays inert" "$(env_now MONERO_NODE_HOST)" "172.28.0.26"
+assert_eq "confirmed inactive Tari endpoint stays inert" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
+
 # tari.mode off renders the SAME fixed placeholder local does (#1855) — the escalation this issue's
 # provenance section checked and ruled out, pinned here instead of left as an argument.
 jq '.tari.mode="off"' "$C/config.json" >"$C/off.json"
