@@ -210,9 +210,13 @@ phase_crossupdate() {
     # image-id change") really recreated the container. Ask podman directly, the same
     # runtime-over-archive preference the restore leg's verdict already uses.
     local running_img loaded_img
+    # podman inspect's {{.Image}} is the bare hex digest; podman images --no-trunc's {{.ID}}
+    # carries a "sha256:" prefix — same id, two spellings (job 365 proved it: the two strings
+    # differed only by that prefix while the recreation itself was already correct).
     running_img=$(_ssh "podman inspect dashboard --format '{{.Image}}'" 2>/dev/null | tr -d '\r\n')
     loaded_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |
         awk '/pithead-dashboard/{print $2; exit}' | tr -d '\r\n')
+    loaded_img="${loaded_img#sha256:}"
     if [ -n "$running_img" ] && [ -n "$loaded_img" ] && [ "$running_img" = "$loaded_img" ]; then
         ok "the dashboard container is running the freshly loaded candidate image ($loaded_img)"
     else
