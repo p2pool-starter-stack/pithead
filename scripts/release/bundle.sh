@@ -111,9 +111,15 @@ make_bundle() {
         rm -f "$generated"
         die "make_bundle: could not rebuild pithead."
     }
-    cmp -s "$generated" pithead || { rm -f "$generated"; die "make_bundle: generated pithead differs from the artifact to ship."; }
+    cmp -s "$generated" pithead || {
+        rm -f "$generated"
+        die "make_bundle: generated pithead differs from the artifact to ship."
+    }
     mkdir -p "$d"
-    cp "$generated" "$d/pithead" || { rm -f "$generated"; die "make_bundle: failed to copy required runtime files."; }
+    cp "$generated" "$d/pithead" || {
+        rm -f "$generated"
+        die "make_bundle: failed to copy required runtime files."
+    }
     rm -f "$generated"
     cp pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."

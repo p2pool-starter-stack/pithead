@@ -138,12 +138,12 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     set --
     source "$REL" 2>/dev/null
     set +eu
-    REPO_ROOT="$ROOT"
+    export REPO_ROOT="$ROOT"
     WORKDIR="$SANDBOX/bundle"
     mkdir -p "$WORKDIR"
     TAG=v9.9.9
-    REGISTRY=ghcr.io/test
-    DRY_RUN=0
+    export REGISTRY=ghcr.io/test
+    export DRY_RUN=0
     export PITHEAD_BUILD_ROOT="$SANDBOX/not-the-repo"
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
@@ -169,12 +169,12 @@ bundle_mismatch="$({
     # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
-    REPO_ROOT="$ROOT"
+    export REPO_ROOT="$ROOT"
     WORKDIR="$SANDBOX/bundle-mismatch"
     mkdir -p "$WORKDIR"
     TAG=v9.9.9
-    REGISTRY=ghcr.io/test
-    DRY_RUN=0
+    export REGISTRY=ghcr.io/test
+    export DRY_RUN=0
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
     make_bundle "$WORKDIR/pithead.tar.gz"

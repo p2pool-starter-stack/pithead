@@ -160,15 +160,25 @@ release_tree_gate() { # <dry-run> <allow-dirty>
         # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
         source "$REL" 2>/dev/null
         set +eu
-        DRY_RUN="$1"
-        ALLOW_DIRTY="$2"
+        export DRY_RUN="$1"
+        export ALLOW_DIRTY="$2"
         GIT_COMMIT="$(git rev-parse HEAD)"
+        export GIT_COMMIT
         require_clean_release_tree
     )
 }
-assert_rc "dirty real release refuses the worktree" "$(release_tree_gate 0 0 >/dev/null 2>&1; echo $?)" "1"
-assert_rc "dirty dry run requires --allow-dirty" "$(release_tree_gate 1 0 >/dev/null 2>&1; echo $?)" "1"
-assert_rc "dirty dry run permits --allow-dirty" "$(release_tree_gate 1 1 >/dev/null 2>&1; echo $?)" "0"
+assert_rc "dirty real release refuses the worktree" "$(
+    release_tree_gate 0 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run requires --allow-dirty" "$(
+    release_tree_gate 1 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run permits --allow-dirty" "$(
+    release_tree_gate 1 1 >/dev/null 2>&1
+    echo $?
+)" "0"
 rm -f "$dirty_marker"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
