@@ -109,6 +109,9 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
     if out=$(dashboard_control_post "$route" "$body"); then
         rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        # A restarted dashboard can close a successful POST without a body after accepting it.
+        # The caller-supplied id remains pollable; a nonempty response without an id is a refusal.
+        [ -n "$rid" ] || [ -n "$out" ] || rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     else
         # The POST died in flight rather than being answered. A commit whose apply recreates
         # containers restarts the dashboard underneath its own request, so the runner's answer can
