@@ -301,7 +301,7 @@ _phase_install_initial() {
     # Deliberately install to the WRONG disk (the foreign one) and confirm the sentinel really
     # does disappear — otherwise a broken mount/hash check above would report "untouched" no
     # matter what a real wrong-disk bug did.
-    local nc_out nc_rc=0
+    local nc_out nc_rc=0 nc_marker nc_marker_rc=0
     if [ -z "$foreign_dev" ]; then
         bad "negative control: the foreign disk is not visible, so nothing was proven"
     else
@@ -310,11 +310,16 @@ _phase_install_initial() {
         nc_out=$(_ssh "pithead-install --target /dev/$foreign_dev --yes 2>&1") || nc_rc=$?
         if [ "$nc_rc" -ne 0 ]; then
             bad "negative control: the installer refused the foreign disk (rc $nc_rc): $(printf '%s' "$nc_out" | tail -3 | tr '\n' ' ' | cut -c1-200)"
-        elif _ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null &&
-            test -e \"\$m/sentinel\""; then
-            bad "negative control: the sentinel survived an install onto its OWN disk — the untouched row above proves nothing"
         else
+            nc_marker=$(_ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null || exit 9
+                if test -e \"\$m/sentinel\"; then rc=1; else echo sentinel-gone; rc=0; fi
+                umount \"\$m\" 2>/dev/null || true
+                exit \"\$rc\"") || nc_marker_rc=$?
+        fi
+        if [ "$nc_rc" -eq 0 ] && [ "$nc_marker_rc" -eq 0 ] && [ "$nc_marker" = "sentinel-gone" ]; then
             ok "negative control: installing to the foreign disk destroys the sentinel (the untouched row fires)"
+        elif [ "$nc_rc" -eq 0 ]; then
+            bad "negative control: the sentinel survived or could not be verified — the untouched row above proves nothing"
         fi
     fi
 }

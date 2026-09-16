@@ -325,6 +325,7 @@ KVM analog: `--phase install` automates the mechanics of M3, M4 and M5 (inventor
 model/serial, the wrong-disk guard against a second scsi disk, copy completeness, target
 boot, and reinstall preserving `/data`). The manual cases remain about what KVM cannot fake
 — real firmware's boot order, a real USB controller, and a real internal disk.
+M4's "will be erased" wording is pinned at tier 1 from the `empty` state asserted by the KVM row.
 
 **M3 — install to disk.** From the browser, choose the internal disk. Confirm that the
 USB stick itself is **not offered**, that no disk is preselected, and that model, size and
