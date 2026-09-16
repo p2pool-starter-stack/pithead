@@ -235,10 +235,12 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
    on this box instead, an existing file winning on a name collision. The [shared restore
    collision rule](../operations.md#restore-collision-rules) explains why this differs from
-   `pithead restore`. The firstboot loop reaches this door unconditionally, before it ever checks
-   whether `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
-   gating on that presence used to skip the carried restore outright; `prepare_directories` (run
-   by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
+   `pithead restore`. On a `wipe=keep` reinstall, `pithead-install` clears the target's prior
+   `config.json` and `machine-role` before rebooting when it carries an accepted restore. Those
+   markers would otherwise skip the firstboot service entirely; chain data stays intact for the
+   merge. The firstboot loop then reaches this door unconditionally before checking for a config;
+   `prepare_directories` (run by the `setup` it feeds) unconditionally re-chowns every data dir,
+   so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
 `error.txt` and returns 1 — nothing already on disk is touched, and the

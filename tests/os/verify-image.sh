@@ -244,6 +244,8 @@ chk "boot unit triggers on a coordinator's config.json" 'grep -q "^ConditionPath
 chk "boot unit triggers on an accepted role marker (a rig has no config.json)" 'grep -q "^ConditionPathExists=|/data/pithead/machine-role" "$BOOTU"'
 chk "firstboot is closed by config.json" 'grep -q "^ConditionPathExists=!/data/pithead/config.json" "$FBU"'
 chk "firstboot is closed by the role marker (no wizard on a provisioned rig)" 'grep -q "^ConditionPathExists=!/data/pithead/machine-role" "$FBU"'
+INSTALLER="$ROOT/usr/local/sbin/pithead-install"
+chk "a carried restore clears keep-preserved boot markers, not chains" 'grep -q "pithead-restore.enc" "$INSTALLER" && grep -q "pithead/config.json.*pithead/machine-role" "$INSTALLER"'
 # Prebuilt-first for the rig role: the baked binary is asserted above, and the seeding that puts
 # it in the rig's workspace is pithead-sync's, shared with the Both role.
 chk "sync seeds the prebuilt into the miner workspace" 'grep -q "prebuilt/xmrig" "$ROOT/usr/local/sbin/pithead-sync"'
