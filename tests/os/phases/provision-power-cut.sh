@@ -15,7 +15,16 @@
 _phase_provision_power_cut() {
     info "power-cut leg (M10) — cut power while the provisioned stack is live, three times"
     local i height_before names_before names images_before images slot_before slot_after before
-    height_before=$(_monerod_height)
+    # monerod's RPC can still be starting even once the provision phase has otherwise settled, so a
+    # single-shot read here raced it the same way the post-cut read once did (see below). Poll it
+    # the same way rather than failing the whole leg on a transient "not answering yet".
+    local htries_before=0
+    while [ "$htries_before" -lt 18 ]; do
+        height_before=$(_monerod_height)
+        [ -n "$height_before" ] && break
+        sleep 10
+        htries_before=$((htries_before + 1))
+    done
     names_before=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
     images_before=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
     slot_before=$(_ssh "grub-editenv /boot/efi/grub/grubenv list 2>/dev/null | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort" | tr '\n' ' ')
@@ -76,8 +85,8 @@ _phase_provision_power_cut() {
     if [ -n "$height_before" ]; then
         # monerod's own container can still be starting up the instant the earlier checks above
         # pass (they ask podman and curl, not the chain RPC), so a single-shot read here raced it
-        # and misread "not answering yet" as "went backwards". Poll the same way the miner and
-        # dashboard checks above do.
+        # and misread "not answering yet" as "went backwards". Poll the same way the pre-cut read,
+        # the miner, and the dashboard checks do.
         local height_after="" htries=0
         while [ "$htries" -lt 18 ]; do
             height_after=$(_monerod_height)
