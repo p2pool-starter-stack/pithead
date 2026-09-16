@@ -4,13 +4,13 @@ import { Err, Field, Note } from "./wizardparts.mjs";
 
 export const Gate = ({ error, onSubmit }) => html`<div class="card">
     <p>Enter the one-time token shown on this machine's console or terminal.</p>
-    <${Err}>${error}<//>
     <form onSubmit=${onSubmit}>
         <${Field} label="Token">
             <input name="token" autofocus autocomplete="off" autocapitalize="off"
                 spellcheck=${false} placeholder="pit-XXXXXX" />
         <//>
         <${Note}>Case doesn't matter, and the ${" "}<code>pit-</code>${" "}prefix is optional.<//>
+        <${Err}>${error}<//>
         <button type="submit" class="btn-toggle active">Continue</button>
     </form>
 </div>`;
@@ -97,7 +97,14 @@ export const InstallSection = ({
 // Restore-at-setup (#909): the config form's alternative — an uploaded encrypted backup +
 // its emergency-kit passphrase. Validation is host-side (the same "container asks, host
 // decides" split as everything else here); this just carries the two answers up.
-export const RestoreSection = ({ file, passphrase, onFile, onPassphrase }) => html`<div>
+export const RestoreSection = ({
+  file,
+  passphrase,
+  passphraseVisible,
+  onFile,
+  onPassphrase,
+  onPassphraseVisible,
+}) => html`<div>
     <h3>Restore from a backup</h3>
     <${Note}>Upload the encrypted backup archive and its emergency-kit passphrase — shown once,
     when the backup was made. This restores settings, wallets, keys and the dashboard's history;
@@ -108,9 +115,12 @@ export const RestoreSection = ({ file, passphrase, onFile, onPassphrase }) => ht
     <//>
     ${file && html`<p class="text-muted">${file.name} (${Math.round(file.size / 1024)} KB)</p>`}
     <${Field} label="Passphrase">
-        <input type="password" value=${passphrase} onInput=${onPassphrase}
-            autocomplete="off" placeholder="the emergency-kit passphrase" />
+        <input type=${passphraseVisible ? "text" : "password"} value=${passphrase} onInput=${onPassphrase}
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck=${false}
+            placeholder="the emergency-kit passphrase" />
     <//>
+    <label><input type="checkbox" checked=${passphraseVisible}
+        onChange=${onPassphraseVisible} /> Show passphrase</label>
 </div>`;
 
 export const Installing = ({ status }) => html`<div class="card">
@@ -135,7 +145,7 @@ export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`
       handoff && handoff.role === "rig"
         ? html`<h3>Check this rig</h3>
             <p>This is what the machine will be.</p>
-            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class="wizard-mono">${f.value}</code><//>`)}
+            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class=${f.label === "Control token" ? "wizard-mono wizard-token" : "wizard-mono"}>${f.value}</code><//>`)}
             <${Note}>${rigCardNote(handoff)}<//>
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer && !stick ? "Looks right — erase the disk and install" : "Looks right — save it"}</button>`

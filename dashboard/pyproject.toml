@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
   "aiohttp>=3.14.3",
-  # [socks] pulls in PySocks so the XvB stats fetch can route over the Tor SOCKS proxy (#163).
+  # [socks] pulls in PySocks for external requests routed through the Tor SOCKS proxy.
   "requests[socks]>=2.34.2",
   # grpcio/protobuf floors are dictated by the checked-in Tari gRPC stubs
   # (mining_dashboard/client/tari/generated/*_pb2*.py), which assert these at
@@ -38,7 +38,7 @@ test = [
 ]
 # Developer tooling (Wave 7, #280). Pinned so local, pre-commit, and CI all run the SAME ruff
 # — lint output is version-sensitive, so a floor would let CI and a contributor disagree.
-dev = ["ruff==0.16.6", "pre-commit>=4.6.2"]
+dev = ["ruff==0.16.7", "pre-commit>=4.6.2"]
 
 [tool.setuptools.packages.find]
 include = ["mining_dashboard*"]

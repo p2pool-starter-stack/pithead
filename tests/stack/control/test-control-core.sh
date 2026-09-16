@@ -176,7 +176,11 @@ jq -n --arg w "$WALLET" --arg id "$UUID0" '{id:$id, action:"preview", actor:"adm
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"main"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS0/$UUID0.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead control-run-pending >/dev/null 2>&1)
-assert_eq "blank-creds preview status" "$(jq -r '.status' "$RESULTS0/$UUID0.json" 2>/dev/null)" "previewed"
+# Node RPC credentials are perimeter keys, so the preview REFUSES rather than reporting
+# "previewed, approval_required" for a change the gate would then refuse anyway (2026-09-13
+# perimeter audit round 2 — preview and gate classify through control_committable_re alike).
+assert_eq "blank-creds preview status" "$(jq -r '.status' "$RESULTS0/$UUID0.json" 2>/dev/null)" "rejected"
+assert_contains "blank-creds refusal names the perimeter, not a missing envelope" "$(jq -r '.error' "$RESULTS0/$UUID0.json" 2>/dev/null)" "not committable from the dashboard"
 assert_eq "staged copy keeps the blank node_username — not persisted (#556)" "$(jq -r '.monero.node_username' "$STAGED0/$UUID0.json" 2>/dev/null)" ""
 assert_eq "staged copy keeps the blank node_password — not persisted (#556)" "$(jq -r '.monero.node_password' "$STAGED0/$UUID0.json" 2>/dev/null)" ""
 # Clean up: the result/staged counters the tests below assume start from a clean spool.

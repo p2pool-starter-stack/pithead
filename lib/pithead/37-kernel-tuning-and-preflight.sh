@@ -144,15 +144,15 @@ prompt_start_stack() {
 
 # Per-component free-disk requirement in GiB — the single source of truth for the stack's disk
 # budget, shared by setup's preflight_resources and doctor's Disk check. Monero (the blockchain) is
-# pruning-aware: ~120 GiB pruned, ~320 GiB full. Tari's chain is the other heavyweight — ~200 GiB and
-# growing fast. Summed, this is ~330 GiB pruned / ~530 GiB full, the documented minimum
-# (docs/hardware.md). These carry generous growth headroom over usage measured on live nodes
-# (August 2026: Monero pruned ~100 GiB / full ~267 GiB, Tari ~149 GiB) because both chains grow
-# ~100+ GiB/year combined — for a set-and-forget host the docs recommend a 2–4 TB drive.
-# Args: <component> [<prune>] where prune (1 = on, 0 = off) only matters for "monero". Prints GiB.
+# ~320 GiB for Monero in either prune mode. A node synced from genesis with pruning enabled consumed
+# 266 GiB in September 2026, so pruning is not a smaller safe preflight budget (#1502).
+# Tari adds ~200 GiB, making ~530 GiB the documented minimum with both nodes local
+# (docs/hardware.md). For a set-and-forget host the docs recommend a 2–4 TB drive.
+# Args: <component> [<prune>]. The prune argument is kept for callers, but the current Monero
+# budget is the same in either mode. Prints GiB.
 disk_component_gib() {
     case "$1" in
-    monero) if [ "${2:-1}" -eq 1 ] 2>/dev/null; then echo 120; else echo 320; fi ;;
+    monero) echo 320 ;;
     tari) echo 200 ;;
     p2pool) echo 5 ;;
     dashboard) echo 2 ;;
@@ -181,7 +181,7 @@ disk_fs_mount() {
 #
 # Args: <mode> <prune> <monero_dir> <tari_dir> <p2pool_dir> <dashboard_dir> <tor_dir>
 #   mode  = "doctor" (emit dr_ok/dr_warn) or "preflight" (emit warn only when under requirement)
-#   prune = 1 (pruning on) / 0 (off); only affects the Monero requirement.
+#   prune = accepted for call compatibility; both Monero modes currently budget 320 GiB.
 check_disk_grouped() {
     local mode="$1" prune="$2"
     shift 2
@@ -237,13 +237,13 @@ check_disk_grouped() {
         avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}')
         if [ "$mode" = "doctor" ]; then
             if [ -n "$avail_kb" ] && [ "$avail_kb" -ge "$need_kb" ] 2>/dev/null; then
-                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GB."
+                dr_ok "Data on $mount ($comps): ${avail_h:-?} free — needs ~${req_gib[i]} GiB."
             else
-                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GB the stack needs there."
+                dr_warn "Data on $mount ($comps): ${avail_h:-?} free — below the ~${req_gib[i]} GiB the stack needs there."
             fi
         else
             if [ -n "$avail_kb" ] && [ "$avail_kb" -lt "$need_kb" ] 2>/dev/null; then
-                warn "Low disk on $mount (hosts $comps): ${avail_h:-?} free, below the ~${req_gib[i]} GB the stack needs there — free space or move a data_dir to a larger volume."
+                warn "Low disk on $mount (hosts $comps): ${avail_h:-?} free, below the ~${req_gib[i]} GiB the stack needs there — free space or move a data_dir to a larger volume."
             fi
         fi
     done
@@ -263,7 +263,7 @@ preflight_resources() {
     # Treat the stack as one unit: group all five data dirs by the filesystem they live on and warn
     # once per volume that can't hold the combined requirement of the components sharing it (so dirs
     # on the same disk produce a single line, not one per dir). check_disk_grouped is WARN-only here.
-    # A remote node (#103) keeps its chain elsewhere: blank its dir so the ~120 GiB (Monero) /
+    # A remote node (#103) keeps its chain elsewhere: blank its dir so the ~320 GiB (Monero) /
     # ~200 GiB (Tari) budget isn't demanded of THIS host — small disks are exactly why an operator
     # goes remote. check_disk_grouped skips empty dirs.
     local pre_mono_dir="${MONERO_DIR:-}" pre_tari_dir="${TARI_DIR:-}"
