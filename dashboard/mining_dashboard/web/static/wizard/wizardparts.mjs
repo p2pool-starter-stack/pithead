@@ -5,7 +5,8 @@
 import { html } from "../app/preact.mjs";
 
 export const Note = ({ children }) => html`<p class="text-muted wizard-note">${children}</p>`;
-export const Err = ({ children }) => (children ? html`<p class="c-bad">${children}</p>` : null);
+export const Err = ({ children }) =>
+  children ? html`<p class="c-bad" role="alert">${children}</p>` : null;
 
 export const Field = ({ label, children }) => html`<label class="config-field">
     <span class="config-field-name">${label}</span>${children}

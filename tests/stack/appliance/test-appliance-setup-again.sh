@@ -110,7 +110,23 @@ assert_rc "no switch: a present config.json short-circuits into setup" "$?" "5"
 out=$(PITHEAD_SETUP_AGAIN=1 PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$SAWB" eval "$SAW_STUBS" 2>&1)
 assert_rc "switch: config.json does not short-circuit — the page path is reached" "$?" "7"
 assert_not_contains "...and setup did not run" "$out" "setup-ran"
-unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS
+
+echo "== unit: firstboot_wizard consumes a carried restore even with a pre-existing config.json (#2195) =="
+# A wipe=keep reinstall target keeps its OWN prior config.json — the guard that skipped
+# consume_preseed_restore whenever config.json was already present therefore never ran the
+# installer-carried restore on exactly the target the #2001 N-1 leg needs. Proven here without a
+# real archive: consume_preseed_restore is stubbed to log its own call and land a distinguishing
+# config.json, same idiom as this file's setup()/export_build_provenance stubs above.
+: >"$SAESP/pithead-restore.enc" # presence alone is what the carried-restore door checks for
+printf '{"monero":{"wallet":"4fixture"}}' >"$SAWB/config.json"
+SAW_STUBS_RESTORE='container_engine() { echo podman; }; export_build_provenance() { echo page-path-reached; exit 7; }; setup() { echo setup-ran; exit 5; }; consume_preseed_restore() { echo "consume_preseed_restore-called" >>"${RF_LOG:?}"; printf "{\"monero\":{\"wallet\":\"4restored\"}}" >"$PWD/config.json"; return 0; }; firstboot_wizard'
+: >"$RF_LOG"
+out=$(PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$SAWB" eval "$SAW_STUBS_RESTORE" 2>&1)
+assert_rc "a carried restore + a pre-existing config.json still runs setup on the RESTORED config" "$?" "5"
+assert_contains "...the carried-restore door was actually called, not skipped by the config.json guard" "$(cat "$RF_LOG")" "consume_preseed_restore-called"
+assert_eq "...and the restored config.json replaced the pre-existing one" "$(jq -r '.monero.wallet' "$SAWB/config.json")" "4restored"
+rm -f "$SAESP/pithead-restore.enc"
+unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE
 rm -rf "$SAWB" "$SAESP"
 echo "== unit: write_handoff_card — the credentials card is owner-only from its first byte (#1842) =="
 # The card carries the login or the rig's control token. Both controls remove what a lazy fix would

@@ -42,6 +42,7 @@ export class WizardApp extends Component {
     restoreMode: false,
     restoreFile: null,
     restorePassphrase: "",
+    restorePassphraseVisible: false,
     status: "",
     handoff: null,
     moneroWalletTouched: false,
@@ -287,7 +288,13 @@ export class WizardApp extends Component {
       body.append("confirm", this.state.confirm);
       body.append("wipe", this.state.wipe);
     }
-    const res = await fetch("/submit-restore", { method: "POST", body });
+    let res;
+    try {
+      res = await fetch("/submit-restore", { method: "POST", body });
+    } catch {
+      this.setState({ error: "Could not reach this machine. Retry when it is available." });
+      return;
+    }
     if (!res.ok) {
       let msg = "Restore failed — check the archive and passphrase, and retry.";
       try {

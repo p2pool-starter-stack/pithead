@@ -286,6 +286,59 @@ assert_contains "re-apply re-attempts the recreate" "$out" "retrying"
 if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
 assert_eq "marker cleared after a successful retry" "$mk" "absent"
 
+echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
+# A docker stub that fails `compose up` with the exact state-conflict shape observed on bench-ci job
+# 388 (a container still mid-transition from its own prior start) on the FIRST call only, then
+# succeeds — proving the retry happens inside a single apply, not across a second dashboard commit.
+R2="$SANDBOX/racecompose"
+mkdir -p "$R2/build/tari" "$R2/dashboard" "$R2/bin" "$R2/data/monero" "$R2/data/tari" "$R2/data/p2pool/stats" "$R2/data/tor" "$R2/data/dashboard"
+: >"$R2/dashboard/Dockerfile"
+cp "$STACK" "$R2/pithead"
+cp "$ROOT/build/tari/config.toml.template" "$R2/build/tari/"
+cat >"$R2/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+echo "[docker] $*" >> "${DOCKER_LOG:-/dev/null}"
+case "$*" in
+  "compose version"|"info") exit 0 ;;
+  "exec tor cat /var/lib/tor/monero/hostname") echo "mona.onion"; exit 0 ;;
+  "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion"; exit 0 ;;
+  "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion"; exit 0 ;;
+  "compose up --pull never -d --remove-orphans")
+    CNT_FILE="${RACE_CNT_FILE:-/dev/null}"
+    n=$(($(cat "$CNT_FILE" 2>/dev/null || echo 0) + 1))
+    echo "$n" >"$CNT_FILE"
+    if [ "$n" -eq 1 ]; then
+        echo " Container p2pool Starting"
+        echo " Container p2pool Error response from daemon: container deadbeef must be in Created or Stopped state to be started: container state improper" >&2
+        exit 1
+    fi
+    exit 0
+    ;;
+esac
+exit 0
+EOF
+printf '#!/usr/bin/env bash\nexit 0\n' >"$R2/bin/sudo"
+chmod +x "$R2/bin/docker" "$R2/bin/sudo"
+cat >"$R2/.env" <<EOF
+MONERO_ONION_ADDRESS=mona.onion
+TARI_ONION_ADDRESS=taria.onion
+P2POOL_ONION_ADDRESS=p2pa.onion
+PROXY_AUTH_TOKEN=ORIGINALTOKEN
+HOST_IP=box.lan
+DEPLOYMENT_COMPLETED=true
+COMPOSE_PROFILES=local_node
+MONERO_OUT_PEERS=48
+EOF
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":49}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$R2/config.json"
+RACE_CNT="$R2/race-count"
+out="$(cd "$R2" && RACE_CNT_FILE="$RACE_CNT" PATH="$R2/bin:$PATH" ./pithead apply -y 2>&1)"
+rc=$?
+assert_rc "apply survives a transient container-state race on the first compose up (rc 0)" "$rc" "0"
+assert_contains "apply reports the transient race and retries within the same run" "$out" "retrying once"
+assert_eq "compose up was called exactly twice (one retry)" "$(cat "$RACE_CNT")" "2"
+if [ -f "$R2/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
+assert_eq "no incomplete marker survives a same-run retry that succeeded" "$mk" "absent"
+
 echo "== black-box: up warns about missing (relocated) data dirs (#126) =="
 RL="$SANDBOX/reloc"
 mkdir -p "$RL/bin"

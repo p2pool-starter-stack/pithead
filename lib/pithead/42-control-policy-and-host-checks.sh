@@ -18,25 +18,36 @@
 
 # Approval gate for a commit (#33). The client-side typed-APPLY modal is NOT a security control:
 # a compromised/XSS'd container writes the request spool directly and never renders that modal, so
-# the only trustworthy gate is here, host-side. FAIL CLOSED, two independent checks:
+# the only trustworthy gate is here, host-side. FAIL CLOSED.
 #
-#   1. TRUE DEFAULT-DENY: a commit that changes ANY env key NOT in
-#      CONTROL_DASHBOARD_EDITABLE_KEYS — in EITHER direction (enable, change, or DISABLE) — is
-#      refused. An allowlist, not a blocklist: a key added to render_env tomorrow is
-#      un-committable from the dashboard until someone deliberately lists it here. Deliberately
-#      decoupled from describe_change's cosmetic INFO/DEST flag: that flag labels only the
-#      disruptive direction (enabling auth is DEST, disabling is INFO), so a compromised
-#      container could otherwise switch security controls OFF with zero DEST rows.
-#   2. Anything describe_change still flags DEST (pruning, data dirs, node-mode switch, ...) is
-#      refused as disruptive, even for allowlisted keys.
+#   TRUE DEFAULT-DENY: a commit that changes ANY env key not named in one of the THREE lists below
+#   — CONTROL_DASHBOARD_EDITABLE_KEYS, CONTROL_DASHBOARD_CONFIRM_KEYS,
+#   CONTROL_DASHBOARD_APPROVAL_KEYS — is REFUSED, in EITHER direction (enable, change, or DISABLE).
+#   An allowlist, not a blocklist: a key added to render_env tomorrow is un-committable from the
+#   dashboard until someone deliberately lists it. Deliberately decoupled from describe_change's
+#   cosmetic INFO/DEST flag: that flag labels only the disruptive direction (enabling auth is DEST,
+#   disabling is INFO), so a compromised container could otherwise switch security controls OFF
+#   with zero DEST rows. The three lists are the whole committable universe and nothing else.
 #
-# Both checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
+# WHY THE THIRD LIST IS NAMED RATHER THAN "EVERYTHING ELSE" (2026-09-13 perimeter audit). #1978 replaced this refusal
+# with approval_required=1 so that every reference-configuration leaf had SOME route; at the time
+# that route was #338's Telegram tap, a second identity. #2076 removed the tap and left the typed
+# envelope alone in that tier, which the container writes itself — so "everything else" had become
+# self-approvable, wallets included, against what SECURITY.md and docs/appliance.md promise
+# operators. The tier is now a SHORT NAMED LIST and a key nobody enumerated fails closed again.
+# READ THIS BEFORE ADDING TO IT: the envelope is typo protection, NOT a second identity
+# (42-control-approval-helpers.sh says so in its own words), so a key here is committable by a
+# compromised dashboard container. Admit only what the confirm tier's criterion admits —
+# expensive-but-recoverable, not a breach — and never a credential, a payout destination, or a
+# switch that turns a security control off.
+#
+# The checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
 # runs — nothing is trusted from the container's request or its (host-written but container-visible)
 # result file — so a forged "destructive:false" cannot slip a wallet swap or an auth-disable
-# through. Sensitive changes now carry an approval envelope bound to the staged preview and the
-# authenticated dashboard actor; payout destinations additionally require the operator to type the
-# final characters of the exact new address. The media-only set below remains outside that policy:
-# no browser approval makes one of those changes committable. Echoes a reason on refusal.
+# through. Past that pass, a DEST row or a worker-descriptor change additionally demands the typed
+# envelope, and a payout destination demands the final characters of the exact new address. The
+# media-only set below remains outside all of it: no browser approval makes one of those changes
+# committable. Echoes a reason on refusal.
 
 # The env keys committable from the dashboard: operational tuning only, and only keys whose value
 # is derived from a validated enum, boolean, or number — never a free-form string that reaches a
@@ -141,6 +152,55 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+
+# The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
+# approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
+# because the envelope backing it is container-writable — see the warning in this file's header.
+# It exists at all because #1978's "every leaf has a route" is a real goal for an appliance with no
+# host shell; what the 2026-09-13 perimeter audit removed is the "everything not otherwise listed" rule that silently swept
+# the entire security perimeter into it once #2076 took the second identity away.
+#
+# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential:
+# TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED switch a channel #2076 made READ-ONLY, so neither
+# can be used to commit anything, and both are instantly reversible by the same route. The two
+# tamper alarms on that channel are NOT here and never may be: they sit in
+# CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
+# unnoticed. TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not here either — repointing the alarm is
+# silencing it by another name.
+#
+# XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
+# "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
+# endpoint (33-render-env.sh) — and 39-describe-change.sh classifies it as a secret configuration
+# value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
+# host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
+#
+# dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
+# all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
+# config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
+# config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
+# round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
+# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
+# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
+# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
+# the "documented exception" this file used to carve out for it contradicted that promise instead
+# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
+# that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
+# Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
+# lists above; a key added here without its path there is invisible in the editor, and a path added
+# there without its key here is offered to the operator and then refused host-side.
+# Space-separated exact env-key names.
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
+
+# The committable universe as one alternation: the three lists above and nothing else. Defined
+# ONCE because the commit gate and the preview MUST classify identically — while they did not
+# (2026-09-13 perimeter audit), the preview told the operator a change was approval-tier that the gate then refused
+# outright, which is the edit-then-reject experience #613 exists to remove. Leading/trailing
+# separators are stripped: an EMPTY list would otherwise leave a bare alternation branch, and
+# `grep -vxE 'A|B|'` does not count a blank KEY column as a violation.
+control_committable_re() {
+    printf '%s %s %s' "$CONTROL_DASHBOARD_EDITABLE_KEYS" "$CONTROL_DASHBOARD_CONFIRM_KEYS" \
+        "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
+}
 
 # The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
 # trigger is not a fourth hand-kept copy of these key names. Every key here must also be in
