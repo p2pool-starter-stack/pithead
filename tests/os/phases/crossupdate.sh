@@ -209,18 +209,27 @@ phase_crossupdate() {
     # `pithead-boot`'s loader-then-`up` sequence (11-baked-images.sh: "'up' recreates on the
     # image-id change") really recreated the container. Ask podman directly, the same
     # runtime-over-archive preference the restore leg's verdict already uses.
-    local running_img loaded_img
-    # podman inspect's {{.Image}} is the bare hex digest; podman images --no-trunc's {{.ID}}
-    # carries a "sha256:" prefix — same id, two spellings (job 365 proved it: the two strings
-    # differed only by that prefix while the recreation itself was already correct).
+    local running_img baked_img tagged_img
+    # The reference is what the CANDIDATE SLOT SHIPS, never what happens to sit in podman's store
+    # (#2056 review): reading the "loaded" id back out of `podman images` compares the container
+    # against itself, so a `load-images` that no-ops leaves the OLD image under that same constant
+    # tag and the comparison still matches — exactly the #798 shape this row exists to catch. The
+    # slot's own baked archive is the independent anchor: its embedded config digest is the id
+    # podman assigns on load, so a container still running the previous version cannot match it.
+    # manifest.json sits at the end of a `docker save` tar, so this decompresses the archive once.
     running_img=$(_ssh "podman inspect dashboard --format '{{.Image}}'" 2>/dev/null | tr -d '\r\n')
-    loaded_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |
+    baked_img=$(_ssh "tar -xzOf \$(ls /opt/pithead/images/*.tar.gz | head -1) manifest.json 2>/dev/null | jq -r '.[0].Config // \"\"'" 2>/dev/null |
+        sed 's#.*/##; s#\.json$##' | tr -d '\r\n')
+    # Diagnostic only: a mismatch then says WHICH half did not happen — the loader, or the recreate.
+    tagged_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |
         awk '/pithead-dashboard/{print $2; exit}' | tr -d '\r\n')
-    loaded_img="${loaded_img#sha256:}"
-    if [ -n "$running_img" ] && [ -n "$loaded_img" ] && [ "$running_img" = "$loaded_img" ]; then
-        ok "the dashboard container is running the freshly loaded candidate image ($loaded_img)"
+    tagged_img="${tagged_img#sha256:}"
+    if [ -z "$baked_img" ]; then
+        bad "could not read the candidate slot's baked dashboard image digest out of /opt/pithead/images — this row has no reference to compare the running container against"
+    elif [ -n "$running_img" ] && [ "$running_img" = "$baked_img" ]; then
+        ok "the dashboard container is running the image the candidate slot ships ($baked_img)"
     else
-        bad "the dashboard container is not running the currently loaded candidate image — a stale container reads as healthy everywhere else (#798) (running: ${running_img:-none}, loaded: ${loaded_img:-none})"
+        bad "the dashboard container is not running the candidate slot's baked image — a stale container reads as healthy everywhere else (#798) (running: ${running_img:-none}, slot ships: $baked_img, store holds under the tag: ${tagged_img:-none})"
     fi
 
     local scode
