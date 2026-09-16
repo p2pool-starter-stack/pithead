@@ -135,10 +135,10 @@ for WRITABLE_ROOT in "$DASHBOARD_ROOT" "$CONTROL_ROOT/requests" "$CLEARNET_ROOT"
     preview_move "$WRITABLE_ROOT/pivot/monero"
     printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
     run_pending >/dev/null
-    assert_eq "dashboard-writable ancestor $WRITABLE_CASE is refused despite APPLY" \
+    assert_eq "dashboard-writable ancestor is refused despite APPLY" \
         "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
-    assert_contains "writable-ancestor $WRITABLE_CASE refusal names the boundary" \
-        "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "dashboard-writable"
+    assert_contains "writable-ancestor refusal names the boundary" \
+        "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "overlap"
     rm -f "$WRITABLE_ROOT/pivot"
 done
 # The rest of the control spool is host-only but also cannot become service data.

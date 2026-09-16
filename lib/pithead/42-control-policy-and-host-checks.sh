@@ -79,9 +79,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
 CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
 
 # Config-path distinctions hidden inside a direct env row. P2POOL_FLAGS also carries p2pool.pool,
-# which remains ordinary, so the host checks the changed source path before accepting that row.
-CONTROL_DASHBOARD_CONFIRM_PATHS='p2pool.clearnet
-monero.remote.host
+# which remains ordinary, so the host checks p2pool.clearnet separately. Inactive remote-node
+# fields produce no env row, but keep the same CONFIRM-only contract as active node endpoints.
+CONTROL_DASHBOARD_APPROVAL_PATHS='p2pool.clearnet'
+CONTROL_DASHBOARD_CONFIRM_PATHS='monero.remote.host
 monero.remote.rpc_port
 monero.remote.zmq_port
 tari.remote.host

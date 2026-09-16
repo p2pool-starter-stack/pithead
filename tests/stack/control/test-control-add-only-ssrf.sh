@@ -276,12 +276,13 @@ unset -f assert_resolved_worker_host_refused
 assert_eq "config.json still has exactly rig1 after every round-5 SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 
-# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — it still hits the same descriptor refusal.
+# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not
+# refuse every name on shape alone; it still reaches the typed confirmation gate.
 printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
+assert_contains "LAN hostname append asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system

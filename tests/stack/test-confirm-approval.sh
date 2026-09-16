@@ -211,7 +211,7 @@ jq -n --arg new "$BAD_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "invalid payout address is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "invalid payout preview names its checksum" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "checksum"
+assert_contains "invalid payout preview names its checksum" "$(jq -r '.log' "$RESULTS/$UUID3.json")" "checksum"
 BAD_TARI="${VALID_TARI%?}B"
 jq -n --arg w "$WALLET" --arg tari "$BAD_TARI" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
@@ -219,7 +219,7 @@ jq -n --arg w "$WALLET" --arg tari "$BAD_TARI" --arg id "$UUID3" '{id:$id,action
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "invalid Tari payout is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "invalid Tari preview names its checksum" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "checksum"
+assert_contains "invalid Tari preview names its checksum" "$(jq -r '.log' "$RESULTS/$UUID3.json")" "checksum"
 jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},

@@ -66,7 +66,9 @@ control_masked_binding_error() { # <request-file>
 # absent from apply's env-var porcelain.
 control_mark_config_confirm_rows() { # <newline paths> <porcelain>
     local paths="$1" out="$2" path endpoint_key
-    out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
+    if printf '%s\n' "$paths" | grep -qxF 'p2pool.clearnet'; then
+        out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
+    fi
     while IFS= read -r path; do
         case "$path" in
         monero.remote.host) endpoint_key=MONERO_NODE_HOST ;;

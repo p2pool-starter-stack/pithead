@@ -15,7 +15,7 @@ situation honestly.
 |---|---|---|---|
 | **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (`make test`) |
 | **2 — Contract** | `tests/integration/fakes/test_contract.py` | The real Monero/Tari clients parsing real daemon wire formats, and `requests` completing a capped HTTP request through a fake SOCKS5 CONNECT proxy | Every PR (docker-free) |
-| **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: hold/release and reject/readmit actually stopping/starting `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
+| **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: dashboard requests cross the host-runner spool, and hold/release plus reject/readmit actually stop/start `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
 | **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, EFI boot, A/B commit/rollback, install-to-disk | Manual / release gate (`make test-integration`; the battery on the KVM bench) |
 
 Stubs do most of the work. The dashboard unit tests drive the hard runtime states with mocked
@@ -71,6 +71,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | `network.tor_egress_firewall=true` (#270/#855/#2059), the **default**: the kernel actually DROPs a direct clearnet dial from a `mining_net` container, on both backends | config → live kernel | 1 ✅ (rendered iptables + nft rulesets) · 4 ▶ (real dial dropped, with a same-container dial through Tor's SOCKS as the within-row control — Docker backend in `run.sh`, netavark backend in the KVM battery) |
 | `network.tor_egress_firewall=false` (#270): the opt-out actually opens a direct clearnet dial, not just that no rule installed | config → live kernel | 1 ✅ (stubbed iptables installs no rule) · 4 ▶ (real dial succeeds) |
 | `monero.view_key` / `tari.view_key` (#381/#462): payout-confirmation wallet-rpc/tari-wallet wiring | config → fake wallets → persisted state + configured webhook | 3 ✅ (`mini-stack`: one confirmed payout reaches `/api/state` and one alert; replay, empty-wallet, and disabled/no-dial controls for both chains, #2267) · 4 ▶ (needs `IT_MONERO_VIEW_KEY`/`IT_TARI_VIEW_KEY`+`IT_TARI_SPEND_PUBLIC_KEY`; a confirmed payout landing is real-money real-time, not e2e-reachable) |
+| `monero.wallet_address` dashboard change (#1959): full old/new preview, typed `APPLY` plus exact suffix approval, host commit, and masked-config readback | Configuration API → request spool → generated host CLI → `/api/config` | 1 ✅ (policy/key-class rows in `tests/stack/test-control-*`) · 3 ✅ (`mini-stack` round trip) |
 
 ### B. Sync lifecycle (#35)
 

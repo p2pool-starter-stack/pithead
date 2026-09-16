@@ -47,13 +47,6 @@ assert_eq "bundled dashboard-data move preserves the payout alarm baseline" \
     "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$MOVED_DASHBOARD_DIR/mining_data.db")" "$WALLET"
 if [ -e "$LIVE_DASHBOARD_DIR" ]; then bad "bundled dashboard-data move removes the old path" "still exists"; else ok "bundled dashboard-data move removes the old path"; fi
 
-# Switching the control channel off is how an attacker locks the operator out of the remedy.
-jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "control-channel disable is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "confirmed control-channel disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-
 # Deanonymisation and egress: both applied before the 2026-09-13 perimeter audit, and both are asserted refused token-less
 # in the battery next door — which is exactly how that battery stayed green against this.
 jq '.p2pool.clearnet=true' "$C/config.json" >"$C/cand.json"
@@ -125,3 +118,11 @@ jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
 assert_eq "the wallet-changed alarm cannot be silenced with an envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_contains "the alarm refusal names the physical-presence route" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
+
+# Switching the control channel off is how an attacker locks the operator out of the remedy. It
+# runs last because an applied disable correctly stops this test's own remaining spool requests.
+jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "control-channel disable is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
+assert_eq "confirmed control-channel disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"

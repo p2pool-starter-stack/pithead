@@ -92,10 +92,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         approval_required=1
         needs_confirm=1
     fi
-    if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then
-        approval_required=1
-        needs_confirm=1
-    fi
+    if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=1; fi
+    if control_changed_config_paths "$staged" | grep -qxF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then needs_confirm=1; fi
     if [ "$worker_sensitive" -eq 1 ]; then
         approval_required=1
         needs_confirm=1
@@ -252,7 +250,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
         # Unlisted reference values confirm; worker descriptor arrays join after their SSRF guard.
-        local approval_required=false committable_re approval_re bad worker_changed=0 config_confirm_paths
+        local approval_required=false committable_re approval_re bad worker_changed=0 config_paths
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
@@ -271,9 +269,10 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
                 NF && $2 !~ ("^(" re ")$") {$1="CONFIRM"}
                 {print}')
         fi
-        if config_confirm_paths=$(control_changed_config_paths "$staged" | grep -xF "$CONTROL_DASHBOARD_CONFIRM_PATHS" || true) && [ -n "$config_confirm_paths" ]; then
-            approval_required=true
-            out=$(control_mark_config_confirm_rows "$config_confirm_paths" "$out")
+        config_paths=$(control_changed_config_paths "$staged" | grep -xF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS" || true)
+        if [ -n "$config_paths" ]; then
+            out=$(control_mark_config_confirm_rows "$config_paths" "$out")
+            if printf '%s\n' "$config_paths" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=true; fi
         fi
         if [ "$worker_changed" -eq 1 ]; then
             approval_required=true

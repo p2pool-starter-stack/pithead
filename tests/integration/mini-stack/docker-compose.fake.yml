@@ -37,6 +37,14 @@ services:
     volumes:
       - dashboard_data:/data
       - dashboard_stats:/app/stats:ro
+      # Production control boundary: only requests is writable; results, audit and the host-masked
+      # config are read-only. The host runner remains outside this container.
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/requests:/control/requests
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/results:/control/results:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/audit:/control/audit:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/masked:/control/masked:ro
+      - ../../../config.reference.json:/host-config/config.reference.json:ro
+      - ../../../config.core-keys.json:/host-config/config.core-keys.json:ro
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"
@@ -87,6 +95,7 @@ services:
       # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
+      DASHBOARD_CONTROL_ENABLED: "true"
     depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc]
 
   fake-monerod:
