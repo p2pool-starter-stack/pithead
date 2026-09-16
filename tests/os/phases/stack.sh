@@ -15,7 +15,7 @@
 # docs/dev/testing-strategy.md § J's parity matrix (#2062) names exactly what this phase adds over
 # `provision`: the 15-scenario config matrix's remote-safe subset, fault injection, hardening,
 # auth-fail-closed, and XvB routing — all against the appliance channel for the first time.
-STACK_INTEGRATION_RUN="$SCRIPT_DIR/../../integration/run.sh"
+STACK_INTEGRATION_RUN="$SCRIPT_DIR/../integration/run.sh"
 
 # Shape the wizard's served config for remote-node mode. Mirrors provision_browser_config
 # (tests/os/provision-browser-submit.sh) but for the Both-role remote-node answers instead of the
