@@ -139,42 +139,35 @@ dashboard_onion_exposure_verdict() { # <Caddyfile> <ss> <doctor-json> <bridge-ga
     echo "onion-enabled appliance keeps Caddy's listeners private: the onion vhost binds the bridge gateway, no wildcard socket appears, and doctor agrees"
 }
 
-# Enables dashboard.onion.enabled through the SAME approved control-commit path day-two config
-# changes use (preview -> reject without APPLY -> commit with APPLY), proving the listener boundary
-# survives a real config-driven tor+caddy recreate rather than only a fresh render. Always leaves
-# the onion disabled again, whatever the verdict.
-phase_provision_dashboard_onion_exposure() { # <dashboard-user> <dashboard-password>
-    # shellcheck disable=SC2034  # DASH_USER/DASH_PASS are read by dashboard_curl (provision-browser-submit.sh), a sibling source file shellcheck can't see from here
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview rid result caddy sockets doctor prefix gw verdict
-    live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
-        bad "onion exposure: live config could not be read"
+# dashboard.onion.enabled is a setup-time-only field: it names no row in ANY of 42-control-policy-
+# and-host-checks.sh's three committable-key tiers, so the dashboard's own control-commit API
+# refuses to change it at all ("this change alters a security-sensitive setting ... that is not
+# committable from the dashboard ... use 'Set up again' if you need to change it" — measured
+# directly: job 428 hit exactly this refusal when this leg first tried the control-commit route).
+# "Set up again" itself means a reboot into the wizard, too heavy for one leg — so this toggles it
+# the way `apply` (a host command, outside the dashboard's committable-key gate entirely) already
+# supports: edit config.json and re-apply, using appliance-config-approval-leg.sh's own
+# snapshot/restore pair (approval_capture_restore_snapshot/approval_restore_pending) so the box is
+# always left as it was found, whatever the verdict.
+phase_provision_dashboard_onion_exposure() {
+    local caddy sockets doctor prefix gw verdict
+    approval_capture_restore_snapshot || {
+        bad "onion exposure: could not snapshot the guest's config.json"
         return
     }
-    proposed=$(printf '%s' "$live" | jq -c '.dashboard.onion.enabled = true')
-    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
-    if ! printf '%s' "$preview" | jq -e '.status == "previewed" and .destructive == true and any(.changes[]; .flag == "DEST")' >/dev/null; then
-        bad "onion enable did not preview as a destructive/approval-gated change ($(control_result_payload "$preview"))"
+    if ! _ssh 'set -eu
+cd /data/pithead
+jq -c ".dashboard.onion.enabled = true" config.json >config.json.onion-test
+mv config.json.onion-test config.json
+./pithead apply -y' >/dev/null 2>&1; then
+        bad "onion exposure: ./pithead apply -y did not accept the onion-enabled config"
+        approval_restore_pending || bad "onion exposure: cleanup after a failed apply also failed"
         return
     fi
-    rid=$(printf '%s' "$preview" | jq -r '.id')
-    result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id}')")
-    if ! printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("type APPLY"))' >/dev/null; then
-        bad "onion enable crossed the approval gate without APPLY ($(control_result_payload "$result"))"
-        return
-    fi
-    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
-    rid=$(printf '%s' "$preview" | jq -r '.id')
-    result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')" 300)
-    if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
-        bad "onion enable did not apply ($(control_result_payload "$result"))"
-        return
-    fi
-    ok "dashboard Tor onion enabled through the approved control-commit path"
+    ok "dashboard Tor onion enabled via a host-side apply (the dashboard's own control-commit route refuses this field by design)"
 
     prefix=$(_ssh "grep '^NETWORK_PREFIX=' /data/pithead/.env | cut -d= -f2" | tr -d '\r\n')
     if [ -z "$prefix" ]; then
-        # No return here: the onion is already live on the box, so the disable cleanup below
-        # must still run regardless of whether the verdict itself could be read.
         bad "onion exposure: could not read NETWORK_PREFIX from the guest's .env"
     else
         gw="${prefix}.1"
@@ -188,9 +181,5 @@ phase_provision_dashboard_onion_exposure() { # <dashboard-user> <dashboard-passw
         fi
     fi
 
-    proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null | jq -c '.dashboard.onion.enabled = false')
-    preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
-    rid=$(printf '%s' "$preview" | jq -r '.id')
-    result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY"}')" 300)
-    printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || bad "onion-enable cleanup (disabling it again) failed"
+    approval_restore_pending || bad "onion-enable cleanup (restoring the original config) failed"
 }
