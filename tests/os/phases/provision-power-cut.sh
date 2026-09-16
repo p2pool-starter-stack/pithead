@@ -32,6 +32,87 @@ _phase_provision_power_cut() {
         bad "could not record the live stack, stored-image, and slot baseline before the power cuts"
         return 1
     }
+    m10_recovered() { # <cut number>; every invariant must hold before the next cut
+        local cut="$1" broken images height_after="" htries=0 mtries=0 miner_back=0 tries=0 code=000 answered=0 genv slot_after tries3=0
+        broken=$(_ssh 'root=$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null); find "$root/overlay" -maxdepth 2 -name lower -size 0 -print -quit 2>/dev/null')
+        if [ -z "$broken" ]; then
+            ok "M10.$cut: the image store is runnable — no zero-length layer metadata"
+        else
+            bad "M10.$cut: the image store is damaged: $broken"
+            return 1
+        fi
+        images=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
+        if [ "$images" = "$images_before" ]; then
+            ok "M10.$cut: every stored image still has its pre-cut digest"
+        else
+            bad "M10.$cut: stored image digests changed (wanted: '$images_before'; got: '${images:-unreadable}')"
+            return 1
+        fi
+        if [ -z "$height_before" ]; then
+            bad "M10.$cut: could not read monerod's height before the power cuts"
+            return 1
+        fi
+        while [ "$htries" -lt 18 ]; do
+            height_after=$(_monerod_height)
+            [ -n "$height_after" ] && break
+            sleep 10
+            htries=$((htries + 1))
+        done
+        if [ -n "$height_after" ] && [ "$height_after" -ge "$height_before" ] 2>/dev/null; then
+            ok "M10.$cut: monerod reports height $height_after, at or past the pre-cut height $height_before"
+        else
+            bad "M10.$cut: monerod height went backwards or is unreadable (before: $height_before, after: ${height_after:-unreadable})"
+            return 1
+        fi
+        while [ "$mtries" -lt 24 ]; do
+            _ssh "systemctl is-active --quiet xmrig && pgrep -x xmrig >/dev/null" && {
+                miner_back=1
+                break
+            }
+            sleep 10
+            mtries=$((mtries + 1))
+        done
+        [ "$miner_back" -eq 1 ] && ok "M10.$cut: the miner unit is active" || {
+            bad "M10.$cut: the miner did not return"
+            return 1
+        }
+        while [ "$tries" -lt 36 ]; do
+            # shellcheck disable=SC2154  # shared through the assembled runner scope
+            code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
+            case "$code" in
+            2?? | 3?? | 401 | 403)
+                answered=1
+                break
+                ;;
+            esac
+            sleep 5
+            tries=$((tries + 1))
+        done
+        [ "$answered" -eq 1 ] && ok "M10.$cut: the dashboard answers through caddy (HTTP $code)" || {
+            bad "M10.$cut: the dashboard never answered through caddy (last: $code)"
+            return 1
+        }
+        while [ "$tries3" -lt 18 ]; do
+            genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+            case "$genv" in *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;; esac
+            sleep 10
+            tries3=$((tries3 + 1))
+        done
+        case "$genv" in
+        *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*)
+            slot_after=$(printf '%s\n' "$genv" | tr ' ' '\n' | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort | tr '\n' ' ')
+            [ "$slot_after" = "$slot_before" ] &&
+                ok "M10.$cut: the slot stayed committed — pithead-boot committed nothing new" || {
+                bad "M10.$cut: the slot commit state changed (before: '$slot_before'; after: '$slot_after')"
+                return 1
+            }
+            ;;
+        *)
+            bad "M10.$cut: the slot is not committed — grubenv: ${genv:-unreadable}"
+            return 1
+            ;;
+        esac
+    }
     for i in 1 2 3; do
         before=$(_boot_id) || {
             bad "M10.$i: could not read the boot id before the power cut"
@@ -61,93 +142,8 @@ _phase_provision_power_cut() {
             bad "M10.$i: the stack did NOT return before the next cut (wanted: '$names_before'; running: '${names:-none}')"
             return 1
         }
+        m10_recovered "$i" || return 1
     done
-
-    # The #1029 class, from a REAL virsh destroy rather than the unit-tested fixture: an
-    # interrupted image load can leave containers/storage holding zero-length `lower` files, which
-    # is the exact signal lib/pithead/11-baked-images.sh's own repair_broken_image_store looks for
-    # (and, once found, rebuilds). Asking the store the same question it asks itself is cheaper and
-    # more honest than starting every stored container to find out.
-    local broken
-    broken=$(_ssh 'root=$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null); find "$root/overlay" -maxdepth 2 -name lower -size 0 -print -quit 2>/dev/null')
-    if [ -z "$broken" ]; then
-        ok "the image store is runnable — no zero-length layer metadata after the power cuts"
-    else
-        bad "the image store is damaged after the power cuts: $broken"
-    fi
-    images=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
-    if [ "$images" = "$images_before" ]; then
-        ok "every stored image still has its pre-cut digest after the power cuts"
-    else
-        bad "stored image digests changed after the power cuts (wanted: '$images_before'; got: '${images:-unreadable}')"
-    fi
-
-    if [ -n "$height_before" ]; then
-        # monerod's own container can still be starting up the instant the earlier checks above
-        # pass (they ask podman and curl, not the chain RPC), so a single-shot read here raced it
-        # and misread "not answering yet" as "went backwards". Poll the same way the pre-cut read,
-        # the miner, and the dashboard checks do.
-        local height_after="" htries=0
-        while [ "$htries" -lt 18 ]; do
-            height_after=$(_monerod_height)
-            [ -n "$height_after" ] && break
-            sleep 10
-            htries=$((htries + 1))
-        done
-        if [ -n "$height_after" ] && [ "$height_after" -ge "$height_before" ] 2>/dev/null; then
-            ok "monerod reports height $height_after, at or past the pre-cut height $height_before"
-        else
-            bad "monerod height went backwards or is unreadable (before: $height_before, after: ${height_after:-unreadable})"
-        fi
-    else
-        bad "could not read monerod's height before the power cuts — the M10 height guarantee was not exercised"
-    fi
-
-    local mtries=0 miner_back=0
-    while [ "$mtries" -lt 24 ]; do
-        _ssh "systemctl is-active --quiet xmrig && pgrep -x xmrig >/dev/null" && {
-            miner_back=1
-            break
-        }
-        sleep 10
-        mtries=$((mtries + 1))
-    done
-    [ "$miner_back" -eq 1 ] && ok "the miner unit is active after the power cuts" ||
-        bad "the miner did not return after the power cuts"
-
-    local tries=0 code=000 answered=0
-    while [ "$tries" -lt 36 ]; do
-        # shellcheck disable=SC2154  # shared through the assembled runner scope
-        code=$(curl -ksS -o /dev/null -w '%{http_code}' -m 8 "https://$ip/" 2>/dev/null || true)
-        case "$code" in 2?? | 3?? | 401 | 403)
-            answered=1
-            break
-            ;;
-        esac
-        sleep 5
-        tries=$((tries + 1))
-    done
-    [ "$answered" -eq 1 ] && ok "the dashboard answers through caddy after the power cuts (HTTP $code)" ||
-        bad "the dashboard never answered through caddy after the power cuts (last: $code)"
-
-    # The slot must still self-commit — a power cut mid-write must not leave it perpetually
-    # uncommitted (every future boot would take GRUB's fallback path forever).
-    local genv tries3=0
-    while [ "$tries3" -lt 18 ]; do
-        genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
-        case "$genv" in *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;; esac
-        sleep 10
-        tries3=$((tries3 + 1))
-    done
-    case "$genv" in
-    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*)
-        slot_after=$(printf '%s\n' "$genv" | tr ' ' '\n' | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort | tr '\n' ' ')
-        [ "$slot_after" = "$slot_before" ] &&
-            ok "the slot stayed committed after the power cuts — pithead-boot committed nothing new" ||
-            bad "the slot commit state changed after the power cuts (before: '$slot_before'; after: '$slot_after')"
-        ;;
-    *) bad "the slot is not committed after the power cuts — grubenv: ${genv:-unreadable}" ;;
-    esac
 }
 
 # monerod's RPC, read the same way soak-probe.sh does: node credentials from /data/pithead/.env,

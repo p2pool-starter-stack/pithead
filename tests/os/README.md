@@ -124,8 +124,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
   failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
   provisioned stack is live — every earlier power cut in the battery landed on a bare guest
-  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. Asserts every
-  container returns, the image store stays runnable (the #1029 class — present, digest-matched
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
+  asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
   monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack

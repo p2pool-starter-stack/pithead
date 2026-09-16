@@ -182,6 +182,8 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
+    local serial_before=0
+    [ -f "$SERIAL" ] && serial_before=$(wc -c <"$SERIAL")
     virsh destroy "$VM" >/dev/null 2>&1 || {
         bad "D: could not cut power during the image load"
         return
@@ -195,8 +197,15 @@ phase_fault() {
         ok "D: survived a power cut mid image load — booted"
     else
         # A clean refusal is an acceptable outcome too (#2067c: "repairs the store or refuses with
-        # a legible console message") — only silence is disqualifying.
-        if wait_serial "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" 60; then
+        # a legible console message") — only silence is disqualifying. The serial log is
+        # cumulative, so admit only text written after THIS cut, never boot noise from before it.
+        local refusal deadline=$(($(date +%s) + 60))
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
+            grep -qE "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" <<<"$refusal" && break
+            sleep 3
+        done
+        if grep -qE "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" <<<"${refusal:-}"; then
             ok "D: refused to continue after the interrupted load, with a legible console message"
         else
             bad "D: BRICKED — no boot and no legible message after a power cut mid image load"

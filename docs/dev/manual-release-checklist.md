@@ -75,7 +75,8 @@ back **by itself** after the plug is pulled still needs hands on real hardware:
   (destroy mid-write, `tests/os/phases/fault.sh`) — pull the plug at the wall on real hardware to
   confirm Restore on AC Power Loss, not the write itself.*
 - **M10 — power cut during normal mining.** *Covered by: `provision` phase's power-cut leg
-  (M10, #2067, `tests/os/phases/provision-power-cut.sh`) — same caveat.*
+  (M10, #2067, `tests/os/phases/provision-power-cut.sh`), which checks the complete recovery after
+  every one of its three cuts — same caveat.*
 
 ### Install-path cases worth walking deliberately
 
