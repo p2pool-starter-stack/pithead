@@ -54,7 +54,13 @@ _stack_run_integration() { # <label> <extra args...>
     if [ "$rc" -eq 0 ]; then
         ok "DIY gate vs. appliance channel: $label"
     else
-        bad "DIY gate vs. appliance channel: $label (exit $rc; tail: $(tail -5 "$out" | tr '\n' ' ' | cut -c1-300))"
+        # The full capture, not a truncated tail: a one-line summary here cannot distinguish
+        # "p2pool never got a merge-mining client" from "the client is up and Tari refused it"
+        # from a dozen other same-named-but-differently-caused assertion failures, and every one
+        # of those needs a different fix. This flows into the same kvm-<phase>.log artifact the
+        # rest of the battery already writes through, so it costs nothing to keep.
+        bad "DIY gate vs. appliance channel: $label (exit $rc)"
+        sed 's/\x1b\[[0-9;]*m//g' "$out"
     fi
     grep -a 'of which:' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
