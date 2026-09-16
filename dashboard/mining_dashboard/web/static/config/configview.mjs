@@ -22,7 +22,7 @@
 // sentinel — "blank means keep" survives the model change.
 
 import { Component, html } from "../app/preact.mjs";
-import { applyFailure } from "./applyfailure.mjs";
+import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import { editableCandidate, restoreHidden } from "./confighidden.mjs";
 import {
   buildSections,
@@ -276,7 +276,7 @@ export class ConfigView extends Component {
       if (out.status === "rejected") {
         this.setState({
           phase: "form",
-          error: out.error || "The host runner rejected the config.",
+          error: out.log ? { log: out.log } : out.error || "The host runner rejected the config.",
         });
         return;
       }
@@ -436,7 +436,7 @@ export class ConfigView extends Component {
       coreKeys,
     );
     return html`<div class="config-view">
-        ${error ? html`<div class="card"><p class="status-bad">${error}</p></div>` : null}
+        ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"
             ? html`<div class="card"><p class="status-bad">The last apply failed. This form shows
@@ -509,9 +509,10 @@ export class UpgradeControl extends Component {
 
   render() {
     const { update, enabled } = this.props;
-    if (!enabled || !update || !update.available) return null;
     const { phase, confirmText, result } = this.state;
-    const version = update.latest;
+    const available = enabled && update && update.available;
+    if (!available && phase !== "failed") return null;
+    const version = update?.latest;
     let modal = null;
     if (phase === "confirm") {
       modal = html`<div class="config-modal-backdrop">
@@ -559,23 +560,22 @@ export class UpgradeControl extends Component {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
               <h3>Upgrade did not complete</h3>
-              <p class="status-bad">${result.error || "The host runner reported a failure."}</p>
-              ${
-                result.backup
-                  ? html`<p class="text-muted">Pre-upgrade copies of <code>config.json</code> and
-                    <code>.env</code> are kept on the host: <code>${result.backup}</code>.</p>`
-                  : null
-              }
+              ${upgradeFailure(result, this.props.appliance)}
               <div class="config-modal-actions">
                   <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Close</button>
               </div>
           </div>
       </div>`;
     }
-    return html`<button class="badge badge-accent version-badge ml-2"
-            title=${"Upgrade the stack to " + version + " from the dashboard"}
-            onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
-            Upgrade to ${version}
-        </button>${modal}`;
+    return [
+      available
+        ? html`<button class="badge badge-accent version-badge ml-2"
+              title=${"Upgrade the stack to " + version + " from the dashboard"}
+              onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
+              Upgrade to ${version}
+          </button>`
+        : null,
+      modal,
+    ];
   }
 }
