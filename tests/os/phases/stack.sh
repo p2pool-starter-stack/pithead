@@ -196,17 +196,28 @@ phase_stack() {
     # The DIY gate itself, staged as the ask lays out: a non-destructive read, then the
     # destructive phases the appliance channel has never run, then the remote-safe scenario
     # subset, then XvB routing — the appliance channel's first live coverage of each (#2062).
+    #
+    # Every invocation below names --scenario (or, for --check, returns before the matrix is
+    # even reached). Without one, tests/integration/run.sh's own default is to iterate its FULL
+    # 15-scenario matrix first — almost all of it monero.mode=local, which this remote-node-only
+    # guest can only run by starting a local monerod from scratch each time. That cost over two
+    # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
+    # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
+    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
+    [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     _stack_run_integration "check (non-destructive live-state assertion)" --check
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
+        --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
-    local scn remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
-    [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
-    for scn in remote-main-secure-tari remote-tari-main-secure; do
-        _stack_run_integration "scenario $scn" --scenario "$scn" "${remote_extra[@]}"
-    done
+    # remote-tari-main-secure sets monero.mode=local (it exercises a remote TARI node from an
+    # otherwise-local DIY bench, tests/integration/scenarios.sh) — kept scenario-only, never
+    # paired with the destructive phases above, since this guest has no local chain to run them
+    # against; the config-application assertions alone are still a real, appliance-channel first.
+    _stack_run_integration "scenario remote-tari-main-secure" \
+        --scenario remote-tari-main-secure "${remote_extra[@]}"
     # xvb.enabled=true was submitted above; a recent PPLNS share is NOT guaranteed on a scratch
     # guest whose remote node was only just pointed at — a fresh live-node coverage gap #2062
     # documents (docs/dev/testing-strategy.md § J), not a defect this phase can manufacture.
     _stack_run_integration "xvb routing smoke (first appliance-channel run)" \
-        --safety-backup --xvb-routing-smoke
+        --scenario remote-main-secure-tari "${remote_extra[@]}" --safety-backup --xvb-routing-smoke
 }
