@@ -6,6 +6,7 @@ dashboard loop actually fired a liveness heartbeat end to end, not against a moc
 """
 
 import argparse
+import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -13,6 +14,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--log", default="/tmp/pings.log")  # noqa: S108 — throwaway itest container
+    ap.add_argument("--event-log", default="")
     args = ap.parse_args()
 
     class Handler(BaseHTTPRequestHandler):
@@ -22,6 +24,15 @@ def main():
             with open(args.log, "a") as f:
                 f.write(self.path + "\n")
                 f.flush()
+            if args.event_log and self.command == "POST":
+                try:
+                    event = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))[
+                        "event"
+                    ]
+                    with open(args.event_log, "a") as f:
+                        f.write(event + "\n")
+                except (KeyError, ValueError, TypeError):
+                    pass
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
