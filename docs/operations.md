@@ -234,7 +234,12 @@ on, and remove them when it is off:
 
 - `pithead-control.path` — watches `./data/control/requests/` for request files.
 - `pithead-control.service` — a root oneshot running `pithead control-run-pending` from the
-  install directory. Fixed command, no parameters from the container.
+  install directory. Fixed command, no parameters from the container. It retries on failure
+  (`Restart=on-failure`, 15s) with systemd's own start-limit disabled, so a request that lands
+  while the stack momentarily isn't fully set up — recovering from a setup fault, mid-apply — gets
+  picked up once it is, instead of leaving the runner wedged until a reboot (#2219). A stack that
+  never finishes setup keeps retrying every 15s rather than wedging — check `./pithead doctor` or
+  `systemctl status pithead-control.service` if requests never seem to land.
 
 The unit names are global to the host, so removal is ownership-checked: a checkout with the flag
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the
@@ -588,6 +593,15 @@ before committing them. `.env` and `Caddyfile` are regenerated from validated `c
 only validated generated secrets and Tor identity are retained from the archived environment.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
+
+#### Restore collision rules
+
+The restore door determines which copy wins when both the archive and destination have a file at
+the same path. `./pithead restore` is an explicit recovery command on an already deployed box, so
+the archive replaces the destination's file. The appliance wizard's restore-at-setup path instead
+preserves the destination's file in `data/monero`, `data/tari`, and `data/p2pool`: a `wipe=keep`
+install may already have synced chain data, and replacing it would force a resync. It still adds
+files that only the archive has. The wizard replaces its Tor and dashboard directories normally.
 
 > NOTE: The archive stores the source box's absolute paths, and `restore` puts every file back
 > exactly where it came from. On a machine laid out differently (another user, another install
