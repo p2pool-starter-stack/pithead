@@ -48,7 +48,6 @@ const POLL_MAX = 90; // 3 minutes — a commit recreates containers, which can t
 // ahead of it and was reported as a failure. No constant can be provably enough (the pull is
 // unbounded), which is why the message below no longer claims the upgrade failed.
 const UPGRADE_POLL_MAX = 1350;
-
 // Poll /api/control/result until a terminal result lands; shared by the Configuration view, the
 // Upgrade button (#59), and the Backup card (#908). `skip` ignores an intermediate status under
 // the same id (the still-present "previewed" result while a commit runs; "running" while an
@@ -86,7 +85,6 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
       "Stopped waiting — this can take longer than expected on a slow connection. The host keeps going and finishes on its own; reload in a few minutes to see the result. If the version is unchanged after that, check that dashboard.control is enabled and the pithead-control unit is running.",
   );
 }
-
 const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
 // #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review
 // modal makes you type APPLY. The tooltip sets that expectation up front.
@@ -304,7 +302,9 @@ export class ConfigView extends Component {
         body: JSON.stringify(body),
       });
       if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      let out = await res.json();
+      let out = await res.text();
+      out = out ? JSON.parse(out) : await this.poll(id, "previewed");
+      if (!out || typeof out.status !== "string") throw new Error("Unreadable control response");
       if (out.status === "pending" || out.status === "previewed")
         out = await this.poll(id, "previewed");
       this.setState({ phase: "done", result: out });

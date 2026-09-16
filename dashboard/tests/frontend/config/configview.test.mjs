@@ -63,6 +63,37 @@ test("poll skips the still-present preview result until the commit outcome lands
   assert.equal(out.status, "applied");
 });
 
+test("commit polls its preview id after an empty successful response", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  await withFastPoll(
+    async (url) =>
+      url === "/api/control/commit"
+        ? { status: 202, ok: true, text: async () => "" }
+        : okResult({ status: "applied" }),
+    () => view.commit(),
+  );
+  assert.equal(view.state.phase, "done");
+  assert.equal(view.state.result.status, "applied");
+});
+
+test("commit does not poll after a nonempty response without a result status", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  let calls = 0;
+  await withFastPoll(
+    async () => {
+      calls++;
+      return { status: 202, ok: true, text: async () => "{}" };
+    },
+    () => view.commit(),
+  );
+  assert.equal(calls, 1);
+  assert.equal(view.state.phase, "error");
+});
+
 test("a rejected appliance preview labels the host validation log", async () => {
   const view = new ConfigView({ appliance: true });
   view.props = { appliance: true };
