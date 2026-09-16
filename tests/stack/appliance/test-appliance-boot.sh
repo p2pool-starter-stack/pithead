@@ -492,10 +492,9 @@ SYNCSCRIPT="$ROOT/os/overlay/pithead-sync"
 mk_tmpdir SSB
 mkdir -p "$SSB/opt-pithead" "$SSB/opt-rigforge/util" "$SSB/opt-rigforge/prebuilt/xmrig/build"
 for f in pithead pithead-completion.bash VERSION docker-compose.yml \
-    config.reference.json config.core-keys.json config.minimal.json cosign.pub; do
+    config.reference.json config.core-keys.json config.minimal.json cosign.pub cosign.registry-ca.crt; do
     printf 'pithead-program' >"$SSB/opt-pithead/$f"
 done
-printf 'debug registry CA' >"$SSB/opt-pithead/cosign.registry-ca.crt"
 printf 'program-v2' >"$SSB/opt-rigforge/rigforge.sh"
 chmod +x "$SSB/opt-rigforge/rigforge.sh"
 printf 'helper' >"$SSB/opt-rigforge/util/proposed-grub.sh"
@@ -515,22 +514,17 @@ assert_eq "prebuilt seeded into the workspace where 'already built' finds it" \
     "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
 assert_eq "the commit marker rides with the seed" \
     "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
-assert_eq "the debug registry CA reaches the runtime verifier" \
-    "$(cat "$SSB/data/pithead/cosign.registry-ca.crt" 2>/dev/null)" "debug registry CA"
+assert_eq "the debug registry CA reaches the runtime verifier" "$(cat "$SSB/data/pithead/cosign.registry-ca.crt" 2>/dev/null)" "pithead-program"
 [ -e "$SSB/data/rigforge/prebuilt" ] && bad "prebuilt/ is a seed, never a synced tree" "synced" ||
     ok "prebuilt/ is a seed, never a synced tree"
 # State survives a re-run: the rendered config and a native rebuild of the SAME pin stay put.
 printf '{"pools":[{"url":"127.0.0.1:3333"}]}' >"$SSB/data/rigforge/config.json"
 printf 'native-rebuild' >"$SSB/data/rigforge/data/worker/xmrig/build/xmrig"
 run_sync >/dev/null 2>&1
-assert_eq "config.json (state) survives the resync" \
-    "$(cat "$SSB/data/rigforge/config.json")" '{"pools":[{"url":"127.0.0.1:3333"}]}'
-assert_eq "a same-pin native rebuild is left alone" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
-rm -f "$SSB/opt-pithead/cosign.registry-ca.crt"
-run_sync >/dev/null 2>&1
-[ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" ||
-    bad "a later release removes the stale debug registry CA" "still present"
+assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/config.json")" '{"pools":[{"url":"127.0.0.1:3333"}]}'
+assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
+rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
+[ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
 # A new pin arrives with a new image AND its new prebuilt: the cached build is replaced, so the
 # on-box clone path never needs to run.
 printf 'commit-C\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-commit"
@@ -629,8 +623,7 @@ osh_all="$(printf '%s' "$OSH" | sed -n '/^all)/,/^    ;;/p')"
 for ph in boot update install provision rig media fault reset; do
     assert_contains "--phase all runs phase_$ph" "$osh_all" "phase_$ph"
 done
-assert_contains "the battery pins the commit and passes the debug registry key to verify-image" "$OSH" \
-    'PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"'
+assert_contains "the battery pins the commit and passes the debug registry key to verify-image" "$OSH" 'PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"'
 VIS="$(cat "$ROOT/tests/os/verify-image.sh")"
 # Wiring the guard on is only half of it: the two ends have to speak the same shape. build-image.sh
 # stamps `git rev-parse HEAD` — the FULL sha — and the harness first handed over `--short`, so the

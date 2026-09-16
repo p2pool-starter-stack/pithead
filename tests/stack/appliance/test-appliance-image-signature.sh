@@ -4,6 +4,12 @@
 echo "== unit: appliance image signature pins (#1891) =="
 SIG="$SANDBOX/appliance-signature"
 mkdir -p "$SIG/opt/pithead"
+SIG_BI="$(cat "$ROOT/os/build-image.sh")"
+SIG_DF="$(cat "$ROOT/os/rootfs/Dockerfile")"
+assert_contains "the staged five-image compose is digest-pinned before the rootfs build" "$SIG_BI" 'pin_first_party_images os/build/stage/docker-compose.yml'
+assert_contains "a debug registry requires its alternate cosign public key" "$SIG_BI" 'PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required'
+assert_contains "a debug TLS registry bakes the CA for containerized cosign" "$SIG_BI" 'cp "$PITHEAD_REGISTRY_CA" "$stage/opt/pithead/cosign.registry-ca.crt"'
+assert_contains "the Dockerfile bakes the release cosign key" "$SIG_DF" 'config.minimal.json cosign.pub /opt/pithead/'
 printf '%s\n' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-tor:${STACK_VERSION:-dev}' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-monero:${STACK_VERSION:-dev}' \
