@@ -172,14 +172,20 @@ phase_provision_dashboard_onion_exposure() { # <dashboard-user> <dashboard-passw
     ok "dashboard Tor onion enabled through the approved control-commit path"
 
     prefix=$(_ssh "grep '^NETWORK_PREFIX=' /data/pithead/.env | cut -d= -f2" | tr -d '\r\n')
-    gw="${prefix}.1"
-    caddy=$(_ssh "cat /data/pithead/Caddyfile" 2>/dev/null) || caddy=""
-    sockets=$(_ssh "ss -Hltnp" 2>/dev/null) || sockets=""
-    doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
-    if verdict=$(dashboard_onion_exposure_verdict "$caddy" "$sockets" "$doctor" "$gw"); then
-        ok "$verdict"
+    if [ -z "$prefix" ]; then
+        # No return here: the onion is already live on the box, so the disable cleanup below
+        # must still run regardless of whether the verdict itself could be read.
+        bad "onion exposure: could not read NETWORK_PREFIX from the guest's .env"
     else
-        bad "$verdict"
+        gw="${prefix}.1"
+        caddy=$(_ssh "cat /data/pithead/Caddyfile" 2>/dev/null) || caddy=""
+        sockets=$(_ssh "ss -Hltnp" 2>/dev/null) || sockets=""
+        doctor=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor --json" 2>/dev/null) || true
+        if verdict=$(dashboard_onion_exposure_verdict "$caddy" "$sockets" "$doctor" "$gw"); then
+            ok "$verdict"
+        else
+            bad "$verdict"
+        fi
     fi
 
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null | jq -c '.dashboard.onion.enabled = false')

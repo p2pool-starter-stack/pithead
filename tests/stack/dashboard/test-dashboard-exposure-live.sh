@@ -114,5 +114,45 @@ assert_contains "onion exposure verdict fires when the bridge listener never app
     "$(dashboard_onion_exposure_verdict "$onion_caddy" "$safe_ss" "$onion_doctor" "$gw" || true)" "not listening on the onion bridge gateway"
 assert_contains "onion exposure verdict fires on a wildcard listener" \
     "$(dashboard_onion_exposure_verdict "$onion_caddy" "$wild_ss" "$onion_doctor" "$gw" || true)" "wildcard listener"
+assert_contains "onion exposure verdict fires on a wildcard listener" \
+    "$(dashboard_onion_exposure_verdict "$onion_caddy" "$wild_ss" "$onion_doctor" "$gw" || true)" "wildcard listener"
 assert_contains "onion exposure verdict fires when the Caddyfile drops the gateway bind" \
     "$(dashboard_onion_exposure_verdict "$safe_caddy" "$onion_safe_ss" "$onion_doctor" "$gw" || true)" "no onion vhost bound to the bridge gateway"
+
+echo "== black-box: phase_provision_dashboard_onion_exposure always disables the onion again (#2280) =="
+# Regression: an early guard that returns before the cleanup commit at the end of the phase would
+# leave the appliance permanently onion-enabled. Drive the real phase function with dashboard_curl/
+# dashboard_control_request/_ssh stubbed, forcing the guest's NETWORK_PREFIX read to come back
+# empty (a live-listener read failure) — the phase must still report the failure AND still submit
+# the disable commit, not skip it.
+onion_call_log=$(mktemp)
+onion_phase_out=$(
+    # shellcheck disable=SC1090
+    source "$STACK" 2>/dev/null
+    set +e
+    # A file, not a shell var: dashboard_control_request is invoked from inside $(...) command
+    # substitutions in the real phase function, each of which forks a subshell — a plain counter
+    # variable would reset every call instead of accumulating.
+    dashboard_curl() { printf '{"dashboard":{"onion":{"enabled":false}}}'; }
+    dashboard_config_body() { printf '{"config":%s}' "$1"; }
+    dashboard_control_request() { # <route> <body>
+        echo x >>"$onion_call_log"
+        local n
+        n=$(wc -l <"$onion_call_log" | tr -d ' ')
+        case "$1:$n" in
+        preview:1) printf '{"status":"previewed","destructive":true,"changes":[{"flag":"DEST"}],"id":"p1"}' ;;
+        commit:2) printf '{"status":"rejected","error":"needs type APPLY"}' ;;
+        preview:3) printf '{"status":"previewed","destructive":true,"changes":[{"flag":"DEST"}],"id":"p2"}' ;;
+        *) printf '{"status":"applied"}' ;;
+        esac
+    }
+    control_result_payload() { printf 'x'; }
+    _ssh() { printf ''; } # NETWORK_PREFIX grep -> empty, the guard this test targets
+    ok() { :; }
+    bad() { printf 'BAD:%s\n' "$1"; }
+    phase_provision_dashboard_onion_exposure admin secret
+    printf 'CALLS:%s\n' "$(wc -l <"$onion_call_log" | tr -d ' ')"
+)
+rm -f "$onion_call_log"
+assert_contains "phase still submits the disable commit after the NETWORK_PREFIX guard fires" "$onion_phase_out" "CALLS:6"
+assert_contains "phase reports the NETWORK_PREFIX read failure" "$onion_phase_out" "BAD:onion exposure: could not read NETWORK_PREFIX"
