@@ -24,7 +24,7 @@ control_roundtrip_setup() {
 
     # The dashboard image runs as uid 1000. The fixture may be owned by the CI runner (or by the
     # outer test-container uid), so grant only the request-spool write/execute bits it needs.
-    chmod 755 "$C/data/control"
+    chmod 755 "$C/data/control" "$C/data/control/results"
     chmod 733 "$C/data/control/requests"
     export PITHEAD_ITEST_CONTROL_DIR="$C/data/control"
 }
