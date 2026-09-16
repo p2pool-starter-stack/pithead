@@ -45,22 +45,20 @@ echo "== unit: headless setup resolves the appliance's browsable name, never the
 RDH=$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
-    source "$STACK"
-    set +e
+    source "$STACK"; set +e
     log() { :; }
     PITHEAD_APPLIANCE=1 DASHBOARD_HOST="" resolve_dashboard_host interactive </dev/null
     printf '%s' "$HOST_IP"
 )
 assert_eq "no tty + appliance -> <hostname>.local" "$RDH" "$(hostname).local"
 unset RDH
-
-echo "== unit: ssh access is derived — key-only, /run-resident, absent when disabled (#786) =="
 SSHSB="$SANDBOX/sshsb"
 mkdir -p "$SSHSB/bin" "$SSHSB/units" "$SSHSB/run"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$SSHSB/bin/systemctl"
 chmod +x "$SSHSB/bin/systemctl"
-ssh_run() { # <config-json>
-    printf '%s' "$1" >"$SSHSB/config.json"
+ssh_run() {
+    printf '%s' "$1" >"$SSHSB/variant"
+    printf '%s' "$2" >"$SSHSB/config.json"
     (
         cd "$SSHSB" || exit
         PATH="$SSHSB/bin:$PATH"
@@ -70,35 +68,38 @@ ssh_run() { # <config-json>
         log() { :; }
         warn() { :; }
         sudo() { "$@"; }
-        PITHEAD_APPLIANCE=1 PITHEAD_UNIT_DIR="$SSHSB/units" PITHEAD_SSH_RUN_DIR="$SSHSB/run/ssh" \
+        PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$SSHSB/variant" PITHEAD_UNIT_DIR="$SSHSB/units" PITHEAD_SSH_RUN_DIR="$SSHSB/run/ssh" \
             CONFIG_FILE="$SSHSB/config.json" provision_ssh_access
     )
 }
-ssh_run '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
+ssh_run debug '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
 grep -q "ssh-ed25519 AAAATEST" "$SSHSB/run/ssh/authorized_keys" 2>/dev/null &&
     ok "enabled -> the key lands in the runtime dir" || bad "enabled -> the key lands in the runtime dir" "missing"
 grep -q "PasswordAuthentication=no" "$SSHSB/units/ssh.service.d/pithead.conf" 2>/dev/null &&
     ok "password auth is forced OFF in the unit override" || bad "password auth is forced OFF in the unit override" "missing"
-ssh_run '{"ssh":{"enabled":false}}'
+ssh_run release '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
 [ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
-    ok "disabled -> key and override are REMOVED" || bad "disabled -> key and override are REMOVED" "residue"
+    ok "release -> carried SSH config cannot create runtime access" || bad "release -> carried SSH config cannot create runtime access" "residue"
 unset SSHSB ssh_run
-
-echo "== unit: ssh.enabled without a public key is refused at validation =="
 VSB="$SANDBOX/vsb"
 mkdir -p "$VSB"
 printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true} }' "$WALLET" >"$VSB/config.json"
 vout=$(
     cd "$VSB" || exit
-    # shellcheck disable=SC1090
+    source "$STACK"; set +e
+    log() { :; }
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
+)
+assert_eq "carried release SSH config does not block boot validation" "$vout" ""
+printf release >"$VSB/variant"
+vout=$(
+    cd "$VSB" || exit
     source "$STACK"
     set +e
-    log() { :; }
-    CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
 )
-assert_contains "refusal names the missing key" "$vout" "ssh.authorized_key"
+assert_contains "new release SSH config is refused" "$vout" "ssh.enabled is unavailable"
 unset VSB vout
-
 echo "== unit: on the appliance, control-runner units render into /run — root is read-only (#791) =="
 # /etc/systemd/system cannot take a write on the appliance (RO root by design): apply died at
 # 'tee: Read-only file system' on hardware, killing the ONLY post-setup management path. /run is
@@ -137,7 +138,6 @@ case "$diy_out" in
 *) ok "DIY keeps persistent /etc enablement (no --runtime)" ;;
 esac
 unset PCR791 pcr791_run appl_out diy_out
-
 echo "== unit: the dashboard certificate exists whenever the Caddyfile names it =="
 # A machine that SKIPS the wizard (pre-seeded config, or a reinstall whose preserved /data
 # already held config.json) still gets a certificate: the Caddyfile named a file only the wizard

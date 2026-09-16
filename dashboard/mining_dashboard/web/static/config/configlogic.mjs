@@ -14,8 +14,6 @@
 // preview, and the gate are all untouched by this display-only regroup. A secret left blank keeps
 // its sentinel — the server swaps it for the live value ("unchanged").
 
-import { isHidden } from "./confighidden.mjs";
-
 export const SECRET_HINT = "set — leave blank to keep";
 
 export function isSecretSentinel(v) {
@@ -92,9 +90,7 @@ function walk(node, path, out) {
 // never overlap across groups and first-match is unambiguous; classifyGroup's own test asserts
 // that invariant directly. Any leaf no group claims renders in the catch-all "Other" group below
 // (never silently dropped) — buildSections' own test suite asserts every config.reference.json
-// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either. The one
-// exception is a HIDDEN path (confighidden.mjs, #1850), dropped below before any of this runs —
-// `ssh.*` has no group entry BECAUSE it can never render, not the other way round.
+// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either.
 export const OTHER_GROUP = "Other";
 export const LOGICAL_GROUPS = [
   {
@@ -228,7 +224,7 @@ export function buildSections(cfg) {
   const byGroup = new Map();
   for (const g of LOGICAL_GROUPS) byGroup.set(g.name, []);
   byGroup.set(OTHER_GROUP, []);
-  for (const f of fields) if (!isHidden(f.key)) byGroup.get(classifyGroup(f.key)).push(f);
+  for (const f of fields) byGroup.get(classifyGroup(f.key)).push(f);
   const sections = [];
   for (const [name, groupFields] of byGroup)
     if (groupFields.length)

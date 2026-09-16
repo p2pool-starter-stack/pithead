@@ -9,7 +9,6 @@
 // config beneath as a collapsed JSON pane — both live, both views of a single `candidate`
 // object. Editing a field rewrites the candidate (typed by the field, via configsync's shared
 // coerceForType) and the pane re-renders; editing the pane replaces it and the fields refill.
-// Hidden paths (#1850) sit outside the candidate: neither surface shows or alters them.
 //
 // The form pins a `core` group — the wizard's own shortlist, `_core_keys` on the fetched config,
 // sourced from config.core-keys.json so the two never drift apart — above LOGICAL sections
@@ -23,7 +22,6 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { applyFailure } from "./applyfailure.mjs";
-import { editableCandidate, restoreHidden } from "./confighidden.mjs";
 import {
   buildSections,
   isSecretSentinel,
@@ -36,6 +34,9 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+
+const editableCandidate = (cfg) => JSON.parse(JSON.stringify(cfg, (key, value) =>
+  key.startsWith("_") ? undefined : value));
 
 export { PreviewModal };
 
@@ -247,13 +248,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // The candidate plus the hidden subtrees the fetched config carried (#1850) IS the proposed
-  // config — the pane shows every key preview receives that this page may change, which is the
-  // point of the pattern (#785). A pane mid-typo blocks Save via jsonError instead.
+  // The candidate is the proposed config. A pane mid-typo blocks Save via jsonError instead.
   buildProposed() {
-    const { candidate, cfg, jsonError } = this.state;
+    const { candidate, jsonError } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: restoreHidden(candidate, cfg) };
+    return { config: candidate };
   }
 
   async save() {

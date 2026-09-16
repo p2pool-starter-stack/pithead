@@ -352,6 +352,8 @@ chk "blanket disable preset baked (first-boot preset-all must be a no-op)" \
     'grep -qx "disable \*" "$ROOT/etc/systemd/system-preset/00-pithead.preset"'
 chk "systemd-firstboot masked (every boot is a first boot with an empty machine-id)" \
     '[ "$(readlink "$ROOT/etc/systemd/system/systemd-firstboot.service")" = "/dev/null" ]'
+chk "release image ignores config-driven SSH" \
+    'grep -q "variant=$(appliance_variant)" "$ROOT/opt/pithead/pithead" && grep -q "\[ \"\$variant\" = release \]" "$ROOT/opt/pithead/pithead"'
 
 # The sibling carries the refusals that stop a debug image shipping as a release; this script runs
 # without -e, so a missing sibling must refuse here rather than source nothing and report clean.

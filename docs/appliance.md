@@ -250,10 +250,6 @@ the time zone (detected from the machine unless set). They are still there to ch
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as
 `root` with the dashboard password. It is set fresh at every boot and never stored on disk.
-Two more switches live only in the setup page's **Advanced** view, deliberately out of the quick
-form: `ssh.enabled` with `ssh.authorized_key` turns on key-only SSH (never passwords) for remote
-debugging. The day-two Configuration view does not list them and cannot approve them remotely;
-changing SSH still requires a configuration stick.
 
 **Already know exactly what you want?** Open **Advanced** at the bottom. It shows the complete
 configuration — every key, with its default filled in — and it *is* what the machine will run:
@@ -599,9 +595,8 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 `.local` name. Plain `http://` addresses redirect to `https://`, so either spelling works. Wi-Fi is not supported, so a wireless-only network will not work.
 
 **You need a shell on the machine.** Log in at its console as `root` with the dashboard
-password. For SSH, set `ssh.enabled` and `ssh.authorized_key` in the Advanced view at setup —
-key-only, and only if you need it. The dashboard does not offer them after that; a configuration
-stick is the way in later.
+password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
+appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
 **"Wrong token."** The token changes each time the setup service restarts — read the
 current one from the console. After five wrong attempts it mints a new one on purpose.
