@@ -802,9 +802,12 @@ rather than erroring.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
 > scan — but it reveals every incoming payout amount and its timing to anyone who can read it. The
-> stack keeps it in the owner-only `.env`, never logs or echoes it, keeps it off the dashboard
-> Configuration editor, and never puts it on a container command line. It stays on the box: the
-> view-only `monero-wallet-rpc` is published only to the host loopback (`127.0.0.1:18082`), runs
+> stack keeps it in the owner-only `.env`, never logs or echoes it, sends only a masked sentinel to
+> the Configuration editor and browser, and never puts it on a container command line. Replacing it
+> from Configuration requires typed `APPLY`. The wallet receives the key and the dashboard receives
+> its wallet RPC credential at runtime, so masking protects the editor/browser, not a compromised
+> backend process. It stays on the box: the view-only `monero-wallet-rpc` is published only to the
+> host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
 > password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
 > trust story, so a view key set with `monero.mode: remote` is refused. To rotate it, get a fresh
@@ -818,9 +821,11 @@ Tari wallet) and the stack runs a **view-only** `minotari_console_wallet` agains
 node. The Tari tab of the earnings card then shows **Confirmed** XTM totals (24 hours, 7 days,
 all-time) beside the time-to-block estimate, and the same `payout_confirmed` alert fires once per
 Tari payout, carrying the chain. The Tari view key is a secret and is handled exactly like the
-Monero one — owner-only `.env`, never logged or on a container command line, off the Configuration
-editor — with one extra safeguard: because Tari has no key-import file, the three wallet secrets are
-delivered to the container through a tmpfs secret mount, so they never appear in `docker inspect`.
+Monero one — owner-only `.env`, never logged or on a container command line, and visible to the
+Configuration editor/browser only as a masked sentinel; replacement requires typed `APPLY`. The
+running wallet necessarily receives the key. As an extra safeguard, because Tari has no key-import
+file, the three wallet secrets are delivered through a tmpfs secret mount, so they never appear in
+`docker inspect`.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 the Unix epoch), not a block height. Leave `tari.view_key` empty and none of the Tari half runs.
 
