@@ -55,10 +55,21 @@ test('StackTopology marks live routes with marching ants, never a dashed edge', 
 test('ComponentHealth flips to a warning summary when the posture leaks', () => {
     const s = clone();
     s.topology.summary.level = 'warn';
+    s.topology.summary.leaks = 2;
     s.topology.summary.label = '2 clearnet egress path(s) exposing your IP';
     assert.match(renderApp({ state: s }), /⚠️/);
     assert.match(renderApp({ state: s }), /exposing your IP/);
     assert.match(renderApp({ state: s }), /egress-summary c-bad/);
+});
+
+test('ComponentHealth renders an unverified-only posture as a warning, not a leak', () => {
+    const s = clone();
+    s.topology.summary.level = 'warn';
+    s.topology.summary.leaks = 0;
+    s.topology.summary.label = '2 egress path(s) unverified; Tor-only status cannot be confirmed';
+    const html = renderApp({ state: s });
+    assert.match(html, /egress-summary c-warn/);
+    assert.doesNotMatch(html, /egress-summary c-bad/);
 });
 
 test('ComponentHealth still renders the panel but omits the drawer when egress is absent', () => {
