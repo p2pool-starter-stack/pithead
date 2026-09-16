@@ -187,6 +187,7 @@ integration_expected=$(
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
         ! -name redact-it-password.sh \
+        ! -name remote-endpoints.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |
         sed 's|^tests/integration/||'
 )
