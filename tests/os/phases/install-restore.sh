@@ -151,8 +151,7 @@ _phase_install_restore() {
         sleep 8
         vm_destroy_or_refuse || return
 
-        # The source archive keeps its fresh-disk coverage. The N-1 archive follows it onto that
-        # now-provisioned disk, so wipe=keep has actual chain data to preserve.
+        # The N-1 archive follows the source restore onto its now-provisioned disk, so keep has data to preserve.
         img=$(_build_image v1) || {
             bad "restore leg: image build failed"
             # shellcheck disable=SC2154  # shared through the assembled runner scope
