@@ -267,14 +267,17 @@ assert_rc "activating on the first read, inactive on the next: settled after one
 # phase must therefore use this settled-unit wait before requiring the retained active state.
 RIG_PHASE="$ROOT/tests/os/phases/rig.sh"
 rig_boot_window=$(sed -n '/info "reboot leg/,/unit_ran_this_boot/p' "$RIG_PHASE")
-rig_wait_line=$(printf '%s\n' "$rig_boot_window" | grep -n 'provisioning_settled 60' | head -1 | cut -d: -f1)
-rig_active_line=$(printf '%s\n' "$rig_boot_window" | grep -n 'systemctl is-active pithead-boot' | head -1 | cut -d: -f1)
-if [ -n "$rig_wait_line" ] && [ -n "$rig_active_line" ] && [ "$rig_wait_line" -lt "$rig_active_line" ]; then
+rig_order=$(printf '%s\n' "$rig_boot_window" | awk '
+    /provisioning_settled 60/ && /systemctl is-active pithead-boot/ {
+        print index($0, "provisioning_settled 60") < index($0, "systemctl is-active pithead-boot") ? "settled-first" : "active-first"
+    }
+')
+if [ "$rig_order" = settled-first ]; then
     ok "the rig reboot settles pithead-boot before requiring it active"
 else
-    bad "the rig reboot settles pithead-boot before requiring it active" "wait@${rig_wait_line:-missing} active@${rig_active_line:-missing}"
+    bad "the rig reboot settles pithead-boot before requiring it active" "order=${rig_order:-missing}"
 fi
-unset RIG_PHASE rig_boot_window rig_wait_line rig_active_line
+unset RIG_PHASE rig_boot_window rig_order
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
 assert_contains "the verdict names both units" "$ps_out" "units: one provisioning unit ran this boot (firstboot: activating/ran=yes, boot: inactive/ran=yes)"
 assert_contains "…and the wizard's spooled error when there is one" "$ps_out" "setup error: [ERROR] Stack failed to start"
