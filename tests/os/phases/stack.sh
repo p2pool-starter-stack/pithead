@@ -25,9 +25,16 @@ STACK_INTEGRATION_RUN="$SCRIPT_DIR/../integration/run.sh"
 # password, $7 tari host (empty means tari.mode=off, #1855), $8 tari grpc port.
 stack_browser_config() {
     local cfg th="${7:-}" grpc="${8:-0}"
+    # local_miner is left untouched at the wizard's own served default (enabled: true,
+    # dashboard/mining_dashboard/wizard_config.py) rather than forced — a real appliance mines
+    # with its own CPU by default, remote-node or not. Job 397 measured that default adding a
+    # "local-miner" topology node the DIY gate's canonical-node-set assertion has never seen,
+    # because the DIY bench's own persistent config happens to carry it disabled; that is a gap
+    # in the assertion's expected list, filed separately, not a config choice for this phase to
+    # suppress by diverging from the wizard's default.
     cfg=$(printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
         '.monero.wallet_address = $m | .tari.wallet_address = $t | .p2pool.pool = "mini" |
-         .local_miner.enabled = true | .xvb.enabled = true') || return 1
+         .xvb.enabled = true') || return 1
     if [ -n "$th" ]; then
         remote_node_proposal "$cfg" "$2" "$3" "$4" "$5" "$6" "$th" "$grpc"
     else
