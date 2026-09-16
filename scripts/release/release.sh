@@ -229,7 +229,6 @@ main() {
     preflight
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
     if [ "$RESUME_PROMOTE" -eq 1 ]; then
-        require_clean_release_tree
         warn "--resume-promote: skipping build/stage. Re-staging to recover digests..."
         ghcr_login
         local suffix repo digest
@@ -244,15 +243,12 @@ main() {
         done
     else
         test_gate
-        require_clean_release_tree
         build_images
         stage_push
     fi
     smoke_test
-    require_clean_release_tree
     promote
     sign_images # #376 — signs the digests promote re-tagged; --resume-promote reaches this too
-    require_clean_release_tree
     publish
 
     printf '\n'

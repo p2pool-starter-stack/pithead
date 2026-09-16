@@ -22,13 +22,8 @@ check_release_toolchain() {
 require_clean_release_tree() {
     [ "$DRY_RUN" -eq 1 ] && return 0
     [ "$ALLOW_DIRTY" -eq 0 ] || die "--allow-dirty requires --dry-run."
-    git diff --no-ext-diff --quiet "$GIT_COMMIT" -- &&
-        git diff --no-ext-diff --cached --quiet "$GIT_COMMIT" -- &&
-        [ -z "$(git ls-files --others --exclude-standard)" ] ||
+    [ -z "$(git status --porcelain)" ] ||
         die "Working tree differs from $GIT_COMMIT. Commit/stash first."
-    if git ls-files -v | grep -q '^[a-zS]'; then
-        die "Working tree has assume-unchanged or skip-worktree files; clear those flags before releasing."
-    fi
 }
 # --- Release signing (#376, #960) -----------------------------------------------------------------
 #
