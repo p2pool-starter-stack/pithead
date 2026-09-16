@@ -153,13 +153,13 @@ phase_provision_dashboard_onion_exposure() { # <dashboard-user> <dashboard-passw
     proposed=$(printf '%s' "$live" | jq -c '.dashboard.onion.enabled = true')
     preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
     if ! printf '%s' "$preview" | jq -e '.status == "previewed" and .destructive == true and any(.changes[]; .flag == "DEST")' >/dev/null; then
-        bad "onion enable did not preview as a destructive/approval-gated change"
+        bad "onion enable did not preview as a destructive/approval-gated change ($(control_result_payload "$preview"))"
         return
     fi
     rid=$(printf '%s' "$preview" | jq -r '.id')
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id}')")
     if ! printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("type APPLY"))' >/dev/null; then
-        bad "onion enable crossed the approval gate without APPLY"
+        bad "onion enable crossed the approval gate without APPLY ($(control_result_payload "$result"))"
         return
     fi
     preview=$(dashboard_control_request preview "$(dashboard_config_body "$proposed")")
