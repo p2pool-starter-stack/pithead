@@ -117,7 +117,8 @@ every gate is green.
 
 Use `--allow-dirty` only with `--dry-run` to rehearse uncommitted changes.
 Every real release path requires a clean worktree so the approved commit is
-the bytes that are built and published.
+the bytes that are built and published. Before bundling, it rebuilds `pithead`
+from its slices and refuses a different generated artifact.
 
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
 > runners (and what does run free on every PR), and the safe self-hosted-runner setup are covered

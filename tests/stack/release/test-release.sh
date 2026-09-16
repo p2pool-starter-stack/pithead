@@ -17,10 +17,10 @@ echo "== unit: release.sh pure logic (#44) =="
 # the positional args cleared (`set --`) so release.sh's own arg-parser doesn't see the test's args;
 # release.sh guards its main() behind a BASH_SOURCE check, so sourcing only defines the functions.
 REL="$ROOT/scripts/release/release.sh"
-# shellcheck disable=SC1090
 (
     cd "$ROOT" || exit
     set --
+    # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
     is_semver "0.1.0"
@@ -30,6 +30,7 @@ assert_rc "is_semver accepts 0.1.0" "$?" "0"
 (
     cd "$ROOT" || exit
     set --
+    # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
     is_semver "1.2.3-rc.1"
@@ -156,6 +157,27 @@ grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle shi
 grep -q '^pithead/PITHEAD_COMMIT$' "$SANDBOX/bundle.list" && ok "bundle ships PITHEAD_COMMIT (the --image-upgrade provenance anchor)" || bad "bundle ships PITHEAD_COMMIT" "absent from the bundle"
 assert_eq "PITHEAD_COMMIT holds the full 40-hex commit, not a short one" \
     "$(cat "$SANDBOX/bundle/pithead/PITHEAD_COMMIT" 2>/dev/null)" "0123456789abcdef0123456789abcdef01234567"
+echo "== unit: release bundle rejects a changed generated CLI (#2240) =="
+cp "$ROOT/pithead" "$SANDBOX/pithead.before"
+printf '\ntampered\n' >>"$ROOT/pithead"
+bundle_mismatch="$({
+    cd "$ROOT" || exit
+    set --
+    # shellcheck disable=SC1090
+    source "$REL" 2>/dev/null
+    set +eu
+    WORKDIR="$SANDBOX/bundle-mismatch"
+    mkdir -p "$WORKDIR"
+    TAG=v9.9.9
+    REGISTRY=ghcr.io/test
+    DRY_RUN=0
+    GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+    for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+    make_bundle "$WORKDIR/pithead.tar.gz"
+} 2>&1)"
+assert_rc "bundle refuses a generated CLI that differs from its slices" "$?" "1"
+assert_contains "bundle mismatch names pithead" "$bundle_mismatch" "generated pithead differs"
+mv "$SANDBOX/pithead.before" "$ROOT/pithead"
 grep -q '^pithead/$' "$SANDBOX/bundle.list" && ok "bundle unpacks to versionless pithead/" || bad "bundle unpacks to pithead/" "top-level dir is not pithead/"
 _bundle_docs=$(sed -n 's|^pithead/docs/||p' "$SANDBOX/bundle.list" | grep -vE '^$|/$' | sort)
 _expected_docs=$(printf '%s\n' configuration.md dashboard.md faq.md getting-started.md hardware.md monitoring.md operations.md privacy.md telegram.md workers.md | sort)

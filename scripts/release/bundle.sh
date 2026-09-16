@@ -105,7 +105,14 @@ compose_build_mounts() {
 # containers find the config templates they render at setup.
 make_bundle() {
     # Unpacks to a versionless "pithead/" dir. Ships only the operator docs needed to run the stack.
-    local out="$1" d="$WORKDIR/pithead"
+    local out="$1" d="$WORKDIR/pithead" generated
+    generated="$(mktemp .pithead.bundle.XXXXXX)" || die "make_bundle: could not create a pithead rebuild."
+    PITHEAD_BUILD_ARTIFACT="$generated" bash scripts/build-pithead.sh >/dev/null || {
+        rm -f "$generated"
+        die "make_bundle: could not rebuild pithead."
+    }
+    cmp -s "$generated" pithead || { rm -f "$generated"; die "make_bundle: generated pithead differs from the artifact to ship."; }
+    rm -f "$generated"
     mkdir -p "$d"
     cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
