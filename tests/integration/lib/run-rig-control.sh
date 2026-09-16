@@ -92,6 +92,11 @@ run_rigforge_control() {
         return 1
     fi
     wait_status_ok 240 || true
+    # TEMP DIAGNOSTIC for #2313 — not part of the fix, remove before merge.
+    it_log "diag(#2313): IT_RIG_TOKEN length: ${#IT_RIG_TOKEN}"
+    it_log "diag(#2313): live config.json worker token type/len: $(rx "jq -r --arg n \"$rig\" '(.workers.list // [])[] | select(.name==\$n) | (.token | if type==\"string\" then \"string:\"+(length|tostring) else type end)' config.json 2>/dev/null")"
+    it_log "diag(#2313): worker-read-tokens rows on box: $(rx "cat \$(grep -E '^CONTROL_DIR=' .env 2>/dev/null | head -n1 | cut -d= -f2-)/masked/worker-read-tokens.json 2>/dev/null | jq -c 'map({name,host,port})' 2>/dev/null || echo MISSING")"
+    it_log "diag(#2313): api_state rigforge for '$rig' pre-wait: $(api_state | jq -c --arg n "$rig" 'first(.workers[]? | select(.name==$n) | {api_ok, adopted, rigforge})' 2>/dev/null)"
     if [ -n "$RIGFORGE_BOOTSTRAP_VERSION" ]; then
         if ! rigforge_bootstrap "$rig" "$RIGFORGE_BOOTSTRAP_VERSION"; then
             _restore_rig_control_baseline || true
