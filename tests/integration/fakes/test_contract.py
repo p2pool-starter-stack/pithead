@@ -112,13 +112,11 @@ def test_bounded_get_reaches_an_http_fake_through_socks():
     assert response.json()["id"] == "itest-worker" and socks.connected
 
 
-def test_bounded_get_refused_socks_dial_is_a_request_exception():
-    with (
-        FakeWorkerApi() as http,
-        FakeSocks(refuse=True) as socks,
-        pytest.raises(requests.RequestException),
-    ):
-        bounded_get(f"http://localhost:{http.port}/1/summary", proxies=socks.proxies)
+def test_bounded_get_refused_socks_dial_reaches_the_proxy():
+    with FakeWorkerApi() as http, FakeSocks(refuse=True) as socks:
+        with pytest.raises(requests.ConnectionError) as raised:
+            bounded_get(f"http://localhost:{http.port}/1/summary", proxies=socks.proxies)
+    assert socks.connected and "0x05" in str(raised.value)
 
 
 # --- Tari (gRPC BaseNode) ---------------------------------------------------

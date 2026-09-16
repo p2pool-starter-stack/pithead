@@ -43,6 +43,7 @@ class _Handler(socketserver.BaseRequestHandler):
             client.sendall(b"\x05\x05\x00\x01" + b"\x00" * 6)
             return
         client.sendall(b"\x05\x00\x00\x01" + b"\x00" * 6)
+        # ponytail: 1s loopback idle limit; make it configurable if a slower fake needs reuse.
         while ready := select.select((client, target), (), (), 1)[0]:
             for source in ready:
                 if not (data := source.recv(65536)):
