@@ -13,7 +13,8 @@ It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 ```bash
 sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
 # Publish the five first-party images under the tag the appliance will ask for, then point the
-# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS.
+# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS; it is baked
+# for both Podman pulls and the containerized Cosign verification.
 PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img

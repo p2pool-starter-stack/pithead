@@ -29,20 +29,25 @@ cosign_available() {
     command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
-# Run cosign in a container, with the install dir mounted read-only at /w as its working dir.
-# ponytail: ONE mount, because every file cosign is ever handed lives under the install dir —
-# cosign.pub sits next to this script, and the bundle + .sig it verifies on a one-click upgrade go
-# under CONTROL_DIR, which is derived as "$PWD/data/control" and is not operator-settable. A caller
-# that ever needs a path outside $PWD must add its own mount rather than assume this one covers it.
+# Run cosign in a container, with the install dir mounted read-only at /w as its working dir. A
+# debug appliance adds one read-only CA mount for its private TLS registry; every other file cosign
+# receives lives under the install dir — cosign.pub sits next to this script, and the bundle + .sig
+# it verifies on a one-click upgrade go under CONTROL_DIR, which is derived as "$PWD/data/control"
+# and is not operator-settable.
 # HOME=/tmp: cosign caches TUF material under $HOME and prints a multi-line warning when it cannot
 # write there — noise on every verify, and the operator is not meant to see this run at all.
 # The image pull is quiet and happens once; without it docker streams pull progress mid-`up`.
 cosign_run() {
+    local registry_mount=()
+    if [ -n "${COSIGN_REGISTRY_CA:-}" ]; then
+        [ -f "$COSIGN_REGISTRY_CA" ] || return 1
+        registry_mount=(-v "$COSIGN_REGISTRY_CA:/registry-ca.crt:ro")
+    fi
     docker image inspect "$COSIGN_IMAGE" >/dev/null 2>&1 ||
         docker pull -q "$COSIGN_IMAGE" >/dev/null 2>&1 ||
         return 1
     docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-        -v "$PWD:/w:ro" -w /w "$COSIGN_IMAGE" "$@"
+        -v "$PWD:/w:ro" "${registry_mount[@]}" -w /w "$COSIGN_IMAGE" "$@"
 }
 
 # Translate a host path under the install dir into the path cosign_run's container sees. Both sides
@@ -95,7 +100,11 @@ verify_release_images() {
     cosign_available ||
         error "cosign.pub is present but docker is not available to run the verifier — refusing an unverified pull. Install Docker ($DOCS_URL/docs/getting-started.md#1-prerequisites) and re-run '$0'."
     # The 5 first-party images, verified by the exact digest compose pins them to (#451/#461).
-    local suffix repo sha image out
+    local suffix repo sha image out registry_ca="" cosign_registry_args=()
+    if [ -f cosign.registry-ca.crt ]; then
+        registry_ca="$PWD/cosign.registry-ca.crt"
+        cosign_registry_args=(--registry-cacert /registry-ca.crt)
+    fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"
         # #557: plain `sha="$(...)"` aborts under errexit on a no-match grep BEFORE this error()
@@ -104,7 +113,7 @@ verify_release_images() {
             error "cosign.pub is present but pithead-${suffix} is not digest-pinned in docker-compose.yml — cannot bind verification to the bytes compose pulls; refusing. A signed release bundle pins every first-party image by @sha256."
         fi
         image="${repo}@${sha}"
-        if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "$image" 2>&1); then
+        if ! out=$(COSIGN_REGISTRY_CA="$registry_ca" cosign_run verify --key cosign.pub --private-infrastructure "${cosign_registry_args[@]}" "$image" 2>&1); then
             # Strip control chars: cosign's stderr echoes registry-supplied bytes, and error()
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
             # inject ANSI escapes into the operator's terminal (#376 review).

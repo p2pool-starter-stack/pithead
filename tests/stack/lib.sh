@@ -236,6 +236,7 @@ case "$1" in
 info | pull) exit 0 ;;
 image) exit 0 ;; # `image inspect` -> pinned verifier already local, nothing pulled
 run)
+    [ -z "${COSIGN_DOCKER_LOG:-}" ] || echo "[docker] $*" >>"$COSIGN_DOCKER_LOG"
     shift
     # Drop the run flags up to and including the pinned verifier image; what remains is the cosign
     # argv the caller actually asked for.

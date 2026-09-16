@@ -325,6 +325,7 @@ if [ -n "$TEST_REGISTRY" ]; then
     fi
     mkdir -p "$stage/opt/pithead"
     cp "$TEST_COSIGN_PUB" "$stage/opt/pithead/cosign.pub"
+    [ -z "${PITHEAD_REGISTRY_CA:-}" ] || cp "$PITHEAD_REGISTRY_CA" "$stage/opt/pithead/cosign.registry-ca.crt"
     (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
