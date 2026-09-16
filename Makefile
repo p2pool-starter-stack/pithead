@@ -33,8 +33,9 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
 	bash scripts/install-test-tools.sh --self-test
 
-test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
+test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
