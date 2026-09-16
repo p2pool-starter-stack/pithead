@@ -68,11 +68,12 @@ request = urllib.request.Request(
 response = urllib.request.urlopen(request, timeout=40)
 payload = json.loads(response.read())
 if response.status == 202:
+    rid = payload["id"]
     skip = "previewed" if route == "commit" else None
     for _ in range(60):
         time.sleep(0.25)
         response = urllib.request.urlopen(
-            f"http://127.0.0.1:8000/api/control/result?id={payload['id']}", timeout=5
+            f"http://127.0.0.1:8000/api/control/result?id={rid}", timeout=5
         )
         payload = json.loads(response.read())
         if response.status != 202 and payload.get("status") != skip:
