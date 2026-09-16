@@ -105,6 +105,15 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
+# /api/control/result never echoes the request id back (only the POST handlers for preview/commit
+# merge it in) — the real frontend (backupview.mjs's runBackup) knows this and keeps the id it
+# already resolved from the POST, re-attaching it client-side (`{ id, ...result }`) rather than
+# trusting the polled body. Match that here, once, in the shared poller: every verb whose POST
+# never resolves synchronously (backup, unlike preview/commit, ALWAYS 202s) reaches its terminal
+# status purely through polling and would otherwise hand callers a result with no `.id` at all (#2300).
+control_result_stamp_id() { # <result-json> <id>
+    printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
+}
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
     local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
     if out=$(dashboard_control_post "$route" "$body"); then
@@ -123,11 +132,11 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
         case "$status" in
         pending | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
         } ;;
         *)
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
             ;;
         esac
@@ -283,6 +292,19 @@ _recovery_self_test() {
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
+    # /api/control/result never echoes the id back — a verb like backup that always resolves
+    # through polling would otherwise hand callers a terminal result with no `.id` at all (#2300).
+    case "$(control_result_stamp_id '{"status":"applied","passphrase":"p"}' r3)" in
+    '{"status":"applied","passphrase":"p","id":"r3"}') ;;
+    *) return 1 ;;
+    esac
+    # A pre-existing id is overwritten by the caller's resolved one, not left stale.
+    case "$(control_result_stamp_id '{"status":"applied","id":"stale"}' r4)" in
+    '{"status":"applied","id":"r4"}') ;;
+    *) return 1 ;;
+    esac
+    # Malformed JSON falls back to the input unchanged rather than raising.
+    [ "$(control_result_stamp_id '' r5)" = "" ] || return 1
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"
 }
 
