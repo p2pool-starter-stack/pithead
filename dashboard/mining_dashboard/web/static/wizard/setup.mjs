@@ -56,7 +56,7 @@ export function renderSetup(app) {
   const v = (name) => pathGet(cfg, FIELDS[name].path);
   const on = (name) => app.edit(FIELDS[name].path);
   const addr = classifyMoneroAddress(v("moneroWallet"));
-  const addrInvalid = ["subaddress", "integrated", "not-primary"].includes(addr.kind);
+  const addrInvalid = !["ok", "empty", "partial"].includes(addr.kind);
   const tg = telegramPairReady(v("telegramToken"), v("telegramChat"));
   const remoteMonero = v("moneroMode") === "remote";
   const tariMode = tariAnswer(v("tariMode"));

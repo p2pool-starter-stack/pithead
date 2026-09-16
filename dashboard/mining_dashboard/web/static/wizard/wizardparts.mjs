@@ -25,7 +25,7 @@ export const RadioField = ({
         <input type="radio" name=${name} value=${optionValue}
             checked=${String(value) === String(optionValue)} onChange=${onChange} />
         <span><strong>${optionLabel}</strong>
-          ${description && html`<span class="text-muted">${description}</span>`}
+          <span class="text-muted">${description}</span>
         </span>
       </label>`,
     )}
