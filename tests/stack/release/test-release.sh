@@ -144,7 +144,7 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     TAG=v9.9.9
     REGISTRY=ghcr.io/test
     DRY_RUN=0
-    PITHEAD_BUILD_ROOT="$SANDBOX/not-the-repo"
+    export PITHEAD_BUILD_ROOT="$SANDBOX/not-the-repo"
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.

@@ -20,10 +20,10 @@ check_release_toolchain() {
 }
 
 require_clean_release_tree() {
-    [ "$DRY_RUN" -eq 1 ] && return 0
     [ "$ALLOW_DIRTY" -eq 0 ] || die "--allow-dirty requires --dry-run."
     [ -z "$(git status --porcelain)" ] ||
-        die "Working tree differs from $GIT_COMMIT. Commit/stash first."
+        { [ "$DRY_RUN" -eq 1 ] && [ "$ALLOW_DIRTY" -eq 1 ]; } ||
+        die "Working tree differs from $GIT_COMMIT. Commit/stash first (or use --allow-dirty with --dry-run)."
 }
 # --- Release signing (#376, #960) -----------------------------------------------------------------
 #

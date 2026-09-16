@@ -112,9 +112,10 @@ make_bundle() {
         die "make_bundle: could not rebuild pithead."
     }
     cmp -s "$generated" pithead || { rm -f "$generated"; die "make_bundle: generated pithead differs from the artifact to ship."; }
-    rm -f "$generated"
     mkdir -p "$d"
-    cp pithead pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
+    cp "$generated" "$d/pithead" || { rm -f "$generated"; die "make_bundle: failed to copy required runtime files."; }
+    rm -f "$generated"
+    cp pithead-completion.bash VERSION docker-compose.yml config.minimal.json config.reference.json config.core-keys.json "$d/" 2>/dev/null || die "make_bundle: failed to copy required runtime files."
     [ -e cosign.pub ] || [ "${COSIGN_ENABLED:-0}" -eq 0 ] || die "make_bundle: signing is enabled but cosign.pub is missing."
     [ ! -e cosign.pub ] || cp cosign.pub "$d/" 2>/dev/null || die "make_bundle: failed to copy cosign.pub."
     # The bundle's own provenance anchor: the exact commit these bytes were cut from. The tier-4
