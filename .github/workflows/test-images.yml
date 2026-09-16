@@ -11,10 +11,10 @@ name: Test-harness images
 # enter either, and tests/stack/release asserts that rather than trusting it.
 #
 # Kept deliberately in lockstep with ci.yml's scan step: same pinned action, same engine version,
-# same severity and fixability scope. `make lint-trivy-parity` holds all three workflows to one
-# TRIVY_VERSION (scripts/watch/trivyignore-watch.sh GATE_WORKFLOWS) — a third copy of this step that
-# could drift to a different engine would make trivyignore-watch.sh's verdicts meaningless, which is
-# the whole reason that lint exists.
+# same severity and fixability scope. `make lint-trivy-parity` holds all three workflows' install-trivy
+# `version:` to one TRIVY_VERSION (scripts/watch/trivyignore-watch.sh GATE_WORKFLOWS) — a third copy of
+# this step that could drift to a different engine would make trivyignore-watch.sh's verdicts
+# meaningless, which is the whole reason that lint exists.
 
 on:
   push:
@@ -27,7 +27,7 @@ on:
       - "tests/integration/tor-client/**"
       - "tests/runner/**"
       - ".github/workflows/test-images.yml"
-      - ".trivyignore"
+      - ".config/trivyignore"
   schedule:
     # Weekly, on the same cadence as ci.yml's sweep. A base digest does not change under us, but the
     # CVE database does: an image that scanned clean in March is not clean in September, and nothing
@@ -96,19 +96,30 @@ jobs:
       # refuses to run without. A narrow skip would have to name every one of those targets, which
       # is this `if` with more lines. uv's own pair went 4 -> 0 in #2084, measured on the digests
       # directly, since this gate would not have reported it either way.
+      - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
+        if: matrix.service != 'test-runner'
+        with:
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
       - name: Scan image for CVEs (Trivy)
         if: matrix.service != 'test-runner'
+        id: trivy-scan
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
-          version: v0.74.0
+          skip-setup-trivy: true # scans with the binary the step above installed (#1290, #2214)
           image-ref: pithead-${{ matrix.service }}:ci
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
           # cache: false for the same reason as ci.yml (#1159): the action's DB cache is per-ref and
           # day-granular, so a branch's first run of the day freezes its database until midnight and
           # the gate's answer starts depending on when the branch last ran.
           cache: "false"
+      - name: Retry Scan image for CVEs (Trivy)
+        if: matrix.service != 'test-runner' && steps.trivy-scan.outcome == 'failure'
+        uses: ./.github/actions/retry-trivy-scan
+        with:
+          image-ref: pithead-${{ matrix.service }}:ci
+          trivyignores: .config/trivyignore

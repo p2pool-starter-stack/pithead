@@ -94,6 +94,10 @@ stage_compose() { # <version-tag> <stage-dir>  -> prints the COMPOSE_SOURCE line
     mkdir -p "$dir" || return 1
     rm -f "$dir/docker-compose.yml" "$dir/COMPOSE_SOURCE" || return 1
     if [ -n "${PITHEAD_OS_COMPOSE_FILE:-}" ]; then
+        [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" = 1 ] && [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+            echo "PITHEAD_OS_COMPOSE_FILE is restricted to synthetic debug harness builds" >&2
+            return 1
+        }
         [ -r "$PITHEAD_OS_COMPOSE_FILE" ] && [ -f "$PITHEAD_OS_COMPOSE_FILE" ] && [ ! -L "$PITHEAD_OS_COMPOSE_FILE" ] || {
             echo "PITHEAD_OS_COMPOSE_FILE: $PITHEAD_OS_COMPOSE_FILE is not a readable file" >&2
             return 1

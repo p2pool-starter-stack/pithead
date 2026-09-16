@@ -34,9 +34,9 @@ not the generated file.
 
 The full shell and appliance selftest suite expects **Linux and a non-root user**, as in
 CI. It uses GNU utilities and tests permission failures that root would bypass. On Linux,
-install Bash, Git, Make, jq, Node, Python 3, e2fsprogs, gh, xxd, and the shellcheck/shfmt
-versions pinned in `Makefile`, and run under a UTF-8 locale. A missing one of those last four
-does not error — it changes a verdict; see
+install Bash, Git, Make, jq, Node, Python 3, e2fsprogs, xxd, and the shellcheck/shfmt
+versions pinned in `Makefile`, and run under a UTF-8 locale. Missing system Python, xxd, or a
+UTF-8 locale does not error — it changes a verdict; see
 [what each tier needs](docs/dev/testing-strategy.md#what-each-tier-needs-from-its-host).
 
 On macOS or Windows, run it in the image instead — it carries that toolchain at the pinned
@@ -75,8 +75,9 @@ verdict that means something. The dashboard and frontend unit suites still run f
      the pointer, and nothing else here notices; the run prints how many `source` expressions it could
      not resolve statically, so that blind spot stays visible; deliberate absences go in the script's
      own `allowed_absent()` with a reason, never a per-file exemption),
-     `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text, and
-     no bare `docs/` paths in `pithead` operator text — release bundles carry a curated operator-doc
+     `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text,
+     including untracked, non-ignored frontend files, and no bare `docs/` paths in `pithead` operator
+     text — release bundles carry a curated operator-doc
      subset, not arbitrary repo paths, so point at `$DOCS_URL/docs/<file>.md#anchor` instead; comments
      keep the plain path),
      `lint-topology` (no real-looking IPv6/IPv4 literal, `/home/<name>` path, `.lan`/`.internal`/
@@ -87,9 +88,18 @@ verdict that means something. The dashboard and frontend unit suites still run f
      comment), `lint-file-budget` (the file-budget ratchet, issue #1105 Phase 0 — see
      [File budget gate](#file-budget-gate)),
      `lint-pithead-build` (the generated `pithead` must build from `lib/pithead/*.sh` in a clean
-     checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE
-     gate's two trivy-action steps and `scripts/watch/trivyignore-watch.sh` must name one trivy engine
-     version — issue #1290), `lint-proto` (buf),
+     checkout — issue #1105 Phase 2), `lint-trivy-parity` (the CVE gate installs trivy once per
+     job via `./.github/actions/install-trivy`, and that step's `version:` is the only line that
+     decides which engine scans — every trivy-action step passes `skip-setup-trivy: true` and
+     declares no version of its own. The gate holds those literals across `ci.yml`,
+     `os-rootfs.yml` and `test-images.yml`, and `scripts/watch/trivyignore-watch.sh`, to one
+     trivy engine version — issue #1290 — and holds the shape that keeps that meaningful: per
+     workflow, the counts of trivy-action steps, `install-trivy` steps and `skip-setup-trivy: true`
+     lines must match, no `version:` may reappear in a trivy-action step where nothing would
+     resolve it, and neither `install-trivy` nor `retry-trivy-scan` may carry a pin of its own —
+     so the cached installer keeps a transient GitHub Releases outage from redding every scan,
+     issue #2214),
+     `lint-proto` (buf),
      `lint-toml` (taplo). The
      non-Python tools run via `npx`/`uvx`/`docker`, so a contributor needs **Node, uv, and Docker**
      on PATH (plus `shfmt`); `pre-commit` runs the same checks on changed files. Link-checking

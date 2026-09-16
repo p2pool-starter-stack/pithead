@@ -59,7 +59,7 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # (x/mod pulls x/tools, x/net, x/crypto...). When you add one, read Go's own upgrade list, not this.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
-# and delete its .trivyignore mute in the SAME change — a mute left over a finding you have just
+# and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
 # fixed means the scan can no longer tell "fixed" from "hidden", which is how two obsolete mutes
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
@@ -135,22 +135,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
 # hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
 ARG APT_INDEX_STAMP=0
+# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
-        jq openssl curl ca-certificates xxd iproute2 \
+        jq openssl curl ca-certificates xxd iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
         fdisk gdisk parted e2fsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
         squashfs-tools \
         openssh-server sudo less nano htpdate
-# NB: the apt lists survive THIS layer on purpose — the later `apt-get install` steps below
-# (the RigForge toolchain, the updater) run without their own `apt-get update` and resolve
-# against these lists. They are deleted after the LAST apt step: nothing at runtime uses apt
-# (no apt on the running box), and the rootfs ships as a flat tarball, so a late deletion
-# genuinely leaves every slot and update bundle smaller.
+# NB: the apt lists survive THIS layer on purpose — the later `apt-get install` steps below (the RigForge toolchain, the
+# updater) run without their own `apt-get update` and resolve against these lists. They are deleted after the LAST apt
+# step: nothing at runtime uses apt (no apt on the running box), and the rootfs ships as a flat tarball, so a late
+# deletion genuinely leaves every slot and update bundle smaller.
 
 # The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
 # services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
