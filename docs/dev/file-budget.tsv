@@ -50,7 +50,7 @@ os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
 scripts/watch/trivyignore-watch.sh	599
 tests/integration/e2e.sh	687
-tests/integration/fakes/test_contract.py	451
+tests/integration/fakes/test_contract.py	439
 tests/integration/lib.sh	691
 tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
