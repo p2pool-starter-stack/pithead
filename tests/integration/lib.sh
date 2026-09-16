@@ -213,12 +213,8 @@ resolve_overrides() {
 }
 
 # --- Expectation derivation (pure) ------------------------------------------
-# Given a rendered config.json, list the services we expect to be running. The bundled monerod
-# only runs in local mode (the local_node compose profile) and the bundled tari only runs in
-# local mode (local_tari, #103) — each independently, since the two chains toggle mode on their
-# own axis; in remote mode the matching bundled node must be ABSENT. wallet-rpc/tari-wallet
-# (#381/#462) only run when their view key is set (payout_confirm/tari_payout_confirm). Everything
-# else is always expected. Mirrors stack_status()'s profile gating.
+# Given a rendered config.json, list services we expect running: bundled monerod/tari only in
+# local mode (independent axes, #103); wallet-rpc/tari-wallet only when their view_key is set (#381/#462); everything below always expected (mirrors stack_status()'s profile gating).
 EXPECTED_ALWAYS="caddy dashboard docker-control docker-proxy p2pool tor xmrig-proxy"
 
 expected_services() {
@@ -233,6 +229,10 @@ expected_services() {
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
 
+expected_topology_nodes() { # topology panel's node set (#2303): local-miner only when local_miner.enabled=true
+    local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
+}
 # Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
 absent_services() {
     local config_json="$1" mmode tmode
