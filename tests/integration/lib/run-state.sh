@@ -198,15 +198,15 @@ assert_running_state() {
     #     Assert the data contract survives the trip (the on-the-wire privacy posture is verified
     #     separately by assert_egress_posture via /proc/net/tcp): both sections present, the badge
     #     summary shared verbatim with the map so they can never disagree, and the canonical node
-    #     set exposed. Holds for every scenario — the node set is static and the summary invariant
-    #     is config-independent.
+    #     set exposed. NOT config-independent (#2303): local_miner.enabled gates a "local-miner"
+    #     node, same as topology_graph.py; expected_topology_nodes (lib.sh) mirrors + selftests it.
     assert_eq "egress posture section present" "$(jq_get "$st" '.egress.summary | type')" "object"
     assert_eq "topology section present" "$(jq_get "$st" '.topology.summary | type')" "object"
     assert_eq "topology + egress share one summary" \
         "$(jq_get "$st" '.topology.summary == .egress.summary')" "true"
-    assert_eq "topology exposes the canonical node set" \
+    assert_eq "topology exposes the canonical node set (#2303)" \
         "$(jq_get "$st" '[.topology.nodes[].id] | sort | join(",")')" \
-        "browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+        "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
     local want_bind
