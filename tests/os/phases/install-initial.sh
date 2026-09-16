@@ -311,9 +311,16 @@ _phase_install_initial() {
         if [ "$nc_rc" -ne 0 ]; then
             bad "negative control: the installer refused the foreign disk (rc $nc_rc): $(printf '%s' "$nc_out" | tail -3 | tr '\n' ' ' | cut -c1-200)"
         else
-            nc_marker=$(_ssh "m=\$(mktemp -d) && mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null || exit 9
-                if test -e \"\$m/sentinel\"; then rc=1; else echo sentinel-gone; rc=0; fi
-                umount \"\$m\" 2>/dev/null || true
+            nc_marker=$(_ssh "m=\$(mktemp -d)
+                if mount -r /dev/$foreign_dev \"\$m\" 2>/dev/null; then
+                    if test -e \"\$m/sentinel\"; then rc=1; else echo sentinel-gone; rc=0; fi
+                    umount \"\$m\" 2>/dev/null || true
+                elif [ \"\$(lsblk -dnro PTTYPE /dev/$foreign_dev)\" = gpt ]; then
+                    echo sentinel-gone
+                    rc=0
+                else
+                    rc=1
+                fi
                 exit \"\$rc\"") || nc_marker_rc=$?
         fi
         if [ "$nc_rc" -eq 0 ] && [ "$nc_marker_rc" -eq 0 ] && [ "$nc_marker" = "sentinel-gone" ]; then
