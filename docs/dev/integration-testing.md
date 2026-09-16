@@ -189,7 +189,8 @@ tests/integration/run.sh --local --dir /home/miner/pithead --lifecycle
 
 # A single scenario (see --list for names)
 tests/integration/run.sh --host miner@10.0.0.5 --scenario remote-main-secure-tari \
-    --remote-monero-host 10.0.0.5:18081
+    --remote-monero-host node.example --remote-monero-rpc-port 28081 \
+    --remote-monero-zmq-port 28083 --remote-tari-host tari.example
 
 # Cover the OPPOSITE prune mode. The box mines one mode against its live chain; the other is
 # skipped unless you supply a chain for it (it's otherwise covered by the fake mini-stack). A
@@ -220,8 +221,8 @@ Useful flags (full list in `run.sh --help`):
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
 | `--no-mining-asserts` | Skip the two mining assertions — workers online ≥ `--workers` and stratum total hashes > 0 — with a logged notice, for a box that has no miner connected. Every other assertion stays binding. `e2e.sh --no-miner` passes this automatically ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)). |
-| `--remote-monero-host <h>` | External node endpoint for the `remote` scenario. |
-| `--remote-tari-host <h>` | External Tari node endpoint for the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)) — an already-synced Tari node, same shape as `--remote-monero-host`. |
+| `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
+| `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
 | `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
@@ -391,6 +392,15 @@ The rig phases are gated on a borrowed miner rather than on the mode: the releas
 release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/1364)). `--keep` leaves it deployed for
 inspection (skips the restore). Requires SSH access to the test bench and the miner; see the
 [testbench README](../../tests/integration/tools/testbench-README.md).
+
+`--harness-arg <flag>` (repeatable) appends one more `run.sh` phase flag after the mode's own,
+in the order given — how bench-ci's `phases` selection ([bench-ci#46](https://github.com/p2pool-starter-stack/bench-ci/issues/46))
+runs exactly one named phase against a commit without a dedicated `--mode`. Only an allowlisted
+`run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
+`--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
+`--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
+and anything else is refused before any bench work, never built into a shell string from the raw
+value. Not supported with `--mode check`, which runs nothing but `--check` by design.
 
 ---
 
