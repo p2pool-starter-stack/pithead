@@ -285,7 +285,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
         if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
-            printf '%s\n' "$out" | grep -qE $'^(CONFIRM|DEST)\t'; then
+            printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
             approval_required=true
         fi
         result=$(printf '%s\n' "$out" | jq -R -s --argjson approval_required "$approval_required" \
