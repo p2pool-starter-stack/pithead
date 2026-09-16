@@ -313,10 +313,7 @@ report() {
 }
 
 # --- self-test -------------------------------------------------------------------------------------
-# The union-across-images rule is the whole product here; a real run is one `docker build` and one
-# `docker run trivy` per image. Drives report()'s logic against stubbed build_image/scan_image —
-# the same technique scripts/watch/pin-watch.sh uses to stub `gh` — over fixture per-image findings that
-# reproduce the trap verbatim: an ID present in exactly ONE of six covered images.
+# Drive report() with stubs; engine parity and workflow-contract checks follow.
 if [ "${1:-}" = "--self-test" ]; then
     st_fail=0
     st() { # <label> <got> <want>
@@ -327,6 +324,9 @@ if [ "${1:-}" = "--self-test" ]; then
             st_fail=1
         fi
     }
+
+    st "shipped sweep keeps released-main root fallback" "$(grep -Fc 'git show origin/main:.config/trivyignore >main.trivyignore 2>/dev/null || git show origin/main:.trivyignore >main.trivyignore' "$ROOT/.github/workflows/ci.yml")" "1"
+    st "weekly workflow keeps tracker #1382 exact title" "$(grep -Fc 'TITLE: "Obsolete .trivyignore mutes (weekly report)"' "$ROOT/.github/workflows/trivyignore-watch.yml")" "1"
 
     st "ignored_ids strips comments and blank lines" \
         "$(
