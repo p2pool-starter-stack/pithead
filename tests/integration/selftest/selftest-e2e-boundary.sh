@@ -33,5 +33,27 @@ rejected_before_ssh "pre-supplied rig NAME metacharacters never reach SSH, even 
 rejected_before_ssh "a valid first line cannot hide a second rig NAME line" RIG_NAME $'rig\ninvalid;value'
 rejected_before_ssh "bootstrap target metacharacters never reach SSH" RIGFORGE_BOOTSTRAP_VERSION 'v1.17.2;touch'
 
+rejected_before_ssh_args() { # <label> [args...] -> asserts rc!=0 and ssh never dialed
+    local label="$1"
+    shift
+    rm -f "$MARKER"
+    env PATH="$TMP:/usr/bin:/bin" SSH_MARKER="$MARKER" BENCH_HOST=bench MINER_HOST=rig \
+        bash "$HERE/../e2e.sh" candidate --mode targeted "$@" >/dev/null 2>&1
+    local rc=$?
+    if [ "$rc" -ne 0 ] && [ ! -e "$MARKER" ]; then
+        it_pass "$label"
+    else
+        it_fail "$label" "rc=$rc ssh_called=$([ -e "$MARKER" ] && echo yes || echo no)"
+    fi
+}
+
+echo "== --harness-arg (#2179): only the run.sh phase allowlist reaches the harness, never a shell =="
+rejected_before_ssh_args "an unlisted flag never reaches SSH" --harness-arg '--image-upgrade'
+rejected_before_ssh_args "a bare shell metacharacter never reaches SSH" --harness-arg ';touch'
+rejected_before_ssh_args "a --scenario name with metacharacters never reaches SSH" \
+    --harness-arg --scenario --harness-arg 'name;touch'
+rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
+    --harness-arg '--lifecycle' --mode check
+
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
