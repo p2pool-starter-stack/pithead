@@ -214,7 +214,7 @@ ${n_scen} live config scenarios (${n_axes} axis values) · ${n_mini} mini-stack 
 | 1 — Unit | dashboard pytest | ${n_py_dash} |
 | 1 — Unit | frontend (node --test) | ${n_node} |
 | 1 — Unit | \`pithead\` shell suite | ${n_stack} sections |
-| 1 — Unit | compose interpolation + hardening (#90) | 1 |
+| 1 — Unit | compose hardening + generated Caddyfile parsing (#90/#1037) | 1 |
 | 2 — Contract | fake-daemon clients | ${n_py_fake} |
 | 3 — Mini-stack | docker control-plane scenarios | ${n_mini} |
 | 4 — Live matrix | config scenarios | ${n_scen} (${n_axes} axis values) |
@@ -256,6 +256,11 @@ cat <<EOF
 - docker-compose.yml \`\${VAR}\` interpolation resolves against a representative .env
 - #90 hardening invariants: no-new-privileges / cap_drop / read-only roots, credential-free
   healthchecks, least-privilege Docker socket proxies, and the pinned \`pithead\` project name
+
+### Generated Caddyfile parser gate (tests/stack/standalone/test_caddyfile.sh)
+- the pinned Caddy image rejects the #1037 bind/basic_auth directive collision
+- every successful Caddyfile from the existing DIY, appliance identity, auth, custom-port and
+  onion render scenarios adapts to non-empty JSON
 
 ### Real-image data-reset repair (tests/stack/standalone/test_data_reset.sh)
 - #1062 on a REAL ext4 image with the system's own e2fsprogs: the superblock-magic damage the
