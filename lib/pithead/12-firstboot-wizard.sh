@@ -388,7 +388,7 @@ firstboot_wizard() {
                 if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
                     printf '%s' "$post_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
-                    rm -f "$PWD/config.json" "$spool/install-request"
+                    rm -f "$PWD/config.json" "$PWD/config.json.bak-1x" "$spool/install-request"
                     warn "The configuration this machine assembled did not pass validation: $post_err"
                     sleep 2
                     continue

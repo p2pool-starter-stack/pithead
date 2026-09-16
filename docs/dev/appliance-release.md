@@ -177,7 +177,9 @@ container that stayed unhealthy for good (#1098). `os/build-image.sh` therefore 
 `/opt/pithead/COMPOSE_SOURCE` (`tag NAME SHA`, or `tree`) and prints it. What that costs: a compose
 change on the branch is not exercised on the appliance until the next cut, where the tag does not
 exist yet and the tree is the source. A clone that has not fetched the tag is refused rather than
-silently built the old way; `git fetch --tags` clears it.
+silently built the old way; `git fetch --tags` clears it. Only the appliance battery's synthetic
+bundle fixture may opt into an explicit compose file; ordinary builds cannot replace the tag or
+tree source.
 
 `--dev` auto-generates a throwaway `CN=pithead-dev` signing key for the bench. A release build
 omits it and must name the real key instead (`PITHEAD_RAUC_CERT` + `PITHEAD_RAUC_KEY`) — see
@@ -376,16 +378,21 @@ obvious way: a mains outage took the build bench down overnight and it was still
 the morning.
 
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
-rig power-loss and update, and run-from-USB. They stay a manual procedure today — see
+rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
 [the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) does not yet cover them: it proves the
 wizard's rig card and role select, that a rig submits toward a pool (against a faked listener, so
 it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, and
 the A/B update leg committing on a rig. It proves none of an accepted share at a real coordinator,
-MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, a power cut on a
-rig, or booting the rig role from the stick without installing to disk. No bench release e2e
-scenario for the rig role exists yet either. Converting what KVM can prove, and naming a bench e2e
-for the rest, is tracked as #1886's first gap; the numbering here stays stable so old release
-records still point at the same steps once that lands.
+MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, or a power cut on a
+rig. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+(`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
+internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
+no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
+untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
+reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
+rig role exists yet. Converting M11–M13, and naming a bench e2e for what KVM cannot prove, is
+tracked as #1886's first gap; the numbering here stays stable so old release records still point
+at the same steps once that lands.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
@@ -496,7 +503,7 @@ one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M11–M14 for any release touching the rig role, M15 and M16) on
+4. Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
    real hardware. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
