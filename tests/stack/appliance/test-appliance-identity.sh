@@ -86,17 +86,19 @@ mkdir -p "$VSB"
 printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true} }' "$WALLET" >"$VSB/config.json"
 vout=$(
     cd "$VSB" || exit
-    source "$STACK"; set +e
+    # shellcheck disable=SC1090
+    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"; set +e
     log() { :; }
-    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" parse_and_validate_config 2>&1
 )
 assert_eq "carried release SSH config does not block boot validation" "$vout" ""
 printf release >"$VSB/variant"
 vout=$(
     cd "$VSB" || exit
-    source "$STACK"
+    # shellcheck disable=SC1090
+    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"
     set +e
-    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 CONFIG_FILE="$VSB/config.json" parse_and_validate_config 2>&1
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 parse_and_validate_config 2>&1
 )
 assert_contains "new release SSH config is refused" "$vout" "ssh.enabled is unavailable"
 unset VSB vout
@@ -213,12 +215,10 @@ nl_assert_agreement() { # <scenario-label> — every name appliance_site_names()
         ok "$1: every name is both served and certified"
     fi
 }
-
 # Disagreement #3: auto identity, HOST_IP already the .local form (resolve_dashboard_host's own
 # answer for an appliance on "auto") — both consumers must agree the .local name is IN.
 NL_HOSTNAME="rig1" NL_IPS="192.168.1.20" NL_HOST_IP="rig1.local" NL_DASHBOARD_HOST=""
 nl_assert_agreement "auto identity"
-
 # Disagreements #1 and #2: dashboard.host pinned to a name that is NOT this machine's hostname.
 NL_HOSTNAME="rig1" NL_IPS="192.168.1.20" NL_HOST_IP="panel.example" NL_DASHBOARD_HOST="panel.example"
 nl_assert_agreement "pinned dashboard.host"

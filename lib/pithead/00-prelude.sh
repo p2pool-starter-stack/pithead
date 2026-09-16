@@ -95,7 +95,10 @@ PITHEAD_DRY_RUN=0
 
 # Missing stamps are old release images: fail closed rather than letting configuration reopen SSH.
 appliance_variant() {
-    tr -d ' \t\r\n' <"${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" 2>/dev/null || printf release
+    local variant_file="${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" variant
+    [ -r "$variant_file" ] || { printf release; return; }
+    variant=$(tr -d ' \t\r\n' <"$variant_file")
+    printf '%s' "${variant:-release}"
 }
 
 # Detect whether we're being sourced (e.g. by the test suite). When sourced we only define

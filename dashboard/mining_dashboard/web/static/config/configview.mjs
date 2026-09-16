@@ -35,8 +35,8 @@ import {
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
 
-const editableCandidate = (cfg) => JSON.parse(JSON.stringify(cfg, (key, value) =>
-  key.startsWith("_") ? undefined : value));
+const editableCandidate = (cfg) =>
+  JSON.parse(JSON.stringify(cfg, (key, value) => (key.startsWith("_") ? undefined : value)));
 
 export { PreviewModal };
 
