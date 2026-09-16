@@ -88,11 +88,11 @@ _control_paths_overlap() { # <normalized-a> <normalized-b>
 }
 
 # Resolve all five staged data destinations exactly as apply does, then keep every mount disjoint
-# from its peers and from state the dashboard can already write. Checking lexical and canonical
-# spellings closes both direct ancestor mounts and symlink aliases.
+# from its peers and from state with a separate owner or trust boundary. Checking lexical and
+# canonical spellings closes both direct ancestor mounts and symlink aliases.
 control_validate_data_dir_overlaps() { # <staged-file>
     local staged="$1" data_root path lex real i j current_dashboard control_dir clearnet_dir
-    local monero_current tari_current p2pool_current tor_current caddy_dir proxy_tls_dir
+    local monero_current tari_current p2pool_current tor_current caddy_dir proxy_tls_dir pithead_tls_dir
     local -a names=(monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir)
     local -a paths lexes=() reals=() protected_names protected_paths protected_lexes=() protected_reals=()
     paths=(
@@ -136,6 +136,7 @@ control_validate_data_dir_overlaps() { # <staged-file>
     clearnet_dir=$(env_get CLEARNET_STATE_DIR)
     caddy_dir=$(env_get CADDY_LOG_DIR)
     proxy_tls_dir=$(env_get PROXY_TLS_DIR)
+    pithead_tls_dir=$(env_get PITHEAD_TLS_DIR)
     [ -n "$monero_current" ] || monero_current="$PWD/data/monero"
     [ -n "$tari_current" ] || tari_current="$PWD/data/tari"
     [ -n "$p2pool_current" ] || p2pool_current="$PWD/data/p2pool"
@@ -145,9 +146,10 @@ control_validate_data_dir_overlaps() { # <staged-file>
     [ -n "$clearnet_dir" ] || clearnet_dir="$PWD/data/clearnet-state"
     [ -n "$caddy_dir" ] || caddy_dir="$PWD/data/caddy-logs"
     [ -n "$proxy_tls_dir" ] || proxy_tls_dir="$PWD/data/proxy-tls"
-    protected_names=(live.monero live.tari live.p2pool live.tor live.dashboard control.state clearnet.state caddy.logs live.proxy-tls staged.proxy-tls)
+    [ -n "$pithead_tls_dir" ] || pithead_tls_dir="$PWD/data/tls"
+    protected_names=(live.monero live.tari live.p2pool live.tor live.dashboard control.state clearnet.state caddy.logs live.proxy-tls staged.proxy-tls caddy.tls)
     protected_paths=("$monero_current" "$tari_current" "$p2pool_current" "$tor_current" "$current_dashboard"
-        "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls")
+        "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls" "$pithead_tls_dir")
     for path in "${protected_paths[@]}"; do
         lex=$(realpath -ms -- "$path" 2>/dev/null) || lex=""
         real=$(realpath -m -- "$path" 2>/dev/null) || real=""

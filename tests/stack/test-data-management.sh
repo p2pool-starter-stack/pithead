@@ -171,7 +171,8 @@ assert_contains "live service cross-over names the protected root" \
 
 # Internal log and TLS roots are siblings under the allowlisted data parent, but never service data.
 for INTERNAL_ROOT in "$(run_sourced "$C" env_get_file "$C/.env" CADDY_LOG_DIR)" \
-    "$(run_sourced "$C" env_get_file "$C/.env" PROXY_TLS_DIR)"; do
+    "$(run_sourced "$C" env_get_file "$C/.env" PROXY_TLS_DIR)" \
+    "$(run_sourced "$C" env_get_file "$C/.env" PITHEAD_TLS_DIR)"; do
     preview_move "$INTERNAL_ROOT/monero"
     printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
     run_pending >/dev/null
