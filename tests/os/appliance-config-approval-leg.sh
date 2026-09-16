@@ -26,9 +26,23 @@ dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's ar
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
 
 remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
+    # <user>/<password> are OFTEN blank (#2297): a reserved bench node commonly needs no RPC auth
+    # (config.example.toml's provision env lists only host/port for it), and $live's own
+    # monero.node_username/node_password already carry a {"__secret__":true} sentinel — /api/config
+    # masks every CONTROL_SECRET_PATHS leaf, and that pair is on it. A blank arg must leave those two
+    # fields ALONE so the sentinel survives to staging: control_preview's restore (43-control-
+    # approval-and-preview.sh) swaps a sentinel for the live value, but only recognizes the sentinel
+    # SHAPE — overwriting it with a literal "" here defeats that restore before it runs, and an empty
+    # string then reads as a REAL change against the live host-generated local-node creds (23-setup-
+    # and-credentials.sh), which MONERO_NODE_USERNAME/PASSWORD's perimeter (42-control-policy-and-
+    # host-checks.sh: credentials stay host-CLI-only, no allowlist tier) refuses outright — the whole
+    # preview never reaches "previewed", so destructive/approval_required/preview_values are never
+    # populated either. A real operator repointing only host/port through the dashboard form never
+    # touches these fields, so this must not, when they are blank.
     printf '%s\0' "$@" | jq -Rsc 'split("\u0000") as $v | ($v[0] | fromjson) |
         .monero.mode="remote" | .monero.remote={host:$v[1],rpc_port:($v[2]|tonumber),zmq_port:($v[3]|tonumber)} |
-        .monero.node_username=$v[4] | .monero.node_password=$v[5] |
+        (if $v[4] != "" then .monero.node_username=$v[4] else . end) |
+        (if $v[5] != "" then .monero.node_password=$v[5] else . end) |
         .tari.mode="remote" | .tari.remote={host:$v[6],grpc_port:($v[7]|tonumber)}'
 }
 
@@ -204,7 +218,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         .status == "previewed" and .destructive == true and .approval_required == true and
         any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
         any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
-        bad "reserved-node preview did not expose endpoints behind the combined approval gate"
+        bad "reserved-node preview did not expose endpoints behind the combined approval gate ($(reserved_node_preview_payload "$preview"))"
         return
     fi
     rid=$APPROVAL_REQUEST_ID
@@ -239,7 +253,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
         any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
         any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
-        bad "reserved-node preview omitted an endpoint the operator must see before confirming"
+        bad "reserved-node preview omitted an endpoint the operator must see before confirming ($(reserved_node_preview_payload "$preview"))"
         node_ok=0
     fi
     if { [ -n "$mu" ] && case "$preview" in *"$mu"*) true ;; *) false ;; esac } ||
@@ -271,6 +285,27 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     [ "$node_ok" -eq 1 ] || return 1
 }
 
+# #2297: a blank monero-node-username/password arg must leave monero.node_username/node_password
+# UNTOUCHED, so a live {"__secret__":true} sentinel survives to control_preview's restore — see the
+# comment on remote_node_proposal itself for why an overwrite to "" defeats that restore and trips
+# the credential perimeter. A NON-blank arg must still land (an operator-supplied real credential
+# for a node that DOES need auth is exactly what this path exists to carry).
+_remote_node_proposal_self_test() {
+    local f=0 live out
+    live='{"monero":{"node_username":{"__secret__":true},"node_password":{"__secret__":true}}}'
+    out=$(remote_node_proposal "$live" mh 1 2 "" "" th 3)
+    case "$out" in *'"__secret__":true'*'"__secret__":true'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(printf '%s' "$out" | jq -r '.monero.node_username.__secret__, .monero.node_password.__secret__' 2>/dev/null | tr '\n' ' ')
+    [ "$out" = "true true " ] || f=$((f + 1))
+    out=$(remote_node_proposal "$live" mh 1 2 realuser realpass th 3 | jq -r '.monero.node_username, .monero.node_password' 2>/dev/null | tr '\n' ' ')
+    [ "$out" = "realuser realpass " ] || f=$((f + 1))
+    [ "$f" -eq 0 ] || {
+        printf 'remote-node-proposal self-test FAILED: %s checks\n' "$f"
+        return 1
+    }
+    printf 'remote-node-proposal self-test passed\n'
+}
+
 _approval_self_test() {
     local f=0
     mm_roundtrip_verdict 'MergeMiningClientTari tari://127.0.0.1:18142 uses chain_id 0123456789abcdef' >/dev/null || f=$((f + 1))
@@ -284,7 +319,9 @@ _approval_self_test() {
     # check dies as a missing command rather than a verdict.
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
+    _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
+    _remote_node_proposal_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
