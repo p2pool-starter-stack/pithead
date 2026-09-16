@@ -20,7 +20,7 @@ check_release_toolchain() {
 }
 
 require_clean_release_tree() {
-    [ "$ALLOW_DIRTY" -eq 0 ] || die "--allow-dirty requires --dry-run."
+    [ "$ALLOW_DIRTY" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || die "--allow-dirty requires --dry-run."
     [ -z "$(git status --porcelain)" ] ||
         { [ "$DRY_RUN" -eq 1 ] && [ "$ALLOW_DIRTY" -eq 1 ]; } ||
         die "Working tree differs from $GIT_COMMIT. Commit/stash first (or use --allow-dirty with --dry-run)."
