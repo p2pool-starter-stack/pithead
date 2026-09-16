@@ -80,7 +80,7 @@ _control_request_transport_self_test() (
 # fires when the server ANSWERED a refusal would turn every rejection into a full deadline of
 # polling, which is the opposite failure and just as expensive on a 2.5-hour battery.
 _control_request_lost_response_self_test() (
-    local body ip=fixture result polls
+    local body ip=fixture result polls empty_post=0
     body='{"id":"rid-7","confirm":"APPLY"}'
     # A file, not a variable: every poll happens inside a command substitution, so a counter
     # incremented in the shim would be discarded with that subshell and read 0 however many times
@@ -96,10 +96,18 @@ _control_request_lost_response_self_test() (
             ;;
         *)
             cat >/dev/null
-            return 0
+            [ "$empty_post" -eq 1 ] && return 0
+            return 52
             ;;
         esac
     }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    # A successful empty POST has the same recoverable shape as the transport loss above.
+    sleep() { :; }
+    empty_post=1
+    : >"$polls"
     result=$(dashboard_control_request commit "$body" 30) || return 1
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
