@@ -31,14 +31,12 @@ bash "$ROOT/scripts/lint/lint-operator-strings.sh" --self-test >/dev/null 2>&1
 assert_rc "operator-strings guard self-test passes" "$?" "0"
 
 echo "== unit: pin-watch self-test (#1128) =="
-# The watcher's whole product is the COMPARISON: our pins do not spell versions the way upstream
-# tags them (`caddy:2.11.4` vs `v2.11.4`, `minotari_node:v5.3.1-mainnet` vs `v5.6.0`), so a plain
-# string compare reports two components stale every week for ever and the report gets muted — as
-# useless as the scheduled workflow that lived on a non-default branch and never ran at all. Its
-# --self-test drives the normalisation over the real pin spellings and drives both lookup failure
-# paths, because an upstream lookup that could not run must never read as "current".
+# Drives the real pin spellings and failed lookups: unreachable must never read as current.
 bash "$ROOT/scripts/watch/pin-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "pin-watch self-test passes" "$?" "0"
+# Drives active, transitive no-op and downgrade raises through a synthetic Go module graph.
+bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
+assert_rc "Go module raise watch self-test passes" "$?" "0"
 
 echo "== unit: resolve-pins self-test (#1137) =="
 # pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
@@ -125,25 +123,23 @@ assert_rc "#1966 appliance diagnostics verdict self-test passes" "$?" "0"
 # #2059: drives what keeps the Tor-egress backstop REACHABLE past a provision abort. Why: the leg file.
 bash "$ROOT/tests/os/appliance-egress-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#2059 appliance Tor-egress backstop self-test passes" "$?" "0"
+# #2219: drives the control-runner recovery leg's assertion logic against a fully stubbed guest —
+# a runner that never retries must be caught, and the recovered path must report cleanly. Lives in
+# tests/os/ (appliance lane); driven here because tier 1 is the lowest tier that proves it and it
+# needs no KVM (the retry itself is only provable on a real systemd, in the tier4-kvm leg).
+bash "$ROOT/tests/os/control-runner-recovery-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#2219 control-runner recovery leg self-test passes" "$?" "0"
 bash -c 'PITHEAD_OS_VM_DESTROY_SELF_TEST=1 exec bash "$1"' _ "$ROOT/tests/os/kvm-preflight.sh"
 assert_rc "the OS battery refuses a VM that survives teardown" "$?" "0"
 
 echo "== unit: tor healthcheck command-dependency self-test (#1372) =="
-# The #1098 pair above asks whether a healthcheck script EXISTS where its Dockerfile promises. This
-# asks the other half of the same contract: whether build/tor/healthcheck.sh can still RUN on
-# nothing but the commands that image ships. #1372 is the case that made the gap visible — the
-# Dockerfile installed `xxd` by name for one call site that busybox already served, and nothing in
-# CI could see either the need or its removal. Its --self-test drives the script for real with PATH
-# stripped to an allowlist of the image's commands, and drops each declared command in turn, because
-# a leaking PATH would pass every case on the host's own commands and prove nothing.
+# #1372: run the Tor healthcheck on exactly the commands its image ships.
+# Its self-test drops each command, so a leaking PATH cannot pass it.
 bash "$ROOT/build/tor/healthcheck-selftest.sh" --self-test >/dev/null 2>&1
 assert_rc "tor healthcheck runs on the commands its own image ships (#1372)" "$?" "0"
 
 echo "== unit: wait_while_alive polls on liveness, not a tick count (#1495) =="
-# The #1342 stanza's OLD shape -- a fixed tick*interval budget -- is reproduced here at a scale
-# that proves the point in under a second: a holder delayed past a budget it does not owe read as
-# a false "the lock is free" under load. Shown against the very shape it replaced, side by side,
-# rather than asserted from a description of it.
+# The #1342 fixed tick budget gives up on a delayed live holder; liveness polling does not.
 whwa_flag="$SANDBOX/whwa-ready"
 whwa_ready() { [ -e "$whwa_flag" ]; }
 whwa_old_wait() { # <pid> <check-fn> <ticks> -- the fixed-budget shape #1495 removed
@@ -169,8 +165,7 @@ assert_rc "wait_while_alive rides out the same delay because the holder is still
 kill "$whwa_pid" 2>/dev/null
 wait "$whwa_pid" 2>/dev/null
 
-# The other half: a holder that exits WITHOUT ever satisfying CHECK must be reported as gone
-# immediately, not waited out to whatever budget happens to be generous enough to cover it.
+# A holder that exits without satisfying CHECK must be reported as gone immediately.
 rm -f "$whwa_flag" # the first case's holder left this behind; a stale flag would satisfy CHECK for free
 whwa_start="$SECONDS"
 (exit 1) &
@@ -179,19 +174,29 @@ wait_while_alive "$whwa_pid" whwa_ready
 assert_rc "gives up the moment a holder that never checks in has already died" "$?" "1"
 assert_rc "and does so in under a second, not a fixed wait" \
     "$([ "$((SECONDS - whwa_start))" -lt 2 ] && echo 0 || echo 1)" "0"
-unset -f whwa_ready whwa_old_wait
-rm -f "$whwa_flag"
+# Force the holder to succeed and exit after CHECK returns false, before liveness is read.
+whwa_go="$SANDBOX/whwa-go"
+rm -f "$whwa_flag" "$whwa_go"
+whwa_succeeds_on_exit() {
+    [ -e "$whwa_flag" ] && return 0
+    : >"$whwa_go"
+    wait "$whwa_pid"
+    return 1
+}
+(
+    while [ ! -e "$whwa_go" ]; do sleep 0.01; done
+    : >"$whwa_flag"
+) &
+whwa_pid=$!
+wait_while_alive "$whwa_pid" whwa_succeeds_on_exit
+assert_rc "wait_while_alive rechecks a holder that succeeded as it exited" "$?" "0"
+unset -f whwa_ready whwa_old_wait whwa_succeeds_on_exit
+rm -f "$whwa_flag" "$whwa_go"
 
 echo "== unit: every run.sh fragment refuses a direct run (#1657) =="
-# A test-*.sh domain file carries no assertion primitives of its own: run one directly and its
-# assert_* calls are "command not found" while the file still exits 0 for 21 of the 55 — a domain
-# reporting success having executed nothing. test-backup.sh goes further and builds its fixture
-# roots in the caller's working tree on the way past, because `cd "" && pwd -P` returns the cwd.
-# Enumerating every fragment rather than sampling one is the whole point: the regression this
-# guards against is a NEW fragment added without the marker check, and a fixed list would never
-# see it. STACK_SUITE is deliberately NOT unset here — lib.sh sets it as a plain assignment and
-# never exports it, so a child bash cannot inherit it; if someone ever exports it, every fragment
-# stops refusing at once and this row is what says so.
+# A direct fragment run can exit 0 after missing assertion primitives and can write fixtures.
+# Enumerate all fragments so new ones cannot evade the guard. STACK_SUITE remains unexported:
+# exporting it would disarm every child-bash refusal.
 frag_probe="$SANDBOX/fragment-refusal"
 mkdir -p "$frag_probe"
 frag_bad=""
@@ -231,7 +236,7 @@ case "$vd_hb_out" in
 esac
 unset vd_id_out vd_hb_out
 
-echo "== unit: scheduled-run watch self-test (#1377) =="
+echo "== unit: scheduled-run watch self-test (#1377, #1418) =="
 # The Monday CVE sweep's reader. Its red path CANNOT be exercised live — staging it would mean
 # making the default branch's CI genuinely fail — so the fixtures here are the only place the
 # failure branch runs at all. They also pin the distinction the watcher exists for: a sweep that
@@ -345,6 +350,7 @@ test-control-add-only-ssrf.sh|2
 test-control-add-only-ssrf.sh|3
 test-control-core.sh|reowned
 test-control-diagnostics.sh|_c
+test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-doctor.sh|ip

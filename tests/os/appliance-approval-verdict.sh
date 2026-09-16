@@ -86,16 +86,17 @@ _control_request_lost_response_self_test() (
     # incremented in the shim would be discarded with that subshell and read 0 however many times
     # it ran — a control that cannot fail.
     polls=$(mktemp)
-    # The POST always dies; the result poll answers, exactly as the guest's disk did.
+    # The POST answers empty while the dashboard restarts; the result poll answers later.
     dashboard_curl() {
         case "$*" in
         *'/api/control/result?id=rid-7'*)
             printf 'x' >>"$polls"
+            [ "$(wc -c <"$polls")" -gt 1 ] || return 52
             printf '{"id":"rid-7","status":"applied"}'
             ;;
         *)
             cat >/dev/null
-            return 52
+            return 0
             ;;
         esac
     }

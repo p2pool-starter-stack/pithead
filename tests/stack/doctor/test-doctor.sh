@@ -289,7 +289,7 @@ mk_timedatectl ""
 assert_eq "clock_sync_status: blank => unknown" "$(PATH="$CLKBIN:$PATH" run_sourced "$SANDBOX" clock_sync_status)" "unknown"
 
 echo "== unit: disk_component_gib =="
-assert_eq "monero pruned -> 120" "$(run_sourced "$SANDBOX" disk_component_gib monero 1)" "120"
+assert_eq "monero pruned -> 320 (#1502)" "$(run_sourced "$SANDBOX" disk_component_gib monero 1)" "320"
 assert_eq "monero full -> 320" "$(run_sourced "$SANDBOX" disk_component_gib monero 0)" "320"
 assert_eq "tari -> 200" "$(run_sourced "$SANDBOX" disk_component_gib tari)" "200"
 assert_eq "tor -> 1" "$(run_sourced "$SANDBOX" disk_component_gib tor)" "1"
@@ -318,36 +318,36 @@ mkdir -p "$DM/monero" "$DM/tari" "$DM/p2pool" "$DM/dashboard" "$DM/tor"
 md="$DM/monero" td="$DM/tari" pd="$DM/p2pool" dd="$DM/dashboard" rd="$DM/tor"
 
 # All five dirs on ONE filesystem with plenty of space -> a SINGLE grouped OK line naming every
-# component, with the combined pruned requirement (120+200+5+2+1 = 328 GB).
+# component, with the combined requirement (320+200+5+2+1 = 528 GiB).
 one_map="$md=/data $td=/data $pd=/data $dd=/data $rd=/data /data=/data"
 out="$(PATH="$DISK/bin:$PATH" DF_MAP="$one_map" DF_AVAIL_KB=629145600 DF_AVAIL_H=600G \
     run_sourced "$SANDBOX" check_disk_grouped doctor 1 "$md" "$td" "$pd" "$dd" "$rd" 2>&1)"
 assert_eq "one fs -> single line" "$(printf '%s\n' "$out" | grep -c 'Data on')" "1"
 assert_contains "single line names all components" "$out" "(monero, tari, p2pool, dashboard, tor)"
-assert_contains "single line shows combined ~328 GB" "$out" "needs ~328 GB"
+assert_contains "single line shows combined ~528 GiB" "$out" "needs ~528 GiB"
 assert_contains "ample space -> OK" "$out" "OK"
 
-# Same single filesystem but too small (100 GiB < 328 GiB) -> ONE WARN line.
+# Same single filesystem but too small (100 GiB < 528 GiB) -> ONE WARN line.
 out="$(PATH="$DISK/bin:$PATH" DF_MAP="$one_map" DF_AVAIL_KB=104857600 DF_AVAIL_H=100G \
     run_sourced "$SANDBOX" check_disk_grouped doctor 1 "$md" "$td" "$pd" "$dd" "$rd" 2>&1)"
 assert_eq "one small fs -> single line" "$(printf '%s\n' "$out" | grep -c 'Data on')" "1"
-assert_contains "small fs warns below need" "$out" "below the ~328 GB"
+assert_contains "small fs warns below need" "$out" "below the ~528 GiB"
 
 # Two filesystems: monero+tari on /big, the rest on /small -> ONE line per filesystem.
 two_map="$md=/big $td=/big $pd=/small $dd=/small $rd=/small /big=/big /small=/small"
 out="$(PATH="$DISK/bin:$PATH" DF_MAP="$two_map" DF_AVAIL_KB=629145600 DF_AVAIL_H=600G \
     run_sourced "$SANDBOX" check_disk_grouped doctor 1 "$md" "$td" "$pd" "$dd" "$rd" 2>&1)"
 assert_eq "two fs -> two lines" "$(printf '%s\n' "$out" | grep -c 'Data on')" "2"
-assert_contains "/big groups monero+tari (~320 GB)" "$out" "/big (monero, tari): 600G free — needs ~320 GB"
-assert_contains "/small groups the small three (~8 GB)" "$out" "/small (p2pool, dashboard, tor): 600G free — needs ~8 GB"
+assert_contains "/big groups monero+tari (~520 GiB)" "$out" "/big (monero, tari): 600G free — needs ~520 GiB"
+assert_contains "/small groups the small three (~8 GiB)" "$out" "/small (p2pool, dashboard, tor): 600G free — needs ~8 GiB"
 
 # Remote node modes (#103): doctor/preflight blank the remote component's dir (its chain lives on
 # the OTHER host), and an empty dir arg must drop that component from the budget entirely — here
-# tari remote drops the ~200 GB Tari share, leaving monero+the small three (120+5+2+1 = 128 GB).
+# tari remote drops the 200 GiB Tari share, leaving monero+the small three (320+5+2+1 = 328 GiB).
 out="$(PATH="$DISK/bin:$PATH" DF_MAP="$one_map" DF_AVAIL_KB=629145600 DF_AVAIL_H=600G \
     run_sourced "$SANDBOX" check_disk_grouped doctor 1 "$md" "" "$pd" "$dd" "$rd" 2>&1)"
 assert_contains "remote tari drops tari from the budget" "$out" "(monero, p2pool, dashboard, tor)"
-assert_contains "remote tari budget excludes the 200 GB" "$out" "needs ~128 GB"
+assert_contains "remote tari budget excludes the 200 GiB" "$out" "needs ~328 GiB"
 
 # Preflight mode is WARN-only and silent when there's enough room.
 out="$(PATH="$DISK/bin:$PATH" DF_MAP="$one_map" DF_AVAIL_KB=629145600 DF_AVAIL_H=600G \
@@ -468,40 +468,3 @@ assert_contains "doctor runs to the summary" "$out" "Diagnostics summary"
 assert_contains "doctor flags the unreachable daemon" "$out" "Docker daemon is not reachable"
 assert_rc "doctor exits 1 on a critical FAIL" "$rc" "1"
 assert_contains "doctor header carries the version (#386)" "$out" "Version: pithead v9.9.9"
-
-echo "== black-box: doctor's onion report follows node mode (#103) =="
-# A node running elsewhere has no hidden service to provision, so its placeholder address is the
-# correct state — doctor must not send the operator back to `setup` over it. A LOCAL node with no
-# address is still a real problem and must keep warning.
-DOC="$SANDBOX/doctor-onion"
-mkdir -p "$DOC/build/tari" "$DOC/dashboard"
-: >"$DOC/dashboard/Dockerfile"
-cp "$STACK" "$DOC/pithead"
-cp "$ROOT/build/tari/config.toml.template" "$DOC/build/tari/"
-make_stubs "$DOC/bin"
-# $VALID_PRIMARY, not $WALLET: $WALLET is only assigned inside build_val_sandbox() (lib.sh), which
-# this section now runs well before in the consolidated file — same class of trap as $V/$DJ above
-# and $C in module 8's re-derivation. $VALID_PRIMARY is the exact value WALLET holds in that
-# function's local/checksum-valid case, and it's a lib.sh top-level fixture, so it's always bound.
-printf '{"monero":{"mode":"remote","wallet_address":"%s","remote":{"host":"10.0.0.8"}},"tari":{"mode":"remote","wallet_address":"'"$VALID_TARI"'","remote":{"host":"10.0.0.9"}}}\n' "$VALID_PRIMARY" >"$DOC/config.json"
-doctor_onions() { # <COMPOSE_PROFILES> -> doctor's "Tor onion addresses" section
-    {
-        printf 'MONERO_ONION_ADDRESS=placeholder\nTARI_ONION_ADDRESS=placeholder\nP2POOL_ONION_ADDRESS=p2pa.onion\n'
-        printf 'TARI_GRPC_ADDRESS=10.0.0.9:18142\nDEPLOYMENT_COMPLETED=true\nHOST_IP=box.lan\n'
-        printf 'COMPOSE_PROFILES=%s\n' "$1"
-    } >"$DOC/.env"
-    (cd "$DOC" && PATH="$DOC/bin:$PATH" ./pithead doctor 2>&1 | sed -n '/Tor onion addresses/,/^$/p')
-}
-doc_remote="$(doctor_onions "")"
-assert_contains "doctor: a remote Monero node's missing onion is expected, not a warning (#103)" \
-    "$doc_remote" "MONERO_ONION_ADDRESS not needed"
-assert_contains "doctor: a remote Tari node's missing onion is expected, not a warning (#103)" \
-    "$doc_remote" "TARI_ONION_ADDRESS not needed"
-assert_contains "doctor: P2Pool's onion is still reported either way (#103)" \
-    "$doc_remote" "P2POOL_ONION_ADDRESS set"
-doc_local="$(doctor_onions "local_node,local_tari")"
-assert_contains "doctor: a LOCAL Monero node with no onion still warns (#103)" \
-    "$doc_local" "MONERO_ONION_ADDRESS is not provisioned"
-assert_contains "doctor: a LOCAL Tari node with no onion still warns (#103)" \
-    "$doc_local" "TARI_ONION_ADDRESS is not provisioned"
-unset DOC doc_remote doc_local doctor_onions

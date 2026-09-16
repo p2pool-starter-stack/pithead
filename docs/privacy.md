@@ -70,19 +70,29 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   plaintext leg p2pool uses.
 - Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections.
 
-**Known limitation, Docker (DIY) channel only** (tracked in
-[pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)): the enforcement
-check above walks `DOCKER-USER` looking for a rule that would shadow our DROP, but it only
-recognizes a foreign rule as shadowing when that rule is unscoped or scoped to exactly the mining
-subnet. A foreign rule scoped to a *wider* network that happens to contain the mining subnet —
-written by something else that shares the chain, such as ufw-docker or a second Compose project —
-is not recognized, so `pithead doctor` can report "Tor-only egress enforced" while that wider rule
-is actually the one deciding. This only matters if something else on the same host also writes
-rules into `DOCKER-USER`; the podman/netavark appliance path does not have this gap. To check for
-it by hand, run `sudo iptables -S DOCKER-USER` and look above the `pithead-tor-egress`-tagged
-`DROP` line: if any `ACCEPT` or `RETURN` rule there is scoped with `-s` to a network wider than
-your mining subnet, that rule can shadow the DROP no matter what `doctor` reports. If you find one,
-narrow or remove it — `pithead` cannot do this for you.
+On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
+that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
+Compose project. It does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
+`RETURN` rule scoped with `-s` to any network that overlaps the mining subnet — a wider supernet
+containing it, or a narrower range inside it, negated (`! -s`) or not — is recognized as shadowing,
+in addition to an unscoped rule or one scoped to exactly the mining subnet
+([pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)). A rule scoped only
+with `-d` (destination) is covered conservatively rather than precisely: the walk doesn't do
+CIDR math on `-d`, so any `-d`-scoped rule is treated the same as an unscoped one and flagged as
+shadowing, whether or not it could actually match our traffic — safe, but not exact.
+`pithead doctor` reports the shadowed case as not-enforced. This only matters if something else on
+the same host also writes rules into `DOCKER-USER`; the podman/netavark appliance path proves
+reachability structurally instead of by rule-scanning, so it does not have this gap.
+
+The check reads each `DOCKER-USER` rule as tokens rather than scanning it as text, honouring the
+quoting `iptables` itself uses, so `-s` counts only as a flag of its own and a foreign rule's own
+free-text values — a `--comment`, an `-m string --string`, anything quoted — are values that can
+never be read as flags, whatever they spell. Three earlier substring-scanning versions of this
+check could each be talked out of a correct verdict by a crafted match value, the last of them
+reported as a live fail-open ([pithead#2129](https://github.com/p2pool-starter-stack/pithead/issues/2129));
+the tokeniser replaces that shape rather than patching it. There is no fallback path: a rule the
+tokeniser cannot read unambiguously — an unterminated quote, a `-s` whose value is not an address,
+two sources on one rule — is reported as shadowing, never as harmless.
 
 ---
 

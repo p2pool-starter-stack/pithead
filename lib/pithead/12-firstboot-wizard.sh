@@ -107,10 +107,10 @@ firstboot_wizard() {
     # the pre-filled combined page instead (below).
     if ! installer_mode_available; then
         # The carried restore first: it holds MORE than a config (keys, database), and once it
-        # lands the config pre-seed guard below sees config.json and stands down.
-        if [ ! -f "$PWD/config.json" ]; then
-            consume_preseed_restore || true
-        fi
+        # lands the config pre-seed guard below sees config.json and stands down. Unconditional —
+        # gating on config.json's own absence let a `wipe=keep` target's PRIOR config.json skip
+        # the carried restore entirely (#2195); consume_preseed_restore itself no-ops (rc 2 idle).
+        consume_preseed_restore || true
         if [ ! -f "$PWD/config.json" ] && consume_preseed_config "$PWD/config.json"; then
             # Spent: config.json lives on /data now, and a plaintext wallet + password must not
             # sit on this machine's unencrypted ESP forever. Only on an INSTALLED machine —
@@ -388,7 +388,7 @@ firstboot_wizard() {
                 if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
                     printf '%s' "$post_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
-                    rm -f "$PWD/config.json" "$spool/install-request"
+                    rm -f "$PWD/config.json" "$PWD/config.json.bak-1x" "$spool/install-request"
                     warn "The configuration this machine assembled did not pass validation: $post_err"
                     sleep 2
                     continue
