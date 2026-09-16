@@ -84,34 +84,24 @@ The stack's defaults:
   inside the window, a compromised container that can write the spool can time the reboot
   itself — the TTL bounds that exposure rather than removing it. Enabling the
   channel without a dashboard password is a validation error, on a published onion it additionally
-  requires Tor client authorization, and every mutation is audited host-side. Commits are default-denied against an explicit allowlist. Low-risk
-  operational settings commit directly; a small set of operationally-disruptive ones — data-directory
-  moves, the stratum port, enabling clearnet initial sync, enabling pruning, and the remote Monero
-  and Tari **node endpoints** (#1888) — commit only behind a typed confirmation in the dashboard,
-  and only in that direction. A node-endpoint change carries a second, non-cosmetic gate: the host
+  requires Tor client authorization, and every mutation is audited host-side. Low-risk operational
+  settings commit directly; every other reference setting commits behind a typed confirmation in
+  the dashboard. Dashboard authentication is the access-control perimeter. Typed `APPLY` and payout
+  suffixes protect against mistakes, not a compromised dashboard process, which can write both its
+  request and its confirmation. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. The endpoints are address identity, not secrets — the remote node's RPC
-  username and password stay in the never-committable set below. A dashboard-confirmed
-  data-directory move is further held to an **allowlist** (#728): the new location must sit under the
+  a node that is not there. A dashboard-confirmed data-directory move is further held to an
+  **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI
   only. The host CLI keeps its wider blocklist check — a shell operator already has filesystem-wide
-  reach. Everything else is refused in
-  every direction, as is anything the change preview flags destructive (including the heavy direction
-  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The security
-  perimeter — wallets and view keys, dashboard auth and onion exposure, the control channel itself,
-  the Tor egress firewall, binds, and every credential —
-  is never dashboard-committable, with or without the typed confirmation. A key added in the
-  future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
-  edits must be applied from the host CLI, or on an appliance from a configuration stick.
-  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
-  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
-  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
-  confirmation rather than a second identity — the same self-approval shape this perimeter exists
-  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
-  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
-  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
-  second identity that a future approval tier could rejoin once one exists.
+  reach. An authenticated dashboard session can repoint payouts, credentials, onion exposure, the
+  control channel, and the Tor egress firewall. The operator owns that exposure, including password
+  strength and how the dashboard is exposed over Tor.
+  **The per-rig worker descriptors** (`workers.list[]`) are not reference-form leaves and remain
+  host-CLI-only. The configuration-stick-only paths remain `dashboard.auth.password` and the
+  `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms; `ssh.*` is
+  absent from release images.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the

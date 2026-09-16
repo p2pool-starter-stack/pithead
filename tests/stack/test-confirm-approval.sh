@@ -212,25 +212,28 @@ assert_eq "confirmed prune disable landed" "$(jq -r '.monero.prune' "$C/config.j
 echo "== black-box: a payout change previews full addresses and binds the typed suffix (#1959) =="
 NEW_WALLET="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 NEW_WALLET_SUFFIX="${NEW_WALLET: -8}"
+BAD_WALLET="${NEW_WALLET%?}B"
+jq -n --arg new "$BAD_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
+    monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
+    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+    dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "invalid payout address is refused during preview" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "invalid payout preview names its checksum" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "checksum"
 jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-# These three rows read "marks the sensitive class" and previewed both wallet values in full,
-# which is exactly the edit-then-reject the gate then performed: a payout address is in no
-# committable tier, so the preview now REFUSES it and names the key (2026-09-13 perimeter audit
-# round 2). Preview and gate reach the same verdict, which is what #613 asks of them.
-assert_eq "payout preview is refused, not offered for approval" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "payout preview refusal names the key" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_WALLET_ADDRESS"
-assert_eq "payout preview leaks no wallet value into the result" "$(jq -r '.preview_values // "none"' "$RESULTS/$UUID3.json")" "none"
+assert_eq "payout preview is offered for confirmation" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "previewed"
+assert_eq "payout preview requires typed confirmation" "$(jq -r '.destructive' "$RESULTS/$UUID3.json")" "true"
+assert_contains "payout preview shows the full old address" "$(jq -r '.preview_values[].old' "$RESULTS/$UUID3.json")" "$WALLET"
+assert_contains "payout preview shows the full new address" "$(jq -r '.preview_values[].new' "$RESULTS/$UUID3.json")" "$NEW_WALLET"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:"wrong"}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "wrong payout suffix is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "wrong payout suffix changed no funds destination" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
-# ...and a CORRECT suffix does not apply it either (2026-09-13 perimeter audit). This row used to read "matching payout
-# suffix applies", and its passing was the shape of the defect: control_validate_approval compared a
-# suffix derived from the STAGED config against one in the envelope, and the container wrote both.
+# A fresh preview plus the exact suffix and APPLY token commits the ruled dashboard change.
 jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -238,14 +241,11 @@ jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:
 run_pending >/dev/null
 jq -n --arg id "$UUID3" --arg suffix "$NEW_WALLET_SUFFIX" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$suffix}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "a correct self-written payout suffix does NOT apply the swap" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "the payout refusal names the key, not the suffix" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_WALLET_ADDRESS"
-assert_eq "the operator's payout destination is unchanged in config.json" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
-assert_contains "the operator's payout destination is unchanged in .env" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
+assert_eq "a correct payout suffix applies the swap" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "the confirmed payout destination lands in config.json" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$NEW_WALLET"
+assert_contains "the confirmed payout destination lands in .env" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$NEW_WALLET"
 
-# The suffix comparison is now reachable only as a unit: no committable tier renders
-# MONERO_/TARI_WALLET_ADDRESS, so the gate refuses before consulting it. Kept covered here so the
-# helper does not rot while it waits for a tier with a real second identity behind it.
+# Keep the suffix helper's exact-match contract covered independently too.
 jq --arg w "$NEW_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/suffix-staged.json"
 assert_rc "control_validate_approval accepts the exact final characters" \
     "$(

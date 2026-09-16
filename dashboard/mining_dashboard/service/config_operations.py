@@ -76,6 +76,18 @@ def approval_paths(reference, cfg, free_paths, confirm_paths):
     )
 
 
+def confirmed_paths(reference, free_paths, confirm_paths, approval_paths):
+    """Route every remaining schema leaf through typed confirmation (#1959)."""
+    classified = set(free_paths) | set(confirm_paths) | set(approval_paths)
+    return sorted(
+        path
+        for path in leaf_paths(reference)
+        if path not in classified
+        and path not in NEVER_APPROVE_PATHS
+        and not path.startswith("ssh.")
+    )
+
+
 def missing_default_paths(reference, host, getter):
     """Return schema leaves omitted by the sparse host config."""
     return [

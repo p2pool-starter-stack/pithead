@@ -1213,11 +1213,9 @@ appliance there is no shell, so where the DIY stack says to run `./pithead apply
 the log view, or the setup page while the machine is still unprovisioned.
 
 Where the appliance offers nothing that would fix it, the report says so and stops, rather than
-naming a command you cannot run or a page that is no longer there. Three cases are worth knowing,
+naming a command you cannot run or a page that is no longer there. Two cases are worth knowing,
 because each is a real dead end rather than an oversight:
 
-- **A payout address is not editable from the dashboard at all**, so the report tells you that
-  correcting it needs console access.
 - **The setup page closes permanently once the machine is provisioned.** Setup that did not finish
   can only be reported after that point, so the report does not send you back to a page that is
   gone.

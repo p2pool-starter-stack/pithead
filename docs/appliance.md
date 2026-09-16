@@ -302,19 +302,14 @@ running *from* the stick, so the stick cannot come out while it runs. (If you pu
 early, the machine stops responding — hold the power button, leave the stick out, and switch
 it on. An install that had already reported success is safe on the disk.)
 
-Most of the configuration stays editable from the dashboard afterwards — see
-[configuration](configuration.md) for everything you can tune. Be aware of one honest limit
-in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
-to a
-FAT stick as `pithead-config.json`, insert it and reboot — see
-[Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set anything,
-including what no remote channel is allowed to touch.
+Reference settings stay editable from the dashboard afterwards — see
+[configuration](configuration.md). Security-sensitive changes, including payout destinations,
+require the signed-in operator to review the full values and complete the confirmation step.
+Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
+mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
+toggles remain configuration-stick-only. Per-rig worker descriptors also use the stick because
+they are not fields in the reference form. See
+[Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.

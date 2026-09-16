@@ -16,18 +16,11 @@
 # No string from the container is ever executed or interpolated into a command; the candidate
 # config crosses the boundary only as a FILE handed to `apply` via PITHEAD_CONFIG_FILE.
 
-# Approval gate for a commit (#33). The client-side typed-APPLY modal is NOT a security control:
-# a compromised/XSS'd container writes the request spool directly and never renders that modal, so
-# the only trustworthy gate is here, host-side. FAIL CLOSED.
-#
-#   TRUE DEFAULT-DENY: a commit that changes ANY env key not named in one of the THREE lists below
-#   — CONTROL_DASHBOARD_EDITABLE_KEYS, CONTROL_DASHBOARD_CONFIRM_KEYS,
-#   CONTROL_DASHBOARD_APPROVAL_KEYS — is REFUSED, in EITHER direction (enable, change, or DISABLE).
-#   An allowlist, not a blocklist: a key added to render_env tomorrow is un-committable from the
-#   dashboard until someone deliberately lists it. Deliberately decoupled from describe_change's
-#   cosmetic INFO/DEST flag: that flag labels only the disruptive direction (enabling auth is DEST,
-#   disabling is INFO), so a compromised container could otherwise switch security controls OFF
-#   with zero DEST rows. The three lists are the whole committable universe and nothing else.
+# Approval gate for a commit (#33). Dashboard authentication is the access-control perimeter.
+# The client-side APPLY and payout-suffix prompts are typo protection: a compromised dashboard
+# process writes the request spool and can supply them itself. Named low-risk keys use the tiers
+# below; every other schema-backed env change is promoted to confirmation by the host preview and
+# gate. Physical-presence paths remain refused before that classification.
 #
 # WHY THE THIRD LIST IS NAMED RATHER THAN "EVERYTHING ELSE" (2026-09-13 perimeter audit). #1978 replaced this refusal
 # with approval_required=1 so that every reference-configuration leaf had SOME route; at the time
@@ -191,12 +184,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # Space-separated exact env-key names.
 CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
 
-# The committable universe as one alternation: the three lists above and nothing else. Defined
-# ONCE because the commit gate and the preview MUST classify identically — while they did not
-# (2026-09-13 perimeter audit), the preview told the operator a change was approval-tier that the gate then refused
-# outright, which is the edit-then-reject experience #613 exists to remove. Leading/trailing
-# separators are stripped: an EMPTY list would otherwise leave a bare alternation branch, and
-# `grep -vxE 'A|B|'` does not count a blank KEY column as a violation.
+# One alternation for the named tiers; preview and gate treat every non-match as confirmed.
 control_committable_re() {
     printf '%s %s %s' "$CONTROL_DASHBOARD_EDITABLE_KEYS" "$CONTROL_DASHBOARD_CONFIRM_KEYS" \
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'

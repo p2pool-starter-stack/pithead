@@ -10,7 +10,7 @@ _control_host_remedy() {
 
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
-    local approval_required=0 worker_sensitive=0
+    local approval_required=0 worker_sensitive=0 needs_confirm=0
     # Fail closed if we cannot re-derive the change set (the staged config was validated at
     # preview, so a dry-run failure here means something changed — refuse).
     if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>/dev/null); then
@@ -83,10 +83,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change adds config keys not in the schema (%s) — refusing to commit. %s' "$unknown" "$(_control_host_remedy)"
         return 1
     fi
-    # Default-deny across ALL THREE committable tiers (control_committable_re, 42-), whatever a row's
-    # flag says: a key in none of them fails closed HERE with a refusal, not a demand for an envelope
-    # the container writes itself. Keyed off a violation COUNT so a blank row still refuses; past it,
-    # a CONFIRM/APPROVAL key still clears DEST, the typed APPLY and the envelope.
+    # Every unlisted schema-backed env change joins the typed confirmation tier (#1959).
     local committable_re approval_re bad hit
     committable_re=$(control_committable_re)
     bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
@@ -95,11 +92,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         return 1
     fi
     if [ "${bad:-0}" -gt 0 ]; then
-        hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
-        printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
-        return 1
+        approval_required=1
+        needs_confirm=1
     fi
-    # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
     # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), so approval_required (the
@@ -163,7 +158,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
     # control (the perimeter above is the boundary). control_commit records a confirmed change
     # distinctly in the audit log via the marker file touched here.
-    if printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t'; then
+    printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' && needs_confirm=1
+    if [ "$needs_confirm" -eq 1 ]; then
         if [ "$confirm" != "APPLY" ]; then
             hit=$(printf '%s\n' "$porcelain" | grep -m1 -E $'^CONFIRM\t' | cut -f3-)
             printf 'this change is disruptive (%s) — type APPLY in the dashboard to confirm.' "${hit:-disruptive change}"
@@ -260,22 +256,19 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
-        # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
-        # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.
+        # Unlisted scalar reference leaves confirm; worker descriptor arrays remain refused.
         local approval_required=false committable_re approval_re bad hit worker_changed=0
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
             worker_changed=1
         fi
-        if [ "${bad:-0}" -gt 0 ] || [ "$worker_changed" -eq 1 ]; then
-            if [ "$worker_changed" -eq 1 ]; then
-                hit='workers.list (a worker descriptor'"'"'s host and API token is a credential change)'
-            else
-                hit=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
-                hit="${hit:-unparseable change row}"
-            fi
+        if control_never_path_changed "$staged"; then
+            control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"this change includes a physical-presence-only setting; use a configuration stick",ts:(now|floor)}')"
+            rm -f "$errf"; control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"; return 0
+        fi
+        if [ "$worker_changed" -eq 1 ]; then
+            hit='workers.list (a worker descriptor'"'"'s host and API token is a credential change)'
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "this change alters a security-sensitive setting ($hit) that is not committable from the dashboard. $(_control_host_remedy)" '{status:"rejected",error:$e,ts:(now|floor)}')"
             # The staged intent STAYS (unlike a validation failure) so a commit attempt still
             # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
@@ -283,9 +276,16 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
             return 0
         fi
+        if [ "${bad:-0}" -gt 0 ]; then
+            approval_required=true
+            out=$(printf '%s\n' "$out" | awk -F'\t' -v re="$committable_re" '
+                BEGIN {OFS=FS}
+                NF && $2 !~ ("^(" re ")$") {$1="CONFIRM"}
+                {print}')
+        fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
         if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
-            printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
+            printf '%s\n' "$out" | grep -qE $'^(CONFIRM|DEST)\t'; then
             approval_required=true
         fi
         result=$(printf '%s\n' "$out" | jq -R -s --argjson approval_required "$approval_required" \

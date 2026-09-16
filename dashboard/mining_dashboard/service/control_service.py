@@ -197,10 +197,8 @@ def _editable_paths():
 
 # Env-var -> config-path map for the CONFIRM-gated set (#719), mirroring pithead's
 # CONTROL_DASHBOARD_CONFIRM_KEYS the same way EDITABLE_ENV_KEY_PATHS mirrors the editable allowlist
-# (drift-guarded by test_confirm_keys_have_no_intra_repo_drift). These are operationally-disruptive
-# but NOT the security perimeter: the dashboard MAY commit them, but only behind a type-to-confirm.
-# Surfaced to the browser as ``_confirm_keys`` so the Configuration view renders them editable with
-# a "confirm to proceed" affordance instead of greying them out as host-only. The gate is still the
+# Every otherwise-unclassified reference leaf is dashboard-committable behind confirmation. The
+# gate is still the
 # authority: describe_change decides per-DIRECTION whether a change is CONFIRM (a data-dir move, a
 # stratum-port repoint, a clearnet-sync ENABLE, a prune ENABLE) or stays a host-only DEST (prune
 # DISABLE, a TOR data-dir move), so a field here can still be refused at commit in its heavy
@@ -219,17 +217,14 @@ CONFIRM_ENV_KEY_PATHS = {
     # kept proxy.donate_level and the two payout restore points host-only (donate traffic bypasses
     # the Tor socks5; a future-dated restore point defeats payout-confirmation tamper evidence).
     "MONERO_OUT_PEERS": ("monero.out_peers",),
-    # Node endpoints (#1888): confirm-gated, not free-commit, and paired with the approval gate's
-    # host-side reachability probe. 42-control-policy-and-host-checks.sh carries the reasoning.
+    # Node endpoints (#1888) are confirm-gated and host-probed.
     "MONERO_NODE_HOST": ("monero.remote.host",),
     "MONERO_RPC_PORT": ("monero.remote.rpc_port",),
     "MONERO_ZMQ_PORT": ("monero.remote.zmq_port",),
     "TARI_GRPC_ADDRESS": ("tari.remote.host", "tari.remote.grpc_port"),
     # Whether this host merge-mines at all (#1929), and COMPOSE_PROFILES the PROFILE HALF of the
-    # same switch — without it, default-deny counts an unlisted key and drags every mode switch
-    # back to the Telegram tier. Mapped to tari.mode ALONE, narrower than its real derivation on
-    # purpose: monero.mode and the view keys also move it and must NOT read as confirm-tier; their
-    # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
+    # same switch. Mapped to tari.mode ALONE, narrower than its real derivation on
+    # purpose: monero.mode and the view keys also move it and keep their own classification.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
 }
@@ -298,10 +293,13 @@ def read_config():
     mask_secrets(cfg)
     cfg["_core_keys"] = _load_core_keys()
     cfg["_editable_keys"] = _editable_paths()
-    cfg["_confirm_keys"] = _confirm_paths(cfg)
-    cfg["_approval_keys"] = config_operations.approval_paths(
-        reference, cfg, _editable_paths(), _confirm_paths(cfg)
+    explicit_confirm = _confirm_paths(cfg)
+    approval = config_operations.approval_paths(reference, cfg, _editable_paths(), explicit_confirm)
+    cfg["_confirm_keys"] = config_operations.confirmed_paths(
+        reference, _editable_paths(), explicit_confirm, approval
     )
+    cfg["_confirm_keys"] = sorted(set(explicit_confirm + cfg["_confirm_keys"]))
+    cfg["_approval_keys"] = approval
     cfg["_default_keys"] = config_operations.missing_default_paths(reference, host, _get)
     cfg["_last_apply"] = config_operations.last_apply_state(audit_service.recent_changes())
     return cfg

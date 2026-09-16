@@ -1,30 +1,9 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# The three-tier commit perimeter (2026-09-13 perimeter audit): what a SELF-WRITTEN approval envelope cannot reach.
-#
-# WHY THIS FILE EXISTS, AND WHY IT IS NOT IN test-control-add-only-ssrf.sh. That file's whole
-# "TRUE default-deny" battery sent TOKEN-LESS commits, so each refusal proved only that the gate
-# stopped at a MISSING envelope — not that the perimeter held. It did not: a commit carrying a
-# self-written envelope applied a Monero payout-wallet swap, a p2pool clearnet flip, a
-# tor_egress_firewall disable and a control-channel disable, measured on develop @ acb3d61f. The
-# envelope is not a second identity (#2076 removed that; 42-control-approval-helpers.sh says so in
-# its own header): the dashboard container writes the request spool, so it picks its own `actor`,
-# types its own "APPLY", and computes the payout suffix from the very address it is proposing —
-# control_validate_approval then compares one attacker-supplied value against another.
-#
-# Every case below therefore sends the envelope. The file is separate because
-# test-control-add-only-ssrf.sh sits at its file-budget ceiling and this battery does not fit in
-# it — the same reason that file was itself split out (see its header, #1105 Phase 0).
-#
-# POSITION-LOCKED: run.sh sources this immediately after test-control-add-only-ssrf.sh, and it
-# reads gate_try() and $UUID5 from there — both deliberately outlive that source, as its header
-# says. It re-derives the results path and seeds its own baseline from the host CLI, so it borrows
-# no ambient fixture beyond those two names.
-#
-# MUTATION PROOF: widening control_committable_re (42-) to re-admit any perimeter key, or turning
-# the `bad` refusal in control_approval_gate back into approval_required=1, reddens every
-# "is refused with a self-written envelope" row here while leaving the token-less battery next
-# door green — which is precisely the blind spot this file was written to close.
+# Confirmed security-sensitive configuration commits (#1959).
+# Each moved key is refused without a confirmation and applies with APPLY plus the approval
+# envelope. The envelope is typo protection, not a second identity. This fragment follows
+# test-control-add-only-ssrf.sh because it reuses gate_try() and $UUID5 from that domain.
 
 # gate_try() writes the request spool itself, from the $REQS it reads in the file that defines it;
 # only the results path is read here.
@@ -35,7 +14,7 @@ SELF_ENVELOPE='{"payout_suffixes":{}}'
 # A second checksum-valid mainnet primary (the Monero project's legacy donation address).
 ATTACKER_WALLET="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 
-echo "== black-box: a self-written approval envelope does not cross the perimeter (2026-09-13 perimeter audit) =="
+echo "== black-box: perimeter settings require confirmation and then apply (#1959) =="
 # Baseline from the host CLI, never the gate, so what the cases below protect is real.
 jq -n --arg w "$WALLET" \
     '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
@@ -48,34 +27,39 @@ assert_contains "perimeter baseline applied from the host CLI" "$(cat "$C/.env")
 # The payout destination. The suffix is CORRECT on purpose: a wrong one would prove only that the
 # typo check works, which was never the question. This is the case that used to APPLY.
 jq --arg w "$ATTACKER_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "payout swap is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout_suffixes:{monero:$s}}')"
-assert_eq "payout swap is refused with a CORRECT self-written suffix" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "the payout refusal names the key, not the suffix" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "MONERO_WALLET_ADDRESS"
-assert_eq "config.json keeps the operator's payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
-assert_contains ".env keeps the operator's payout address" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
+assert_eq "confirmed payout swap applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$ATTACKER_WALLET"
+assert_contains ".env carries the confirmed payout address" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$ATTACKER_WALLET"
 
 # Switching the control channel off is how an attacker locks the operator out of the remedy.
 jq '.dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "control-channel disable is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "control-channel disable is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_eq "config.json keeps the control channel enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
+assert_eq "confirmed control-channel disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 
 # Deanonymisation and egress: both applied before the 2026-09-13 perimeter audit, and both are asserted refused token-less
 # in the battery next door — which is exactly how that battery stayed green against this.
 jq '.p2pool.clearnet=true' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "p2pool clearnet flip is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "p2pool clearnet flip is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_eq "config.json keeps p2pool on Tor" "$(jq -r '.p2pool.clearnet // false' "$C/config.json")" "false"
+assert_eq "confirmed p2pool clearnet flip applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "tor-egress-firewall disable is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "tor-egress-firewall disable is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_eq "config.json keeps the tor egress firewall unset (defaults on)" "$(jq -r '.network.tor_egress_firewall // "unset"' "$C/config.json")" "unset"
+assert_eq "confirmed tor-egress-firewall disable applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 
 # A view key reveals every incoming payout amount and time — a secret, never a tier.
 jq '.monero.view_key="deadbeef"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "monero view-key set is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "monero view-key set is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_eq "config.json gains no view key" "$(jq -r '.monero.view_key // "unset"' "$C/config.json")" "unset"
+assert_eq "confirmed monero view-key set applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 
 # POSITIVE CONTROL. The tier was narrowed, not emptied: without this row every assertion above
 # would also pass if the envelope path had been broken outright rather than scoped, and a gate
