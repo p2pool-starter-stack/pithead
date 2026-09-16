@@ -60,7 +60,7 @@ apply_dry_run() {
 render_derived() {
     require_env
     ensure_onion_password
-    PITHEAD_CONFIG_SET=1 parse_and_validate_config
+    parse_and_validate_config
     load_preserved_state
     ensure_directories
     resolve_dashboard_host # non-interactive

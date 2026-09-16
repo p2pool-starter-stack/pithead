@@ -94,6 +94,7 @@ vout=$(
     PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" parse_and_validate_config 2>&1
 )
 assert_eq "carried release SSH config does not block boot validation" "$vout" ""
+assert_eq "boot render treats carried config as legacy" "$(sed -n '/^render_derived()/,/^}/p' "$STACK" | grep -c PITHEAD_CONFIG_SET)" "0"
 printf release >"$VSB/variant"
 vout=$(
     cd "$VSB" || exit
@@ -159,7 +160,6 @@ assert_eq "an existing certificate is reused, never replaced" "$fp2" "$fp1"
 unset PITHEAD_TLS_DIR
 rm -rf "$TLSSB"
 unset TLSSB fp1 fp2
-
 echo "== unit: the certificate SAN list and Caddy's site list agree, for a given identity (#1132) =="
 # Three named disagreements this closes, all one root cause (two independent copies of the same
 # expansion): (1) the cert always used `hostname` while site_hosts used dashboard.host when
