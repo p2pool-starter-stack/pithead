@@ -613,7 +613,16 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
-  `config.json` hand-edit shows up in the masked prefill (with the token still masked).
+  `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
+  half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
+  container never holds the real `ACCESS_TOKEN`, only a read-only credential the host derives from
+  it (`render_worker_read_tokens`, `rigforge:api-read:v1`) and RigForge verifies the same way
+  (`derive_read_token`, `util/api-server.py`) — both sides refuse to derive one from a control
+  token under 32 printable ASCII characters ([#2313](https://github.com/p2pool-starter-stack/pithead/issues/2313)).
+  A rig configured with a shorter `ACCESS_TOKEN` never gets a usable enriched feed while adopted —
+  this leg (and the `max_temp_c` ceiling read that feeds it) times out or self-skips rather than
+  passing; `render_masked_config` now warns naming the worker when it drops a too-weak token, and
+  the dashboard container logs the same reason (rate-limited to once per five minutes per host).
 - Auto-rollback ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517), rigforge#236):
   a change the rig rolls back is recorded as `rolled_back` in the worker-apply result and history.
   An absent `IT_RIG_ROLLBACK_CHANGES` is a `[missing]` row with the required input named.
