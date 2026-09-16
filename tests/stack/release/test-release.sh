@@ -138,11 +138,13 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     set --
     source "$REL" 2>/dev/null
     set +eu
+    REPO_ROOT="$ROOT"
     WORKDIR="$SANDBOX/bundle"
     mkdir -p "$WORKDIR"
     TAG=v9.9.9
     REGISTRY=ghcr.io/test
     DRY_RUN=0
+    PITHEAD_BUILD_ROOT="$SANDBOX/not-the-repo"
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
@@ -151,6 +153,7 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     cp "$WORKDIR/pithead/docker-compose.yml" "$SANDBOX/bundle-compose.yml" 2>/dev/null || true
     tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
 ) >"$SANDBOX/bundle.list" 2>/dev/null
+assert_rc "bundle rebuild ignores a caller PITHEAD_BUILD_ROOT" "$?" "0"
 grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle ships config.minimal.json (basic quick-start config)" || bad "bundle ships config.minimal.json" "absent from the bundle"
 # The upgrade gate ties a candidate archive to a commit through this file, and refuses the archive
 # without it. A bundle that ships without one is only discovered at gate time, on a reserved box.
@@ -166,6 +169,7 @@ bundle_mismatch="$({
     # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
+    REPO_ROOT="$ROOT"
     WORKDIR="$SANDBOX/bundle-mismatch"
     mkdir -p "$WORKDIR"
     TAG=v9.9.9
