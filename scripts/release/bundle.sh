@@ -107,11 +107,11 @@ make_bundle() {
     # Unpacks to a versionless "pithead/" dir. Ships only the operator docs needed to run the stack.
     local out="$1" d="$WORKDIR/pithead" generated
     generated="$(mktemp .pithead.bundle.XXXXXX)" || die "make_bundle: could not create a pithead rebuild."
-    PITHEAD_BUILD_ROOT="$REPO_ROOT" PITHEAD_BUILD_ARTIFACT="$generated" bash scripts/build-pithead.sh >/dev/null || {
+    PITHEAD_BUILD_ROOT="$REPO_ROOT" PITHEAD_BUILD_ARTIFACT="$generated" bash "$REPO_ROOT/scripts/build-pithead.sh" >/dev/null || {
         rm -f "$generated"
         die "make_bundle: could not rebuild pithead."
     }
-    cmp -s "$generated" pithead || {
+    cmp -s "$generated" "$REPO_ROOT/pithead" || {
         rm -f "$generated"
         die "make_bundle: generated pithead differs from the artifact to ship."
     }
