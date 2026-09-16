@@ -6,9 +6,9 @@
 //
 // Two tiers here on purpose. `tariAnswer` is pure and carries the migration rule, so it is proved
 // alone. Everything else is proved through WizardApp's REAL setup form rather than through the
-// components in isolation: the defect this replaces was a binding defect — a select that showed
+// components in isolation: the defect this replaces was a binding defect — a control that showed
 // one answer while the config held another — and a component rendered with hand-made props cannot
-// see it. The form's own select is found by its LABEL and its handler is fired, so the assertion
+// see it. The form's own group is found by its LABEL and its handler is fired, so the assertion
 // covers the path an operator's click actually takes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -97,9 +97,8 @@ function walk(vnode, out = []) {
   return walk(props.children, out);
 }
 
-// The <select> inside the Field whose label reads `label`. Binding the lookup to the label rather
-// than to document order is what makes each assertion below a claim about the question an
-// operator reads, and keeps it from silently following the wrong control after a reorder.
+// Binding the lookup to the visible label rather than document order keeps these assertions on
+// the question the operator reads after a reorder.
 const controlFor = (kind) => (tree, label) => {
   for (const node of walk(tree)) {
     if (node.type !== "label" || !renderToString(node).includes(label)) continue;
@@ -108,8 +107,16 @@ const controlFor = (kind) => (tree, label) => {
   }
   return null;
 };
-const selectFor = controlFor("select");
 const inputFor = controlFor("input");
+const radiosFor = (tree, label) => {
+  const group = walk(tree).find(
+    (node) => node.type === "fieldset" && renderToString(node).includes(label),
+  );
+  return group ? walk(group).filter((node) => node.type === "input" && node.props.type === "radio") : [];
+};
+const radioFor = (tree, label, value) =>
+  radiosFor(tree, label).find((node) => node.props.value === value);
+const selectedRadio = (tree, label) => radiosFor(tree, label).find((node) => node.props.checked);
 
 const TARI_Q = "Merge-mine Tari?";
 const XVB_Q = "Join the XMRvsBeast raffle?";
@@ -123,34 +130,58 @@ const setupOn = (tariMode) => {
 
 test("the wizard asks whether to merge-mine at all, with No as the first answer (#1855)", () => {
   const { tree } = setupOn("off");
-  const select = selectFor(tree, TARI_Q);
-  assert.ok(select, "the form asks the merge-mining question");
-  const options = walk(select)
-    .filter((n) => n.type === "option")
-    .map((n) => n.props.value);
+  const radios = radiosFor(tree, TARI_Q);
+  assert.ok(radios.length, "the form asks the merge-mining question");
+  const options = radios.map((n) => n.props.value);
   assert.deepEqual(options, ["off", "local", "remote"]);
-  // A select truncates on the right and the first option is what an operator who reads nothing
-  // gets. Both have to say No.
-  assert.match(renderToString(select), /No — mine Monero only/);
+  assert.match(renderToString(setupOn("off").tree), /<strong>No<\/strong>.*Mine Monero only/s);
 });
 
 test("a machine that declined merge-mining reads back as declined, not as local (#1855)", () => {
   // The defect this replaces: the select was `remoteTari ? "remote" : "local"`, which had no way
   // to say off. A config holding "off" rendered as "Run the bundled node on this machine", so the
   // wizard misreported the machine to its own operator, and one touch of that control wrote a yes.
-  assert.equal(selectFor(setupOn("off").tree, TARI_Q).props.value, "off");
-  assert.equal(selectFor(setupOn("local").tree, TARI_Q).props.value, "local");
-  assert.equal(selectFor(setupOn("remote").tree, TARI_Q).props.value, "remote");
+  assert.equal(selectedRadio(setupOn("off").tree, TARI_Q).props.value, "off");
+  assert.equal(selectedRadio(setupOn("local").tree, TARI_Q).props.value, "local");
+  assert.equal(selectedRadio(setupOn("remote").tree, TARI_Q).props.value, "remote");
 });
 
 test("answering the merge-mining question writes tari.mode and nothing else (#1855)", () => {
   for (const answer of ["off", "local", "remote"]) {
     const { inst, tree } = setupOn("local");
-    selectFor(tree, TARI_Q).props.onChange({ target: { value: answer } });
+    radioFor(tree, TARI_Q, answer).props.onChange({ target: { value: answer } });
     assert.equal(inst.state.cfg.tari.mode, answer, `answering ${answer}`);
     // The JSON pane underneath is what gets submitted, so a field edit that does not reach it
     // is an answer the machine never sees.
     assert.equal(JSON.parse(inst.state.jsonText).tari.mode, answer, `${answer} reaches the JSON`);
+  }
+});
+
+test("an invalid Monero address turns red only after its field is edited", () => {
+  const cfg = clone(REF);
+  cfg.monero.wallet_address = "not-an-address";
+  const inst = form(cfg);
+  let out = renderToString(inst.renderSetup());
+  assert.doesNotMatch(out, /A primary Monero address starts with 4/);
+  inputFor(inst.renderSetup(), "Monero payout address").props.onInput({
+    target: { value: "still-not-an-address" },
+  });
+  out = renderToString(inst.renderSetup());
+  assert.match(out, /<p class="c-bad">A primary Monero address starts with 4\.<\/p>/);
+});
+
+test("every two-to-four-answer setup question renders as full-text radios", () => {
+  const tree = setupOn("local").tree;
+  const groups = walk(tree).filter((node) => node.type === "fieldset");
+  assert.equal(groups.length, 9);
+  for (const group of groups) {
+    const radios = walk(group).filter(
+      (node) => node.type === "input" && node.props.type === "radio",
+    );
+    assert.ok(radios.length >= 2 && radios.length <= 4, renderToString(group));
+    assert.equal(radios.filter((radio) => radio.props.checked).length, 1);
+    assert.equal(walk(group).filter((node) => node.type === "select").length, 0);
+    assert.equal(walk(group).filter((node) => node.type === "label").length, radios.length);
   }
 });
 
@@ -203,7 +234,7 @@ test("the disk cost of saying yes is stated before the answer, not after it (#18
 });
 
 test("the advanced chain-size choice states the current Monero disk budget (#1502)", () => {
-  assert.match(renderToString(setupOn("off").tree), /Pruned — 320 GiB budget/);
+  assert.match(renderToString(setupOn("off").tree), /<strong>Pruned<\/strong>.*320 GiB budget/s);
 });
 
 test("the chain-size advice stops citing a Tari node on a machine that has none (#1855)", () => {
@@ -223,14 +254,9 @@ test("the chain-size advice stops citing a Tari node on a machine that has none 
 
 test("the wizard offers the raffle as a first-boot switch (#1848)", () => {
   const { tree } = setupOn("off");
-  const select = selectFor(tree, XVB_Q);
-  assert.ok(select, "the form asks the raffle question");
-  assert.deepEqual(
-    walk(select)
-      .filter((n) => n.type === "option")
-      .map((n) => n.props.value),
-    ["true", "false"],
-  );
+  const radios = radiosFor(tree, XVB_Q);
+  assert.ok(radios.length, "the form asks the raffle question");
+  assert.deepEqual(radios.map((n) => n.props.value), ["true", "false"]);
   // The docs' own sentence, so the wizard cannot drift from them or invent a figure.
   assert.match(renderToString(tree), /earns nothing extra/);
 });
@@ -238,21 +264,21 @@ test("the wizard offers the raffle as a first-boot switch (#1848)", () => {
 test("the raffle switch defaults to the reference's answer, not to off (#1848)", () => {
   // xvb.enabled is true in config.reference.json: the raffle is opt-OUT, and a switch that
   // rendered No would show every new machine a state it is not in.
-  assert.equal(selectFor(setupOn("off").tree, XVB_Q).props.value, "true");
+  assert.equal(selectedRadio(setupOn("off").tree, XVB_Q).props.value, "true");
   const off = clone(REF);
   off.tari.mode = "off";
   off.xvb.enabled = false;
-  assert.equal(selectFor(form(off).renderSetup(), XVB_Q).props.value, "false");
+  assert.equal(selectedRadio(form(off).renderSetup(), XVB_Q).props.value, "false");
   // A config with no xvb key at all still shows the reference's answer rather than blanking.
   const bare = clone(REF);
   bare.tari.mode = "off";
   delete bare.xvb;
-  assert.equal(selectFor(form(bare).renderSetup(), XVB_Q).props.value, "true");
+  assert.equal(selectedRadio(form(bare).renderSetup(), XVB_Q).props.value, "true");
 });
 
 test("leaving the raffle writes a BOOLEAN false to xvb.enabled (#1848)", () => {
   const { inst, tree } = setupOn("off");
-  selectFor(tree, XVB_Q).props.onChange({ target: { value: "false" } });
+  radioFor(tree, XVB_Q, "false").props.onChange({ target: { value: "false" } });
   // The string "false" is truthy everywhere downstream — in the host's config parse and in the
   // dashboard — so a binding that skipped coercion would read as the raffle still being on.
   assert.equal(inst.state.cfg.xvb.enabled, false);
