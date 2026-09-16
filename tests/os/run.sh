@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|media|fault|reset|crossupdate|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -24,6 +24,10 @@
 #   rig     answer "RigForge" on the same page and prove the OTHER machine this image installs:
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
+#   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
+#           beside a blank internal disk that must stay untouched; answer "RigForge" and never
+#           install. Mines from the stick, no containers, volatile journald, an unaided reboot
+#           returns it mining, and the blank disk is still blank.
 #   media   physical-presence config channel (#786 sub-issue D): a removable stick applied at boot
 #           shows its exact diff on the console, counts down, applies, and consumes itself; pulling
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
@@ -36,7 +40,7 @@
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
 #   all     every phase above except crossupdate, in that order — media, fault and reset included
-#           since #1064
+#           since #1064; rigmedia added since #2069
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -45,6 +49,8 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/hugepages-boot-verdict.sh
 . "$SCRIPT_DIR/hugepages-boot-verdict.sh"
+# shellcheck source=tests/os/secure-boot-boot-verdict.sh
+. "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
 # shellcheck source=tests/os/zero-container-evidence.sh
@@ -145,6 +151,8 @@ source "$SCRIPT_DIR/phases/provision.sh" || exit $?
 source "$SCRIPT_DIR/phases/media.sh" || exit $?
 # shellcheck source=tests/os/phases/rig.sh
 source "$SCRIPT_DIR/phases/rig.sh" || exit $?
+# shellcheck source=tests/os/phases/rigmedia.sh
+source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
 # shellcheck source=tests/os/phases/fault.sh
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
@@ -159,6 +167,7 @@ update) phase_update ;;
 install) phase_install ;;
 provision) phase_provision ;;
 rig) phase_rig ;;
+rigmedia) phase_rigmedia ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
@@ -172,6 +181,7 @@ all)
     phase_install
     phase_provision
     phase_rig
+    phase_rigmedia
     phase_media
     phase_fault
     phase_reset

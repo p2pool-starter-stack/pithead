@@ -145,7 +145,7 @@ export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`
       handoff && handoff.role === "rig"
         ? html`<h3>Check this rig</h3>
             <p>This is what the machine will be.</p>
-            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class="wizard-mono">${f.value}</code><//>`)}
+            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class=${f.label === "Control token" ? "wizard-mono wizard-token" : "wizard-mono"}>${f.value}</code><//>`)}
             <${Note}>${rigCardNote(handoff)}<//>
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer && !stick ? "Looks right — erase the disk and install" : "Looks right — save it"}</button>`
