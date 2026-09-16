@@ -58,6 +58,10 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
         it_fail "direct rig control apply accepted (#516)" "the rig's /apply did not return a change_id"
     else
         _rig_control_await "$change_id" applied || it_warn "rig didn't report the direct change applied in time (#516)"
+        # TEMP DIAGNOSTIC for #2313 — not part of the fix, remove before merge.
+        it_log "diag(#2313): api_state rigforge for '$rig': $(api_state | jq -c --arg n "$rig" 'first(.workers[]? | select(.name==$n) | {api_ok, adopted, rigforge})' 2>/dev/null)"
+        it_log "diag(#2313): worker-read-tokens rows on box: $(rx "cat \$(grep -E '^CONTROL_DIR=' .env 2>/dev/null | head -n1 | cut -d= -f2-)/masked/worker-read-tokens.json 2>/dev/null | jq -c 'map({name,host,port})' 2>/dev/null || echo MISSING")"
+        it_log "diag(#2313): live config.json worker token type: $(rx "jq -r --arg n \"$rig\" '(.workers.list // [])[] | select(.name==\$n) | (.token | type)' config.json 2>/dev/null")"
         if wait_for 90 5 "dashboard feed to reflect the rig-side max_temp_c=$reflect (#516)" _pred_feed_maxt "$rig" "$reflect"; then
             it_pass "rig-side edit reflected in the dashboard's enriched feed (#516)"
         else
