@@ -243,7 +243,6 @@ if [ "$(cstate itest-p2pool)" = "running" ]; then
 else
     c_bad "Tari outage (required) leaves itest-p2pool running" "itest-p2pool is '$(cstate itest-p2pool)'"
 fi
-wait_sink_alerts
 
 # 5. Tari recovers — restores steady state for the scenarios below. Nothing to readmit: Tari
 #    never rejected workers in the first place.
@@ -263,6 +262,7 @@ if [ "$(cstate itest-p2pool)" = "running" ]; then
 else
     c_bad "monerod-outage rejection leaves itest-p2pool running" "itest-p2pool is '$(cstate itest-p2pool)'"
 fi
+wait_sink_alerts
 
 # 7. monerod recovers → readmit (after the recovery-hysteresis window). (#564)
 log "scenario 7: readmits workers when monerod recovers"
