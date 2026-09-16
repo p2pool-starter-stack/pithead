@@ -128,12 +128,8 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
         fi
     else
-        # The POST died in flight rather than being answered. A commit whose apply recreates
-        # containers restarts the dashboard underneath its own request, so the runner's answer can
-        # already be on disk while the response never arrives — measured on the bench (#2060): the
-        # guest's audit read `commit-confirmed -> applied` and its results directory held that id's
-        # document with {"status":"applied"}, while this function reported "the commit never
-        # returned". The id is not lost when that happens, because the CALLER sent it. Poll for it.
+        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
+        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
     # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
@@ -154,7 +150,7 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null)
+        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
     done
     return 1
 }
