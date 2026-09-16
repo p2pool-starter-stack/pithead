@@ -263,6 +263,13 @@ ps_run 'inactive\nreloading\n' 1 settled
 assert_rc "pithead-boot mid-reload: the same, pinning the second unit's check too" "$?" "1"
 PS_FLIP=1 ps_run 'activating\ninactive\n' 5 settled
 assert_rc "activating on the first read, inactive on the next: settled after one poll" "$?" "0"
+# A rig's miner can answer before pithead-boot completes its final mark-good and exits. Its
+# phase must therefore use this settled-unit wait before requiring the retained active state.
+RIG_PHASE="$ROOT/tests/os/phases/rig.sh"
+rig_boot_window=$(sed -n '/# WHICH unit owns the boot/,/unit_ran_this_boot/p' "$RIG_PHASE")
+assert_contains "the rig reboot waits for the boot transaction to settle" "$rig_boot_window" "provisioning_settled 60"
+assert_contains "the settled rig boot still requires pithead-boot active" "$rig_boot_window" "systemctl is-active pithead-boot"
+unset RIG_PHASE rig_boot_window
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
 assert_contains "the verdict names both units" "$ps_out" "units: one provisioning unit ran this boot (firstboot: activating/ran=yes, boot: inactive/ran=yes)"
 assert_contains "…and the wizard's spooled error when there is one" "$ps_out" "setup error: [ERROR] Stack failed to start"
