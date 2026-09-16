@@ -280,6 +280,27 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     [ "$node_ok" -eq 1 ] || return 1
 }
 
+_hostname_landed_fallback_self_test() (
+    local output
+    sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+    hostname_runtime_snapshot() { printf 'unchanged'; }
+    sensitive_preview() {
+        APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
+        APPROVAL_REQUEST_ID=r1
+    }
+    dashboard_control_request() { printf '{"status":"rejected","error":"typed payout confirmations"}'; }
+    approval_commit() { printf ''; }
+    _ssh() { printf '%s\n' '{"id":"r1","status":"applied","approver":""}'; }
+    assert_appliance_hostname_identity() { return 0; }
+    ok() { printf 'ok: %s\n' "$1"; }
+    bad() { printf 'bad: %s\n' "$1"; return 1; }
+    output=$(phase_provision_sensitive_regressions fixture-user fixture-password 2>&1) || true
+    case "$output" in
+    *'ok: a confirmed day-two hostname commit applies, audits without an approver, and converges live identity'*) ;;
+    *) return 1 ;;
+    esac
+)
+
 _approval_self_test() {
     local f=0 here
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -294,6 +315,7 @@ _approval_self_test() {
     # check dies as a missing command rather than a verdict.
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
+    _hostname_landed_fallback_self_test || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
