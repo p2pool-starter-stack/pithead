@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # output globals are consumed by sourced helpers
 #
 # e2e.sh — one-command Tier-4 end-to-end run of a branch against a live test bench.
 #
@@ -22,9 +23,7 @@
 #
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
 # See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
-
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
 # shellcheck source=tests/integration/lib.sh
@@ -50,8 +49,9 @@ BORROW_MINER=1
 SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
+REMOTE_NODE_ARGS=()
+REMOTE_NODE_HOSTS=()
 BRANCH=""
-
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -76,7 +76,6 @@ die() {
     printf '%b ✗%b %s\n' "$C_RED" "$C_RESET" "$*" >&2
     exit 1
 }
-
 usage() {
     cat <<EOF
 Run a branch end-to-end against a live test bench, then restore everything.
@@ -93,6 +92,8 @@ OPTIONS:
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
+  --remote-monero-host <h> [--remote-monero-rpc-port <p>] [--remote-monero-zmq-port <p>]
+  --remote-tari-host <h>  pass external node endpoints through to the live harness
   --skip-preflight  skip the bench-chains-synced pre-flight
   --keep            don't restore at the end (leave the branch deployed + miner repointed — debugging)
   -h, --help        this help
@@ -106,7 +107,6 @@ EXAMPLES:
   tests/integration/e2e.sh main --mode targeted --keep       # quick, leave it deployed to inspect
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -133,6 +133,10 @@ while [ $# -gt 0 ]; do
     --no-miner)
         BORROW_MINER=0
         shift
+        ;;
+    --remote-monero-host | --remote-monero-rpc-port | --remote-monero-zmq-port | --remote-tari-host)
+        add_remote_node_arg "$1" "${2:-}" || die "$1 takes a bare hostname or IPv4 address, or a TCP port 1-65535."
+        shift 2
         ;;
     --skip-preflight)
         SKIP_PREFLIGHT=1
@@ -163,7 +167,6 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
-
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
@@ -171,7 +174,6 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o Ser
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
 on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
-
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
 MINER_CFG_BACKUP=""
@@ -188,7 +190,6 @@ CONTROL_VERDICT_BEFORE=""
 # Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
 # so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
     local rc=$?
@@ -307,7 +308,6 @@ restore_all() {
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
 trap restore_all EXIT
-
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
@@ -317,7 +317,6 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
 # tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
 # the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as
@@ -595,7 +594,7 @@ deploy_branch() {
 
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
-    local phases rearm_id rearm_request rearm_ack
+    local phases remote_args="" rearm_id rearm_request rearm_ack
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
     rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
@@ -608,6 +607,7 @@ run_harness() {
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
+    [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
@@ -620,15 +620,15 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases $no_mining"
+    phases="$phases$remote_args $no_mining"
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
-    step "phases: $phases  (workers=$WORKERS)"
+    printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     local rollback_b64 pools_b64
     harness_install_runner || die "Failed to install the detached harness runner."
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$no_mining" || return 1
+        harness_pregate "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
@@ -653,12 +653,12 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
     done
 
     echo ""
     log "Harness finished (exit $rc). Full log:"
-    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/  /'
+    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
 
