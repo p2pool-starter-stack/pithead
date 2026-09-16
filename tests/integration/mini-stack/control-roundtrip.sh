@@ -68,6 +68,9 @@ PY
     pid=$!
     if control_request_ready; then
         run_pending >"$SANDBOX/control-runner.log" 2>&1 || runner_rc=$?
+        # Production's root runner creates world-readable result files for the uid-1000 dashboard.
+        # The CI host user can have a narrower umask, so normalize that fixture boundary explicitly.
+        chmod 644 "$C/data/control/results/"*.json 2>/dev/null || true
     else
         runner_rc=1
     fi
@@ -107,7 +110,8 @@ assert_payout_control_roundtrip() {
         any(.preview_values[]; .key == "monero.wallet_address" and .old == $old and .new == $new)' >/dev/null; then
         c_ok "payout preview exposes the old/new addresses behind approval"
     else
-        c_bad "payout preview exposes the old/new addresses behind approval" "unexpected preview verdict"
+        c_bad "payout preview exposes the old/new addresses behind approval" \
+            "status=$(printf '%s' "$preview" | jq -r '.status // "missing"'), destructive=$(printf '%s' "$preview" | jq -r '.destructive // "missing"'), approval=$(printf '%s' "$preview" | jq -r '.approval_required // "missing"')"
         return
     fi
 
