@@ -75,8 +75,9 @@ verdict that means something. The dashboard and frontend unit suites still run f
      the pointer, and nothing else here notices; the run prints how many `source` expressions it could
      not resolve statically, so that blind spot stays visible; deliberate absences go in the script's
      own `allowed_absent()` with a reason, never a per-file exemption),
-     `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text, and
-     no bare `docs/` paths in `pithead` operator text — release bundles carry a curated operator-doc
+     `lint-operator-strings` (no issue/PR numbers in operator-facing `pithead`/dashboard text,
+     including untracked, non-ignored frontend files, and no bare `docs/` paths in `pithead` operator
+     text — release bundles carry a curated operator-doc
      subset, not arbitrary repo paths, so point at `$DOCS_URL/docs/<file>.md#anchor` instead; comments
      keep the plain path),
      `lint-topology` (no real-looking IPv6/IPv4 literal, `/home/<name>` path, `.lan`/`.internal`/
