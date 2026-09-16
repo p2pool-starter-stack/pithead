@@ -4,8 +4,29 @@
 DASHBOARD_TEST_GLOBAL_V6="2001:db8:2070::1"
 DASHBOARD_TEST_FALLBACK_ULA="fd00:2070::1"
 
+# Shared by every live-listener verdict below: scans `ss -Hltnp` rows for a caddy socket bound to a
+# wildcard (echoes why and fails) or, when <extra-addr> is given, to that address too.
+_dashboard_reject_wildcard_or_extra_listener() { # <ss> [extra-addr]
+    local sockets="$1" extra="${2:-}" line local_addr
+    while IFS= read -r line; do
+        case "$line" in *caddy*) ;; *) continue ;; esac
+        local_addr=$(awk '{print $4}' <<<"$line")
+        case "$local_addr" in
+        \*:* | 0.0.0.0:* | "[::]":* | :::*)
+            echo "Caddy owns a wildcard listener"
+            return 1
+            ;;
+        esac
+        [ -z "$extra" ] || case "$local_addr" in "$extra":* | "[$extra]":*)
+            echo "Caddy listens on the global address ($extra)"
+            return 1
+            ;;
+        esac
+    done <<<"$sockets"
+}
+
 dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v4> <ula-v6> <global-v6> <pinned-site>
-    local caddy="$1" sockets="$2" curl_rc="$3" doctor="$4" lan="$5" ula="$6" global="$7" site="$8" binds line local_addr
+    local caddy="$1" sockets="$2" curl_rc="$3" doctor="$4" lan="$5" ula="$6" global="$7" site="$8" binds reason
     case "$caddy" in *"$global"*)
         echo "Caddyfile publishes the global address ($global)"
         return 1
@@ -16,20 +37,10 @@ dashboard_exposure_verdict() { # <Caddyfile> <ss> <curl-rc> <doctor-json> <lan-v
         return 1
         ;;
     esac
-    while IFS= read -r line; do
-        case "$line" in *caddy*) ;; *) continue ;; esac
-        local_addr=$(awk '{print $4}' <<<"$line")
-        case "$local_addr" in
-        "$global":* | "[$global]":*)
-            echo "Caddy listens on the global address ($global)"
-            return 1
-            ;;
-        \*:* | 0.0.0.0:* | "[::]":* | :::*)
-            echo "Caddy owns a wildcard listener"
-            return 1
-            ;;
-        esac
-    done <<<"$sockets"
+    if ! reason=$(_dashboard_reject_wildcard_or_extra_listener "$sockets" "$global"); then
+        echo "$reason"
+        return 1
+    fi
     for endpoint in "$lan:443" "[$ula]:443"; do
         printf '%s\n' "$sockets" | grep -F " $endpoint " | grep -q caddy || {
             echo "Caddy is not listening on $endpoint"
@@ -107,22 +118,16 @@ phase_provision_dashboard_exposure() {
 # helpers.sh's _onion_bind_line) — this proves that design holds on a live, provisioned box, not
 # just in the sourced-function unit render.
 dashboard_onion_exposure_verdict() { # <Caddyfile> <ss> <doctor-json> <bridge-gateway>
-    local caddy="$1" sockets="$2" doctor="$3" gw="$4" line local_addr
+    local caddy="$1" sockets="$2" doctor="$3" gw="$4" reason
     case "$caddy" in *"http://$gw {"*) ;; *)
         echo "Caddyfile has no onion vhost bound to the bridge gateway ($gw)"
         return 1
         ;;
     esac
-    while IFS= read -r line; do
-        case "$line" in *caddy*) ;; *) continue ;; esac
-        local_addr=$(awk '{print $4}' <<<"$line")
-        case "$local_addr" in
-        \*:* | 0.0.0.0:* | "[::]":* | :::*)
-            echo "Caddy owns a wildcard listener with the onion enabled"
-            return 1
-            ;;
-        esac
-    done <<<"$sockets"
+    if ! reason=$(_dashboard_reject_wildcard_or_extra_listener "$sockets"); then
+        echo "$reason (with the onion enabled)"
+        return 1
+    fi
     printf '%s\n' "$sockets" | grep -F " $gw:80 " | grep -q caddy || {
         echo "Caddy is not listening on the onion bridge gateway ($gw:80)"
         return 1
