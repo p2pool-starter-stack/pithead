@@ -117,6 +117,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-secret-and-dial-guards.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-secret-and-dial-guards.sh" && domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?" || domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"

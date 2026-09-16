@@ -115,7 +115,26 @@ jq -n --arg id "$UUID7" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",a
 run_pending >/dev/null
 assert_eq "out-of-root Tor data-dir move is refused" "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
 assert_contains "Tor move uses the data-root allowlist" "$(jq -r '.error' "$RESULTS/$UUID7.json")" "outside the stack data root"
-# (3) The SAME path from the HOST shell still applies — the tighter rule is control-only.
+# (3) A destination below the dashboard's writable data directory is refused even when its current
+# symlink target is inside the allowlist. Otherwise the container could swap that ancestor to an
+# arbitrary host path after validation but before root-owned mkdir/chown.
+DASHBOARD_ROOT="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
+mkdir -p "$DASHBOARD_ROOT" "$C/data/symlink-target"
+ln -s "$C/data/symlink-target" "$DASHBOARD_ROOT/pivot"
+preview_move "$DASHBOARD_ROOT/pivot/monero"
+printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+run_pending >/dev/null
+assert_eq "dashboard-writable ancestor is refused despite the APPLY token" \
+    "$(jq -r '.status' "$RESULTS/$UUID7.json" 2>/dev/null)" "rejected"
+assert_contains "writable-ancestor refusal names the dashboard data directory" \
+    "$(jq -r '.error' "$RESULTS/$UUID7.json" 2>/dev/null)" "dashboard data directory"
+if [ ! -e "$C/data/symlink-target/monero" ]; then
+    ok "refused symlinked move touched no target"
+else
+    bad "refused symlinked move touched no target" "target exists"
+fi
+rm -f "$DASHBOARD_ROOT/pivot"
+# (4) The SAME path from the HOST shell still applies — the tighter rule is control-only.
 jq -n --arg w "$WALLET" --arg dd "$EVIL_DIR" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",data_dir:$dd},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"

@@ -185,6 +185,16 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
+# True when the kernel routes an address back to this machine itself. RFC1918 addresses normally
+# identify distinct LAN rigs and remain valid, but this host's own LAN address must not turn the
+# root control runner into a loopback-by-another-name HTTP client.
+_control_ip_is_local() {
+    local route
+    command -v ip >/dev/null 2>&1 || return 0 # no classifier -> fail closed
+    route=$(ip route get "$1" 2>/dev/null) || return 0
+    printf '%s\n' "$route" | grep -qE '^local[[:space:]]'
+}
+
 # True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
 # resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
 # already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
@@ -212,12 +222,8 @@ _resolve_host_ips() {
 # resolver, which normalizes any of those the same way glibc's own numeric-address parsing would.
 # EVERY returned address must clear the check — an attacker's own DNS answer can mix one public IP
 # with one loopback IP in the same response, so checking only the first would miss it.
-# DNS-rebinding (the resolved-at-commit
-# address differing from the address at a later dial) is an accepted residual risk, same as
-# before resolve-and-check existed: it requires a SEPARATE capability (DNS control) beyond a
-# compromised dashboard, and the operator-confirmed write boundary this whole check lives behind
-# is why that's acceptable without also adding a dial-time re-check (see the PR's "Dial-time
-# re-check" note).
+# Worker control operations repeat this check immediately before dialing; the commit-time result
+# is never treated as a durable authorization for a later network request.
 _control_host_is_internal() {
     local host resolved ip
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
@@ -225,7 +231,7 @@ _control_host_is_internal() {
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host"
+        _ipv4_is_sensitive "$host" || _control_ip_is_local "$host"
         return
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
@@ -242,12 +248,67 @@ _control_host_is_internal() {
     while IFS= read -r ip; do
         [ -n "$ip" ] || continue
         if _is_canonical_ipv4 "$ip"; then
-            _ipv4_is_sensitive "$ip" && return 0
+            { _ipv4_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 0
         elif _is_ipv6_literal "$ip"; then
-            _ipv6_is_sensitive "$ip" && return 0
+            { _ipv6_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 0
         else
             return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
     done <<<"$resolved"
     return 1
+}
+
+# Dashboard-confirmed data moves stay inside roots the host already uses. Canonicalize symlinks,
+# and reject a destination below the dashboard's writable data directory even when its current
+# target is safe: the container could otherwise swap that ancestor before root-owned mkdir/chown.
+control_validate_data_dir_destinations() { # <staged-file>
+    local staged="$1" dvar cur dashboard_root dashboard_root_lex
+    local -a allowed_roots=("$PWD/data")
+    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
+        cur=$(env_get "$dvar")
+        [ -n "$cur" ] && allowed_roots+=("$(dirname "$cur")")
+    done
+    cur=$(env_get DASHBOARD_DATA_DIR)
+    dashboard_root=$(realpath -m -- "$cur" 2>/dev/null) || dashboard_root=""
+    dashboard_root_lex=$(realpath -ms -- "$cur" 2>/dev/null) || dashboard_root_lex=""
+
+    local ddpath dest dest_real dest_lex root root_real ok_root changed_paths
+    changed_paths=$(control_changed_config_paths "$staged")
+    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir; do
+        printf '%s\n' "$changed_paths" | grep -qxF "$ddpath" || continue
+        dest=$(jq -r --arg p "$ddpath" 'getpath($p/".") // empty' "$staged" 2>/dev/null)
+        # These exact values resolve to stack-owned defaults. apply's assert_safe_dir has already
+        # rejected relative paths and traversal during the dry-run that precedes this helper.
+        case "$dest" in "" | auto | DYNAMIC_DATA | DYNAMIC_HOST | DYNAMIC_ID) continue ;; esac
+        dest_real=$(realpath -m -- "$dest" 2>/dev/null) || dest_real=""
+        dest_lex=$(realpath -ms -- "$dest" 2>/dev/null) || dest_lex=""
+        if [ -z "$dest_real" ] || [ -z "$dest_lex" ]; then
+            printf 'this move sends %s to a path the host cannot resolve safely. %s' "$ddpath" "$(_control_host_remedy)"
+            return 1
+        fi
+        if [ -n "$dashboard_root_lex" ]; then
+            case "$dest_lex/" in "$dashboard_root_lex"/*)
+                printf 'this move sends %s below the dashboard data directory, which the dashboard can modify — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
+                return 1
+                ;;
+            esac
+        fi
+        if [ -n "$dashboard_root" ]; then
+            case "$dest_real/" in "$dashboard_root"/*)
+                printf 'this move sends %s below the dashboard data directory, which the dashboard can modify — choose a sibling under an allowed data root. %s' "$ddpath" "$(_control_host_remedy)"
+                return 1
+                ;;
+            esac
+        fi
+        ok_root=0
+        for root in "${allowed_roots[@]}"; do
+            root_real=$(realpath -m -- "$root" 2>/dev/null) || continue
+            case "$dest_real/" in "$root_real"/*) ok_root=1 && break ;; esac
+        done
+        if [ "$ok_root" -eq 0 ]; then
+            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or a parent it already uses. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
+            return 1
+        fi
+    done
+    return 0
 }

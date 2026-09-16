@@ -109,47 +109,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
         approval_required=1
     fi
-    # Data-dir destination allowlist (#728). All five configured *_DATA_DIR moves confirm, so a
-    # dashboard operator who types APPLY can now RELOCATE a service's data dir. assert_safe_dir — the
-    # host-shell guard — is a BLOCKLIST: it refuses the catastrophic roots (/, $HOME, bare mounts, …)
-    # but passes any OTHER absolute path. At host-shell trust that is proportionate (a shell already
-    # has filesystem-wide reach); at dashboard trust it would let a confirmed move target another
-    # user's home or another service's data volume and have pithead mkdir/chown -R it and bind-mount
-    # it into a recreated container — a destination trust-escalation. This gate runs ONLY for
-    # dashboard commits (the host `apply` path never calls control_approval_gate), so it is exactly
-    # where the tighter, control-only rule belongs: for a control-channel move, narrow the
-    # DESTINATION from a blocklist to an ALLOWLIST — permit only a path under the stack's own data
-    # root ($PWD/data, the install dir's data/) or a parent the stack ALREADY keeps data in (each
-    # live *_DATA_DIR's parent — a root a host operator already opted into, which covers a co-located
-    # shared data root, #455). Anything else is refused EVEN with the APPLY token: that move stays
-    # host-CLI-only. Only EXPLICIT absolute paths are checked — "auto"/empty resolves to a stack
-    # default that is under a data root by construction. assert_safe_dir still runs at apply time.
-    local -a allowed_roots=("$PWD/data")
-    local dvar cur
-    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
-        cur=$(env_get "$dvar")
-        [ -n "$cur" ] && allowed_roots+=("$(dirname "$cur")")
-    done
-    local ddpath dest root ok_root
-    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir; do
-        dest=$(jq -r --arg p "$ddpath" 'getpath($p/".") // empty' "$staged" 2>/dev/null)
-        # Skip only values resolve_default turns into an in-root stack default — its EXACT set,
-        # not a DYNAMIC_* wildcard (which would also swallow a bogus DYNAMIC_FOO that resolve_default
-        # passes through literally). A non-absolute/traversal dest never reaches here anyway:
-        # assert_safe_dir (called in the dry-run re-derivation at the top of this gate) refuses
-        # `..`/relative paths first — keep that ordering.
-        case "$dest" in "" | auto | DYNAMIC_DATA | DYNAMIC_HOST | DYNAMIC_ID) continue ;; esac
-        ok_root=0
-        # Trailing slash on both sides so a root prefix can't false-match a sibling (/data vs
-        # /database); an exact-root dest matches too (harmless — still the stack's own dir).
-        for root in "${allowed_roots[@]}"; do
-            case "$dest/" in "$root"/*) ok_root=1 && break ;; esac
-        done
-        if [ "$ok_root" -eq 0 ]; then
-            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or a parent it already uses. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
-            return 1
-        fi
-    done
+    # Host-shell data paths use a catastrophic-root blocklist; dashboard moves use the tighter
+    # allowlist and symlink boundary because a confirmed commit later mkdir/chown's as root.
+    control_validate_data_dir_destinations "$staged" || return 1
     # Confirm-gate (#719): an in-scope CONFIRM row PROCEEDS only with the operator's typed
     # confirmation. The token is a fixed literal ("APPLY"), orthogonal to the value being set — it
     # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
@@ -209,6 +171,24 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
+    # A masked worker token may survive an ordinary round-trip, but never an endpoint repoint.
+    # Restoring the old bearer by name after host/port/control_port changed would send a secret the
+    # container never knew to a destination it chose. Make the operator provide the replacement.
+    if ! jq -e --slurpfile live "$CONFIG_FILE" '
+        def endpoint: [(.host // null), (.port // null), (.control_port // null)];
+        (reduce (($live[0].workers.list // []) | reverse | .[]) as $w ({};
+            if ($w | type) == "object" and ($w.name | type) == "string"
+            then .[$w.name] = $w else . end)) as $live_workers
+        | all(.config.workers.list[]?;
+            if (.token | type) == "object" and .token.__secret__ == true
+            then (.name | type) == "string"
+              and ($live_workers[.name] | type) == "object"
+              and endpoint == ($live_workers[.name] | endpoint)
+            else true end)' "$file" >/dev/null 2>&1; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a worker endpoint changed while its token was masked — enter the token for the new endpoint explicitly",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     # The "blank secret keeps the live value" merge happens HERE, host-side (#440): the request
     # arrives with {"__secret__":true} sentinels for untouched secrets (the container never held
     # the real values — it prefills from the pre-masked copy), and each sentinel is swapped for
@@ -221,7 +201,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
-    # container's probe). A sentinel for a rig with no live token collapses to "" too.
+    # container's probe). The endpoint guard above rejects a sentinel without a same-name live
+    # descriptor or with a changed host/port/control_port, before any bearer can be restored.
+    # Webhook sentinels are positional because their order is their only stable identity.
     # dashboard.workers[] is restored too, and MUST be: 30's masker still masks that shape after
     # 2.0.0 removed the alias (#1832, see the note there), and mask and restore are one mechanism.
     # Keeping the mask without the restore would let a sentinel be committed as a literal token.
@@ -245,6 +227,12 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
               else . end)
           else . end
+        | if (.notifications | type) == "object" and (.notifications.webhooks | type) == "array"
+          then .notifications.webhooks |= (to_entries | map(
+              if (.value | type) == "object" and .value.__secret__ == true
+              then ($live[0].notifications.webhooks[.key] // "")
+              else .value end))
+          else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
               if (.token | type) == "object" and .token.__secret__ == true
@@ -262,7 +250,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         fi
         if control_never_path_changed "$staged"; then
             control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"this change includes a physical-presence-only setting; use a configuration stick",ts:(now|floor)}')"
-            rm -f "$errf"; control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"; return 0
+            rm -f "$errf"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+            return 0
         fi
         if [ "${bad:-0}" -gt 0 ]; then
             approval_required=true
@@ -290,7 +280,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             def dotted($p): $p | map(tostring) | join(".");
             def hidden($p):
               any($secret_paths[]; . == $p)
-              or $p[0:2] == ["workers","list"]
+              or ($p[0:2] == ["workers","list"] and $p[-1] == "token")
               or $p[0:2] == ["notifications","webhooks"];
             ($ref[0] * $live[0]) as $live_full
             | ($ref[0] * $staged[0]) as $staged_full
@@ -299,7 +289,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             | {status: "previewed", changes: .,
                destructive: (map(.flag == "DEST" or .flag == "CONFIRM") | any),
                approval_required: $approval_required,
-               preview_values: ([$ref[0] | paths(type != "object" and type != "array") as $path
+               preview_values: ((([$live_full | paths(type != "object" and type != "array")]
+                   + [$staged_full | paths(type != "object" and type != "array")]) | unique) as $paths
+                 | [$paths[] as $path
                    | select(hidden($path) | not)
                    | select(($live_full | getpath($path)) != ($staged_full | getpath($path)))
                    | {key:dotted($path), label:dotted($path),
