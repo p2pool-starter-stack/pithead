@@ -241,11 +241,10 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         # Name which sub-condition broke: the control result itself, the HTTP download, or the
         # decrypt/listing step — three different failure sites the combined check above cannot
         # tell apart from its verdict alone (#2300).
-        local archive_bytes decrypt_state
-        archive_bytes=$(wc -c <"$archive" | tr -d ' ')
+        local decrypt_state
         [ -n "$archive_names" ] && decrypt_state="decrypted, listing: $(printf '%s' "$archive_names" | tr '\n' ' ')" ||
             decrypt_state="undecryptable or empty tar listing"
-        bad "dashboard backup did not produce a downloadable encrypted archive ($(control_result_payload "$result"); passphrase_len=${#pass}; download HTTP ${code:-none}, $archive_bytes bytes; $decrypt_state)"
+        bad "dashboard backup did not produce a downloadable encrypted archive ($(control_result_payload "$result"); passphrase_len=${#pass}; download HTTP ${code:-none}, $(wc -c <"$archive" | tr -d ' ') bytes; $decrypt_state)"
     fi
     rm -f "$archive"
     names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
