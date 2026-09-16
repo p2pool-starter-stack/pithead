@@ -198,6 +198,17 @@ The Dependabot equivalent of the first check is to group its PRs by `baseRefName
 - Target the `develop` branch and fill out the PR template.
 - Link the issue your PR addresses (e.g. `Closes #123`).
 - Make sure `make test` passes; CI runs the same checks.
+- For a PR targeting `develop`, read merge readiness from `mergeable` and
+  `mergeStateStatus`, never from the check rollup. Run:
+
+  ```bash
+  gh pr view <number> --repo p2pool-starter-stack/pithead --json mergeable,mergeStateStatus
+  ```
+
+  Documentation alone does not close this gap: a conflicting PR can still report every check
+  green unless repository rules block it. Track that separate enforcement work in
+  [issue #2237](https://github.com/p2pool-starter-stack/pithead/issues/2237).
+
 - A PR into `develop` merges on green required checks plus the `adversarial-review`
   status recorded on its head SHA by a session that did not author it, human-driven
   or automated; see [AI workflow](docs/dev/ai-workflow.md#review-and-handoff). The
