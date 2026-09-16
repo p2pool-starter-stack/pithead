@@ -238,7 +238,14 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s\n' "$archive_names" | grep -qx 'data/pithead/.env'; then
         ok "dashboard backup decrypts with its one-time passphrase and contains the stack identity"
     else
-        bad "dashboard backup did not produce a downloadable encrypted archive"
+        # Name which sub-condition broke: the control result itself, the HTTP download, or the
+        # decrypt/listing step — three different failure sites the combined check above cannot
+        # tell apart from its verdict alone (#2300).
+        local archive_bytes decrypt_state
+        archive_bytes=$(wc -c <"$archive" | tr -d ' ')
+        [ -n "$archive_names" ] && decrypt_state="decrypted, listing: $(printf '%s' "$archive_names" | tr '\n' ' ')" ||
+            decrypt_state="undecryptable or empty tar listing"
+        bad "dashboard backup did not produce a downloadable encrypted archive ($(control_result_payload "$result"); passphrase_len=${#pass}; download HTTP ${code:-none}, $archive_bytes bytes; $decrypt_state)"
     fi
     rm -f "$archive"
     names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
