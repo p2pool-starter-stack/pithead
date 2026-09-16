@@ -22,7 +22,7 @@ all of which have produced real defects:
 |---|---|
 | Secure Boot, firmware power-on behaviour, real disk topology | No firmware, one virtual disk. |
 | Thermals, CPU governor, the hardware watchdog actually resetting a wedged board | A VM has no watchdog device and no heat. |
-| First-boot on real media — wall-clock, and what a power cut leaves behind | Writing container storage to a USB stick is nothing like a virtual disk, and the operator experience lives in that gap. An interrupted write to a stick left a store that was present, digest-matched and unrunnable, and it bricked install-from-stick on every later boot (#1029). Fault D covers the interrupted first-boot image-load and repair path on a virtual disk; real-media wear and firmware behaviour remain hardware-only. |
+| First-boot on real media — wall-clock, and what a power cut leaves behind | Writing container storage to a USB stick is nothing like a virtual disk, and the operator experience lives in that gap. An interrupted write to a stick left a store that was present, digest-matched and unrunnable, and it bricked install-from-stick on every later boot (#1029). Fault D covers the interrupted first-boot image-load path on a virtual disk: it must repair and serve the wizard, or refuse with a legible console message; real-media wear and firmware behaviour remain hardware-only. |
 
 ### Reserve the hardware
 
