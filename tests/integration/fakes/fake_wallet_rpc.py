@@ -42,7 +42,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         # /control sets the canned transfer list (drives the docker mini-stack over the network).
         if self.path.rstrip("/") == "/control":
-            self.server.state["transfers"] = req.get("transfers", [])
+            if "transfers" in req:
+                self.server.state["transfers"] = req["transfers"]
+            if req.get("reset_calls"):
+                self.server.state["calls"] = 0
             self._send(200, self.server.state)
             return
         # Everything else is JSON-RPC on /json_rpc.
@@ -51,8 +54,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, {"jsonrpc": "2.0", "id": "0", "result": {"version": 65558}})
             return
         if method == "get_transfers":
+            self.server.state["calls"] += 1
             params = req.get("params") or {}
             min_height = int(params.get("min_height", 0) or 0)
+            self.server.state["last_min_height"] = min_height
             rows = [
                 t for t in self.server.state["transfers"] if int(t.get("height", 0)) >= min_height
             ]
@@ -73,7 +78,7 @@ class FakeWalletRpc:
     """Context manager that runs the fake on an ephemeral port in a background thread."""
 
     def __init__(self, port=0, host="127.0.0.1", transfers=None):
-        self.state = {"transfers": list(transfers or [])}
+        self.state = {"transfers": list(transfers or []), "calls": 0, "last_min_height": 0}
         self._srv = _Server((host, port), self.state)
         self.host, self.port = self._srv.server_address
 
@@ -99,7 +104,7 @@ def main():
     ap.add_argument("--port", type=int, default=18082)
     ap.add_argument("--host", default="0.0.0.0")  # noqa: S104 — test-only container
     args = ap.parse_args()
-    srv = _Server((args.host, args.port), {"transfers": []})
+    srv = _Server((args.host, args.port), {"transfers": [], "calls": 0, "last_min_height": 0})
     print(f"fake-wallet-rpc listening on {args.host}:{args.port}", flush=True)
     try:
         srv.serve_forever()
