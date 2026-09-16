@@ -172,22 +172,23 @@ EDITABLE_ENV_KEY_PATHS = {
     },
 }
 
-# dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
-# straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
-# it (#504). Fold it in as the map's one special-case addition. Worker descriptors use the JSON
-# surface because buildSections does not render arrays as individual fields (#172).
-_ENERGY_PATHS = (
+# These paths are config.json-only, so they never appear in the env-var map above, but the host
+# classifies them as ordinary changes. Worker descriptors use the JSON surface because
+# buildSections does not render arrays as individual fields (#172).
+_CONFIG_ONLY_EDITABLE_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
+    "dashboard.energy.tari_price",
     "dashboard.energy.xmr_price",
+    "local_miner.enabled",
 )
 
 
 def _editable_paths():
     """Every config path the control gate will actually commit (#613): the env-var allowlist's
-    paths, union the dashboard.energy special-case (#504)."""
+    paths, union ordinary config.json-only paths."""
     paths = {p for target in EDITABLE_ENV_KEY_PATHS.values() for p in target}
-    paths.update(_ENERGY_PATHS)
+    paths.update(_CONFIG_ONLY_EDITABLE_PATHS)
     return sorted(paths)
 
 

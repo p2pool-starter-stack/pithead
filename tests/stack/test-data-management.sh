@@ -77,7 +77,8 @@ echo "== black-box: a dashboard-confirmed data-dir move is allowlisted to the st
 # #719/#1959 made the five configured *_DATA_DIR moves confirm-gated. assert_safe_dir is a BLOCKLIST, so a
 # confirmed move could target any non-blocklisted absolute path (another user's home, another
 # service's volume). control_approval_gate now narrows the DESTINATION to an allowlist for
-# control-channel moves: only under the stack data root ($C/data) or a parent it already uses.
+# control-channel moves: only under the stack data root ($C/data) or the dedicated parent shared by
+# Monero, Tari, P2Pool, and Tor.
 # The host `apply` path keeps the blocklist — a shell operator is already trusted.
 UUID7="77777777-7777-4777-8777-777777777777"
 control_config mini
@@ -134,7 +135,23 @@ else
     bad "refused symlinked move touched no target" "target exists"
 fi
 rm -f "$DASHBOARD_ROOT/pivot"
-# (4) The SAME path from the HOST shell still applies — the tighter rule is control-only.
+# (4) Co-location under a broad system root does not authorize its sibling services.
+cp "$C/.env" "$C/.env.before-broad-root"
+sed -E \
+    -e 's|^MONERO_DATA_DIR=.*|MONERO_DATA_DIR=/var/lib/monero|' \
+    -e 's|^TARI_DATA_DIR=.*|TARI_DATA_DIR=/var/lib/tari|' \
+    -e 's|^P2POOL_DATA_DIR=.*|P2POOL_DATA_DIR=/var/lib/p2pool|' \
+    -e 's|^TOR_DATA_DIR=.*|TOR_DATA_DIR=/var/lib/tor|' \
+    "$C/.env.before-broad-root" >"$C/.env"
+preview_move "/var/lib/docker"
+printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
+run_pending >/dev/null
+assert_eq "broad shared parent is refused despite the APPLY token" \
+    "$(jq -r '.status' "$RESULTS/$UUID7.json")" "rejected"
+assert_contains "broad shared parent does not widen the allowlist" \
+    "$(jq -r '.error' "$RESULTS/$UUID7.json")" "outside the stack data root"
+mv "$C/.env.before-broad-root" "$C/.env"
+# (5) The SAME path from the HOST shell still applies — the tighter rule is control-only.
 jq -n --arg w "$WALLET" --arg dd "$EVIL_DIR" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",data_dir:$dd},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"

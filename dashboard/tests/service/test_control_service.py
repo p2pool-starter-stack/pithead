@@ -309,20 +309,19 @@ class TestEditableKeys:
         assert "xvb.donation_level" in cfg["_editable_keys"]
         # 2026-08 audit reclassification: same risk class as their already-editable siblings.
         assert "telegram.events.raffle_win" in cfg["_editable_keys"]
-        # Named confirm metadata is present even when no reference file is available.
         assert "monero.out_peers" in cfg["_confirm_keys"]
         assert "monero.out_peers" not in cfg["_editable_keys"]
         assert "proxy.donate_level" not in cfg["_editable_keys"]
         assert "telegram.commands.enabled" not in cfg["_editable_keys"]
         assert cfg["_editable_keys"] == sorted(cfg["_editable_keys"])  # stable, deterministic order
 
-    def test_dashboard_energy_is_the_special_case_addition(self, spool):
-        # dashboard.energy.* never renders to .env (control.approval reads it straight off
-        # config.json), so it can't come from the env-var map — it's allowed by name (#504).
+    def test_config_only_ordinary_paths_are_editable(self, spool):
         cfg = control_service.read_config()
         assert "dashboard.energy.cost_per_kwh" in cfg["_editable_keys"]
         assert "dashboard.energy.currency" in cfg["_editable_keys"]
         assert "dashboard.energy.xmr_price" in cfg["_editable_keys"]
+        for path in ("dashboard.energy.tari_price", "local_miner.enabled"):
+            assert path in cfg["_editable_keys"] and path not in cfg["_confirm_keys"]
 
     def test_telegram_tamper_evidence_alarms_stay_physical_presence_only(self, spool):
         # wallet_changed / clearnet_exposed are the alarms a compromised container must not be

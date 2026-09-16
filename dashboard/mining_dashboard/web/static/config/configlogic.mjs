@@ -300,17 +300,10 @@ export function nestSection(section) {
   };
 }
 
-// Editable-set membership (#613): the control gate only ever commits a fixed allowlist of config
-// paths (pithead's CONTROL_DASHBOARD_EDITABLE_KEYS, plus the dashboard.energy special-case, #504)
-// — everything else is refused at commit no matter what the form sends. Rather than let an
-// operator edit a host-only field and find out at Save, mark it non-editable up front so the view
-// can grey it out and never wire an onChange for it (belt-and-suspenders: the gate still refuses
-// regardless). `editableKeys` is `_editable_keys` on the fetched config (#613), the same
-// underscore-metadata convention `_core_keys` uses, computed server-side from the SAME allowlist
-// the gate enforces (control_service.EDITABLE_ENV_KEY_PATHS, drift-guarded against pithead's
-// CONTROL_DASHBOARD_EDITABLE_KEYS). A missing/empty set fails CLOSED — nothing is marked
-// editable — rather than defaulting to "everything editable" and silently reintroducing the
-// edit-then-reject problem this feature exists to remove.
+// Editable-set membership (#613): `_editable_keys` contains ordinary direct-commit paths and
+// `_confirm_keys` contains the remaining schema paths that need typed confirmation. Physical-
+// presence paths are absent from both. A missing/empty set fails CLOSED — nothing is marked
+// editable — rather than defaulting to "everything editable".
 //
 // `confirmKeys` is `_confirm_keys` (#719): the operationally-disruptive paths the gate WILL commit,
 // but only behind a type-to-confirm. They render editable (not greyed) and carry `confirm: true` so

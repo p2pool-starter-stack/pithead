@@ -195,9 +195,9 @@ _control_ip_is_local() {
     printf '%s\n' "$route" | grep -qE '^local[[:space:]]'
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
-# resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
-# already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
+# Resolve a worker host to one validated numeric address. Mirrors the READ-path SSRF guard a
+# miner-claimed IP already gets (_safe_probe_host,
+# dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
 # the actual HTTP request is built and sent by the — possibly compromised — dashboard container),
 # so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
@@ -222,17 +222,18 @@ _control_ip_is_local() {
 # resolver, which normalizes any of those the same way glibc's own numeric-address parsing would.
 # EVERY returned address must clear the check — an attacker's own DNS answer can mix one public IP
 # with one loopback IP in the same response, so checking only the first would miss it.
-# Worker control operations repeat this check immediately before dialing; the commit-time result
-# is never treated as a durable authorization for a later network request.
-_control_host_is_internal() {
-    local host resolved ip
+# Worker control operations pin curl to the returned address; a check followed by a fresh hostname
+# lookup would leave a DNS-rebinding window.
+_control_resolve_external_ip() {
+    local host resolved ip first=""
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host" || _control_ip_is_local "$host"
-        return
+        { _ipv4_is_sensitive "$host" || _control_ip_is_local "$host"; } && return 1
+        printf '%s\n' "$host"
+        return 0
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
     # spellings ("::1" and "0:0:0:0:0:0:0:1" are the identical address; a hand-rolled
@@ -243,31 +244,62 @@ _control_host_is_internal() {
     # into canonical addresses using the SAME parsing glibc's getaddrinfo (and therefore curl)
     # uses, including a bare literal (no network round trip needed for one), so this is correct
     # for a typed literal and a real hostname alike.
-    resolved=$(_resolve_host_ips "$host") || return 0 # resolution failed/timed out -> FAIL CLOSED
-    [ -n "$resolved" ] || return 0                    # an empty answer -> FAIL CLOSED
+    resolved=$(_resolve_host_ips "$host") || return 1 # resolution failed/timed out -> FAIL CLOSED
+    [ -n "$resolved" ] || return 1                    # an empty answer -> FAIL CLOSED
     while IFS= read -r ip; do
         [ -n "$ip" ] || continue
         if _is_canonical_ipv4 "$ip"; then
-            { _ipv4_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 0
+            { _ipv4_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 1
         elif _is_ipv6_literal "$ip"; then
-            { _ipv6_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 0
+            { _ipv6_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 1
         else
-            return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
+            return 1 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
+        [ -n "$first" ] || first="$ip"
     done <<<"$resolved"
-    return 1
+    [ -n "$first" ] || return 1
+    printf '%s\n' "$first"
+}
+
+# Boolean compatibility wrapper for commit-time target validation.
+_control_host_is_internal() {
+    ! _control_resolve_external_ip "$1" >/dev/null
+}
+
+# A curl --resolve value whose numeric address has passed the local-target floor. IPv6 addresses
+# need brackets in the comma/colon-delimited option value.
+_control_worker_curl_pin() { # <host> <port>
+    local ip
+    ip=$(_control_resolve_external_ip "$1") || return 1
+    case "$ip" in *:*) ip="[$ip]" ;; esac
+    printf '%s:%s:%s\n' "$1" "$2" "$ip"
 }
 
 # Dashboard-confirmed data moves stay inside roots the host already uses. Canonicalize symlinks,
 # and reject a destination below the dashboard's writable data directory even when its current
 # target is safe: the container could otherwise swap that ancestor before root-owned mkdir/chown.
 control_validate_data_dir_destinations() { # <staged-file>
-    local staged="$1" dvar cur dashboard_root dashboard_root_lex
+    local staged="$1" cur shared_root dashboard_root dashboard_root_lex
+    local monero_dir tari_dir p2pool_dir tor_dir
     local -a allowed_roots=("$PWD/data")
-    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do
-        cur=$(env_get "$dvar")
-        [ -n "$cur" ] && allowed_roots+=("$(dirname "$cur")")
-    done
+    # A single service under /var/lib/monero must not authorize sibling /var/lib trees. Only the
+    # co-located root used by all four host services (#455) can extend the dashboard allowlist, and
+    # never when that parent is itself one of assert_safe_dir's broad roots.
+    monero_dir=$(env_get MONERO_DATA_DIR)
+    tari_dir=$(env_get TARI_DATA_DIR)
+    p2pool_dir=$(env_get P2POOL_DATA_DIR)
+    tor_dir=$(env_get TOR_DATA_DIR)
+    if [ -n "$monero_dir" ] && [ -n "$tari_dir" ] && [ -n "$p2pool_dir" ] && [ -n "$tor_dir" ]; then
+        shared_root=$(dirname "$monero_dir")
+    else
+        shared_root=""
+    fi
+    if [ -n "$shared_root" ] && [ "$(dirname "$tari_dir")" = "$shared_root" ] &&
+        [ "$(dirname "$p2pool_dir")" = "$shared_root" ] &&
+        [ "$(dirname "$tor_dir")" = "$shared_root" ]; then
+        shared_root=$(realpath -m -- "$shared_root" 2>/dev/null) || shared_root=""
+        [ -n "$shared_root" ] && ! _data_dir_is_broad_root "$shared_root" && allowed_roots+=("$shared_root")
+    fi
     cur=$(env_get DASHBOARD_DATA_DIR)
     dashboard_root=$(realpath -m -- "$cur" 2>/dev/null) || dashboard_root=""
     dashboard_root_lex=$(realpath -ms -- "$cur" 2>/dev/null) || dashboard_root_lex=""
@@ -306,7 +338,7 @@ control_validate_data_dir_destinations() { # <staged-file>
             case "$dest_real/" in "$root_real"/*) ok_root=1 && break ;; esac
         done
         if [ "$ok_root" -eq 0 ]; then
-            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or a parent it already uses. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
+            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or the dedicated parent shared by Monero, Tari, P2Pool, and Tor. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
             return 1
         fi
     done

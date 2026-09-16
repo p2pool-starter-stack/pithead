@@ -87,33 +87,42 @@ assert_eq "masked webhook survives an unrelated commit" \
     "$(jq -r '.notifications.webhooks[0]' "$C/config.json")" "https://example.com/hook"
 rm -f "$C/bin/getent" "$C/bin/ip"
 
-# A previously safe DNS answer can change after confirmation. Resolve once to a distinct LAN rig,
-# then to loopback on the final pre-dial check; curl must never receive the bearer.
+# A DNS name can change after the safety check. Resolve safely for both host checks, then return
+# loopback on any later lookup; curl must receive the already-validated numeric address.
 REBIND_DIR="$SANDBOX/control-dial-rebind"
 mkdir -p "$REBIND_DIR/staged" "$REBIND_DIR/results" "$REBIND_DIR/audit" "$REBIND_DIR/bin"
 printf '{"workers":{"list":[{"name":"rig","host":"rebind-rig","control_port":8082,"token":"secret"}]}}\n' >"$REBIND_DIR/config.json"
 cat >"$REBIND_DIR/bin/getent" <<'EOF'
 #!/usr/bin/env bash
-if [ ! -e "${REBIND_MARKER:?}" ]; then
-    touch "$REBIND_MARKER"; printf '192.168.1.77 STREAM rebind-rig\n'
+count=0
+[ ! -f "${REBIND_COUNTER:?}" ] || read -r count <"$REBIND_COUNTER"
+count=$((count + 1))
+printf '%s\n' "$count" >"$REBIND_COUNTER"
+if [ "$count" -le 2 ]; then
+    printf '192.168.1.77 STREAM rebind-rig\n'
 else
     printf '127.0.0.1 STREAM rebind-rig\n'
 fi
 EOF
 printf '#!/usr/bin/env bash\nprintf "%%s via 192.168.1.1 dev eth0\\n" "$3"\n' >"$REBIND_DIR/bin/ip"
-printf '#!/usr/bin/env bash\ntouch "${DIAL_MARKER:?}"\nexit 7\n' >"$REBIND_DIR/bin/curl"
+cat >"$REBIND_DIR/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"${DIAL_LOG:?}"
+exit 7
+EOF
 chmod +x "$REBIND_DIR/bin/getent" "$REBIND_DIR/bin/ip" "$REBIND_DIR/bin/curl"
 REBIND_UUID="29292929-1959-4959-8959-292929291959"
 printf '{"id":"%s","action":"worker-apply","actor":"admin","worker":"rig","changes":{"DONATION":2}}\n' \
     "$REBIND_UUID" >"$REBIND_DIR/req.json"
-PATH="$REBIND_DIR/bin:$PATH" REBIND_MARKER="$REBIND_DIR/.resolved" DIAL_MARKER="$REBIND_DIR/.dialed" \
+PATH="$REBIND_DIR/bin:$PATH" REBIND_COUNTER="$REBIND_DIR/.resolved-count" \
+    DIAL_LOG="$REBIND_DIR/.curl-args" \
     CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$REBIND_DIR/config.json" \
     run_sourced_e "$SANDBOX" control_process_request "$REBIND_DIR/req.json" "$REBIND_DIR" >/dev/null 2>&1
-assert_contains "worker target is re-resolved immediately before its bearer is sent" \
+assert_contains "worker dial reports curl failure after its target passes validation" \
     "$(jq -r '.status + "|" + (.error // "")' "$REBIND_DIR/results/$REBIND_UUID.json")" \
-    "rejected|now resolves inside this host"
-if [ -e "$REBIND_DIR/.dialed" ]; then
-    bad "DNS rebind refusal sends no bearer" "curl ran"
-else
-    ok "DNS rebind refusal sends no bearer"
-fi
+    "failed|could not reach"
+assert_eq "worker target is resolved only for validation and pinning" \
+    "$(cat "$REBIND_DIR/.resolved-count")" "2"
+assert_contains "worker curl uses a pinned address" "$(cat "$REBIND_DIR/.curl-args")" "--resolve"
+assert_contains "worker curl pins the validated address" "$(cat "$REBIND_DIR/.curl-args")" \
+    "rebind-rig:8082:192.168.1.77"
