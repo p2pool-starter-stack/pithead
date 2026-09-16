@@ -50,7 +50,9 @@ dashboard_control_request() { # <preview|commit> <json-body>; sets CONTROL_RESPO
     local route="$1" body="$2" pid http_rc=0 runner_rc=0
     CONTROL_RESPONSE="$SANDBOX/control-response.json"
     compose exec -T dashboard python3 - "$route" "$body" >"$CONTROL_RESPONSE" 2>/dev/null <<'PY' &
+import json
 import sys
+import time
 import urllib.request
 
 route, body = sys.argv[1:]
@@ -63,7 +65,19 @@ request = urllib.request.Request(
         "X-Pithead-Control": "1",
     },
 )
-sys.stdout.write(urllib.request.urlopen(request, timeout=40).read().decode())
+response = urllib.request.urlopen(request, timeout=40)
+payload = json.loads(response.read())
+if response.status == 202:
+    skip = "previewed" if route == "commit" else None
+    for _ in range(60):
+        time.sleep(0.25)
+        response = urllib.request.urlopen(
+            f"http://127.0.0.1:8000/api/control/result?id={payload['id']}", timeout=5
+        )
+        payload = json.loads(response.read())
+        if response.status != 202 and payload.get("status") != skip:
+            break
+sys.stdout.write(json.dumps(payload))
 PY
     pid=$!
     if control_request_ready; then
