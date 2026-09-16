@@ -315,9 +315,9 @@ make test-integration ARGS="--host user@box --dir pithead --lifecycle --fault-in
 # unreleased: only the wizard image is baked, so every other service is pulled as
 # pithead-<service>:v$(cat VERSION) at first boot, and without it the appliance provisions and
 # then runs ZERO containers (#2043). build-image.sh refuses such a build; see tests/os/README.md.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> os/build-image.sh --ssh
 os/rauc/mkimage.sh --dev
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img  # sudo's env_reset drops exported vars
 ```
 

@@ -15,9 +15,10 @@ if [ "$MODE" = "--test" ]; then
         chk "boot, setup and dashboard-control units pinned to the test registry" '[ "$(grep -lxF "Environment=PITHEAD_REGISTRY=$PITHEAD_REGISTRY" "$ROOT"/etc/systemd/system/{pithead-boot,pithead-firstboot,pithead-setup-again,pithead-control}.service.d/pithead-test-registry.conf 2>/dev/null | wc -l)" = 4 ]'
         # #1931: a PAM login (an SSH shell running ./pithead by hand) reads /etc/environment, not the drop-ins; the engine pin beside it proves the file was appended to, not replaced.
         chk "/etc/environment pinned to the test registry, engine pin kept" 'grep -qxF "PITHEAD_REGISTRY=$PITHEAD_REGISTRY" "$ROOT/etc/environment" && grep -qxF "PITHEAD_ENGINE=podman" "$ROOT/etc/environment"'
+        chk "debug registry's alternate cosign key is baked" 'cmp -s "$PITHEAD_REGISTRY_COSIGN_PUB" "$ROOT/opt/pithead/cosign.pub"'
         # The trust half is whichever the builder chose: the CA it was handed, byte for byte, or the insecure entry.
         if [ -n "${PITHEAD_REGISTRY_CA:-}" ]; then
-            chk "podman trusts the test registry's CA, and no insecure entry" 'cmp -s "$PITHEAD_REGISTRY_CA" "$ROOT/etc/containers/certs.d/${PITHEAD_REGISTRY%%/*}/ca.crt" && [ ! -e "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" ]'
+            chk "podman and cosign trust the test registry's CA, and no insecure entry" 'cmp -s "$PITHEAD_REGISTRY_CA" "$ROOT/etc/containers/certs.d/${PITHEAD_REGISTRY%%/*}/ca.crt" && cmp -s "$PITHEAD_REGISTRY_CA" "$ROOT/opt/pithead/cosign.registry-ca.crt" && [ ! -e "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" ]'
         else
             chk "podman told the test registry is insecure, and no CA" 'grep -qF "location = \"${PITHEAD_REGISTRY%%/*}\"" "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" && grep -qxF "insecure = true" "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" && [ ! -e "$ROOT/etc/containers/certs.d" ]'
         fi
@@ -25,8 +26,9 @@ if [ "$MODE" = "--test" ]; then
 else
     # The reason this script exists in versioned form: a leaked test key on a release image is a
     # backdoor, and ad-hoc eyeballing is how one ships.
-    chk "NO test marker, NO test registry pin or trust (#1892)" '[ ! -e "$ROOT/etc/pithead-test-marker" ] && [ ! -e "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" ] && [ ! -e "$ROOT/etc/containers/certs.d" ] && ! ls "$ROOT"/etc/systemd/system/*/pithead-test-registry.conf >/dev/null 2>&1 && grep -qxF "PITHEAD_ENGINE=podman" "$ROOT/etc/environment" && ! grep -q "^PITHEAD_REGISTRY=" "$ROOT/etc/environment"'
+    chk "NO test marker, registry pin, trust or CA (#1892)" '[ ! -e "$ROOT/etc/pithead-test-marker" ] && [ ! -e "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" ] && [ ! -e "$ROOT/etc/containers/certs.d" ] && [ ! -e "$ROOT/opt/pithead/cosign.registry-ca.crt" ] && ! ls "$ROOT"/etc/systemd/system/*/pithead-test-registry.conf >/dev/null 2>&1 && grep -qxF "PITHEAD_ENGINE=podman" "$ROOT/etc/environment" && ! grep -q "^PITHEAD_REGISTRY=" "$ROOT/etc/environment"'
     chk "NO SSH authorized_keys" '[ ! -s "$ROOT/root/.ssh/authorized_keys" ]'
+    chk "release cosign key is baked" '[ -s "$ROOT/opt/pithead/cosign.pub" ]'
     chk "ssh service disabled" '! ls "$ROOT"/etc/systemd/system/multi-user.target.wants/ssh.service'
     chk "variant stamp says release" '[ "$(cat "$ROOT/etc/pithead-variant")" = "release" ]'
     # The keyring is the fleet's update trust root. A dev build auto-generates a CN=pithead-dev

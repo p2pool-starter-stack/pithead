@@ -26,6 +26,15 @@ compose_reference() { # <image-root> <out-file>
     esac
 }
 
+compose_matches_source() { # <image-root> <reference-file>
+    local actual="$2.actual" rc
+    sed -E '/pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):/s/@sha256:[0-9a-f]{64}//' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
+    cmp -s "$actual" "$2"
+    rc=$?
+    rm -f "$actual"
+    return "$rc"
+}
+
 # pithead-data-reset runs these behind `|| true`, so both must be baked into the image (#1069 W11).
 data_reset_repair_tools_present() { # <image-root> — 0 iff both tools are executable
     local root="$1"

@@ -13,6 +13,13 @@ for f in pithead pithead-completion.bash VERSION docker-compose.yml \
     config.reference.json config.core-keys.json config.minimal.json cosign.pub; do
     [ -f "$SRC/$f" ] && install -m 644 "$SRC/$f" "$DST/$f"
 done
+# A debug TLS build carries this CA only for the containerized Cosign verifier. It is program
+# material rather than state, so copy it when present and remove it on the next release image.
+if [ -f "$SRC/cosign.registry-ca.crt" ]; then
+    install -m 644 "$SRC/cosign.registry-ca.crt" "$DST/cosign.registry-ca.crt"
+else
+    rm -f "$DST/cosign.registry-ca.crt"
+fi
 [ -f "$DST/pithead" ] && chmod 755 "$DST/pithead"
 # Config templates that services bind-mount: program data, replaced wholesale.
 #

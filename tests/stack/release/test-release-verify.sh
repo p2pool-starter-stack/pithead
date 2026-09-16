@@ -59,6 +59,21 @@ assert_contains "verify binds to the pinned digest, not the tag (#451)" \
     "$(cat "$VRI/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/test/pithead-tor@$TOR_DG"
 assert_not_contains "verify never resolves the mutable tag (#451)" "$(cat "$VRI/cosign.log")" "pithead-tor:v9.9.9"
 
+# A debug appliance carries the test registry CA beside the verifier key. Cosign runs in a
+# container, so mount that CA and pass its container path; otherwise it falls back to HTTP against
+# the TLS registry even though podman itself trusts the same CA.
+printf 'test registry CA\n' >"$VRI/cosign.registry-ca.crt"
+: >"$VRI/cosign.log"
+: >"$VRI/docker.log"
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" COSIGN_DOCKER_LOG="$VRI/docker.log" \
+    PITHEAD_REGISTRY="ghcr.io/test" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "debug-registry CA lets all signatures verify" "$?" "0"
+assert_contains "cosign receives the debug-registry CA" "$(cat "$VRI/cosign.log")" \
+    "verify --key cosign.pub --private-infrastructure --registry-cacert /registry-ca.crt ghcr.io/test/pithead-tor@$TOR_DG"
+assert_contains "cosign container mounts the debug-registry CA read-only" "$(cat "$VRI/docker.log")" \
+    "-v $VRI/cosign.registry-ca.crt:/registry-ca.crt:ro"
+rm -f "$VRI/cosign.registry-ca.crt"
+
 # A signature that does not verify (fake cosign exits 1): FAIL CLOSED. This is the red test for the
 # whole feature — bypass or soften the verification and it goes green-to-broken.
 out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 \
