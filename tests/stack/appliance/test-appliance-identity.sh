@@ -45,7 +45,8 @@ echo "== unit: headless setup resolves the appliance's browsable name, never the
 RDH=$(
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
-    source "$STACK"; set +e
+    source "$STACK"
+    set +e
     log() { :; }
     PITHEAD_APPLIANCE=1 DASHBOARD_HOST="" resolve_dashboard_host interactive </dev/null
     printf '%s' "$HOST_IP"
@@ -87,7 +88,8 @@ printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_
 vout=$(
     cd "$VSB" || exit
     # shellcheck disable=SC1090
-    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"; set +e
+    PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"
+    set +e
     log() { :; }
     PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" parse_and_validate_config 2>&1
 )
@@ -231,11 +233,9 @@ case "$pcf$pcert" in
 *rig1*) bad "pinned dashboard.host: neither consumer names the machine's OTHER identity" "still present: $pcf | $pcert" ;;
 *) ok "pinned dashboard.host: neither consumer names the machine's OTHER identity" ;;
 esac
-
 unset -f nl_render nl_assert_agreement
 rm -rf "$NL"
 unset PITHEAD_TLS_DIR NL NL_HOSTNAME NL_IPS NL_HOST_IP NL_DASHBOARD_HOST pcf pcert
-
 echo "== unit: appliance_site_names stays engine-free — proxy_net's gateway is NOT excluded there (#reboot-leg-fix) =="
 # #1204 already excluded mining_net's gateway here (a known config literal, \${NETWORK_PREFIX}.1).
 # proxy_net's is NOT excluded here on purpose, even though it needs the SAME kind of exclusion —
