@@ -50,7 +50,7 @@ os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
 scripts/watch/trivyignore-watch.sh	599
 tests/integration/e2e.sh	687
-tests/integration/fakes/test_contract.py	451
+tests/integration/fakes/test_contract.py	439
 tests/integration/lib.sh	691
 tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
@@ -71,12 +71,14 @@ tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	470
+tests/stack/lifecycle/recovery.sh	420
 tests/stack/run.sh	407
 tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
+tests/stack/test-harness-tooling.sh	406
 tests/stack/test-monero-tari.sh	582
 tests/stack/test-rig-worker.sh	616
 tests/stack/test-tor-network.sh	780
