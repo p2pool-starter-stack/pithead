@@ -173,10 +173,10 @@ phase_fault() {
         return
     }
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        _ssh "pgrep -f 'podman.*load' >/dev/null" && break
+        _ssh "pgrep -f '[p]odman.*load' >/dev/null" && break
         sleep 1
     done
-    if _ssh "pgrep -f 'podman.*load' >/dev/null"; then
+    if _ssh "pgrep -f '[p]odman.*load' >/dev/null"; then
         ok "D: first-boot image load is active"
     else
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
