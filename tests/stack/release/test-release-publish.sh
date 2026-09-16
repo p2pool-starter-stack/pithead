@@ -154,14 +154,15 @@ dirty_real_out="$(bash "$REL" --allow-dirty 2>&1)"
 assert_rc "--allow-dirty refuses a real release" "$?" "1"
 assert_contains "real release refusal requires --dry-run" "$dirty_real_out" "--allow-dirty requires --dry-run"
 release_tree_gate() { # <dry-run> <allow-dirty>
+    local dry_run="$1" allow_dirty="$2"
     (
         cd "$ROOT" || exit
         set --
         # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
         source "$REL" 2>/dev/null
         set +eu
-        export DRY_RUN="$1"
-        export ALLOW_DIRTY="$2"
+        export DRY_RUN="$dry_run"
+        export ALLOW_DIRTY="$allow_dirty"
         GIT_COMMIT="$(git rev-parse HEAD)"
         export GIT_COMMIT
         require_clean_release_tree
