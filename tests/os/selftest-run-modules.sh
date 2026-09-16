@@ -185,5 +185,7 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
 ) || exit 1
 grep -qF "pgrep -f '[p]odman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
 ! grep -qF "pgrep -f 'podman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
+grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed"
 echo "os-run-modules: PASS"
