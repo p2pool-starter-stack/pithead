@@ -115,7 +115,10 @@ make_bundle() {
         rm -f "$generated"
         die "make_bundle: generated pithead differs from the artifact to ship."
     }
-    mkdir -p "$d"
+    mkdir -p "$d" || {
+        rm -f "$generated"
+        die "make_bundle: could not create the bundle directory."
+    }
     cp "$generated" "$d/pithead" || {
         rm -f "$generated"
         die "make_bundle: failed to copy required runtime files."

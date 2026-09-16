@@ -203,6 +203,21 @@ bundle_mismatch="$({
 assert_rc "bundle refuses a generated CLI that differs from its slices" "$?" "1"
 assert_contains "bundle mismatch names pithead" "$bundle_mismatch" "generated pithead differs"
 mv "$SANDBOX/pithead.before" "$ROOT/pithead"
+echo "== unit: release bundle cleans a failed generated CLI copy (#2240) =="
+bundle_mkdir_fail="$({
+    cd "$ROOT" || exit
+    set --
+    # shellcheck disable=SC1090
+    source "$REL" 2>/dev/null
+    set +eu
+    export REPO_ROOT="$ROOT"
+    WORKDIR="$SANDBOX/bundle-mkdir-fail"
+    mkdir() { return 1; }
+    make_bundle "$WORKDIR/pithead.tar.gz"
+} 2>&1)"
+assert_rc "bundle cleans the generated CLI when its directory cannot be created" "$?" "1"
+assert_contains "bundle names a failed bundle directory" "$bundle_mkdir_fail" "could not create the bundle directory"
+assert_eq "bundle leaves no generated CLI after a directory failure" "$(find "$ROOT" -maxdepth 1 -name '.pithead.bundle.*' -print)" ""
 grep -q '^pithead/$' "$SANDBOX/bundle.list" && ok "bundle unpacks to versionless pithead/" || bad "bundle unpacks to pithead/" "top-level dir is not pithead/"
 _bundle_docs=$(sed -n 's|^pithead/docs/||p' "$SANDBOX/bundle.list" | grep -vE '^$|/$' | sort)
 _expected_docs=$(printf '%s\n' configuration.md dashboard.md faq.md getting-started.md hardware.md monitoring.md operations.md privacy.md telegram.md workers.md | sort)
