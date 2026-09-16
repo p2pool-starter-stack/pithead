@@ -202,11 +202,21 @@ phase_crossupdate() {
         bad "unit(s) failed after the cross-version update: $failed_units"
     fi
 
-    local dm
-    if dm=$(_dash_marker_served candidate 360); then
-        ok "the candidate dashboard image is what's actually serving after the update"
+    # Deterministic, not a 360s HTTP poll (#2056 review, round 3): job 360 spent its whole marker
+    # budget getting "nothing" back from /static/os-test-marker.txt while the dashboard was
+    # provably serving authenticated requests one second later — the static-file route through
+    # Caddy/TLS was the wrong instrument for what this actually needs to prove, which is whether
+    # `pithead-boot`'s loader-then-`up` sequence (11-baked-images.sh: "'up' recreates on the
+    # image-id change") really recreated the container. Ask podman directly, the same
+    # runtime-over-archive preference the restore leg's verdict already uses.
+    local running_img loaded_img
+    running_img=$(_ssh "podman inspect dashboard --format '{{.Image}}'" 2>/dev/null | tr -d '\r\n')
+    loaded_img=$(_ssh "podman images --no-trunc --format '{{.Repository}} {{.ID}}'" 2>/dev/null |
+        awk '/pithead-dashboard/{print $2; exit}' | tr -d '\r\n')
+    if [ -n "$running_img" ] && [ -n "$loaded_img" ] && [ "$running_img" = "$loaded_img" ]; then
+        ok "the dashboard container is running the freshly loaded candidate image ($loaded_img)"
     else
-        bad "the OS updated but the old dashboard image is still serving (got: $dm)"
+        bad "the dashboard container is not running the currently loaded candidate image — a stale container reads as healthy everywhere else (#798) (running: ${running_img:-none}, loaded: ${loaded_img:-none})"
     fi
 
     local scode
