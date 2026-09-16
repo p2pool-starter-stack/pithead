@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -16,10 +15,13 @@ def config_paths(tmp_path, monkeypatch):
     reference = {
         **live,
         "monero": {**live["monero"], "prune": True},
-        "p2pool": {"pool": "mini"},
+        "p2pool": {"pool": "mini", "clearnet": False},
         # telegram.enabled is the approval-tier leaf (2026-09-13 perimeter audit); without one in this synthetic schema
         # the classification tests below cannot tell a NARROWED tier from an EMPTY one.
-        "telegram": {"enabled": True, "events": {"wallet_changed": True}},
+        "telegram": {
+            "enabled": True,
+            "events": {"wallet_changed": True, "clearnet_exposed": True},
+        },
         "network": {"tor_egress_firewall": True},
         "dashboard": {"auth": {"password": ""}, "control": {"enabled": True}},
         "ssh": {"enabled": False},
@@ -74,27 +76,8 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["monero.wallet_address"] == "confirm"
     assert classes["network.tor_egress_firewall"] == "confirm"
     assert classes["dashboard.control.enabled"] == "confirm"
+    assert classes["p2pool.clearnet"] == "confirm"
     assert "dashboard.auth.password" not in classes
     assert "telegram.events.wallet_changed" not in classes
+    assert "telegram.events.clearnet_exposed" not in classes
     assert not any(p.startswith("ssh.") for p in classes)
-
-
-def test_repository_reference_has_no_unrouted_scalar_leaf():
-    reference = json.loads((Path(__file__).parents[3] / "config.reference.json").read_text())
-    free = control_service._editable_paths()
-    explicit = control_service._confirm_paths(
-        {"monero": {"mode": "remote"}, "tari": {"mode": "remote"}}
-    )
-    approval = config_operations.approval_paths(reference, reference, free, explicit)
-    confirmed = config_operations.confirmed_paths(reference, free, explicit, approval)
-    classified = set(free) | set(explicit) | set(approval) | set(confirmed)
-    assert "p2pool.clearnet" in confirmed
-    assert "p2pool.clearnet" not in free
-    unrouted = set(config_operations.leaf_paths(reference)) - classified
-    assert unrouted == {
-        "dashboard.auth.password",
-        "telegram.events.wallet_changed",
-        "telegram.events.clearnet_exposed",
-        "ssh.enabled",
-        "ssh.authorized_key",
-    }

@@ -181,7 +181,7 @@ more, and `telegram.control` is no longer a config key — `apply` drops it from
 upgrade.
 
 **What this costs.** The Telegram tap was the only second identity on a sensitive config commit.
-#1959 deliberately does not replace it: dashboard authentication is the access-control perimeter,
+Issue #1959 deliberately does not replace it: dashboard authentication is the access-control perimeter,
 and every reference value below the physical-presence boundary is reachable through the dashboard.
 Typed `APPLY`, the approval envelope and payout-suffix checks are typo protection, not proof of who
 asked; a compromised dashboard can write every one of them into its own request. The audit records
