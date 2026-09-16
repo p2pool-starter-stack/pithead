@@ -107,14 +107,14 @@ _phase_install_restore() {
     }
     # Restore the source archive first, then the checked-in supported-N-1 artifact. This retains
     # the existing same-version KVM coverage while proving the operator upgrade path separately.
-    local source_archive="$restore_archive"
+    local source_archive="$restore_archive" source_target="$target_disk"
     restore_fixture_fingerprints || {
         bad "restore leg: source or v1.20.0 archive is missing required restore fingerprints"
         rm -f "$target_disk" "$restore_archive" "${RESTORE_N1_ARCHIVE:-}"
         return 1
     }
     local expected_wallet expected_onion expected_secrets expected_config
-    local restore_case restore_target target_chain_sentinel
+    local restore_case restore_target target_chain_sentinel same_version_target=""
     for restore_case in same-version n1; do
         case "$restore_case" in
         same-version)
@@ -124,6 +124,10 @@ _phase_install_restore() {
             expected_secrets="$RESTORE_SOURCE_SECRETS"
             expected_config="$RESTORE_SOURCE_CONFIG"
             target_chain_sentinel=""
+            same_version_target="/srv/code/bench-vm/pithead-restore-target.img"
+            rm -f "$same_version_target"
+            qemu-img create -f raw "$same_version_target" 30G >/dev/null
+            restore_target="$same_version_target"
             ok "restore leg: restoring the source archive through the same-version wizard path"
             ;;
         n1)
@@ -134,6 +138,7 @@ _phase_install_restore() {
             expected_secrets="$RESTORE_N1_SECRETS"
             expected_config="$RESTORE_N1_CONFIG"
             target_chain_sentinel="n1-target-chain-sentinel"
+            restore_target="$same_version_target"
             _ssh "printf '%s\\n' keep-this-chain-data > /data/pithead/data/monero/$target_chain_sentinel" || {
                 bad "restore leg: could not plant the target chain-data sentinel before the N-1 restore"
                 rm -f "$target_disk" "$restore_archive" "$RESTORE_N1_ARCHIVE"
@@ -146,9 +151,8 @@ _phase_install_restore() {
         sleep 8
         vm_destroy_or_refuse || return
 
-        # Restore onto the existing appliance disk: wipe=keep must preserve its chain data while
-        # the N-1 archive supplies configuration and secrets.
-        restore_target="$target_disk"
+        # The source archive keeps its fresh-disk coverage. The N-1 archive follows it onto that
+        # now-provisioned disk, so wipe=keep has actual chain data to preserve.
         img=$(_build_image v1) || {
             bad "restore leg: image build failed"
             # shellcheck disable=SC2154  # shared through the assembled runner scope
@@ -390,7 +394,8 @@ _phase_install_restore() {
         else
             bad "restore leg: v1.20.0 onion identity not restored"
         fi
+        [ "$restore_case" != same-version ] || target_disk="$restore_target"
     done
     phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
-    rm -f "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
+    rm -f "$source_target" "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
 }

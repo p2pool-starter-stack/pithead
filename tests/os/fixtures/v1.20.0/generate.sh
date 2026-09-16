@@ -47,8 +47,8 @@ tar -xzf "$work/pithead.tar.gz" -C "$work"
 
 cd "$work/pithead"
 jq -n --arg wallet "$wallet" --arg tari "$TARI_WALLET" '{
-  monero: {mode: "remote", wallet_address: $wallet, node_username: "fixture-rpc-user", node_password: "fixture-rpc-password", remote: {host: "127.0.0.1", rpc_port: 18081, zmq_port: 18083}},
-  tari: {mode: "remote", wallet_address: $tari, remote: {host: "127.0.0.1", grpc_port: 18142}},
+  monero: {mode: "remote", wallet_address: $wallet, node_username: "fixture-rpc-user", node_password: "fixture-rpc-password", remote: {host: "10.0.0.1", rpc_port: 18081, zmq_port: 18083}},
+  tari: {mode: "remote", wallet_address: $tari, remote: {host: "10.0.0.1", grpc_port: 18142}},
   p2pool: {pool: "mini", stratum_password: "fixture-stratum-password"},
   dashboard: {auth: {username: "fixture-admin", password: "fixture-dashboard-password"}, onion: {enabled: true, client_auth: true}, control: {enabled: true}, energy: {cost_per_kwh: 0.27, currency: "USD"}}
 }' >config.json
