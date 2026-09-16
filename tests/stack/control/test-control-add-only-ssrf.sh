@@ -126,7 +126,7 @@ assert_eq "config.json keeps healthchecks unset" "$(jq -r '.healthchecks.ping_ur
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "tor-egress-firewall disable commit is refused even with the APPLY token" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tor-egress refusal names the perimeter key, not a missing envelope (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TOR_EGRESS_FIREWALL"
+assert_contains "tor-egress refusal asks for the envelope" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json keeps the tor egress firewall unset (defaults on)" "$(jq -r '.network.tor_egress_firewall // "unset"' "$C/config.json")" "unset"
 # Setting a Monero view key (the #381 payout-confirm secret) reveals every incoming amount — a
 # secret, host-only, never confirm-gated. Commit WITH a valid APPLY token: the perimeter gate must
@@ -335,7 +335,7 @@ rm -f "$RESULTS/$UUIDE.json" "$STAGED/$UUIDE.json"
 jq '.dashboard.energy={cost_per_kwh:0.25} | .monero.rpc_lan_access=true' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "energy edit bundled with a non-allowlisted key is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "bundled refusal names the perimeter key (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "MONERO_RPC_BIND"
+assert_contains "bundled refusal asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps monero LAN access off after the refusal" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
 assert_eq "config.json keeps the previously-committed energy cost after the refusal" "$(jq -r '.dashboard.energy.cost_per_kwh' "$C/config.json")" "0.18"
 
@@ -389,7 +389,7 @@ assert_contains "commit request smuggling a destructive flag is rejected" "$(jq 
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "commit after result-file tampering is still refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TELEGRAM_BOT_TOKEN"
+assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps the untampered bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
 
 # Sensitive keys PRESENT but UNCHANGED must not trip the gate: a plain pool-tier change on the

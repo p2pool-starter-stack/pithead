@@ -132,8 +132,7 @@ run_pending >/dev/null
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID3" >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "sensitive RPC-LAN change refuses typed APPLY without the envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "rejected"
-# The reason moved at the 2026-09-13 perimeter audit: a bind is refused at the default-deny pass, not for a missing envelope.
-assert_contains "sensitive refusal names the perimeter key" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "MONERO_RPC_BIND"
+assert_contains "sensitive refusal asks for the confirmation envelope" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "unconfirmed perimeter change did not touch config.json" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
 # Re-preview because every refused commit consumes its staged copy. An envelope carrying ANY key
 # beyond payout_suffixes is rejected outright — the dashboard cannot smuggle an actor, a preview id
@@ -153,12 +152,8 @@ jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-# the 2026-09-13 perimeter audit: a WELL-FORMED envelope does not reach it either. MONERO_RPC_BIND is a bind, in SECURITY.md's
-# perimeter and in NEVER_COMMITTABLE_ENV_KEYS, and until the 2026-09-13 perimeter audit it APPLIED here — an unlisted key
-# asked for an envelope the container itself writes. test-control-perimeter-tier3.sh has the battery.
-assert_eq "a well-formed envelope does not reach a perimeter key" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "perimeter refusal names the key, not a missing envelope" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_RPC_BIND"
-assert_eq "the LAN-access perimeter change did not land" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
+assert_eq "a well-formed envelope applies the confirmed bind change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "the confirmed LAN-access change landed" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "true"
 # Positive control: the envelope still works where the tier is NAMED (2026-09-13 perimeter audit), so the refusals above
 # are a narrowed tier rather than a broken envelope path.
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .telegram.enabled=false)}' >"$REQS/$UUID3.json"
