@@ -140,7 +140,12 @@ bundle_copy_fail="$(
         cd "$ROOT" || exit
         set -- && source "$REL" 2>/dev/null
         set +eu && export REPO_ROOT="$ROOT" && WORKDIR="$SANDBOX/bundle-copy-fail" TAG=v9.9.9
-        cp() { return 1; }
+        cp() {
+            case "$1" in
+            .pithead.bundle.*) command cp "$@" ;;
+            *) return 1 ;;
+            esac
+        }
         make_bundle "$WORKDIR/pithead.tar.gz"
     ) 2>&1
 )"
