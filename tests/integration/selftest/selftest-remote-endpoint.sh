@@ -62,6 +62,41 @@ out=$(bash "$HERE/../run.sh" --remote-monero-host 10.0.0.5:18081 2>&1)
 assert_rc "host:port is refused" "$?" "2"
 assert_contains "refusal explains the bare-host rule" "$out" "BARE host or IP"
 
+out=$(bash "$HERE/../run.sh" --remote-monero-host 'node;echo INJECTED' --local 2>&1)
+assert_rc "Monero shell payload is refused before rendering" "$?" "2"
+assert_contains "Monero refusal names the host grammar" "$out" "unsupported characters"
+
+out=$(bash "$HERE/../run.sh" --remote-tari-host 'node"|.network.subnet="INJECTED' --local 2>&1)
+assert_rc "Tari jq payload is refused before rendering" "$?" "2"
+assert_contains "Tari refusal names the host grammar" "$out" "unsupported characters"
+
+out=$(bash "$HERE/../run.sh" --remote-tari-host tari.example:18142 --local 2>&1)
+assert_rc "Tari host:port is refused before rendering" "$?" "2"
+assert_contains "Tari host:port refusal names the separate port" "$out" "grpc_port separately"
+
+out=$(bash "$HERE/../e2e.sh" --remote-tari-host tari.example:18142 --help 2>&1)
+assert_rc "e2e refuses a Tari host:port before preflight" "$?" "1"
+assert_contains "e2e Tari refusal names the bare-host grammar" "$out" "bare hostname or IPv4"
+
+out=$(bash "$HERE/../e2e.sh" --remote-monero-host 'node;echo INJECTED' --help 2>&1)
+assert_rc "e2e refuses a remote host before preflight" "$?" "1"
+assert_contains "e2e refusal names the host grammar" "$out" "bare hostname or IPv4"
+
+out=$(bash "$HERE/../e2e.sh" --remote-monero-rpc-port abc --help 2>&1)
+assert_rc "e2e refuses a remote port before preflight" "$?" "1"
+assert_contains "e2e port refusal names the range" "$out" "1-65535"
+
+REMOTE_NODE_HOSTS=(node.example)
+out=$(printf 'failed at node.example:28081\n' | redact_remote_output)
+assert_absent "remote hostname is masked from console output" "$out" "node.example"
+assert_contains "remote port remains useful evidence" "$out" "28081"
+assert_contains "masked console output retains a useful marker" "$out" "<redacted-endpoint>"
+
+# shellcheck disable=SC2034 # read by redact_remote_output in the sourced helper
+REMOTE_NODE_HOSTS=()
+out=$(printf 'ordinary output\n' | redact_remote_output)
+assert_contains "empty remote-host array is safe" "$out" "ordinary output"
+
 out=$(bash "$HERE/../run.sh" --remote-monero-rpc-port 0 --local 2>&1)
 assert_rc "port 0 is refused" "$?" "2"
 assert_contains "port refusal names the range" "$out" "1-65535"
@@ -79,6 +114,10 @@ assert_contains "non-numeric port names the range" "$out" "1-65535"
 out=$(bash "$HERE/../run.sh" --remote-monero-zmq-port 1x --local 2>&1)
 assert_rc "part-numeric zmq port is refused" "$?" "2"
 assert_contains "part-numeric port names the range" "$out" "1-65535"
+
+out=$(bash "$HERE/../run.sh" --remote-monero-rpc-port $'1\e[2J' --local 2>&1)
+assert_rc "port terminal-control payload is refused" "$?" "2"
+assert_absent "port refusal does not echo terminal controls" "$out" $'\e'
 
 echo ""
 echo "selftest-remote-endpoint: $IT_PASS passed, $IT_FAIL failed"
