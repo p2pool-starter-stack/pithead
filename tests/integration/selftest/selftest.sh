@@ -60,22 +60,22 @@ resolve_overrides "monero.mode=remote"
 rc=$?
 assert_rc "remote skips without endpoint" "$rc" "1"
 assert_contains "skip names --remote-monero-host" "$SKIP_REASON" "--remote-monero-host"
-REMOTE_MONERO_HOST="10.0.0.5:18081"
+REMOTE_MONERO_HOST="10.0.0.5"
 resolve_overrides "monero.mode=remote"
 rc=$?
 assert_rc "remote ok with endpoint" "$rc" "0"
-assert_contains "augments remote host" "$RESOLVED" "monero.remote.host=10.0.0.5:18081"
+assert_contains "augments remote host" "$RESOLVED" "monero.remote.host=10.0.0.5"
 # tari.mode remote (#103/#942): same shape as monero's above, its own global/endpoint.
 REMOTE_TARI_HOST=""
 resolve_overrides "tari.mode=remote"
 rc=$?
 assert_rc "tari remote skips without endpoint" "$rc" "1"
 assert_contains "skip names --remote-tari-host" "$SKIP_REASON" "--remote-tari-host"
-REMOTE_TARI_HOST="10.0.0.6:18142"
+REMOTE_TARI_HOST="10.0.0.6"
 resolve_overrides "tari.mode=remote"
 rc=$?
 assert_rc "tari remote ok with endpoint" "$rc" "0"
-assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6:18142"
+assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6"
 unset REMOTE_TARI_HOST
 # Payout confirmation (#381/#462/#942): the "payout_confirm=env" marker gates on
 # IT_MONERO_VIEW_KEY, is always stripped from RESOLVED, and folds in tari's pair only when BOTH
@@ -108,12 +108,12 @@ unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1
 FULL_DATA_DIR="/srv/full"
-REMOTE_MONERO_HOST="10.0.0.5:18081"
+REMOTE_MONERO_HOST="10.0.0.5"
 resolve_overrides "monero.mode=remote monero.prune=false"
 rc=$?
 assert_rc "compound prereqs resolve" "$rc" "0"
 assert_contains "compound: data_dir" "$RESOLVED" "monero.data_dir=/srv/full"
-assert_contains "compound: remote host" "$RESOLVED" "monero.remote.host=10.0.0.5:18081"
+assert_contains "compound: remote host" "$RESOLVED" "monero.remote.host=10.0.0.5"
 # A network.subnet move can't be hot-applied (#201) — the hot-apply loop must SKIP it (loud, not
 # silent), leaving the real coverage to run.sh's --subnet phase.
 BASELINE_PRUNE=1
@@ -189,11 +189,10 @@ assert_eq "both remote marks both absent" "$(absent_services "$BOTH_REMOTE")" "$
 VIEWKEY_MONERO='{"monero":{"mode":"local","view_key":"vk"}}'
 VIEWKEY_TARI='{"tari":{"mode":"local","view_key":"tvk"}}'
 assert_contains "monero.view_key set -> wallet-rpc expected" "$(expected_services "$VIEWKEY_MONERO")" "wallet-rpc"
-case "$(expected_services "$LOCAL")" in
-*wallet-rpc*) it_fail "no view_key -> wallet-rpc not expected" "wallet-rpc present" ;;
-*) it_pass "no view_key -> wallet-rpc not expected" ;;
-esac
+case "$(expected_services "$LOCAL")" in *wallet-rpc*) it_fail "no view_key -> wallet-rpc not expected" "wallet-rpc present" ;; *) it_pass "no view_key -> wallet-rpc not expected" ;; esac
 assert_contains "tari.view_key set -> tari-wallet expected" "$(expected_services "$VIEWKEY_TARI")" "tari-wallet"
+assert_eq "local_miner unset -> no local-miner node (#2303)" "$(expected_topology_nodes "$LOCAL")" "browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+assert_eq "local_miner.enabled=true -> local-miner node present (#2303)" "$(expected_topology_nodes '{"local_miner":{"enabled":true}}')" "browser,caddy,dashboard,docker,internet,local-miner,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
 assert_eq "pool_label main" "$(pool_label main)" "Main"
 assert_eq "pool_label mini" "$(pool_label mini)" "Mini"
 assert_eq "pool_label nano" "$(pool_label nano)" "Nano"

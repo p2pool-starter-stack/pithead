@@ -116,3 +116,19 @@ async def test_masked_control_token_without_read_map_fails_closed(monkeypatch):
         "adopted": True,
     }
     assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_missing_read_token_warns_about_token_length_not_auth_mode(monkeypatch, caplog):
+    # #2313: a masked/adopted worker with no read_token is almost always a control token under
+    # RigForge's 32-character read-derivation floor (render_worker_read_tokens enforces the same
+    # floor host-side) — not an XMRIG_API_AUTH/port misconfiguration. The generic _fix_hint() used
+    # for every other probe failure is actively wrong advice here, so this path must say why the
+    # enriched feed is empty rather than pointing the operator at xmrig auth settings.
+    monkeypatch.setattr(xc, "XMRIG_API_AUTH", "name")
+    monkeypatch.setattr(xc, "WORKER_ENDPOINTS", _descriptor()["workers"]["list"])
+    session = FakeSession(response=FakeResponse(200, {"ok": True}))
+    with caplog.at_level("WARNING"):
+        await XMRigWorkerClient(session).get_stats("10.0.0.5", "rig1")
+    assert "32" in caplog.text
+    assert "xmrig access-token" not in caplog.text
