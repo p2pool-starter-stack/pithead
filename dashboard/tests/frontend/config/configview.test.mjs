@@ -30,6 +30,10 @@ test("carried SSH configuration is warned about and not proposed", async () => {
   const rendered = renderToString(view.render());
   assert.match(rendered, /SSH settings from an older configuration are ignored/);
   assert.doesNotMatch(rendered, /ssh\.enabled/);
+
+  view.onJsonInput('{"ssh":{"authorized_key":"retired"},"network":{"mtu":1400}}');
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.doesNotMatch(view.state.editText, /authorized_key/);
 });
 
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,

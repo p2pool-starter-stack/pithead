@@ -225,7 +225,8 @@ export class ConfigView extends Component {
       this.setState({ editText: text, jsonError: staged.error });
       return;
     }
-    this.setState({ editText: text, jsonError: null, candidate: staged.config });
+    const candidate = editableCandidate(staged.config);
+    this.setState({ editText: JSON.stringify(candidate, null, 2), jsonError: null, candidate });
   }
   // Fill the JSON textarea from a local file (#529, mirrors WorkerInspect.onFilePick, #518) — a
   // FileReader read, never an upload; the operator still reviews and clicks Save like any other
