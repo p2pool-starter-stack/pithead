@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import requests
 
 import mining_dashboard.service.notify.test_alert as test_alert
+from mining_dashboard.helper.http import request_failure_class
 from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 
@@ -13,6 +14,11 @@ def _response(status):
     response.status_code = status
     response.url = "https://redacted.invalid"
     return response
+
+
+def test_failure_class_fallbacks_are_secret_free():
+    assert request_failure_class(requests.HTTPError()) == "HTTP error"
+    assert request_failure_class(requests.RequestException("SECRET URL")) == "RequestException"
 
 
 def test_unconfigured_sinks_and_healthchecks_are_reported():
