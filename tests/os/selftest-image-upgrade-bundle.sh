@@ -6,7 +6,12 @@ td="$(mktemp -d)"
 trap 'rm -rf "$td"' EXIT
 mkdir "$td/bin"
 printf '%s\n' '#!/bin/sh' 'case "$1" in pull) [ "${FAIL_IMAGE_PULL:-0}" = 0 ] || exit 23;; image) printf "%s@sha256:%064d\n" "${5%:*}" 1;; esac' >"$td/bin/docker"
-printf '%s\n' '#!/bin/sh' 'cp "$8" "$7"' >"$td/bin/cosign"
+printf '%s\n' '#!/bin/sh' \
+    'case " $* " in *" --use-signing-config=false "*) ;; *) exit 24;; esac' \
+    'case " $* " in *" --tlog-upload=false "*) ;; *) exit 24;; esac' \
+    'output= source=' \
+    'while [ "$#" -gt 0 ]; do case "$1" in --output-signature) output=$2; shift 2;; *) source=$1; shift;; esac; done' \
+    'cp "$source" "$output"' >"$td/bin/cosign"
 chmod +x "$td/bin/"*
 : >"$td/key"
 PATH="$td/bin:$PATH" PITHEAD_REGISTRY=registry.test "$HERE/image-upgrade-bundle.sh" "$td/candidate.tar.gz" \

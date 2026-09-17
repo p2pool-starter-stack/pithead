@@ -72,7 +72,8 @@ _image_upgrade_prepare_inputs() {
         return "$rc"
     }
     _image_upgrade_input_run signing 'cosign sign-blob <candidate> with <wrong-key>' \
-        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --tlog-upload=false --key "$stage/wrong.key" \
+        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --use-signing-config=false --tlog-upload=false \
+        --key "$stage/wrong.key" \
         --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz" || return $?
     if "$stage/cosign" verify-blob --key "$stage/bundle.pub" --signature "$stage/wrong.sig" \
         --insecure-ignore-tlog=true "$stage/candidate.tar.gz" >/dev/null 2>&1; then

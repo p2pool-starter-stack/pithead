@@ -65,7 +65,8 @@ awk -v registry="$REGISTRY" '{gsub(/\$\{PITHEAD_REGISTRY:-ghcr.io\/p2pool-starte
     "$WORKDIR/repack/pithead/docker-compose.yml" >"$WORKDIR/repack/pithead/docker-compose.yml.new"
 mv "$WORKDIR/repack/pithead/docker-compose.yml.new" "$WORKDIR/repack/pithead/docker-compose.yml"
 tar --no-xattrs -czf "$OUT" -C "$WORKDIR/repack" pithead
-cosign sign-blob --yes --tlog-upload=false --key "$KEY" --output-signature "$OUT.sig" "$OUT" >/dev/null 2>&1 || {
+cosign sign-blob --yes --use-signing-config=false --tlog-upload=false --key "$KEY" \
+    --output-signature "$OUT.sig" "$OUT" >/dev/null 2>&1 || {
     rc=$?
     input_failure signing 'cosign sign-blob <candidate> with <bundle-key>' "$rc"
     exit "$rc"
