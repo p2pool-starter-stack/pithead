@@ -156,7 +156,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   modifying it, then invoke the existing image-upgrade harness against the submitted images. The
   baseline uses remote Monero and remote Tari because v1.20.0 predates Tari-off mode. The phase
   runs the release-shaped stack under the CLI's existing test override inside the otherwise
-  appliance-shaped guest. It proves bundle trust (including a wrong-key
+  appliance-shaped guest. Its private volatile script is invoked through `bash`, so a noexec
+  mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
   and resumed hashes. Release-input preparation failures name only the failed sub-step, a redacted
   command, and its exit status; command output, tokens, keys, and signature material stay hidden.

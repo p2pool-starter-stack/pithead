@@ -154,7 +154,7 @@ phase_image_upgrade() {
         bad "could not stage the private upgrade inputs inside the guest"
         return
     }
-    _ssh "/run/pithead-image-upgrade/image-upgrade-guest.sh $head" || rc=$?
+    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" || rc=$?
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
     if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
         ok "guest-local reflink volume and private inputs were torn down"

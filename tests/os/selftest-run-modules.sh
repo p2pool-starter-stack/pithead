@@ -163,6 +163,33 @@ else
     echo "image-upgrade left staged guest inputs after a staging failure" >&2
     exit 1
 fi
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT=18083
+    REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
+    _image_upgrade_prepare_inputs() { :; }
+    _vm_boot_disk() { :; }
+    _wait_ssh() { :; }
+    _image_upgrade_stage_guest() { :; }
+    _image_upgrade_clear_guest_inputs() { :; }
+    _ssh() {
+        case "$1" in
+        'bash /run/pithead-image-upgrade/image-upgrade-guest.sh '*) printf '%s\n' "$1" >"$td/guest-runner" ;;
+        '! mountpoint -q /mnt/pithead-image-upgrade'*) : ;;
+        *) return 1 ;;
+        esac
+    }
+    bad() { :; }
+    info() { :; }
+    ok() { :; }
+    phase_image_upgrade
+    grep -Eq '^bash /run/pithead-image-upgrade/image-upgrade-guest\.sh [0-9a-f]{40}$' "$td/guest-runner"
+); then
+    :
+else
+    echo "image-upgrade did not invoke its private guest script through bash" >&2
+    exit 1
+fi
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
 preflight_cleanup="$(sed -n '/kvm_preflight || {/,/^    }/p' "$HERE/phases/rigmedia.sh")"
