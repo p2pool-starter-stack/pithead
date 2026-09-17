@@ -138,8 +138,10 @@ grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &
 }
 bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
 if (
-    _ssh() { printf '%s\n' 'stage=baseline-setup exit=17'; }
-    [ "$(_image_upgrade_read_guest_failure)" = 'stage=baseline-setup exit=17' ]
+    for stage in reflink-file reflink-format reflink-mount reflink-verify baseline-setup; do
+        _ssh() { printf 'stage=%s exit=17\n' "$stage"; }
+        [ "$(_image_upgrade_read_guest_failure)" = "stage=$stage exit=17" ] || exit 1
+    done
     _ssh() { printf '%s\n' 'stage=baseline-setup exit=17 token=must-not-leak'; }
     ! _image_upgrade_read_guest_failure >/dev/null 2>&1
 ); then

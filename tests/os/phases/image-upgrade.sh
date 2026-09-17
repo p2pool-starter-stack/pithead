@@ -125,16 +125,16 @@ _image_upgrade_clear_guest_inputs() {
 }
 
 _image_upgrade_read_guest_failure() {
-    local marker stage exit_status
+    local marker guest_stage exit_status
     marker="$(_ssh 'cat /run/pithead-image-upgrade/guest-stage' 2>/dev/null)" || return 1
-    stage="${marker#stage=}"
-    stage="${stage%% exit=*}"
+    guest_stage="${marker#stage=}"
+    guest_stage="${guest_stage%% exit=*}"
     exit_status="${marker##* exit=}"
-    case "$stage" in
-    guest-preflight | reflink-volume | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    case "$guest_stage" in
+    guest-preflight | reflink-file | reflink-format | reflink-mount | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
     *) return 1 ;;
     esac
-    [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$stage exit=$exit_status" ] || return 1
+    [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$guest_stage exit=$exit_status" ] || return 1
     printf '%s\n' "$marker"
 }
 

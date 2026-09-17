@@ -12,7 +12,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-volume | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mount | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -31,13 +31,14 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    GUEST_STAGE=baseline-setup
-    if (record_failure 17); then
-        exit 1
-    else
-        rc=$?
-    fi
-    [ "$rc" -eq 17 ] && [ "$(cat "$INPUT/guest-stage")" = 'stage=baseline-setup exit=17' ]
+    for GUEST_STAGE in reflink-file reflink-format reflink-mount reflink-verify baseline-setup; do
+        if (record_failure 17); then
+            exit 1
+        else
+            rc=$?
+        fi
+        [ "$rc" -eq 17 ] && [ "$(cat "$INPUT/guest-stage")" = "stage=$GUEST_STAGE exit=17" ] || exit 1
+    done
     cosign() { :; }
     GUEST_STAGE=bundle-trust
     if (verify_bundle_trust); then
@@ -63,11 +64,14 @@ trap cleanup EXIT
 
 systemctl stop pithead-firstboot.service
 podman rm -f pithead-wizard >/dev/null 2>&1 || true
-GUEST_STAGE=reflink-volume
+GUEST_STAGE=reflink-file
 truncate -s 14G "$LOOP"
+GUEST_STAGE=reflink-format
 mkfs.xfs -f -m reflink=1 "$LOOP" >/dev/null
 mkdir -p "$MOUNT"
+GUEST_STAGE=reflink-mount
 mount -o loop "$LOOP" "$MOUNT"
+GUEST_STAGE=reflink-verify
 xfs_info "$MOUNT" | grep -q 'reflink=1'
 
 GUEST_STAGE=bundle-trust
