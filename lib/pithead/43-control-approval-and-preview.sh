@@ -74,7 +74,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     local unknown
     if ! unknown=$(jq -rn --argjson carried "$carried_ssh" --slurpfile ref "$REFERENCE_CONFIG" --slurpfile cfg "$staged" '
         def norm: [.[] | strings] | join(".");
-        ([$cfg[0] | paths | select(($carried or .[0] != "ssh") and .[0:2] != ["workers", "list"]) | norm]
+        ([$cfg[0] | paths | select((($carried | not) or .[0] != "ssh") and .[0:2] != ["workers", "list"]) | norm]
          - [$ref[0] | paths | norm])
         | unique | join(", ")' 2>/dev/null); then
         printf 'could not validate the staged config against the schema (%s) — refusing to commit' "$REFERENCE_CONFIG"
