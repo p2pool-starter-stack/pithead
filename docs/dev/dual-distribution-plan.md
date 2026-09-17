@@ -389,8 +389,8 @@ container is the dashboard image in a flag mode, and the host-side wait-then-app
 loop lives in `pithead`. `install.sh`'s last step becomes the wizard handoff instead
 of `exec ./pithead setup`.
 
-Lockout insurance: physical console login always works (the appliance has no SSH by
-default; SSH is a wizard opt-in) — a broken wizard must never brick the box.
+Lockout insurance: physical console login always works (release appliances never
+provision SSH) — a broken wizard must never brick the box.
 
 ### Phase 4 — release pipeline + channels
 

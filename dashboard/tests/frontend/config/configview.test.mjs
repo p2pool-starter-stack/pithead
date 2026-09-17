@@ -1,12 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
-import { PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { ConfigView, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { editableCandidate } from "../../../mining_dashboard/web/static/config/configlogic.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
+
+test("editableCandidate drops private and prototype-control keys but keeps secret sentinels", () => {
+  const out = editableCandidate(JSON.parse('{"__proto__":{"polluted":true},"constructor":{"polluted":true},"network":{"mtu":1500},"secret":{"__secret__":true}}'));
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+  assert.equal(Object.hasOwn(out, "constructor"), false);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.deepEqual(out.network, { mtu: 1500 });
+  assert.deepEqual(out.secret, { __secret__: true });
+});
+
+test("carried SSH configuration is warned about and not proposed", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ ssh: { enabled: true }, network: { mtu: 1500 } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.equal(view.state.sections.flatMap((section) => section.fields).some((field) => field.key.startsWith("ssh.")), false);
+  const rendered = renderToString(view.render());
+  assert.match(rendered, /SSH settings from an older configuration are ignored/);
+  assert.doesNotMatch(rendered, /ssh\.enabled/);
+
+  view.onJsonInput('{"ssh":{"authorized_key":"retired"},"network":{"mtu":1400}}');
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.doesNotMatch(view.state.editText, /authorized_key/);
+});
 
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,
 // restoring the globals afterwards.
