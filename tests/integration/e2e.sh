@@ -361,7 +361,6 @@ wait_workers() { # <n> <timeout_s>
         sleep 8
     done
 }
-
 # --- Phase 0: preflight -----------------------------------------------------
 preflight() {
     log "Preflight"
