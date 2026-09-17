@@ -35,6 +35,18 @@ for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy
     assert_eq "quadlet parity: $f" "$(diff -u "$ROOT/os/quadlet/$f" "$QOUT/$f" 2>&1 | head -c 300)" ""
 done
 assert_eq "quadlet p2pool disables its persistent file log (#1989)" "$(grep -c '^Exec=--no-log-file ' "$QOUT/p2pool.container")" "1"
+QNOAUTH="$SANDBOX/quadlet-no-auth-out"
+sed -E 's/^MONERO_NODE_(USERNAME|PASSWORD)=.*/\1=/' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/no-auth.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/no-auth.env" "$QNOAUTH" >/dev/null
+assert_eq "remote node without RPC auth omits --rpc-login (#2278)" \
+    "$(sed -n '/^Exec=/p' "$QNOAUTH/p2pool.container")" \
+    "Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats"
+QEMPTY_PASSWORD="$SANDBOX/quadlet-empty-password-out"
+sed -E 's/^MONERO_NODE_PASSWORD=.*/MONERO_NODE_PASSWORD=/' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/empty-password.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/empty-password.env" "$QEMPTY_PASSWORD" >/dev/null
+assert_eq "remote node with an empty password keeps --rpc-login (#2278)" \
+    "$(sed -n '/^Exec=/p' "$QEMPTY_PASSWORD/p2pool.container")" \
+    "Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login rendered-node-user: --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats"
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
 # The two render targets share one dashboard, and a variable added to the compose service can be
 # left off the quadlet unit with nothing red (#1896: the three DASHBOARD_ONION_* values the header
