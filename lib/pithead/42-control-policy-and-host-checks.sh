@@ -163,7 +163,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential, plus
 # HOST_IP. The Telegram toggles switch a channel #2076 made READ-ONLY, so neither can be used to
 # commit anything, and both are instantly reversible by the same route. HOST_IP is the validated
-# dashboard.hostname: changing it remints the local certificate and changes the machine's mDNS
+# dashboard.host: changing it remints the local certificate and changes the machine's mDNS
 # identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here
 # and never may be: they sit in
 # CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
@@ -191,7 +191,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.
 # Space-separated exact env-key names.
-CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
 
 # The committable universe as one alternation: the three lists above and nothing else. Defined
 # ONCE because the commit gate and the preview MUST classify identically — while they did not
