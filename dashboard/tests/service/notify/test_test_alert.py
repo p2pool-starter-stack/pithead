@@ -17,6 +17,7 @@ def _response(status):
     response.url = "https://redacted.invalid"
     response.raw = MagicMock()
     response.raw.stream.side_effect = AssertionError("response body was read")
+    response.raw.read.side_effect = AssertionError("response body was read")
     return response
 
 
@@ -79,11 +80,11 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
 
     def post(url, **kwargs):
         attempts.append((url, kwargs))
-        if "api.telegram.org" in url:
+        if len(attempts) == 1:
             raise requests.ConnectionError("refused")
-        if "refused.invalid" in url:
+        if len(attempts) == 2:
             raise requests.Timeout("slow")
-        if "rejected.invalid" in url:
+        if len(attempts) == 3:
             response = _response(302)
         else:
             response = _response(200)
@@ -106,6 +107,7 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
     assert all(kwargs["stream"] is True for _, kwargs in attempts)
     assert all(kwargs["allow_redirects"] is False for _, kwargs in attempts)
     assert all(response.raw.stream.call_count == 0 for response in responses)
+    assert all(response.raw.read.call_count == 0 for response in responses)
     assert attempts[2][1]["json"]["event"] == test_alert.TEST_EVENT
     assert test_alert.TEST_MESSAGE in attempts[-1][1]["data"].decode()
     assert token not in text
