@@ -12,7 +12,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mount | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -31,7 +31,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mount reflink-verify baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -39,8 +39,10 @@ if [ "$NEW_SHA" = --self-test ]; then
         fi
         [ "$rc" -eq 17 ] && [ "$(cat "$INPUT/guest-stage")" = "stage=$GUEST_STAGE exit=17" ] || exit 1
     done
-    sed -n '/^GUEST_STAGE=reflink-mount$/,/^GUEST_STAGE=reflink-verify$/p' "${BASH_SOURCE[0]}" |
+    sed -n '/^GUEST_STAGE=reflink-mountpoint$/,/^GUEST_STAGE=reflink-mount-loop$/p' "${BASH_SOURCE[0]}" |
         grep -Fx 'mkdir -p "$MOUNT"' >/dev/null || exit 1
+    sed -n '/^GUEST_STAGE=reflink-mount-loop$/,/^GUEST_STAGE=reflink-verify$/p' "${BASH_SOURCE[0]}" |
+        grep -Fx 'mount -o loop "$LOOP" "$MOUNT"' >/dev/null || exit 1
     cosign() { :; }
     GUEST_STAGE=bundle-trust
     if (verify_bundle_trust); then
@@ -70,8 +72,9 @@ GUEST_STAGE=reflink-file
 truncate -s 14G "$LOOP"
 GUEST_STAGE=reflink-format
 mkfs.xfs -f -m reflink=1 "$LOOP" >/dev/null
-GUEST_STAGE=reflink-mount
+GUEST_STAGE=reflink-mountpoint
 mkdir -p "$MOUNT"
+GUEST_STAGE=reflink-mount-loop
 mount -o loop "$LOOP" "$MOUNT"
 GUEST_STAGE=reflink-verify
 xfs_info "$MOUNT" | grep -q 'reflink=1'

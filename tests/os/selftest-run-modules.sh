@@ -138,7 +138,7 @@ grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &
 }
 bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
 if (
-    for stage in reflink-file reflink-format reflink-mount reflink-verify baseline-setup; do
+    for stage in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-setup; do
         _ssh() { printf 'stage=%s exit=17\n' "$stage"; }
         [ "$(_image_upgrade_read_guest_failure)" = "stage=$stage exit=17" ] || exit 1
     done
