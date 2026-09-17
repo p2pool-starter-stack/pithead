@@ -227,15 +227,21 @@ phase_stack() {
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
-    # remote-tari-main-secure sets monero.mode=local (it exercises a remote TARI node from an
-    # otherwise-local DIY bench, tests/integration/scenarios.sh) — kept scenario-only, never
-    # paired with the destructive phases above, since this guest has no local chain to run them
-    # against; the config-application assertions alone are still a real, appliance-channel first.
-    _stack_run_integration "scenario remote-tari-main-secure" \
-        --scenario remote-tari-main-secure "${remote_extra[@]}"
     # xvb.enabled=true was submitted above; a recent PPLNS share is NOT guaranteed on a scratch
     # guest whose remote node was only just pointed at — a fresh live-node coverage gap #2062
     # documents (docs/dev/testing-strategy.md § J), not a defect this phase can manufacture.
     _stack_run_integration "xvb routing smoke (first appliance-channel run)" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" --safety-backup --xvb-routing-smoke
+    # remote-tari-main-secure sets monero.mode=local (it exercises a remote TARI node from an
+    # otherwise-local DIY bench, tests/integration/scenarios.sh) — kept scenario-only, never
+    # paired with the destructive phases above, since this guest has no local chain to run them
+    # against; the config-application assertions alone are still a real, appliance-channel first.
+    # Run LAST (#2062, job 447): its own end-of-run restore genuinely fails on this guest — no
+    # local chain to revert to — which left BASELINE_CONFIG poisoned for whatever invocation ran
+    # next (xvb.enabled read back false, failing "XvB smoke starts from a known enabled baseline"
+    # even though the wizard submitted xvb.enabled=true). Every later invocation captures its own
+    # BASELINE_CONFIG fresh from the guest's live config.json, so a scenario known to leave a bad
+    # restore must never precede one that depends on that file being clean.
+    _stack_run_integration "scenario remote-tari-main-secure" \
+        --scenario remote-tari-main-secure "${remote_extra[@]}"
 }

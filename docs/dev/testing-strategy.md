@@ -262,11 +262,21 @@ half an hour total. Every invocation names `--scenario`: without one the harness
 serve by building a local chain from nothing. Left unscoped that cost over two hours per invocation
 and exhausted a 240-minute job.
 
-Three of the DIY gate's rows do not pass on this channel yet, and none of them are the appliance's
-fault: the canonical-node-set assertion predates the wizard's own `local_miner` default (#2303), the
-egress verifier expects a git checkout on the target (#2302), and doctor's egress-firewall row checks
-wording doctor no longer emits (#2301). The merge-mining round-trip needs a reachable ZMQ publisher
-on the reserved node. Until those close, the phase reports red — honestly, which is the point.
+Job 447 (#2062) ran the full four-invocation battery against a real reserved node for the first time
+with working RPC/ZMQ credentials on both sides. Three rows that read red there were pre-existing DIY
+gate gaps, all closed by the time this branch merged `develop`: the canonical-node-set assertion
+predated the wizard's own `local_miner` default (#2303), the egress verifier assumed a git checkout on
+the target (#2302), and doctor's egress-firewall row checked wording doctor no longer emits (#2301).
+A fourth was this phase's own bug, not the DIY gate's: `remote-tari-main-secure` (the one scenario
+that switches the guest to `monero.mode=local`) ran before `--xvb-routing-smoke`, and its own
+end-of-run restore genuinely fails on a guest with no local chain to revert to — poisoning the
+`BASELINE_CONFIG` the next invocation reads fresh from the guest's live `config.json`, so the smoke
+leg's "starts from a known enabled baseline" check saw `xvb.enabled=false` even though the wizard
+submitted `true`. Fixed by running that scenario last, since only it is expected to leave a dirty
+restore. One row is real, new signal and not yet explained: `p2pool merge-mining gRPC round-trip
+(#1397)` still fails with both Monero and Tari independently confirmed synced and reachable — p2pool
+itself never builds a merge-mining client. Filed as #2326; until it closes, the `stack` phase reports
+that one row red — honestly, which is the point.
 
 | Situation | Trigger | Tier |
 |---|---|---|
