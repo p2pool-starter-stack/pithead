@@ -85,7 +85,7 @@ tar --no-xattrs -czf "$OUT" -C "$WORKDIR/repack" pithead >/dev/null 2>&1 || {
     input_failure candidate-bundle 'tar -czf <candidate-bundle>' "$rc" || true
     exit "$rc"
 }
-cosign sign-blob --yes --use-signing-config=false --tlog-upload=false --key "$KEY" \
+cosign sign-blob --yes --use-signing-config=false --new-bundle-format=false --tlog-upload=false --key "$KEY" \
     --output-signature "$OUT.sig" "$OUT" >/dev/null 2>&1 || {
     rc=$?
     input_failure signing 'cosign sign-blob <candidate> with <bundle-key>' "$rc"

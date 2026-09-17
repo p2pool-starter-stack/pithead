@@ -131,6 +131,7 @@ chmod 0700 "$wrong_stage/cosign"
 : >"$wrong_stage/candidate.tar.gz"
 _image_upgrade_sign_wrong_key "$wrong_stage" || exit $?
 grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &&
+    grep -Fx -- '--new-bundle-format=false' "$wrong_stage/cosign.args" >/dev/null &&
     grep -Fx -- '--tlog-upload=false' "$wrong_stage/cosign.args" >/dev/null || {
     echo "image-upgrade wrong-key signing lost its legacy detached flags" >&2
     exit 1

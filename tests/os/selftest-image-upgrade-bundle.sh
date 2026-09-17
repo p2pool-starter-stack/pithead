@@ -12,6 +12,7 @@ export TAR_CALL_COUNT
 printf '%s\n' '#!/bin/sh' 'case "$1" in pull) [ "${FAIL_IMAGE_PULL:-0}" = 0 ] || exit 23;; image) printf "%s@sha256:%064d\n" "${5%:*}" 1;; esac' >"$td/bin/docker"
 printf '%s\n' '#!/bin/sh' \
     'case " $* " in *" --use-signing-config=false "*) ;; *) exit 24;; esac' \
+    'case " $* " in *" --new-bundle-format=false "*) ;; *) exit 24;; esac' \
     'case " $* " in *" --tlog-upload=false "*) ;; *) exit 24;; esac' \
     'output= source=' \
     'while [ "$#" -gt 0 ]; do case "$1" in --output-signature) output=$2; shift 2;; *) source=$1; shift;; esac; done' \

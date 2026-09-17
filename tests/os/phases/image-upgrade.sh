@@ -107,7 +107,8 @@ _image_upgrade_prepare_inputs() {
 _image_upgrade_sign_wrong_key() { # <private stage>
     local stage="$1"
     _image_upgrade_input_run signing 'cosign sign-blob <candidate> with <wrong-key>' \
-        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --use-signing-config=false --tlog-upload=false \
+        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --use-signing-config=false --new-bundle-format=false \
+        --tlog-upload=false \
         --key "$stage/wrong.key" --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz"
 }
 
