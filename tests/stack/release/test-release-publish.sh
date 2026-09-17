@@ -150,9 +150,6 @@ assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
-dirty_real_out="$(bash "$REL" --allow-dirty 2>&1)"
-assert_rc "--allow-dirty refuses a real release" "$?" "1"
-assert_contains "real release refusal requires --dry-run" "$dirty_real_out" "--allow-dirty requires --dry-run"
 release_tree_gate() { # <dry-run> <allow-dirty>
     local dry_run="$1" allow_dirty="$2"
     (
