@@ -138,7 +138,10 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
             port=$(printf '%s' "$row" | jq -r '.port')
             [ -n "$name" ] && [ -n "$host" ] && [ -n "$token" ] || continue
             [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || continue
-            [ "${#token}" -ge 32 ] && [[ "$token" != *[![:graph:]]* ]] || continue
+            if ! { [ "${#token}" -ge 32 ] && [[ "$token" != *[![:graph:]]* ]]; }; then
+                warn "RigForge worker '$name': its control token is too weak (needs 32+ printable ASCII characters) to derive a read-only credential — the dashboard's enriched feed will show no live data for this rig until the token is strengthened."
+                continue
+            fi
             read=$(hmac_sha256_hex "$token" 'rigforge:api-read:v1') || exit 1
             printf '%s\n%s\n%s\n%s\n' "$name" "$host" "$port" "$read" |
                 jq -Rn '{name: input, host: input, port: (input | tonumber), read_token: input}' >>"$rows" || exit 1
