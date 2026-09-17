@@ -148,6 +148,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   --auth-fail-closed`, then the `remote-*` scenario subset, then `--xvb-routing-smoke`. The first
   live remote-node coverage on either channel (#1446). Reuses the same reserved-node env vars as
   the `provision` phase's remote-node consumer row below, and skips (by-design) without them.
+  Measured cost: about fifteen minutes to a mining guest, then roughly half an hour for the four
+  DIY-gate invocations. Every invocation names `--scenario` on purpose — the harness's default is
+  its whole 15-scenario matrix, nearly all `monero.mode=local`, which this guest has no chain for.
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects

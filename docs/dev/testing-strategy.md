@@ -239,17 +239,32 @@ than inventing an appliance-side vocabulary next to it.
 | Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
 | Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
 | Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
-| XvB over Tor, XvB routing | ✓ | ✗ missing — added via `--xvb-routing-smoke` in the `stack` phase (#2062) |
-| Shares / hashes flowing end to end | ✓ | ✗ missing (behind the sync gate; see #2063) |
-| Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | ✗ missing (one wizard config, one benign edit, one hostname change) — the `stack` phase (#2062) adds the remote-safe subset |
+| XvB over Tor, XvB routing | ✓ | partial — the `stack` phase (#2062) runs `--xvb-routing-smoke`, and its baseline rows execute; the routing transition itself skips `missing` until the guest holds a PPLNS share |
+| Shares / hashes flowing end to end | ✓ | ✓ on the `stack` phase's remote-node guest (workers online, stratum hashes advancing — measured, #2062); still `missing` on a local-node guest, which never clears the sync gate (#2063) |
+| Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | partial — the `stack` phase (#2062) applies the remote-safe subset live (`pithead apply -y` per scenario, pool main→mini, re-apply no-op, secrets preserved). Prune, full-DB and local-node scenarios stay `by-design`: a scratch guest holds no chain |
 | Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
 | Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
-| Node down → reject workers → readmit | ✓ (fault injection) | ✗ missing — added via `--fault-injection` in the `stack` phase (#2062) |
-| Tor / dashboard fault recovery | ✓ | partial (backup restart) |
+| Node down → reject workers → readmit | ✓ (fault injection) | ✗ by-design — measured, not predicted: the DIY gate skips fault injection and the node-down failover leg in remote mode ("no local monerod to break/stop"), so the `stack` phase's remote-node topology cannot reach them. Closing this needs a local-node guest with a chain, not a flag |
+| Tor / dashboard fault recovery | ✓ | partial (backup restart). The DIY gate's `--hardening` phase is `by-design` on the `stack` phase's guest too ("remote mode: no local containers/systemd to exercise") |
 | RigForge worker apply / upgrade | ✓ (borrowed physical rig) | ✗ by-design (the rig guest never targets a coordinator in the `stack` phase's remote-node topology) |
 | OS update through the dashboard, A/B commit, migration hold | n/a | ✓ |
 | Boot, install, media channel, power-cut faults, factory reset | n/a | ✓ |
-| Remote-node mode, live | ✗ (zero routine coverage, #1446) | partial (the node-consumer row: preflight, p2pool arguments, chain_id probe — not mining) — the `stack` phase (#2062) is the first live remote-node coverage on either channel |
+| Remote-node mode, live | ✗ (zero routine coverage, #1446) | ✓ — the `stack` phase (#2062) provisions `monero.mode=remote` at a reserved node from the first wizard submit, clears the sync gate and mines. The first live remote-node coverage on either channel |
+
+What the `stack` phase's first real runs established, and what they cost. A remote-node guest
+provisions, releases and mines: containers up, `/api/state` answering, workers online and stratum
+hashes advancing, within about fifteen minutes of boot. The DIY gate then runs against it in four
+invocations — `--check`, the destructive phases, each remote scenario, and XvB routing — in roughly
+half an hour total. Every invocation names `--scenario`: without one the harness iterates its whole
+15-scenario matrix first, nearly all of it `monero.mode=local`, which a remote-node guest can only
+serve by building a local chain from nothing. Left unscoped that cost over two hours per invocation
+and exhausted a 240-minute job.
+
+Three of the DIY gate's rows do not pass on this channel yet, and none of them are the appliance's
+fault: the canonical-node-set assertion predates the wizard's own `local_miner` default (#2303), the
+egress verifier expects a git checkout on the target (#2302), and doctor's egress-firewall row checks
+wording doctor no longer emits (#2301). The merge-mining round-trip needs a reachable ZMQ publisher
+on the reserved node. Until those close, the phase reports red — honestly, which is the point.
 
 | Situation | Trigger | Tier |
 |---|---|---|
