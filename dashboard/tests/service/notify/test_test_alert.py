@@ -16,6 +16,7 @@ def _response(status):
     response.status_code = status
     response.url = "https://redacted.invalid"
     response.raw = MagicMock()
+    response.raw.stream.side_effect = AssertionError("response body was read")
     return response
 
 
@@ -74,6 +75,7 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy=""),
     ]
     attempts = []
+    responses = []
 
     def post(url, **kwargs):
         attempts.append((url, kwargs))
@@ -82,8 +84,11 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         if "refused.invalid" in url:
             raise requests.Timeout("slow")
         if "rejected.invalid" in url:
-            return _response(302)
-        return _response(200)
+            response = _response(302)
+        else:
+            response = _response(200)
+        responses.append(response)
+        return response
 
     output = StringIO()
     with patch("requests.post", side_effect=post):
@@ -100,6 +105,7 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
     assert len(attempts) == 4
     assert all(kwargs["stream"] is True for _, kwargs in attempts)
     assert all(kwargs["allow_redirects"] is False for _, kwargs in attempts)
+    assert all(response.raw.stream.call_count == 0 for response in responses)
     assert attempts[2][1]["json"]["event"] == test_alert.TEST_EVENT
     assert test_alert.TEST_MESSAGE in attempts[-1][1]["data"].decode()
     assert token not in text
