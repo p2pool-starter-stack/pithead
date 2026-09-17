@@ -103,6 +103,9 @@ rov_run "" test-alert
 assert_rc "test-alert exits with the dashboard command" "$ROV_RC" "0"
 assert_contains "test-alert runs the real dashboard module" "$(cat "$ROV/docker.log")" \
     "exec dashboard python3 -m mining_dashboard.service.notify.test_alert"
+rov_run "" test-alert status
+assert_rc "test-alert is refused in a command chain" "$ROV_RC" "1"
+assert_contains "test-alert chain refusal names the side-effecting verb" "$ROV_OUT" "test-alert"
 : >"$ROV/docker.log"
 rov_run "" doctor
 assert_rc "uncontended: doctor exits 1 on the unreachable daemon" "$ROV_RC" "1"
