@@ -12,6 +12,7 @@
 
 import { Component, html } from "../app/preact.mjs";
 import { pollResult } from "../config/configview.mjs";
+import { controlCommitResult } from "../config/controlclient.mjs";
 import {
   buildAdoptedConfig,
   DEFAULT_API_PORT,
@@ -94,10 +95,7 @@ export class AdoptRigForm extends Component {
         body: JSON.stringify({ id: out.id }),
       });
       if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      let committed = await res.json();
-      if (committed.status === "pending" || committed.status === "previewed") {
-        committed = await pollResult(out.id, "previewed");
-      }
+      const committed = await controlCommitResult(res, out.id, pollResult);
       this.setState({ busy: false, result: committed });
       if (committed.status === "applied" && this.props.onAdopted) this.props.onAdopted();
     } catch (e) {
