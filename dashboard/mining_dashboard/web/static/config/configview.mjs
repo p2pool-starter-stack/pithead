@@ -37,7 +37,7 @@ import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
 const editableCandidate = (cfg) =>
   JSON.parse(
     JSON.stringify(cfg, (key, value) =>
-      key.startsWith("_") || key === "ssh" || key === "__proto__" || key === "constructor"
+      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
         ? undefined
         : value,
     ),
@@ -212,8 +212,7 @@ export class ConfigView extends Component {
     this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null });
   }
 
-  // Pane -> candidate -> fields. Hand-edited JSON wins; while it does not parse, the pane keeps
-  // the broken text and the error, and the last good candidate stays what Save would send.
+  // Pane -> candidate -> fields. Invalid pane text leaves the last good candidate as Save input.
   onJsonInput(text) {
     const err = jsonSyntaxError(text);
     if (err) {
@@ -226,11 +225,12 @@ export class ConfigView extends Component {
       return;
     }
     const candidate = editableCandidate(staged.config);
-    this.setState({ editText: JSON.stringify(candidate, null, 2), jsonError: null, candidate });
+    const editText =
+      JSON.stringify(candidate) === JSON.stringify(staged.config)
+        ? text
+        : JSON.stringify(candidate, null, 2);
+    this.setState({ editText, jsonError: null, candidate });
   }
-  // Fill the JSON textarea from a local file (#529, mirrors WorkerInspect.onFilePick, #518) — a
-  // FileReader read, never an upload; the operator still reviews and clicks Save like any other
-  // JSON-mode edit.
   onFilePick(e) {
     const file = e.target.files[0];
     if (!file) return;

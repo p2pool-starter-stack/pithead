@@ -7,12 +7,13 @@ const ID = "11111111-1111-4111-8111-111111111111";
 
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
 
-test("editableCandidate drops prototype-control keys", () => {
-  const out = editableCandidate(JSON.parse('{"__proto__":{"polluted":true},"constructor":{"polluted":true},"network":{"mtu":1500}}'));
+test("editableCandidate drops private and prototype-control keys but keeps secret sentinels", () => {
+  const out = editableCandidate(JSON.parse('{"__proto__":{"polluted":true},"constructor":{"polluted":true},"network":{"mtu":1500},"secret":{"__secret__":true}}'));
   assert.equal(Object.getPrototypeOf(out), Object.prototype);
   assert.equal(Object.hasOwn(out, "constructor"), false);
   assert.equal(Object.prototype.polluted, undefined);
   assert.deepEqual(out.network, { mtu: 1500 });
+  assert.deepEqual(out.secret, { __secret__: true });
 });
 
 test("carried SSH configuration is warned about and not proposed", async () => {
