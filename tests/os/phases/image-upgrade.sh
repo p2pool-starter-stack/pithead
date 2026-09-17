@@ -29,7 +29,14 @@ _image_upgrade_inputs_valid() {
 
 _image_upgrade_prepare_inputs() {
     local stage="$1" cosign_member rc
-    cosign_member="$(tar -tf os/build/pithead-root.tar | grep -E '(^|/)usr/local/bin/cosign$' | head -n1)"
+    if cosign_member="$(tar -tf os/build/pithead-root.tar 2>/dev/null | grep -E '(^|/)usr/local/bin/cosign$' | head -n1)"; then
+        :
+    else
+        rc=$?
+        _image_upgrade_input_failure candidate-bundle \
+            'tar -tf <candidate-rootfs> | grep <cosign>' "$rc"
+        return "$rc"
+    fi
     [ -n "$cosign_member" ] || {
         _image_upgrade_input_failure candidate-bundle 'tar -tf <candidate-rootfs>' 1
         return 1
@@ -39,14 +46,18 @@ _image_upgrade_prepare_inputs() {
         _image_upgrade_input_failure candidate-bundle 'tar -xOf <candidate-rootfs> <cosign>' "$rc"
         return "$rc"
     }
-    chmod 0700 "$stage/cosign"
-    curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
-        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return 1
-    curl -fsSL --retry 3 -o "$stage/v1.20.0.sig" \
-        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz.sig || return 1
-    cp cosign.pub "$stage/project.pub" || return 1
-    "$stage/cosign" verify-blob --key "$stage/project.pub" --signature "$stage/v1.20.0.sig" \
-        --insecure-ignore-tlog=true "$stage/v1.20.0.tar.gz" >/dev/null 2>&1 || return 1
+    _image_upgrade_input_run signing 'chmod <cosign>' chmod 0700 "$stage/cosign" || return $?
+    _image_upgrade_input_run signing 'curl <published-v1.20.0-bundle>' \
+        curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
+        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return $?
+    _image_upgrade_input_run signing 'curl <published-v1.20.0-signature>' \
+        curl -fsSL --retry 3 -o "$stage/v1.20.0.sig" \
+        https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz.sig || return $?
+    _image_upgrade_input_run signing 'cp <project-public-key> <private-stage>' \
+        cp cosign.pub "$stage/project.pub" || return $?
+    _image_upgrade_input_run signing 'cosign verify-blob <published-v1.20.0-bundle>' \
+        "$stage/cosign" verify-blob --key "$stage/project.pub" --signature "$stage/v1.20.0.sig" \
+        --insecure-ignore-tlog=true "$stage/v1.20.0.tar.gz" || return $?
     ok "published v1.20.0 bundle verifies with the project public key"
 
     _image_upgrade_input_run signing 'cosign generate-key-pair <bundle-key>' \
@@ -89,7 +100,8 @@ _image_upgrade_prepare_inputs() {
             'tar -xOf <baseline> pithead/config.reference.json | jq <config-transform>' "$rc"
         return "$rc"
     fi
-    chmod 0600 "$stage/config.json"
+    _image_upgrade_input_run generated-config 'chmod <generated-config>' \
+        chmod 0600 "$stage/config.json" || return $?
     _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration' \
         tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration || return $?
 }

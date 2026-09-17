@@ -71,6 +71,27 @@ diagnostic="$(_image_upgrade_input_run generated-config \
     echo "image-upgrade failure attribution lost the sub-step, redacted command, or exit status" >&2
     exit 1
 }
+baseline_rc=0
+baseline_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        case "$1" in
+        -tf) printf 'usr/local/bin/cosign\n' ;;
+        -xOf) printf '#!/bin/sh\nexit 0\n' ;;
+        esac
+    }
+    chmod() { :; }
+    curl() {
+        printf 'must-not-leak\n' >&2
+        return 23
+    }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || baseline_rc=$?
+[ "$baseline_rc" -eq 23 ] &&
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
+    exit 1
+}
 if (
     REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT='' \
         REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
