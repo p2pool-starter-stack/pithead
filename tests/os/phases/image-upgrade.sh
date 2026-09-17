@@ -3,6 +3,19 @@
 
 IMAGE_UPGRADE_HOST_STAGE=""
 
+_image_upgrade_input_failure() { # <sub-step> <redacted-command> <exit-status>
+    printf 'image-upgrade input failure: sub-step=%s command="%s" exit=%s\n' "$1" "$2" "$3" >&2
+    return "$3"
+}
+
+_image_upgrade_input_run() { # <sub-step> <redacted-command> <command...>
+    local step="$1" display="$2" rc
+    shift 2
+    "$@" >/dev/null 2>&1 && return 0
+    rc=$?
+    _image_upgrade_input_failure "$step" "$display" "$rc"
+}
+
 _image_upgrade_inputs_valid() {
     local host port
     for host in "${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}"; do
@@ -15,10 +28,17 @@ _image_upgrade_inputs_valid() {
 }
 
 _image_upgrade_prepare_inputs() {
-    local stage="$1" cosign_member
+    local stage="$1" cosign_member rc
     cosign_member="$(tar -tf os/build/pithead-root.tar | grep -E '(^|/)usr/local/bin/cosign$' | head -n1)"
-    [ -n "$cosign_member" ] || return 1
-    tar -xOf os/build/pithead-root.tar "$cosign_member" >"$stage/cosign" || return 1
+    [ -n "$cosign_member" ] || {
+        _image_upgrade_input_failure candidate-bundle 'tar -tf <candidate-rootfs>' 1
+        return 1
+    }
+    tar -xOf os/build/pithead-root.tar "$cosign_member" >"$stage/cosign" 2>/dev/null || {
+        rc=$?
+        _image_upgrade_input_failure candidate-bundle 'tar -xOf <candidate-rootfs> <cosign>' "$rc"
+        return "$rc"
+    }
     chmod 0700 "$stage/cosign"
     curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
         https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return 1
@@ -29,20 +49,27 @@ _image_upgrade_prepare_inputs() {
         --insecure-ignore-tlog=true "$stage/v1.20.0.tar.gz" >/dev/null 2>&1 || return 1
     ok "published v1.20.0 bundle verifies with the project public key"
 
-    COSIGN_PASSWORD='' "$stage/cosign" generate-key-pair --output-key-prefix "$stage/bundle" >/dev/null 2>&1 || return 1
-    COSIGN_PASSWORD='' "$stage/cosign" generate-key-pair --output-key-prefix "$stage/wrong" >/dev/null 2>&1 || return 1
+    _image_upgrade_input_run signing 'cosign generate-key-pair <bundle-key>' \
+        env COSIGN_PASSWORD= "$stage/cosign" generate-key-pair --output-key-prefix "$stage/bundle" || return $?
+    _image_upgrade_input_run signing 'cosign generate-key-pair <wrong-key>' \
+        env COSIGN_PASSWORD= "$stage/cosign" generate-key-pair --output-key-prefix "$stage/wrong" || return $?
     COSIGN_PASSWORD='' PATH="$stage:$PATH" PITHEAD_REGISTRY="$PITHEAD_REGISTRY" \
         tests/os/image-upgrade-bundle.sh "$stage/candidate.tar.gz" "$(git rev-parse HEAD)" \
-        "$stage/bundle.key" >/dev/null 2>&1 || return 1
-    COSIGN_PASSWORD='' "$stage/cosign" sign-blob --yes --tlog-upload=false --key "$stage/wrong.key" \
-        --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz" >/dev/null 2>&1 || return 1
+        "$stage/bundle.key" >/dev/null || {
+        rc=$?
+        _image_upgrade_input_failure candidate-bundle 'tests/os/image-upgrade-bundle.sh <candidate> <commit> <bundle-key>' "$rc"
+        return "$rc"
+    }
+    _image_upgrade_input_run signing 'cosign sign-blob <candidate> with <wrong-key>' \
+        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --tlog-upload=false --key "$stage/wrong.key" \
+        --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz" || return $?
     if "$stage/cosign" verify-blob --key "$stage/bundle.pub" --signature "$stage/wrong.sig" \
         --insecure-ignore-tlog=true "$stage/candidate.tar.gz" >/dev/null 2>&1; then
         return 1
     fi
     ok "candidate bundle rejects a signature from the wrong key"
 
-    tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json | jq \
+    if tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json 2>/dev/null | jq \
         --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
         --arg monero_host "$REMOTE_MONERO_HOST" --argjson monero_rpc "$REMOTE_MONERO_RPC_PORT" \
         --argjson monero_zmq "$REMOTE_MONERO_ZMQ_PORT" --arg tari_host "$REMOTE_TARI_HOST" '
@@ -52,9 +79,17 @@ _image_upgrade_prepare_inputs() {
             .tari.wallet_address = $tari_wallet | .tari.mode = "remote" |
             .tari.remote.host = $tari_host | .p2pool.pool = "mini" |
             .local_miner.enabled = true | .xvb.enabled = false
-        ' >"$stage/config.json" || return 1
+        ' >"$stage/config.json" 2>/dev/null; then
+        :
+    else
+        rc=$?
+        _image_upgrade_input_failure generated-config \
+            'tar -xOf <baseline> pithead/config.reference.json | jq <config-transform>' "$rc"
+        return "$rc"
+    fi
     chmod 0600 "$stage/config.json"
-    tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration || return 1
+    _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration' \
+        tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration || return $?
 }
 
 _image_upgrade_stage_guest() {

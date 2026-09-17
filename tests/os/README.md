@@ -145,7 +145,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   runs the release-shaped stack under the CLI's existing test override inside the otherwise
   appliance-shaped guest. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
-  and resumed hashes; its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
+  and resumed hashes. Release-input preparation failures name only the failed sub-step, a redacted
+  command, and its exit status; command output, tokens, keys, and signature material stay hidden.
+  Its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|media|fault|reset|image-upgrade|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
