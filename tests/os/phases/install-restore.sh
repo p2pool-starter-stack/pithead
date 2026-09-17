@@ -61,9 +61,7 @@ _phase_install_restore() {
     case "$rnames" in
     *dashboard*caddy* | *caddy*dashboard*)
         ok "restore leg: keep-reinstalled machine provisioned — a live stack to back up ($rnames)"
-        # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
-        # mutation lock through its tor-health wait for minutes after the stack looks live, and a
-        # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
+        # Settle on units, not `podman ps`: the wizard may still hold the mutation lock; 900 s covers Tor.
         if ! provisioning_settled 900; then
             bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
             backup_failure_evidence
@@ -89,8 +87,7 @@ _phase_install_restore() {
         backup_watch_report # a vanish the backup happened to survive is still the #1059 event
     else
         bad "restore leg: could not take the source backup"
-        # The reason lives on the guest — capture ALL of it, log AND tree, or this failure is
-        # undiagnosable after the VM is recycled (it has been, twice: #1059).
+        # Capture guest evidence before recycling the VM (#1059).
         backup_failure_evidence
         # shellcheck disable=SC2154  # shared through the assembled runner scope
         rm -f "$target_disk"
@@ -105,15 +102,14 @@ _phase_install_restore() {
         rm -f "$target_disk"
         return 1
     }
-    # Restore the source archive first, then the checked-in supported-N-1 artifact. This retains
-    # the existing same-version KVM coverage while proving the operator upgrade path separately.
+    # Restore the source archive first, then the checked-in supported-N-1 artifact.
     local source_archive="$restore_archive" source_target="$target_disk"
     restore_fixture_fingerprints || {
         bad "restore leg: source or v1.20.0 archive is missing required restore fingerprints"
         rm -f "$target_disk" "$restore_archive" "${RESTORE_N1_ARCHIVE:-}"
         return 1
     }
-    local expected_wallet expected_onion expected_secrets expected_config
+    local expected_wallet expected_onion expected_onion_key expected_onion_dir expected_secrets expected_config
     local restore_case restore_target target_chain_sentinel same_version_target=""
     for restore_case in same-version n1; do
         case "$restore_case" in
@@ -121,6 +117,8 @@ _phase_install_restore() {
             restore_archive="$source_archive"
             expected_wallet="$HARNESS_WALLET"
             expected_onion="$RESTORE_SOURCE_ONION"
+            expected_onion_key="MONERO_ONION_ADDRESS"
+            expected_onion_dir="monero"
             expected_secrets="$RESTORE_SOURCE_SECRETS"
             expected_config="$RESTORE_SOURCE_CONFIG"
             target_chain_sentinel=""
@@ -135,6 +133,8 @@ _phase_install_restore() {
             restore_pass=$(tr -d '\r\n' <"$RESTORE_N1_DIR/passphrase")
             expected_wallet="$RESTORE_N1_WALLET"
             expected_onion="$RESTORE_N1_ONION"
+            expected_onion_key="DASHBOARD_ONION_ADDRESS"
+            expected_onion_dir="dashboard"
             expected_secrets="$RESTORE_N1_SECRETS"
             expected_config="$RESTORE_N1_CONFIG"
             target_chain_sentinel="n1-target-chain-sentinel"
@@ -379,8 +379,8 @@ _phase_install_restore() {
         local odeadline
         odeadline=$(($(date +%s) + 600))
         while [ "$(date +%s)" -lt "$odeadline" ]; do
-            new_onion=$(_ssh "grep DASHBOARD_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
-            tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/dashboard/hostname 2>/dev/null" | tr -d '\r')
+            new_onion=$(_ssh "grep $expected_onion_key /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
+            tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/$expected_onion_dir/hostname 2>/dev/null" | tr -d '\r')
             [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && break
             sleep 15
         done
@@ -389,9 +389,9 @@ _phase_install_restore() {
         # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
         # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
         if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$expected_onion" ] && [ "$tor_hostname" = "$expected_onion" ]; then
-            ok "restore leg: restored machine kept the v1.20.0 Tor identity, not a regenerated one"
+            ok "restore leg: restored machine kept the archive's Tor identity, not a regenerated one"
         else
-            bad "restore leg: v1.20.0 onion identity not restored"
+            bad "restore leg: archive Tor identity not restored"
         fi
         [ "$restore_case" != same-version ] || target_disk="$restore_target"
     done
