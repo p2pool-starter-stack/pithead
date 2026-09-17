@@ -309,8 +309,9 @@ not the dashboard. Changing any of these later does not mean reinstalling: write
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set anything,
-including what no remote channel is allowed to touch.
+media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting, including what no remote channel is allowed to touch. Release images reject
+retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.

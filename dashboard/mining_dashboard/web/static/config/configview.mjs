@@ -180,7 +180,7 @@ export class ConfigView extends Component {
       this.setState({
         phase: "form",
         cfg,
-        sections: buildSections(cfg),
+        sections: buildSections(candidate),
         coreKeys: cfg._core_keys || [],
         editableKeys: cfg._editable_keys || [],
         confirmKeys: cfg._confirm_keys || [],

@@ -26,7 +26,10 @@ test("carried SSH configuration is warned about and not proposed", async () => {
     globalThis.fetch = realFetch;
   }
   assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
-  assert.match(renderToString(view.render()), /SSH settings from an older configuration are ignored/);
+  assert.equal(view.state.sections.flatMap((section) => section.fields).some((field) => field.key.startsWith("ssh.")), false);
+  const rendered = renderToString(view.render());
+  assert.match(rendered, /SSH settings from an older configuration are ignored/);
+  assert.doesNotMatch(rendered, /ssh\.enabled/);
 });
 
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,
