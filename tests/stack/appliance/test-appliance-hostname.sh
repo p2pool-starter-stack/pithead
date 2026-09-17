@@ -86,6 +86,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
             generate_caddyfile() { echo "$HOST_IP" >Caddyfile; }
             docker() { :; }
             compose_up_checked() { [ "$mode" != failed ]; }
+            # shellcheck disable=SC2034  # read by sourced apply/setup helpers
             DEPLOYMENT_COMPLETED=true P2POOL_ONION=fixture.onion DASHBOARD_ONION_ENABLED=false
             [ "$mode" != retry ] || : >.env.apply-incomplete
             case "$3" in
@@ -169,6 +170,7 @@ md_run() { # <operation> [conf-body-mode]
         noline) printf '[server]\nuse-ipv6=no\n' >avahi.conf ;;
         missing) rm -f avahi.conf ;;
         esac
+        # shellcheck disable=SC2034  # read by the sourced Avahi helper
         PITHEAD_AVAHI_CONF="$PWD/avahi.conf"
         ensure_etc_overlay() { printf 'overlay\n' >>calls; }
         sudo_sed() { sed -i.bak "$1" "$2" && rm -f "$2.bak"; }
@@ -187,6 +189,7 @@ md_run() { # <operation> [conf-body-mode]
             appliance_reconcile_mdns_interfaces && printf 'changed\n' || printf 'unchanged\n'
             ;;
         reconcile)
+            # shellcheck disable=SC2034  # read by sourced hostname helpers
             DASHBOARD_HOST=auto PITHEAD_DRY_RUN=0
             hostname() { printf 'pithead'; }
             sudo() { printf '%s\n' "$*" >>calls; }

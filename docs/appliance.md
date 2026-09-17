@@ -147,11 +147,12 @@ addresses, runs no node, and serves nothing to log into. If a Pithead already an
 network at `pithead.local:3333`, its address is filled in for you; otherwise enter it by hand
 from that machine's own "Point miners at" line. Confirming shows a summary card with the worker
 name, where it mines, this machine's address and a **control token** — **not a login**, because
-a rig has none. The token is shown once — a rig serves no page after this — so copy it now. If you lose
+a rig has none. The token is shown once — a rig serves no page after this — so tap it to select it,
+then copy it now. If you lose
 it, the boot menu's **Set up again** with the same worker name shows the same token again
 (see [The boot menu](#the-boot-menu)). It is what lets that Pithead adopt the rig: in its dashboard, under Workers, the adopt
 form takes this rig's address, control port `8082` and the token. Until you do that, the rig
-still mines and still appears under Workers once it connects, but its row reads as an API error,
+still mines and still appears under Workers once it connects, but its row is badged `not adopted`,
 because the token guards every API on the rig — the miner's own included, so nothing else on the
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no

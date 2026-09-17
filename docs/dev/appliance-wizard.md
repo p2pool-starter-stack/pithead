@@ -228,11 +228,16 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    call `firstboot_consume_spool` uses.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
    validated generated secrets and Tor identity from the archived environment.
-   Only on success: install the configuration files at mode `0600`, copy the
-   accepted data trees to their mapped destinations, and publish `applied`. Optional chain
-   data is accepted within the upload cap; normal backups exclude it. The firstboot
-   loop short-circuits straight into that acceptance path; `prepare_directories` (run by the
-   `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
+   Only on success: install the configuration files at mode `0600`, apply the accepted data
+   trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
+   database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
+   within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
+   on this box instead, an existing file winning on a name collision. The [shared restore
+   collision rule](../operations.md#restore-collision-rules) explains why this differs from
+   `pithead restore`. The firstboot loop reaches this door unconditionally, before it ever checks
+   whether `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
+   gating on that presence used to skip the carried restore outright; `prepare_directories` (run
+   by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
 `error.txt` and returns 1 — nothing already on disk is touched, and the
