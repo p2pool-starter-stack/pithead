@@ -47,10 +47,10 @@ _image_upgrade_prepare_inputs() {
         return "$rc"
     }
     _image_upgrade_input_run signing 'chmod <cosign>' chmod 0700 "$stage/cosign" || return $?
-    _image_upgrade_input_run baseline-bundle 'curl <published-v1.20.0-bundle>' \
+    _image_upgrade_input_run signing 'curl <published-v1.20.0-bundle>' \
         curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
         https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return $?
-    _image_upgrade_input_run baseline-bundle 'curl <published-v1.20.0-signature>' \
+    _image_upgrade_input_run signing 'curl <published-v1.20.0-signature>' \
         curl -fsSL --retry 3 -o "$stage/v1.20.0.sig" \
         https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz.sig || return $?
     _image_upgrade_input_run signing 'cp <project-public-key> <private-stage>' \

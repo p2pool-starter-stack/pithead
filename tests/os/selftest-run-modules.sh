@@ -88,7 +88,7 @@ baseline_diagnostic="$(
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || baseline_rc=$?
 [ "$baseline_rc" -eq 23 ] &&
-    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=baseline-bundle command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
     echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
     exit 1
 }
