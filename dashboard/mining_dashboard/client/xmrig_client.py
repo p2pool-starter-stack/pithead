@@ -104,10 +104,10 @@ def parse_rigforge(payload, now=None):
 
 
 # Pool keys that are a credential and must never reach the dashboard, let alone an editor box that
-# can POST them back. RigForge already deletes both before serving the block (its read is
-# token-OPTIONAL, so it masks at the source), but this is the same defence-in-depth posture
-# ``mask_secrets`` takes with the host config: the rig is remote, and a rig running an older or
-# patched build is exactly the case a single mask would miss.
+# can POST them back. RigForge already masks a stored one to a {"__secret__": true} sentinel
+# before serving the block (its read is token-OPTIONAL, so it masks at the source), but this is
+# the same defence-in-depth posture ``mask_secrets`` takes with the host config: the rig is
+# remote, and an older or patched build is exactly the case a single mask would miss.
 _POOL_CREDENTIAL_KEYS = ("pass", "tls-fingerprint")
 
 # How deep the strip below will walk before it stops trusting the value. A real writable config is
@@ -351,7 +351,7 @@ class XMRigWorkerClient:
             f"XMRIG_API_PORT ({XMRIG_API_PORT})"
         )
 
-    def _warn(self, host, name, url, detail):
+    def _warn(self, host, name, url, detail, hint=None):
         now = time.monotonic()
         if now - self._warned.get(host, float("-inf")) < _WARN_INTERVAL_S:
             return
@@ -362,7 +362,7 @@ class XMRigWorkerClient:
             host,
             url,
             detail,
-            self._fix_hint(),
+            hint if hint is not None else self._fix_hint(),
         )
 
     async def get_stats(self, ip, name):
@@ -407,10 +407,9 @@ class XMRigWorkerClient:
         url = f"http://{host}:{port}/1/summary"
         if isinstance(override.get("token"), dict):
             read_token = override.get("read_token")
-            if not read_token:
-                self._warn(
-                    host, name_token, url, "the adopted rig's read credential is unavailable"
-                )
+            if not read_token:  # #2313: usually under RigForge's 32-char read-derivation floor
+                hint = "the control token is likely under RigForge's 32-char read-derivation floor"
+                self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
                 return {"api_ok": False, "adopted": adopted}
             headers = self._auth_header(name_token, read_token)
         else:

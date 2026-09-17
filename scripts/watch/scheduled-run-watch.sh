@@ -1,91 +1,27 @@
 #!/usr/bin/env bash
-#
-# Scheduled-run watch (#1377).
-#
-# The Monday run of ci.yml IS the CVE sweep: `build-images` rebuilds every image and scans the
-# rebuild (#833), `sweep-shipped` scans the published digests (#1313). A scheduled run has no pull
-# request, so nothing draws a person to it — and on 2026-08-17 `build-images` went red and nobody
-# was told for seven days. This watcher is that run's reader.
-#
-# WHY IT IS NOT A JOB INSIDE ci.yml. Two reasons, both measured rather than assumed:
-#
-#   1. SUBJECT. The one reader ci.yml already has is `sweep-shipped-report`, and its tracking issue
-#      is titled "Shipped-image CVE sweep" — a title that is also the upsert key, so it cannot be
-#      widened without orphaning the existing issue and filing a duplicate on the next run. Filing
-#      a `build-images` red under it would put a finding about a REBUILD of the branch inside the
-#      one report whose whole premise is that it scanned the bytes users pulled, and would make its
-#      "Last fully successful sweep" stamp span two different questions.
-#   2. IT GENERALISES. `build-images` is the job that reddened, but it is not the only job that can.
-#      Watching the RUN covers every job the schedule reaches, including ones added later — the
-#      failure mode of a per-job reader is that it silently stops covering the thing it was named
-#      for.
-#
-# REPORT-ONLY, like its two siblings. A failed sweep is reported into a tracking issue rather than
-# reddening this run, because "the Monday sweep found a CVE" asks for a decision a person makes,
-# and because reddening a scheduled run is precisely the notification that was proven not to work.
-# This run goes red only when the WATCHER could not do its job.
-#
-# WHAT THIS SCRIPT IS. It does no lookups and touches no network. The workflow calls `gh` and
-# leaves two JSON files in a directory; this script reads them and renders the tracking-issue body.
-# Keeping the render out of the workflow is what makes it testable: `--self-test` drives the clean
-# path and every refusal below through fixtures, with no network and no gh. That matters more here
-# than usual, because the red path CANNOT be exercised live — staging it would mean making the
-# default branch's CI genuinely fail.
-#
-# INCOMPLETE IS NEVER CLEAN. Every refusal below exits 1 and says UNCHECKED rather than printing a
-# reassuring "no failures". A watcher with nothing to say and a watcher that has quietly died look
-# identical from the Actions tab.
-#
-#   - the directory is missing, or holds no runs file
-#   - the runs file cannot be parsed, or lists no scheduled run at all
-#   - the newest scheduled run has not finished, so nothing can be said about whether it passed
-#   - the newest scheduled run failed and its jobs file is missing, unparseable, or names no job
-#
-# NOT COVERED, deliberately, and filed as #1418: a scheduled run that never HAPPENS. This watcher
-# reads the runs it can see, so a dropped cron is invisible to it in exactly the way it is
-# invisible to everything else. The history table below is the human-readable half of that — a
-# reader can see the gap — but nothing here decides that a gap is too long.
-#
 # Usage:
-#   scripts/watch/scheduled-run-watch.sh <dir>    Render the report for the JSON in <dir> on stdout.
-#                                           <dir>/runs.json  = gh run list --json ... (an array)
-#                                           <dir>/jobs.json  = gh run view --json jobs (an object)
-#                                           rc 1 if the watch could not do its job.
-#   scripts/watch/scheduled-run-watch.sh --title  Print the tracking issue's title, nothing else.
-#   scripts/watch/scheduled-run-watch.sh --self-test
-#                                           Drive the render and every refusal above through
-#                                           fixtures. No network, no gh.
-
+#   scripts/watch/scheduled-run-watch.sh <dir>    Render <dir>/cadence.json, runs.json and jobs.json; rc 1 if unchecked.
 set -Eeuo pipefail
 
-# THE TITLE IS A CONSTANT AND MUST NEVER BE EDITED. The workflow upserts the tracking issue by
-# EXACT title match over the open issue list. Change this string and the next run silently files a
-# SECOND issue instead of updating the first, then keeps both — the old one frozen at whatever it
-# last said, which reads as a watch that found nothing new. Renaming the issue by hand in the web
-# UI breaks it the same way.
 WATCH_ISSUE_TITLE="Scheduled CI run watch (weekly report)"
 
-# How many past scheduled runs the history table prints. It exists to make a STREAK visible: the
-# second-order finding from #1419 is that a gate red for nine consecutive runs has no transition
-# left to make, so it can no longer signal a new break — and that is invisible in any report that
-# shows only the newest run.
 HISTORY_ROWS=6
 
 usage() {
     sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
-# --- render helpers -----------------------------------------------------------------------------
+list_schedules() {
+    local file line cron
+    for file in "$1"/*.yml "$1"/*.yaml; do
+        [ -f "$file" ] || continue
+        while IFS= read -r line; do
+            cron="$(printf '%s\n' "$line" | sed -E "s/^[[:space:]]*- cron: [\"']([^\"']+)[\"'].*/\1/")"
+            printf '%s\t%s\n' "$file" "$cron"
+        done < <(awk '$0 == "  schedule:" { inside=1; next } inside && /^[^ ]/ { inside=0 } inside && /^    - cron:/ { print }' "$file")
+    done
+}
 
-# A conclusion as a table cell. `cancelled` and `timed_out` are NOT folded into failure: they mean
-# the sweep did not run to completion, which is a different thing from the sweep finding something,
-# and a reader deciding whether to cut a patch release needs to tell them apart — so the conclusion
-# is printed verbatim rather than bucketed.
-#
-# THE SAME RULE IS SPELLED TWICE: here, and in `render_history`'s jq, because one table is built in
-# bash and the other in jq. They had already drifted once (this said `**FAILED**` where jq said
-# `**failure**` for the same run), so the self-test below renders one run through BOTH and asserts
-# the cells are identical. Change one spelling and that assertion fails.
 conclusion_cell() {
     case "$1" in
     success) printf 'ok' ;;
@@ -94,13 +30,86 @@ conclusion_cell() {
     esac
 }
 
+render_cadence() {
+    local file="$1/cadence.json" rows unchecked
+    if [ ! -s "$file" ]; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: no declared-schedule history was collected.\n\n'
+        return 1
+    fi
+    if jq -e '.workflows | group_by(.path) | any(length != 1)' "$file" >/dev/null 2>&1; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: a workflow declares more than one cron slot; Actions history does not identify which slot fired.\n\n'
+        return 1
+    fi
+    rows="$(jq -c '
+        def parts:
+            if .cron | test("^[0-9]{1,2} \\* \\* \\* \\*$") then
+                (.cron | split(" ") | {minute: (.[0] | tonumber), period: 3600, kind: "hourly"})
+            elif .cron | test("^[0-9]{1,2} [0-9]{1,2} \\* \\* [0-6]$") then
+                (.cron | split(" ") | {minute: (.[0] | tonumber), hour: (.[1] | tonumber), weekday: (.[4] | tonumber), period: 604800, kind: "weekly"})
+            else null end;
+        def slot($now; $p):
+            if $p.kind == "hourly" then
+                ((($now - ($p.minute * 60)) / 3600 | floor) * 3600) + ($p.minute * 60)
+            else
+                (($now / 86400 | floor) * 86400) + ($p.hour * 3600) + ($p.minute * 60)
+                - (((((($now / 86400 | floor) + 4) % 7) - $p.weekday + 7) % 7) * 86400)
+                | if . > $now then . - 604800 else . end
+            end;
+        def interior_gap($runs; $p): reduce $runs[] as $after
+            ({previous: null, gaps: []}; if .previous == null or $after.slot - .previous.slot <= $p.period then . + {previous: $after} else .previous as $before | . + {gaps: (.gaps + [range($before.slot + $p.period; $after.slot; $p.period) | {slot: ., before: $before, after: $after}]), previous: $after} end) | .gaps;
+        (.checkedAt | fromdateiso8601) as $now
+        | [.workflows[] | . as $w | ($w | parts) as $p
+            | [.runs[]? | . + {epoch: (try (.createdAt | fromdateiso8601) catch null)} | select(.epoch != null)] as $valid
+            | if $p == null or $p.minute > 59 or ($p.hour // 0) > 23 or (.runs | type) != "array"
+                 or ($valid | length) != ($w.runs | length)
+                 or ($valid | any((.databaseId | type) != "number" or (.url | type) != "string" or (.url | length) == 0))
+                 or (.path | type) != "string" or (.path | length) == 0
+                 or (.declaredAt | type) != "number" then
+                {workflow: .path, cron: .cron, last: "unknown", state: {kind: "unchecked"}}
+              else (slot($now; $p)) as $latest
+                | (slot(($w.declaredAt // $now); $p)) as $before_declared
+                | (if $before_declared <= ($w.declaredAt // $now) then $before_declared + $p.period else $before_declared end) as $first
+                | ([$valid[] | . + {slot: slot(.epoch; $p)} | select(.slot >= $first)] | sort_by(.slot) | group_by(.slot) | map(last)) as $observed
+                | ($observed | first) as $old | ($observed | last) as $new
+                | ((if $old != null and $old.slot > $first then [range($first; $old.slot; $p.period) | {slot: ., before: null, after: $old}] else [] end) + interior_gap($observed; $p)) as $gaps
+                | {workflow: .path, cron: .cron, last: ($new.createdAt // "none"), state:
+                   (if .path == ".github/workflows/scheduled-run-watch.yml" then {kind: "external"}
+                    elif ($gaps | length) > 0 then {kind: "missed", gaps: $gaps}
+                    elif $new == null and $now >= ($first + $p.period) then {kind: "missed", gaps: [range($first; $latest; $p.period) | {slot: ., before: null, after: null}]}
+                    elif $new == null and $now >= ($first + 43200) then {kind: "late"}
+                    elif $new == null then {kind: "grace"}
+                    elif $new.slot < ($latest - $p.period) then {kind: "missed", gaps: [range($new.slot + $p.period; $latest; $p.period) | {slot: ., before: $new, after: null}]}
+                    elif $new.slot < $latest and $now >= ($latest + 43200) then {kind: "late"}
+                    elif $new.slot < $latest then {kind: "grace"} else {kind: "ok"} end)}
+              end]
+    ' "$file" 2>/dev/null || true)"
+    if [ -z "$rows" ] || [ "$rows" = "[]" ]; then
+        printf '## Declared schedule cadence\n\nUNCHECKED: the declared-schedule history could not be parsed.\n\n'
+        return 1
+    fi
+    printf '## Declared schedule cadence\n\n'
+    printf '| Workflow | Cron | Last observed run | Cadence |\n|---|---|---|---|\n'
+    printf '%s' "$rows" | jq -r '
+        def bound($run; $empty): if $run == null then $empty else "[\($run.databaseId)](\($run.url))" end;
+        def state: if .kind == "missed" then .gaps[] | "**MISSED** `\(.slot | todateiso8601)` between \(bound(.before; "the declaration boundary")) and \(bound(.after; "no observed run"))" elif .kind == "unchecked" then "**UNCHECKED**" elif .kind == "external" then "external stamp only" elif .kind == "late" then "LATE" elif .kind == "grace" then "within 12h grace" else "ok" end;
+        .[] | "| `\(.workflow)` | `\(.cron)` | \(.last) | \(.state | state) |"'
+    printf '\nMISSED means no run appeared for a full period after an expected slot. LATE is informational\n'
+    printf 'after 12 hours; neither finding fails this report. UNCHECKED means the watch itself failed.\n\n'
+    printf 'This scheduled watcher cannot announce its own absence or a GitHub-wide schedule shutdown.\n'
+    printf 'The carried-forward successful-check stamp is the external observer signal for that gap.\n\n'
+    unchecked="$(printf '%s' "$rows" | jq '[.[] | select(.state.kind == "unchecked")] | length')"
+    [ "$unchecked" = 0 ]
+}
 render_report() {
     local dir="$1" runs newest id url created status conclusion rc=0
 
-    printf 'The Monday run of `ci.yml` is the CVE sweep — `build-images` scans a rebuild of this\n'
+    printf 'Every workflow schedule declared on the default branch is compared with its run history.\n'
+    printf 'The Monday run of `ci.yml` is also the CVE sweep — `build-images` scans a rebuild of this\n'
     printf 'branch (#833) and `sweep-shipped` scans the published digests (#1313). A scheduled run\n'
     printf 'has no pull request, so nothing draws anyone to its red tick. This issue is its reader\n'
     printf '(#1377); it is rewritten in place every week.\n\n'
+
+    render_cadence "$dir" || rc=$?
 
     if [ ! -d "$dir" ] || [ ! -s "$dir/runs.json" ]; then
         printf 'UNCHECKED: no run history was collected, so this report cannot say whether the\n'
@@ -108,8 +117,6 @@ render_report() {
         return 1
     fi
 
-    # Sort here rather than trusting gh to return newest-first: the ordering is not part of the
-    # documented contract, and a report that names the wrong run as "newest" is worse than none.
     runs="$(jq -c 'sort_by(.createdAt) | reverse' "$dir/runs.json" 2>/dev/null || true)"
     if [ -z "$runs" ] || [ "$runs" = "null" ] || [ "$(printf '%s' "$runs" | jq -r 'length')" = "0" ]; then
         printf 'UNCHECKED: the run history could not be parsed, or lists no scheduled run at all.\n'
@@ -135,9 +142,6 @@ render_report() {
     elif [ "$conclusion" = "success" ]; then
         printf 'The sweep completed and found nothing it had to report.\n\n'
     else
-        # Called for its OUTPUT and its rc, so it must not be captured: `rc=$(render_failed_jobs)`
-        # assigns the rendered table to rc and drops it from the report — the table vanishes and
-        # the exit code becomes a string. Caught by the self-test below, never by reading.
         render_failed_jobs "$dir" || rc=$?
     fi
 
@@ -145,9 +149,6 @@ render_report() {
     return "$rc"
 }
 
-# The failed-job table for a run that did not succeed. Returns 1 when the jobs could not be read —
-# knowing the run failed while being unable to say WHICH job failed is a half-answer, and the
-# report must not present it as a whole one.
 render_failed_jobs() {
     local dir="$1" failed count
     if [ ! -s "$dir/jobs.json" ]; then
@@ -173,8 +174,6 @@ render_failed_jobs() {
     return 0
 }
 
-# The history table. A single red tells a reader almost nothing; a streak tells them the gate has
-# stopped being an instrument (#1419).
 render_history() {
     printf '## Recent scheduled runs\n\n'
     printf '| Run | Started | Result |\n|---|---|---|\n'
@@ -183,10 +182,13 @@ render_history() {
     printf '\n'
 }
 
-# --- entry points -------------------------------------------------------------------------------
-
 if [ "${1:-}" = "--title" ]; then
     printf '%s\n' "$WATCH_ISSUE_TITLE"
+    exit 0
+fi
+
+if [ "${1:-}" = "--schedules" ] && [ $# -eq 2 ]; then
+    list_schedules "$2"
     exit 0
 fi
 
@@ -204,11 +206,11 @@ if [ "${1:-}" = "--self-test" ]; then
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
 
-    # <dir> <conclusion-of-newest> [older-conclusions...]
     runs_fixture() {
         local dir="$1" i=0 c
         shift
         mkdir -p "$dir"
+        cadence_fixture "$dir"
         for c in "$@"; do
             printf '{"databaseId":%d,"url":"https://x/%d","createdAt":"2026-08-%02dT05:00:00Z","status":"completed","conclusion":"%s"}\n' \
                 $((100 + i)) $((100 + i)) $((28 - i)) "$c"
@@ -222,11 +224,23 @@ if [ "${1:-}" = "--self-test" ]; then
             printf '{"name":"%s","conclusion":"%s"}\n' "${spec%%:*}" "${spec##*:}"
         done | jq -s '{jobs: .}' >"$dir/jobs.json"
     }
-
-    # The GREEN path has to be REACHABLE. A check that can only ever say "incomplete" is as
-    # useless as one that only ever says "clean".
-    # Eight runs against HISTORY_ROWS=6, so the cap is EXERCISED rather than merely configured. A
-    # fixture smaller than the cap can never tell a working limit from an absent one.
+    cadence_fixture() { # <dir> [checked-at] [cron] [runs-json]
+        local dir="$1" checked="${2:-2026-09-14T08:00:00Z}" cron="${3:-0 5 * * 1}"
+        local runs="${4:-}"
+        [ -n "$runs" ] || runs='[{"createdAt":"2026-09-14T06:00:00Z"}]'
+        mkdir -p "$dir"
+        jq -n --arg checkedAt "$checked" --arg cron "$cron" --argjson runs "$runs" \
+            '{checkedAt: $checkedAt, workflows: [{path: ".github/workflows/ci.yml", cron: $cron, declaredAt: ("2026-08-01T00:00:00Z" | fromdateiso8601), runs: ($runs | to_entries | map(.value + {databaseId: (.value.databaseId // .key), url: (.value.url // "https://x/\(.key)")}))}]}' >"$dir/cadence.json"
+    }
+    workflows="$tmp/workflows"
+    mkdir -p "$workflows"
+    printf 'on:\n  schedule:\n    - cron: "0 5 * * 1"\njobs: {}\n' >"$workflows/a.yml"
+    printf 'on:\n  push:\njobs: {}\n' >"$workflows/b.yml"
+    printf 'on:\n  schedule:\n    - cron: "30 6 * * 1" # comment\njobs: {}\n' >"$workflows/c.yaml"
+    out="$(list_schedules "$workflows")"
+    st "every workflow carrying schedule is enumerated" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "2"
+    st "an unscheduled workflow is omitted" "$(printf '%s\n' "$out" | grep -cF 'b.yml')" "0"
+    st "cron comments and .yaml workflows are handled" "$(printf '%s\n' "$out" | grep -cF $'c.yaml\t30 6 * * 1')" "1"
     ok="$tmp/ok"
     runs_fixture "$ok" success success success success success success success success
     out="$(render_report "$ok")" && rc=0 || rc=$?
@@ -235,15 +249,84 @@ if [ "${1:-}" = "--self-test" ]; then
     st "a passing run says so" "$(printf '%s' "$out" | grep -c 'found nothing it had to report')" "1"
     st "the history table is capped at HISTORY_ROWS" "$(hist "$out")" "$HISTORY_ROWS"
     st "a clean report names no failing job" "$(printf '%s' "$out" | grep -c 'did not pass')" "0"
-
-    # A shorter history than the cap prints what exists, not a padded table.
+    gap="$tmp/gap"
+    cadence_fixture "$gap" "2026-09-04T04:40:00Z" "23 * * * *" '[]'
+    jq '.workflows[0].declaredAt = ("2026-09-04T00:00:00Z" | fromdateiso8601)' "$gap/cadence.json" >"$gap/next" && mv "$gap/next" "$gap/cadence.json"
+    out="$(render_cadence "$gap")" && rc=0 || rc=$?
+    st "an actual elapsed hourly gap retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "4"
+    st "a missed run is a report finding, not a broken watcher" "$rc" "0"
+    interior="$tmp/interior"
+    cadence_fixture "$interior" "2026-09-21T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$interior/cadence.json" >"$interior/next" && mv "$interior/next" "$interior/cadence.json"
+    out="$(render_cadence "$interior")"
+    st "a recovered weekly run does not erase the missed interior slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "1"
+    st "an interior gap names its slot and bounding runs" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between [907](https://x/907) and [921](https://x/921)')" "1"
+    interior_many="$tmp/interior-many"
+    cadence_fixture "$interior_many" "2026-09-28T08:00:00Z" "0 5 * * 1" '[{"databaseId":907,"url":"https://x/907","createdAt":"2026-09-07T07:00:00Z"},{"databaseId":928,"url":"https://x/928","createdAt":"2026-09-28T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$interior_many/cadence.json" >"$interior_many/next" && mv "$interior_many/next" "$interior_many/cadence.json"
+    out="$(render_cadence "$interior_many")"
+    st "an interior recovery retains every missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "an interior recovery names the later missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between [907](https://x/907) and [928](https://x/928)')" "1"
+    recovered="$tmp/recovered"
+    cadence_fixture "$recovered" "2026-10-06T08:00:00Z" "0 5 * * 1" '[{"databaseId":929,"url":"https://x/929","createdAt":"2026-10-06T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
+    out="$(render_cadence "$recovered")"
+    st "a recovered first run retains every missed declaration-boundary slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "3"
+    st "a declaration boundary names the first missed slot and run" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-14T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration boundary includes later missed slots" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration boundary includes the third missed slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-28T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    jq '.workflows[0].declaredAt = ("2026-09-14T05:00:00Z" | fromdateiso8601)' "$recovered/cadence.json" >"$recovered/next" && mv "$recovered/next" "$recovered/cadence.json"
+    out="$(render_cadence "$recovered")"
+    st "a declaration exactly on a slot starts with the next slot" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-21T05:00:00Z` between the declaration boundary and [929](https://x/929)')" "1"
+    st "a declaration exactly on a slot excludes that slot" "$(printf '%s' "$out" | grep -cF '2026-09-14T05:00:00Z')" "0"
+    boundary_interior="$tmp/boundary-interior"
+    cadence_fixture "$boundary_interior" "2026-10-05T08:00:00Z" "0 5 * * 1" '[{"databaseId":921,"url":"https://x/921","createdAt":"2026-09-21T07:00:00Z"},{"databaseId":1005,"url":"https://x/1005","createdAt":"2026-10-05T07:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-09T00:00:00Z" | fromdateiso8601)' "$boundary_interior/cadence.json" >"$boundary_interior/next" && mv "$boundary_interior/next" "$boundary_interior/cadence.json"
+    out="$(render_cadence "$boundary_interior")"
+    st "a recovered declaration boundary retains later interior gaps" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "2"
+    st "a recovered declaration boundary names the later interior gap" "$(printf '%s' "$out" | grep -cF '**MISSED** `2026-09-28T05:00:00Z` between [921](https://x/921) and [1005](https://x/1005)')" "1"
+    fresh="$tmp/fresh"
+    cadence_fixture "$fresh" "2026-09-14T08:00:00Z" "0 5 * * 1" '[]'
+    jq '.workflows[0].declaredAt = ("2026-09-11T00:00:00Z" | fromdateiso8601)' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
+    out="$(render_cadence "$fresh")"
+    st "a new schedule gets its first full period of grace" "$(printf '%s' "$out" | grep -cF 'within 12h grace')" "1"
+    jq '.workflows[0].path = ".github/workflows/scheduled-run-watch.yml"' "$fresh/cadence.json" >"$fresh/next" && mv "$fresh/next" "$fresh/cadence.json"
+    out="$(render_cadence "$fresh")"
+    st "the scheduled watcher does not claim to observe itself" "$(printf '%s' "$out" | grep -cF 'external stamp only')" "1"
+    late="$tmp/late"
+    cadence_fixture "$late" "2026-09-14T18:00:00Z" "0 5 * * 1" '[{"createdAt":"2026-09-07T06:00:00Z"}]'
+    jq '.workflows[0].declaredAt = ("2026-09-06T00:00:00Z" | fromdateiso8601)' "$late/cadence.json" >"$late/next" && mv "$late/next" "$late/cadence.json"
+    out="$(render_cadence "$late")" && rc=0 || rc=$?
+    st "a run absent twelve hours after its slot is LATE" "$(printf '%s' "$out" | grep -c '| LATE |')" "1"
+    st "late is informational" "$rc" "0"
+    jq '.checkedAt = "2026-10-06T08:00:00Z"' "$late/cadence.json" >"$late/next" && mv "$late/next" "$late/cadence.json"
+    out="$(render_cadence "$late")"
+    st "a trailing gap retains every fully elapsed slot" "$(printf '%s' "$out" | grep -cF '**MISSED**')" "3"
+    unknown="$tmp/unknown"
+    cadence_fixture "$unknown"
+    jq '.workflows[0].runs = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "unreadable history is UNCHECKED" "$(printf '%s' "$out" | grep -cF '**UNCHECKED**')" "1"
+    st "unchecked history fails the watcher" "$rc" "1"
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1" '[{"createdAt":"not-a-time"}]'
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "a malformed run timestamp is UNCHECKED" "$rc" "1"
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1"
+    jq '.workflows[0].runs[0].databaseId = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "run evidence without an ID fails closed" "$rc" "1"
+    cadence_fixture "$unknown" "2026-09-14T08:00:00Z" "0 5 * * 1"
+    jq '.workflows[0].runs[0].url = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "run evidence without a URL fails closed" "$rc" "1"
+    cadence_fixture "$unknown"
+    jq '.workflows[0].path = null' "$unknown/cadence.json" >"$unknown/next" && mv "$unknown/next" "$unknown/cadence.json"
+    out="$(render_cadence "$unknown")" && rc=0 || rc=$?
+    st "a missing workflow path fails closed" "$rc" "1"
     short="$tmp/short"
     runs_fixture "$short" success success
     out="$(render_report "$short")" && rc=0 || rc=$?
     st "a history shorter than the cap prints only the runs it has" "$(hist "$out")" "2"
-
-    # A failed run is REPORTED, not reddened: rc stays 0 because the WATCHER did its job. This is
-    # the assertion that separates this watcher from the red tick it exists to replace.
     red="$tmp/red"
     runs_fixture "$red" failure success success
     jobs_fixture "$red" "Build image (dashboard):failure" "Shell tests:success" "Lint:skipped"
@@ -252,17 +335,12 @@ if [ "${1:-}" = "--self-test" ]; then
     st "the failing job is named" "$(printf '%s' "$out" | grep -cF 'Build image (dashboard)')" "1"
     st "a passing job is not listed as failing" "$(printf '%s' "$out" | grep -cF '| `Shell tests` |')" "0"
     st "a SKIPPED job is not listed as failing" "$(printf '%s' "$out" | grep -cF '| `Lint` |')" "0"
-    # The SAME run renders in both tables, one built in bash and one in jq. Asserting the count is
-    # 2 is what pins the two spellings together — it fails if either side drifts.
     st "the failed run is marked in both tables, identically" \
         "$(printf '%s' "$out" | grep -c '| \*\*failure\*\* |')" "2"
-
-    # --- the refusals. Each is pinned on the ONE input only it rejects. ---
-
     miss="$tmp/missing"
     out="$(render_report "$miss")" && rc=0 || rc=$?
     st "a missing directory fails" "$rc" "1"
-    st "a missing directory says UNCHECKED" "$(printf '%s' "$out" | grep -c UNCHECKED)" "1"
+    st "a missing directory says both inputs are UNCHECKED" "$(printf '%s' "$out" | grep -c UNCHECKED)" "2"
 
     empty="$tmp/empty"
     mkdir -p "$empty"
@@ -276,7 +354,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$bad")" && rc=0 || rc=$?
     st "an unparseable run list fails" "$rc" "1"
 
-    # An unfinished run is the case a naive reader calls "not failed". It is UNCHECKED.
     running="$tmp/running"
     mkdir -p "$running"
     printf '[{"databaseId":1,"url":"https://x/1","createdAt":"2026-08-31T05:00:00Z","status":"in_progress","conclusion":null}]\n' >"$running/runs.json"
@@ -284,7 +361,6 @@ if [ "${1:-}" = "--self-test" ]; then
     st "an unfinished newest run fails rather than reading as passing" "$rc" "1"
     st "an unfinished run is not called a success" "$(printf '%s' "$out" | grep -c 'found nothing')" "0"
 
-    # Knowing a run failed but not WHICH job is a half-answer and must not read as a whole one.
     nojobs="$tmp/nojobs"
     runs_fixture "$nojobs" failure success
     out="$(render_report "$nojobs")" && rc=0 || rc=$?
@@ -302,9 +378,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(render_report "$nofail")" && rc=0 || rc=$?
     st "a failed run whose jobs all passed fails rather than reporting nothing" "$rc" "1"
 
-    # Every case above calls render_report inside an `&&` list, where bash suppresses `set -e` for
-    # the whole dynamic extent of the call — so none of them can see an error-exit that only bites
-    # the way CI actually invokes this: bare, in its own process.
     out="$(bash "${BASH_SOURCE[0]}" "$ok")" && rc=0 || rc=$?
     st "the clean path survives a real subprocess invocation" "$rc" "0"
     out="$(bash "${BASH_SOURCE[0]}" "$red")" && rc=0 || rc=$?
@@ -312,7 +385,6 @@ if [ "${1:-}" = "--self-test" ]; then
     out="$(bash "${BASH_SOURCE[0]}" "$empty")" && rc=0 || rc=$?
     st "a refusal still exits 1 from a real subprocess" "$rc" "1"
 
-    # The title is the upsert key; a change here silently files a second issue for ever.
     st "--title prints the constant and nothing else" \
         "$(bash "${BASH_SOURCE[0]}" --title)" "$WATCH_ISSUE_TITLE"
 

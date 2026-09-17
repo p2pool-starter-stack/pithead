@@ -143,8 +143,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
 6. Cross-version upgrade: leave the old signed release running at `--dir`. Supply an independently
    prepared private `pithead.tar.gz` and detached signature without a public release or `latest` tag,
    and keep the trusted `cosign.pub` outside that candidate. The signed archive must contain
-   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit — which `make_bundle` does not
-   write yet, so no bundle satisfies this today. There is no standalone candidate producer, but
+   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. `make_bundle` writes it from
+   preflight's approved `GIT_COMMIT`. There is no standalone candidate producer, but
    `release.sh`'s `publish` stage already builds and signs exactly these artifacts (`make_bundle`
    then `sign_bundle`) BEFORE its confirmation prompt and before any tag, push or GitHub release.
    That is the natural place to run this gate: at that point the promoted images carry their real
@@ -189,7 +189,8 @@ tests/integration/run.sh --local --dir /home/miner/pithead --lifecycle
 
 # A single scenario (see --list for names)
 tests/integration/run.sh --host miner@10.0.0.5 --scenario remote-main-secure-tari \
-    --remote-monero-host 10.0.0.5:18081
+    --remote-monero-host node.example --remote-monero-rpc-port 28081 \
+    --remote-monero-zmq-port 28083 --remote-tari-host tari.example
 
 # Cover the OPPOSITE prune mode. The box mines one mode against its live chain; the other is
 # skipped unless you supply a chain for it (it's otherwise covered by the fake mini-stack). A
@@ -215,13 +216,13 @@ Useful flags (full list in `run.sh --help`):
 | `--host <user@host>` / `--local` | Drive the box over SSH, or a stack on this machine. |
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
-| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. |
+| `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
 | `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (synced chains reusable, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
 | `--no-mining-asserts` | Skip the two mining assertions — workers online ≥ `--workers` and stratum total hashes > 0 — with a logged notice, for a box that has no miner connected. Every other assertion stays binding. `e2e.sh --no-miner` passes this automatically ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)). |
-| `--remote-monero-host <h>` | External node endpoint for the `remote` scenario. |
-| `--remote-tari-host <h>` | External Tari node endpoint for the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)) — an already-synced Tari node, same shape as `--remote-monero-host`. |
+| `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
+| `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
 | `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
@@ -392,6 +393,15 @@ release ships ([#1364](https://github.com/p2pool-starter-stack/pithead/issues/13
 inspection (skips the restore). Requires SSH access to the test bench and the miner; see the
 [testbench README](../../tests/integration/tools/testbench-README.md).
 
+`--harness-arg <flag>` (repeatable) appends one more `run.sh` phase flag after the mode's own,
+in the order given — how bench-ci's `phases` selection ([bench-ci#46](https://github.com/p2pool-starter-stack/bench-ci/issues/46))
+runs exactly one named phase against a commit without a dedicated `--mode`. Only an allowlisted
+`run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
+`--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
+`--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
+and anything else is refused before any bench work, never built into a shell string from the raw
+value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+
 ---
 
 ## The config matrix
@@ -560,8 +570,8 @@ can prove — the tier-2 fake covers the `:8081` read only. It enables `dashboar
 borrowed rig in `workers.list[]` (#506; its token seen inside the container only as the
 `{"__secret__": true}` sentinel, [#440](https://github.com/p2pool-starter-stack/pithead/issues/440);
 the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still
-carrying that key is migrated to `workers.list[]` before the legs run), and drives five legs, each
-self-skipping loudly without its prerequisite:
+carrying that key is migrated to `workers.list[]` before the legs run). Missing inputs are recorded
+as `[missing]` rows, while permanent safety refusals are recorded as `[by-design]` rows:
 
 - Read with a populated masked descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)):
   `api_ok` and the enriched feed still resolve — the guard for the v1.5.2 regression, where the
@@ -580,10 +590,11 @@ self-skipping loudly without its prerequisite:
   `watchdog_interval_min` steps one minute away from wherever it sits, inside RigForge's 1–1440
   range. The restore runs whatever the assertions said, so a mid-leg failure cannot strand a
   borrowed rig on a probe value.
-- **Three writable keys are deliberately never driven, and this is a decision rather than a gap.**
+- **Two writable keys are deliberately never driven, and this is a decision rather than a gap.**
   `autotune` would start a real tuning run — it moves hashrate and thermals and may not settle
   inside the leg. `watchdog` would remove thermal protection from a rig mining at its temperature
-  ceiling. `pools` cannot be round-tripped from the rig's own reading at all: RigForge serves a
+  ceiling. Each refusal has its own `[by-design]` leg row. `pools` cannot be round-tripped from the
+  rig's own reading at all: RigForge serves a
   stored `pass` or `tls-fingerprint` as the `{"__secret__": true}` marker and never the value, and
   the dashboard drops the marker again on the way back, so the value that comes back is lossy — and
   `pass` is the stack's stratum password
@@ -598,11 +609,23 @@ self-skipping loudly without its prerequisite:
   operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
   guessed value risks a real `rejected` instead of proving the round trip). Self-skips if the
   dashboard has never applied a `pools` value to this rig before (nothing to safely restore).
+  An absent probe or restorable original is a `[missing]` row, never a pass or an unexplained gate
+  failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
-  `config.json` hand-edit shows up in the masked prefill (with the token still masked).
+  `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
+  half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
+  container never holds the real `ACCESS_TOKEN`, only a read-only credential the host derives from
+  it (`render_worker_read_tokens`, `rigforge:api-read:v1`) and RigForge verifies the same way
+  (`derive_read_token`, `util/api-server.py`) — both sides refuse to derive one from a control
+  token under 32 printable ASCII characters ([#2313](https://github.com/p2pool-starter-stack/pithead/issues/2313)).
+  A rig configured with a shorter `ACCESS_TOKEN` never gets a usable enriched feed while adopted —
+  this leg (and the `max_temp_c` ceiling read that feeds it) times out or self-skips rather than
+  passing; `render_masked_config` now warns naming the worker when it drops a too-weak token, and
+  the dashboard container logs the same reason (rate-limited to once per five minutes per host).
 - Auto-rollback ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517), rigforge#236):
   a change the rig rolls back is recorded as `rolled_back` in the worker-apply result and history.
+  An absent `IT_RIG_ROLLBACK_CHANGES` is a `[missing]` row with the required input named.
 
 ### Settling an apply that comes back `accepted`
 

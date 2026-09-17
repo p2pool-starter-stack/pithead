@@ -116,11 +116,11 @@ test("submit validates IN PLACE: no view swap, the button narrates, the server m
   restore();
 });
 
-test("the mine-on-this-box choice is a labeled select naming RigForge, default Yes", async () => {
+test("the mine-on-this-box choice is a labeled radio group naming RigForge, default Yes", async () => {
   const { inst, restore } = await appOn([stateFor("setup")]);
   const out = renderToString(inst.render());
   assert.match(out, /Mine on this machine too\?/);
-  assert.match(out, /No — this box only coordinates/);
+  assert.match(out, /This machine only coordinates/);
   assert.match(out, /RigForge/);
   restore();
 });
@@ -137,15 +137,15 @@ test("saying yes promises the built-in miner, never a manual install", async () 
   restore();
 });
 
-// --- the role select (#797 R3): one page, three shapes ---------------------------------------
+// --- the role choice (#797 R3): one page, three shapes ---------------------------------------
 
-test("the role select is the FIRST disclosure, above the disk, reading exactly three names", async () => {
+test("the role choice is the FIRST disclosure, above the disk, reading exactly three names", async () => {
   const { inst, restore } = await appOn([stateFor("installer", { disks: DISKS })]);
   const out = renderToString(inst.render());
   assert.ok(out.indexOf("What is this machine?") < out.indexOf("Install onto"));
   assert.match(out, /Pithead \+ RigForge/);
-  assert.match(out, /"rig">RigForge</);
-  assert.match(out, /"pithead">Pithead</);
+  assert.match(out, /name="role" value="rig"/);
+  assert.match(out, /name="role" value="pithead"/);
   restore();
 });
 
@@ -154,7 +154,7 @@ test("role Pithead + RigForge presets the local-miner switch and keeps the full 
   inst.setRole({ target: { value: "both" } });
   assert.equal(inst.state.cfg.local_miner.enabled, true);
   const out = renderToString(inst.render());
-  assert.match(out, /Payout address/); // still Pithead's form — no new UI beyond the select
+  assert.match(out, /Payout address/); // still Pithead's form — no new UI beyond the choice
   assert.match(out, /Nothing to install/); // the preset shows as the live switch's Yes note
   // Back to plain Pithead: the documented default returns — today's config, byte for byte.
   inst.setRole({ target: { value: "pithead" } });
