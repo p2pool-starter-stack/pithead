@@ -63,7 +63,7 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
     run_pending >/dev/null
 }
 
-. "$ROOT/tests/stack/control/test-control-physical-presence-preview.sh"
+. "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
 # Clear the stratum access password (disable direction is an INFO row) — refused.
