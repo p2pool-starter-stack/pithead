@@ -165,6 +165,9 @@ release_tree_gate() { # <dry-run> <allow-dirty>
         require_clean_release_tree
     )
 }
+dirty_real_allow_out="$(release_tree_gate 0 1 2>&1)"
+assert_rc "dirty real release refuses --allow-dirty" "$?" "1"
+assert_contains "dirty real --allow-dirty refusal requires --dry-run" "$dirty_real_allow_out" "--allow-dirty requires --dry-run"
 assert_rc "dirty real release refuses the worktree" "$(
     release_tree_gate 0 0 >/dev/null 2>&1
     echo $?
