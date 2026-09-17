@@ -46,7 +46,11 @@ physical_presence_password_refusal_verdict() { # <control-result-json>
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
 # reads this printed NO response payload on a failure: it could not tell "the preview never
 # returned" from "the flags are wrong" from "an endpoint is missing" — three different defects, one
-# blank line. Bounded to the shape the row actually checks — status/destructive/approval_required,
+# blank line. `.error` is in the allowlist because "rejected" alone is still three different
+# defects: the control runner writes the refusal REASON there, and without it a rejected row cannot
+# say WHICH gate fired (never-path, physical-presence, or approval) — a check that cannot
+# distinguish its own outcomes is not a check. The reason strings are host-authored constants, not
+# request or config content. Bounded to the shape the row actually checks — status/destructive/approval_required/error,
 # and ONLY the two preview_values entries this row's own jq inspects (monero.remote.host,
 # tari.remote.host) — rather than the raw preview or every preview_values entry: an ALLOWLIST, not a
 # key/value trim, because the row is debugging exactly the case where the preview's shape cannot be
@@ -57,7 +61,7 @@ reserved_node_preview_payload() { # <preview-json, possibly empty or malformed>
         printf 'no result — the preview never returned'
         return
     }
-    printf '%s' "$preview" | jq -c '{status, destructive, approval_required,
+    printf '%s' "$preview" | jq -c '{status, destructive, approval_required, error,
         preview_values: ([.preview_values[]? |
             select(.key == "monero.remote.host" or .key == "tari.remote.host") | {key, new}])}' \
         2>/dev/null || printf 'unparseable preview response'
@@ -78,6 +82,10 @@ _reserved_node_preview_payload_self_test() {
     # endpoint keys this row checks, so a stray credential-shaped key is dropped outright, not just
     # stripped of its own old/label.
     case "$out" in *s3cret*) f=$((f + 1)) ;; esac
+    # A rejected preview must carry WHICH refusal fired — that is the whole reason .error is
+    # allowlisted, and the case this row was blind to.
+    out=$(reserved_node_preview_payload '{"status":"rejected","error":"this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick"}')
+    case "$out" in *'"status":"rejected"'*physical-presence-only*) ;; *) f=$((f + 1)) ;; esac
     out=$(reserved_node_preview_payload '')
     case "$out" in *'the preview never returned'*) ;; *) f=$((f + 1)) ;; esac
     out=$(reserved_node_preview_payload '{"node_password":"s3cret"')
