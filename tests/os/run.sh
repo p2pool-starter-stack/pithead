@@ -165,6 +165,10 @@ source "$SCRIPT_DIR/phases/reset.sh" || exit $?
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 require_host
 require_clean_bench
+if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
+    PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)" \
+        tests/os/verify-image.sh "$IMAGE" --test || exit $?
+fi
 case "$PHASE" in
 boot) phase_boot ;;
 update) phase_update ;;
