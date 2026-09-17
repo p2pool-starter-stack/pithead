@@ -962,8 +962,7 @@ the config tab now behave identically.) The pieces:
   different keys; a single-key section keeps the shorter relative label — its heading names the rest.
   Every group carries a one-line explanation. A frontend test requires every reference path to
   have an intentional named group, so a new key cannot silently vanish or drift into an **Other**
-  bucket. A hidden key is the one exception: `ssh.*` (below) is dropped
-  before the grouping runs, so it reaches neither a section nor **Other**. `workers.list[]` (the per-rig descriptors) isn't a form field
+  bucket. `workers.list[]` (the per-rig descriptors) isn't a form field
   here — a variable-length list has no single form control for it; edit the complete list in the
   Advanced JSON pane. Changes to existing rig hosts and tokens require approval.
   [Worker Inspect](#worker-inspect) is a different thing:
@@ -985,17 +984,7 @@ the config tab now behave identically.) The pieces:
   uses. A malformed edit is flagged inline, keeps the last good candidate as what Save would
   send, and blocks Save until fixed. The pane edits the whole config as text, so grouping and
   the form grouping does not constrain it — the machine still validates it under the same free,
-  confirm, approval, and never-approve classes. The hidden keys below are the exception: they are not in
-  the text, and typing one in does not put it there.
-- **`ssh.*` is not in this view at all**
-  ([#1850](https://github.com/p2pool-starter-stack/pithead/issues/1850)). SSH on the appliance is a
-  developer feature — a user never shells into the machine, and the ways in are a configuration
-  stick and the `--ssh` debug image. The host's approval channel refuses those keys whatever
-  sends them, so the page used to offer a control that could not work: an operator who set
-  `ssh.enabled` and pressed **Save & preview changes** was told "No configuration changes
-  detected", because the host had dropped the only key they had changed. The form and the pane
-  both hide them now, and the view puts the machine's own values back into whatever it sends —
-  so a save from here leaves SSH exactly as it was, on or off.
+  confirm, approval, and never-approve classes.
 
 The flow mirrors the CLI's `apply`:
 
@@ -1055,9 +1044,9 @@ signed-in operator, the typed `APPLY` for a disruptive change, and the payout su
 friction and typo protection, not a second identity. A sensitive commit no longer depends on
 Telegram being configured, so it works the same on a stack that never set the bot up.
 
-The existing physical-presence boundary is unchanged: `ssh.*`, the dashboard password, and the two
-tamper alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every
-other check and directs the operator to use a configuration stick. This prevents the configuration
+The existing physical-presence boundary is unchanged: the dashboard password and the two tamper
+alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every other
+check and directs the operator to use a configuration stick. This prevents the configuration
 page from weakening the evidence its own later changes would be judged by.
 
 A node-endpoint change is the one confirm-gated setting with a second gate behind the typed

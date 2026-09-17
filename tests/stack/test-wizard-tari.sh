@@ -159,3 +159,21 @@ assert_not_contains "the declined machine runs no Tari container (no local_tari 
 
 unset c out tari_reads sto_profiles WT WT_ROOMY_KB WT_ROOMY_H WT_SMALL_KB WT_SMALL_H STO sto_out sto_rc
 unset -f wt_run wt_cfg
+
+echo "== unit: Tari's config pins the active chain to mainnet (#2304) =="
+# config.toml.template had no `network` key at all — only an unused `[mainnet.p2p.seeds]` section
+# header — so minotari_node fell back to its binary-default network, silently ignoring every
+# mainnet-specific section while the image tag, docs, and operator all assume mainnet. Asserted on
+# the file the node actually reads (the rendered runtime config, via the real
+# render_tari_runtime_config()), not just the source template, so a regression that strips the key
+# from either the template or the render is caught.
+TARISRC="$SANDBOX/tari-network-pin-src.toml"
+cp "$ROOT/build/tari/config.toml.template" "$TARISRC"
+# shellcheck disable=SC1090
+(
+    export PITHEAD_TEST_SOURCE=1 TARI_CLEARNET_SYNC=false CLEARNET_MARKER="$SANDBOX/tari-network-pin-absent-marker"
+    source "$ROOT/build/tari/entrypoint.sh"
+    render_tari_runtime_config "$TARISRC" "$SANDBOX/tari-network-pin-rt.toml"
+)
+assert_contains "rendered runtime config still pins network=mainnet (#2304)" "$(cat "$SANDBOX/tari-network-pin-rt.toml")" 'network = "mainnet"'
+unset TARISRC

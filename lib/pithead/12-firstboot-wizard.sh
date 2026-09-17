@@ -385,7 +385,7 @@ firstboot_wizard() {
                 # Same isolation the other two validator calls use: a fresh bash so the
                 # validator's own error() exit cannot take this loop with it, and CONFIG_FILE
                 # (readonly) is aimed by the env var rather than reassigned.
-                if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+                if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
                     printf '%s' "$post_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
                     rm -f "$PWD/config.json" "$PWD/config.json.bak-1x" "$spool/install-request"
