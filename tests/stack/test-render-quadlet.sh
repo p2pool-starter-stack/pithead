@@ -36,7 +36,7 @@ for f in mining.network proxy.network tor.container p2pool.container xmrig-proxy
 done
 assert_eq "quadlet p2pool disables its persistent file log (#1989)" "$(grep -c '^Exec=--no-log-file ' "$QOUT/p2pool.container")" "1"
 QNOAUTH="$SANDBOX/quadlet-no-auth-out"
-sed -E 's/^MONERO_NODE_(USERNAME|PASSWORD)=.*/\1=/' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/no-auth.env"
+sed -E 's/^MONERO_NODE_(USERNAME|PASSWORD)=.*/MONERO_NODE_\1=/' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/no-auth.env"
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/no-auth.env" "$QNOAUTH" >/dev/null
 assert_eq "remote node without RPC auth omits --rpc-login (#2278)" \
     "$(sed -n '/^Exec=/p' "$QNOAUTH/p2pool.container")" \

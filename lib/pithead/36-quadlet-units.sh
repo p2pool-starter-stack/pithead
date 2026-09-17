@@ -232,11 +232,7 @@ WantedBy=multi-user.target
 EOF
         ;;
     esac
-
-    local rpc_login=""
-    if [ -n "$(_qenv MONERO_NODE_USERNAME)" ]; then
-        rpc_login=" --rpc-login $(_qenv MONERO_NODE_USERNAME):$(_qenv MONERO_NODE_PASSWORD)"
-    fi
+    local rpc_login=""; [ -z "$(_qenv MONERO_NODE_USERNAME)" ] || rpc_login=" --rpc-login $(_qenv MONERO_NODE_USERNAME):$(_qenv MONERO_NODE_PASSWORD)"
     cat >"$outdir/p2pool.container" <<EOF
 [Unit]
 Description=pithead p2pool
