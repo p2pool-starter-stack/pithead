@@ -33,12 +33,23 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     fi
     prefix="$(env_on_box NETWORK_PREFIX)"
     [ -n "$prefix" ] || prefix="172.28.0"
-    # Resolve the verifier by absolute path off run.sh's $HERE so it runs even when the stack --dir is a
-    # release bundle with no tests/ tree (local mode: driver == box, so $HERE reaches it). SSH mode keeps
-    # the remote-relative path — the remote is a full checkout and $HERE is a driver path meaningless there.
-    local bench="tests/integration/benchmarks/bench-verify-egress.sh"
-    [ "$IT_MODE" = "local" ] && bench="$HERE/benchmarks/bench-verify-egress.sh"
+    # Resolve the verifier: local mode drives the box directly, so run.sh's own $HERE reaches it
+    # even when the stack --dir is a release bundle with no tests/ tree. SSH mode (--host) cannot
+    # assume the target carries a pithead git checkout at all — an appliance install only ships
+    # the deployed runtime, never tests/ (#2302) — so push the (self-contained, no sourcing)
+    # script over the same SSH connection rx already uses, run it from there, then remove it.
+    local bench
+    if [ "$IT_MODE" = "local" ]; then
+        bench="$HERE/benchmarks/bench-verify-egress.sh"
+    else
+        bench=".itest-bench-verify-egress.sh"
+        if ! rx "cat > $(quote_arg "$bench")" --stdin <"$HERE/benchmarks/bench-verify-egress.sh"; then
+            it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "could not push bench-verify-egress.sh to the target"
+            return 0
+        fi
+    fi
     out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
+    [ "$IT_MODE" = "local" ] || rx "rm -f $(quote_arg "$bench")" >/dev/null 2>&1
     case "$(egress_verdict "$out")" in
     ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
     leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;

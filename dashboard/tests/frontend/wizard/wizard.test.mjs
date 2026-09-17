@@ -34,13 +34,15 @@ test("picker: an empty disk restates the erase in red, and offers NO wipe choice
   assert.doesNotMatch(destructive, /Keep my data/);
 });
 
-test("picker: a previous install offers the three-way data choice as a dropdown", () => {
+test("picker: a previous install offers the three-way data choice as radios", () => {
   const out = sect({ chosen: "sda" });
+  assert.equal((out.match(/<select/g) || []).length, 1); // the target-disk inventory only
+  assert.equal((out.match(/type="radio"/g) || []).length, 3);
   assert.match(out, /Keep everything/);
-  assert.match(out, /keep the blockchains/);
+  assert.match(out, /Keep the blockchains/);
   assert.match(out, /Wipe everything/);
   // The expensive consequence is named where the choice is made, not discovered later.
-  assert.match(out, /re-download from scratch/);
+  assert.match(out, /Download the chains again from scratch/);
   // Not yet the red warning — that appears only once "all" is chosen.
   assert.doesNotMatch(out, /took days to download/);
 });
