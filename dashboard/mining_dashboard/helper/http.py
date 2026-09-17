@@ -44,6 +44,12 @@ def request_failure_class(exc):
     return type(exc).__name__
 
 
+def raise_for_success(response):
+    """Raise without reading the body unless the response is 2xx."""
+    if not 200 <= response.status_code < 300:
+        raise requests.HTTPError(response=response)
+
+
 class BoundedResponse:
     """The slice of ``requests.Response`` the clients actually use: ``status_code``, ``text``,
     ``json()``, ``raise_for_status()`` — backed by the capped body."""

@@ -45,7 +45,7 @@ class TestSend:
         n = _enabled(api_base="https://tg.test")
         resp = MagicMock()
         resp.__enter__.return_value = resp
-        resp.raise_for_status = MagicMock()
+        resp.status_code = 200
         with patch.object(tg_mod.requests, "post", return_value=resp) as post:
             assert n.send("node down") is True
         url = post.call_args.args[0]
@@ -54,6 +54,7 @@ class TestSend:
         assert body["chat_id"] == "123"
         assert body["text"] == "node down"
         assert post.call_args.kwargs["stream"] is True
+        assert post.call_args.kwargs["allow_redirects"] is False
         resp.__exit__.assert_called_once()
 
     def test_send_routes_over_tor(self):
@@ -61,7 +62,7 @@ class TestSend:
         n = _enabled(tor_proxy="socks5h://tor:9050")
         resp = MagicMock()
         resp.__enter__.return_value = resp
-        resp.raise_for_status = MagicMock()
+        resp.status_code = 200
         with patch.object(tg_mod.requests, "post", return_value=resp) as post:
             n.send("x")
         assert post.call_args.kwargs["proxies"] == {
@@ -80,7 +81,7 @@ class TestSend:
         n = _enabled()
         resp = MagicMock()
         resp.__enter__.return_value = resp
-        resp.raise_for_status.side_effect = requests.HTTPError("401")
+        resp.status_code = 401
         with patch.object(tg_mod.requests, "post", return_value=resp):
             assert n.send("x") is False
 

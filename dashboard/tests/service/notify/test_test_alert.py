@@ -82,7 +82,7 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         if "refused.invalid" in url:
             raise requests.Timeout("slow")
         if "rejected.invalid" in url:
-            return _response(503)
+            return _response(302)
         return _response(200)
 
     output = StringIO()
@@ -93,12 +93,13 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
     assert text.splitlines() == [
         "Telegram: FAIL (connection error)",
         "Webhook 1: FAIL (timeout)",
-        "Webhook 2: FAIL (HTTP 503)",
+        "Webhook 2: FAIL (HTTP 302)",
         "ntfy: PASS",
         "Healthchecks: excluded — a ping moves the dead-man switch.",
     ]
     assert len(attempts) == 4
     assert all(kwargs["stream"] is True for _, kwargs in attempts)
+    assert all(kwargs["allow_redirects"] is False for _, kwargs in attempts)
     assert attempts[2][1]["json"]["event"] == test_alert.TEST_EVENT
     assert test_alert.TEST_MESSAGE in attempts[-1][1]["data"].decode()
     assert token not in text

@@ -9,7 +9,7 @@ from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink, 
 def _ok_resp():
     resp = MagicMock()
     resp.__enter__.return_value = resp
-    resp.raise_for_status = MagicMock()
+    resp.status_code = 200
     return resp
 
 
@@ -45,6 +45,7 @@ class TestWebhookPayload:
             assert hook.send("Monero node is DOWN", "node_down") is True
         assert post.call_args.args[0] == "https://hook.test/x"
         assert post.call_args.kwargs["stream"] is True
+        assert post.call_args.kwargs["allow_redirects"] is False
         resp.__exit__.assert_called_once()
         body = post.call_args.kwargs["json"]
         assert body["event"] == "node_down"
@@ -97,9 +98,11 @@ class TestFailSilent:
     def test_http_error_swallowed(self):
         resp = MagicMock()
         resp.__enter__.return_value = resp
-        resp.raise_for_status.side_effect = requests.HTTPError("503")
+        resp.status_code = 503
         with patch.object(ns_mod.requests, "post", return_value=resp):
-            assert NtfySink("https://ntfy.test/t").send("x") is False
+            sink = NtfySink("https://ntfy.test/t")
+            assert sink.send("x") is False
+        assert sink.last_failure == "HTTP 503"
 
     def test_url_and_token_never_logged_on_failure(self, caplog):
         # A requests error message embeds the request URL — webhook URLs often carry tokens in

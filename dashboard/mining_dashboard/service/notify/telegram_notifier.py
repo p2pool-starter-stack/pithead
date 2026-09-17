@@ -3,7 +3,7 @@ import logging
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
-from mining_dashboard.helper.http import request_failure_class
+from mining_dashboard.helper.http import raise_for_success, request_failure_class
 
 logger = logging.getLogger("TelegramNotifier")
 
@@ -90,8 +90,9 @@ class TelegramNotifier:
                 timeout=self.timeout,
                 proxies=self._proxies,
                 stream=True,
+                allow_redirects=False,
             ) as resp:
-                resp.raise_for_status()
+                raise_for_success(resp)
             return True
         except requests.RequestException as exc:
             self.last_failure = request_failure_class(exc)
