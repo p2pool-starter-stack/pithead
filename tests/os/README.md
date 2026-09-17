@@ -160,7 +160,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
   and resumed hashes. Release-input preparation failures name only the failed sub-step, a redacted
-  command, and its exit status; command output, tokens, keys, and signature material stay hidden.
+  command, and its exit status. Downstream guest failures name only a fixed stage and integer exit
+  status; command output, tokens, keys, signature material, and topology stay hidden.
   Its EXIT trap stops the stack, unmounts the XFS, and removes the sparse file.
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|all`

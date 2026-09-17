@@ -124,9 +124,23 @@ _image_upgrade_clear_guest_inputs() {
     _ssh 'rm -rf /run/pithead-image-upgrade'
 }
 
+_image_upgrade_read_guest_failure() {
+    local marker stage exit_status
+    marker="$(_ssh 'cat /run/pithead-image-upgrade/guest-stage' 2>/dev/null)" || return 1
+    stage="${marker#stage=}"
+    stage="${stage%% exit=*}"
+    exit_status="${marker##* exit=}"
+    case "$stage" in
+    guest-preflight | reflink-volume | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    *) return 1 ;;
+    esac
+    [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$stage exit=$exit_status" ] || return 1
+    printf '%s\n' "$marker"
+}
+
 phase_image_upgrade() {
     info "phase: image-upgrade (signed v1.20.0 -> candidate on guest-local reflink XFS)"
-    local ip="" rc=0 cleanup_rc=0 head
+    local ip="" rc=0 cleanup_rc=0 head guest_failure=""
     _image_upgrade_inputs_valid || {
         bad "image-upgrade requires REMOTE_MONERO_HOST, REMOTE_MONERO_RPC_PORT, REMOTE_MONERO_ZMQ_PORT, REMOTE_TARI_HOST, and PITHEAD_REGISTRY"
         return
@@ -154,7 +168,10 @@ phase_image_upgrade() {
         bad "could not stage the private upgrade inputs inside the guest"
         return
     }
-    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" || rc=$?
+    _ssh "bash /run/pithead-image-upgrade/image-upgrade-guest.sh $head" || {
+        rc=$?
+        guest_failure="$(_image_upgrade_read_guest_failure || true)"
+    }
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
     if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
         ok "guest-local reflink volume and private inputs were torn down"
@@ -164,6 +181,6 @@ phase_image_upgrade() {
     if [ "$rc" -eq 0 ] && [ "$cleanup_rc" -eq 0 ]; then
         ok "deployed image upgrade and exact rollback passed in the disposable guest"
     else
-        bad "deployed image upgrade gate failed (guest runner rc=$rc)"
+        bad "deployed image upgrade gate failed (${guest_failure:-stage=unattributed exit=$rc})"
     fi
 }

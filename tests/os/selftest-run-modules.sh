@@ -11,7 +11,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info it_warn it_err have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs phase_image_upgrade phase_crossupdate'
+expected_functions='ok bad info it_warn it_err have _ssh _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure phase_image_upgrade phase_crossupdate'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -136,6 +136,18 @@ grep -Fx -- '--use-signing-config=false' "$wrong_stage/cosign.args" >/dev/null &
     echo "image-upgrade wrong-key signing lost its legacy detached flags" >&2
     exit 1
 }
+bash "$HERE/image-upgrade-guest.sh" --self-test || exit $?
+if (
+    _ssh() { printf '%s\n' 'stage=baseline-setup exit=17'; }
+    [ "$(_image_upgrade_read_guest_failure)" = 'stage=baseline-setup exit=17' ]
+    _ssh() { printf '%s\n' 'stage=baseline-setup exit=17 token=must-not-leak'; }
+    ! _image_upgrade_read_guest_failure >/dev/null 2>&1
+); then
+    :
+else
+    echo "image-upgrade guest-stage marker was not fixed and payload-only" >&2
+    exit 1
+fi
 if (
     REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT='' \
         REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
@@ -171,23 +183,32 @@ if (
     _vm_boot_disk() { :; }
     _wait_ssh() { :; }
     _image_upgrade_stage_guest() { :; }
-    _image_upgrade_clear_guest_inputs() { :; }
+    guest_inputs_cleared=0
+    _image_upgrade_clear_guest_inputs() { guest_inputs_cleared=1; }
     _ssh() {
         case "$1" in
-        'bash /run/pithead-image-upgrade/image-upgrade-guest.sh '*) printf '%s\n' "$1" >"$td/guest-runner" ;;
+        'bash /run/pithead-image-upgrade/image-upgrade-guest.sh '*)
+            printf '%s\n' "$1" >"$td/guest-runner"
+            return 17
+            ;;
+        'cat /run/pithead-image-upgrade/guest-stage')
+            [ "$guest_inputs_cleared" -eq 0 ] && printf '%s\n' 'stage=baseline-setup exit=17'
+            ;;
         '! mountpoint -q /mnt/pithead-image-upgrade'*) : ;;
         *) return 1 ;;
         esac
     }
-    bad() { :; }
+    bad() { printf '%s\n' "$1" >"$td/verdict"; }
     info() { :; }
     ok() { :; }
     phase_image_upgrade
-    grep -Eq '^bash /run/pithead-image-upgrade/image-upgrade-guest\.sh [0-9a-f]{40}$' "$td/guest-runner"
+    grep -Eq '^bash /run/pithead-image-upgrade/image-upgrade-guest\.sh [0-9a-f]{40}$' "$td/guest-runner" &&
+        grep -Fx 'deployed image upgrade gate failed (stage=baseline-setup exit=17)' "$td/verdict" >/dev/null &&
+        [ "$guest_inputs_cleared" -eq 1 ]
 ); then
     :
 else
-    echo "image-upgrade did not invoke its private guest script through bash" >&2
+    echo "image-upgrade did not capture its fixed guest marker before cleanup" >&2
     exit 1
 fi
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
