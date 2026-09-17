@@ -60,7 +60,7 @@ reserved_node_preview_payload() { # <preview-json, possibly empty or malformed>
     printf '%s' "$preview" | jq -c '{status, destructive, approval_required,
         preview_values: ([.preview_values[]? |
             select(.key == "monero.remote.host" or .key == "tari.remote.host") | {key, new}])}' \
-        2>/dev/null || printf 'unparseable: %.200s' "$preview"
+        2>/dev/null || printf 'unparseable preview response'
 }
 
 _reserved_node_preview_payload_self_test() {
@@ -80,8 +80,9 @@ _reserved_node_preview_payload_self_test() {
     case "$out" in *s3cret*) f=$((f + 1)) ;; esac
     out=$(reserved_node_preview_payload '')
     case "$out" in *'the preview never returned'*) ;; *) f=$((f + 1)) ;; esac
-    out=$(reserved_node_preview_payload '{"status":')
-    case "$out" in *'unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(reserved_node_preview_payload '{"node_password":"s3cret"')
+    case "$out" in *'unparseable preview response'*) ;; *) f=$((f + 1)) ;; esac
+    case "$out" in *s3cret*) f=$((f + 1)) ;; esac
     [ "$f" -eq 0 ] || {
         printf 'reserved-node-preview-payload self-test FAILED: %s checks\n' "$f"
         return 1
