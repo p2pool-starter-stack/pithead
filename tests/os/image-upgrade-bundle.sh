@@ -59,12 +59,32 @@ die() {
 }
 
 make_bundle "$OUT"
-mkdir "$WORKDIR/repack"
-tar -xzf "$OUT" -C "$WORKDIR/repack"
+mkdir "$WORKDIR/repack" >/dev/null 2>&1 || {
+    rc=$?
+    input_failure candidate-bundle 'mkdir <candidate-repack>' "$rc" || true
+    exit "$rc"
+}
+tar -xzf "$OUT" -C "$WORKDIR/repack" >/dev/null 2>&1 || {
+    rc=$?
+    input_failure candidate-bundle 'tar -xzf <candidate-bundle>' "$rc" || true
+    exit "$rc"
+}
 awk -v registry="$REGISTRY" '{gsub(/\$\{PITHEAD_REGISTRY:-ghcr.io\/p2pool-starter-stack\}/,registry); print}' \
-    "$WORKDIR/repack/pithead/docker-compose.yml" >"$WORKDIR/repack/pithead/docker-compose.yml.new"
-mv "$WORKDIR/repack/pithead/docker-compose.yml.new" "$WORKDIR/repack/pithead/docker-compose.yml"
-tar --no-xattrs -czf "$OUT" -C "$WORKDIR/repack" pithead
+    "$WORKDIR/repack/pithead/docker-compose.yml" >"$WORKDIR/repack/pithead/docker-compose.yml.new" 2>/dev/null || {
+    rc=$?
+    input_failure candidate-bundle 'awk <candidate-compose> <registry-rewrite>' "$rc" || true
+    exit "$rc"
+}
+mv "$WORKDIR/repack/pithead/docker-compose.yml.new" "$WORKDIR/repack/pithead/docker-compose.yml" >/dev/null 2>&1 || {
+    rc=$?
+    input_failure candidate-bundle 'mv <candidate-compose-rewrite>' "$rc" || true
+    exit "$rc"
+}
+tar --no-xattrs -czf "$OUT" -C "$WORKDIR/repack" pithead >/dev/null 2>&1 || {
+    rc=$?
+    input_failure candidate-bundle 'tar -czf <candidate-bundle>' "$rc" || true
+    exit "$rc"
+}
 cosign sign-blob --yes --use-signing-config=false --tlog-upload=false --key "$KEY" \
     --output-signature "$OUT.sig" "$OUT" >/dev/null 2>&1 || {
     rc=$?

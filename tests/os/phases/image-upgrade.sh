@@ -71,10 +71,7 @@ _image_upgrade_prepare_inputs() {
         _image_upgrade_input_failure candidate-bundle 'tests/os/image-upgrade-bundle.sh <candidate> <commit> <bundle-key>' "$rc"
         return "$rc"
     }
-    _image_upgrade_input_run signing 'cosign sign-blob <candidate> with <wrong-key>' \
-        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --use-signing-config=false --tlog-upload=false \
-        --key "$stage/wrong.key" \
-        --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz" || return $?
+    _image_upgrade_sign_wrong_key "$stage" || return $?
     if "$stage/cosign" verify-blob --key "$stage/bundle.pub" --signature "$stage/wrong.sig" \
         --insecure-ignore-tlog=true "$stage/candidate.tar.gz" >/dev/null 2>&1; then
         _image_upgrade_input_failure signing \
@@ -105,6 +102,13 @@ _image_upgrade_prepare_inputs() {
         chmod 0600 "$stage/config.json" || return $?
     _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration' \
         tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration || return $?
+}
+
+_image_upgrade_sign_wrong_key() { # <private stage>
+    local stage="$1"
+    _image_upgrade_input_run signing 'cosign sign-blob <candidate> with <wrong-key>' \
+        env COSIGN_PASSWORD= "$stage/cosign" sign-blob --yes --use-signing-config=false --tlog-upload=false \
+        --key "$stage/wrong.key" --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz"
 }
 
 _image_upgrade_stage_guest() {
