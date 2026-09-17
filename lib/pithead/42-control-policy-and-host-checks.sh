@@ -191,7 +191,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.
 # Space-separated exact env-key names.
-CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
 # The committable universe as one alternation: the three lists above and nothing else. Defined
 # ONCE because the commit gate and the preview MUST classify identically — while they did not
