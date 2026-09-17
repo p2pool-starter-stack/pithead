@@ -11,9 +11,10 @@ _control_host_remedy() {
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 worker_sensitive=0
-    # Fail closed if we cannot re-derive the change set (the staged config was validated at
-    # preview, so a dry-run failure here means something changed — refuse).
-    if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>/dev/null); then
+    # Fail closed if the previewed staged config cannot be re-derived.
+    local carried_ssh=0
+    control_carried_ssh "$staged" && carried_ssh=1
+    if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>/dev/null); then
         printf 'could not re-validate the staged change host-side — refusing to commit'
         return 1
     fi
@@ -207,7 +208,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     return 0
 }
 
-# Preview: stage the candidate config host-side, dry-run it, report the describe_change rows.
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
@@ -229,9 +229,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
     # container's probe). A sentinel for a rig with no live token collapses to "" too.
-    # dashboard.workers[] is restored too, and MUST be: 30's masker still masks that shape after
-    # 2.0.0 removed the alias (#1832, see the note there), and mask and restore are one mechanism.
-    # Keeping the mask without the restore would let a sentinel be committed as a literal token.
     # The LIVE lookup below therefore reads BOTH shapes, and that is the whole point: worker_list is
     # workers.list[] alone since #1832, so resolving legacy sentinels against it would find nothing
     # and blank every per-rig token to "" — a restore branch that cannot restore. workers.list[]
@@ -241,6 +238,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         (reduce (($live[0] | worker_list) + (($live[0].dashboard // {}) | .workers // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
             then .[$w.name] = ($w.token // "") else . end)) as $livetok
+        | if ((.config | has("ssh") | not) and ($live[0] | has("ssh"))) then .config.ssh = $live[0].ssh else . end
         | reduce $paths[] as $p (.config;
             (try getpath($p) catch null) as $v
             | if ($v | type) == "object" and $v.__secret__ == true
@@ -259,7 +257,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
-    if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
+    local carried_ssh=0
+    control_carried_ssh "$staged" && carried_ssh=1
+    if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
         # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
         # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
         # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.

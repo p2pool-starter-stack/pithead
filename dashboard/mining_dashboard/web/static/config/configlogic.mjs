@@ -20,6 +20,15 @@ export function isSecretSentinel(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v) && v.__secret__ === true;
 }
 
+export const editableCandidate = (cfg) =>
+  JSON.parse(
+    JSON.stringify(cfg, (key, value) =>
+      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
+        ? undefined
+        : value,
+    ),
+  );
+
 // Fixed-choice fields; everything else renders from its JSON type.
 const FIELD_OPTIONS = {
   "monero.mode": ["local", "remote"],

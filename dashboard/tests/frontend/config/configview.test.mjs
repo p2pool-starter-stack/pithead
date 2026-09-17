@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ConfigView, editableCandidate, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { ConfigView, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { editableCandidate } from "../../../mining_dashboard/web/static/config/configlogic.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 const ID = "11111111-1111-4111-8111-111111111111";

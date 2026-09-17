@@ -23,6 +23,7 @@ import { Component, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import {
   buildSections,
+  editableCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
@@ -33,15 +34,6 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
-
-const editableCandidate = (cfg) =>
-  JSON.parse(
-    JSON.stringify(cfg, (key, value) =>
-      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
-        ? undefined
-        : value,
-    ),
-  );
 
 export { editableCandidate, PreviewModal };
 

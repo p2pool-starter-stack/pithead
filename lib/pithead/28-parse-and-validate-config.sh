@@ -17,15 +17,13 @@ parse_and_validate_config() {
         error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
     fi
 
-    if [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
-        if is_appliance && [ "$(appliance_variant)" = release ]; then
-            [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
-        else
-            case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
-            ssh-* | ecdsa-* | sk-*) ;;
-            *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
-            esac
-        fi
+    if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
+        [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
+    elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
+        case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
+        ssh-* | ecdsa-* | sk-*) ;;
+        *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
+        esac
     fi
     # tari.mode (#103/#1855): monero.mode's local/remote switch plus "off" — no merge-mining at all.
     # Read BEFORE the required-fields gate below, which depends on it, and ahead of everything else

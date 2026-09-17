@@ -23,6 +23,10 @@ control_never_path_changed() { # <staged-file>
     return 1
 }
 
+control_carried_ssh() { # <staged-file>
+    jq -e --slurpfile live "$CONFIG_FILE" '($live[0] | has("ssh")) and (.ssh == $live[0].ssh)' "$1" >/dev/null 2>&1
+}
+
 # Typed payout confirmation for a sensitive dashboard commit (#2076). The dashboard collects the
 # last characters of a new payout address and the host re-checks them against the STAGED file, so a
 # fat-fingered or truncated paste cannot reach an unrecoverable field. This is typo protection, not
