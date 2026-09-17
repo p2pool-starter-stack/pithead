@@ -47,7 +47,9 @@ control_request_ready() {
 }
 
 dashboard_control_request() { # <preview|commit> <json-body>; sets CONTROL_RESPONSE
-    local route="$1" body="$2" pid http_rc=0 runner_rc=0
+    local route="$1" body="$2" pid request_id http_rc=0 runner_rc=0
+    CONTROL_HOST_STATUS=missing
+    CONTROL_CONTAINER_STATUS=missing
     CONTROL_RESPONSE="$SANDBOX/control-response.json"
     compose exec -T dashboard python3 - "$route" "$body" >"$CONTROL_RESPONSE" 2>/dev/null <<'PY' &
 import json
@@ -82,10 +84,17 @@ sys.stdout.write(json.dumps(payload))
 PY
     pid=$!
     if control_request_ready; then
+        request_id=$(basename "$(compgen -G "$C/data/control/requests/*.json" | head -n1)" .json)
         run_pending >"$SANDBOX/control-runner.log" 2>&1 || runner_rc=$?
         # Production's root runner creates world-readable result files for the uid-1000 dashboard.
         # The CI host user can have a narrower umask, so normalize that fixture boundary explicitly.
         chmod 644 "$C/data/control/results/"*.json 2>/dev/null || true
+        CONTROL_HOST_STATUS=$(jq -r '.status // "missing"' "$C/data/control/results/$request_id.json" 2>/dev/null || true)
+        CONTROL_CONTAINER_STATUS=$(compose exec -T dashboard python3 -c \
+            'import json,sys; print(json.load(open(f"/control/results/{sys.argv[1]}.json")).get("status", "missing"))' \
+            "$request_id" 2>/dev/null || true)
+        CONTROL_HOST_STATUS="${CONTROL_HOST_STATUS:-missing}"
+        CONTROL_CONTAINER_STATUS="${CONTROL_CONTAINER_STATUS:-missing}"
     else
         runner_rc=1
     fi
@@ -116,7 +125,7 @@ assert_payout_control_roundtrip() {
         return
     }
     if ! dashboard_control_request preview "$(printf '%s' "$proposed" | jq -c '{config:.}')"; then
-        c_bad "payout approval reaches the host preview" "dashboard or host runner failed"
+        c_bad "payout approval reaches the host preview" "dashboard or host runner failed (host=$CONTROL_HOST_STATUS, container=$CONTROL_CONTAINER_STATUS)"
         return
     fi
     preview=$(cat "$CONTROL_RESPONSE")
@@ -126,7 +135,7 @@ assert_payout_control_roundtrip() {
         c_ok "payout preview exposes the old/new addresses behind approval"
     else
         c_bad "payout preview exposes the old/new addresses behind approval" \
-            "status=$(printf '%s' "$preview" | jq -r '.status // "missing"'), destructive=$(printf '%s' "$preview" | jq -r '.destructive // "missing"'), approval=$(printf '%s' "$preview" | jq -r '.approval_required // "missing"')"
+            "status=$(printf '%s' "$preview" | jq -r '.status // "missing"'), destructive=$(printf '%s' "$preview" | jq -r '.destructive // "missing"'), approval=$(printf '%s' "$preview" | jq -r '.approval_required // "missing"'), host=$CONTROL_HOST_STATUS, container=$CONTROL_CONTAINER_STATUS"
         return
     fi
 

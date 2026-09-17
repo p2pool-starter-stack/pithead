@@ -78,7 +78,6 @@ tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
-tests/stack/test-harness-tooling.sh	406
 tests/stack/test-monero-tari.sh	582
 tests/stack/test-rig-worker.sh	616
 tests/stack/test-tor-network.sh	780
