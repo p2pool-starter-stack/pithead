@@ -78,6 +78,9 @@ grep -q "ssh-ed25519 AAAATEST" "$SSHSB/run/ssh/authorized_keys" 2>/dev/null &&
     ok "enabled -> the key lands in the runtime dir" || bad "enabled -> the key lands in the runtime dir" "missing"
 grep -q "PasswordAuthentication=no" "$SSHSB/units/ssh.service.d/pithead.conf" 2>/dev/null &&
     ok "password auth is forced OFF in the unit override" || bad "password auth is forced OFF in the unit override" "missing"
+ssh_run debug '{"ssh":{"enabled":false}}'
+[ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
+    ok "debug disabled -> runtime SSH access is removed" || bad "debug disabled -> runtime SSH access is removed" "residue"
 ssh_run release '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST key@test"}}'
 [ ! -e "$SSHSB/run/ssh" ] && [ ! -e "$SSHSB/units/ssh.service.d" ] &&
     ok "release -> carried SSH config cannot create runtime access" || bad "release -> carried SSH config cannot create runtime access" "residue"
@@ -359,7 +362,6 @@ chmod +x "$CAB/bin/docker"
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "engine unreachable post-\`up\` -> WARN, naming the tooling gap" "$out" "WARN"
 assert_not_contains "engine unreachable post-\`up\` -> never FAILs a healthy box" "$out" "FAIL"
-
 # The base name is NOT excused by an unreachable engine — it needs no live state to derive, so an
 # uncovered base name is always a real, actionable problem.
 printf 'not a certificate' >"$CAB/tls/wizard.crt"
@@ -369,7 +371,6 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$CAB/tls/wizard.ke
 out=$(cab_run "192.168.1.20 172.28.0.1 172.19.0.1" doctor)
 assert_contains "an uncovered BASE name still FAILs even with the engine unreachable" "$out" "FAIL"
 assert_contains "the FAIL names the base" "$out" "rig1.local"
-
 # Nothing extra to explain (dashboard.host pinned collapses the auto-expansion to just the base,
 # per appliance_site_names' own "an explicit pin stays a single name on purpose" rule) -> an
 # unreachable engine is never even consulted, so no spurious WARN either. check_appliance_cert
@@ -406,7 +407,6 @@ assert_not_contains "a pinned dashboard.host that IS covered -> no FAIL" "$out" 
 unset -f cab_run cab_run_pinned
 rm -rf "$CAB"
 unset CAB out
-
 echo "== unit: the certificate re-mints when the served name list changes, not otherwise (#1132) =="
 # Compare, don't date-guess: the minted SAN list is derived from the certificate itself (openssl)
 # and set-compared against the machine's current name list. An operator who has pinned this

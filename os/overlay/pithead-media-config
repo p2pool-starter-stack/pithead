@@ -1,8 +1,9 @@
 #!/bin/bash
 # Physical-presence configuration channel (issue D of the appliance parity set): a removable FAT
-# stick carrying pithead-config.json can change ANY setting, including the never-approve set no
-# remote channel may touch (ssh.*, the approval channel's own identity, dashboard.auth.password,
-# the tamper-evidence toggles). Trust statement, stated once here and in docs/appliance.md:
+# stick carrying pithead-config.json can change any supported setting, including the never-approve
+# set no remote channel may touch (the approval channel's own identity, dashboard.auth.password,
+# the tamper-evidence toggles). Release images reject retired ssh.* settings. Trust statement,
+# stated once here and in docs/appliance.md:
 # whoever can insert media and power-cycle the machine already has full authority over it — this
 # channel makes that authority usable instead of implicit, and adds a tamper-evidence trail (the
 # normal host-edit detector fires on whatever it changes) rather than a new way in. Boot-time
@@ -195,7 +196,7 @@ media_device_present() {
     [ -b "$1" ] || return 1
     [ -z "${2:-}" ] || [ "$(blkid -s UUID -o value "$1" 2>/dev/null)" = "$2" ]
 }
-media_read_key() {                      # $1: timeout seconds -> prints one char, rc 1 on timeout
+media_read_key() { # $1: timeout seconds -> prints one char, rc 1 on timeout
     local tty="${PITHEAD_MEDIA_TTY:-/dev/tty1}" k=""
     [ -r "$tty" ] || {
         sleep "$1" 2>/dev/null
