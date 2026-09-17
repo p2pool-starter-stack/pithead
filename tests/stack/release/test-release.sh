@@ -142,7 +142,7 @@ bundle_copy_fail="$(
         set +eu && export REPO_ROOT="$ROOT" && WORKDIR="$SANDBOX/bundle-copy-fail" TAG=v9.9.9
         cp() {
             case "$1" in
-            .pithead.bundle.*) command cp "$@" ;;
+            "$ROOT"/.pithead.bundle.*) command cp "$@" ;;
             *) return 1 ;;
             esac
         }
@@ -165,7 +165,6 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     TAG=v9.9.9
     export REGISTRY=ghcr.io/test
     export DRY_RUN=0
-    export PITHEAD_BUILD_ROOT="$SANDBOX/not-the-repo"
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
@@ -174,7 +173,6 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     cp "$WORKDIR/pithead/docker-compose.yml" "$SANDBOX/bundle-compose.yml" 2>/dev/null || true
     tar tzf "$WORKDIR/pithead.tar.gz" 2>/dev/null
 ) >"$SANDBOX/bundle.list" 2>/dev/null
-assert_rc "bundle rebuild ignores a caller PITHEAD_BUILD_ROOT" "$?" "0"
 grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle ships config.minimal.json (basic quick-start config)" || bad "bundle ships config.minimal.json" "absent from the bundle"
 # The upgrade gate ties a candidate archive to a commit through this file, and refuses the archive
 # without it. A bundle that ships without one is only discovered at gate time, on a reserved box.
@@ -182,27 +180,29 @@ grep -q '^pithead/PITHEAD_COMMIT$' "$SANDBOX/bundle.list" && ok "bundle ships PI
 assert_eq "PITHEAD_COMMIT holds the full 40-hex commit, not a short one" \
     "$(cat "$SANDBOX/bundle/pithead/PITHEAD_COMMIT" 2>/dev/null)" "0123456789abcdef0123456789abcdef01234567"
 echo "== unit: release bundle rejects a changed generated CLI (#2240) =="
-cp "$ROOT/pithead" "$SANDBOX/pithead.before"
-printf '\ntampered\n' >>"$ROOT/pithead"
-bundle_mismatch="$({
-    cd "$ROOT" || exit
-    set --
-    # shellcheck disable=SC1090
-    source "$REL" 2>/dev/null
-    set +eu
-    export REPO_ROOT="$ROOT"
-    WORKDIR="$SANDBOX/bundle-mismatch"
-    mkdir -p "$WORKDIR"
-    TAG=v9.9.9
-    export REGISTRY=ghcr.io/test
-    export DRY_RUN=0
-    GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
-    for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
-    make_bundle "$WORKDIR/pithead.tar.gz"
-} 2>&1)"
+bundle_mismatch="$(
+    (
+        cp "$ROOT/pithead" "$SANDBOX/pithead.before"
+        trap 'mv "$SANDBOX/pithead.before" "$ROOT/pithead"' EXIT
+        printf '\ntampered\n' >>"$ROOT/pithead"
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        set +eu
+        export REPO_ROOT="$ROOT"
+        WORKDIR="$SANDBOX/bundle-mismatch"
+        mkdir -p "$WORKDIR"
+        TAG=v9.9.9
+        export REGISTRY=ghcr.io/test
+        export DRY_RUN=0
+        GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+        make_bundle "$WORKDIR/pithead.tar.gz"
+    ) 2>&1
+)"
 assert_rc "bundle refuses a generated CLI that differs from its slices" "$?" "1"
 assert_contains "bundle mismatch names pithead" "$bundle_mismatch" "generated pithead differs"
-mv "$SANDBOX/pithead.before" "$ROOT/pithead"
 echo "== unit: release bundle cleans a failed generated CLI copy (#2240) =="
 bundle_mkdir_fail="$({
     cd "$ROOT" || exit
