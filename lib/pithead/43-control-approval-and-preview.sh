@@ -373,11 +373,10 @@ control_reown_operator_files() {
     done
 }
 
-# Commit: apply the HOST-SIDE staged copy from the matching preview. A tampered second request
-# can't swap the config — commit carries only the id; the config it applies is the one previewed.
+# Commit uses the host-side staged copy; a second request cannot swap it.
 control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
-    local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0
+    local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
     if [ ! -f "$staged" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
@@ -415,9 +414,10 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     # Keep a pre-change backup; on failure it is named in the result and left in place. The
     # `apply -y` below re-renders the pre-masked prefill copy (#440), so the dashboard's editor
     # form reflects the committed config on the next load.
+    control_carried_ssh "$staged" && carried_ssh=1
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak-control"
     cp "$staged" "$CONFIG_FILE"
-    "$0" apply -y >"$logf" 2>&1 || rc=$?
+    PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply -y >"$logf" 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then
         control_reown_operator_files # the root apply wrote .env/Caddyfile as root — give them back (#33)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",ts:(now|floor)}')"

@@ -107,13 +107,13 @@ vout=$(
     # shellcheck disable=SC1090
     PITHEAD_CONFIG_FILE="$VSB/config.json" source "$STACK"
     set +e
+    PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_CARRIED_SSH=1 parse_and_validate_config || exit 1
     PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$VSB/variant" PITHEAD_CONFIG_SET=1 parse_and_validate_config 2>&1
 )
-assert_contains "new release SSH config is refused" "$vout" "ssh.enabled is unavailable"
+assert_contains "only new release SSH config is refused" "$vout" "ssh.enabled is unavailable"
 unset VSB vout
 echo "== unit: on the appliance, control-runner units render into /run — root is read-only (#791) =="
-# /etc/systemd/system cannot take a write on the appliance (RO root by design): apply died at
-# 'tee: Read-only file system' on hardware, killing the ONLY post-setup management path. /run is
+# /etc/systemd/system cannot take a write on the appliance (RO root by design); /run is
 # a first-class unit dir, writable, and cleared every boot — fine, because these units are
 # derived and the boot path re-renders them every boot. Enablement must be --runtime for the
 # same reason (no symlinks under /etc either).
