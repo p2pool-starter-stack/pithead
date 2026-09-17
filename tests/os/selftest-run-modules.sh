@@ -196,7 +196,7 @@ if (
         'cat /run/pithead-image-upgrade/guest-stage')
             [ "$guest_inputs_cleared" -eq 0 ] && printf '%s\n' 'stage=baseline-setup exit=17'
             ;;
-        '! mountpoint -q /mnt/pithead-image-upgrade'*) : ;;
+        '! mountpoint -q /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade') : ;;
         *) return 1 ;;
         esac
     }

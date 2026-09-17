@@ -3,7 +3,7 @@
 set -euo pipefail
 
 INPUT=/run/pithead-image-upgrade
-MOUNT=/mnt/pithead-image-upgrade
+MOUNT=/data/pithead-image-upgrade-mount
 LOOP=/data/pithead-image-upgrade.xfs
 OLD_SHA=296fe6af551b773bae49486e98517ac274b896cd
 NEW_SHA="${1:?candidate commit required}"
@@ -41,6 +41,9 @@ if [ "$NEW_SHA" = --self-test ]; then
     done
     sed -n '/^GUEST_STAGE=reflink-mountpoint$/,/^GUEST_STAGE=reflink-mount-loop$/p' "${BASH_SOURCE[0]}" |
         grep -Fx 'mkdir -p "$MOUNT"' >/dev/null || exit 1
+    grep -Fx 'MOUNT=/data/pithead-image-upgrade-mount' "${BASH_SOURCE[0]}" >/dev/null || exit 1
+    sed -n '/^cleanup()/,/^}/p' "${BASH_SOURCE[0]}" |
+        grep -Fx '    rmdir "$MOUNT" 2>/dev/null || true' >/dev/null || exit 1
     sed -n '/^GUEST_STAGE=reflink-mount-loop$/,/^GUEST_STAGE=reflink-verify$/p' "${BASH_SOURCE[0]}" |
         grep -Fx 'mount -o loop "$LOOP" "$MOUNT"' >/dev/null || exit 1
     cosign() { :; }
@@ -61,6 +64,7 @@ cleanup() {
         cd /
         umount "$MOUNT" || umount -l "$MOUNT" || true
     fi
+    rmdir "$MOUNT" 2>/dev/null || true
     rm -f "$LOOP"
 }
 trap 'record_failure $?' ERR

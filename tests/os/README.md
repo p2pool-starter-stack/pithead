@@ -152,7 +152,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
 - **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
-  reflinks inside that disposable guest, verify and install the published v1.20.0 bundle without
+  reflinks under the disposable guest's writable data partition, verify and install the published
+  v1.20.0 bundle without
   modifying it, then invoke the existing image-upgrade harness against the submitted images. The
   baseline uses remote Monero and remote Tari because v1.20.0 predates Tari-off mode. The phase
   runs the release-shaped stack under the CLI's existing test override inside the otherwise

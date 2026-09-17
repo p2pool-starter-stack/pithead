@@ -173,7 +173,7 @@ phase_image_upgrade() {
         guest_failure="$(_image_upgrade_read_guest_failure || true)"
     }
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
-    if _ssh '! mountpoint -q /mnt/pithead-image-upgrade && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
+    if _ssh '! mountpoint -q /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
         ok "guest-local reflink volume and private inputs were torn down"
     else
         bad "guest-local reflink volume teardown did not finish"
