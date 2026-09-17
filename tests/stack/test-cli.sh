@@ -19,8 +19,6 @@ run_sourced "$SANDBOX" assert_safe_dir "" >/dev/null 2>&1
 assert_rc "rejects empty" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/srv/p2pool/data" >/dev/null 2>&1
 assert_rc "allows real dir" "$?" "0"
-# Tightened guard (#91): bare mount/parent roots, non-absolute paths and '..' traversal are refused;
-# a dedicated subfolder of a mount root is still fine.
 run_sourced "$SANDBOX" assert_safe_dir "/srv" >/dev/null 2>&1
 assert_rc "rejects bare /srv" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/mnt" >/dev/null 2>&1
@@ -29,7 +27,6 @@ run_sourced "$SANDBOX" assert_safe_dir "relative/data" >/dev/null 2>&1
 assert_rc "rejects relative path" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/srv/../etc/data" >/dev/null 2>&1
 assert_rc "rejects .. traversal" "$?" "1"
-# A ':' would forge an extra field in the compose bind-mount short syntax (SOURCE:TARGET:MODE).
 run_sourced "$SANDBOX" assert_safe_dir "/srv/pithead/data:ro" >/dev/null 2>&1
 assert_rc "rejects ':' (compose volume-mount injection)" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/mnt/disk/monero" >/dev/null 2>&1
@@ -74,8 +71,6 @@ run_sourced "$SANDBOX" is_valid_port "0899" >/dev/null 2>&1
 assert_rc "rejects a leading zero (no octal-parse error)" "$?" "1"
 
 echo "== unit: semver_newer (#59 — the upgrade downgrade guard) =="
-# The comparison gates the upgrade button: a lexical bug would let 1.9.0 look "newer" than 1.10.0
-# and could be leveraged to force an older, vulnerable release.
 run_sourced "$SANDBOX" semver_newer "v1.10.0" "v1.9.0" >/dev/null 2>&1
 assert_rc "1.10.0 is newer than 1.9.0 (no lexical bug)" "$?" "0"
 run_sourced "$SANDBOX" semver_newer "v1.9.0" "v1.10.0" >/dev/null 2>&1
@@ -86,7 +81,6 @@ run_sourced "$SANDBOX" semver_newer "v2.0.0" "v1.99.99" >/dev/null 2>&1
 assert_rc "major bump beats a high minor/patch" "$?" "0"
 
 echo "== unit: resolve_dashboard_host (dashboard.host 'auto' revert, 247c5a0) =="
-# A configured dashboard.host is used verbatim.
 # shellcheck disable=SC1090,SC2034  # $STACK path is dynamic; DASHBOARD_HOST is read by the sourced function
 got="$(
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
@@ -96,8 +90,6 @@ got="$(
     printf '%s' "$HOST_IP"
 )"
 assert_eq "configured dashboard.host is used" "$got" "my.box.lan"
-# 'auto' (no dashboard.host) on a non-interactive run must REVERT HOST_IP to the machine
-# hostname, not keep a stale prior value — the regression fixed in 247c5a0.
 # shellcheck disable=SC1090,SC2034
 got="$(
     cd "$SANDBOX" && source "$STACK" 2>/dev/null
@@ -124,16 +116,12 @@ run_sourced "$SANDBOX" is_valid_host "a/b" >/dev/null 2>&1
 assert_rc "rejects slash" "$?" "1"
 run_sourced "$SANDBOX" is_valid_host "" >/dev/null 2>&1
 assert_rc "rejects empty" "$?" "1"
-# #558: length-bound at 253 (a DNS name's max length), mirroring the worker-host charset check
-# (resolve_worker_target / validate_worker_endpoints) rather than leaving this one check unbounded.
 run_sourced "$SANDBOX" is_valid_host "$(printf 'a%.0s' $(seq 1 253))" >/dev/null 2>&1
 assert_rc "accepts 253 chars (the DNS name bound)" "$?" "0"
 run_sourced "$SANDBOX" is_valid_host "$(printf 'a%.0s' $(seq 1 254))" >/dev/null 2>&1
 assert_rc "rejects 254 chars, past the bound (#558)" "$?" "1"
 
 echo "== unit: first-run epilogue shows once after up (#384) =="
-# The "what happens next" onboarding note: prints on the first up in a fresh deploy dir, drops a
-# marker beside .env, and stays silent on every later restart.
 mk_tmpdir FR
 out="$(run_sourced "$FR" print_first_run_epilogue 2>&1)"
 assert_contains "first-run: epilogue explains the sync-then-mine hold" "$out" "held until Monero and Tari finish their first sync"
@@ -208,6 +196,18 @@ out="$("$STACK" frobnicate 2>&1)"
 rc=$?
 assert_rc "unknown command fails" "$rc" "1"
 assert_contains "unknown command message" "$out" "Unknown command"
+TA="$SANDBOX/test-alert"
+mkdir -p "$TA/bin"
+cp "$STACK" "$TA/pithead"
+: >"$TA/.env"
+make_stubs "$TA/bin"
+(cd "$TA" && DOCKER_LOG="$TA/docker.log" PATH="$TA/bin:$PATH" ./pithead test-alert >/dev/null)
+assert_rc "test-alert exits with the container command" "$?" "0"
+assert_contains "test-alert runs the real dashboard module" "$(cat "$TA/docker.log")" \
+    "exec dashboard python3 -m mining_dashboard.service.notify.test_alert"
+: >"$TA/docker.log"
+(cd "$TA" && DOCKER_LOG="$TA/docker.log" PATH="$TA/bin:$PATH" ./pithead doctor >/dev/null 2>&1) || true
+assert_not_contains "doctor does not send test alerts" "$(cat "$TA/docker.log")" "notify.test_alert"
 
 echo "== unit: chain validation (#94) =="
 # A chain must be judged as a whole BEFORE anything runs. validate_chain error-exits (rc 1) on the

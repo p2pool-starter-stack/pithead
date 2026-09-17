@@ -31,6 +31,19 @@ class ResponseTooLarge(requests.RequestException):
     fail-silent handling treats it like any other transport failure."""
 
 
+def request_failure_class(exc):
+    """Return a secret-free failure class for an outbound ``requests`` error."""
+    if isinstance(exc, requests.HTTPError):
+        response = exc.response
+        status = getattr(response, "status_code", None) if response is not None else None
+        return f"HTTP {status}" if isinstance(status, int) else "HTTP error"
+    if isinstance(exc, requests.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.ConnectionError):
+        return "connection error"
+    return type(exc).__name__
+
+
 class BoundedResponse:
     """The slice of ``requests.Response`` the clients actually use: ``status_code``, ``text``,
     ``json()``, ``raise_for_status()`` — backed by the capped body."""

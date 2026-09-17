@@ -3,6 +3,7 @@ import logging
 import requests
 
 from mining_dashboard.config.config import TOR_SOCKS_PROXY
+from mining_dashboard.helper.http import request_failure_class
 
 logger = logging.getLogger("TelegramNotifier")
 
@@ -57,6 +58,7 @@ class TelegramNotifier:
         # tor_proxy is a test seam; the default wires the configured proxy.
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
+        self.last_failure = ""
 
         if enabled and not self.enabled:
             # Switched on but unusable — tell the operator once, without leaking the token.
@@ -72,6 +74,7 @@ class TelegramNotifier:
         """Push one message. Returns True on a successful 2xx send, False otherwise
         (including when disabled). Never raises. ``event`` is accepted for sink-interface
         parity (#380) and ignored — Telegram gates per-event upstream via event_enabled."""
+        self.last_failure = ""
         if not self.enabled:
             return False
 
@@ -90,6 +93,7 @@ class TelegramNotifier:
             resp.raise_for_status()
             return True
         except requests.RequestException as exc:
+            self.last_failure = request_failure_class(exc)
             # Log only the exception *type*: a requests error message can embed the full URL,
             # which contains the bot token. Telegram being unreachable on a private/Tor-only
             # host is expected, so this stays at debug to avoid log noise.
