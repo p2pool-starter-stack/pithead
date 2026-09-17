@@ -44,6 +44,7 @@ class TestSend:
     def test_send_posts_to_bot_api(self):
         n = _enabled(api_base="https://tg.test")
         resp = MagicMock()
+        resp.__enter__.return_value = resp
         resp.raise_for_status = MagicMock()
         with patch.object(tg_mod.requests, "post", return_value=resp) as post:
             assert n.send("node down") is True
@@ -52,11 +53,14 @@ class TestSend:
         body = post.call_args.kwargs["json"]
         assert body["chat_id"] == "123"
         assert body["text"] == "node down"
+        assert post.call_args.kwargs["stream"] is True
+        resp.__exit__.assert_called_once()
 
     def test_send_routes_over_tor(self):
         # The bot dial must ride the Tor SOCKS proxy, never leak the host IP to Telegram.
         n = _enabled(tor_proxy="socks5h://tor:9050")
         resp = MagicMock()
+        resp.__enter__.return_value = resp
         resp.raise_for_status = MagicMock()
         with patch.object(tg_mod.requests, "post", return_value=resp) as post:
             n.send("x")
@@ -75,6 +79,7 @@ class TestSend:
     def test_send_swallows_http_error(self):
         n = _enabled()
         resp = MagicMock()
+        resp.__enter__.return_value = resp
         resp.raise_for_status.side_effect = requests.HTTPError("401")
         with patch.object(tg_mod.requests, "post", return_value=resp):
             assert n.send("x") is False

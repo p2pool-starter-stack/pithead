@@ -80,7 +80,7 @@ class TelegramNotifier:
 
         url = f"{self._api_base}/bot{self.bot_token}/sendMessage"
         try:
-            resp = requests.post(
+            with requests.post(
                 url,
                 json={
                     "chat_id": self.chat_id,
@@ -89,8 +89,9 @@ class TelegramNotifier:
                 },
                 timeout=self.timeout,
                 proxies=self._proxies,
-            )
-            resp.raise_for_status()
+                stream=True,
+            ) as resp:
+                resp.raise_for_status()
             return True
         except requests.RequestException as exc:
             self.last_failure = request_failure_class(exc)

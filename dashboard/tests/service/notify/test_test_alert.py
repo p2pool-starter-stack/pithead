@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+import mining_dashboard.service.notify.healthchecks as healthchecks_mod
+import mining_dashboard.service.notify.notify_sinks as notify_sinks_mod
 import mining_dashboard.service.notify.test_alert as test_alert
 from mining_dashboard.helper.http import request_failure_class
 from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink
@@ -13,6 +15,7 @@ def _response(status):
     response = requests.Response()
     response.status_code = status
     response.url = "https://redacted.invalid"
+    response.raw = MagicMock()
     return response
 
 
@@ -21,10 +24,15 @@ def test_failure_class_fallbacks_are_secret_free():
     assert request_failure_class(requests.RequestException("SECRET URL")) == "RequestException"
 
 
-def test_unconfigured_sinks_and_healthchecks_are_reported():
+def test_unconfigured_sinks_and_healthchecks_are_reported(monkeypatch):
     output = StringIO()
+    monkeypatch.setattr(
+        healthchecks_mod, "HEALTHCHECKS_PING_URL", "https://healthchecks.invalid/secret"
+    )
 
-    assert test_alert.run_test_alert(TelegramNotifier(), [], output) is True
+    with patch.object(healthchecks_mod, "bounded_get") as healthchecks_ping:
+        assert test_alert.run_test_alert(TelegramNotifier(), [], output) is True
+    healthchecks_ping.assert_not_called()
     assert output.getvalue().splitlines() == [
         "Telegram: not configured",
         "Webhook: not configured",
@@ -35,15 +43,19 @@ def test_unconfigured_sinks_and_healthchecks_are_reported():
 
 def test_default_path_uses_the_real_sink_factories(monkeypatch):
     notifier_factory = MagicMock(return_value=TelegramNotifier())
-    sink = NtfySink("https://ntfy.invalid/topic", tor_proxy="")
-    sink.send = MagicMock(return_value=True)
     monkeypatch.setattr(test_alert, "build_default_notifier", notifier_factory)
-    monkeypatch.setattr(test_alert, "config_sinks", MagicMock(return_value=[sink]))
+    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_WEBHOOK_URLS", ["https://hook.invalid/test"])
+    monkeypatch.setattr(notify_sinks_mod, "NTFY_URL", "https://ntfy.invalid/topic")
+    monkeypatch.setattr(notify_sinks_mod, "NTFY_TOKEN", "")
+    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_TOR", False)
 
-    assert test_alert.run_test_alert(output=StringIO()) is True
+    with patch("requests.post", return_value=_response(200)) as post:
+        assert test_alert.run_test_alert(output=StringIO()) is True
     notifier_factory.assert_called_once_with()
-    test_alert.config_sinks.assert_called_once_with()
-    sink.send.assert_called_once_with(test_alert.TEST_MESSAGE, test_alert.TEST_EVENT)
+    assert [call.args[0] for call in post.call_args_list] == [
+        "https://hook.invalid/test",
+        "https://ntfy.invalid/topic",
+    ]
 
 
 def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
@@ -86,6 +98,7 @@ def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
         "Healthchecks: excluded — a ping moves the dead-man switch.",
     ]
     assert len(attempts) == 4
+    assert all(kwargs["stream"] is True for _, kwargs in attempts)
     assert attempts[2][1]["json"]["event"] == test_alert.TEST_EVENT
     assert test_alert.TEST_MESSAGE in attempts[-1][1]["data"].decode()
     assert token not in text

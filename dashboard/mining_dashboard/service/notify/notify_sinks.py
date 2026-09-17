@@ -53,8 +53,14 @@ class _HttpSink:
         if not self.enabled:
             return False
         try:
-            resp = requests.post(self.url, timeout=self.timeout, proxies=self._proxies, **kwargs)
-            resp.raise_for_status()
+            with requests.post(
+                self.url,
+                timeout=self.timeout,
+                proxies=self._proxies,
+                stream=True,
+                **kwargs,
+            ) as resp:
+                resp.raise_for_status()
             return True
         except requests.RequestException as exc:
             self.last_failure = request_failure_class(exc)

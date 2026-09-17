@@ -8,6 +8,7 @@ from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink, 
 
 def _ok_resp():
     resp = MagicMock()
+    resp.__enter__.return_value = resp
     resp.raise_for_status = MagicMock()
     return resp
 
@@ -39,9 +40,12 @@ class TestEnabledGating:
 class TestWebhookPayload:
     def test_posts_event_text_ts_json(self):
         hook = WebhookSink("https://hook.test/x", tor_proxy="")
-        with patch.object(ns_mod.requests, "post", return_value=_ok_resp()) as post:
+        resp = _ok_resp()
+        with patch.object(ns_mod.requests, "post", return_value=resp) as post:
             assert hook.send("Monero node is DOWN", "node_down") is True
         assert post.call_args.args[0] == "https://hook.test/x"
+        assert post.call_args.kwargs["stream"] is True
+        resp.__exit__.assert_called_once()
         body = post.call_args.kwargs["json"]
         assert body["event"] == "node_down"
         assert body["text"] == "Monero node is DOWN"
@@ -92,6 +96,7 @@ class TestFailSilent:
 
     def test_http_error_swallowed(self):
         resp = MagicMock()
+        resp.__enter__.return_value = resp
         resp.raise_for_status.side_effect = requests.HTTPError("503")
         with patch.object(ns_mod.requests, "post", return_value=resp):
             assert NtfySink("https://ntfy.test/t").send("x") is False
