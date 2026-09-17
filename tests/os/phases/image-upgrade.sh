@@ -28,15 +28,15 @@ _image_upgrade_inputs_valid() {
 }
 
 _image_upgrade_prepare_inputs() {
-    local stage="$1" cosign_member rc
-    if cosign_member="$(tar -tf os/build/pithead-root.tar 2>/dev/null | grep -E '(^|/)usr/local/bin/cosign$' | head -n1)"; then
+    local stage="$1" cosign_member rootfs_members rc
+    if rootfs_members="$(tar -tf os/build/pithead-root.tar 2>/dev/null)"; then
         :
     else
         rc=$?
-        _image_upgrade_input_failure candidate-bundle \
-            'tar -tf <candidate-rootfs> | grep <cosign>' "$rc"
+        _image_upgrade_input_failure candidate-bundle 'tar -tf <candidate-rootfs>' "$rc"
         return "$rc"
     fi
+    cosign_member="$(grep -E '(^|/)usr/local/bin/cosign$' <<<"$rootfs_members" | head -n1)"
     [ -n "$cosign_member" ] || {
         _image_upgrade_input_failure candidate-bundle 'tar -tf <candidate-rootfs>' 1
         return 1
@@ -47,10 +47,10 @@ _image_upgrade_prepare_inputs() {
         return "$rc"
     }
     _image_upgrade_input_run signing 'chmod <cosign>' chmod 0700 "$stage/cosign" || return $?
-    _image_upgrade_input_run signing 'curl <published-v1.20.0-bundle>' \
+    _image_upgrade_input_run baseline-bundle 'curl <published-v1.20.0-bundle>' \
         curl -fsSL --retry 3 -o "$stage/v1.20.0.tar.gz" \
         https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz || return $?
-    _image_upgrade_input_run signing 'curl <published-v1.20.0-signature>' \
+    _image_upgrade_input_run baseline-bundle 'curl <published-v1.20.0-signature>' \
         curl -fsSL --retry 3 -o "$stage/v1.20.0.sig" \
         https://github.com/p2pool-starter-stack/pithead/releases/download/v1.20.0/pithead.tar.gz.sig || return $?
     _image_upgrade_input_run signing 'cp <project-public-key> <private-stage>' \

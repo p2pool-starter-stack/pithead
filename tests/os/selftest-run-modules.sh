@@ -88,8 +88,39 @@ baseline_diagnostic="$(
     _image_upgrade_prepare_inputs "$stage" 2>&1
 )" || baseline_rc=$?
 [ "$baseline_rc" -eq 23 ] &&
-    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=signing command="curl <published-v1.20.0-bundle>" exit=23' ] || {
+    [ "$baseline_diagnostic" = 'image-upgrade input failure: sub-step=baseline-bundle command="curl <published-v1.20.0-bundle>" exit=23' ] || {
     echo "image-upgrade baseline trust preparation lost safe failure attribution" >&2
+    exit 1
+}
+candidate_rc=0
+candidate_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        printf 'must-not-leak\n' >&2
+        return 31
+    }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || candidate_rc=$?
+[ "$candidate_rc" -eq 31 ] &&
+    [ "$candidate_diagnostic" = 'image-upgrade input failure: sub-step=candidate-bundle command="tar -tf <candidate-rootfs>" exit=31' ] || {
+    echo "image-upgrade candidate bundle preparation lost safe failure attribution" >&2
+    exit 1
+}
+signing_rc=0
+signing_diagnostic="$(
+    stage="$(mktemp -d)" && trap 'rm -rf "$stage"' EXIT
+    tar() {
+        case "$1" in
+        -tf) printf 'usr/local/bin/cosign\n' ;;
+        -xOf) printf '#!/bin/sh\nprintf "must-not-leak\\n" >&2\nexit 29\n' ;;
+        esac
+    }
+    curl() { :; }
+    _image_upgrade_prepare_inputs "$stage" 2>&1
+)" || signing_rc=$?
+[ "$signing_rc" -eq 29 ] &&
+    [ "$signing_diagnostic" = 'image-upgrade input failure: sub-step=signing command="cosign verify-blob <published-v1.20.0-bundle>" exit=29' ] || {
+    echo "image-upgrade signing preparation lost safe failure attribution" >&2
     exit 1
 }
 if (
