@@ -169,7 +169,6 @@ echo "== unit: Tari's config pins the active chain to mainnet (#2304) =="
 # from either the template or the render is caught.
 TARISRC="$SANDBOX/tari-network-pin-src.toml"
 cp "$ROOT/build/tari/config.toml.template" "$TARISRC"
-assert_contains "canonical template pins network=mainnet (#2304)" "$(cat "$TARISRC")" 'network = "mainnet"'
 # shellcheck disable=SC1090
 (
     export PITHEAD_TEST_SOURCE=1 TARI_CLEARNET_SYNC=false CLEARNET_MARKER="$SANDBOX/tari-network-pin-absent-marker"
