@@ -135,13 +135,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
 # hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
 ARG APT_INDEX_STAMP=0
-# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
+# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
-        jq openssl curl ca-certificates xxd iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
+        jq openssl curl ca-certificates iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
         fdisk gdisk parted e2fsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
@@ -199,7 +199,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The toolchain is RigForge's Debian dependency list, with one naming fix: trixie ships the
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
-# every boot and is the ONLY tool a prebuilt tree strictly needs.
+# every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
 RUN apt-get install -y --no-install-recommends \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
         linux-cpupower msr-tools
@@ -208,7 +208,7 @@ RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
     && tar -xzf /tmp/rigforge.tar.gz -C /opt/rigforge --strip-components=1 \
-    && rm /tmp/rigforge.tar.gz \
+    && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
     && chmod +x /opt/rigforge/rigforge.sh \
     && printf 'ref=%s version=%s\n' "$RIGFORGE_REF" "$(tr -d ' \t\r\n' </opt/rigforge/VERSION)" \
         >/opt/rigforge/RIGFORGE_REF
