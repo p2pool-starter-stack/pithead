@@ -190,21 +190,26 @@ phase_stack() {
     }
     ok "stack: /api/state answers — provisioning released the stack"
 
+    # p2pool takes noticeably longer than dashboard+caddy to report ready (image pull, its own
+    # startup sequence) — job 454 (#2062) measured --check running against a guest whose p2pool
+    # container hadn't started yet, six minutes after dashboard+caddy both had, failing every
+    # p2pool-dependent assertion (container up, workers online, stratum hashes, merge-mining) for
+    # a reason that had nothing to do with any of them. Wait for it explicitly rather than let the
+    # DIY gate's own first invocation discover it missing.
     local deadline2=$(($(date +%s) + 1500)) names=""
     while [ "$(date +%s)" -lt "$deadline2" ]; do
         names=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
-        case "$names" in *dashboard*caddy* | *caddy*dashboard*) break ;; esac
+        if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
+            break
+        fi
         sleep 15
     done
-    case "$names" in
-    *dashboard*caddy* | *caddy*dashboard*)
+    if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
         ok "stack: containers are running (podman: $names)"
-        ;;
-    *)
+    else
         bad "stack: containers never came up (running: '${names:-none}')"
         return 1
-        ;;
-    esac
+    fi
 
     # The DIY gate itself, staged as the ask lays out: a non-destructive read, then the
     # destructive phases the appliance channel has never run, then the remote-safe scenario
@@ -237,11 +242,12 @@ phase_stack() {
     # paired with the destructive phases above, since this guest has no local chain to run them
     # against; the config-application assertions alone are still a real, appliance-channel first.
     # Run LAST (#2062, job 447): its own end-of-run restore genuinely fails on this guest — no
-    # local chain to revert to — which left BASELINE_CONFIG poisoned for whatever invocation ran
-    # next (xvb.enabled read back false, failing "XvB smoke starts from a known enabled baseline"
-    # even though the wizard submitted xvb.enabled=true). Every later invocation captures its own
-    # BASELINE_CONFIG fresh from the guest's live config.json, so a scenario known to leave a bad
-    # restore must never precede one that depends on that file being clean.
+    # local chain to revert to — which corrupts config.json for whatever invocation runs next
+    # (every invocation captures its own BASELINE_CONFIG fresh from the guest's live file). A
+    # scenario known to leave a bad restore must never precede one that depends on that file being
+    # clean, regardless of what else is going on with it — see #2330 for the separate, still-open
+    # question of why BASELINE_CONFIG reads xvb.enabled=false even directly after a clean restore
+    # (job 454, with this ordering already in place).
     _stack_run_integration "scenario remote-tari-main-secure" \
         --scenario remote-tari-main-secure "${remote_extra[@]}"
 }
