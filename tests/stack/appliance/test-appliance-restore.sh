@@ -42,16 +42,21 @@ cat >"$RS/bin/sudo" <<'EOF'
 exec "$@"
 EOF
 chmod +x "$RS/bin/docker" "$RS/bin/sudo"
+RS_AUTH_PASSWORD="restore auth password"
+RS_AUTH_HASH=$(printf '%s' '$2a$14$abcdefghijklmnopqrstuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu' | openssl base64 -A)
+RS_AUTH_FP=$(printf '%s' "$RS_AUTH_PASSWORD" | sha256sum | cut -d' ' -f1)
 cat >"$RS/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
 P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
 PROXY_AUTH_TOKEN=0123456789abcdef01234567
+DASHBOARD_AUTH_HASH_B64=$RS_AUTH_HASH
+DASHBOARD_AUTH_PW_FP=$RS_AUTH_FP
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$RS/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"%s"}} }\n' "$WALLET" "$RS_AUTH_PASSWORD" >"$RS/config.json"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
 printf 'ONIONKEY-ORIG\n' >"$RS/data/tor/hs_ed25519_secret_key"
 printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
@@ -76,6 +81,7 @@ assert_eq "valid restore installs config.json" "$([ -f "$RS/config.json" ] && ec
 assert_contains "valid restore carries the original wallet" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "valid restore regenerates the Caddyfile from config" "$(cat "$RS/Caddyfile" 2>/dev/null)" "reverse_proxy 127.0.0.1:8000"
 assert_eq "valid restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-ORIG"
+assert_eq "valid restore keeps the dashboard credential hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_AUTH_HASH"
 assert_eq "applied marker set" "$([ -f "$RSPOOL/applied" ] && echo yes)" "yes"
 assert_eq "the archive is consumed" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
@@ -85,7 +91,7 @@ assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase
 # still survives the canonical re-render.
 RH="$RS/stale-derived"
 mkdir -p "$RH/${RS#/}"
-cp "$RS/config.json" "$RH/${RS#/}/config.json"
+jq 'del(.dashboard.auth)' "$RS/config.json" >"$RH/${RS#/}/config.json"
 cat >"$RH/${RS#/}/.env" <<'EOF'
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion

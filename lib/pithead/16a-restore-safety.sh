@@ -90,9 +90,10 @@ restore_staged_members_safe() {
 # .env and Caddyfile from the staged, validated config. This runs before any live path is touched.
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
     local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
-    local key value count kind
+    local key value count kind decoded
     : >"$seed" || return 1
     while read -r key kind; do
+        if [[ "$key" == DASHBOARD_AUTH_* ]] && [ -z "$(jq -r '.dashboard.auth.password // ""' "$staged_cfg")" ]; then continue; fi
         if [ "$key" = PROXY_STRATUM_PASSWORD ] && [ "$(jq -r '.p2pool.stratum_password // ""' "$staged_cfg")" != auto ]; then continue; fi
         count=0
         [ ! -f "$staged_env" ] || count=$(grep -c "^${key}=" "$staged_env" 2>/dev/null || true)
@@ -102,6 +103,11 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         case "$kind" in
         hex24) [[ "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         hex32) [[ "$value" =~ ^[0-9a-f]{32}$ ]] || return 1 ;;
+        sha256) [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1 ;;
+        bcrypt)
+            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
+            [[ "$decoded" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]] || return 1
+            ;;
         optional_hex24) [[ -z "$value" || "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         onion) [[ "$value" =~ ^(placeholder|[a-z2-7]{56}\.onion)$ ]] || return 1 ;;
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
@@ -119,6 +125,8 @@ P2POOL_ONION_ADDRESS onion
 DASHBOARD_ONION_ADDRESS onion
 DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
+DASHBOARD_AUTH_HASH_B64 bcrypt
+DASHBOARD_AUTH_PW_FP sha256
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \

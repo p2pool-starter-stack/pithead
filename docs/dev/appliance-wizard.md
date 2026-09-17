@@ -228,7 +228,8 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    call `firstboot_consume_spool` uses. A valid restored remote-node configuration is not redialed
    under a later release's new-configuration preflight policy.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
-   validated generated secrets and Tor identity from the archived environment.
+   validated generated secrets (including the dashboard credential hash when it matches the
+   restored login) and Tor identity from the archived environment.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
    trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
    database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,

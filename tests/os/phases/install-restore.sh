@@ -395,6 +395,6 @@ _phase_install_restore() {
         fi
         [ "$restore_case" != same-version ] || target_disk="$restore_target"
     done
-    phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
+    phase_install_prefill_submit_leg "$target_disk" "$expected_wallet" || return # #1846, last: nothing after it needs the disk
     rm -f "$source_target" "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
 }

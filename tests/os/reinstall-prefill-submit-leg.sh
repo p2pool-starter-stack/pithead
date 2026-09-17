@@ -16,10 +16,10 @@
 # back ("Credentials were never confirmed — nothing was installed"). A refusal installs nothing
 # either. The disk is the same after the leg as before it, whichever way the row goes.
 #
-# $1 = a disk holding a provisioned install (the reinstall leg's target); $DISK still holds the
-# installer image the restore leg booted from; ip/SERIAL/VM/HARNESS_WALLET from run.sh.
-phase_install_prefill_submit_leg() { # <target-disk>
-    local target_disk="$1" token="" tries=0 jar scode handoff="" page_err=""
+# $1 = a disk holding a provisioned install; $2 = its wallet; $DISK still holds the installer
+# image the restore leg booted from; ip/SERIAL/VM from run.sh.
+phase_install_prefill_submit_leg() { # <target-disk> <expected-wallet>
+    local target_disk="$1" expected_wallet="$2" token="" tries=0 jar scode handoff="" page_err=""
     info "pre-fill submit leg (#1846) — the previous machine's answers, submitted as a browser does"
     _ssh "systemctl poweroff" 2>/dev/null || true
     sleep 8
@@ -64,7 +64,7 @@ phase_install_prefill_submit_leg() { # <target-disk>
     # verdict; a red names the wallet it saw, or what the reads saw when none carried one (#1936).
     wizard_state_poll "$ip" "$jar" '.config.monero.wallet_address // empty' || true
     case "$WIZ_STATE" in
-    "${HARNESS_WALLET:0:8}"*) ok "pre-fill submit leg: the page offers the previous install's answers (pre-fill armed)" ;;
+    "${expected_wallet:0:8}"*) ok "pre-fill submit leg: the page offers the previous install's answers (pre-fill armed)" ;;
     *)
         bad "pre-fill submit leg: pre-fill NOT armed, the leg cannot reach the #1846 path (served wallet: ${WIZ_STATE:-none; $WIZ_STATE_WHY})"
         rm -f "$jar"
