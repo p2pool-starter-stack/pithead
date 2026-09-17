@@ -21,7 +21,7 @@ set -euo pipefail
 ROOT="${PITHEAD_BUILD_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 readonly ROOT
 readonly SRC_DIR="$ROOT/lib/pithead"
-readonly ARTIFACT="$ROOT/pithead"
+readonly ARTIFACT="${PITHEAD_BUILD_ARTIFACT:-$ROOT/pithead}"
 
 # List the source slices in build order. LC_ALL=C so the order is the same everywhere: a locale
 # that collates punctuation differently would silently reorder the artifact, and a reordered
