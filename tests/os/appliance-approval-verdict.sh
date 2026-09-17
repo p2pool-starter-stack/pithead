@@ -39,6 +39,52 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
+# Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
+# reads this printed NO response payload on a failure: it could not tell "the preview never
+# returned" from "the flags are wrong" from "an endpoint is missing" — three different defects, one
+# blank line. Bounded to the shape the row actually checks — status/destructive/approval_required,
+# and ONLY the two preview_values entries this row's own jq inspects (monero.remote.host,
+# tari.remote.host) — rather than the raw preview or every preview_values entry: an ALLOWLIST, not a
+# key/value trim, because the row is debugging exactly the case where the preview's shape cannot be
+# trusted, and a credential-shaped key sneaking into preview_values must not ride along with it.
+reserved_node_preview_payload() { # <preview-json, possibly empty or malformed>
+    local preview="${1:-}"
+    [ -n "$preview" ] || {
+        printf 'no result — the preview never returned'
+        return
+    }
+    printf '%s' "$preview" | jq -c '{status, destructive, approval_required,
+        preview_values: ([.preview_values[]? |
+            select(.key == "monero.remote.host" or .key == "tari.remote.host") | {key, new}])}' \
+        2>/dev/null || printf 'unparseable: %.200s' "$preview"
+}
+
+_reserved_node_preview_payload_self_test() {
+    local f=0 out
+    local good='{"status":"previewed","destructive":true,"approval_required":false,
+        "preview_values":[{"key":"monero.remote.host","label":"Monero node host","old":null,"new":"reserved-monero.example"},
+                           {"key":"monero.node_password","label":"x","old":"s3cret","new":"s3cret"}]}'
+    out=$(reserved_node_preview_payload "$good")
+    case "$out" in
+    *'"status":"previewed"'*'"destructive":true'*'"approval_required":false'*'"key":"monero.remote.host"'*'"new":"reserved-monero.example"'*) ;;
+    *) f=$((f + 1)) ;;
+    esac
+    # THE POINT OF THIS HELPER: a credential riding in the raw preview (deliberately smuggled in on
+    # an unrelated key here) must NOT reach the bounded payload — the allowlist keeps only the two
+    # endpoint keys this row checks, so a stray credential-shaped key is dropped outright, not just
+    # stripped of its own old/label.
+    case "$out" in *s3cret*) f=$((f + 1)) ;; esac
+    out=$(reserved_node_preview_payload '')
+    case "$out" in *'the preview never returned'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(reserved_node_preview_payload '{"status":')
+    case "$out" in *'unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
+    [ "$f" -eq 0 ] || {
+        printf 'reserved-node-preview-payload self-test FAILED: %s checks\n' "$f"
+        return 1
+    }
+    printf 'reserved-node-preview-payload self-test passed\n'
+}
+
 tari_endpoint_roundtrip_verdict() { # <p2pool-startup-log> <expected-host:port>
     local plain
     plain=$(printf '%s\n' "$1" | mm_strip_ansi)
@@ -86,16 +132,17 @@ _control_request_lost_response_self_test() (
     # incremented in the shim would be discarded with that subshell and read 0 however many times
     # it ran — a control that cannot fail.
     polls=$(mktemp)
-    # The POST always dies; the result poll answers, exactly as the guest's disk did.
+    # The POST answers empty while the dashboard restarts; the result poll answers later.
     dashboard_curl() {
         case "$*" in
         *'/api/control/result?id=rid-7'*)
             printf 'x' >>"$polls"
+            [ "$(wc -c <"$polls")" -gt 1 ] || return 52
             printf '{"id":"rid-7","status":"applied"}'
             ;;
         *)
             cat >/dev/null
-            return 52
+            return 0
             ;;
         esac
     }
@@ -207,5 +254,8 @@ _approval_bind_payload_self_test() {
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     set -uo pipefail
-    _approval_bind_payload_self_test
+    f=0
+    _approval_bind_payload_self_test || f=1
+    _reserved_node_preview_payload_self_test || f=1
+    exit "$f"
 fi

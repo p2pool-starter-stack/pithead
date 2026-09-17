@@ -84,6 +84,36 @@ test("poll skips the still-present preview result until the commit outcome lands
   assert.equal(out.status, "applied");
 });
 
+test("a rejected appliance preview labels the host validation log", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", log: "Run './pithead apply' after fixing p2pool.pool" }),
+    () => view.save(),
+  );
+  const out = renderToString(view.render());
+  assert.match(out, /Configuration preview did not complete/);
+  assert.match(out, /this machine's own log from the\s+failed config preview/);
+  assert.match(out, /\.\/pithead apply/);
+  assert.match(out, /cannot\s+be run from here/);
+});
+
+test("a rejected appliance preview leaves an authored error unlabelled", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", error: "Another config apply is already running" }),
+    () => view.save(),
+  );
+  const out = renderToString(view.render());
+  assert.match(out, /Another config apply is already running/);
+  assert.doesNotMatch(out, /this machine's own log/);
+});
+
 test("runUpgrade posts the seen version, skips 'running', rides out the restart, returns the outcome", async () => {
   let posted = null;
   let polls = 0;
@@ -174,6 +204,52 @@ test("the failed modal names the pre-upgrade config/.env copies when the result 
   assert.match(renderToString(inst.render()), /bak-upgrade-1/);
   inst.state.result = { status: "failed", error: "boom" };
   assert.doesNotMatch(renderToString(inst.render()), /Pre-upgrade copies/);
+});
+
+test("an appliance upgrade failure labels the log and hides host-only recovery", () => {
+  const props = { update: UPDATE, enabled: true, appliance: true };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    log: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /this machine's own log from the failed\s+upgrade/);
+  assert.match(out, /upgrade log tail/);
+  assert.doesNotMatch(out, /pithead upgrade|\/host\/path|\/host\/config/);
+  assert.match(out, /copies of <code>config\.json<\/code> and\s+<code>\.env<\/code> are kept on this machine/);
+});
+
+test("a host upgrade failure keeps its separate recovery and backup paths", () => {
+  const props = { update: UPDATE, enabled: true, appliance: false };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    log: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /upgrade log tail/);
+  assert.match(out, /cd \/host\/path && \.\/pithead upgrade/);
+  assert.match(out, /\/host\/config\.json\.bak/);
+});
+
+test("an authored upgrade rejection is not mislabeled as a machine log", () => {
+  const props = { update: UPDATE, enabled: true, appliance: true };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = { status: "rejected", error: "already up to date" };
+  const out = renderToString(inst.render());
+  assert.match(out, /already up to date/);
+  assert.doesNotMatch(out, /machine's own log/);
 });
 
 // --- Preview modal (#504) --------------------------------------------------------------

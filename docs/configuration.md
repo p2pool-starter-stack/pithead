@@ -71,16 +71,23 @@ plain HTTP, edit `config.json` and run `./pithead apply`.
 
 ## Setup vs. day-2
 
-`./pithead setup` and the dashboard's first-run web wizard only ask for the fields listed in
+`./pithead setup` and the dashboard's first-run web wizard both ask for the fields listed in
 [Getting Started › Run setup](getting-started.md#3-run-setup) — the Monero payout address, the
 Monero node mode, whether the machine merge-mines Tari (and the Tari payout address and node if it
-does), the pool tier, and a handful of other high-level questions. Every other key in
+does), the pool tier, and a handful of other high-level questions. The web wizard alone also asks
+whether to join the XvB raffle; the CLI leaves `xvb.enabled` at its documented default. Every other
+key in
 [`config.reference.json`](../config.reference.json) is day-2: not asked by either wizard,
 deliberately out of scope for a first run. Set it by editing `config.json` directly (then
 `./pithead apply`) or through the dashboard's config editor once the stack is up. Examples include
 stratum TLS and the stratum password (`p2pool.stratum_tls`, `p2pool.stratum_password`), onion
-client authentication (`dashboard.onion.client_auth`), the XvB raffle switch (`xvb.*`), energy
-pricing (`dashboard.energy.*`), and notification webhooks (`notifications.webhooks`).
+client authentication (`dashboard.onion.client_auth`), the rest of the XvB raffle settings (`xvb.*`
+other than `xvb.enabled`), energy pricing (`dashboard.energy.*`), and notification webhooks
+(`notifications.webhooks`).
+
+The web wizard leaves both payout-address inputs empty on a new machine; the example strings in
+`config.reference.json` are documentation, not saved answers. Questions with two to four answers
+show every answer as a radio choice. The target-disk inventory remains a select list.
 
 ---
 
@@ -153,7 +160,7 @@ the desired value is not presented as proof of what the still-running services u
 | `tari.payout_scan_birthday` | `auto` | Where the view-only Tari wallet starts scanning on first creation (#462). Unlike Monero's block-height restore point, a Tari birthday is **days since the Unix epoch** (a u16, 0–65535). `auto` = today when the wallet is first made, so it tracks payouts forward without rescanning from genesis. Set an earlier day to backfill older payouts (slower first scan). Only affects the first wallet creation; ignored once the wallet exists. |
 | **Monero node** |  | _Choose the Monero node and how Pithead reaches or exposes it._ |
 | `monero.mode` | `local` | `local` runs the bundled Monero node; `remote` connects to an external node (see `monero.remote`). |
-| `monero.node_username` / `node_password` | _auto (local)_ | Credentials for the local node's RPC, used only inside the stack (monerod, p2pool, and the dashboard, which reads the node's `get_info` for sync status). Leave them blank. On `setup` and on every `apply`, the stack fills in anything missing (username `admin`, a random alphanumeric password) and writes the values back into `config.json`, so they stay stable and you can see what was set. Set these yourself only for a remote node that requires RPC auth. |
+| `monero.node_username` / `node_password` | _auto (local)_ | Credentials for the local node's RPC, used only inside the stack (monerod, p2pool, and the dashboard, which reads the node's `get_info` for sync status). Leave them blank. On `setup` and on every `apply`, the stack fills in anything missing (username `admin`, a random alphanumeric password) and writes the values back into `config.json`, so they stay stable and you can see what was set. Set these yourself only for a remote node that requires RPC auth; a remote node without RPC auth leaves both fields empty. |
 | `monero.prune` | `true` | Prune the Monero blockchain to save disk space. The dashboard's Monero panel shows the resulting Pruned/Full mode and the node's on-disk DB size, so you can spot a config-vs-data mismatch when reusing a chain. A pruned node still confirms payouts — coinbase outputs are never pruned. |
 | `monero.clearnet_initial_sync` | `false` | Privacy-relevant, default off. `true` makes monerod do its initial block download over clearnet (much faster than Tor) by dropping the Tor P2P `proxy=` and lowering `out-peers` to 32. Transaction broadcast stays on Tor and wallets are never exposed. Your node's IP becomes visible to the Monero P2P network while it's on, and `pithead` warns loudly (apply/status/doctor/up) the whole time. The dashboard switches monerod back to Tor automatically once the chain is synced (#234) and keeps it there, so you can leave this `true`. Applies to the bundled node only — with `monero.mode: remote` nothing here acts on it, so set it back to `false` before switching. Full threat model: [Privacy › Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default). |
 | `monero.rpc_lan_access` | `false` | `true` publishes the node's RPC on the LAN (`0.0.0.0`) for wallets on other machines; default is localhost-only. |

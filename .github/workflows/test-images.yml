@@ -11,10 +11,10 @@ name: Test-harness images
 # enter either, and tests/stack/release asserts that rather than trusting it.
 #
 # Kept deliberately in lockstep with ci.yml's scan step: same pinned action, same engine version,
-# same severity and fixability scope. `make lint-trivy-parity` holds all three workflows to one
-# TRIVY_VERSION (scripts/watch/trivyignore-watch.sh GATE_WORKFLOWS) — a third copy of this step that
-# could drift to a different engine would make trivyignore-watch.sh's verdicts meaningless, which is
-# the whole reason that lint exists.
+# same severity and fixability scope. `make lint-trivy-parity` holds all three workflows' install-trivy
+# `version:` to one TRIVY_VERSION (scripts/watch/trivyignore-watch.sh GATE_WORKFLOWS) — a third copy of
+# this step that could drift to a different engine would make trivyignore-watch.sh's verdicts
+# meaningless, which is the whole reason that lint exists.
 
 on:
   push:
@@ -96,14 +96,17 @@ jobs:
       # refuses to run without. A narrow skip would have to name every one of those targets, which
       # is this `if` with more lines. uv's own pair went 4 -> 0 in #2084, measured on the digests
       # directly, since this gate would not have reported it either way.
+      - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
+        if: matrix.service != 'test-runner'
+        with:
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
       - name: Scan image for CVEs (Trivy)
         if: matrix.service != 'test-runner'
         id: trivy-scan
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Explicit, and held equal to ci.yml's by `make lint-trivy-parity` (#1290).
-          version: v0.73.0
+          skip-setup-trivy: true # scans with the binary the step above installed (#1290, #2214)
           image-ref: pithead-${{ matrix.service }}:ci
           scanners: vuln
           severity: HIGH,CRITICAL

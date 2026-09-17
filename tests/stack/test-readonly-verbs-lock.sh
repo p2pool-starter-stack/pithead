@@ -28,6 +28,7 @@ printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node,local_tari\nHOST_
 cat >"$ROV/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 sub="$*"
+[ -n "${DOCKER_LOG:-}" ] && printf '%s\n' "$sub" >>"$DOCKER_LOG"
 case "$sub" in
 "info") exit 1 ;;
 "compose config --services")
@@ -60,7 +61,7 @@ rov_run() { # <lockfile|""> <verb> [args...] -> sets ROV_OUT, ROV_RC
     # ONE invocation for both legs, and that is structural rather than tidy: the whole proof is
     # "same fixture, same command, only the lock differs". Two invocation lines could be edited
     # apart, and the contended leg would then be asserting against a different fixture.
-    local -a rov_env=("FAKE_STATES=$ROV_STATES" "PATH=$ROV/bin:$PATH")
+    local -a rov_env=("DOCKER_LOG=$ROV/docker.log" "FAKE_STATES=$ROV_STATES" "PATH=$ROV/bin:$PATH")
     if [ -n "$lk" ]; then
         rov_env+=("PITHEAD_LOCK_FILE=$lk" "PITHEAD_LOCK_TIMEOUT=1")
     fi
@@ -97,9 +98,19 @@ rov_hold() { # <lockfile> -> sets ROVHOLDER
 rov_run "" status
 assert_rc "uncontended: status exits 0" "$ROV_RC" "0"
 assert_contains "uncontended: status really produced its summary" "$ROV_OUT" "All expected services are up"
+: >"$ROV/docker.log"
+rov_run "" test-alert
+assert_rc "test-alert exits with the dashboard command" "$ROV_RC" "0"
+assert_contains "test-alert runs the real dashboard module" "$(cat "$ROV/docker.log")" \
+    "exec dashboard python3 -m mining_dashboard.service.notify.test_alert"
+rov_run "" test-alert status
+assert_rc "test-alert is refused in a command chain" "$ROV_RC" "1"
+assert_contains "test-alert chain refusal names the side-effecting verb" "$ROV_OUT" "test-alert"
+: >"$ROV/docker.log"
 rov_run "" doctor
 assert_rc "uncontended: doctor exits 1 on the unreachable daemon" "$ROV_RC" "1"
 assert_contains "uncontended: doctor really ran to its summary" "$ROV_OUT" "Diagnostics summary"
+assert_not_contains "doctor does not send test alerts" "$(cat "$ROV/docker.log")" "notify.test_alert"
 rov_run "" logs
 assert_rc "uncontended: logs exits 0" "$ROV_RC" "0"
 assert_contains "uncontended: logs really reached the follow" "$ROV_OUT" "Following logs"
@@ -146,7 +157,7 @@ kill "$ROVHOLDER" 2>/dev/null
 # ROV_UNCLAIMED is a floor, not a finding: it is what this domain makes NO claim about, not a set
 # shown to mutate. Some of it is very likely read-only too; nothing here says so either way.
 ROV_PROVEN="logs status doctor"
-ROV_UNCLAIMED="setup apply render up down restart upgrade support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
+ROV_UNCLAIMED="setup apply render up down restart upgrade test-alert support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
 
 rov_cmds="$(
     cd "$SANDBOX" || exit

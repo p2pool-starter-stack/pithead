@@ -334,6 +334,7 @@ doctor() {
         fi
         check_revenue_containers
         check_dashboard_answers
+        check_dashboard_public_listener
         check_monerod_synchronized
     fi
 
