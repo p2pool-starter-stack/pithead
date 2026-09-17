@@ -90,7 +90,7 @@ ssh_run unknown '{"ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST k
 unset SSHSB ssh_run
 VSB="$SANDBOX/vsb"
 mkdir -p "$VSB"
-printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":false} }' "$WALLET" >"$VSB/config.json"
+printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "ssh":{"enabled":true,"authorized_key":"ssh-ed25519 AAAATEST legacy@test"} }' "$WALLET" >"$VSB/config.json"
 vout=$(
     cd "$VSB" || exit
     # shellcheck disable=SC1090

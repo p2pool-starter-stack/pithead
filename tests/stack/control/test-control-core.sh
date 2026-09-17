@@ -217,6 +217,16 @@ assert_eq "preview preserves carried retired SSH" "$(jq -r '.ssh.enabled' "$STAG
 assert_eq "staged candidate is mode 600" "$(file_mode "$STAGED/$UUID1.json")" "600"
 assert_contains "preview audited" "$(cat "$AUDIT" 2>/dev/null)" "\"action\":\"preview\",\"status\":\"previewed\""
 
+# A carried subtree is the only retired SSH exception. A changed key is newly staged and must
+# fail the closed schema guard, not inherit the carried marker.
+cp -p "$STAGED/$UUID1.json" "$STAGED/$UUID1.clean"
+jq '.ssh.authorized_key = "ssh-ed25519 AAAATEST changed@test"' "$STAGED/$UUID1.json" >"$STAGED/$UUID1.next" && mv "$STAGED/$UUID1.next" "$STAGED/$UUID1.json"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID1" >"$REQS/$UUID1.json"
+run_pending >/dev/null
+assert_eq "changed retired SSH is rejected" "$(jq -r '.status' "$RESULTS/$UUID1.json")" "rejected"
+assert_contains "changed retired SSH fails the closed schema guard" "$(jq -r '.error' "$RESULTS/$UUID1.json")" "adds config keys not in the schema"
+mv "$STAGED/$UUID1.clean" "$STAGED/$UUID1.json"
+
 # Malformed id: it would become a filename, so the request is discarded with no result at all.
 printf '{"id":"../../etc/passwd","action":"preview","actor":"x","config":{}}\n' >"$REQS/evil.json"
 out="$(run_pending)"
