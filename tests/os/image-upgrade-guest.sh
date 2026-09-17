@@ -39,6 +39,8 @@ if [ "$NEW_SHA" = --self-test ]; then
         fi
         [ "$rc" -eq 17 ] && [ "$(cat "$INPUT/guest-stage")" = "stage=$GUEST_STAGE exit=17" ] || exit 1
     done
+    sed -n '/^GUEST_STAGE=reflink-mount$/,/^GUEST_STAGE=reflink-verify$/p' "${BASH_SOURCE[0]}" |
+        grep -Fx 'mkdir -p "$MOUNT"' >/dev/null || exit 1
     cosign() { :; }
     GUEST_STAGE=bundle-trust
     if (verify_bundle_trust); then
@@ -68,8 +70,8 @@ GUEST_STAGE=reflink-file
 truncate -s 14G "$LOOP"
 GUEST_STAGE=reflink-format
 mkfs.xfs -f -m reflink=1 "$LOOP" >/dev/null
-mkdir -p "$MOUNT"
 GUEST_STAGE=reflink-mount
+mkdir -p "$MOUNT"
 mount -o loop "$LOOP" "$MOUNT"
 GUEST_STAGE=reflink-verify
 xfs_info "$MOUNT" | grep -q 'reflink=1'
