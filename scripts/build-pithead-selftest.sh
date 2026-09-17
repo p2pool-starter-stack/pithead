@@ -325,12 +325,27 @@ self_test() {
     *"Building the generated pithead CLI"*) _case "the release plan names its CLI build step" 0 0 ;;
     *) _case "the release plan names its CLI build step" 0 1 ;;
     esac
-    local build_line files_line
+    local build_line files_line release_file preflight_call_line workdir_line clean_tree_line
+    release_file="$clone/repo/scripts/release/release.sh"
     build_line=$(grep -n 'Building the generated pithead CLI' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1)
     files_line=$(grep -n '\[ -f VERSION \]' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1)
     rc=0
     [ -n "$build_line" ] && [ "$build_line" -lt "$files_line" ] || rc=1
     _case "release preflight builds the CLI before reading bundle inputs" 0 "$rc"
+    # Static by design: executing release.sh with --allow-dirty as a control could push or publish
+    # on the exact regressed tree this checks. The release suite drives the gate function safely.
+    rc=0
+    grep -Fxq '    --allow-dirty) ALLOW_DIRTY=1 ;;' "$release_file" || rc=1
+    _case "release argument parsing wires --allow-dirty to its preflight flag" 0 "$rc"
+    preflight_call_line=$(grep -n '^[[:space:]]*preflight$' "$release_file" | cut -d: -f1 || true)
+    workdir_line=$(grep -n '^[[:space:]]*WORKDIR=.*mktemp' "$release_file" | cut -d: -f1 || true)
+    rc=0
+    [ -n "$preflight_call_line" ] && [ -n "$workdir_line" ] && [ "$preflight_call_line" -lt "$workdir_line" ] || rc=1
+    _case "every release route runs preflight before doing release work" 0 "$rc"
+    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1 || true)
+    rc=0
+    [ -n "$clean_tree_line" ] && [ -n "$build_line" ] && [ "$clean_tree_line" -lt "$build_line" ] || rc=1
+    _case "release preflight refuses dirty trees before building release bytes" 0 "$rc"
     rm -rf "$clone"
 
     if [ "$fail" -ne 0 ]; then

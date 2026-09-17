@@ -67,11 +67,11 @@ firstboot_consume_spool() ( # <spool-dir>
     local snap rc=0
     snap=$(wizard_spool_request "$spool" config.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
-    trap 'wizard_spool_clean "${snap%/*}"' EXIT
+    trap 'rm -f "${snap}.bak-1x"; wizard_spool_clean "${snap%/*}"' EXIT
     cand="$snap"
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
-    if err=$(PITHEAD_CONFIG_FILE="$cand" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+    if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
         install -m 600 "$cand" "$PWD/config.json" || return 1
         rm -f "$spool/config.json"
         wizard_spool_publish "$spool" applied true

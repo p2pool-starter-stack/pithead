@@ -65,6 +65,8 @@ _image_upgrade_prepare_inputs() {
         --output-signature "$stage/wrong.sig" "$stage/candidate.tar.gz" || return $?
     if "$stage/cosign" verify-blob --key "$stage/bundle.pub" --signature "$stage/wrong.sig" \
         --insecure-ignore-tlog=true "$stage/candidate.tar.gz" >/dev/null 2>&1; then
+        _image_upgrade_input_failure signing \
+            'cosign verify-blob <candidate> with <wrong-public-key>' 0 || true
         return 1
     fi
     ok "candidate bundle rejects a signature from the wrong key"

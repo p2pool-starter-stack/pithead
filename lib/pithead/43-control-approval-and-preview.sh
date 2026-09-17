@@ -11,9 +11,10 @@ _control_host_remedy() {
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 worker_sensitive=0
-    # Fail closed if we cannot re-derive the change set (the staged config was validated at
-    # preview, so a dry-run failure here means something changed — refuse).
-    if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>/dev/null); then
+    # Fail closed if the previewed staged config cannot be re-derived.
+    local carried_ssh=0
+    control_carried_ssh "$staged" && carried_ssh=1
+    if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>/dev/null); then
         printf 'could not re-validate the staged change host-side — refusing to commit'
         return 1
     fi
@@ -71,9 +72,9 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # risking the false-alarms a naive grep-based path diff would hit on jq-internal and filename
     # dotted tokens.
     local unknown
-    if ! unknown=$(jq -rn --slurpfile ref "$REFERENCE_CONFIG" --slurpfile cfg "$staged" '
+    if ! unknown=$(jq -rn --argjson carried "$carried_ssh" --slurpfile ref "$REFERENCE_CONFIG" --slurpfile cfg "$staged" '
         def norm: [.[] | strings] | join(".");
-        ([$cfg[0] | paths | select(.[0:2] != ["workers", "list"]) | norm]
+        ([$cfg[0] | paths | select(($carried != 1 or .[0] != "ssh") and .[0:2] != ["workers", "list"]) | norm]
          - [$ref[0] | paths | norm])
         | unique | join(", ")' 2>/dev/null); then
         printf 'could not validate the staged config against the schema (%s) — refusing to commit' "$REFERENCE_CONFIG"
@@ -207,7 +208,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     return 0
 }
 
-# Preview: stage the candidate config host-side, dry-run it, report the describe_change rows.
 control_preview() { # <request-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     local staged="$cdir/staged/$id.json" errf="$cdir/staged/.$id.err" out result
@@ -229,9 +229,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
     # container's probe). A sentinel for a rig with no live token collapses to "" too.
-    # dashboard.workers[] is restored too, and MUST be: 30's masker still masks that shape after
-    # 2.0.0 removed the alias (#1832, see the note there), and mask and restore are one mechanism.
-    # Keeping the mask without the restore would let a sentinel be committed as a literal token.
     # The LIVE lookup below therefore reads BOTH shapes, and that is the whole point: worker_list is
     # workers.list[] alone since #1832, so resolving legacy sentinels against it would find nothing
     # and blank every per-rig token to "" — a restore branch that cannot restore. workers.list[]
@@ -241,6 +238,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         (reduce (($live[0] | worker_list) + (($live[0].dashboard // {}) | .workers // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
             then .[$w.name] = ($w.token // "") else . end)) as $livetok
+        | if ((.config | has("ssh") | not) and ($live[0] | has("ssh"))) then .config.ssh = $live[0].ssh else . end
         | reduce $paths[] as $p (.config;
             (try getpath($p) catch null) as $v
             | if ($v | type) == "object" and $v.__secret__ == true
@@ -259,7 +257,9 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
-    if out=$(PITHEAD_CONFIG_FILE="$staged" "$0" apply --dry-run --porcelain 2>"$errf"); then
+    local carried_ssh=0
+    control_carried_ssh "$staged" && carried_ssh=1
+    if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
         # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
         # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
         # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.
@@ -340,7 +340,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "previewed" "$(porcelain_keys "$out")"
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
-        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"
         rm -f "$staged"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
     fi
@@ -373,11 +373,10 @@ control_reown_operator_files() {
     done
 }
 
-# Commit: apply the HOST-SIDE staged copy from the matching preview. A tampered second request
-# can't swap the config — commit carries only the id; the config it applies is the one previewed.
+# Commit uses the host-side staged copy; a second request cannot swap it.
 control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
-    local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0
+    local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
     if [ ! -f "$staged" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
@@ -415,9 +414,10 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     # Keep a pre-change backup; on failure it is named in the result and left in place. The
     # `apply -y` below re-renders the pre-masked prefill copy (#440), so the dashboard's editor
     # form reflects the committed config on the next load.
+    control_carried_ssh "$staged" && carried_ssh=1
     cp "$CONFIG_FILE" "${CONFIG_FILE}.bak-control"
     cp "$staged" "$CONFIG_FILE"
-    "$0" apply -y >"$logf" 2>&1 || rc=$?
+    PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply -y >"$logf" 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then
         control_reown_operator_files # the root apply wrote .env/Caddyfile as root — give them back (#33)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",ts:(now|floor)}')"

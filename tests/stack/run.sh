@@ -27,14 +27,14 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain
 
 # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
+# shellcheck source=tests/stack/dashboard/test-dashboard-exposure-live.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
 # Regression (#1330): test-dashboard-onion.sh must not depend on running after test-dashboard.sh. A
-# `( ... )` subshell forks THIS process and inherits its whole variable table, exported or not — including
-# $auth_hb64/$caddy_https left behind by test-dashboard.sh's `source` above — so a subshell guard would
-# stay green. Only a separate `bash` process is isolated (environment only); $HERE is passed as an argument.
+# A subshell inherits this process's variables, so only a separate `bash` proves isolation.
 # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
 bash -c '
     set -uo pipefail
@@ -233,9 +233,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-firstboot-install
 
 # shellcheck source=tests/stack/test-readonly-verbs-lock.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-readonly-verbs-lock.sh" && domain_ran test-readonly-verbs-lock.sh "$_d0" "$?" || domain_ran test-readonly-verbs-lock.sh "$_d0" "$?"
-
-# shellcheck source=tests/stack/appliance/test-appliance-identity-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity-boot.sh" && domain_ran test-appliance-identity-boot.sh "$_d0" "$?" || domain_ran test-appliance-identity-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-boot-verdicts.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-verdicts.sh" && domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?" || domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-machine-id-journal.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-machine-id-journal.sh" && domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?" || domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?"
 

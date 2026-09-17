@@ -121,7 +121,7 @@ DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
 DEPLOYMENT_COMPLETED bool
 EOF
-    if ! PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \
+    if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \
         bash -c 'source "$1" && parse_and_validate_config >/dev/null && load_preserved_state && DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) && resolve_dashboard_host && render_env "${ENV_FILE}.dryrun" >/dev/null && mv -f -- "${ENV_FILE}.dryrun" "$ENV_FILE" && generate_caddyfile "$PITHEAD_CADDY_FILE" false >/dev/null' \
         _ "${BASH_SOURCE[0]}"; then
         rm -f -- "$seed" "$staged_caddy"
@@ -159,7 +159,7 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     staged_caddy="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[2]#/}"
     paths_file="$RESTORE_STAGE_DIR/.validated-data-paths"
     if [ ! -f "$staged_cfg" ] || [ ! -f "$staged_env" ] || { [ -e "$staged_caddy" ] && [ ! -f "$staged_caddy" ]; } ||
-        ! err=$(PITHEAD_CONFIG_FILE="$staged_cfg" RESTORE_PATH_FILE="$paths_file" bash -c \
+        ! err=$(PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" RESTORE_PATH_FILE="$paths_file" bash -c \
             "source '${BASH_SOURCE[0]}' && parse_and_validate_config >/dev/null && printf '%s\\0' \"\$MONERO_DIR\" \"\$TARI_DIR\" \"\$P2POOL_DIR\" \"\$TOR_DATA_DIR\" \"\$DASHBOARD_DIR\" >\"\$RESTORE_PATH_FILE\"" 2>&1); then
         restore_discard_stage
         error "Archive does not contain a valid Pithead configuration — nothing was restored. ${err:0:240}"
@@ -236,6 +236,9 @@ restore_commit_stage() {
     done
     for path in "${RESTORE_ALLOWED_DIRS[@]}"; do
         rel="${path#/}"
+        # This explicit recovery command makes the archive win collisions. The wizard setup
+        # path intentionally preserves existing chain files; see docs/operations.md's
+        # "Restore collision rules" for the different operational intent.
         [ ! -d "$RESTORE_STAGE_DIR/$rel" ] || { sudo mkdir -p "$path" && sudo cp -a --remove-destination "$RESTORE_STAGE_DIR/$rel"/. "$path"/; } || {
             restore_discard_stage
             error "Restore failed while committing $path; inspect the destination before retrying."

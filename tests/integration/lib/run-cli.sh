@@ -34,8 +34,7 @@ MATRIX:
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
-  --remote-tari-host <h>  external Tari node endpoint for the tari.mode=remote scenario (#103;
-                         e.g. an already-synced Tari node on the LAN)
+  --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -164,9 +163,13 @@ parse_args() {
             shift
             ;;
         --remote-monero-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-monero-host contains unsupported characters. Use a hostname or IPv4 address."
+                exit 2
+            fi
             case "${2:-}" in
             *:*)
-                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port). Got \"$2\"."
+                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port)."
                 exit 2
                 ;;
             esac
@@ -174,14 +177,8 @@ parse_args() {
             shift 2
             ;;
         --remote-monero-rpc-port | --remote-monero-zmq-port)
-            case "${2:-}" in
-            "" | *[!0-9]*)
-                it_err "$1 takes a TCP port 1-65535. Got \"${2:-}\"."
-                exit 2
-                ;;
-            esac
-            if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then
-                it_err "$1 takes a TCP port 1-65535. Got \"$2\"."
+            if ! valid_tcp_port "${2:-}"; then
+                it_err "$1 takes a TCP port 1-65535."
                 exit 2
             fi
             if [ "$1" = "--remote-monero-rpc-port" ]; then
@@ -192,6 +189,16 @@ parse_args() {
             shift 2
             ;;
         --remote-tari-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-tari-host contains unsupported characters. Use a bare hostname or IPv4 address."
+                exit 2
+            fi
+            case "$2" in
+            *:*)
+                it_err "--remote-tari-host takes a bare host or IPv4 address; Pithead renders tari.remote.grpc_port separately."
+                exit 2
+                ;;
+            esac
             REMOTE_TARI_HOST="$2"
             shift 2
             ;;

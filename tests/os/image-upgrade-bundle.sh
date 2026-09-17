@@ -24,6 +24,7 @@ source scripts/release/bundle.sh
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 TAG="$(tr -d '[:space:]' <VERSION)"
+REPO_ROOT="$ROOT"
 REGISTRY="$PITHEAD_REGISTRY"
 IMAGE_PREFIX="${PITHEAD_IMAGE_PREFIX:-pithead-}"
 IMAGES=(tor monero p2pool xmrig-proxy dashboard)

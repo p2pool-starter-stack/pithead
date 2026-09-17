@@ -4,8 +4,11 @@ description: >
   pinned tag through an undocumented, unauthenticated `github.com/.../releases/<tag>` JSON
   endpoint (not the GitHub API), which intermittently 404s on a tag that exists (#2215) —
   confirmed transient, not a withdrawn release: the same pin passes on a bare rerun with no code
-  change. The caller keeps its own primary trivy-action step inline (parity-checked by
-  `make lint-trivy-parity`); this is only the fallback attempt.
+  change. This declares NO `version:` of its own and sets `skip-setup-trivy: true`: the caller
+  installs the engine once, up front, via ./.github/actions/install-trivy, whose `version:` is the
+  single pin `make lint-trivy-parity` reads (#1290, #2214). A second pin here would decide which
+  engine the retry path runs while sitting outside that gate — so there isn't one, and this step
+  re-scans with the binary already on $GITHUB_PATH rather than installing a second time.
 inputs:
   image-ref:
     required: true
@@ -16,7 +19,7 @@ runs:
   steps:
     - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
-        version: v0.74.0
+        skip-setup-trivy: true
         image-ref: ${{ inputs.image-ref }}
         scanners: vuln
         severity: HIGH,CRITICAL
