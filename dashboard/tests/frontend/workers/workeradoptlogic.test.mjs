@@ -198,6 +198,11 @@ test("buildAdoptedConfig: never mutates the live config object it was handed", (
   assert.equal(JSON.stringify(live), before);
 });
 
+test("buildAdoptedConfig: drops retired SSH from the dashboard proposal", () => {
+  const cfg = buildAdoptedConfig({ ssh: { enabled: true }, workers: { list: [] } }, "rig2", "10.0.0.10", "8081", "8082", "tok2");
+  assert.equal(Object.hasOwn(cfg, "ssh"), false);
+});
+
 test("buildAdoptedConfig: trims stray whitespace off host and token", () => {
   const cfg = buildAdoptedConfig({}, "rig1", " 10.0.0.9 ", "8081", "8082", " tok \n");
   assert.equal(cfg.workers.list[0].host, "10.0.0.9");

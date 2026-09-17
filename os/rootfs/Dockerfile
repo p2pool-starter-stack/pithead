@@ -121,7 +121,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # The OS: init + kernel + bootloader userland for the generic-grub-efi target, the container
 # engine, pithead's host dependencies, mDNS (pithead.local), and time sync (before Tor — the
-# firstboot ordering rule). openssh-server ships installed but DISABLED: SSH is a wizard opt-in.
+# firstboot ordering rule). openssh-server ships installed but disabled: release SSH is never provisioned.
 # The shell-out set is LOAD-BEARING and debian-slim ships none of it: netavark calls nft to
 # program container networking, and pithead-install calls sgdisk (gdisk), partprobe (parted),
 # jq, lsblk, mkfs and the grub tools ON THE APPLIANCE — a tool the build host happens to have is
