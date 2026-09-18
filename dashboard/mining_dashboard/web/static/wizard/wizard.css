@@ -34,6 +34,10 @@
   min-width: 0;
 }
 
+.wizard-token {
+  user-select: all;
+}
+
 .wizard-json {
   width: 100%;
   min-height: 22rem;
@@ -50,6 +54,35 @@
   margin-left: 0.75rem;
   padding-left: 0.75rem;
   border-left: 2px solid var(--border);
+}
+
+.wizard-choices {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+.wizard-choices legend {
+  margin-bottom: 0.25rem;
+}
+
+.wizard-choices label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  width: 100%;
+  cursor: pointer;
+}
+
+.wizard-choices input {
+  margin-top: 0.2rem;
+}
+
+.wizard-choices label span {
+  display: grid;
 }
 
 /* The restore-at-setup toggle and its "back" link (#909): a plain button styled as text. */

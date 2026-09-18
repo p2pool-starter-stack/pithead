@@ -17,10 +17,10 @@ echo "== unit: release.sh pure logic (#44) =="
 # the positional args cleared (`set --`) so release.sh's own arg-parser doesn't see the test's args;
 # release.sh guards its main() behind a BASH_SOURCE check, so sourcing only defines the functions.
 REL="$ROOT/scripts/release/release.sh"
-# shellcheck disable=SC1090
 (
     cd "$ROOT" || exit
     set --
+    # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
     is_semver "0.1.0"
@@ -30,6 +30,7 @@ assert_rc "is_semver accepts 0.1.0" "$?" "0"
 (
     cd "$ROOT" || exit
     set --
+    # shellcheck disable=SC1090
     source "$REL" 2>/dev/null
     set +eu
     is_semver "1.2.3-rc.1"
@@ -103,6 +104,22 @@ case "$(bash "$REL" --help 2>&1)" in
 *"set -euo pipefail"*) bad "release --help stops at the comment header" "leaked the script body into --help" ;;
 *) ok "release --help stops at the comment header" ;;
 esac
+CUT_DOC="$(
+    sed -n '/^## Cutting a release/,/^## Shipping a bad release/p' "$ROOT/docs/dev/appliance-release.md" |
+        tr '\n' ' ' | tr -s ' '
+)"
+BRANCH_DOC="$(
+    sed -n '/^### Branch mechanics/,/^### Pipeline:/p' "$ROOT/docs/dev/releasing.md" |
+        tr '\n' ' ' | tr -s ' '
+)"
+assert_contains "release runbook sets the CHANGELOG heading date at the cut (#1828)" "$CUT_DOC" \
+    "set its heading to the current UTC date"
+assert_contains "appliance gates, builds and tag use the final cut commit (#1828)" "$CUT_DOC" \
+    "Every gate, build and tag below uses that final cut commit"
+assert_contains "canonical release pipeline uses the final cut commit (#1828)" "$BRANCH_DOC" \
+    "Run the pipeline with the final cut commit checked out"
+assert_not_contains "release docs reject the obsolete prep-commit cut (#1828)" "$CUT_DOC$BRANCH_DOC" \
+    "prep commit checked out"
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
 # runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
 # empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template
@@ -122,8 +139,13 @@ bundle_copy_fail="$(
     (
         cd "$ROOT" || exit
         set -- && source "$REL" 2>/dev/null
-        set +eu && WORKDIR="$SANDBOX/bundle-copy-fail" TAG=v9.9.9
-        cp() { return 1; }
+        set +eu && export REPO_ROOT="$ROOT" && WORKDIR="$SANDBOX/bundle-copy-fail" TAG=v9.9.9
+        cp() {
+            case "$1" in
+            "$ROOT"/.pithead.bundle.*) command cp "$@" ;;
+            *) return 1 ;;
+            esac
+        }
         make_bundle "$WORKDIR/pithead.tar.gz"
     ) 2>&1
 )"
@@ -137,11 +159,12 @@ assert_contains "bundle names the required-file copy failure" "$bundle_copy_fail
     set --
     source "$REL" 2>/dev/null
     set +eu
+    export REPO_ROOT="$ROOT"
     WORKDIR="$SANDBOX/bundle"
     mkdir -p "$WORKDIR"
     TAG=v9.9.9
-    REGISTRY=ghcr.io/test
-    DRY_RUN=0
+    export REGISTRY=ghcr.io/test
+    export DRY_RUN=0
     GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
     # make_bundle now digest-pins the first-party images (#376), so it needs the promoted digests
     # promote would have captured -- a full repo@sha256 ref, as set_digest stores them.
@@ -156,6 +179,45 @@ grep -q '^pithead/config.minimal.json$' "$SANDBOX/bundle.list" && ok "bundle shi
 grep -q '^pithead/PITHEAD_COMMIT$' "$SANDBOX/bundle.list" && ok "bundle ships PITHEAD_COMMIT (the --image-upgrade provenance anchor)" || bad "bundle ships PITHEAD_COMMIT" "absent from the bundle"
 assert_eq "PITHEAD_COMMIT holds the full 40-hex commit, not a short one" \
     "$(cat "$SANDBOX/bundle/pithead/PITHEAD_COMMIT" 2>/dev/null)" "0123456789abcdef0123456789abcdef01234567"
+echo "== unit: release bundle rejects a changed generated CLI (#2240) =="
+bundle_mismatch="$(
+    (
+        cp "$ROOT/pithead" "$SANDBOX/pithead.before"
+        trap 'mv "$SANDBOX/pithead.before" "$ROOT/pithead"' EXIT
+        printf '\ntampered\n' >>"$ROOT/pithead"
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090
+        source "$REL" 2>/dev/null
+        set +eu
+        export REPO_ROOT="$ROOT"
+        WORKDIR="$SANDBOX/bundle-mismatch"
+        mkdir -p "$WORKDIR"
+        TAG=v9.9.9
+        export REGISTRY=ghcr.io/test
+        export DRY_RUN=0
+        GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        for _s in "${IMAGES[@]}"; do set_digest "$_s" "ghcr.io/test/pithead-$_s@sha256:$(printf '%064d' 1)"; done
+        make_bundle "$WORKDIR/pithead.tar.gz"
+    ) 2>&1
+)"
+assert_rc "bundle refuses a generated CLI that differs from its slices" "$?" "1"
+assert_contains "bundle mismatch names pithead" "$bundle_mismatch" "generated pithead differs"
+echo "== unit: release bundle cleans a failed generated CLI copy (#2240) =="
+bundle_mkdir_fail="$({
+    cd "$ROOT" || exit
+    set --
+    # shellcheck disable=SC1090
+    source "$REL" 2>/dev/null
+    set +eu
+    export REPO_ROOT="$ROOT"
+    WORKDIR="$SANDBOX/bundle-mkdir-fail"
+    mkdir() { return 1; }
+    make_bundle "$WORKDIR/pithead.tar.gz"
+} 2>&1)"
+assert_rc "bundle cleans the generated CLI when its directory cannot be created" "$?" "1"
+assert_contains "bundle names a failed bundle directory" "$bundle_mkdir_fail" "could not create the bundle directory"
+assert_eq "bundle leaves no generated CLI after a directory failure" "$(find "$ROOT" -maxdepth 1 -name '.pithead.bundle.*' -print)" ""
 grep -q '^pithead/$' "$SANDBOX/bundle.list" && ok "bundle unpacks to versionless pithead/" || bad "bundle unpacks to pithead/" "top-level dir is not pithead/"
 _bundle_docs=$(sed -n 's|^pithead/docs/||p' "$SANDBOX/bundle.list" | grep -vE '^$|/$' | sort)
 _expected_docs=$(printf '%s\n' configuration.md dashboard.md faq.md getting-started.md hardware.md monitoring.md operations.md privacy.md telegram.md workers.md | sort)

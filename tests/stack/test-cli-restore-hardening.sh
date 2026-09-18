@@ -92,6 +92,12 @@ assert_eq "failed restore removes its private stage" "$(find "$CR/tmp" -mindepth
 assert_eq "restore never removes an inherited stage path" "$(cat "$CR/inherited-stage/victim")" KEEP
 
 cp "$BK/config.json" "$ROOTS/${BK#/}/config.json"
+jq '.ssh = {"enabled":true}' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+cr_archive "$CR/retired-ssh.tar.gz"
+out="$(cd "$BK" && PITHEAD_APPLIANCE=1 PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/retired-ssh.tar.gz" 2>&1)"
+assert_rc "release restore rejects newly staged SSH config" "$?" 1
+assert_contains "release restore names retired SSH" "$out" "ssh.enabled is unavailable"
+cp "$BK/config.json" "$ROOTS/${BK#/}/config.json"
 chmod 644 "$ROOTS/${BK#/}/config.json"
 cr_archive "$CR_ARCHIVE"
 rm -f "$CR/sudo.log"

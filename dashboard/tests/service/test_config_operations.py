@@ -10,7 +10,7 @@ def config_paths(tmp_path, monkeypatch):
     live = {
         "monero": {"wallet_address": "4live", "view_key": "", "node_password": ""},
         "workers": {"api_token": ""},
-        "dashboard": {"auth": {"password": ""}},
+        "dashboard": {"auth": {"password": ""}, "host": "box"},
     }
     reference = {
         **live,
@@ -58,6 +58,7 @@ def test_perimeter_fields_are_offered_in_no_tier_at_all(config_paths):
     # Positive control: the tier is narrowed, not emptied. Without this an approval_paths() that
     # returned nothing at all would satisfy every assertion above.
     assert "telegram.enabled" in cfg["_approval_keys"]
+    assert "dashboard.host" in cfg["_approval_keys"]
 
 
 def test_every_reference_leaf_is_intentionally_classified(config_paths):
@@ -72,6 +73,7 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["p2pool.pool"] == "free"
     assert classes["monero.prune"] == "confirm"
     assert classes["telegram.enabled"] == "approval"
+    assert classes["dashboard.host"] == "approval"
     assert "monero.wallet_address" not in classes, (
         "a payout destination is host-only (2026-09-13 perimeter audit)"
     )
