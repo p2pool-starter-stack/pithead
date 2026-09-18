@@ -343,14 +343,12 @@ export class WizardApp extends Component {
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);
-    return html`<h1>Pithead setup</h1>${view}`;
+    return view;
   }
 }
 
 // Mount only in a browser (node --test imports this module; a bare `document` would break that).
-// Clear #app: the shell ships the heading and "Loading…" inside it, and preact APPENDS (#1868).
 if (typeof document !== "undefined") {
-  document.getElementById("app").replaceChildren();
   render(html`<${WizardApp} />`, document.getElementById("app"));
 }
 
