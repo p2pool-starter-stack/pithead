@@ -90,6 +90,7 @@
   background: none;
   border: none;
   padding: 0;
+  min-height: 24px;
   font: inherit;
   color: var(--accent);
   text-decoration: underline;
@@ -114,14 +115,15 @@
   cursor: not-allowed;
 }
 
-/* A section heading sat hard against the field above it and read as that field's label: h3 carries
- * `margin: 0 0 15px` from dashboard.css, so the space above it was whatever the preceding help
- * paragraph happened to leave — headings after a bare select got none. A heading that opens its
+/* A section heading used to sit hard against the field above it and read as that field's label:
+ * the shared section style carries `margin: 0 0 15px`, so the space above it was whatever the
+ * preceding help paragraph happened to leave — headings after a bare select got none. One that opens its
  * own card still needs zero, which is what the :first-child reset is for (#1868). */
-.wizard-shell h3 {
+.wizard-shell h2 {
   margin-top: 22px;
+  font-weight: 700;
 }
 
-.wizard-shell h3:first-child {
+.wizard-shell h2:first-child {
   margin-top: 0;
 }
