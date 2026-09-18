@@ -128,6 +128,18 @@ wait_hc() { # wait_hc <label> <ere-pattern> [timeout]
     done
 }
 
+# Payouts poll every 10th collection cycle; at UPDATE_INTERVAL=2 that's a 20s poll interval, so
+# the deadline must cover at least two of them to catch a poll that lands just after the replay.
+wait_min_height() { # wait_min_height <expected> [timeout]
+    local want="$1" timeout="${2:-45}" end
+    end=$(($(date +%s) + timeout))
+    while :; do
+        [ "$(wallet_min_height)" = "$want" ] && return 0
+        [ "$(date +%s)" -ge "$end" ] && return 1
+        sleep 1
+    done
+}
+
 wait_payout() { # wait_payout <chain> <amount> [timeout]
     local chain="$1" amount="$2" timeout="${3:-50}" end result
     end=$(($(date +%s) + timeout))
@@ -358,7 +370,7 @@ wait_payout monero 0.25
 wait_hc "Monero payout fires one alert" '^/alerts$' 50
 if [ "$(payout_alert_count)" = 1 ]; then c_ok "Monero payout alert fired once"; else c_bad "Monero payout alert fired once" "got $(payout_alert_count)"; fi
 set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
-sleep 22
+wait_min_height 100
 if [ "$(payout_alert_count)" = 1 ] && [ "$(wallet_min_height)" = 100 ]; then c_ok "Monero payout replay fires no alert and seeds min_height"; else c_bad "Monero payout replay fires no alert and seeds min_height" "alerts=$(payout_alert_count), min_height=$(wallet_min_height)"; fi
 
 compose exec -T fake-hc sh -c ': > /tmp/pings.log; : > /tmp/events.log'
