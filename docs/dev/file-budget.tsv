@@ -59,6 +59,7 @@ tests/integration/selftest/selftest.sh	686
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
 tests/stack/appliance/test-appliance-boot.sh	641
+tests/stack/appliance/test-appliance-build-compose-source.sh	401
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
 tests/stack/appliance/test-appliance-media.sh	409
