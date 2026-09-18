@@ -105,6 +105,11 @@ main() {
         require_env
         stack_status || exit 1
         ;;
+    test-alert)
+        _reject_options test-alert "$@"
+        require_env
+        docker exec dashboard python3 -m mining_dashboard.service.notify.test_alert
+        ;;
     doctor)
         case "${1:-}" in
         "") doctor || exit 1 ;;

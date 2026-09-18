@@ -104,12 +104,13 @@ consume_preseed_config() { # <dest-config-path>
         rm -f "$tmp"
         return 1
     }
-    if err=$(PITHEAD_CONFIG_FILE="$tmp" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+    if err=$(PITHEAD_CONFIG_FILE="$tmp" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
         mv "$tmp" "$dest"
+        rm -f "${tmp}.bak-1x"
         log "Using the pre-seeded configuration from $f."
         return 0
     fi
-    rm -f "$tmp"
+    rm -f "$tmp" "${tmp}.bak-1x"
     warn "The pre-seeded $f was rejected — falling back to the setup page."
     warn "  $(printf '%s' "$err" | tail -n 1 | tr -d '[:cntrl:]' | tail -c 200)"
     return 1

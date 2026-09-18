@@ -125,6 +125,12 @@ bash "$ROOT/tests/os/appliance-egress-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#2059 appliance Tor-egress backstop self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-xvb-routing-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1998 appliance XvB routing injection self-test passes" "$?" "0"
+# #2219: drives the control-runner recovery leg's assertion logic against a fully stubbed guest —
+# a runner that never retries must be caught, and the recovered path must report cleanly. Lives in
+# tests/os/ (appliance lane); driven here because tier 1 is the lowest tier that proves it and it
+# needs no KVM (the retry itself is only provable on a real systemd, in the tier4-kvm leg).
+bash "$ROOT/tests/os/control-runner-recovery-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#2219 control-runner recovery leg self-test passes" "$?" "0"
 bash -c 'PITHEAD_OS_VM_DESTROY_SELF_TEST=1 exec bash "$1"' _ "$ROOT/tests/os/kvm-preflight.sh"
 assert_rc "the OS battery refuses a VM that survives teardown" "$?" "0"
 
