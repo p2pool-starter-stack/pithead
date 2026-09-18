@@ -250,10 +250,6 @@ the time zone (detected from the machine unless set). They are still there to ch
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as
 `root` with the dashboard password. It is set fresh at every boot and never stored on disk.
-Two more switches live only in the setup page's **Advanced** view, deliberately out of the quick
-form: `ssh.enabled` with `ssh.authorized_key` turns on key-only SSH (never passwords) for remote
-debugging. The day-two Configuration view does not list them and cannot approve them remotely;
-changing SSH still requires a configuration stick.
 
 **Already know exactly what you want?** Open **Advanced** at the bottom. It shows the complete
 configuration — every key, with its default filled in — and it *is* what the machine will run:
@@ -313,8 +309,9 @@ not the dashboard. Changing any of these later does not mean reinstalling: write
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set anything,
-including what no remote channel is allowed to touch.
+media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting, including what no remote channel is allowed to touch. Release images reject
+retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
@@ -546,9 +543,9 @@ place.
 Insert a stick carrying a `pithead-config.json` and reboot: the machine validates it, shows
 the exact change on the console, and applies it after a countdown — no password, no browser,
 no keyboard required. This is the same file format the setup wizard reads (see [setting it up
-without a monitor](#setting-it-up-without-a-monitor)), and it can change **any** setting,
-including the ones the dashboard never exposes: the SSH toggle, the dashboard login password,
-and the Telegram alert channel's own identity. That is deliberate. Whoever can insert media
+without a monitor](#setting-it-up-without-a-monitor)), and it can change settings the dashboard
+never exposes, including the dashboard login password and the Telegram alert channel's own
+identity. That is deliberate. Whoever can insert media
 and power the machine off and on already has full authority over it — a shell at the console
 proves the same thing today — so this channel makes that authority usable instead of assuming
 you have a monitor and a working password. It is the recovery path when the dashboard password
@@ -599,9 +596,8 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 `.local` name. Plain `http://` addresses redirect to `https://`, so either spelling works. Wi-Fi is not supported, so a wireless-only network will not work.
 
 **You need a shell on the machine.** Log in at its console as `root` with the dashboard
-password. For SSH, set `ssh.enabled` and `ssh.authorized_key` in the Advanced view at setup —
-key-only, and only if you need it. The dashboard does not offer them after that; a configuration
-stick is the way in later.
+password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
+appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
 **"Wrong token."** The token changes each time the setup service restarts — read the
 current one from the console. After five wrong attempts it mints a new one on purpose.

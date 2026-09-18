@@ -124,6 +124,5 @@
     "tor": true
   },
   "tor": { "data_dir": "auto", "auto_heal": false },
-  "network": { "subnet": "172.28.0.0/24", "tor_egress_firewall": true },
-  "ssh": { "enabled": false, "authorized_key": "" }
+  "network": { "subnet": "172.28.0.0/24", "tor_egress_firewall": true }
 }

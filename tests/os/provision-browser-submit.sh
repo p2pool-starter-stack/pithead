@@ -115,22 +115,40 @@ control_result_stamp_id() { # <result-json> <id>
     printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
 }
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
     if out=$(dashboard_control_post "$route" "$body"); then
-        rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
-        [ -n "$rid" ] || [ -n "$out" ] || rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        response_code=${out##*$'\n'}
+        if [[ $response_code =~ ^[0-9]{3}$ ]]; then
+            out=${out%$'\n'*}
+            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
+            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
+            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
+        fi
+        if [[ $response_code =~ ^5 ]]; then
+            # A failing proxy can name another request; the fresh preview id in the caller wins.
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        else
+            rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        fi
+        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
+        # or malformed successful response. Only an explicit JSON error is a real refusal; the
+        # caller's id still names a request the host may complete, so poll it.
+        if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        fi
     else
         # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
         # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # A server that ANSWERED without an id refused the request; that is a verdict, not a lost
-    # response, and it must stay fast rather than polling a deadline out.
+    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | running | downloading | installing | "") ;;
+        # The control API can acknowledge a queued request before the root runner starts it.
+        # `accepted` still carries the request id, so it is a polling state, not a verdict.
+        pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
             control_result_stamp_id "$out" "$rid"
             return 0

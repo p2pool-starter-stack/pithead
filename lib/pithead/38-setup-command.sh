@@ -32,7 +32,7 @@ setup() {
     check_prerequisites
     ensure_config_exists
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
-    parse_and_validate_config
+    PITHEAD_CONFIG_SET=1 parse_and_validate_config
     preflight_resources          # WARN-only: low disk/RAM heads-up before committing to a sync (#87)
     check_stratum_exposure setup # WARN-only: public-IP host => unauthenticated stratum :3333 exposed (#113)
     load_preserved_state
