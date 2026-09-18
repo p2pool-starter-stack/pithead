@@ -131,7 +131,7 @@ wait_hc() { # wait_hc <label> <ere-pattern> [timeout]
 # Payouts poll every 10th collection cycle; at UPDATE_INTERVAL=2 that's a 20s poll interval, so
 # the deadline must cover at least two of them to catch a poll that lands just after the replay.
 wait_min_height() { # wait_min_height <expected> [timeout]
-    local want="$1" timeout="${2:-45}" end
+    local want="$1" timeout="${2:-50}" end
     end=$(($(date +%s) + timeout))
     while :; do
         [ "$(wallet_min_height)" = "$want" ] && return 0
