@@ -43,7 +43,6 @@ lib/pithead/14-local-miner.sh	414
 lib/pithead/28-parse-and-validate-config.sh	467
 lib/pithead/33-render-env.sh	484
 lib/pithead/36-quadlet-units.sh	407
-lib/pithead/39-describe-change.sh	418
 lib/pithead/43-control-approval-and-preview.sh	432
 os/overlay/pithead-boot	418
 os/rootfs/Dockerfile	405

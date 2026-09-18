@@ -10,7 +10,7 @@ def config_paths(tmp_path, monkeypatch):
     live = {
         "monero": {"wallet_address": "4live", "view_key": "", "node_password": ""},
         "workers": {"api_token": ""},
-        "dashboard": {"auth": {"password": ""}},
+        "dashboard": {"auth": {"password": ""}, "host": "box"},
     }
     reference = {
         **live,
@@ -23,7 +23,7 @@ def config_paths(tmp_path, monkeypatch):
             "events": {"wallet_changed": True, "clearnet_exposed": True},
         },
         "network": {"tor_egress_firewall": True},
-        "dashboard": {"auth": {"password": ""}, "control": {"enabled": True}},
+        "dashboard": {"auth": {"password": ""}, "host": "box", "control": {"enabled": True}},
         "ssh": {"enabled": False},
     }
     host = tmp_path / "config.json"
@@ -60,6 +60,7 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
     assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
     assert not any(path.startswith("ssh.") for path in cfg["_confirm_keys"])
     assert "telegram.enabled" in cfg["_approval_keys"]
+    assert "dashboard.host" in cfg["_approval_keys"]
 
 
 def test_every_reference_leaf_is_intentionally_classified(config_paths):
@@ -77,6 +78,7 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["network.tor_egress_firewall"] == "confirm"
     assert classes["dashboard.control.enabled"] == "confirm"
     assert classes["p2pool.clearnet"] == "confirm"
+    assert classes["dashboard.host"] == "approval"
     assert "dashboard.auth.password" not in classes
     assert "telegram.events.wallet_changed" not in classes
     assert "telegram.events.clearnet_exposed" not in classes

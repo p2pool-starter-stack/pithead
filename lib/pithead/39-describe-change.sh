@@ -1,6 +1,10 @@
 # Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
+    if describe_notification_change "$key" "$old" "$new"; then
+        printf '%s\t%s' "$flag" "$msg"
+        return
+    fi
     case "$key" in
     MONERO_PRUNE)
         # Both directions require confirmation; disabling warns that restoring full history needs a re-sync.
@@ -233,6 +237,7 @@ describe_change() {
         msg=""
         ;;
     HOST_IP)
+        flag=APPROVAL
         msg="Dashboard hostname: $old → $new."
         ;;
     HOST_PORT)
@@ -278,59 +283,7 @@ describe_change() {
             msg="Tor guard self-heal DISABLED — a stuck guard is back to WARN-only ('./pithead doctor', fix with './pithead restart tor'); the dashboard container is recreated."
         fi
         ;;
-    TELEGRAM_ENABLED)
-        msg="Telegram operator bot → $([ "$new" == "true" ] && echo on || echo off) — the dashboard container is recreated."
-        ;;
-    TELEGRAM_BOT_TOKEN)
-        # Secret — never echo the token value into the change preview / logs.
-        msg="Telegram bot token updated — the dashboard container is recreated."
-        ;;
-    TELEGRAM_CHAT_ID)
-        msg="Telegram chat id: $old → $new."
-        ;;
-    TELEGRAM_COMMANDS_ENABLED)
-        msg="Telegram command interface → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now answers" || echo "no longer answers") /status, /hashrate, /workers, /sync from the configured chat; the dashboard container is recreated."
-        ;;
-    TELEGRAM_EVENT_*)
-        msg="Telegram alert toggle ($key): $old → $new."
-        ;;
-    TELEGRAM_DAILY_SUMMARY_TIME)
-        msg="Telegram daily summary time: $old → $new (local time)."
-        ;;
-    NOTIFY_WEBHOOK_URLS)
-        # Webhook URLs often carry tokens in the query string — report the change WITHOUT
-        # printing the values (same rule as HEALTHCHECKS_PING_URL).
-        if [ -z "$new" ]; then
-            msg="Webhook alert sink(s) DISABLED — URL list cleared; the dashboard container is recreated."
-        elif [ -z "$old" ]; then
-            msg="Webhook alert sink(s) ENABLED — every alert now also POSTs as JSON to the configured URL(s), over Tor by default; the dashboard container is recreated."
-        else
-            msg="Webhook alert URL(s) updated — the dashboard container is recreated."
-        fi
-        ;;
-    NTFY_URL)
-        # The topic URL is a capability secret (whoever knows it can read/post the topic) —
-        # never print it.
-        if [ -z "$new" ]; then
-            msg="ntfy alert sink DISABLED — topic URL cleared; the dashboard container is recreated."
-        elif [ -z "$old" ]; then
-            msg="ntfy alert sink ENABLED — every alert now also POSTs to the configured ntfy topic, over Tor by default; the dashboard container is recreated."
-        else
-            msg="ntfy topic URL updated — the dashboard container is recreated."
-        fi
-        ;;
-    NTFY_TOKEN)
-        # Secret — never echo the token value into the change preview / logs.
-        msg="ntfy access token updated — the dashboard container is recreated."
-        ;;
     XMRIG_API_TOKEN | XVB_STANDBY_SOURCE) msg="Secret configuration value updated — the dashboard container is recreated." ;;
-    NOTIFY_TOR)
-        if [ "$new" == "true" ]; then
-            msg="Webhook/ntfy alerts back on Tor — endpoints see a Tor exit, not this host's IP; the dashboard container is recreated."
-        else
-            msg="⚠ Webhook/ntfy alerts OFF Tor — POSTs go out directly, so clearnet endpoints see this host's IP (the LAN/self-hosted carve-out; Tor exits can't reach private addresses); the dashboard container is recreated."
-        fi
-        ;;
     MONERO_CLEARNET_SYNC)
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.

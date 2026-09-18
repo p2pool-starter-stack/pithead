@@ -7,6 +7,8 @@
 // validate_worker_endpoints enforces — so an obviously malformed value is refused before a round
 // trip, not because this is where the trust decision is made.
 
+import { editableCandidate } from "../config/configlogic.mjs";
+
 const HOST_RE = /^[A-Za-z0-9._-]{1,253}$/;
 const TOKEN_RE = /^[!-~]{1,128}$/;
 
@@ -118,7 +120,7 @@ export function hostIsInternal(host, subnet) {
  * never touches an existing element, only pushes a new one onto the end.
  */
 export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, controlPort, token) {
-  const cfg = JSON.parse(JSON.stringify(liveConfig || {}));
+  const cfg = editableCandidate(liveConfig || {});
   const workers = cfg.workers && typeof cfg.workers === "object" ? cfg.workers : {};
   const list = Array.isArray(workers.list) ? workers.list.slice() : [];
   list.push({

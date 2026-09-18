@@ -11,7 +11,7 @@ apply_dry_run() {
     {
         # NOTE: no ensure_onion_password here — it would write an auto-generated password into
         # the candidate config. A dry run must only read; an invalid candidate fails validation.
-        parse_and_validate_config
+        PITHEAD_CONFIG_SET=1 parse_and_validate_config
         load_preserved_state
         # P2Pool's onion is the provisioning marker (see apply) — a node's may be a placeholder.
         if onion_missing "$P2POOL_ONION" || ! is_deployed; then
@@ -126,7 +126,7 @@ apply() {
         return 0
     fi
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one
-    parse_and_validate_config
+    PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state
     # P2Pool's onion is the provisioning marker, not Monero's: p2pool always runs, while a node's
     # onion is legitimately a placeholder in remote mode (#103).

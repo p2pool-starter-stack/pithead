@@ -60,6 +60,10 @@ assert_eq "doctor --json counters match verdict lines" \
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
 assert_eq "all dashboard payout remedies point at Configuration + confirmation (#1959)" \
     "$(grep -c 'payout address.*Open Configuration.*complete the confirmation step' "$STACK")" "5"
+printf release >"$DJ/variant"
+jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
+out=$(cd "$DJ" && PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$DJ/variant" PATH="$DJ/bin:$PATH" ./pithead doctor 2>&1 || true)
+assert_contains "release doctor warns that carried SSH is inert" "$out" "ssh.enabled is ignored on this release image"
 out=$(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --bogus 2>&1 || true)
 assert_contains "doctor rejects unknown options" "$out" "Unknown option"
 # support-bundle: chmod-600 tarball; doctor.json inside; .env secrets redacted by key pattern —

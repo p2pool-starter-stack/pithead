@@ -73,10 +73,45 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
-# Legacy approval-envelope keys. The container can write this envelope, so it is confirmation
-# metadata rather than a second identity. The two tamper alarms remain in NEVER_PATHS. Config-only
-# sensitive values such as price_feed and workers.list are named directly in the gate.
-CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
+# The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
+# approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
+# because the envelope backing it is container-writable — see the warning in this file's header.
+# It exists at all because #1978's "every leaf has a route" is a real goal for an appliance with no
+# host shell; what the 2026-09-13 perimeter audit removed is the "everything not otherwise listed" rule that silently swept
+# the entire security perimeter into it once #2076 took the second identity away.
+#
+# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential, plus
+# HOST_IP. The Telegram toggles switch a channel #2076 made READ-ONLY, so neither can be used to
+# commit anything, and both are instantly reversible by the same route. HOST_IP is the validated
+# dashboard.host: changing it remints the local certificate and changes the machine's mDNS
+# identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here
+# and never may be: they sit in
+# CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
+# unnoticed. TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not here either — repointing the alarm is
+# silencing it by another name.
+#
+# XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
+# "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
+# endpoint (33-render-env.sh) — and 39-describe-change.sh classifies it as a secret configuration
+# value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
+# host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
+#
+# dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
+# all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
+# config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
+# config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
+# round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
+# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
+# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
+# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
+# the "documented exception" this file used to carve out for it contradicted that promise instead
+# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
+# that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
+# Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
+# lists above; a key added here without its path there is invisible in the editor, and a path added
+# there without its key here is offered to the operator and then refused host-side.
+# Space-separated exact env-key names.
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
 # Config-path distinctions hidden inside a direct env row. P2POOL_FLAGS also carries p2pool.pool,
 # which remains ordinary, so the host checks p2pool.clearnet separately. Inactive remote-node

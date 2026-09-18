@@ -42,6 +42,7 @@ def leaf_paths(node, prefix=()):
 APPROVAL_ENV_KEY_PATHS = {
     "TELEGRAM_ENABLED": ("telegram.enabled",),
     "TELEGRAM_COMMANDS_ENABLED": ("telegram.commands.enabled",),
+    "HOST_IP": ("dashboard.host",),
 }
 # dashboard.energy is config.json-only (#504), so the price feed carries no env key to map; the
 # host gate names it by path for the same reason.

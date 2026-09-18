@@ -39,10 +39,18 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
+physical_presence_password_refusal_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+}
+
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
 # reads this printed NO response payload on a failure: it could not tell "the preview never
 # returned" from "the flags are wrong" from "an endpoint is missing" — three different defects, one
-# blank line. Bounded to the shape the row actually checks — status/destructive/approval_required,
+# blank line. `.error` is in the allowlist because "rejected" alone is still three different
+# defects: the control runner writes the refusal REASON there, and without it a rejected row cannot
+# say WHICH gate fired (never-path, physical-presence, or approval) — a check that cannot
+# distinguish its own outcomes is not a check. The reason strings are host-authored constants, not
+# request or config content. Bounded to the shape the row actually checks — status/destructive/approval_required/error,
 # and ONLY the two preview_values entries this row's own jq inspects (monero.remote.host,
 # tari.remote.host) — rather than the raw preview or every preview_values entry: an ALLOWLIST, not a
 # key/value trim, because the row is debugging exactly the case where the preview's shape cannot be
@@ -53,10 +61,10 @@ reserved_node_preview_payload() { # <preview-json, possibly empty or malformed>
         printf 'no result — the preview never returned'
         return
     }
-    printf '%s' "$preview" | jq -c '{status, destructive, approval_required,
+    printf '%s' "$preview" | jq -c '{status, destructive, approval_required, error,
         preview_values: ([.preview_values[]? |
             select(.key == "monero.remote.host" or .key == "tari.remote.host") | {key, new}])}' \
-        2>/dev/null || printf 'unparseable: %.200s' "$preview"
+        2>/dev/null || printf 'unparseable preview response'
 }
 
 _reserved_node_preview_payload_self_test() {
@@ -74,10 +82,15 @@ _reserved_node_preview_payload_self_test() {
     # endpoint keys this row checks, so a stray credential-shaped key is dropped outright, not just
     # stripped of its own old/label.
     case "$out" in *s3cret*) f=$((f + 1)) ;; esac
+    # A rejected preview must carry WHICH refusal fired — that is the whole reason .error is
+    # allowlisted, and the case this row was blind to.
+    out=$(reserved_node_preview_payload '{"status":"rejected","error":"this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick"}')
+    case "$out" in *'"status":"rejected"'*physical-presence-only*) ;; *) f=$((f + 1)) ;; esac
     out=$(reserved_node_preview_payload '')
     case "$out" in *'the preview never returned'*) ;; *) f=$((f + 1)) ;; esac
-    out=$(reserved_node_preview_payload '{"status":')
-    case "$out" in *'unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
+    out=$(reserved_node_preview_payload '{"node_password":"s3cret"')
+    case "$out" in *'unparseable preview response'*) ;; *) f=$((f + 1)) ;; esac
+    case "$out" in *s3cret*) f=$((f + 1)) ;; esac
     [ "$f" -eq 0 ] || {
         printf 'reserved-node-preview-payload self-test FAILED: %s checks\n' "$f"
         return 1
@@ -150,13 +163,113 @@ _control_request_lost_response_self_test() (
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
     rm -f "$polls"
+    # A queued request is likewise not final: the API supplies its id with `accepted`, and the
+    # next result poll is the only response that tells whether the apply completed.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"rid-7","status":"accepted"}'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A reset connection can look successful to curl while carrying no response body. The caller's
+    # id remains authoritative unless the server explicitly returned an error document.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '\n000'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A plain 5xx from the restarting proxy can follow an accepted request, so poll its fresh id.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf 'temporarily unavailable\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # The proxy may return a JSON error document too; its 5xx status still leaves the outcome open.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *)
+            cat >/dev/null
+            printf '{"error":"temporarily unavailable"}\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # A proxy's id is not the committed preview's id; a 5xx must still poll the caller's request.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*)
+            printf 'x' >>"$polls"
+            printf '{"id":"rid-7","status":"applied"}'
+            ;;
+        *'/api/control/result?id='*) printf '{"status":"rejected"}' ;;
+        *)
+            cat >/dev/null
+            printf '{"id":"other-request","error":"temporarily unavailable"}\n503'
+            ;;
+        esac
+    }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    rm -f "$polls"
+    # An id-less HTTP refusal is not a dropped 2xx reply: never poll a possibly stale request id.
+    dashboard_curl() {
+        case "$*" in
+        *'/api/control/result?id=rid-7'*) printf 'x' >>"$polls" ;;
+        *)
+            cat >/dev/null
+            printf 'forbidden\n403'
+            ;;
+        esac
+    }
+    dashboard_control_request commit "$body" 30 >/dev/null 2>&1 && return 1
+    [ ! -s "$polls" ] || return 1
     # A body with no id of its own has nothing to fall back to and must still fail fast.
     dashboard_curl() {
         cat >/dev/null
         return 52
     }
     dashboard_control_request diag-doctor '{}' 30 >/dev/null 2>&1 && return 1
-    # And a server that ANSWERED without an id refused: fail fast, do not poll the deadline out.
+    # An explicit server refusal without an id must still fail fast, not poll the deadline out.
     dashboard_curl() {
         cat >/dev/null
         printf '{"error":"Missing X-Pithead-Control header."}'
@@ -252,10 +365,18 @@ _approval_bind_payload_self_test() {
     printf 'approval-bind-payload self-test passed\n'
 }
 
+_physical_presence_password_refusal_self_test() {
+    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
+    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
+    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+    return 0
+}
+
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     set -uo pipefail
     f=0
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
+    _physical_presence_password_refusal_self_test || f=1
     exit "$f"
 fi

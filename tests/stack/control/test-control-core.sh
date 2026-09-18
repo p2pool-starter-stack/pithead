@@ -194,6 +194,11 @@ RESULTS="$C/data/control/results"
 STAGED="$C/data/control/staged"
 AUDIT="$C/data/control/audit/control.log"
 
+# A dashboard proposal intentionally omits retired SSH. The control runner restores only the
+# byte-identical carried subtree, so an unrelated dashboard save neither fails validation nor
+# silently deletes legacy config.
+jq '.ssh={enabled:true,authorized_key:"ssh-ed25519 AAAATEST carried@test"}' "$C/config.json" >"$C/config.ssh" && mv "$C/config.ssh" "$C/config.json"
+
 # Preview: a valid typed intent (pool main -> mini) → previewed result + a host-side staged copy.
 jq -n --arg w "$WALLET" --arg id "$UUID1" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
@@ -206,9 +211,20 @@ assert_eq "preview result status" "$(jq -r '.status' "$RESULTS/$UUID1.json" 2>/d
 assert_contains "preview result carries the change row" "$(jq -r '.changes[].msg' "$RESULTS/$UUID1.json" 2>/dev/null)" "P2Pool sidechain changing"
 assert_eq "pool switch alone is not destructive" "$(jq -r '.destructive' "$RESULTS/$UUID1.json" 2>/dev/null)" "false"
 [ -f "$STAGED/$UUID1.json" ] && ok "candidate staged host-side" || bad "candidate staged host-side" "missing"
+assert_eq "preview preserves carried retired SSH" "$(jq -r '.ssh.enabled' "$STAGED/$UUID1.json")" "true"
 # The staged copy carries merged secrets — it must land owner-only (#33 re-review).
 assert_eq "staged candidate is mode 600" "$(file_mode "$STAGED/$UUID1.json")" "600"
 assert_contains "preview audited" "$(cat "$AUDIT" 2>/dev/null)" "\"action\":\"preview\",\"status\":\"previewed\""
+
+# A carried subtree is the only retired SSH exception. A changed key is newly staged and must
+# fail the closed schema guard, not inherit the carried marker.
+cp -p "$STAGED/$UUID1.json" "$STAGED/$UUID1.clean"
+jq '.ssh.authorized_key = "ssh-ed25519 AAAATEST changed@test"' "$STAGED/$UUID1.json" >"$STAGED/$UUID1.next" && mv "$STAGED/$UUID1.next" "$STAGED/$UUID1.json"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID1" >"$REQS/$UUID1.json"
+run_pending >/dev/null
+assert_eq "changed retired SSH is rejected" "$(jq -r '.status' "$RESULTS/$UUID1.json")" "rejected"
+assert_contains "changed retired SSH fails the closed schema guard" "$(jq -r '.error' "$RESULTS/$UUID1.json")" "adds config keys not in the schema"
+mv "$STAGED/$UUID1.clean" "$STAGED/$UUID1.json"
 
 # Malformed id: it would become a filename, so the request is discarded with no result at all.
 printf '{"id":"../../etc/passwd","action":"preview","actor":"x","config":{}}\n' >"$REQS/evil.json"
@@ -266,6 +282,7 @@ printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID1" >"$REQS/$UUID1
 run_pending >/dev/null
 assert_eq "commit result status" "$(jq -r '.status' "$RESULTS/$UUID1.json" 2>/dev/null)" "applied"
 assert_eq "committed config landed in config.json" "$(jq -r '.p2pool.pool' "$C/config.json")" "mini"
+assert_eq "unrelated commit retains carried retired SSH" "$(jq -r '.ssh.enabled' "$C/config.json")" "true"
 [ -f "$C/config.json.bak-control" ] &&
     assert_eq "pre-change backup kept" "$(jq -r '.p2pool.pool' "$C/config.json.bak-control")" "main" ||
     bad "pre-change backup kept" "config.json.bak-control missing"
