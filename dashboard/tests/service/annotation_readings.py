@@ -63,7 +63,7 @@ a plain module rather than a helper inside the test file.
 # `config/config.py:local_miner_enabled` (slice 4) is the third, and the first member that is NOT
 # an outbound sender — so it deliberately does not lean on the grounds `annotation_gate._EMPTY`
 # records (see #1599: measured at `b0a32bd`, the tip that comment was written against, TWELVE
-# functions already held a `False` failure return and this was one of them, so its five senders
+# functions already held a `False` failure return and this was one of them, so its four senders
 # were a subset somebody read, never the whole population). No member is waved through by that
 # class; each is read on its own terms. It returns False when
 # the masked-config mount is missing or unreadable, and its docstring argues the choice outright:
@@ -72,21 +72,20 @@ a plain module rather than a helper inside the test file.
 # local_miner_enabled() else 0)` — so there is no third branch for an out-of-band answer to reach,
 # and False-on-failure and False-because-no-miner move the RAM floor by exactly the same amount.
 # `-> bool | None` would invent a return the function never makes.
-# Slice 5a adds the four OUTBOUND SENDERS as a group, and the shared argument is precisely why
-# they could be read as one: each returns True only when the send demonstrably landed, and False
-# for every other outcome — disabled, throttled, a non-2xx, or an exception. Every caller acts on
-# "the message did not go out", which is what all of those mean, so there is no out-of-band case
-# to declare and `-> bool | None` would invent a return none of them makes. The grouping has to be
-# EARNED, so each was confirmed to be that shape rather than admitted by it:
+# Slice 5a adds three outbound senders and `_probe_egress`. With the slice-2 Docker sender, the
+# four senders share one argument: each returns True only when the send demonstrably landed, and
+# False for every other outcome — disabled, throttled, a non-2xx, or an exception. Every caller
+# acts on "the message did not go out", so there is no out-of-band case to declare. The grouping
+# has to be EARNED, so each was confirmed to be that shape rather than admitted by it:
 #   `notify_sinks.py:_post`     — False when `not self.enabled`, and on `RequestException`.
 #   `telegram_notifier.py:send` — the same two, and its docstring states the contract outright.
-#   `tor_heal.py:_probe_egress` — True iff a clearnet exit answered, False on `RequestException`.
 #   `healthchecks.py:ping`      — a dead-man's switch, and the only one with TWO `except` handlers,
 #     both returning False. Its docstring already enumerates the False cases (not configured,
 #     throttled, request failed, endpoint rejected) as deliberately one answer.
 #   `docker/docker_control.py:_post` (slice 2) is the same class and is folded in here: True only
 #     on HTTP 204/304, False on every other status and any exception, and its callers act on "the
 #     container action did not happen", which is what both False paths mean.
+# `_probe_egress` is not a sender: True iff a clearnet exit answered, False on `RequestException`.
 #
 # Slice 5b adds two MORE, listed separately rather than folded into the group above, because they
 # fail in OPPOSITE directions — which is why `service/` was split rather than taken whole:

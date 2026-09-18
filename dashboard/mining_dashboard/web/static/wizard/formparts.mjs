@@ -5,7 +5,7 @@ import { Err, Field, Note } from "./wizardparts.mjs";
 
 export function renderRigFields(app) {
   const { rigPool, rigWorker, rigPassword, rigDefaults } = app.state;
-  return html`<h3>Where it mines</h3>
+  return html`<h2>Where it mines</h2>
         <${Field} label="Pool address (host:port)">
             <input class="wizard-mono" value=${rigPool}
                 onInput=${(e) => app.setState({ rigPool: e.target.value })}

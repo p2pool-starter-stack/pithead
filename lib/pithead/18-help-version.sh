@@ -42,6 +42,10 @@ Inspection:
   logs [service]            Follow logs for all containers, or a single service.
   status                    Show container status + health-check every expected service
                             (warns about anything down; non-zero exit if so).
+  test-alert                Send one marked test message through every configured Telegram,
+                            webhook, and ntfy sink. Reports each result without printing its
+                            URL or token; Healthchecks is excluded because a ping moves its
+                            dead-man switch.
   doctor [--json]           Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk,
                             .env/onion state, and container status — a paste-able health report.
                               --json           machine-readable report on stdout (the human

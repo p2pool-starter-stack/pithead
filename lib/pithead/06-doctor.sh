@@ -85,6 +85,10 @@ doctor() {
 
     # --- Monero payout address must be a PRIMARY address (p2pool can't pay subaddresses/integrated) (#250) ---
     if [ -f "$CONFIG_FILE" ]; then
+        if is_appliance && [ "$(appliance_variant)" = release ] &&
+            [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE" 2>/dev/null)" = true ]; then
+            dr_warn "ssh.enabled is ignored on this release image — SSH is available only in a debug build."
+        fi
         local _mw
         _mw=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE" 2>/dev/null)
         if [ -n "$_mw" ] && [ "$_mw" != "your_monero_wallet_address" ]; then
@@ -330,6 +334,7 @@ doctor() {
         fi
         check_revenue_containers
         check_dashboard_answers
+        check_dashboard_public_listener
         check_monerod_synchronized
     fi
 
