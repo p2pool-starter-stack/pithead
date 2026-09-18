@@ -16,7 +16,7 @@ situation honestly.
 | **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (`make test`) |
 | **2 — Contract** | `tests/integration/fakes/test_contract.py` | The real Monero/Tari clients parsing real daemon wire formats, and `requests` completing a capped HTTP request through a fake SOCKS5 CONNECT proxy | Every PR (docker-free) |
 | **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: hold/release and reject/readmit actually stopping/starting `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
-| **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Manual / release gate (`make test-integration`; the battery on the KVM bench) |
+| **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate (`make test-integration`; the battery on the KVM bench) |
 
 Stubs do most of the work. The dashboard unit tests drive the hard runtime states with mocked
 clients; more mocks for the same logic would duplicate them. What stubs can't prove is wiring:
@@ -34,6 +34,31 @@ The fakes are the enabler. The whole control plane is env-configurable (`MONERO_
 `TARI_GRPC_ADDRESS`, `DOCKER_CONTROL_URL`, `NODE_DOWN_AFTER_SEC`, `UPDATE_INTERVAL`, …), so the
 real code points at small controllable servers and drives the entire state machine in seconds, in
 CI, with no chain and no test box.
+
+## What a PR must prove
+
+The tier a change needs follows from the paths its diff touches, never from the size of the diff or
+from a claim that the change is static, config-only, render-only or one line. Tiers 1 to 3 run on
+every PR on GitHub; tier 4 is the release gate and, narrowed to what the change touches, the per-PR
+gate for anything that changes what runs on a box. The rows mirror bench-ci's "Which tier" table.
+
+| The diff touches | Proof on the PR's head before merge |
+|---|---|
+| `build/<service>/`: a Dockerfile, an entrypoint, a config template, a healthcheck, a seed list | tiers 1 to 3 green, then a bench-ci `tier4-e2e` job with `options.mode` `targeted` (or `matrix`): the branch is built and deployed, the service starts from the rendered file and reports healthy |
+| compose files, config rendering (`lib/pithead/*.sh` apply, render and inject paths, `config.reference.json`, templates), the control plane, anything that stops or starts a container | the same `tier4-e2e` `targeted` or `matrix` job |
+| deploy, upgrade and restore paths, merge-mining, Tor, real miners | `tier4-e2e`, `targeted` or `matrix`, or the phase or scenario that exercises it |
+| `os/`, RAUC, the wizard, first boot, the installer, updates | `tier4-kvm`, one phase at a time; `all` before a release only |
+| the RigForge worker to stack contract | rigforge `tier4-e2e` |
+| dashboard logic and its tests, docs, workflows, scripts that never run on a box | tiers 1 to 3 are the proof; the PR body names this row as the reason no bench job ran |
+
+A tier-1 assertion on a rendered file is required for a config change and never sufficient: it
+proves the render, not that the daemon accepts the file. #2327 added `network = "mainnet"` under
+`[common]` in `build/tari/config.toml.template` with a tier-1 test that the rendered file carried
+the line; every tier-1 to tier-3 check passed, and minotari_node v5.3.1, which accepts only
+`override_from` and `base_path` there, exited before it started on every bench that rendered the
+template. `options.mode: check` reads what already runs on the bench and proves nothing about the
+branch. A job on an older commit does not cover the head. A PR in the first five rows with no job
+on its head is not ready for review, and the adversarial review returns it.
 
 ## Scenario catalog
 
@@ -349,10 +374,13 @@ handful of suites are invoked as their own CI step instead and are listed as exe
 | **Test-inventory drift** check (every suite still enumerates; every domain file is sourced) | — | every PR | ✅ required |
 | Fake-daemon **docker mini-stack** | 3 | PRs touching the harness/dashboard | ✅ (own workflow) |
 | **Live config matrix** on real nodes | 4 | manual / pre-release | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
+| **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e`, `targeted` or `matrix`) | ✅ required: the adversarial review returns a PR without it |
 | **KVM appliance battery** (`tests/os/run.sh`) | 4 | manual / pre-release | ✅ **release gate for the image** ([appliance-release.md](appliance-release.md)) |
 
 The first three tiers run on every PR with no special infrastructure. Tier 4 is the blocking
-pre-release gate (see [Releasing](releasing.md)) because it needs the real synced nodes.
+pre-release gate (see [Releasing](releasing.md)) because it needs the real synced nodes, and,
+narrowed to what the diff touches, the per-PR gate for any change to what runs on a box (see
+[What a PR must prove](#what-a-pr-must-prove)).
 
 ### Engineering standards
 
