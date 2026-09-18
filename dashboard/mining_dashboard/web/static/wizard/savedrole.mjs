@@ -57,9 +57,9 @@ export const SavedRoleScreen = ({
     class="card">
     ${
       kept
-        ? html`<h3>Keeping this machine as it is</h3>
+        ? html`<h2>Keeping this machine as it is</h2>
             <p>Nothing was changed. This page is done — the machine carries on starting up.</p>`
-        : html`<h3>This machine is already set up</h3>
+        : html`<h2>This machine is already set up</h2>
             <p>It is ${summary.name}.</p>
             ${summary.rows.map(
               (r) =>
