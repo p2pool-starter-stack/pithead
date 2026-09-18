@@ -24,9 +24,8 @@ assert_rc "docs-voice guard refuses an empty prose-doc enumeration directly" "$r
 assert_contains "docs-voice refusal names the empty enumeration" "$out" "prose-doc enumeration returned zero files"
 
 echo "== unit: lint-operator-strings self-test (#755) =="
-# The operator-strings guard's frontend scanner is non-trivial awk (comment-stripping + CSS-hex-colour
-# skip); a silent break would make it stop catching leaks. Its --self-test drives fixtures through the
-# real scanners and fails if a planted #NNN is missed or a hex colour/comment is wrongly flagged.
+# The operator-strings guard's frontend scanner is non-trivial awk (comment-stripping + CSS-hex-colour skip); a silent break would make it stop catching leaks.
+# Its --self-test drives fixtures through the real scanners and fails if a planted #NNN is missed or a hex colour/comment is wrongly flagged.
 bash "$ROOT/scripts/lint/lint-operator-strings.sh" --self-test >/dev/null 2>&1
 assert_rc "operator-strings guard self-test passes" "$?" "0"
 
@@ -39,9 +38,8 @@ bash "$ROOT/scripts/watch/go-raise-watch.sh" --self-test >/dev/null 2>&1
 assert_rc "Go module raise watch self-test passes" "$?" "0"
 
 echo "== unit: resolve-pins self-test (#1137) =="
-# pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still
-# matches what its registry serves for that tag. This is the check that does, and its --self-test
-# drives the exact half-done bump #1137 is about (tag moved, old digest left in the file) red.
+# pin-watch.sh above compares VERSIONS; it does not ask whether a pinned tag@sha256 digest still matches what its registry serves for that tag.
+# This is the check that does, and its --self-test drives the exact half-done bump #1137 is about (tag moved, old digest left in the file) red.
 bash "$ROOT/scripts/release/resolve-pins.sh" --self-test >/dev/null 2>&1
 assert_rc "resolve-pins self-test passes" "$?" "0"
 

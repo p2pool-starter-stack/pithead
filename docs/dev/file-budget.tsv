@@ -74,7 +74,6 @@ tests/stack/lifecycle/recovery.sh	420
 tests/stack/run.sh	407
 tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462
-tests/stack/test-harness-tooling.sh	402
 tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
