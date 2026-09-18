@@ -115,22 +115,27 @@ Releases are cut on a private build/test server that runs the full Monero and fu
 `make release` (or `pithead release`), runs the pipeline. Nothing is promoted or published until
 every gate is green.
 
+Use `--allow-dirty` with `--dry-run` to rehearse uncommitted changes.
+Every real release path requires a clean worktree so the approved commit is
+the bytes that are built and published. Before bundling, it rebuilds `pithead`
+from its slices and refuses a different generated artifact.
+
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
 > runners (and what does run free on every PR), and how bench-ci owns the release gate are covered
 > in [Release / Validation Server](release-server.md).
 
 ### Branch mechanics
 
-Releases are cut from `develop`. Land the release-prep commit (`VERSION`, `pyproject.toml`, the
-`CHANGELOG.md` entry) as a normal PR, run the pipeline with that commit checked out, and publish:
-the tag lands on it, and `release.sh` then moves `main` to the tagged commit with a fast-forward
-push. `main` keeps its meaning — the last released commit — and stays an ancestor of `develop` by
-construction, so there is no back-merge and no post-release repair step ([#1076]; releases through
-v1.19.3 instead merged `develop` into `main` and back, and the back-merge was missed on v1.19.0).
-Commits that land on `develop` after the prep commit sit ahead of `main`, the normal state
-between releases — cut with the prep commit checked out, not whatever `develop` has moved on to.
-`release.sh` warns (it does not abort) when the working tree is on any branch other than
-`develop`.
+Releases are cut from `develop`. Land the release-prep commit (`VERSION`, `pyproject.toml`, and a
+draft `CHANGELOG.md` entry) as a normal PR. On the cut date, land a final cut commit on `develop`
+that refreshes the changelog for every included operator-visible change and sets its heading to
+the current UTC date. Run the pipeline with the final cut commit checked out: the tag lands on it,
+and `release.sh` then moves `main` to the tagged commit with a fast-forward push. `main` keeps its
+meaning — the last released commit — and stays an ancestor of `develop` by construction, so there
+is no back-merge and no post-release repair step ([#1076]; releases through v1.19.3 instead merged
+`develop` into `main` and back, and the back-merge was missed on v1.19.0). Commits that land on
+`develop` after the final cut commit sit ahead of `main`, the normal state between releases.
+`release.sh` warns (it does not abort) when the working tree is on any branch other than `develop`.
 
 The fast-forward push cannot ride a PR: GitHub merges a PR by merge commit, squash, or rebase,
 each of which mints a new commit, and the point is that `main` gains no object the tag does not
@@ -147,8 +152,8 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Pipeline: stage → smoke-test → promote
 
-1. Preflight: build the git-ignored `pithead` executable from `lib/pithead/*.sh`, then check the
-   clean working tree; read the product version from the top-level `VERSION` file; confirm
+1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
+   `lib/pithead/*.sh`; read the product version from the top-level `VERSION` file; confirm
    `vX.Y.Z` isn't already released; resolve the component pins into the ingredients manifest.
    The generated executable is copied into the release bundle; its source slices are not.
 2. Bench gate (blocking): require a successful `bench-ci/tier4` commit status for the exact

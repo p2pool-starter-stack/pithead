@@ -126,6 +126,7 @@ signing_decide() { # <cwd> <env-assignments> [action]
         # shellcheck disable=SC1090
         source "$REL" 2>/dev/null
         set +eu
+        export REPO_ROOT="$ROOT"
         eval "$_envs"
         trap 'printf " enabled=%s" "${COSIGN_ENABLED:-unset}"' EXIT
         resolve_signing 2>&1

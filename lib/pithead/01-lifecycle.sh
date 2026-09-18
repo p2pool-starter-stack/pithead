@@ -103,16 +103,36 @@ remove_deactivated_profile_containers() {
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
 compose_up_checked() {
-    local tmp out rc
+    local tmp out rc _attempt
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
-    tmp="$(mktemp)"
-    compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
-    rc=${PIPESTATUS[0]}
-    out="$(<"$tmp")"
-    rm -f "$tmp"
-    [ "$rc" -ne 0 ] && explain_subnet_collision "$out"
+    # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
+    # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
+    # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped
+    # state to be started" (Docker/Podman both use this shape). That resolves itself once the
+    # in-flight transition finishes, so a short second pass recovers it instead of failing an
+    # otherwise-successful config change; a real failure (bad image, port clash, subnet collision)
+    # repeats identically and stays fatal.
+    for _attempt in 1 2; do
+        tmp="$(mktemp)"
+        compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
+        rc=${PIPESTATUS[0]}
+        out="$(<"$tmp")"
+        rm -f "$tmp"
+        [ "$rc" -eq 0 ] && return 0
+        case "$out" in
+        *"must be in Created or Stopped state to be started"*)
+            [ "$_attempt" -eq 1 ] && {
+                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                sleep 3
+                continue
+            }
+            ;;
+        esac
+        break
+    done
+    explain_subnet_collision "$out"
     return "$rc"
 }
 

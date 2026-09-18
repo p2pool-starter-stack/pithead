@@ -198,11 +198,13 @@ chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/conta
 chk "container storage on /data" 'grep -q "graphroot = \"/data/containers/storage\"" "$ROOT/etc/containers/storage.conf"'
 chk "wizard image baked (offline first boot)" 'ls "$ROOT"/opt/pithead/images/*.tar.gz'
 chk "installer + its whole toolset" '[ -x "$ROOT/usr/local/sbin/pithead-install" ] && [ -e "$ROOT/usr/sbin/sgdisk" ] && [ -e "$ROOT/usr/bin/jq" ]'
+chk "unused xxd package absent (#1380)" 'package_absent "$ROOT" xxd'
 chk "grub.cfg staged for installs" '[ -s "$ROOT/usr/share/pithead/grub.cfg" ]'
 chk "rauc daemon present (CLI alone cannot install)" '[ -f "$ROOT/usr/lib/systemd/system/rauc.service" ]'
 chk "rauc keyring baked" '[ -s "$ROOT/etc/rauc/keyring.pem" ]'
 chk "firstboot + sync units enabled" 'ls "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-firstboot.service "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-sync.service'
 chk "program tree at /opt/pithead" '[ -x "$ROOT/opt/pithead/pithead" ] && [ -s "$ROOT/opt/pithead/VERSION" ]'
+chk "unsupported RigForge tests absent (#1380)" '[ ! -e "$ROOT/opt/rigforge/tests" ]'
 
 echo "==> the built-in miner (local_miner on the appliance)"
 # The whole point of baking: nothing here can be installed after the image ships. A missing
@@ -352,6 +354,8 @@ chk "blanket disable preset baked (first-boot preset-all must be a no-op)" \
     'grep -qx "disable \*" "$ROOT/etc/systemd/system-preset/00-pithead.preset"'
 chk "systemd-firstboot masked (every boot is a first boot with an empty machine-id)" \
     '[ "$(readlink "$ROOT/etc/systemd/system/systemd-firstboot.service")" = "/dev/null" ]'
+chk "release image ignores config-driven SSH" \
+    'release_line=$(grep -nF "[ \"\$variant\" = release ]" "$ROOT/opt/pithead/pithead" | head -1 | cut -d: -f1) && start_line=$(grep -nF "systemctl start ssh" "$ROOT/opt/pithead/pithead" | head -1 | cut -d: -f1) && [ "$release_line" -lt "$start_line" ] && sed -n "${release_line},$((release_line + 4))p" "$ROOT/opt/pithead/pithead" | grep -qx "        en=false"'
 
 # The sibling carries the refusals that stop a debug image shipping as a release; this script runs
 # without -e, so a missing sibling must refuse here rather than source nothing and report clean.

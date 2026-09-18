@@ -195,6 +195,51 @@ assert_contains "the missing App-id refusal names its setting" "$bench_no_app_id
 bench_bad_slug="$(bench_tier4_gate '[]' 4242 4242 'Bench CI!' 2>&1)"
 assert_rc "an invalid App slug refuses the release" "$?" "1"
 assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "BENCH_CI_APP_SLUG"
+echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
+dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
+release_tree_gate() { # <dry-run> <allow-dirty>
+    local dry_run="$1" allow_dirty="$2"
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
+        source "$REL" 2>/dev/null
+        set +eu
+        export DRY_RUN="$dry_run"
+        export ALLOW_DIRTY="$allow_dirty"
+        GIT_COMMIT="$(git rev-parse HEAD)"
+        export GIT_COMMIT
+        require_clean_release_tree
+    )
+}
+dirty_real_allow_out="$(release_tree_gate 0 1 2>&1)"
+assert_rc "dirty real release refuses --allow-dirty" "$?" "1"
+assert_contains "dirty real --allow-dirty refusal requires --dry-run" "$dirty_real_allow_out" "--allow-dirty requires --dry-run"
+assert_rc "dirty real release refuses the worktree" "$(
+    release_tree_gate 0 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run requires --allow-dirty" "$(
+    release_tree_gate 1 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run permits --allow-dirty" "$(
+    release_tree_gate 1 1 >/dev/null 2>&1
+    echo $?
+)" "0"
+git_status_failure="$({
+    cd "$ROOT" || exit
+    set --
+    # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
+    source "$REL" 2>/dev/null
+    set +eu
+    export DRY_RUN=0 ALLOW_DIRTY=0 GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+    git() { return 1; }
+    require_clean_release_tree
+} 2>&1)"
+assert_rc "a failed worktree inspection refuses the release" "$?" "1"
+assert_contains "a failed worktree inspection is diagnosed" "$git_status_failure" "Could not inspect the working tree"
+rm -f "$dirty_marker"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
 # repoints `current`, which is what makes rollback possible. So asserting on the directory the run
