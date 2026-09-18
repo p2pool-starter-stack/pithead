@@ -5,11 +5,6 @@
 # Base directory for blockchain database and logs
 base_path = "/var/tari/node"
 
-# Pin the active chain (#2304): without this key minotari_node falls back to its binary-default
-# network instead of the [mainnet.*] sections below, so the node (and the payout wallet's view of
-# it) can silently sync a different chain than the one this stack is built and documented for.
-network = "mainnet"
-
 [p2p.seeds]
 # DNS seeds are DISABLED for privacy (dns_seeds = [] below), so the node does ZERO seed DNS and
 # bootstraps purely from the onion peer_seeds over Tor (#162). The name servers below are now inert,

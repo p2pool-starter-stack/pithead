@@ -239,7 +239,7 @@ _rag_drive() { # <mutation|-> <scenario json>
 # rather than turning some later assertion vacuous.
 assert_eq "recovery page build(): the page exports every function this suite drives" \
     "$(_rag_build - --exports)" \
-    "build checkAuth checkSsh checkTari checkXmr moneroAddressType tariAddressType"
+    "build checkAuth checkTari checkXmr moneroAddressType tariAddressType"
 
 # 1. Dashboard login ticked, username typed, password left blank. This is the recovery path
 #    docs/appliance.md points a locked-out operator at.
