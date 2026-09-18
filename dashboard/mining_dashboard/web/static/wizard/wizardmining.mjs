@@ -5,9 +5,9 @@
 // answer shown is worth proving without a browser.
 
 import { html } from "../app/preact.mjs";
-import { Field, Note } from "./wizardparts.mjs";
+import { Field, Note, RadioField } from "./wizardparts.mjs";
 
-// Which of the three answers a stored `tari.mode` is, for the select to show.
+// Which of the three answers a stored `tari.mode` is, for the question to show.
 //
 // Only the literal "off" reads as declined. Everything else — a missing key included — is a yes,
 // because that is what the host does with a config written before the question existed
@@ -31,13 +31,12 @@ export function tariAnswer(mode) {
 // there would have blocked submit on a form that never asks the question. `required` stays on it
 // for a yes — that is the same bar the Monero address holds.
 export const TariSection = ({ answer, v, on }) => html`<h3>Tari merge-mining</h3>
-    <${Field} label="Merge-mine Tari?">
-        <select value=${answer} onChange=${on("tariMode")}>
-            <option value="off">No — mine Monero only (default)</option>
-            <option value="local">Yes — run a Tari node on this machine</option>
-            <option value="remote">Yes — use a Tari node I already run</option>
-        </select>
-    <//>
+    <${RadioField} label="Merge-mine Tari?" name="tari-mode" value=${answer}
+        onChange=${on("tariMode")} options=${[
+          ["off", "No", "Mine Monero only (default)."],
+          ["local", "Yes, with the bundled node", "Run a Tari node on this machine."],
+          ["remote", "Yes, with my node", "Use a Tari node I already run."],
+        ]} />
     <${Note}>Merge-mining earns Tari from the same work that mines Monero, so it costs no
     hashrate — but it needs its own payout address and a node of its own, and the bundled node
     adds a 200 GiB disk budget on top of Monero's. The Configuration view carries this switch, so
@@ -73,12 +72,11 @@ export const TariSection = ({ answer, v, on }) => html`<h3>Tari merge-mining</h3
 // default answer here is the one a machine already had, and only a No changes anything. There is
 // no follow-up question by design — the donor id and tier keep their defaults and stay editable
 // from the dashboard, which is where the raffle's own decision table lives.
-export const XvbField = ({ v, on }) => html`<${Field} label="Join the XMRvsBeast raffle?">
-        <select value=${String(v("xvb") ?? true)} onChange=${on("xvb")}>
-            <option value="true">Yes — donate a slice of hashrate to the raffle (default)</option>
-            <option value="false">No — send everything to P2Pool</option>
-        </select>
-    <//>
+export const XvbField = ({ v, on }) => html`<${RadioField} label="Join the XMRvsBeast raffle?"
+        name="xvb" value=${String(v("xvb") ?? true)} onChange=${on("xvb")} options=${[
+          ["true", "Yes", "Donate a slice of hashrate to the raffle (default)."],
+          ["false", "No", "Send everything to P2Pool."],
+        ]} />
     <${Note}>The switching engine donates only enough hashrate to hold your target tier and routes
     everything else to P2Pool. Donating above a tier's threshold earns nothing extra, because the
     raffle picks its winners at random.<//>`;

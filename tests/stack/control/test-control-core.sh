@@ -195,6 +195,11 @@ RESULTS="$C/data/control/results"
 STAGED="$C/data/control/staged"
 AUDIT="$C/data/control/audit/control.log"
 
+# A dashboard proposal intentionally omits retired SSH. The control runner restores only the
+# byte-identical carried subtree, so an unrelated dashboard save neither fails validation nor
+# silently deletes legacy config.
+jq '.ssh={enabled:true,authorized_key:"ssh-ed25519 AAAATEST carried@test"}' "$C/config.json" >"$C/config.ssh" && mv "$C/config.ssh" "$C/config.json"
+
 # Preview: a valid typed intent (pool main -> mini) → previewed result + a host-side staged copy.
 jq -n --arg w "$WALLET" --arg id "$UUID1" '{id:$id, action:"preview", actor:"admin", config:{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
@@ -207,9 +212,20 @@ assert_eq "preview result status" "$(jq -r '.status' "$RESULTS/$UUID1.json" 2>/d
 assert_contains "preview result carries the change row" "$(jq -r '.changes[].msg' "$RESULTS/$UUID1.json" 2>/dev/null)" "P2Pool sidechain changing"
 assert_eq "pool switch alone is not destructive" "$(jq -r '.destructive' "$RESULTS/$UUID1.json" 2>/dev/null)" "false"
 [ -f "$STAGED/$UUID1.json" ] && ok "candidate staged host-side" || bad "candidate staged host-side" "missing"
+assert_eq "preview preserves carried retired SSH" "$(jq -r '.ssh.enabled' "$STAGED/$UUID1.json")" "true"
 # The staged copy carries merged secrets — it must land owner-only (#33 re-review).
 assert_eq "staged candidate is mode 600" "$(file_mode "$STAGED/$UUID1.json")" "600"
 assert_contains "preview audited" "$(cat "$AUDIT" 2>/dev/null)" "\"action\":\"preview\",\"status\":\"previewed\""
+
+# A carried subtree is the only retired SSH exception. A changed key is newly staged and must
+# fail the closed schema guard, not inherit the carried marker.
+cp -p "$STAGED/$UUID1.json" "$STAGED/$UUID1.clean"
+jq '.ssh.authorized_key = "ssh-ed25519 AAAATEST changed@test"' "$STAGED/$UUID1.json" >"$STAGED/$UUID1.next" && mv "$STAGED/$UUID1.next" "$STAGED/$UUID1.json"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID1" >"$REQS/$UUID1.json"
+run_pending >/dev/null
+assert_eq "changed retired SSH is rejected" "$(jq -r '.status' "$RESULTS/$UUID1.json")" "rejected"
+assert_contains "changed retired SSH fails the closed schema guard" "$(jq -r '.error' "$RESULTS/$UUID1.json")" "adds config keys not in the schema"
+mv "$STAGED/$UUID1.clean" "$STAGED/$UUID1.json"
 
 # Malformed id: it would become a filename, so the request is discarded with no result at all.
 printf '{"id":"../../etc/passwd","action":"preview","actor":"x","config":{}}\n' >"$REQS/evil.json"
@@ -253,7 +269,7 @@ jq -n --arg w "$WALLET" --arg id "$UUID2" '{id:$id, action:"preview", actor:"x",
     dashboard:{auth:{password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID2.json"
 run_pending >/dev/null
 assert_eq "invalid candidate config is rejected" "$(jq -r '.status' "$RESULTS/$UUID2.json" 2>/dev/null)" "rejected"
-assert_contains "rejection carries pithead's validation error" "$(jq -r '.error' "$RESULTS/$UUID2.json" 2>/dev/null)" "p2pool.pool"
+assert_contains "rejection carries pithead's validation log" "$(jq -r '.log' "$RESULTS/$UUID2.json" 2>/dev/null)" "p2pool.pool"
 [ ! -f "$STAGED/$UUID2.json" ] && ok "rejected candidate is not left staged" || bad "rejected candidate is not left staged" "staged file present"
 
 # Commit without a staged intent → rejected (preview first).
@@ -267,6 +283,7 @@ printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID1" >"$REQS/$UUID1
 run_pending >/dev/null
 assert_eq "commit result status" "$(jq -r '.status' "$RESULTS/$UUID1.json" 2>/dev/null)" "applied"
 assert_eq "committed config landed in config.json" "$(jq -r '.p2pool.pool' "$C/config.json")" "mini"
+assert_eq "unrelated commit retains carried retired SSH" "$(jq -r '.ssh.enabled' "$C/config.json")" "true"
 [ -f "$C/config.json.bak-control" ] &&
     assert_eq "pre-change backup kept" "$(jq -r '.p2pool.pool' "$C/config.json.bak-control")" "main" ||
     bad "pre-change backup kept" "config.json.bak-control missing"
@@ -305,3 +322,43 @@ printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID2" >"$REQS/$UUID2
 run_pending >/dev/null
 assert_contains "expired staged intent is rejected" "$(jq -r '.error' "$RESULTS/$UUID2.json" 2>/dev/null)" "expired"
 [ ! -f "$STAGED/$UUID2.json" ] && ok "expired staged intent cleared" || bad "expired staged intent cleared" "still staged"
+
+echo "== black-box: reserved-node preview is CONFIRM-tier, not approval-tier (#1888/#1920; #2297) =="
+# Baseline is already remote-mode on BOTH chains so the candidate below moves only the four
+# node-endpoint keys (MONERO_NODE_HOST/RPC_PORT/ZMQ_PORT, TARI_GRPC_ADDRESS) — a local_node MODE
+# switch is a DIFFERENT, DEST-flagged row (COMPOSE_PROFILES in 39-describe-change.sh) that would
+# set approval_required for an unrelated reason and defeat this measurement.
+UUID3="33333333-3333-4333-8333-333333333333"
+jq -n --arg w "$WALLET" '{
+    monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
+            remote:{host:"baseline-monero.example",rpc_port:18081,zmq_port:18083}},
+    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"baseline-tari.example",grpc_port:18142}},
+    p2pool:{pool:"mini"},
+    dashboard:{secure:true,host:"box.lan",
+               auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}' >"$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id, action:"preview", actor:"admin", config:{
+    monero:{mode:"remote",wallet_address:$w,node_username:"u",node_password:"p",
+            remote:{host:"reserved-monero.example",rpc_port:18089,zmq_port:18090}},
+    tari:{wallet_address:"'"$VALID_TARI"'",mode:"remote",remote:{host:"reserved-tari.example",grpc_port:18142}},
+    p2pool:{pool:"mini"},
+    dashboard:{secure:true,host:"box.lan",
+               auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "reserved-node preview status" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "previewed"
+# CONFIRM (39-describe-change.sh's node-endpoint row) counts toward `destructive`, same as DEST.
+assert_eq "reserved-node preview is destructive (CONFIRM tier)" "$(jq -r '.destructive' "$RESULTS/$UUID3.json" 2>/dev/null)" "true"
+# The reachability probe, not the approval envelope, is the compensating control for this tier
+# (#1888/#1920): only a DEST row or a CONTROL_DASHBOARD_APPROVAL_KEYS key sets approval_required,
+# and neither fires for a same-mode endpoint repoint — so this must read false, not true.
+assert_eq "reserved-node preview does not demand the approval envelope" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json" 2>/dev/null)" "false"
+assert_eq "monero endpoint named in preview_values" \
+    "$(jq -r '.preview_values[] | select(.key=="monero.remote.host") | .new' "$RESULTS/$UUID3.json" 2>/dev/null)" "reserved-monero.example"
+assert_eq "tari endpoint named in preview_values" \
+    "$(jq -r '.preview_values[] | select(.key=="tari.remote.host") | .new' "$RESULTS/$UUID3.json" 2>/dev/null)" "reserved-tari.example"
+rm -f "$RESULTS/$UUID3.json" "$STAGED/$UUID3.json"
+# Restore the baseline this file's own tail is documented to leave behind (pool mini, local mode,
+# node_password "p", dashboard password "a control passphrase") — test-secrets-masking.sh, sourced
+# right after this file, reads that exact state rather than re-establishing it itself.
+control_config mini
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
