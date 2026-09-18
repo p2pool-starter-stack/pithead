@@ -49,7 +49,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" HARNESS_SSH_FAULT=0 # raw --harness-arg values -> validate_harness_args's output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -86,7 +86,7 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
+  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted, incl. --fault-injection-ssh; see lib/harness-args.sh)
   --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
@@ -620,7 +620,7 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}" # bench-ci's one-phase selection, after the mode's own (#2179)
+    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}$([ "${HARNESS_SSH_FAULT:-0}" = "1" ] && printf ' --fault-ssh-dest %s' "$(quote_arg "$BENCH_HOST")")" # bench-ci's phases (#2179), #2000's SSH dest
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     local rollback_b64 pools_b64

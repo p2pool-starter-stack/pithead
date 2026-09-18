@@ -50,6 +50,7 @@ CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
 RUN_FAULTS=0
+FAULT_SSH_DEST="" # #2000: --fault-ssh-dest <user@host> — run just the fault-injection phase's rx() calls over SSH
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
 RUN_RIGFORGE=0
@@ -201,7 +202,7 @@ main() {
         run_rigforge_integration
     fi
     [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection_maybe
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke

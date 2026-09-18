@@ -58,6 +58,9 @@ MATRIX:
                          real clock-drift verdict, and tmpfs-fills the dashboard data dir for
                          a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
                          SSH and locally. Slow (healthcheck + node-health debounce).
+  --fault-ssh-dest <h>   with --fault-injection: run just that phase's rx() calls (lib.sh) against
+                         <user@host> over SSH instead of the run's own --local/--host mode (#2000).
+                         Proves the SSH quoting branch without moving the rest of the run.
   --image-upgrade <old-sha> <new-sha>
                          run `pithead upgrade` from a private candidate release bundle against
                          the already-running old images and prove image revision, chain-data and
@@ -216,6 +219,10 @@ parse_args() {
             RUN_FAULTS=1
             shift
             ;;
+        --fault-ssh-dest)
+            FAULT_SSH_DEST="$2"
+            shift 2
+            ;;
         --image-upgrade)
             [ "$#" -ge 3 ] || {
                 it_err "--image-upgrade requires <old-sha> <new-sha>."
@@ -305,6 +312,10 @@ parse_args() {
 
     if [ "$IT_MODE" = "ssh" ] && [ -z "$IT_SSH_DEST" ]; then
         it_err "Provide --host <user@host> or --local. See --help."
+        exit 2
+    fi
+    if [ -n "$FAULT_SSH_DEST" ] && [ "$RUN_FAULTS" != "1" ]; then
+        it_err "--fault-ssh-dest requires --fault-injection."
         exit 2
     fi
     [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || {
