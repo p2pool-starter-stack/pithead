@@ -85,12 +85,12 @@ services:
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
       TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
-      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-itest-token}"
+      TELEGRAM_BOT_TOKEN: "itest-token"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
       TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-http://fake-sink:9000}"
       NOTIFY_WEBHOOK_URLS: "${NOTIFY_WEBHOOK_URLS-http://fake-sink:9000/webhook}"
       NTFY_URL: "${NTFY_URL-http://fake-sink:9000/ntfy}"
-      NTFY_TOKEN: "${NTFY_TOKEN:-itest-token}"
+      NTFY_TOKEN: "itest-token"
       NOTIFY_TOR: "false"
     depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink]
 
@@ -158,7 +158,7 @@ services:
     container_name: itest-fake-hc
     networks: [itestnet]
     entrypoint: []
-    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log", "--event-log", "/tmp/events.log"]
+    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log"]
     volumes:
       - "../fakes:/fakes:ro"
 

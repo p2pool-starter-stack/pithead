@@ -139,6 +139,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 |---|---|---|
 | Healthchecks.io liveness ping reaches the configured receiver | dashboard loop | 3 ▶ (`fake_hc`) |
 | Telegram, webhook, and ntfy receive a configured node-down alert; disabled sinks make no request | monerod down / disabled configuration | 3 ▶ (`fake_sink`) |
+| Telegram *command* polling (`getUpdates`) rides the same `TELEGRAM_API_BASE` seam the alert path does, but is off by default (`TELEGRAM_COMMANDS_ENABLED`) and the mini-stack never enables it — the seam is proven outbound-only here | dashboard loop | 1 ✅ (mocked transport) |
 
 ### D. Container health verdicts (`pithead status`)
 

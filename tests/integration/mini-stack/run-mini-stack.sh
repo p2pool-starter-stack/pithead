@@ -321,7 +321,13 @@ set_tari down
 assert_stays "Tari-optional: itest-xmrig-proxy keeps mining through a Tari outage" itest-xmrig-proxy running 8
 set_monerod down
 assert_state "Tari-optional: monerod outage still rejects workers" itest-xmrig-proxy exited 90
-if [ -z "$(sink_requests)" ]; then
+# A dead recorder returns the same empty string as a quiet one: a missing container, a failed
+# exec or an unreadable log would all read as "no requests" and pass this control vacuously.
+# Prove fake-sink is up FIRST, so emptiness means the sinks stayed silent (#2263).
+sink_state="$(cstate itest-fake-sink)"
+if [ "$sink_state" != running ]; then
+    c_bad "disabled alert sinks make no requests" "recorder itest-fake-sink is '$sink_state' — an empty log proves nothing"
+elif [ -z "$(sink_requests)" ]; then
     c_ok "disabled alert sinks make no requests"
 else
     c_bad "disabled alert sinks make no requests" "$(sink_requests | tr '\n' ' ')"

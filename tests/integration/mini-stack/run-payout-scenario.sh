@@ -65,10 +65,18 @@ PY
 }
 
 # The payout webhook rides the same NOTIFY_WEBHOOK_URLS the alert-sink coverage in the parent
-# script points at fake-sink (#2263), not fake-hc's separate --event-log — grep the sink's own
-# request log instead. fake_sink.py logs the POST body as a JSON-escaped string, so a literal
-# '"event": "..."' pattern never matches the on-disk backslash-quoted form — match the bare word.
-payout_alert_count() { sink_requests | grep -c 'payout_confirmed' || true; }
+# script points at fake-sink (#2263), not fake-hc's separate event log — read the sink's own
+# request log instead. fake_sink.py stores each POST body as a JSON-escaped *string*, so any raw
+# text match has to know that escaping; decode the line instead and count only webhook posts whose
+# event really is payout_confirmed. A decode failure prints nothing, and every caller below wants
+# exactly 1, so it reads red rather than passing as a quiet zero.
+payout_alert_count() {
+    sink_requests | python3 -c '
+import json, sys
+rows = [json.loads(line) for line in sys.stdin if line.strip()]
+print(sum(1 for r in rows if r["path"] == "/webhook" and json.loads(r["body"]).get("event") == "payout_confirmed"))
+'
+}
 
 # 12. Payout confirmation (#2267): drive each real wallet client through its network fake, then
 # prove the persisted total is exposed by /api/state and the configured webhook saw one alert.
