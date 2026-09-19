@@ -139,7 +139,7 @@ and the Healthchecks ping URL, is reachable from the panel behind the confirmati
 | `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
 | `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Not exposed | Physical presence only — see above |
 | `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + approval envelope |
-| `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns this session logs itself out on a mistyped password | Confirm preview + typed `APPLY` |
+| `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns this session logs itself out on a mistyped password | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
 | `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` |
 
 When a key is absent from `config.json`, the view uses the value in `config.reference.json` and

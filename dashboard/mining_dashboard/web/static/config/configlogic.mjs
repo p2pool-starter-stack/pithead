@@ -53,7 +53,7 @@ const FIELD_WARNINGS = {
   "dashboard.auth.password":
     "Dashboard login password changing — every other signed-in session is logged out, and a mistyped password locks this session out too. Keep another way to reach this appliance handy before you confirm.",
   "dashboard.host":
-    "Machine hostname changing — this is the approval-gated day-two rename (#2236): it reissues the local certificate and changes the appliance's mDNS identity.",
+    "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity.",
 };
 
 function isPlainObject(v) {
