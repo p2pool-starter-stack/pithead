@@ -218,6 +218,16 @@ test('XMR Network collapses to the headline stats by default', () => {
     assert.match(card, /Show all \(8\)/); // 7 + the node's local/remote location (#1040)
 });
 
+test('THE WIDER POOL label is gated like its own cards, not shown over an empty grid in Simple view (#1862)', () => {
+    // GlobalStats, NetworkCard and ComponentHealth — everything under this label — are all
+    // card-advanced. Without the same class the label itself stays visible in Simple view even
+    // though its grid renders 0 visible children. "Your Stack" is untouched: Overview
+    // (card-simple) and ExpectedVsActualCard (both views) keep that section non-empty in Simple.
+    const html = renderApp();
+    assert.match(html, /<div class="grid-section-label card-advanced">The Wider Pool<\/div>/);
+    assert.match(html, /<div class="grid-section-label">Your Stack<\/div>/);
+});
+
 test('MoreStats expands to show every stat when toggled, and persists the choice per card, independently of siblings', () => {
     // There is no localStorage under node --test (see logic.test.mjs's loadPref/savePref test) —
     // stub a minimal one so MoreStats's loadPref/savePref calls (the same helpers
