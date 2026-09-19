@@ -13,7 +13,7 @@ import { Component, Fragment, html } from "../app/preact.mjs";
 
 // Fixed layout — the stack is a known, fixed set of components, so positions are hand-placed
 // (left→right: incoming clients, the host bridge, the Tor hub, the internet) rather than solved.
-export const CLIENT_ZONE_NAME = "Clients";
+export const CLIENT_ZONE_NAME = "Clients / remote nodes";
 export const POS = {
   rigs: { x: 12, y: 64, w: 88, h: 32 },
   browser: { x: 12, y: 150, w: 88, h: 32 },
@@ -28,6 +28,11 @@ export const POS = {
   tor: { x: 392, y: 96, w: 96, h: 40 },
   internet: { x: 392, y: 220, w: 96, h: 36 },
 };
+export const REMOTE_POS = {
+  monerod: { x: 12, y: 220, w: 88, h: 32 },
+  tari: { x: 12, y: 270, w: 88, h: 32 },
+};
+export const nodePos = (n) => (n.remote ? REMOTE_POS[n.id] : POS[n.id]);
 
 // Every route the server can put on an edge needs an entry in ALL THREE of these: a colour, a
 // label, and a place in ROUTES (which generates the arrowhead markers). A route missing from
@@ -71,8 +76,10 @@ export function edgePath(e, a, b) {
   if (e.from === "dashboard" && (e.to === "tor" || e.to === "internet")) {
     return `M${a.x + a.w / 2},${a.y + a.h} V312 H372 V${b.y + b.h / 2} H${b.x}`;
   }
-  if (e.from === "p2pool" && e.to === "tari") {
-    return `M${a.x},${a.y + a.h / 2} H254 V${b.y + b.h / 2} H${b.x}`;
+  if (e.from === "p2pool" && (e.to === "tari" || e.to === "monerod")) {
+    return b.x < a.x
+      ? `M${a.x},${a.y + a.h / 2} H112 V${b.y + b.h / 2} H${b.x + b.w}`
+      : `M${a.x},${a.y + a.h / 2} H254 V${b.y + b.h / 2} H${b.x}`;
   }
   const ac = center(a);
   const bc = center(b);
@@ -134,13 +141,18 @@ export class StackTopology extends Component {
           <text x="440" y="20" class="topo-zone">Tor → internet</text>
           ${edges.map((e) => this._edge(e, byId)).filter(Boolean)}
           ${nodes.map((n) => {
-            const p = POS[n.id];
+            const p = nodePos(n);
             if (!p) return null;
             // #1040: monerod and tari are the only nodes an operator can run elsewhere, so only
             // they carry `remote` and only they get a location caption. It rides as a SIBLING of
             // the node group, not a child: `.topo-node text` outranks `.topo-zone`, so a caption
             // inside the group would silently render as a second full-size label.
-            const loc = n.remote === true ? "remote" : n.remote === false ? "local" : null;
+            const loc =
+              n.remote === true
+                ? `remote · ${ROUTE_NAME[n.route] || n.route}`
+                : n.remote === false
+                  ? "local"
+                  : null;
             const cx = p.x + p.w / 2;
             return html`
               <${Fragment}>
@@ -156,8 +168,8 @@ export class StackTopology extends Component {
   }
 
   _edge(e, byId) {
-    const a = POS[e.from];
-    const b = POS[e.to];
+    const a = nodePos(byId[e.from] || { id: e.from });
+    const b = nodePos(byId[e.to] || { id: e.to });
     if (!a || !b) return null;
     const key = e.leak ? "clearnet" : e.route;
     const color = ROUTE_COLOR[key] || ROUTE_COLOR.local;

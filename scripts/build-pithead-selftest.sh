@@ -293,6 +293,25 @@ self_test() {
     _case "a build ACCEPTS the same name declared -a (not -r) in two slices (readonly, not declare)" 0 "$rc"
     rm -rf "$plain"
 
+    # 18. #2337: enough slices that the list of their paths overflows a pipe buffer. The build
+    #     used to find its first slice via `printf '%s\n' "$slices" | head -n 1` — under
+    #     `set -o pipefail`, `head` closing its read end after one line, while `printf` still has
+    #     the rest of a multi-line `$slices` queued, kills `printf` on SIGPIPE and aborts an
+    #     ordinary build. A handful of short names never overflows the pipe buffer in one write and
+    #     stays green by luck; enough long names forces it every time.
+    local many i
+    many=$(mktemp -d)
+    mkdir -p "$many/lib/pithead"
+    printf '#!/usr/bin/env bash\nfirst\n' >"$many/lib/pithead/0000-prelude.sh"
+    for i in $(seq 1 2000); do
+        printf ': # filler %04d\n' "$i" >"$many/lib/pithead/$(printf '%04d' "$i")-filler.sh"
+    done
+    printf 'last\n' >"$many/lib/pithead/9999-tail.sh"
+    rc=0
+    PITHEAD_BUILD_ROOT="$many" bash "$BUILD" >/dev/null 2>&1 || rc=$?
+    _case "a build with enough slices to overflow a pipe buffer still exits 0 (#2337)" 0 "$rc"
+    rm -rf "$many"
+
     # The distribution contract: a clean checkout carries no generated CLI, and plain `make`
     # creates an executable ignored copy. Apply the caller's working diff so this case is useful
     # before commit as well as in CI.

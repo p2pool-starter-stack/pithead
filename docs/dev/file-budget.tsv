@@ -56,6 +56,7 @@ tests/integration/lib/run-state.sh	403
 tests/integration/mini-stack/run-mini-stack.sh	409
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
+tests/integration/selftest/selftest-rigforge-writable-keys.sh	411
 tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
@@ -67,7 +68,7 @@ tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
 tests/stack/appliance/test-appliance-rig-miner.sh	466
-tests/stack/control/test-control-add-only-ssrf.sh	436
+tests/stack/control/test-control-add-only-ssrf.sh	447
 tests/stack/control/test-control-upgrade.sh	795
 tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591

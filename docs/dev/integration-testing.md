@@ -611,9 +611,15 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   reading cannot be written back, the restore target is the dashboard's record of what *it* last
   pushed (`GET /api/worker`'s `.last_applied.pools`), which is un-stripped, and the probe is
   operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
-  guessed value risks a real `rejected` instead of proving the round trip). Self-skips if the
-  dashboard has never applied a `pools` value to this rig before (nothing to safely restore).
-  An absent probe or restorable original is a `[missing]` row, never a pass or an unexplained gate
+  guessed value risks a real `rejected` instead of proving the round trip). If the dashboard has
+  never applied a `pools` value to this rig before, there is nothing on record to restore — so the
+  leg seeds the record with the probe itself
+  ([#2325](https://github.com/p2pool-starter-stack/pithead/issues/2325)): the probe is by contract
+  a value already known safe to apply and carrying a `pass`, so it doubles as "the original" too,
+  and it leaves `.last_applied.pools` seeded for every run after this one. Either way, the value the
+  leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
+  ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a

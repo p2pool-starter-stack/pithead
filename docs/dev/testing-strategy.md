@@ -60,6 +60,15 @@ template. `options.mode: check` reads what already runs on the bench and proves 
 branch. A job on an older commit does not cover the head. A PR in the first five rows with no job
 on its head is not ready for review, and the adversarial review returns it.
 
+Tari is the one stack service whose image is upstream (pinned by digest, no `build/tari/`
+Dockerfile), so it has no `Build image (tari)` CI job to catch this the way the other five
+services' image builds do. `tests/stack/standalone/test_tari_config_parse.sh` (`make test-tari-config-parse`, its own
+workflow, `tari-config-parse.yml` — ci.yml is at its file-budget ceiling) closes that gap cheaply:
+it renders
+`build/tari/config.toml.template` the way `inject_service_configs` does and feeds the result to
+the pinned `minotari_node` image with `--network none`, no chain data, failing the job if the node
+rejects it with a `ConfigError` (#2341).
+
 ## Scenario catalog
 
 Every situation, its trigger, and the tier(s) that cover it. ✅ = covered today; ▶ = exercised by
