@@ -95,7 +95,12 @@ verify_release_images() {
     cosign_available ||
         error "cosign.pub is present but docker is not available to run the verifier — refusing an unverified pull. Install Docker ($DOCS_URL/docs/getting-started.md#1-prerequisites) and re-run '$0'."
     # The 5 first-party images, verified by the exact digest compose pins them to (#451/#461).
-    local suffix repo sha image out
+    local suffix repo sha image out cosign_registry_args=()
+    # A debug build's private-registry CA is program material beside cosign.pub, so the install-dir
+    # mount already carries it into the container — a relative name, like --key on the same command.
+    if [ -f cosign.registry-ca.crt ]; then
+        cosign_registry_args=(--registry-cacert cosign.registry-ca.crt)
+    fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"
         # #557: plain `sha="$(...)"` aborts under errexit on a no-match grep BEFORE this error()
@@ -104,7 +109,7 @@ verify_release_images() {
             error "cosign.pub is present but pithead-${suffix} is not digest-pinned in docker-compose.yml — cannot bind verification to the bytes compose pulls; refusing. A signed release bundle pins every first-party image by @sha256."
         fi
         image="${repo}@${sha}"
-        if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "$image" 2>&1); then
+        if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "${cosign_registry_args[@]}" "$image" 2>&1); then
             # Strip control chars: cosign's stderr echoes registry-supplied bytes, and error()
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
             # inject ANSI escapes into the operator's terminal (#376 review).
