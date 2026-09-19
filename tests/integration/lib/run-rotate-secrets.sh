@@ -110,14 +110,17 @@ run_rotate_secrets() {
         it_pass "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN"
     fi
 
+    # The failure detail never echoes proxy_args itself (or the passwords) — it is the live
+    # --access-password value, and it_fail's output is not secret-redacted the way a captured
+    # artifact is.
     local proxy_args
     proxy_args="$(_rotate_proxy_live_args)"
     case "$proxy_args" in
     *"$new_stratum_pass"*) it_pass "xmrig-proxy live argv carries the NEW stratum access-password (no-rig-mode credential check, #2344)" ;;
-    *) it_fail "xmrig-proxy live argv carries the NEW stratum access-password (no-rig-mode credential check, #2344)" "not found in: $proxy_args" ;;
+    *) it_fail "xmrig-proxy live argv carries the NEW stratum access-password (no-rig-mode credential check, #2344)" "new value not found in the live --access-password argv" ;;
     esac
     case "$proxy_args" in
-    *"$old_stratum_pass"*) it_fail "xmrig-proxy live argv no longer carries the OLD stratum access-password" "old value still live: $proxy_args" ;;
+    *"$old_stratum_pass"*) it_fail "xmrig-proxy live argv no longer carries the OLD stratum access-password" "old value still live in the --access-password argv" ;;
     *) it_pass "xmrig-proxy live argv no longer carries the OLD stratum access-password" ;;
     esac
 
