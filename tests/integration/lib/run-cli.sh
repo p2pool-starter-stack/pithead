@@ -81,6 +81,12 @@ MATRIX:
                          on a spooled request (allowlisted change applies, sensitive change
                          refused), and the stack recovers from a tor restart. DESTRUCTIVE-then-
                          restored (enables then disables the control channel).
+  --rotate-onion         also run the rotate-dashboard-onion phase (#2345): rotate the dashboard's
+                         .onion address and client-auth key, assert the new address answers over
+                         real Tor, the old one stops answering, the Caddyfile names only the new
+                         vhost (#546), and HOST_IP survives (#356). Restores the pre-rotation onion
+                         identity afterward. DESTRUCTIVE-then-restored; self-skips without a
+                         provisioned dashboard onion.
   --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
                          dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.
@@ -246,6 +252,10 @@ parse_args() {
             ;;
         --hardening)
             RUN_HARDENING=1
+            shift
+            ;;
+        --rotate-onion)
+            RUN_ROTATE_ONION=1
             shift
             ;;
         --rigforge)

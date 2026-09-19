@@ -52,6 +52,7 @@ RUN_LIFECYCLE=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
+RUN_ROTATE_ONION=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
@@ -98,6 +99,8 @@ source "$HERE/lib/run-lifecycle.sh" || exit $?
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-onion.sh
+source "$HERE/lib/run-rotate-onion.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
@@ -204,6 +207,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_ONION" = "1" ] && run_rotate_onion
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
