@@ -1278,6 +1278,15 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
 
+**Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
+A fresh archive stays downloadable for at least one hour after the backup completes; past that
+window, only the 3 most recent archives are kept. Ordinary control-request results (config
+previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
+limits leave behind is capped at 512 MiB total, oldest first. `os-update-state.json` and the
+result of a request still in flight are never pruned. Pruning runs host-side after every control
+request and on every boot; see `control_prune_results` in
+`lib/pithead/49-control-request-loop.sh` for the exact defaults.
+
 ## Upgrading from the dashboard
 
 With `dashboard.control.enabled: true` (the same flag as the Configuration view) and a newer
