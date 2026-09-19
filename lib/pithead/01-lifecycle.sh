@@ -116,6 +116,12 @@ compose_up_checked() {
     # rc/out are seeded because the loop below may never run: a COMPOSE_UP_TRIES of 0, or any value
     # `seq` refuses, yields no iterations, and an unset rc would be an `unbound variable` abort under
     # the control runner's `set -u` rather than the honest "the up did not succeed" this returns.
+    #
+    # This retries on ANY compose-up failure, not just the "must be in Created or Stopped state to
+    # be started" shape #2298/#2293 scripted: that message is one instance of the same passenger-
+    # transition race (#2218), and gating the retry on matching it exactly missed every other engine
+    # wording for the identical condition. A real failure (subnet collision, bad image, port clash)
+    # still exhausts the tries and returns compose's own exit code, same as #2298 intended.
     local tmp out="" rc=1 try
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.

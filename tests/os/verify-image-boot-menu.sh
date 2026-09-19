@@ -7,6 +7,10 @@ echo "==> boot menu (titles for a person, #1838; the way back to setup, #1318)"
 # shellcheck disable=SC2034  # read inside chk's eval'd conditions
 GRUBCFG="$ESP/grub/grub.cfg"
 chk "the menu waits 5 s — long enough to choose an entry" 'grep -q "^timeout=5$" "$GRUBCFG"'
+# Pins the TEMPLATE only: that these menuentry lines exist and still reference the current/A/B
+# title variables, so a refactor cannot silently drop one. It cannot prove the variables get the
+# RIGHT values for a given slot state — that's grub.cfg's real selection logic, executed against
+# fixture grubenv values by tests/stack/appliance/test-appliance-boot-labels.sh (#2055 G4).
 chk "entries name their version, slot and current/previous state" 'grep -q "^menuentry \"\$CURRENT_NAME (slot \$CURRENT_SLOT, current)\"" "$GRUBCFG" && grep -q "^menuentry \"\$A_TITLE\"" "$GRUBCFG" && grep -q "^menuentry \"\$B_TITLE\"" "$GRUBCFG"'
 chk "legacy-unknown and verified-empty slots stay distinct" 'grep -q "Pithead version unknown" "$GRUBCFG" && grep -q "empty (slot B)" "$GRUBCFG"'
 chk "no bootloader counters in any title" '! grep "^menuentry" "$GRUBCFG" | grep -qE "OK=|TRY="'

@@ -14,6 +14,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 const WIZARD_MJS = read("../../../mining_dashboard/web/static/wizard/wizard.mjs");
 const WIZARD_CSS = read("../../../mining_dashboard/web/static/wizard/wizard.css");
 const WIZARD_HTML = read("../../../mining_dashboard/web/templates/wizard.html");
+const LAYOUT_CSS = read("../../../mining_dashboard/web/static/styles/layout.css");
 
 function ruleFor(css, selectorRe) {
   const m = css.match(new RegExp(`(^|\\})\\s*(${selectorRe.source})\\s*\\{([^}]*)\\}`, "m"));
@@ -25,6 +26,7 @@ function ruleFor(css, selectorRe) {
 // wizard.mjs and was blind to savedrole.mjs's "Keep it", which is exactly this defect in a file the
 // needle never looked at.
 const STATIC = new URL("../../../mining_dashboard/web/static/", import.meta.url);
+const WIZARD = new URL("../../../mining_dashboard/web/static/wizard/", import.meta.url);
 const VIEWS = readdirSync(STATIC, { recursive: true })
   .filter((f) => f.endsWith(".mjs"))
   .map((f) => [f, readFileSync(new URL(f, STATIC), "utf8")])
@@ -71,25 +73,34 @@ test("wizard.css: the button's target size clears WCAG 2.2 SC 2.5.8 (24px) as a 
     Number(mh[1]) >= 24,
     `min-height ${mh[1]}px is below the 24px target-size floor (SC 2.5.8)`,
   );
+  const link = ruleFor(WIZARD_CSS, /\.wizard-link/);
+  const linkHeight = link.body.match(/min-height:\s*(\d+)px/);
+  assert.ok(linkHeight, "expected the link-styled button to declare its own target-size floor");
+  assert.ok(Number(linkHeight[1]) >= 24, `wizard-link min-height ${linkHeight[1]}px is below the 24px target-size floor`);
 });
 
-test("wizard.mjs: the mount clears #app, which the shell deliberately ships non-empty", () => {
-  // The two halves are a pair: the template ships the heading and "Loading…" inside #app so a curl
-  // can recognize the page, and preact's render appends. Assert both, or a later edit to either one
-  // silently restores the residue.
-  assert.match(WIZARD_HTML, /<main[^>]*id="app"[^>]*>\s*<h1>/, "the shell still ships markup in #app");
-  const mount = WIZARD_MJS.slice(WIZARD_MJS.indexOf('typeof document !== "undefined"'));
-  const clearAt = mount.indexOf("replaceChildren()");
-  const renderAt = mount.indexOf("render(");
-  assert.ok(clearAt !== -1, "#app is never cleared, so the shell's markup outlives every stage");
-  assert.ok(clearAt < renderAt, "#app must be cleared BEFORE render, not after");
+test("wizard shell: the server-side heading remains, without a Loading placeholder or duplicate app heading", () => {
+  const shellH1s = WIZARD_HTML.match(/<h1(?=[\s>])/g) || [];
+  const appH1s = WIZARD_MJS.match(/<h1(?=[\s>])/g) || [];
+  assert.match(WIZARD_HTML, /<main[^>]*id="app"[^>]*>\s*<h1>/, "the shell still identifies the page");
+  assert.equal(shellH1s.length, 1, "the shell must carry exactly one page heading");
+  assert.doesNotMatch(WIZARD_HTML, /Loading…/, "the placeholder survives Preact renders");
+  assert.equal(appH1s.length, 0, "the app must not duplicate the shell heading");
 });
 
-test("wizard.css: a section heading is spaced from the field above, but not when it opens a card", () => {
-  const h3 = ruleFor(WIZARD_CSS, /\.wizard-shell\s+h3/);
-  assert.ok(h3, "expected a `.wizard-shell h3` rule");
-  assert.match(h3.body, /margin-top:\s*[1-9]/, "a heading with no top margin reads as the label of the field above it");
-  const first = ruleFor(WIZARD_CSS, /\.wizard-shell\s+h3:first-child/);
+test("wizard section headings are h2s with the h3 appearance and a fixed top margin", () => {
+  const headings = readdirSync(WIZARD)
+    .filter((file) => file.endsWith(".mjs"))
+    .flatMap((file) => readFileSync(new URL(file, WIZARD), "utf8").match(/<h[23](?=[\s>])/g) || []);
+  assert.equal(headings.filter((tag) => tag === "<h3").length, 0, "wizard section headings must not skip h2");
+  assert.equal(headings.filter((tag) => tag === "<h2").length, 16, "expected every wizard section heading");
+  assert.equal((WIZARD_HTML.match(/<h1(?=[\s>])/g) || []).length + headings.length, 17, "expected one page heading and all 16 section headings");
+  assert.match(LAYOUT_CSS, /h3,\s*\.wizard-shell h2\s*\{/, "wizard h2s keep the section-heading appearance");
+  const h2 = ruleFor(WIZARD_CSS, /\.wizard-shell\s+h2/);
+  assert.ok(h2, "expected a `.wizard-shell h2` rule");
+  assert.match(h2.body, /margin-top:\s*[1-9]/, "a heading with no top margin reads as the label of the field above it");
+  assert.match(h2.body, /font-weight:\s*700/, "the scoped h2 retains the h3's bold weight");
+  const first = ruleFor(WIZARD_CSS, /\.wizard-shell\s+h2:first-child/);
   assert.ok(first, "expected the :first-child reset");
   assert.match(first.body, /margin-top:\s*0/);
 });

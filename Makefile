@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -33,8 +33,9 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
 	bash scripts/install-test-tools.sh --self-test
 
-test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
+test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
@@ -50,6 +51,9 @@ test-fakes: ## Fake-daemon contract test — real dashboard clients vs controlla
 
 test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+
+test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
+	bash tests/stack/standalone/test_tari_config_parse.sh
 
 # The Linux toolchain as an image (#2078), so a contributor on macOS or Windows gets the verdict CI
 # gets instead of the refusal #2041 installed. Pass any target or command through ARGS:
@@ -161,9 +165,11 @@ lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, o
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
 	bash scripts/build-pithead.sh --self-test
 
-lint-trivy-parity: ## Fail if ci.yml's and os-rootfs.yml's trivy-action steps drift from the version scripts/watch/trivyignore-watch.sh scans with (#1290)
+lint-trivy-parity: ## Fail if a gate workflow's install-trivy version: (the one line that decides the engine) drifts from the version scripts/watch/trivyignore-watch.sh scans with (#1290), or if the cached-installer shape that makes it the only pin breaks (#2214)
 	bash scripts/watch/trivyignore-watch.sh --self-test
 	bash scripts/watch/trivyignore-watch.sh --check-parity
+	bash scripts/lint/lint-trivy-installer-cache.sh --self-test
+	bash scripts/lint/lint-trivy-installer-cache.sh
 
 lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/proto/buf.yaml)
 	cd dashboard/mining_dashboard/client/tari/proto && \

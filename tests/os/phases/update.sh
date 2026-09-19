@@ -1,5 +1,19 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+#
+# SCOPE (#2055 G1): legs 1-3 below keep the guest UNPROVISIONED throughout — neither config.json
+# nor machine-role is ever written, so pithead-boot.service's ConditionPathExists never triggers
+# and the unit never runs for the whole of legs 1-3. Their `rauc install`/`mark-good`/`mark-bad`
+# calls drive the A/B bootloader mechanism directly over SSH, standing in for what pithead-boot's
+# health-gated auto-commit would issue on a real boot. Legs 1-3 therefore measure the RAUC/GRUB
+# slot mechanism ONLY: pithead-boot's own render/up/health-gate/commit-or-rollback logic, the
+# data-floor restore and the held-chain release are NOT exercised here — those need a provisioned
+# guest and are leg 4's job (`phase_update_dashboard`, via `_wizard_provision_capture`, which does
+# write config.json and drives the real dashboard-triggered os-update path; see testing-strategy.md
+# row 223/226). Two exceptions ride units with no provisioned-only condition and so stay valid
+# evidence even here: `boot_label_serial_verdict` below (leg 2) reads `pithead-boot-version.service`,
+# which the #1956/#2054 fix deliberately made run on every boot; and the machine-id/SSH-host-key
+# survival checks read `pithead-machine-id`/`pithead-ssh-host-keys`, both unconditional units.
 phase_update() {
     info "phase: update (A/B commit + rollback, driven over test-only SSH)"
     # NO local _ssh/_wait_ssh redefinitions here. Function definitions are global but locals are

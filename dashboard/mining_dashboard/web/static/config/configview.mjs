@@ -9,7 +9,6 @@
 // config beneath as a collapsed JSON pane — both live, both views of a single `candidate`
 // object. Editing a field rewrites the candidate (typed by the field, via configsync's shared
 // coerceForType) and the pane re-renders; editing the pane replaces it and the fields refill.
-// Hidden paths (#1850) sit outside the candidate: neither surface shows or alters them.
 //
 // The form pins a `core` group — the wizard's own shortlist, `_core_keys` on the fetched config,
 // sourced from config.core-keys.json so the two never drift apart — above LOGICAL sections
@@ -20,12 +19,11 @@
 // closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
 // sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
 // sentinel — "blank means keep" survives the model change.
-
 import { Component, html } from "../app/preact.mjs";
-import { applyFailure } from "./applyfailure.mjs";
-import { editableCandidate, restoreHidden } from "./confighidden.mjs";
+import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import {
   buildSections,
+  editableCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
@@ -37,25 +35,21 @@ import {
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
 
-export { PreviewModal };
+export { editableCandidate, PreviewModal };
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
 const POLL_MAX = 90; // 3 minutes — a commit recreates containers, which can take a while
-// #1071: 45 minutes. The old 900s ceiling sat BELOW what the host runner is allowed to spend before
-// the image pull even starts — 60s on the release API, 900s on the bundle over Tor, 120s on the
-// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still
-// ahead of it and was reported as a failure. No constant can be provably enough (the pull is
+// #1071: 45 minutes. The old 900s ceiling sat BELOW image-pull bounds: 60s on the release API, 900s on the bundle over Tor, 120s on the
+// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still ahead of it and was reported as a failure. No constant can be provably enough (the pull is
 // unbounded), which is why the message below no longer claims the upgrade failed.
 const UPGRADE_POLL_MAX = 1350;
-
 // Poll /api/control/result until a terminal result lands; shared by the Configuration view, the
 // Upgrade button (#59), and the Backup card (#908). `skip` ignores an intermediate status under
 // the same id (the still-present "previewed" result while a commit runs; "running" while an
 // upgrade or backup runs). Commit/upgrade/backup all briefly recreate or stop+restart the stack
 // — commit/upgrade take the dashboard container itself down, backup takes the whole compose
-// project down and back up — so a fetch here can transiently fail: a dropped connection (proxy
-// down too, for backup) or a 502/503/504 (proxy up, upstream mid-restart, #622). Ride both out
+// project down and back up — so a fetch here can transiently fail: a dropped connection (proxy down too, for backup) or a 502/503/504 (proxy up, upstream mid-restart, #622). Ride both out
 // and keep polling until the result file answers.
 export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
   for (let i = 0; i < max; i++) {
@@ -88,11 +82,9 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
 }
 
 const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
-// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review
-// modal makes you type APPLY. The tooltip sets that expectation up front.
+// #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
 const APPROVAL_TITLE = "Editable — this sensitive change is recorded under your signed-in identity";
-
 // `full` (#529): the pinned Core card mixes fields from several sections, so its rows need the
 // FULL dotted key ("monero.wallet_address") to stay unambiguous. A natural section keeps the
 // shorter relative label ONLY while all its fields share one top-level key (its heading then says
@@ -102,8 +94,7 @@ const APPROVAL_TITLE = "Editable — this sensitive change is recorded under you
 //
 // `field.editable` (#613): a physical-presence-only field renders disabled, with no
 // onChange/onInput wired, so it cannot enter the form's staged edits. Preact skips an event prop
-// entirely when it is
-// `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
+// entirely when it is `undefined`, so passing `undefined` rather than a no-op is what actually removes the listener.
 const Field = ({ field, value, onEdit, full }) => {
   const editable = field.editable !== false;
   const label = full ? field.key : field.path.slice(1).join(".") || field.path[0];
@@ -167,7 +158,6 @@ export class ConfigView extends Component {
   componentDidMount() {
     this.load();
   }
-
   async load() {
     try {
       const res = await fetch("/api/config");
@@ -182,7 +172,7 @@ export class ConfigView extends Component {
       this.setState({
         phase: "form",
         cfg,
-        sections: buildSections(cfg),
+        sections: buildSections(candidate),
         coreKeys: cfg._core_keys || [],
         editableKeys: cfg._editable_keys || [],
         confirmKeys: cfg._confirm_keys || [],
@@ -214,8 +204,7 @@ export class ConfigView extends Component {
     this.setState({ candidate, editText: JSON.stringify(candidate, null, 2), jsonError: null });
   }
 
-  // Pane -> candidate -> fields. Hand-edited JSON wins; while it does not parse, the pane keeps
-  // the broken text and the error, and the last good candidate stays what Save would send.
+  // Pane -> candidate -> fields. Invalid pane text leaves the last good candidate as Save input.
   onJsonInput(text) {
     const err = jsonSyntaxError(text);
     if (err) {
@@ -227,12 +216,13 @@ export class ConfigView extends Component {
       this.setState({ editText: text, jsonError: staged.error });
       return;
     }
-    this.setState({ editText: text, jsonError: null, candidate: staged.config });
+    const candidate = editableCandidate(staged.config);
+    const editText =
+      JSON.stringify(candidate) === JSON.stringify(staged.config)
+        ? text
+        : JSON.stringify(candidate, null, 2);
+    this.setState({ editText, jsonError: null, candidate });
   }
-
-  // Fill the JSON textarea from a local file (#529, mirrors WorkerInspect.onFilePick, #518) — a
-  // FileReader read, never an upload; the operator still reviews and clicks Save like any other
-  // JSON-mode edit.
   onFilePick(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -247,13 +237,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // The candidate plus the hidden subtrees the fetched config carried (#1850) IS the proposed
-  // config — the pane shows every key preview receives that this page may change, which is the
-  // point of the pattern (#785). A pane mid-typo blocks Save via jsonError instead.
+  // The candidate is the proposed config. A pane mid-typo blocks Save via jsonError instead.
   buildProposed() {
-    const { candidate, cfg, jsonError } = this.state;
+    const { candidate, jsonError } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: restoreHidden(candidate, cfg) };
+    return { config: candidate };
   }
 
   async save() {
@@ -276,7 +264,7 @@ export class ConfigView extends Component {
       if (out.status === "rejected") {
         this.setState({
           phase: "form",
-          error: out.error || "The host runner rejected the config.",
+          error: out.log ? { log: out.log } : out.error || "The host runner rejected the config.",
         });
         return;
       }
@@ -436,11 +424,16 @@ export class ConfigView extends Component {
       coreKeys,
     );
     return html`<div class="config-view">
-        ${error ? html`<div class="card"><p class="status-bad">${error}</p></div>` : null}
+        ${error ? previewFailure(error, this.props.appliance) : null}
         ${
           lastApply?.status === "failed"
             ? html`<div class="card"><p class="status-bad">The last apply failed. This form shows
               the desired configuration; services that stayed running may still use the earlier settings.</p></div>`
+            : null
+        }
+        ${
+          this.state.cfg?.ssh
+            ? html`<div class="card"><p class="status-warn">SSH settings from an older configuration are ignored and are not saved from this page.</p></div>`
             : null
         }
         ${this.renderForm(core, groups)}
@@ -473,8 +466,7 @@ export class ConfigView extends Component {
 
 // POST the upgrade intent, then wait out the whole run. Exported for node --test — this network
 // flow is the logic; UpgradeControl only maps its outcome onto UI state. The server answers 202
-// straight away (the upgrade recreates the dashboard container itself), so the real outcome
-// arrives via pollResult, skipping the intermediate "running" result and riding out the restart.
+// straight away, so the real outcome arrives via pollResult, skipping "running" and the restart.
 export async function runUpgrade(version) {
   const res = await fetch("/api/control/upgrade", {
     method: "POST",
@@ -509,9 +501,10 @@ export class UpgradeControl extends Component {
 
   render() {
     const { update, enabled } = this.props;
-    if (!enabled || !update || !update.available) return null;
     const { phase, confirmText, result } = this.state;
-    const version = update.latest;
+    const available = enabled && update && update.available;
+    if (!available && phase !== "failed") return null;
+    const version = update?.latest;
     let modal = null;
     if (phase === "confirm") {
       modal = html`<div class="config-modal-backdrop">
@@ -559,23 +552,22 @@ export class UpgradeControl extends Component {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
               <h3>Upgrade did not complete</h3>
-              <p class="status-bad">${result.error || "The host runner reported a failure."}</p>
-              ${
-                result.backup
-                  ? html`<p class="text-muted">Pre-upgrade copies of <code>config.json</code> and
-                    <code>.env</code> are kept on the host: <code>${result.backup}</code>.</p>`
-                  : null
-              }
+              ${upgradeFailure(result, this.props.appliance)}
               <div class="config-modal-actions">
                   <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Close</button>
               </div>
           </div>
       </div>`;
     }
-    return html`<button class="badge badge-accent version-badge ml-2"
-            title=${"Upgrade the stack to " + version + " from the dashboard"}
-            onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
-            Upgrade to ${version}
-        </button>${modal}`;
+    return [
+      available
+        ? html`<button class="badge badge-accent version-badge ml-2"
+              title=${"Upgrade the stack to " + version + " from the dashboard"}
+              onClick=${() => this.setState({ phase: "confirm", confirmText: "" })}>
+              Upgrade to ${version}
+          </button>`
+        : null,
+      modal,
+    ];
   }
 }

@@ -105,37 +105,61 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
+# /api/control/result never echoes the request id back (only the POST handlers for preview/commit
+# merge it in) — the real frontend (backupview.mjs's runBackup) knows this and keeps the id it
+# already resolved from the POST, re-attaching it client-side (`{ id, ...result }`) rather than
+# trusting the polled body. Match that here, once, in the shared poller: every verb whose POST
+# never resolves synchronously (backup, unlike preview/commit, ALWAYS 202s) reaches its terminal
+# status purely through polling and would otherwise hand callers a result with no `.id` at all (#2300).
+control_result_stamp_id() { # <result-json> <id>
+    printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
+}
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
     if out=$(dashboard_control_post "$route" "$body"); then
-        rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        response_code=${out##*$'\n'}
+        if [[ $response_code =~ ^[0-9]{3}$ ]]; then
+            out=${out%$'\n'*}
+            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
+            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
+            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
+        fi
+        if [[ $response_code =~ ^5 ]]; then
+            # A failing proxy can name another request; the fresh preview id in the caller wins.
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        else
+            rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        fi
+        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
+        # or malformed successful response. Only an explicit JSON error is a real refusal; the
+        # caller's id still names a request the host may complete, so poll it.
+        if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        fi
     else
-        # The POST died in flight rather than being answered. A commit whose apply recreates
-        # containers restarts the dashboard underneath its own request, so the runner's answer can
-        # already be on disk while the response never arrives — measured on the bench (#2060): the
-        # guest's audit read `commit-confirmed -> applied` and its results directory held that id's
-        # document with {"status":"applied"}, while this function reported "the commit never
-        # returned". The id is not lost when that happens, because the CALLER sent it. Poll for it.
+        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
+        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # A server that ANSWERED without an id refused the request; that is a verdict, not a lost
-    # response, and it must stay fast rather than polling a deadline out.
+    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | running | downloading | installing | "") ;;
+        # The control API can acknowledge a queued request before the root runner starts it.
+        # `accepted` still carries the request id, so it is a polling state, not a verdict.
+        pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
         } ;;
         *)
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null)
+        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
     done
     return 1
 }
@@ -144,9 +168,13 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
 # guest. An empty result is its own sentence: `dashboard_control_request` returns nothing both
 # when the POST was refused and when the request never left pending before its deadline, and a
 # row that printed the same thing for that as for a rejected apply would hide the difference.
-control_result_payload() { # <result-json>
+control_result_payload() { # <result-json> [landed]
     [ -n "$1" ] || {
-        printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        if [ "${2:-}" = landed ]; then
+            printf 'requested change landed, but no result file was written — runner completion is unknown'
+        else
+            printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        fi
         return 0
     }
     printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
@@ -154,7 +182,7 @@ control_result_payload() { # <result-json>
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
+    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names live_state
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "post-provision control: live config could not be read"
         return
@@ -175,7 +203,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
         ok "post-provision benign setting applies through the dashboard control runner"
     else
-        bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision benign control request did not complete ($(control_result_payload "$result" "$live_state"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
@@ -216,7 +246,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
         ok "post-provision disruptive setting applies with typed approval"
     else
-        bad "post-provision approved setting did not land ($(control_result_payload "$result"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision approved control request did not complete ($(control_result_payload "$result" "$live_state"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
         return
     fi
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
@@ -241,7 +273,13 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s\n' "$archive_names" | grep -qx 'data/pithead/.env'; then
         ok "dashboard backup decrypts with its one-time passphrase and contains the stack identity"
     else
-        bad "dashboard backup did not produce a downloadable encrypted archive"
+        # Name which sub-condition broke: the control result itself, the HTTP download, or the
+        # decrypt/listing step — three different failure sites the combined check above cannot
+        # tell apart from its verdict alone (#2300).
+        local decrypt_state
+        [ -n "$archive_names" ] && decrypt_state="decrypted, listing: $(printf '%s' "$archive_names" | tr '\n' ' ')" ||
+            decrypt_state="undecryptable or empty tar listing"
+        bad "dashboard backup did not produce a downloadable encrypted archive ($(control_result_payload "$result"); passphrase_len=${#pass}; download HTTP ${code:-none}, $(wc -c <"$archive" | tr -d ' ') bytes; $decrypt_state)"
     fi
     rm -f "$archive"
     names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
@@ -278,8 +316,22 @@ _recovery_self_test() {
     *) return 1 ;;
     esac
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '' landed)" in *'change landed'*'completion is unknown'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
+    # /api/control/result never echoes the id back — a verb like backup that always resolves
+    # through polling would otherwise hand callers a terminal result with no `.id` at all (#2300).
+    case "$(control_result_stamp_id '{"status":"applied","passphrase":"p"}' r3)" in
+    '{"status":"applied","passphrase":"p","id":"r3"}') ;;
+    *) return 1 ;;
+    esac
+    # A pre-existing id is overwritten by the caller's resolved one, not left stale.
+    case "$(control_result_stamp_id '{"status":"applied","id":"stale"}' r4)" in
+    '{"status":"applied","id":"r4"}') ;;
+    *) return 1 ;;
+    esac
+    # Malformed JSON falls back to the input unchanged rather than raising.
+    [ "$(control_result_stamp_id '' r5)" = "" ] || return 1
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"
 }
 

@@ -24,7 +24,7 @@ export const ConfigChanges = ({ changes }) =>
     : null;
 
 export const InstallFailed = ({ error, changes, onBack }) => html`<div class="card">
-    <h3>Installation failed</h3>
+    <h2>Installation failed</h2>
     <${Err}>${error || "The install stopped. Check the machine console for detail."}<//>
     <${ConfigChanges} changes=${changes} />
     <p>Nothing else will be installed until you return to the settings and submit again.</p>

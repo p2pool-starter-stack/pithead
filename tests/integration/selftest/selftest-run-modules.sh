@@ -50,6 +50,19 @@ source "$ROOT/lib/run-rig-control.sh" || exit $?
 source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
+pithead() {
+    printf '%s\n' \
+        'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed' \
+        'OK   workers can connect' \
+        'OK   dashboard answers on 127.0.0.1:8000'
+}
+env_on_box() { [ "$1" = TOR_EGRESS_FIREWALL ] && echo true; }
+doctor_checks_failed=0
+assert_rc() { [ "$2" = "$3" ] || doctor_checks_failed=$((doctor_checks_failed + 1)); }
+assert_contains() { [[ "$2" == *"$3"* ]] || doctor_checks_failed=$((doctor_checks_failed + 1)); }
+assert_doctor_ok
+[ "$doctor_checks_failed" -eq 0 ] || exit 1
+
 detail="$({
     source "$ROOT/lib.sh"
     env_on_box() { case "$1" in MONERO_CLEARNET_SYNC | TARI_CLEARNET_SYNC) echo false ;; NETWORK_PREFIX) echo 172.28.0 ;; esac }

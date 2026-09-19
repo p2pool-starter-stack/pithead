@@ -13,6 +13,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Removed
 
+- **Release images no longer accept the `ssh.*` configuration options.** SSH is now a debug-build
+  property; a carried 1.x `ssh.enabled: true` setting is ignored and reported rather than blocking
+  an update.
+
 - **Telegram is a read-only notification channel.** The bot still answers `/status`, `/info`,
   `/hashrate`, `/workers`, `/sync`, `/system`, `/pool`, `/xvb`, `/earnings`, `/luck` and `/help`,
   and still sends every event alert and the daily summary. Its two write surfaces are gone
@@ -70,7 +74,7 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
   friction and typo protection, not a second identity. The physical-presence boundary is unchanged:
-  `ssh.*`, `dashboard.auth.password` and the two tamper-alarm event toggles still cannot be changed
+  `dashboard.auth.password` and the two tamper-alarm event toggles still cannot be changed
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed

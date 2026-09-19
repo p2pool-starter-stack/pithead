@@ -96,17 +96,18 @@ rm -f "$PSD/pithead-token.txt"
 run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
 assert_rc "no config file -> rc 2 (nothing pre-seeded)" "$?" "2"
 
-printf '{"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"}}' >"$PSD/pithead-config.json"
-run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
+printf '{"monero":{"wallet_address":"nope"},"tari":{"wallet_address":"t"},"dashboard":{"workers":[{"name":"legacy-rig","token":"fixture-secret"}]}}' >"$PSD/pithead-config.json"
+TMPDIR="$PSD" run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
 assert_rc "invalid config -> rc 1, wizard still opens" "$?" "1"
 [ -f "$PSD/out.json" ] && bad "rejected config NOT installed" "it was" || ok "rejected config NOT installed"
 
-printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"'"$VALID_TARI"'"},"p2pool":{"pool":"mini","stratum_password":"auto"}}' \
+printf '{"monero":{"wallet_address":"%s"},"tari":{"wallet_address":"'"$VALID_TARI"'"},"p2pool":{"pool":"mini","stratum_password":"auto"},"dashboard":{"workers":[{"name":"legacy-rig","token":"fixture-secret"}]}}' \
     "$VALID_PRIMARY" >"$PSD/pithead-config.json"
 cp "$PSD/pithead-config.json" "$PSD/original.json"
-run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
+TMPDIR="$PSD" run_sourced "$SANDBOX" consume_preseed_config "$PSD/out.json" >/dev/null 2>&1
 assert_rc "valid config -> rc 0" "$?" "0"
 [ -s "$PSD/out.json" ] && ok "valid config installed" || bad "valid config installed" "missing"
+assert_eq "pre-seed validation copies leave no migration backup" "$(find "$PSD" -name '*.bak-1x' -print -quit)" ""
 # The medium must come back unchanged: validation fills in generated credentials, and writing
 # those back would hand every machine in a fleet the first one's secrets.
 if cmp -s "$PSD/pithead-config.json" "$PSD/original.json"; then

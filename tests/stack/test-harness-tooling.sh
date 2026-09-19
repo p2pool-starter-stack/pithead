@@ -105,7 +105,6 @@ echo "== unit: #1676 version-aging helper self-test =="
 # driven here because tier 1 is the lowest tier that proves it and it needs no KVM.
 bash "$ROOT/tests/os/aged-version.sh" --self-test >/dev/null 2>&1
 assert_rc "#1676 aged-version self-test passes" "$?" "0"
-
 echo "== unit: #1936 wizard-state-poll self-test =="
 # The RC1 battery reddened twice on one word — `no-served-config`, `served wallet: none` — where a
 # timeout, a refusal and a non-JSON page all print alike (#1932, #1936). The shared /api/state
@@ -115,7 +114,8 @@ echo "== unit: #1936 wizard-state-poll self-test =="
 # proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
-
+bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null 2>&1
+assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-diagnostics-leg.sh" --self-test >/dev/null 2>&1
@@ -123,6 +123,12 @@ assert_rc "#1966 appliance diagnostics verdict self-test passes" "$?" "0"
 # #2059: drives what keeps the Tor-egress backstop REACHABLE past a provision abort. Why: the leg file.
 bash "$ROOT/tests/os/appliance-egress-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#2059 appliance Tor-egress backstop self-test passes" "$?" "0"
+# #2219: drives the control-runner recovery leg's assertion logic against a fully stubbed guest —
+# a runner that never retries must be caught, and the recovered path must report cleanly. Lives in
+# tests/os/ (appliance lane); driven here because tier 1 is the lowest tier that proves it and it
+# needs no KVM (the retry itself is only provable on a real systemd, in the tier4-kvm leg).
+bash "$ROOT/tests/os/control-runner-recovery-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "#2219 control-runner recovery leg self-test passes" "$?" "0"
 bash -c 'PITHEAD_OS_VM_DESTROY_SELF_TEST=1 exec bash "$1"' _ "$ROOT/tests/os/kvm-preflight.sh"
 assert_rc "the OS battery refuses a VM that survives teardown" "$?" "0"
 

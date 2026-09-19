@@ -1,12 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
-import { PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { ConfigView, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { editableCandidate } from "../../../mining_dashboard/web/static/config/configlogic.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
+
+test("editableCandidate drops private and prototype-control keys but keeps secret sentinels", () => {
+  const out = editableCandidate(JSON.parse('{"__proto__":{"polluted":true},"constructor":{"polluted":true},"network":{"mtu":1500},"secret":{"__secret__":true}}'));
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+  assert.equal(Object.hasOwn(out, "constructor"), false);
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.deepEqual(out.network, { mtu: 1500 });
+  assert.deepEqual(out.secret, { __secret__: true });
+});
+
+test("carried SSH configuration is warned about and not proposed", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ ssh: { enabled: true }, network: { mtu: 1500 } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.equal(view.state.sections.flatMap((section) => section.fields).some((field) => field.key.startsWith("ssh.")), false);
+  const rendered = renderToString(view.render());
+  assert.match(rendered, /SSH settings from an older configuration are ignored/);
+  assert.doesNotMatch(rendered, /ssh\.enabled/);
+
+  view.onJsonInput('{"ssh":{"authorized_key":"retired"},"network":{"mtu":1400}}');
+  assert.equal(Object.hasOwn(view.buildProposed().config, "ssh"), false);
+  assert.doesNotMatch(view.state.editText, /authorized_key/);
+});
 
 // Drive poll() with setTimeout fired synchronously so the 2s cadence doesn't slow the test,
 // restoring the globals afterwards.
@@ -61,6 +91,36 @@ test("poll skips the still-present preview result until the commit outcome lands
   const view = new ConfigView({});
   const out = await withFastPoll(fetchStub, () => view.poll(ID, "previewed"));
   assert.equal(out.status, "applied");
+});
+
+test("a rejected appliance preview labels the host validation log", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", log: "Run './pithead apply' after fixing p2pool.pool" }),
+    () => view.save(),
+  );
+  const out = renderToString(view.render());
+  assert.match(out, /Configuration preview did not complete/);
+  assert.match(out, /this machine's own log from the\s+failed config preview/);
+  assert.match(out, /\.\/pithead apply/);
+  assert.match(out, /cannot\s+be run from here/);
+});
+
+test("a rejected appliance preview leaves an authored error unlabelled", async () => {
+  const view = new ConfigView({ appliance: true });
+  view.props = { appliance: true };
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "form", candidate: {}, cfg: {} });
+  await withFastPoll(
+    async () => okResult({ status: "rejected", error: "Another config apply is already running" }),
+    () => view.save(),
+  );
+  const out = renderToString(view.render());
+  assert.match(out, /Another config apply is already running/);
+  assert.doesNotMatch(out, /this machine's own log/);
 });
 
 test("runUpgrade posts the seen version, skips 'running', rides out the restart, returns the outcome", async () => {
@@ -153,6 +213,52 @@ test("the failed modal names the pre-upgrade config/.env copies when the result 
   assert.match(renderToString(inst.render()), /bak-upgrade-1/);
   inst.state.result = { status: "failed", error: "boom" };
   assert.doesNotMatch(renderToString(inst.render()), /Pre-upgrade copies/);
+});
+
+test("an appliance upgrade failure labels the log and hides host-only recovery", () => {
+  const props = { update: UPDATE, enabled: true, appliance: true };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    log: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /this machine's own log from the failed\s+upgrade/);
+  assert.match(out, /upgrade log tail/);
+  assert.doesNotMatch(out, /pithead upgrade|\/host\/path|\/host\/config/);
+  assert.match(out, /copies of <code>config\.json<\/code> and\s+<code>\.env<\/code> are kept on this machine/);
+});
+
+test("a host upgrade failure keeps its separate recovery and backup paths", () => {
+  const props = { update: UPDATE, enabled: true, appliance: false };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = {
+    status: "failed",
+    log: "upgrade log tail",
+    recovery: "cd /host/path && ./pithead upgrade",
+    backup: "/host/config.json.bak /host/.env.bak",
+  };
+  const out = renderToString(inst.render());
+  assert.match(out, /upgrade log tail/);
+  assert.match(out, /cd \/host\/path && \.\/pithead upgrade/);
+  assert.match(out, /\/host\/config\.json\.bak/);
+});
+
+test("an authored upgrade rejection is not mislabeled as a machine log", () => {
+  const props = { update: UPDATE, enabled: true, appliance: true };
+  const inst = new UpgradeControl(props);
+  inst.props = props;
+  inst.state.phase = "failed";
+  inst.state.result = { status: "rejected", error: "already up to date" };
+  const out = renderToString(inst.render());
+  assert.match(out, /already up to date/);
+  assert.doesNotMatch(out, /machine's own log/);
 });
 
 // --- Preview modal (#504) --------------------------------------------------------------
