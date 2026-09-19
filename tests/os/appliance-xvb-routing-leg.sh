@@ -14,7 +14,7 @@ _xvb_payload() { # <mode> -> base64 Python that actuates then reads the live rou
         "    client = XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)" \
         "    await AlgoService(state, client, None).switch_miners('$1')" \
         "    pools = client.get_config().get('pools', [])" \
-        "    print(json.dumps({'mode': state.get_xvb_stats().get('mode'), 'pools': [{'enabled': p.get('enabled'), 'tor': bool(p.get('socks5'))} for p in pools]}))" \
+        "    print(json.dumps({'mode': state.get_xvb_stats().get('current_mode'), 'pools': [{'enabled': p.get('enabled'), 'tor': bool(p.get('socks5'))} for p in pools]}))" \
         "asyncio.run(main())" |
         base64 | tr -d '\n'
 }
