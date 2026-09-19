@@ -17,6 +17,25 @@ test("editableCandidate drops private and prototype-control keys but keeps secre
   assert.deepEqual(out.secret, { __secret__: true });
 });
 
+// #1871: one card states the control-channel-off fact once, links the guide, and keeps the
+// exact setting in a <code> aside; the host file path and ./pithead apply no longer appear as
+// user text. htm drops whitespace at a text/<code> boundary split across a line break unless an
+// explicit ${" "} holds it — the regression this guards is literal concatenation like
+// "Setting:dashboard.control.enabled".
+test("the disabled card states the fact once, links the guide, and keeps the key spaced from its label (#1871)", () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "disabled" });
+  const out = renderToString(view.render());
+  assert.match(out, /docs\/dashboard\.md#configuration-view/);
+  assert.match(out, /<code>dashboard\.control\.enabled<\/code>/);
+  assert.doesNotMatch(out, /Setting:dashboard/);
+  assert.doesNotMatch(out, /setdashboard/);
+  assert.doesNotMatch(out, /truein/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
+});
+
 test("carried SSH configuration is warned about and not proposed", async () => {
   const view = new ConfigView({});
   view.setState = (patch) => Object.assign(view.state, patch);
