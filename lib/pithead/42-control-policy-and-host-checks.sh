@@ -136,9 +136,15 @@ control_committable_re() {
 CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
-# SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space
-# separated. This is checked against config paths before anything else in the commit gate.
-CONTROL_DASHBOARD_NEVER_PATHS='ssh dashboard.auth.password
+# SSH and the two tamper alarms. Exact dotted paths/prefixes, space separated. This is checked
+# against config paths before anything else in the commit gate.
+#
+# dashboard.auth.password left this list in #2367: the owner ruled every config field must be
+# reachable from the panel, destructive ones warn and confirm rather than refuse. It now falls
+# through to the typed-confirmation default below like any other unclassified leaf (it emits no
+# CONTROL_DASHBOARD_EDITABLE_KEYS/CONFIRM_KEYS/APPROVAL_KEYS row of its own, so `bad` in
+# 43-control-approval-and-preview.sh always catches it and sets needs_confirm).
+CONTROL_DASHBOARD_NEVER_PATHS='ssh
     telegram.events.wallet_changed telegram.events.clearnet_exposed'
 
 # True if $1 is EXACTLY a canonical dotted-decimal IPv4 literal — four decimal octets 0-255, none
