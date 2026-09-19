@@ -205,7 +205,11 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and fake
+root-run battery without overriding `HOME`. The login is a Monero-node credential, not endpoint
+identity, so it is never carried through the dashboard proposal: the row lands it with a direct
+host-side config edit (the route "Set up again" names in the dashboard's refusal text), then
+separately asserts that pushing a login change through the dashboard is refused outright, before
+proposing the endpoint move alone. The row requires the host preflight and fake
 second-identity approval to succeed, checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
 endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node

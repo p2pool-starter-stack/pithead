@@ -144,6 +144,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
+    local raw patched dirty status destructive approval_required mh_shown th_shown
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
     # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
@@ -211,17 +212,74 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         fi
     done
     live=$(sensitive_live_config) || return
-    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
+    approval_capture_restore_snapshot || {
+        bad "could not preserve the original raw configuration for guaranteed restore"
+        return
+    }
+
+    # #2333: MONERO_NODE_USERNAME/PASSWORD are the reserved node's own RPC login, not endpoint
+    # identity — they stay host-CLI-only (42-control-policy-and-host-checks.sh:123) and the
+    # dashboard perimeter refuses the WHOLE preview the instant either changes, endpoints included
+    # (43-control-approval-and-preview.sh's bad>0 arm: one non-committable key sinks the request
+    # before destructive/approval_required/preview_values are ever populated). A real operator
+    # repointing only host/port through the dashboard form never carries the login with it, so this
+    # leg does not either: the login lands through the host route "Set up again" names in the
+    # refusal text, and the dashboard proposal below only ever moves host/port.
+    if [ -n "$mu" ] || [ -n "$mp" ]; then
+        raw=$(_ssh 'cat /data/pithead/config.json' 2>/dev/null) && [ -n "$raw" ] || {
+            bad "could not read the live config to set the reserved node's RPC login"
+            return
+        }
+        patched=$(printf '%s' "$raw" | jq --arg u "$mu" --arg p "$mp" '
+            (if $u != "" then .monero.node_username = $u else . end) |
+            (if $p != "" then .monero.node_password = $p else . end)') || {
+            bad "could not construct the reserved node's login patch"
+            return
+        }
+        printf '%s' "$patched" | _ssh 'cat >/data/pithead/config.json.os2333-node-login &&
+mv /data/pithead/config.json.os2333-node-login /data/pithead/config.json &&
+cd /data/pithead && ./pithead apply -y >/dev/null' || {
+            bad "could not set the reserved node's RPC login through the host route"
+            return
+        }
+    fi
+
+    # The gap the fixture's non-blank password used to hide entirely: a login change is refused
+    # outright, endpoints and all. Assert that on its own, with a synthetic value, so the branch is
+    # exercised regardless of what the bench fixture happens to supply.
+    dirty=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "os2333-dashboard-login-probe" "$th" "$grpc") || {
+        bad "reserved-node login-change proposal could not be constructed"
+        return
+    }
+    sensitive_preview "$(dashboard_config_body "$dirty")" || {
+        bad "could not preview a reserved-node login change"
+        return
+    }
+    if printf '%s' "$APPROVAL_PREVIEW" | jq -e '
+        .status == "rejected" and (.error // "" | contains("MONERO_NODE_PASSWORD")) and
+        (.error // "" | contains("not committable from the dashboard"))' >/dev/null; then
+        ok "dashboard preview refuses a Monero node login change even alongside an endpoint move"
+    else
+        bad "dashboard did not refuse a Monero node login change ($(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
+        return
+    fi
+
+    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "" "$th" "$grpc") || {
         bad "reserved-node proposal could not be constructed"
         return
     }
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW
-    if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
-        .status == "previewed" and .destructive == true and .approval_required == true and
-        any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
-        any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
-        bad "reserved-node preview did not expose endpoints behind the combined approval gate ($(reserved_node_preview_payload "$preview"))"
+    status=$(printf '%s' "$preview" | jq -r '.status // "unreadable"')
+    destructive=$(printf '%s' "$preview" | jq -r '.destructive // false')
+    approval_required=$(printf '%s' "$preview" | jq -r '.approval_required // false')
+    mh_shown=$(printf '%s' "$preview" | jq -e --arg mh "$mh" 'any(.preview_values[]?; .key == "monero.remote.host" and .new == $mh)' >/dev/null 2>&1 && echo true || echo false)
+    th_shown=$(printf '%s' "$preview" | jq -e --arg th "$th" 'any(.preview_values[]?; .key == "tari.remote.host" and .new == $th)' >/dev/null 2>&1 && echo true || echo false)
+    if [ "$status" = previewed ] && [ "$destructive" = true ] && [ "$approval_required" = true ] &&
+        [ "$mh_shown" = true ] && [ "$th_shown" = true ]; then
+        ok "reserved-node preview exposes endpoints behind the combined approval gate"
+    else
+        bad "reserved-node preview did not expose endpoints behind the combined approval gate (status=$status destructive=$destructive approval_required=$approval_required monero_host_shown=$mh_shown tari_host_shown=$th_shown; $(reserved_node_preview_payload "$preview"))"
         return
     fi
     rid=$APPROVAL_REQUEST_ID
@@ -234,10 +292,6 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     fi
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
-    approval_capture_restore_snapshot || {
-        bad "could not preserve the original raw configuration for guaranteed restore"
-        return
-    }
     result=$(approval_commit "$rid")
     if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
         bad "host preflight refused the reserved nodes"
