@@ -34,18 +34,28 @@ phase_fault() {
 
     # Fault A: cut power WHILE the updater is writing the spare slot. The invariant is not that
     # the update survives — it is that the box still boots something.
+    local mark verdict
     for i in 1 2 3; do
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
+        mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
         virsh destroy "$VM" >/dev/null 2>&1 || true
         sleep 3
         virsh start "$VM" >/dev/null 2>&1 || true
+        # A hard power cycle can hand the guest a NEW DHCP lease; without re-reading it here,
+        # _wait_ssh spends its whole budget probing the address it held before the cut (#2381:
+        # bench-ci job 101 read a booted, unreachable guest as BRICKED — an "all"-phase run had let
+        # the lease this address was based on age out before the fault phase even started).
+        _wait_dhcp_ip 60 || true
         if _wait_ssh 300; then
             marker=$(_marker)
             ok "A$i: survived a mid-write power cut — booted slot marker '$marker'"
+        elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
+            bad "A$i: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+            return
         else
-            bad "A$i: BRICKED — no boot after a mid-write power cut (disqualifying)"
+            bad "A$i: BRICKED — $verdict (disqualifying)"
             return
         fi
     done
@@ -55,6 +65,7 @@ phase_fault() {
     # refusal — refusing to install is correct, crashing is not, and bricking is disqualifying.
     info "fault C — install a deliberately corrupted bundle"
     _ssh "dd if=/dev/urandom of=/data/update.bundle bs=1M seek=8 count=2 conv=notrunc" >/dev/null 2>&1 || true
+    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
     local corrupt_rc=0
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1") || corrupt_rc=$?
     if printf '%s' "$out" | grep -qi "panic"; then
@@ -69,8 +80,11 @@ phase_fault() {
     fi
     if _wait_ssh 300; then
         ok "C: still boots after being handed a corrupt bundle (marker '$(_marker)')"
+    elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
+        bad "C: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        return
     else
-        bad "C: BRICKED by a corrupt bundle (disqualifying)"
+        bad "C: BRICKED — $verdict (disqualifying)"
         return
     fi
 
@@ -100,13 +114,18 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
+    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
     virsh destroy "$VM" >/dev/null 2>&1 || true
     sleep 3
     virsh start "$VM" >/dev/null 2>&1 || true
+    _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A above
     if _wait_ssh 300; then
         ok "B: survived a mid-commit power cut — booted slot marker '$(_marker)'"
+    elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
+        bad "B: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        return
     else
-        bad "B: BRICKED — no boot after a mid-commit power cut (disqualifying)"
+        bad "B: BRICKED — $verdict (disqualifying)"
         return
     fi
 
