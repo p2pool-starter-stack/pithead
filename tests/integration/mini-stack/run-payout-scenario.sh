@@ -66,8 +66,9 @@ PY
 
 # The payout webhook rides the same NOTIFY_WEBHOOK_URLS the alert-sink coverage in the parent
 # script points at fake-sink (#2263), not fake-hc's separate --event-log — grep the sink's own
-# request log instead.
-payout_alert_count() { sink_requests | grep -c '"event": "payout_confirmed"' || true; }
+# request log instead. fake_sink.py logs the POST body as a JSON-escaped string, so a literal
+# '"event": "..."' pattern never matches the on-disk backslash-quoted form — match the bare word.
+payout_alert_count() { sink_requests | grep -c 'payout_confirmed' || true; }
 
 # 12. Payout confirmation (#2267): drive each real wallet client through its network fake, then
 # prove the persisted total is exposed by /api/state and the configured webhook saw one alert.
@@ -83,7 +84,7 @@ scenario_payout_confirmation() {
     compose exec -T fake-sink sh -c ': > /tmp/requests.log'
     set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
     wait_payout monero 0.25
-    wait_sink "Monero payout fires one alert" '"event": "payout_confirmed"' 50
+    wait_sink "Monero payout fires one alert" 'payout_confirmed' 50
     if [ "$(payout_alert_count)" = 1 ]; then c_ok "Monero payout alert fired once"; else c_bad "Monero payout alert fired once" "got $(payout_alert_count)"; fi
     set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
     wait_min_height 100
@@ -92,7 +93,7 @@ scenario_payout_confirmation() {
     compose exec -T fake-sink sh -c ': > /tmp/requests.log'
     set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
     wait_payout tari 2.5
-    wait_sink "Tari payout fires one alert" '"event": "payout_confirmed"' 50
+    wait_sink "Tari payout fires one alert" 'payout_confirmed' 50
     if [ "$(payout_alert_count)" = 1 ]; then c_ok "Tari payout alert fired once"; else c_bad "Tari payout alert fired once" "got $(payout_alert_count)"; fi
     set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
     sleep 22
