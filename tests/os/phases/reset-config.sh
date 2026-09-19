@@ -11,9 +11,19 @@
 # phases/provision-initial.sh uses.
 _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
-    local onion_before onion_after cr_height_before cr_height_after cr_htries=0 fb_ran boot_ran
+    local onion_before onion_after cr_height_before cr_height_after cr_htries fb_ran boot_ran
     onion_before=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
-    cr_height_before=$(_monerod_height)
+    # monerod's RPC can still be starting even once "stack containers running" above only checked
+    # dashboard+caddy — its baked archive is the largest and loads last (appliance-egress-leg.sh's
+    # own comment on the same wait). Poll the full 5 minutes that leg gives monerod, not
+    # provision-power-cut.sh's tighter 18x10s, which runs only after the rest of the provision
+    # phase has already given monerod plenty of time to start.
+    local cr_height_deadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$cr_height_deadline" ]; do
+        cr_height_before=$(_monerod_height)
+        [ -n "$cr_height_before" ] && break
+        sleep 5
+    done
     if [ -n "$onion_before" ] && [ -n "$cr_height_before" ]; then
         ok "config-reset baseline: onion $onion_before, monerod height $cr_height_before"
     else
@@ -149,6 +159,7 @@ _phase_reset_config() {
     else
         bad "the onion address did not survive config-reset (before: $onion_before, after: ${onion_after:-none})"
     fi
+    cr_htries=0
     while [ "$cr_htries" -lt 18 ]; do
         cr_height_after=$(_monerod_height)
         [ -n "$cr_height_after" ] && break
