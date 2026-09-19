@@ -49,6 +49,7 @@ ONLY_SCENARIO=""
 CHECK_ONLY=0
 READINESS=0
 RUN_LIFECYCLE=0
+RUN_RESET_DASHBOARD=0
 RUN_FAULTS=0
 RUN_AUTH_FAIL_CLOSED=0
 RUN_HARDENING=0
@@ -94,6 +95,8 @@ source "$HERE/lib/run-state.sh" || exit $?
 source "$HERE/lib/run-scenario.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-reset-dashboard.sh
+source "$HERE/lib/run-reset-dashboard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
@@ -201,6 +204,7 @@ main() {
         run_rigforge_integration
     fi
     [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_RESET_DASHBOARD" = "1" ] && run_reset_dashboard
     [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening

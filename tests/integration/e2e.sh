@@ -605,7 +605,7 @@ run_harness() {
     case "$MODE" in
     check) phases="--check" ;;
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
-    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
+    matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --reset-dashboard --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
     [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
