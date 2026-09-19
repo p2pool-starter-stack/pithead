@@ -163,6 +163,16 @@ boot_is_removable() {
     [ "$(cat "/sys/block/$boot_dev/removable" 2>/dev/null)" = "1" ]
 }
 
+# Staged rig settings that are spent OR unusable must not sit on the ESP: they may carry a
+# stratum password, and a VFAT ESP keeps no mode 600 to protect one. Never on removable media —
+# that stick is the operator's own fleet tool, theirs to keep for the next machine. $1 names which.
+scrub_staged_rig() { # <consumed|unusable>
+    boot_is_removable && return 0
+    mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+    rm -f "$PRESEED_DIR/pithead-rig.json" 2>/dev/null ||
+        warn "Could not remove the $1 rig settings from $PRESEED_DIR — they may hold a password; delete the file."
+}
+
 # Booted from removable media AND some other disk is available to install onto. Both halves
 # matter: a box running from its internal disk must never offer to reinstall itself, and an
 # installer with nowhere to install is just a broken setup page.
