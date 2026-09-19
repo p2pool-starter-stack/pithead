@@ -29,9 +29,14 @@ phase_provision_power_regressions() {
     if [ -n "$before" ] && _wait_new_boot "$before" 300; then
         ok "the guest returned unaided after a dashboard-ordered reboot"
     else
-        bad "the guest never came back after a dashboard-ordered reboot"
+        # shellcheck disable=SC2154 # $ip is shared through the assembled runner scope.
+        bad "the guest never came back after a dashboard-ordered reboot ($(_ssh_unreachable_reason "$ip"))"
         return
     fi
+    # Re-acquire the lease rather than assuming it: a guest that took a DIFFERENT address would
+    # otherwise make every probe below fail as "never came back", which is the misreport
+    # _ssh_unreachable_reason exists to stop (tests/os/lib/core.sh). Sets the shared `ip`.
+    _wait_dhcp_ip 120 || bad "no DHCP lease after the dashboard-ordered reboot"
     _wait_ssh 120 || true
     code=""
     local tries=0 answered=0
@@ -71,11 +76,15 @@ phase_provision_power_regressions() {
     fi
     # A dirty ext4 fsck-on-mount message would show up in THIS boot's own dmesg/journal, since a
     # journal-recovered filesystem logs the recovery on the boot that mounts it.
-    virsh start "$VM" >/dev/null 2>&1
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "could not start the guest again after the dashboard-ordered poweroff"
+        return
+    }
+    _wait_dhcp_ip 180 || bad "no DHCP lease after the power-button restart"
     if _wait_ssh 300; then
         ok "the guest boots back up once started — the physical-power-button half of the round trip"
     else
-        bad "the guest never came back up after being started following the poweroff"
+        bad "the guest never came back up after being started following the poweroff ($(_ssh_unreachable_reason "$ip"))"
         return
     fi
     if _ssh "dmesg 2>/dev/null | grep -qi 'recovering journal\|Superblock has_journal'" 2>/dev/null; then

@@ -1409,6 +1409,13 @@ writing the result the page is polling — so a request that never lands never l
   shutdown, then a press of the button) is the safe way to move or unplug the appliance, and it
   restarts on its own from there.
 
+Both orders are rate-limited on the machine itself, not in the browser: the same order inside five
+minutes is refused, with a message saying to retry in a few minutes. That bound is what stops a
+compromised dashboard container from power-cycling the appliance in a loop, so it applies to you
+too — a second reboot straight after one waits out the window. Reboot and power off are bounded
+separately, so a reboot that did not help is immediately followed by a power off if that is what
+you want.
+
 ## Tips
 
 - **First visit certificate warning.** With `dashboard.secure: true` (the default), Caddy uses a

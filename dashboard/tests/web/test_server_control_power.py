@@ -1,6 +1,7 @@
 # ruff: noqa: F403, F405
 """Plain power control route (#2384): POST /api/control/power, modelled on the os-update route."""
 
+import re
 from pathlib import Path
 
 from tests.web._server_support import *  # noqa: F403
@@ -66,10 +67,14 @@ class TestControlPowerRoute:
         assert "nonexistent" not in json.dumps(await resp.json())
 
     def test_action_set_matches_the_host_dispatch_case(self):
+        """BOTH directions. A verb added to only one side must go red rather than 400 silently
+        (route-side gap) or sit unreachable behind a route that can never ask for it (host-side
+        gap) — the latter is the direction a one-way check misses."""
         from mining_dashboard.web.views.power_views import POWER_ACTIONS
 
-        for action in POWER_ACTIONS:
-            assert f"sys-{action})" in _DISPATCH_LOOP, (
-                f"POWER_ACTIONS has {action!r} but 49-control-request-loop.sh has no "
-                f"sys-{action} case — a verb added on one side only"
-            )
+        dispatched = set(re.findall(r"^\s*sys-([a-z-]+)\)", _DISPATCH_LOOP, re.MULTILINE))
+        assert dispatched, "found no sys-* cases in 49-control-request-loop.sh — the regex rotted"
+        assert dispatched == set(POWER_ACTIONS), (
+            f"power action drift: host case has {sorted(dispatched)}, "
+            f"POWER_ACTIONS has {sorted(POWER_ACTIONS)}"
+        )

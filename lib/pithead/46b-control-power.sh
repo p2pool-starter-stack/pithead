@@ -9,11 +9,15 @@
 #
 # Kept out of 48-os-update-verbs.sh on purpose (per the issue): these verbs are not an OS-update
 # step, they share none of its staging state, and that file is already at the file-budget ceiling.
+#
+# Both are bounded twice, host-side: one power verb per drain, and a per-verb cooldown across
+# reboots. The browser's typed confirmation is not a gate — 42-control-policy-and-host-checks.sh
+# says why in its own words: a compromised container writes the spool directly and renders no modal.
 
 # One power verb per drain, like CONTROL_OS_BUDGET (49-control-request-loop.sh) — a reboot or
 # poweroff blocks the runner for the rest of the drain by definition, so a compromised container
 # queuing a flood of them must not starve every other pending intent.
-control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget consumed)
+control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget + cooldown claimed)
     if ! is_appliance; then
         control_os_refuse "$1" "$2" "$3" "$4" rejected "power control applies only to a Pithead OS appliance — a Compose install has a host shell and does not need this. Nothing was changed."
         return 1
@@ -22,7 +26,27 @@ control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget
         control_os_refuse "$1" "$2" "$3" "$4" rejected "another power request is already running in this cycle — retry in a moment."
         return 1
     fi
+    # The budget above bounds one power verb per DRAIN, which is concurrency, not rate: a spool
+    # writer can queue another the moment the machine answers again, and an unbounded reboot loop
+    # is a box no operator can reach at all. So an accepted order also CLAIMS a stamp, and the next
+    # order of the SAME verb inside the window is refused. `find -mmin` rather than date
+    # arithmetic, the same throttle idiom control_os_check uses (47-os-update-helpers.sh).
+    #
+    # The stamp lives in the owner-only control parent, never the container-writable requests
+    # spool, so the asker cannot clear its own cooldown; it sits on /data, so it survives the very
+    # reboot it bounds — a stamp that died with the machine would bound nothing.
+    #
+    # PER VERB, not one shared stamp, because only repeated REBOOTS are a loop: a poweroff ends
+    # with the machine off until someone presses its button, which is this feature's accepted
+    # design, and one shared stamp would instead refuse the operator's real sequence — reboot,
+    # see it did not help, power off to go and move the box.
+    local stamp="$1/.power-stamp.$4"
+    if [ -n "$(find "$stamp" -mmin -5 2>/dev/null)" ]; then
+        control_os_refuse "$1" "$2" "$3" "$4" rejected "the same power order ran less than five minutes ago — retry in a few minutes."
+        return 1
+    fi
     CONTROL_POWER_BUDGET=$((CONTROL_POWER_BUDGET - 1))
+    touch "$stamp" 2>/dev/null || true
     return 0
 }
 
