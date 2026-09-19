@@ -114,13 +114,14 @@ def config_drift(last_applied, rig_config, unsettled=False):
       exactly the keys this dashboard has ever set. A hand-edit to a writable key we never touched
       moves the rig's revision and is invisible here — that is option A's coverage, not this one's.
     - **Never the pool credentials.** ``strip_credentials`` runs over BOTH sides before comparing.
-      RigForge deletes ``pass`` and ``tls-fingerprint`` before serving, so a password we once
-      applied would otherwise be permanent, uncloseable drift on our side alone. The rig side needs
-      the same pass for a different reason: ``_rig_writable_config`` masks a credential it does
-      receive to a ``{__secret__: true}`` sentinel (#1548) rather than stripping it, so a rig that
-      still serves ``pass`` would compare that sentinel against our stripped value and read as
-      permanent drift too, in the other direction. Stripping both sides costs the ability to notice
-      a changed pool password, which nothing on this side can see anyway.
+      RigForge's own ``_api_config_json`` serves a stored ``pass`` or ``tls-fingerprint`` as a
+      ``{__secret__: true}`` sentinel, never the value, and deletes anything that is not a stored
+      string value; our own ``_rig_writable_config`` masks any credential it receives set the same
+      way (#1548), but never deletes one. A rig still serving that sentinel would compare it against
+      our stripped value and read as permanent drift. Stripping our own side too closes the same gap
+      the other way: a password we once applied would otherwise be permanent, uncloseable drift on
+      our side alone. Stripping both sides costs the ability to notice a changed pool password,
+      which nothing on this side can see anyway.
     - **Never mid-flight.** A submitted change sits at ``accepted`` until the reconciler settles it,
       and is not in ``last_applied`` while the rig may already be running it — so comparing inside
       that window reports drift on a key we ourselves just set. Judged on the NEWEST apply row

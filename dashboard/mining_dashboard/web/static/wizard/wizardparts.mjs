@@ -5,8 +5,28 @@
 import { html } from "../app/preact.mjs";
 
 export const Note = ({ children }) => html`<p class="text-muted wizard-note">${children}</p>`;
-export const Err = ({ children }) => (children ? html`<p class="c-bad">${children}</p>` : null);
+export const Err = ({ children }) =>
+  children ? html`<p class="c-bad" role="alert">${children}</p>` : null;
 
 export const Field = ({ label, children }) => html`<label class="config-field">
     <span class="config-field-name">${label}</span>${children}
 </label>`;
+
+export const RadioField = ({
+  label,
+  name,
+  value,
+  onChange,
+  options,
+}) => html`<fieldset class="wizard-choices">
+    <legend class="config-field-name">${label}</legend>
+    ${options.map(
+      ([optionValue, optionLabel, description]) => html`<label>
+        <input type="radio" name=${name} value=${optionValue}
+            checked=${String(value) === String(optionValue)} onChange=${onChange} />
+        <span><strong>${optionLabel}</strong>
+          <span class="text-muted">${description}</span>
+        </span>
+      </label>`,
+    )}
+</fieldset>`;

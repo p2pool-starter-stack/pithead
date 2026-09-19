@@ -163,7 +163,7 @@ out=$(
     main
 )
 assert_eq "low-RAM boot shrinks the pool to the reduced target" "$(cat "$HG/nr_hugepages")" "2560"
-assert_contains "low-RAM boot announces the degrade on the console/journal" "$out" "below the supported 16 GB"
+assert_contains "low-RAM boot announces the degrade on the console/journal (#1221 full wording)" "$out" "This machine has 7.7 GiB of RAM — below the supported 16 GB. The mining reservation is reduced from 6 GiB to 5 GiB of large pages so mining can still run, and everything else runs squeezed: expect lower performance and less headroom. Use a 16 GB machine for supported operation."
 assert_contains "degraded marker names the supported floor in plain words" "$(cat "$HG/marker" 2>/dev/null)" "16 GB"
 assert_eq "marker records the chosen page count — the authority later writers honour" \
     "$(sed -n 's/^pages=//p' "$HG/marker" 2>/dev/null)" "2560"
@@ -179,7 +179,7 @@ out=$(
     main
 )
 assert_eq "far-below-floor boot releases the reservation" "$(cat "$HG/nr_hugepages")" "0"
-assert_contains "far-below-floor boot says the stack will not run reliably" "$out" "will not run reliably"
+assert_contains "far-below-floor boot says the stack will not run reliably (#1221 full wording)" "$out" "This machine has 3.8 GiB of RAM — far below the supported 16 GB. The 6 GiB mining reservation is released entirely so the machine stays responsive, and the mining stack will not run reliably on this hardware."
 assert_eq "released marker records zero pages" "$(sed -n 's/^pages=//p' "$HG/marker" 2>/dev/null)" "0"
 
 # main, supported tier: a strict no-op — pool untouched, no marker, nothing said.

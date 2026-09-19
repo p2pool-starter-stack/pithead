@@ -9,6 +9,7 @@
 // a UI suggestion, it is the only chance — match that in the copy, not just the code.
 
 import { Component, html } from "../app/preact.mjs";
+import { failureLog } from "../config/applyfailure.mjs";
 import { pollResult } from "../config/configview.mjs";
 import { fmtEpoch } from "./securityview.mjs";
 
@@ -124,9 +125,14 @@ export class BackupPanel extends Component {
   }
 
   renderFailed(result) {
+    const error = result && result.error;
+    const log = result && result.log;
     return html`<div class="card">
         <h3>Backup</h3>
-        <p class="status-bad">${(result && result.error) || "The host runner reported a failure."}</p>
+        <p class="status-bad">Backup did not complete.</p>
+        ${error ? html`<p class="status-bad">${error}</p>` : null}
+        ${failureLog(log, this.props.appliance, "backup")}
+        ${!error && !log ? html`<p class="status-bad">The host runner reported a failure.</p>` : null}
         <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", result: null })}>Close</button>
     </div>`;
   }
@@ -149,9 +155,7 @@ export class BackupPanel extends Component {
       }
       return html`<div class="card">
           <h3>Backup</h3>
-          <p>Backup export is off with the rest of the control channel. To enable it, set
-          <code>dashboard.control.enabled: true</code> in <code>config.json</code> on the host
-          and run <code>./pithead apply</code>. It requires a dashboard login.</p>
+          <p>Backup export is off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
     const { phase, id, result } = this.state;

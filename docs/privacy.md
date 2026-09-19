@@ -43,7 +43,12 @@ by channel:
   survives netavark reprogramming its own table.
 
 `pithead doctor` reads whichever mechanism the running engine uses and checks the drop is in a chain
-that is actually hooked at forward, so it cannot report enforced while the rules are orphaned.
+that is actually hooked at forward, so it cannot report enforced while the rules are orphaned. The
+install reads the same live state back before it reports success, so "Tor-only egress enforced" in
+the log means the rules were found in the kernel, not that the install command exited zero. A host
+whose engine has no firewall backend installed at all cannot enforce anything, so `doctor` FAILs
+there rather than skipping the check — on the appliance that is what stops a slot with no firewall
+from committing itself as healthy.
 
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
@@ -64,6 +69,30 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
   plaintext leg p2pool uses.
 - Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections.
+
+On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
+that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
+Compose project. It does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
+`RETURN` rule scoped with `-s` to any network that overlaps the mining subnet — a wider supernet
+containing it, or a narrower range inside it, negated (`! -s`) or not — is recognized as shadowing,
+in addition to an unscoped rule or one scoped to exactly the mining subnet
+([pithead#2117](https://github.com/p2pool-starter-stack/pithead/issues/2117)). A rule scoped only
+with `-d` (destination) is covered conservatively rather than precisely: the walk doesn't do
+CIDR math on `-d`, so any `-d`-scoped rule is treated the same as an unscoped one and flagged as
+shadowing, whether or not it could actually match our traffic — safe, but not exact.
+`pithead doctor` reports the shadowed case as not-enforced. This only matters if something else on
+the same host also writes rules into `DOCKER-USER`; the podman/netavark appliance path proves
+reachability structurally instead of by rule-scanning, so it does not have this gap.
+
+The check reads each `DOCKER-USER` rule as tokens rather than scanning it as text, honouring the
+quoting `iptables` itself uses, so `-s` counts only as a flag of its own and a foreign rule's own
+free-text values — a `--comment`, an `-m string --string`, anything quoted — are values that can
+never be read as flags, whatever they spell. Three earlier substring-scanning versions of this
+check could each be talked out of a correct verdict by a crafted match value, the last of them
+reported as a live fail-open ([pithead#2129](https://github.com/p2pool-starter-stack/pithead/issues/2129));
+the tokeniser replaces that shape rather than patching it. There is no fallback path: a rule the
+tokeniser cannot read unambiguously — an unterminated quote, a `-s` whose value is not an address,
+two sources on one rule — is reported as shadowing, never as harmless.
 
 ---
 
@@ -135,14 +164,14 @@ only when every configured endpoint is a private or loopback IP literal, since s
 leaves your network. A hostname can't be proven private without a DNS lookup, so a hostname
 endpoint with Tor off counts as **clearnet**, a real leak.
 
-The topology diagram applies that same rule to the hops that reach a remote monerod or Tari node,
-and keeps three answers apart instead of two. A node reached at a private, loopback or link-local
-IP literal draws as **LAN**: the hop leaves this machine but stays on your network, so it does not
+The topology diagram moves a remote monerod or Tari node outside the host zone and shows both
+gRPC/RPC hops to it without expanding the internal mesh. A private, loopback or link-local IP
+literal draws as **LAN**: the hop leaves this machine but stays on your network, so it does not
 expose your IP and is not counted as a leak. Any other IP literal draws as **clearnet** and is
-counted. A node configured by **hostname** draws as **Unverified** — the diagram will not resolve
-a name to classify it, because that lookup would itself be an egress, and on a Tor-routed stack it
-would cause the exact exposure the panel exists to warn about, on every render. Unverified is not
-counted as a leak either; the panel says it cannot tell rather than guessing in either direction.
+counted. A hostname draws as **Unverified** because the diagram will not resolve it and create a
+DNS egress on every render. A remote node never gets the local daemon's Tor P2P edge or initial-sync
+edge; those describe a node this machine runs. Unverified is not counted as a proven leak, but it
+makes the shared security summary warn instead of claiming all egress uses Tor.
 
 The two **ingress** hops draw as **Incoming**: mining traffic into xmrig-proxy and HTTPS into
 Caddy, with their sources grouped under **Clients**. This keeps client connections distinct from

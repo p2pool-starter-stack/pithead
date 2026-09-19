@@ -4,7 +4,7 @@ against the keys that must never be dashboard-committable at all."""
 
 import pytest
 
-from mining_dashboard.service import control_service
+from mining_dashboard.service import config_operations, control_service
 
 # The security perimeter (#1094, #1069 W9): env keys that must never be dashboard-committable at
 # all. SECURITY.md:99-100 is the authority for what belongs here — "wallets and view keys,
@@ -73,7 +73,7 @@ def _pithead_key_sets():
         pytest.skip("pithead CLI not present in this test context (dashboard-only image)")
     pithead = pithead_path.read_text()
     found = {}
-    for name in ("EDITABLE", "CONFIRM"):
+    for name in ("EDITABLE", "CONFIRM", "APPROVAL"):
         m = re.search(rf"CONTROL_DASHBOARD_{name}_KEYS='([^']*)'", pithead)
         assert m, f"could not find pithead's {name.lower()} allowlist"
         found[name.lower()] = set(m.group(1).split())
@@ -81,6 +81,18 @@ def _pithead_key_sets():
     assert m, "could not find pithead's CONTROL_NODE_ENDPOINT_KEYS (#1888)"
     found["node_endpoints"] = set(m.group(1).split())
     return pithead, found
+
+
+def test_approval_keys_have_no_intra_repo_drift():
+    """the 2026-09-13 perimeter audit (mirrors the #613/#719 drift checks): config_operations.APPROVAL_ENV_KEY_PATHS is a
+    second copy of pithead's CONTROL_DASHBOARD_APPROVAL_KEYS. Before the 2026-09-13 perimeter audit there was nothing to
+    compare -- the tier was "every schema leaf not otherwise classified", so the dashboard offered
+    the whole security perimeter behind an envelope the container writes itself. The EMPTY case is
+    asserted deliberately: a regex that stopped matching extracts as empty, and empty compares
+    equal to an empty map, so a silently-broken extraction would read as a pass."""
+    _, keys = _pithead_key_sets()
+    assert keys["approval"], "extracted an empty approval allowlist -- the regex stopped matching"
+    assert set(config_operations.APPROVAL_ENV_KEY_PATHS.keys()) == keys["approval"]
 
 
 def test_node_endpoint_keys_are_confirm_gated_and_probed():
@@ -141,11 +153,16 @@ def test_perimeter_env_keys_never_committable_from_either_copy():
     pithead = pithead_path.read_text()
     editable_m = re.search(r"CONTROL_DASHBOARD_EDITABLE_KEYS='([^']*)'", pithead)
     confirm_m = re.search(r"CONTROL_DASHBOARD_CONFIRM_KEYS='([^']*)'", pithead)
-    assert editable_m and confirm_m, "could not find pithead's editable/confirm allowlists"
+    approval_m = re.search(r"CONTROL_DASHBOARD_APPROVAL_KEYS='([^']*)'", pithead)
+    assert editable_m and confirm_m and approval_m, (
+        "could not find pithead's editable/confirm/approval allowlists"
+    )
     pithead_editable = set(editable_m.group(1).split())
     pithead_confirm = set(confirm_m.group(1).split())
+    pithead_approval = set(approval_m.group(1).split())
     py_editable = set(control_service.EDITABLE_ENV_KEY_PATHS.keys())
     py_confirm = set(control_service.CONFIRM_ENV_KEY_PATHS.keys())
+    py_approval = set(config_operations.APPROVAL_ENV_KEY_PATHS.keys())
 
     for key in NEVER_COMMITTABLE_ENV_KEYS:
         # A perimeter entry whose spelling no longer exists in the codebase guards nothing: the
@@ -156,5 +173,10 @@ def test_perimeter_env_keys_never_committable_from_either_copy():
         )
         assert key not in pithead_editable, f"{key} in pithead's CONTROL_DASHBOARD_EDITABLE_KEYS"
         assert key not in pithead_confirm, f"{key} in pithead's CONTROL_DASHBOARD_CONFIRM_KEYS"
+        # The third tier (2026-09-13 perimeter audit). Until it became a NAMED list this assertion could not be made at
+        # all: the tier was "everything not otherwise classified", so every key below was in it and
+        # the perimeter this file names was self-approvable from the dashboard's own request spool.
+        assert key not in pithead_approval, f"{key} in pithead's CONTROL_DASHBOARD_APPROVAL_KEYS"
         assert key not in py_editable, f"{key} in control_service.EDITABLE_ENV_KEY_PATHS"
         assert key not in py_confirm, f"{key} in control_service.CONFIRM_ENV_KEY_PATHS"
+        assert key not in py_approval, f"{key} in config_operations.APPROVAL_ENV_KEY_PATHS"

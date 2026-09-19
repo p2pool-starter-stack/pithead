@@ -311,8 +311,10 @@ XvB's published estimate into the expected side keeps the percent comparing like
 wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
-off shows the config key to set instead of a zero that would read as "earned nothing"; the XvB row
-disappears when XvB is off; a `*` marks a window that reaches back past the oldest recorded payout.
+off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
+Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
+off; a `*` marks a window that reaches back past the oldest recorded payout.
 
 Payouts swing with mining luck — P2Pool pays when the pool finds blocks, and solo Tari blocks are
 rarer still. A sustained gap between expected and actual is the signal worth checking (workers
@@ -485,9 +487,10 @@ Three things bound what the comparison claims, and each bound is deliberate:
 - **It judges only keys this dashboard has set.** What it compares against is a record of the
   changes we pushed, not a copy of the rig's config, so a hand-edit to a key we have never applied
   has nothing to disagree with. The second check below is what covers that case.
-- **It never compares pool passwords.** RigForge strips the pool password and TLS fingerprint before
-  serving its config, so the dashboard strips them from its own side too. A changed pool password
-  would otherwise read as drift on every rig, forever. This comparison cannot see one either way.
+- **It never compares pool passwords.** RigForge serves a stored credential as a marker, never the
+  value, and the dashboard strips both sides so the marker cannot read as drift. A changed pool
+  password would otherwise read as drift on every rig, forever. This comparison cannot see one
+  either way.
 - **It says nothing while a change is in flight.** A change that has been sent and not yet settled
   is not in the applied record, though the rig may already be running it, so the comparison is held
   back until the outcome lands rather than reporting a key we ourselves just set.
@@ -622,10 +625,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
-**XMR Network** and **Tari Merge-Mining** each carry a **Node** row saying whether that node runs
-here or somewhere else, and the **Stack Topology & Egress** diagram captions `monerod` and `tari`
-the same way. The difference is operational: a node you run is yours to restart and resync, and a
-node you point at (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
+**XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
+sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
+remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
+Unverified. The difference is
+operational: a node you run is yours to restart and resync, and a node you point at
+(`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
 before this shipped, rather than a node it has decided is local.
@@ -961,8 +966,7 @@ the config tab now behave identically.) The pieces:
   different keys; a single-key section keeps the shorter relative label — its heading names the rest.
   Every group carries a one-line explanation. A frontend test requires every reference path to
   have an intentional named group, so a new key cannot silently vanish or drift into an **Other**
-  bucket. A hidden key is the one exception: `ssh.*` (below) is dropped
-  before the grouping runs, so it reaches neither a section nor **Other**. `workers.list[]` (the per-rig descriptors) isn't a form field
+  bucket. `workers.list[]` (the per-rig descriptors) isn't a form field
   here — a variable-length list has no single form control for it; edit the complete list in the
   Advanced JSON pane. Changes to existing rig hosts and tokens require approval.
   [Worker Inspect](#worker-inspect) is a different thing:
@@ -984,17 +988,7 @@ the config tab now behave identically.) The pieces:
   uses. A malformed edit is flagged inline, keeps the last good candidate as what Save would
   send, and blocks Save until fixed. The pane edits the whole config as text, so grouping and
   the form grouping does not constrain it — the machine still validates it under the same free,
-  confirm, approval, and never-approve classes. The hidden keys below are the exception: they are not in
-  the text, and typing one in does not put it there.
-- **`ssh.*` is not in this view at all**
-  ([#1850](https://github.com/p2pool-starter-stack/pithead/issues/1850)). SSH on the appliance is a
-  developer feature — a user never shells into the machine, and the ways in are a configuration
-  stick and the `--ssh` debug image. The host's approval channel refuses those keys whatever
-  sends them, so the page used to offer a control that could not work: an operator who set
-  `ssh.enabled` and pressed **Save & preview changes** was told "No configuration changes
-  detected", because the host had dropped the only key they had changed. The form and the pane
-  both hide them now, and the view puts the machine's own values back into whatever it sends —
-  so a save from here leaves SSH exactly as it was, on or off.
+  confirm, approval, and never-approve classes.
 
 The flow mirrors the CLI's `apply`:
 
@@ -1054,9 +1048,9 @@ signed-in operator, the typed `APPLY` for a disruptive change, and the payout su
 friction and typo protection, not a second identity. A sensitive commit no longer depends on
 Telegram being configured, so it works the same on a stack that never set the bot up.
 
-The existing physical-presence boundary is unchanged: `ssh.*`, the dashboard password, and the two
-tamper alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every
-other check and directs the operator to use a configuration stick. This prevents the configuration
+The existing physical-presence boundary is unchanged: the dashboard password and the two tamper
+alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every other
+check and directs the operator to use a configuration stick. This prevents the configuration
 page from weakening the evidence its own later changes would be judged by.
 
 A node-endpoint change is the one confirm-gated setting with a second gate behind the typed
@@ -1284,10 +1278,11 @@ The card names both halves a restore needs: the encrypted archive, and the kit t
 passphrase opening it. Neither half is any use without the other, and setting a machine up later
 asks for that same pair.
 
-On the appliance the card drops the host-side remedy the other builds print. Turning the control
-channel back on means editing `config.json` and running `./pithead apply`, and an appliance
-operator has no shell for either, so there the card says backup returns with the control channel
-rather than naming a file they cannot open.
+On the appliance the card drops the host-side remedy the other builds print. If the machine was
+set up without a dashboard login, it points at **Set up again** in the boot menu instead of
+`config.json` or `./pithead apply`. If a backup attempt fails, the card keeps the error tail but
+labels it as the machine's own backup log, so commands in that log do not read as instructions for
+the browser.
 
 ## Upgrading from the dashboard
 
@@ -1348,10 +1343,12 @@ later ride out the restart.
 The button never appears on a source checkout — the runner refuses the request there, since a dev
 install updates with `git pull`. If the upgrade fails, the result says so in the view: a failed
 release lookup or bundle download changes nothing; a failure during `pithead upgrade` leaves
-containers that were not yet recreated on the previous images, and finishing up is one
-`./pithead upgrade` on the host. There is no automatic rollback — the images of the previous
-release stay on disk, and `docker compose` state is recoverable the same way as a failed
-CLI upgrade. The result names the restore point ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
+containers that were not yet recreated on the previous images. On a host, the result keeps the
+recovery command separate from the upgrade log. On an appliance, the card labels the tail as the
+machine's own log and does not show the host-only command or backup paths. There is no automatic
+rollback — the images of the previous release stay on disk, and `docker compose` state is
+recoverable the same way as a failed CLI upgrade. The host result names the restore point
+([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)):
 on the versioned layout, the previous `pithead-vX.Y.Z` dir; in place, the pre-upgrade
 `config.json`/`.env` copies.
 

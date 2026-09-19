@@ -103,6 +103,8 @@ test('uptimeCell: online shows uptime, offline shows DOWN', () => {
 test('egressRoute: known routes map to icon/label/class; unknown falls back to muted', () => {
     assert.deepEqual(egressRoute('tor'), { icon: '🧅', label: 'Tor', cls: 'ok' });
     assert.equal(egressRoute('clearnet').cls, 'bad');
+    assert.deepEqual(egressRoute('lan'), { icon: '🖧', label: 'LAN', cls: 'accent' });
+    assert.deepEqual(egressRoute('unknown'), { icon: '⚠️', label: 'Unverified', cls: 'warn' });
     assert.equal(egressRoute('local').cls, 'muted');
     assert.equal(egressRoute('inactive').cls, 'muted');
     const unknown = egressRoute('weird');

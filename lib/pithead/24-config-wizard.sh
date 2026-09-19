@@ -132,7 +132,7 @@ wizard_port() {
 }
 
 # The Enter-through answer to "Merge-mine Tari?" (#1916), derived from free disk rather than fixed.
-# The bundled Tari node wants a ~200 GB chain of its own on top of Monero's, so a fixed yes commits
+# The bundled Tari node adds a 200 GiB budget on top of Monero's, so a fixed yes commits
 # an undersized host to a first sync that fills its disk, and a fixed no drops the stack's headline
 # feature on a host with room to spare. Sets WIZ_TARI_DEFAULT to "local" or "off", and PRINTS the
 # one-line reason for it — the operator reads the measurement, not just the verdict it produced.
@@ -162,7 +162,7 @@ wizard_tari_disk_default() {
     fi
     if [ -z "$avail_kb" ]; then
         WIZ_TARI_DEFAULT="local"
-        echo "Disk: could not read the free space where $PWD/data will live, so running the bundled node is the default. The whole stack needs ~${need_gib} GB there."
+        echo "Disk: could not read the free space where $PWD/data will live, so running the bundled node is the default. The whole stack needs ~${need_gib} GiB there."
         return 0
     fi
     avail_h=$(df -Ph "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_h=""
@@ -174,7 +174,7 @@ wizard_tari_disk_default() {
         WIZ_TARI_DEFAULT="off"
         verdict="it does not fit, so declining is the default. Option 3 keeps the chain off this disk."
     fi
-    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GB there — $verdict"
+    echo "Disk: ${avail_h:-?} free on $mount, and the whole stack with the bundled Tari node needs ~${need_gib} GiB there — $verdict"
 }
 
 # Stage 1b (#1855/#1916): does this machine merge-mine Tari at all, and against whose node?

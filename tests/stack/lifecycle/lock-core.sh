@@ -103,6 +103,22 @@ assert_eq "while the kernel has already given the window itself back" "$(lock_st
 # `flock -n FILE sleep 60 &` would NOT do: flock forks, so killing $! orphans a sleep that still
 # holds the inherited descriptor for the full 60s and blocks every case after this one. Open the
 # descriptor here and `exec` the sleep onto it instead, so the holder is one killable process.
+# Score the unrecorded-holder case, skipping the downstream assertions if the window never came
+# up held: an unarmed fixture must cost exactly the one failure below, not that one plus two more
+# that only restate "the lock was free" in the words of an unrelated assertion (#2294) — the two
+# rc/message cases would be reporting on an uncontended run, and the third would pass for the
+# worst reason available, nothing reported under ANY name.
+lock_unrecorded_score() {
+    if [ "$(lock_state)" != "held" ]; then
+        bad "the unrecorded holder takes the window" "the lock is free, so the three cases below prove nothing"
+        return
+    fi
+    out="$(PITHEAD_LOCK_FILE="$LKFILE" PITHEAD_LOCK_TIMEOUT=1 DOCKER_LOG="$LKLOG" PATH="$LKBIN:$PATH" run_sourced "$LKDIR" stack_down 2>&1)"
+    rc=$?
+    assert_rc "an unrecorded holder still blocks the window" "$rc" "75"
+    assert_contains "an unrecorded holder is reported as unrecorded" "$out" "holder unrecorded"
+    assert_not_contains "and is never reported under the previous holder's name" "$out" "verb=backup"
+}
 (
     exec 9>>"$LKFILE"
     flock -n 9 || exit 1
@@ -111,20 +127,23 @@ assert_eq "while the kernel has already given the window itself back" "$(lock_st
 LKEXT=$!
 lock_held() { [ "$(lock_state)" = "held" ]; } # #1495: see wait_while_alive in lib.sh
 wait_while_alive "$LKEXT" lock_held
-# A poll that gives up must say so. If this one exhausts, the external holder never took the
-# window: the two rc/message cases below would be reporting on an uncontended run, and the third
-# passes for the worst reason available — nothing was reported under ANY name, so "never under
-# the previous holder's name" is true of an empty string.
-if [ "$(lock_state)" != "held" ]; then
-    bad "the unrecorded holder takes the window" "the lock is free, so the three cases below prove nothing"
-fi
-out="$(PITHEAD_LOCK_FILE="$LKFILE" PITHEAD_LOCK_TIMEOUT=1 DOCKER_LOG="$LKLOG" PATH="$LKBIN:$PATH" run_sourced "$LKDIR" stack_down 2>&1)"
-rc=$?
-assert_rc "an unrecorded holder still blocks the window" "$rc" "75"
-assert_contains "an unrecorded holder is reported as unrecorded" "$out" "holder unrecorded"
-assert_not_contains "and is never reported under the previous holder's name" "$out" "verb=backup"
+lock_unrecorded_score
 kill "$LKEXT" 2>/dev/null
 wait "$LKEXT" 2>/dev/null
+
+# Regression control (#2294): the lock is free again right here (the holder above was just killed
+# and reaped), so calling the same scoring function now exercises its unarmed branch for real,
+# with no need to fake a second holder. Run it in a subshell with `ok`/`bad` shadowed to local
+# counters, so the failure it is supposed to produce doesn't land in the suite's own PASS/FAIL —
+# a correctly-behaving suite must stay green here, only the one outer assert_eq is scored for real.
+_lk_scored=$(
+    ok() { PASS=$((PASS + 1)); }
+    bad() { FAIL=$((FAIL + 1)); }
+    _before=$((PASS + FAIL))
+    lock_unrecorded_score
+    echo "$((PASS + FAIL - _before))"
+)
+assert_eq "a fixture whose precondition failed scores only that one failure (#2294)" "$_lk_scored" "1"
 
 # A blocked waiter must actually WAIT and then proceed — not print that it is waiting and refuse.
 # Driven by releasing the lock underneath a waiter that is already blocked, rather than by timing:

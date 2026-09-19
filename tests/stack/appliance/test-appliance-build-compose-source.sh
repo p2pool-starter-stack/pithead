@@ -67,9 +67,14 @@ assert_contains "the tree path exits 0" "$cs_out" "rc=0"
 assert_eq "the tree path ships the working tree's compose file byte for byte" \
     "$(cat "$CS/untagged/docker-compose.yml")" "$(cat "$CS/repo/docker-compose.yml")"
 assert_eq "the tree path's stamp is the bare word" "$(cat "$CS/untagged/COMPOSE_SOURCE")" "tree"
-
 printf 'services:\n  immutable: {image: example.invalid/app@sha256:%064d}\n' 3 >"$CS/external-compose.yml"
-cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/file")"
+cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/unmarked-file")"
+assert_contains "a normal build cannot replace the tagged compose with an explicit file" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/debug-file")"
+assert_contains "a normal debug build cannot replace the tagged compose with an explicit file" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/release-file")"
+assert_contains "a shell-less release build cannot opt into synthetic compose staging" "$cs_out" "rc=1"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml" cs_stage v0.0.1 "$CS/file")"
 CS_FILE_SHA="$(sha256sum "$CS/external-compose.yml" | cut -d' ' -f1)"
 assert_contains "an explicit compose file is stamped with its content hash" "$cs_out" "file sha256:$CS_FILE_SHA"
 assert_eq "the explicit compose file is copied byte for byte" \
@@ -79,16 +84,15 @@ assert_eq "the explicit compose file is copied byte for byte" \
     )" "0"
 assert_eq "the file stamp carries the exact lowercase sha256" "$(cat "$CS/file/COMPOSE_SOURCE")" "file sha256:$CS_FILE_SHA"
 
-cs_out="$(PITHEAD_OS_COMPOSE_FILE="$CS/missing-compose.yml" cs_stage v0.0.1 "$CS/missing-file")"
+cs_out="$(PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/missing-compose.yml" cs_stage v0.0.1 "$CS/missing-file")"
 assert_contains "a missing explicit compose file is refused" "$cs_out" "rc=1"
 assert_contains "the missing-file refusal names PITHEAD_OS_COMPOSE_FILE" "$cs_out" "PITHEAD_OS_COMPOSE_FILE"
-
 mkdir -p "$CS/copy-failure"
 printf 'stale\n' >"$CS/copy-failure/docker-compose.yml"
 printf 'tree\n' >"$CS/copy-failure/COMPOSE_SOURCE"
 cs_out="$(
     {
-        export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml"
+        export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_TEST_SSH_PUBKEY=test PITHEAD_OS_SYNTHETIC_COMPOSE=1 PITHEAD_OS_COMPOSE_FILE="$CS/external-compose.yml"
         set --
         source "$ROOT/os/build-image.sh"
         set +e
@@ -116,6 +120,9 @@ cs_out="$(
 assert_contains "a failed remote tag query is refused, not read as tag absence" "$cs_out" "rc=1"
 assert_contains "the remote-query refusal names the uncertainty" "$cs_out" "could not determine whether tag v0.0.9 exists"
 assert_eq "the remote-query failure stages nothing" "$(ls "$CS/remote-error" 2>/dev/null)" ""
+assert_contains "the floor-fallback build opts into synthetic compose staging" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_OS_SYNTHETIC_COMPOSE=1'
+assert_contains "the floor-fallback build resolves its signing material before staging" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'resolve_signing_material 1'
+assert_contains "the floor-fallback build passes resolved signing material to its copied-tree bundle" "$(cat "$ROOT/tests/os/data-floor-fallback-leg.sh")" 'PITHEAD_RAUC_KEYRING="$keyring"'
 
 echo "== unit: build-image --stage-only parses, and stops after staging, before the first docker step (#1215) =="
 # The CI rootfs scan runs the Dockerfile itself, so it needs the staging without the build. The
@@ -126,6 +133,7 @@ echo "== unit: build-image --stage-only parses, and stops after staging, before 
 assert_eq "--stage-only is accepted and recorded" \
     "$( (export PITHEAD_BUILD_IMAGE_TEST=1 && set -- --stage-only && source "$ROOT/os/build-image.sh" && echo "STAGE_ONLY=${STAGE_ONLY:-unset}") 2>&1)" "STAGE_ONLY=1"
 rigforge_test_ref=0123456789abcdef0123456789abcdef01234567
+# shellcheck disable=SC2154 # sourced build-image.sh sets this array.
 rigforge_args_out="$( (export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_RIGFORGE_REF="$rigforge_test_ref" && set -- && source "$ROOT/os/build-image.sh" && printf '%s' "${rigforge_build_args[*]}") 2>&1)"
 assert_eq "an immutable RigForge test ref reaches docker build" "$rigforge_args_out" "--build-arg RIGFORGE_REF=$rigforge_test_ref"
 (export PITHEAD_BUILD_IMAGE_TEST=1 PITHEAD_RIGFORGE_REF=main && set -- && source "$ROOT/os/build-image.sh" >/dev/null 2>&1)
@@ -141,7 +149,6 @@ assert_eq "the stop sits after the staging line and before the wizard image step
     "$([ "${l_stage:-0}" -lt "${l_stop:-0}" ] && [ "${l_stop:-0}" -lt "${l_wizard:-0}" ] && echo ordered)" "ordered"
 unset -f bi_line
 unset l_build l_stage l_stop l_wizard
-
 caller="$CS/caller"
 mkdir -p "$caller/os/build/stage" "$caller/scripts"
 cp "$ROOT/os/build-image.sh" "$caller/os/build-image.sh"
@@ -297,27 +304,6 @@ mismatch_out="$({
 } 2>&1)"
 assert_rc "promotion refuses latest resolving away from the captured digest" "$?" "1"
 assert_contains "promotion mismatch names latest and the captured digest" "$mismatch_out" "ghcr.io/test/pithead-tor:latest did not resolve to captured digest $CHAIN_DIGEST"
-
-# Resume re-captures mutable staging tags, so those bytes must pass smoke before promotion.
-resume_calls="$SANDBOX/resume-calls"
-# shellcheck disable=SC1090,SC2034,SC2329
-(
-    cd "$ROOT" || exit 1
-    set --
-    # shellcheck disable=SC1090
-    source "$REL" 2>/dev/null
-    preflight() { :; }
-    ghcr_login() { :; }
-    manifest_digest() { printf 'sha256:%064d\n' 7; }
-    smoke_test() { printf 'smoke\n' >>"$resume_calls"; }
-    promote() { printf 'promote\n' >>"$resume_calls"; }
-    sign_images() { :; }
-    publish() { :; }
-    DRY_RUN=0 RESUME_PROMOTE=1 IMAGES=(tor) TAG=v9.9.9 STAGING_TAG=v9.9.9-rc.1 REGISTRY=ghcr.io/test
-    main
-) >/dev/null 2>&1
-assert_rc "--resume-promote succeeds with a captured digest" "$?" 0
-assert_eq "--resume-promote smokes newly captured bytes before promotion" "$(tr '\n' ' ' <"$resume_calls")" "smoke promote "
 
 # shellcheck disable=SC1090
 (

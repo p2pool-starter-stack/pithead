@@ -107,8 +107,9 @@ cp config.minimal.json config.json   # then set your Monero + Tari payout addres
 > Release archives include the generated `pithead` executable and offline operator guides; source
 > clones build the executable with `make`.
 
-> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (~330 GB pruned / ~530 GB full
-> minimum with both nodes local; the chains grow ~100+ GB/year, so 2–4 TB avoids a later resize),
+> NOTE: Prereqs are Ubuntu Server 24.04 LTS, 16 GB+ RAM, an SSD (600 GB+ in either prune mode
+> with both nodes local, or 370 GB+ with Tari remote; the chains grow ~100+ GB/year, so 2–4 TB
+> avoids a later resize),
 > and your Monero + Tari payout addresses. Running a node on another machine cuts the disk budget —
 > full sizing in [Hardware Requirements](docs/hardware.md).
 
@@ -239,6 +240,7 @@ Everything runs through `pithead` (`./pithead help` lists it all):
 | `./pithead upgrade` | Re-render config, then pull (bundle) or rebuild (source) the images and restart — see [Updating](docs/operations.md#updating-the-stack). |
 | `./pithead logs [service]` | Follow logs (all, or one service). |
 | `./pithead status` | Container status + health-check of every expected service (warns on anything down). |
+| `./pithead test-alert` | Send a marked test message through each configured Telegram, webhook, and ntfy sink; Healthchecks is excluded because a ping moves its dead-man switch. |
 | `./pithead doctor` | Read-only health report (deps, Docker, AVX2, HugePages, RAM/disk, onion state). |
 | `./pithead version` | Print the installed stack version on one line (offline; also `-V` / `--version`). |
 | `./pithead backup` | Save config, secrets, the Tor onion keys, and the dashboard's database to a passphrase-encrypted archive under `backups/` (`--with-chains` adds blockchain data; `--no-encrypt` writes plaintext; `-y` / `--yes` skips the prompts). |
@@ -267,4 +269,4 @@ If this stack saved you time, donations to this XMR wallet are appreciated:
 Pithead's own code is provided "as-is" under the [MIT License](./LICENSE). Bundled
 third-party components keep their own licenses (two, `p2pool` and `xmrig-proxy`, are GPLv3,
 shipped unmodified as separate containers). See
-[`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).
+[`docs/THIRD_PARTY_LICENSES.md`](./docs/THIRD_PARTY_LICENSES.md).
