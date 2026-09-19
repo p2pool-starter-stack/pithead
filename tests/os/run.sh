@@ -20,10 +20,13 @@
 #           up — wizard accepted, setup ran, images pulled and verified, containers running,
 #           dashboard served. This is the phase that catches an appliance whose engine cannot
 #           actually run the product (it happened: pithead speaks docker, the image had only
-#           podman, and every other phase was green).
+#           podman, and every other phase was green). Closes with a power-cut leg (M10, #2067):
+#           three cuts against the LIVE provisioned stack, not a bare guest or a clean reboot.
 #   rig     answer "RigForge" on the same page and prove the OTHER machine this image installs:
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
+#           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
+#           off a real virsh destroy, not just the reboot leg's clean return.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
@@ -33,6 +36,7 @@
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
 #           dashboard login, appliance defaults and node credentials survive, old login still works.
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
+#           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
