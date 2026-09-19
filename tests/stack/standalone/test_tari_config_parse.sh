@@ -48,7 +48,7 @@ echo "  (image: $TARI_IMAGE)"
 # --network none: the node needs no network to parse config or fail with ConfigError. A config it
 # accepts then tries to reach peers and never exits on its own, so this is bounded (#2341): a
 # container still running after 20s means the config parsed and startup proceeded past it.
-docker run -d --rm --network none --name "$CONTAINER" \
+docker run -d --network none --name "$CONTAINER" \
     -e WAIT_FOR_TOR=0 \
     -v "$ROOT/build/tari:/var/tari/config:ro" \
     -v "$WORK_DIR/node:/var/tari/node" \
