@@ -49,6 +49,17 @@ bundle_redact_log() {
         -e "$xmr_shape"
 }
 
+# .env with secret-bearing values stripped by key pattern; structure (ports, dirs, modes) stays —
+# that is what support actually needs. Keep this pattern in step with CONTROL_SECRET_PATHS
+# (30-release-fetch-and-masked-config.sh): every leaf masked there needs its .env counterpart
+# listed here too, or the same secret ships in cleartext in one artifact while the other redacts
+# it (#2342). tests/stack covers the full enumeration.
+bundle_redact_env() {
+    awk -F= '/^[A-Z0-9_]+=/ {
+        if ($1 ~ /(PASSWORD|TOKEN|SECRET|KEY|WALLET|ONION|AUTH|PING_URL|CHAT_ID|WEBHOOK_URLS|NTFY_URL|STANDBY_SOURCE|USERNAME)/) print $1 "=[redacted]";
+        else print; next } { print }'
+}
+
 stack_support_bundle() {
     _reject_options support-bundle "$@"
     local ts out tmp rc=0
@@ -76,12 +87,8 @@ stack_support_bundle() {
         [ -f "$tmp/scratch/masked/config.json" ] &&
             cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
     fi
-    # .env with secret-bearing values stripped by key pattern; structure (ports, dirs, modes)
-    # stays — that is what support actually needs.
     if [ -f .env ]; then
-        awk -F= '/^[A-Z0-9_]+=/ {
-            if ($1 ~ /(PASSWORD|TOKEN|SECRET|KEY|WALLET|ONION|AUTH|PING_URL|CHAT_ID)/) print $1 "=[redacted]";
-            else print; next } { print }' .env >"$tmp/bundle/env.redacted" 2>/dev/null || true
+        bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
 
     # Container state + recent logs, when an engine is reachable. bundle_redact_log guards the

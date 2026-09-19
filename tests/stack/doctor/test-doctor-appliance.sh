@@ -76,6 +76,38 @@ assert_eq "bundle carries doctor.json" "$(jq -r 'has("summary")' "$DJ/sb-extract
 assert_contains "bundle .env redacts token keys" "$(cat "$DJ/sb-extract/bundle/env.redacted")" "PROXY_AUTH_TOKEN=[redacted]"
 assert_eq "no raw secret value anywhere in the bundle" "$(grep -rc "ORIGINALTOKEN" "$DJ/sb-extract" | grep -vc ":0")" "0"
 
+echo "== unit: bundle_redact_env — every CONTROL_SECRET_PATHS leaf's .env counterpart is masked (#2342) =="
+# One artifact, two policies was the bug: the control channel (CONTROL_SECRET_PATHS,
+# 30-release-fetch-and-masked-config.sh) and support-bundle's .env redaction (07-support-bundle.sh)
+# drifted apart because the bundle test above only ever spot-checked PROXY_AUTH_TOKEN. This
+# enumerates every CONTROL_SECRET_PATHS leaf's .env rendering (33-render-env.sh) so a new secret
+# leaf reds this test instead of shipping in the clear.
+BE="$SANDBOX/bundle-env"
+mkdir -p "$BE"
+cat >"$BE/env-fixture" <<'EOF'
+TELEGRAM_BOT_TOKEN=tgtoken
+XMRIG_API_TOKEN=apitoken
+MONERO_NODE_USERNAME=rpcuser
+MONERO_NODE_PASSWORD=rpcpass
+MONERO_VIEW_KEY=moneroviewkey
+TARI_VIEW_KEY=tariviewkey
+PROXY_STRATUM_PASSWORD=stratumpass
+HEALTHCHECKS_PING_URL=https://hc-ping.com/uuid
+NTFY_URL=https://ntfy.sh/pithead-7f3a-private
+NTFY_TOKEN=ntfytoken
+XVB_STANDBY_SOURCE=http://user:pw@node.example:18081
+NOTIFY_WEBHOOK_URLS=https://hooks.slack.com/services/T00/B00/SECRETPATH
+HOST_IP=box.lan
+EOF
+be_out=$(run_sourced "$BE" bundle_redact_env <"$BE/env-fixture")
+for key in TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN MONERO_NODE_USERNAME MONERO_NODE_PASSWORD \
+    MONERO_VIEW_KEY TARI_VIEW_KEY PROXY_STRATUM_PASSWORD HEALTHCHECKS_PING_URL NTFY_URL \
+    NTFY_TOKEN XVB_STANDBY_SOURCE NOTIFY_WEBHOOK_URLS; do
+    assert_contains "bundle_redact_env masks $key (CONTROL_SECRET_PATHS leaf)" "$be_out" "$key=[redacted]"
+done
+assert_contains "bundle_redact_env leaves structural keys alone" "$be_out" "HOST_IP=box.lan"
+unset BE be_out key
+
 echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support conversation gets the fact (#1121) =="
 # Same shape as the pre-seeding block: PITHEAD_PRESEED_DIR stands in for the ESP. Appliance-only
 # (the note only ever exists on that channel), so PITHEAD_APPLIANCE has to be forced on here —
