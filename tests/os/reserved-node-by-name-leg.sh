@@ -25,10 +25,10 @@ provision_node_preflight_accepts_reserved_name() { # <ip> <authenticated-cookie-
         return 0
     fi
     case "$th" in
-        [0-9]*.[0-9]*.[0-9]*.[0-9]*)
-            it_skip_leg "reserved Tari node accepted by name during first-boot provisioning (#2351)" "PITHEAD_OS_TARI_NODE_HOST is a literal IPv4 address on this bench, not a name -- a differently-configured bench's name-shaped fixture would exercise this leg" missing
-            return 0
-            ;;
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+        it_skip_leg "reserved Tari node accepted by name during first-boot provisioning (#2351)" "PITHEAD_OS_TARI_NODE_HOST is a literal IPv4 address on this bench, not a name -- a differently-configured bench's name-shaped fixture would exercise this leg" missing
+        return 0
+        ;;
     esac
     state=$(curl -fsSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null) || return 1
     cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg th "$th" --argjson grpc "$grpc" '
