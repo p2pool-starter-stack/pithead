@@ -63,18 +63,17 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
     run_pending >/dev/null
 }
 
-# Disable the dashboard login (auth.password:"" needs control:false to pass validation): the
-# preview flags destructive:false — proof the DEST path alone would wave it through — and the
-# commit must still be refused, config untouched.
-jq '.dashboard.auth={username:"admin"} | .dashboard.control={enabled:false}' "$C/config.json" >"$C/cand.json"
-jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$REQS/$UUID5.json"
-run_pending >/dev/null
-# Preview REFUSES it now (round 2 of the perimeter audit) instead of calling it committable.
-assert_eq "auth-disable preview is refused, not previewed as committable" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
-run_pending >/dev/null
-assert_eq "dashboard-login disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "auth-disable refusal names the physical-presence path" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
+. "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
+assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
+
+# Replace the dashboard login (rather than disabling it) and disable control: the preview flags
+# destructive:false — proof the DEST path alone would wave it through — and the commit must still
+# be refused, config untouched. Distinct from the auth-disable case above: a replaced password is a
+# working credential an attacker could log in with, not merely a locked-out dashboard.
+jq '.dashboard.auth.password="a replacement control passphrase" | .dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "dashboard-login replacement commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "dashboard-login replacement refusal names the physical-presence path" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
 assert_eq "config.json keeps the dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 

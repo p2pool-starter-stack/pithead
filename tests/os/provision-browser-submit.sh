@@ -105,37 +105,61 @@ dashboard_curl() {
     auth=${auth//\"/\\\"}
     curl --config <(printf 'user = "%s"\n' "$auth") "$@"
 }
+# /api/control/result never echoes the request id back (only the POST handlers for preview/commit
+# merge it in) — the real frontend (backupview.mjs's runBackup) knows this and keeps the id it
+# already resolved from the POST, re-attaching it client-side (`{ id, ...result }`) rather than
+# trusting the polled body. Match that here, once, in the shared poller: every verb whose POST
+# never resolves synchronously (backup, unlike preview/commit, ALWAYS 202s) reaches its terminal
+# status purely through polling and would otherwise hand callers a result with no `.id` at all (#2300).
+control_result_stamp_id() { # <result-json> <id>
+    printf '%s' "$1" | jq -c --arg id "$2" '. + {id:$id}' 2>/dev/null || printf '%s' "$1"
+}
 dashboard_control_request() { # <route> <json-body> [deadline-seconds]
-    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status
+    local route="$1" body="$2" deadline=$(($(date +%s) + ${3:-240})) out rid status response_code
     if out=$(dashboard_control_post "$route" "$body"); then
-        rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        response_code=${out##*$'\n'}
+        if [[ $response_code =~ ^[0-9]{3}$ ]]; then
+            out=${out%$'\n'*}
+            # curl's 000 and a proxy's 5xx can follow an accepted request while the dashboard
+            # restarts. A received 4xx is a definite refusal; the caller id is otherwise pollable.
+            case "$response_code" in 000 | 2* | 5*) ;; *) return 1 ;; esac
+        fi
+        if [[ $response_code =~ ^5 ]]; then
+            # A failing proxy can name another request; the fresh preview id in the caller wins.
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        else
+            rid=$(printf '%s' "$out" | jq -r '.id // ""' 2>/dev/null)
+        fi
+        # A restarted dashboard can close the POST after accepting it, leaving curl with an empty
+        # or malformed successful response. Only an explicit JSON error is a real refusal; the
+        # caller's id still names a request the host may complete, so poll it.
+        if [ -z "$rid" ] && ! printf '%s' "$out" | jq -e 'type == "object" and has("error")' >/dev/null 2>&1; then
+            out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
+        fi
     else
-        # The POST died in flight rather than being answered. A commit whose apply recreates
-        # containers restarts the dashboard underneath its own request, so the runner's answer can
-        # already be on disk while the response never arrives — measured on the bench (#2060): the
-        # guest's audit read `commit-confirmed -> applied` and its results directory held that id's
-        # document with {"status":"applied"}, while this function reported "the commit never
-        # returned". The id is not lost when that happens, because the CALLER sent it. Poll for it.
+        # A dashboard restart can lose the POST response in flight. The caller-supplied id is still
+        # pollable whether curl reports that loss or returns an empty successful response.
         out="" rid=$(printf '%s' "$body" | jq -r '.id // ""' 2>/dev/null)
     fi
-    # A server that ANSWERED without an id refused the request; that is a verdict, not a lost
-    # response, and it must stay fast rather than polling a deadline out.
+    # An explicit server refusal has no id and must stay fast rather than polling a deadline out.
     [ -n "$rid" ] || return 1
     while [ "$(date +%s)" -lt "$deadline" ]; do
         status=$(printf '%s' "$out" | jq -r '.status // "pending"' 2>/dev/null) || status=pending
         case "$status" in
-        pending | running | downloading | installing | "") ;;
+        # The control API can acknowledge a queued request before the root runner starts it.
+        # `accepted` still carries the request id, so it is a polling state, not a verdict.
+        pending | accepted | running | downloading | installing | "") ;;
         previewed) [ "$route" = preview ] && {
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
         } ;;
         *)
-            printf '%s' "$out"
+            control_result_stamp_id "$out" "$rid"
             return 0
             ;;
         esac
         sleep 3
-        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null)
+        out=$(dashboard_curl -sSk -m 8 "https://$ip/api/control/result?id=$rid" 2>/dev/null) || out=""
     done
     return 1
 }
@@ -241,7 +265,13 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s\n' "$archive_names" | grep -qx 'data/pithead/.env'; then
         ok "dashboard backup decrypts with its one-time passphrase and contains the stack identity"
     else
-        bad "dashboard backup did not produce a downloadable encrypted archive"
+        # Name which sub-condition broke: the control result itself, the HTTP download, or the
+        # decrypt/listing step — three different failure sites the combined check above cannot
+        # tell apart from its verdict alone (#2300).
+        local decrypt_state
+        [ -n "$archive_names" ] && decrypt_state="decrypted, listing: $(printf '%s' "$archive_names" | tr '\n' ' ')" ||
+            decrypt_state="undecryptable or empty tar listing"
+        bad "dashboard backup did not produce a downloadable encrypted archive ($(control_result_payload "$result"); passphrase_len=${#pass}; download HTTP ${code:-none}, $(wc -c <"$archive" | tr -d ' ') bytes; $decrypt_state)"
     fi
     rm -f "$archive"
     names=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
@@ -280,6 +310,19 @@ _recovery_self_test() {
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
+    # /api/control/result never echoes the id back — a verb like backup that always resolves
+    # through polling would otherwise hand callers a terminal result with no `.id` at all (#2300).
+    case "$(control_result_stamp_id '{"status":"applied","passphrase":"p"}' r3)" in
+    '{"status":"applied","passphrase":"p","id":"r3"}') ;;
+    *) return 1 ;;
+    esac
+    # A pre-existing id is overwritten by the caller's resolved one, not left stale.
+    case "$(control_result_stamp_id '{"status":"applied","id":"stale"}' r4)" in
+    '{"status":"applied","id":"r4"}') ;;
+    *) return 1 ;;
+    esac
+    # Malformed JSON falls back to the input unchanged rather than raising.
+    [ "$(control_result_stamp_id '' r5)" = "" ] || return 1
     echo "provision-browser-submit self-test: preflight retention, submit-shaping and control-payload controls passed"
 }
 

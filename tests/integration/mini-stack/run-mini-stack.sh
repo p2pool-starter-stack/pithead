@@ -20,6 +20,7 @@
 #    9. monerod + Tari both down  → REJECTS; recovering only one does NOT readmit; both does
 #   10. dashboard restart         → the one-way sync latch survives (#35 persistence)
 #   11. Tari OPTIONAL, Tari down  → dashboard keeps mining, workers stay accepted (#562)
+#   12. payout confirmation       → both wallet fakes reach /api/state and alert once (#2267)
 #
 set -uo pipefail
 
@@ -90,6 +91,24 @@ assert_stays() { # assert_stays <label> <container> <state> <seconds>
 HOST_ADDR="${PITHEAD_TEST_HOST:-127.0.0.1}"
 set_monerod() { ctl "http://$HOST_ADDR:28081/control" "{\"mode\":\"$1\"}" || c_bad "set monerod $1" "control POST failed"; }
 set_tari() { ctl "http://$HOST_ADDR:28152/control" "{\"mode\":\"$1\"}" || c_bad "set tari $1" "control POST failed"; }
+fake_ctl() { # <container> <port> <json>
+    compose exec -T "$1" python3 -c '
+import sys
+import urllib.request
+
+request = urllib.request.Request(
+    f"http://127.0.0.1:{sys.argv[1]}/control",
+    data=sys.argv[2].encode(),
+    headers={"Content-Type": "application/json"},
+)
+print(urllib.request.urlopen(request, timeout=5).read().decode())
+' "$2" "$3"
+}
+set_wallet() { fake_ctl fake-wallet-rpc 18082 "$1" >/dev/null || c_bad "set Monero wallet transfers" "control POST failed"; }
+set_tari_wallet() { fake_ctl fake-tari-wallet 18153 "$1" >/dev/null || c_bad "set Tari wallet transfers" "control POST failed"; }
+wallet_calls() { fake_ctl fake-wallet-rpc 18082 '{}' | jq -r '.calls'; }
+tari_wallet_calls() { fake_ctl fake-tari-wallet 18153 '{}' | jq -r '.calls'; }
+wallet_min_height() { fake_ctl fake-wallet-rpc 18082 '{}' | jq -r '.last_min_height'; }
 
 # Healthchecks.io e2e (#79): the fake receiver records each ping path to /hc/pings.log. Poll it
 # until an (extended-regex) pattern shows up, proving the REAL dashboard loop fired that request.
@@ -135,6 +154,72 @@ assert ntfy.get("headers", {}).get("Authorization") == "Bearer itest-token"
         sleep 1
     done
 }
+
+# wait_sink <label> <ere-pattern-over-request-lines> [timeout]: like wait_hc, but polling the
+# alert-sink fake instead of the healthchecks fake — used by payout confirmation below, since the
+# webhook it fires over is the same NOTIFY_WEBHOOK_URLS this branch's alert sinks already own.
+wait_sink() {
+    local label="$1" pat="$2" timeout="${3:-40}" end
+    end=$(($(date +%s) + timeout))
+    while :; do
+        sink_requests | grep -Eq "$pat" && {
+            c_ok "$label"
+            return 0
+        }
+        [ "$(date +%s)" -ge "$end" ] && {
+            c_bad "$label" "no line matching /$pat/ in the sink log (got: $(sink_requests | tr '\n' ' '))"
+            return 1
+        }
+        sleep 1
+    done
+}
+
+# Payouts poll every 10th collection cycle; at UPDATE_INTERVAL=2 that's a 20s poll interval, so
+# the deadline must cover at least two of them to catch a poll that lands just after the replay.
+wait_min_height() { # wait_min_height <expected> [timeout]
+    local want="$1" timeout="${2:-50}" end
+    end=$(($(date +%s) + timeout))
+    while :; do
+        [ "$(wallet_min_height)" = "$want" ] && return 0
+        [ "$(date +%s)" -ge "$end" ] && return 1
+        sleep 1
+    done
+}
+
+wait_payout() { # wait_payout <chain> <amount> [timeout]
+    local chain="$1" amount="$2" timeout="${3:-50}" end result
+    end=$(($(date +%s) + timeout))
+    while :; do
+        result="$(
+            compose exec -T dashboard python3 - "$chain" "$amount" <<'PY' 2>&1
+import json
+import sys
+import urllib.request
+
+chain, amount = sys.argv[1], float(sys.argv[2])
+state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
+confirmed = state["earnings"]["confirmed" if chain == "monero" else "tari_confirmed"]
+total = confirmed["xmr_all" if chain == "monero" else "xtm_all"]
+if confirmed.get("enabled") and total == amount:
+    print("OK")
+PY
+        )"
+        [ "$result" = "OK" ] && {
+            c_ok "$chain payout appears in /api/state"
+            return 0
+        }
+        [ "$(date +%s)" -ge "$end" ] && {
+            c_bad "$chain payout appears in /api/state" "$result"
+            return 1
+        }
+        sleep 1
+    done
+}
+
+alert_count() { hc_pings | grep -cx '/alerts' || true; }
+# The payout webhook rides the same NOTIFY_WEBHOOK_URLS the alert-sink coverage above points at
+# fake-sink (#2263), not fake-hc's separate --event-log — grep the sink's own request log instead.
+payout_alert_count() { sink_requests | grep -c '"event": "payout_confirmed"' || true; }
 
 teardown() {
     log "tearing down"
@@ -329,6 +414,64 @@ if [ -z "$(sink_requests)" ]; then
 else
     c_bad "disabled alert sinks make no requests" "$(sink_requests | tr '\n' ' ')"
 fi
+
+# Restore a clean baseline before payout confirmation: the outage check just above ran the
+# dashboard with NOTIFY_WEBHOOK_URLS blanked (to prove a disabled config makes no request) and
+# left both fakes down, so recreating it as-is would hold/reject the miner and fire its own alert
+# on boot, muddying the payout-only assertions below. Settle both chains first.
+set_monerod synced
+set_tari synced
+compose up -d --force-recreate dashboard >/dev/null 2>&1
+for _ in $(seq 1 30); do
+    compose exec -T dashboard python3 -c \
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && break
+    sleep 2
+done
+
+# 12. Payout confirmation (#2267): drive each real wallet client through its network fake, then
+# prove the persisted total is exposed by /api/state and the configured webhook saw one alert.
+# Replaying the same payload must not add either a second total or a second alert; empty wallets
+# remain enabled but invent nothing.
+log "scenario 12: payout confirmation reaches state and alerts exactly once"
+compose exec -T fake-sink sh -c ': > /tmp/requests.log'
+set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
+wait_payout monero 0.25
+wait_sink "Monero payout fires one alert" '"event": "payout_confirmed"' 50
+if [ "$(payout_alert_count)" = 1 ]; then c_ok "Monero payout alert fired once"; else c_bad "Monero payout alert fired once" "got $(payout_alert_count)"; fi
+set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
+wait_min_height 100
+if [ "$(payout_alert_count)" = 1 ] && [ "$(wallet_min_height)" = 100 ]; then c_ok "Monero payout replay fires no alert and seeds min_height"; else c_bad "Monero payout replay fires no alert and seeds min_height" "alerts=$(payout_alert_count), min_height=$(wallet_min_height)"; fi
+
+compose exec -T fake-sink sh -c ': > /tmp/requests.log'
+set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
+wait_payout tari 2.5
+wait_sink "Tari payout fires one alert" '"event": "payout_confirmed"' 50
+if [ "$(payout_alert_count)" = 1 ]; then c_ok "Tari payout alert fired once"; else c_bad "Tari payout alert fired once" "got $(payout_alert_count)"; fi
+set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
+sleep 22
+if [ "$(payout_alert_count)" = 1 ]; then c_ok "Tari payout replay fires no alert"; else c_bad "Tari payout replay fires no alert" "got $(payout_alert_count)"; fi
+set_wallet '{"transfers":[]}'
+set_tari_wallet '{"transactions":[]}'
+sleep 22
+empty_state="$(
+    compose exec -T dashboard python3 - <<'PY' 2>&1
+import json
+import urllib.request
+
+state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
+monero, tari = state["earnings"]["confirmed"], state["earnings"]["tari_confirmed"]
+if monero.get("enabled") and tari.get("enabled") and monero.get("xmr_all") == 0.25 and tari.get("xtm_all") == 2.5:
+    print("OK")
+PY
+)"
+if [ "$empty_state" = OK ] && [ "$(payout_alert_count)" = 1 ]; then c_ok "empty wallets stay enabled and add nothing"; else c_bad "empty wallets stay enabled and add nothing" "$empty_state; alerts=$(payout_alert_count)"; fi
+
+# Control: disabling payout confirmation constructs neither wallet client nor any wallet dial.
+set_wallet '{"transfers":[],"reset_calls":true}'
+set_tari_wallet '{"transactions":[],"reset_calls":true}'
+PAYOUT_CONFIRM_ENABLED=false TARI_PAYOUT_CONFIRM_ENABLED=false compose up -d --force-recreate dashboard >/dev/null 2>&1
+sleep 22
+if [ "$(wallet_calls)" = 0 ] && [ "$(tari_wallet_calls)" = 0 ]; then c_ok "disabled payout confirmation dials no wallet"; else c_bad "disabled payout confirmation dials no wallet" "Monero=$(wallet_calls), Tari=$(tari_wallet_calls)"; fi
 
 echo ""
 log "mini-stack: $PASS passed, $FAIL failed"

@@ -1,0 +1,33 @@
+name: Tari config parse
+
+# Tari is the one stack service whose image is upstream (pinned by digest, no build/tari/
+# Dockerfile), so it gets no `Build image (tari)` job in ci.yml's build-images matrix — and its
+# own job here, rather than a row added to that matrix, because ci.yml sits at its file-budget
+# ceiling (docs/dev/file-budget.tsv). Nothing else feeds the rendered config to the binary that
+# has to parse it (#2341): #2327 added an unknown key under `[common]` and every tier-1 to
+# tier-3 check passed while minotari_node exited 101 with a ConfigError on every bench that
+# rendered the template.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  config-parse:
+    name: Tari config parse (minotari_node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # ubuntu-latest ships Docker — no setup needed. Pulls the pinned quay.io image.
+      - name: Feed the rendered Tari config to the pinned minotari_node image
+        run: make test-tari-config-parse

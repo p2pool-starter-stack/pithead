@@ -162,10 +162,12 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
-    # WHICH unit owns the boot is the whole R4 fork: the wizard's window is closed, pithead-boot runs.
-    [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
+    # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
+    # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
+    # that the boot unit, rather than the condition-skipped wizard, ran this boot.
+    provisioning_settled 60 && [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
         ok "pithead-boot owns a provisioned rig's boot" ||
-        bad "pithead-boot did not run on the rig (its condition still excludes a machine with no config.json)"
+        bad "pithead-boot did not finish active on the provisioned rig boot"
     unit_ran_this_boot pithead-firstboot &&
         bad "the first-boot wizard ran again on a provisioned rig" ||
         ok "the wizard window is closed on a provisioned rig (no setup page on every boot)"
