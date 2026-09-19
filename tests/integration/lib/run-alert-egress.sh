@@ -13,7 +13,7 @@
 # (#424's framing): it is a REFUSAL, counted and named on its own, and it must never turn IT_FAIL
 # red — the flake policy quarantines this class, it does not retry it.
 #
-# Healthchecks is excluded from `test-alert` itself (dashboard/.../notify/test_alert.py: "a ping
+# Healthchecks is excluded from `test-alert` itself (dashboard/mining_dashboard/service/notify/test_alert.py: "a ping
 # moves the dead-man switch"), so its leg calls the SAME production HealthchecksClient directly
 # instead of duplicating its HTTP logic here.
 #
