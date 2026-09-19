@@ -55,7 +55,7 @@ assert_eq "setup is quiet: no public IP" "$out" ""
 out="$(STRATUM_BIND=0.0.0.0 PATH="$IPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure doctor 2>&1)"
 assert_contains "doctor OK: no public IP" "$out" "No public IP"
 
-# Narrowed bind short-circuits BEFORE the IP check (public stub present): quiet setup / OK doctor.
+# Narrowed to a LAN address of its own (public stub present, but doesn't match this bind, #1803): quiet setup / OK doctor.
 make_ip_stub "$PUBLIC_IFACE"
 out="$(STRATUM_BIND=192.168.1.5 PATH="$IPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure setup 2>&1)"
 assert_eq "setup is quiet: bind narrowed to a LAN IP" "$out" ""

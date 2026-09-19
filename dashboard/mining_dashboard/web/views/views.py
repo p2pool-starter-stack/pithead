@@ -202,11 +202,11 @@ def _monero_db_size(monero_sync):
 
 
 def _egress_badge(summary):
-    """Glanceable header badge for the egress posture (#170): green when Tor-only, red on a leak."""
+    """Glanceable header badge: green when Tor-only, warning when uncertain, red on a leak."""
     ok = summary["level"] == "ok"
     return {
-        "variant": "ok" if ok else "bad",
-        "text": "🛡️ Tor-only egress" if ok else f"⚠️ {summary['leaks']} clearnet egress",
+        "variant": "ok" if ok else "bad" if summary["leaks"] else "warn",
+        "text": "🛡️ Tor-only egress" if ok else f"⚠️ {summary['label']}",
         "title": summary["label"],
     }
 
