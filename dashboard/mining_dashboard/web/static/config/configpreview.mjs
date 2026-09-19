@@ -19,7 +19,7 @@ export const PreviewModal = ({
   const armed = (!preview.destructive || confirmText === "APPLY") && suffixesMatch;
   return html`<div class="config-modal-backdrop">
       <div class="card config-modal">
-          <h3>Review changes</h3>
+          <h2>Review changes</h2>
           ${
             changes.length === 0
               ? html`<p class="text-muted">No configuration changes detected.</p>`

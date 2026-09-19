@@ -60,7 +60,7 @@ function StatusLine({ result }) {
   const meta = STATUS_META[result.status] || { cls: "text-muted", label: result.status };
   const detail = result.reason || result.error || result.note || "";
   return html`
-    <p class=${"text-small mt-1 " + meta.cls}>
+    <p class=${"text-small mt-1 " + meta.cls} role="status" aria-live="polite">
         ${meta.label}${result.change_id ? html` · <span class="font-mono text-xs">${result.change_id}</span>` : null}
         ${detail ? html`<span class="text-muted"> — ${detail}</span>` : null}
     </p>`;
@@ -276,10 +276,10 @@ export class WorkerInspect extends Component {
         <dialog class="worker-inspect card" ref=${this.dialogRef} aria-label=${"Worker " + name}
                 onClose=${onClose} onClick=${(e) => e.target === this.dialogRef.current && close()}>
             <div class="flex items-center justify-between">
-                <h3>Worker · ${name}</h3>
+                <h2>Worker · ${name}</h2>
                 <button class="btn-toggle" onClick=${close} aria-label="Close">✕</button>
             </div>
-            ${phase === "loading" ? html`<p class="text-muted">Loading…</p>` : null}
+            ${phase === "loading" ? html`<p class="text-muted" role="status" aria-live="polite">Loading…</p>` : null}
             ${phase === "error" ? html`<p class="status-bad">Couldn't load this worker: ${error}</p>` : null}
             ${phase === "ready" ? this.renderBody(detail) : null}
         </dialog>`;
@@ -339,7 +339,7 @@ export class WorkerInspect extends Component {
             <${StatusLine} result=${upgResult} />
             ${detail.rigforge ? html`<${StatsTable} stats=${detail.rigforge.stats} />` : null}
 
-            <h4 class="mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h4>
+            <h3 class="card-subhead mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h3>
             <${WorkerChartCard}
                 chart=${{
                   hashrate: detail.hashrate_history?.hashrate || [],
@@ -348,7 +348,7 @@ export class WorkerInspect extends Component {
                 range=${chartRange}
                 onRange=${(r) => this.setChartRange(r)} />
 
-            <h4 class="mt-2">Edit config</h4>
+            <h3 class="card-subhead mt-2">Edit config</h3>
             ${
               canEdit
                 ? html`
@@ -386,7 +386,7 @@ export class WorkerInspect extends Component {
                   : html`<p class="text-muted text-small">Config editing is off. Enable dashboard.control (which needs a dashboard password) to edit a rig's config.</p>`
             }
 
-            <h4 class="mt-2">History</h4>
+            <h3 class="card-subhead mt-2">History</h3>
             <${ConfigProvenance} origin=${detail.config_origin} meta=${detail.rig_config_meta} drift=${detail.config_drift} revisionDrift=${detail.config_revision_drift} />
             ${
               (detail.history || []).length
@@ -400,7 +400,7 @@ export class WorkerInspect extends Component {
                 : html`<p class="text-muted text-small">No changes applied from the dashboard yet.</p>`
             }
 
-            <h4 class="mt-2">Hashrate by config version</h4>
+            <h3 class="card-subhead mt-2">Hashrate by config version</h3>
             ${
               (detail.hashrate_by_config || []).length
                 ? html`
@@ -417,7 +417,7 @@ export class WorkerInspect extends Component {
 }
 
 const InfoCard = ({ label, value }) => html`
-    <div class="stat-card"><h5>${label}</h5><p>${value}</p></div>`;
+    <div class="stat-card"><p class="stat-label">${label}</p><p>${value}</p></div>`;
 
 // The compact Workers-Alive list renders the enriched feed as a horizontal badge row; here in the
 // single-rig detail view the same server-built metrics read better as a label → value table (#507).

@@ -16,6 +16,7 @@
 // gestures hand the visible window up via onZoom, which refetches that window from the server at
 // duration-adaptive resolution — so zooming in reveals finer data.
 
+import { chartAriaLabel, workerChartAriaLabel } from "./chartalt.mjs";
 import { bandBorderWidth, clampZoomWindow, fmtHashrate, fmtTimestamp } from "./logic.mjs";
 import { Component, createRef, html } from "./preact.mjs";
 
@@ -65,7 +66,6 @@ const SERIES = [
   // Only offered when there's XvB donation history to draw (see the legend filter in render).
   { key: "xvb_donation", label: "XvB donation %", idx: 6, dot: "dot-xvb-donation" },
 ];
-
 // Smallest zoom window (ms) — guards against requesting a sub-sample slice (30s native cadence).
 const MIN_ZOOM_MS = 60000;
 // Coalesce a flurry of wheel/pan events into one refetch.
@@ -513,7 +513,7 @@ export class ChartCard extends Component {
                     </button>`;
                 })}
             </div>
-            <div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>
+            <div class="chart-wrap"><canvas role="img" aria-label=${chartAriaLabel(props.chart, props.avgWindow, WINDOWS)} ref=${this.canvasRef}></canvas></div>
         </div>`;
   }
 }
@@ -674,7 +674,7 @@ export class WorkerChartCard extends Component {
             ${
               empty
                 ? html`<p class="text-muted text-small">No hashrate history for this rig yet.</p>`
-                : html`<div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>`
+                : html`<div class="chart-wrap"><canvas role="img" aria-label=${workerChartAriaLabel(props.chart.hashrate)} ref=${this.canvasRef}></canvas></div>`
             }
         </div>`;
   }
