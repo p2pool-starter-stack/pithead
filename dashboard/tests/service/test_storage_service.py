@@ -216,17 +216,6 @@ class TestAuditEvents:
     """#530: the durable audit_events table backing the Security panel — mirrored control.log
     rows plus the out-of-band host-edit/rig-edit detections."""
 
-    @pytest.fixture(autouse=True)
-    def _sampler_off(self, monkeypatch):
-        """Pin the #1814 retention sampler OFF for this class by default.
-
-        Every fixture below stamps a fixed calendar date, and those dates fall out of the 30-day
-        window as the real clock moves past them — so once audit_events gained a prune, a 5%
-        sampler that happened to fire would delete the rows a test had just written and fail it
-        at random. These tests are about insert/read semantics, not retention; the two that ARE
-        about retention re-patch this to fire."""
-        monkeypatch.setattr("mining_dashboard.service.mining_store.random.random", lambda: 1.0)
-
     def test_add_and_get_round_trips(self, state_manager):
         state_manager.add_audit_event(
             id="ev-1",
