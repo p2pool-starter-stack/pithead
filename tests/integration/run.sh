@@ -55,6 +55,7 @@ RUN_HARDENING=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
+RUN_ROTATE_SECRETS=0
 RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
@@ -94,6 +95,8 @@ source "$HERE/lib/run-state.sh" || exit $?
 source "$HERE/lib/run-scenario.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$HERE/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-secrets.sh
+source "$HERE/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
@@ -201,6 +204,7 @@ main() {
         run_rigforge_integration
     fi
     [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ROTATE_SECRETS" = "1" ] && run_rotate_secrets
     [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
