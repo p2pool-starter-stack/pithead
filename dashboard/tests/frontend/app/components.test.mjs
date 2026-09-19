@@ -20,6 +20,37 @@ test('operational App shows a disconnected banner when not connected', () => {
     assert.doesNotMatch(renderApp({ connected: true }), /Disconnected — showing data from/);
 });
 
+test('the disconnected banner is a live region (#1859)', () => {
+    assert.match(renderApp({ connected: false }), /class="disconnected-banner" role="status" aria-live="polite">/);
+});
+
+test('the hashrate chart canvas carries a text alternative (#1859)', () => {
+    assert.match(renderApp(), /<canvas role="img" aria-label="Hashrate chart: [^"]+"/);
+});
+
+// --- Landmarks + heading order (#1859: axe landmark-one-main / region / heading-order) ---------
+
+test('the App has exactly one header, one main and a labelled nav landmark', () => {
+    const html = renderApp();
+    assert.equal((html.match(/<header[\s>]/g) || []).length, 1);
+    assert.equal((html.match(/<main[\s>]/g) || []).length, 1);
+    assert.match(html, /<nav class="view-controls" aria-label="View">/);
+});
+
+test('heading levels never skip on the way down, from h1 through every card (#1859)', () => {
+    // axe's heading-order rule: a level may drop by any amount but must never jump UP by more
+    // than one (h2 -> h4 with no h3 between is the violation the issue's counts were about).
+    const levels = [...renderApp().matchAll(/<h([1-6])(?=[\s>])/g)].map((m) => Number(m[1]));
+    assert.ok(levels.length > 10, 'expected many headings across the advanced view');
+    assert.equal(levels[0], 1, 'the brand name must be the page h1');
+    for (let i = 1; i < levels.length; i++) {
+        assert.ok(
+            levels[i] <= levels[i - 1] + 1,
+            `heading jumped from h${levels[i - 1]} to h${levels[i]} at index ${i}`,
+        );
+    }
+});
+
 // --- Header -----------------------------------------------------------------------------
 
 test('Header renders the brand, server badges, version + update badges', () => {
@@ -108,12 +139,12 @@ test('Global P2Pool Stats collapses to the headline stats by default (progressiv
     // Headline: the pool's own money/health figures.
     assert.match(card, /Pool Hashrate/);
     assert.match(card, /Blocks Found/);
-    assert.match(card, /<h5>Last Block<\/h5>/);
+    assert.match(card, /<h4>Last Block<\/h4>/);
     // Detail (sidechain internals, peers, uptime, ...) stays out of the DOM until expanded.
     assert.doesNotMatch(card, /Sidechain Height/);
     assert.doesNotMatch(card, /PPLNS Window/);
     assert.doesNotMatch(card, /PPLNS Weight/);
-    assert.doesNotMatch(card, /<h5>Uptime<\/h5>/);
+    assert.doesNotMatch(card, /<h4>Uptime<\/h4>/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
     assert.match(card, /Show all \(12\)/);
 });

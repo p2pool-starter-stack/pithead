@@ -397,7 +397,7 @@ export class OsUpdateControl extends Component {
           open
             ? html`<div class="config-modal-backdrop">
                 <div class="card config-modal">
-                    <h3>System update</h3>
+                    <h2>System update</h2>
                     ${this.renderBody()}
                 </div>
             </div>`

@@ -31,7 +31,7 @@ test("XvB calculator names every input missing from an unready fresh box (#1960)
     coeffDay: 0,
     energy: { xmr_price: 0, price_source: { feed: true } },
   });
-  assert.match(waiting, /Hashrate Cost<\/h5><p[^>]*>needs hashrate/);
+  assert.match(waiting, /Hashrate Cost<\/h4><p[^>]*>needs hashrate/);
   assert.match(waiting, /Cost needs P2Pool network stats/);
   assert.match(waiting, /XvB says waiting for reward feed/);
   assert.match(waiting, /Fiat net unavailable: waiting for the price feed/);
@@ -42,8 +42,8 @@ test("XvB calculator names every input missing from an unready fresh box (#1960)
     coeffDay: 1e-7,
     energy: { xmr_price: 0, price_source: { feed: false } },
   });
-  assert.match(tooSmall, /Hashrate Cost<\/h5><p[^>]*>below the lowest tier/);
-  assert.match(tooSmall, /Net \(XvB says\)<\/h5><p[^>]*>insufficient hashrate/);
+  assert.match(tooSmall, /Hashrate Cost<\/h4><p[^>]*>below the lowest tier/);
+  assert.match(tooSmall, /Net \(XvB says\)<\/h4><p[^>]*>insufficient hashrate/);
   assert.match(tooSmall, /set dashboard\.energy\.xmr_price or enable its price feed/);
 });
 

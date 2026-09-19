@@ -36,6 +36,8 @@ test('ExpectedVsActualCard compares combined Monero+XvB with a percent and parti
     // scoped to this card's own markup, since other cards legitimately keep est-scroll.
     assert.match(out, /eva-table/);
     assert.doesNotMatch(cardSlice(out, 'card-expected-vs-actual'), /est-scroll/);
+    // #1859: the row-header corner was an empty <th></th> (axe empty-table-header).
+    assert.match(out, /eva-table"><thead><tr>\s*<th scope="col"><span class="sr-only">Row<\/span><\/th>/);
     // Without a fresh published estimate the label honestly drops the "+ XvB".
     s.earnings_summary.xmr.includes_xvb = false;
     assert.match(renderApp({ state: s }), /Monero \(30d\)/);

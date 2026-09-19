@@ -66,6 +66,22 @@ const SERIES = [
   { key: "xvb_donation", label: "XvB donation %", idx: 6, dot: "dot-xvb-donation" },
 ];
 
+// Text alternative for the canvas (WCAG 1.1.1, #1859): axe/screen readers get nothing from a bare
+// <canvas>, so it carries role="img" plus a label stating what the chart currently shows — the
+// latest total and the averaging window, both already displayed visually alongside it.
+function latestPoint(series) {
+  for (let i = (series || []).length - 1; i >= 0; i--) {
+    if (series[i].y != null) return series[i].y;
+  }
+  return 0;
+}
+
+function chartAriaLabel(chart, avgWindow) {
+  const total = latestPoint(chart?.p2pool) + latestPoint(chart?.xvb);
+  const windowLabel = (WINDOWS.find(([w]) => w === avgWindow) || [])[1] || avgWindow;
+  return `Hashrate chart: ${fmtHashrate(total)} total, ${windowLabel} average`;
+}
+
 // Smallest zoom window (ms) — guards against requesting a sub-sample slice (30s native cadence).
 const MIN_ZOOM_MS = 60000;
 // Coalesce a flurry of wheel/pan events into one refetch.
@@ -513,7 +529,7 @@ export class ChartCard extends Component {
                     </button>`;
                 })}
             </div>
-            <div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>
+            <div class="chart-wrap"><canvas role="img" aria-label=${chartAriaLabel(props.chart, props.avgWindow)} ref=${this.canvasRef}></canvas></div>
         </div>`;
   }
 }
@@ -674,7 +690,7 @@ export class WorkerChartCard extends Component {
             ${
               empty
                 ? html`<p class="text-muted text-small">No hashrate history for this rig yet.</p>`
-                : html`<div class="chart-wrap"><canvas ref=${this.canvasRef}></canvas></div>`
+                : html`<div class="chart-wrap"><canvas role="img" aria-label=${"Hashrate chart: " + fmtHashrate(latestPoint(props.chart.hashrate))} ref=${this.canvasRef}></canvas></div>`
             }
         </div>`;
   }

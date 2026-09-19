@@ -17,6 +17,15 @@ test('WorkersTable renders headers and a row per worker with status classes', ()
     assert.match(html, /badge-ok">P2Pool/); // PoolBadge for a p2pool worker
 });
 
+test('WorkersTable has a visually-hidden caption and scope="col" on every header (#1859)', () => {
+    const html = renderApp();
+    assert.match(html, /<table id="workers-table">\s*<caption class="sr-only">Workers<\/caption>/);
+    const headerRow = html.match(/<table id="workers-table">[\s\S]*?<\/thead>/)[0];
+    const ths = headerRow.match(/<th\b[^>]*>/g);
+    assert.equal(ths.length, WORKER_COLUMNS.length);
+    for (const th of ths) assert.match(th, /scope="col"/, `missing scope="col": ${th}`);
+});
+
 test('WorkersTable marks the sorted column, visibly and via aria-sort (#656)', () => {
     // No sort chosen (server order): no column claims a direction.
     assert.doesNotMatch(renderApp(), /aria-sort/);
@@ -33,7 +42,7 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
     const html = renderApp();
     const btns = html.match(/<button type="button" class="th-sort-btn" title="Sort by /g) || [];
     assert.equal(btns.length, WORKER_COLUMNS.length);
-    assert.match(html, /<th><button type="button" class="th-sort-btn" title="Sort by Worker">Worker</);
+    assert.match(html, /<th scope="col"><button type="button" class="th-sort-btn" title="Sort by Worker">Worker</);
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {

@@ -18,20 +18,20 @@ test('both node cards say whether the node is this machine\'s or somebody else\'
     s.sync.monero.local = true;
     s.sync.tari.local = false;
     const tari = cardSlice(renderApp({ state: s }), 'card-tari');
-    assert.match(tari, /<h5>Node<\/h5><p class="">Remote</);
+    assert.match(tari, /<h4>Node<\/h4><p class="">Remote</);
 
     s.sync.tari.local = true;
-    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h5>Node<\/h5><p class="">Local</);
+    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h4>Node<\/h4><p class="">Local</);
 
     // An older payload with no flag must not read as Local — see statcards.test.mjs for why.
     delete s.sync.tari.local;
-    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h5>Node<\/h5><p class="">—</);
+    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h4>Node<\/h4><p class="">—</);
 
     // tari.mode: off (#1849): the backend sends an explicit null, not a missing key — there is no
     // Tari node at all, so neither Local nor Remote is a true answer. Distinct from the "delete"
     // case above: null is what a real off-mode payload puts on the wire.
     s.sync.tari.local = null;
-    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h5>Node<\/h5><p class="">—</);
+    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h4>Node<\/h4><p class="">—</);
 });
 
 test('the XMR Network card reads Monero\'s own location, not Tari\'s (#1040)', () => {
@@ -44,7 +44,7 @@ test('the XMR Network card reads Monero\'s own location, not Tari\'s (#1040)', (
         const s = clone();
         s.sync.monero.local = false;
         s.sync.tari.local = true; // the wrong source would flip this assertion
-        assert.match(cardSlice(renderApp({ state: s }), 'card-network'), /<h5>Node<\/h5><p class="">Remote</);
+        assert.match(cardSlice(renderApp({ state: s }), 'card-network'), /<h4>Node<\/h4><p class="">Remote</);
     } finally {
         delete globalThis.localStorage;
     }

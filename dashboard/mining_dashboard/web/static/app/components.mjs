@@ -69,7 +69,7 @@ function DashboardView({
   // both views — neither is constrained by this ordering.
   return html`
     <div id="dashboard-view" class=${advanced ? "mode-advanced" : ""}>
-        <div class="view-controls">
+        <nav class="view-controls" aria-label="View">
             <div class="toggle-group" role="group" aria-label="Dashboard view">
                 <button class=${"btn-toggle" + (!advanced && !configView && !backupView ? " active" : "")} aria-pressed=${!advanced && !configView && !backupView}
                     title="Chart, workers and the headline numbers" onClick=${() => onView("simple")}>Simple</button>
@@ -80,7 +80,7 @@ function DashboardView({
                 <button class=${"btn-toggle" + (backupView ? " active" : "")} aria-pressed=${backupView}
                     title="Export an encrypted copy of this machine's configuration and secrets" onClick=${() => onView("backup")}>Backup</button>
             </div>
-        </div>
+        </nav>
         <${AdvancedHint} ui=${ui} onView=${onView} onDismissHint=${onDismissHint} />
         ${
           configView
@@ -145,7 +145,10 @@ export function App({
   onCloseInspect,
 }) {
   // The theme toggle is fixed-position and always available, even before the first data load.
-  const switcher = html`<${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} />`;
+  // Wrapped in its own landmark (role="region" via the labelled <section>): it's fixed-position
+  // chrome rendered as a sibling of <header>/<main>, not inside either, so without one it would
+  // sit outside every landmark (axe `region`).
+  const switcher = html`<section aria-label="Theme"><${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} /></section>`;
   // Worker Inspect overlay (#185): opened from a worker name in the table; the panel does its own
   // fetch/apply/poll. `key` remounts it when a different worker is picked. Only reachable when the
   // control channel is on (the trigger is gated on state.control_enabled).
@@ -155,30 +158,32 @@ export function App({
       : null;
   if (!state) {
     return html`<${Fragment}>
-            <div class="loading">${
+            <main class="loading">${
               connected
                 ? "Connecting to the dashboard… If this machine is still syncing its first chain, progress appears here in a moment."
                 : "Cannot reach the dashboard."
-            }</div>
+            }</main>
             ${switcher}
         <//>`;
   }
   return html`<${Fragment}>
         <${Header} state=${state} />
-        <${OsVerdictBanner} os=${state.os_update} />
-        ${!connected ? html`<div class="disconnected-banner">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
-        ${
-          state.syncing
-            ? html`<${SyncView} sync=${state.sync} />`
-            : html`<${Fragment}>
-                <${HeroBand} state=${state} />
-                <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
-                <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
-                                  onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
-                                  onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
-                                  onDismissHint=${onDismissHint} onInspect=${onInspect} />
-              <//>`
-        }
+        <main id="dashboard-main">
+            <${OsVerdictBanner} os=${state.os_update} />
+            ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
+            ${
+              state.syncing
+                ? html`<${SyncView} sync=${state.sync} />`
+                : html`<${Fragment}>
+                    <${HeroBand} state=${state} />
+                    <${MineCartTrain} chart=${state.chart} blocks=${state.blocks} payouts=${state.payouts} />
+                    <${DashboardView} state=${state} ui=${ui} onRange=${onRange} onSort=${onSort}
+                                      onView=${onView} onZoom=${onZoom} onResetZoom=${onResetZoom}
+                                      onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow}
+                                      onDismissHint=${onDismissHint} onInspect=${onInspect} />
+                  <//>`
+            }
+        </main>
         ${inspect}
         ${switcher}
     <//>`;

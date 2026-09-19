@@ -323,7 +323,7 @@ export class ConfigView extends Component {
         ${
           core.length
             ? html`<div class="card config-section config-section-core">
-                <h3>Core</h3>
+                <h2>Core</h2>
                 ${core.map((f) => field(f, true))}
             </div>`
             : null
@@ -391,7 +391,7 @@ export class ConfigView extends Component {
       return html`<div class="card"><p class="text-muted">Loading configuration…</p></div>`;
     if (phase === "disabled") {
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
           <p>Configuration editing is off (the default). To enable it, set <code>dashboard.control.enabled: true</code>
           in <code>config.json</code> on the host and
           run <code>./pithead apply</code>. It requires a dashboard login.</p>
@@ -399,7 +399,7 @@ export class ConfigView extends Component {
     }
     if (phase === "error") {
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
           <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
       </div>`;
@@ -407,12 +407,14 @@ export class ConfigView extends Component {
     if (phase === "done") {
       const ok = result.status === "applied";
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
+          <div role="status" aria-live="polite">
           ${
             ok
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
           }
+          </div>
           <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
       </div>`;
     }
@@ -509,7 +511,7 @@ export class UpgradeControl extends Component {
     if (phase === "confirm") {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
-              <h3>Upgrade to ${version}</h3>
+              <h2>Upgrade to ${version}</h2>
               <p>The host pulls the ${version} release and recreates every container — including
               this dashboard, which goes away for a moment, and the miners' stratum connection,
               which reconnects. Your config, wallet, and chain data are kept.</p>
@@ -526,7 +528,7 @@ export class UpgradeControl extends Component {
     } else if (phase === "upgrading") {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
-              <h3>Upgrading to ${version}…</h3>
+              <h2>Upgrading to ${version}…</h2>
               <p class="text-muted">The host is pulling images and recreating containers. This page
               will briefly disconnect while the dashboard restarts — leave it open; it reports the
               outcome when the new version is up.</p>
@@ -535,7 +537,7 @@ export class UpgradeControl extends Component {
     } else if (phase === "done") {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
-              <h3>Upgraded to ${result.version || version}</h3>
+              <h2>Upgraded to ${result.version || version}</h2>
               <p class="status-ok">The stack is running the new release.</p>
               ${
                 result.rollback
@@ -551,7 +553,7 @@ export class UpgradeControl extends Component {
     } else if (phase === "failed") {
       modal = html`<div class="config-modal-backdrop">
           <div class="card config-modal">
-              <h3>Upgrade did not complete</h3>
+              <h2>Upgrade did not complete</h2>
               ${upgradeFailure(result, this.props.appliance)}
               <div class="config-modal-actions">
                   <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Close</button>

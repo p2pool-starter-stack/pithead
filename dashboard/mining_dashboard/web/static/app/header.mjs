@@ -13,7 +13,7 @@ function Header({ state }) {
   const labelCls = (level) => (level === "high" ? "status-bad" : "text-muted");
   const valCls = (level) => (level === "high" ? "status-bad" : "");
   return html`
-    <div class="header" id="top-header">
+    <header class="header" id="top-header">
         <div>
             <div class="brand">
                 <img class="brand-logo" src="/static/pithead-mark.svg" alt="" width="40" height="40" />
@@ -71,7 +71,7 @@ function Header({ state }) {
                 : null
             }
         </div>
-    </div>`;
+    </header>`;
 }
 
 export { Header };

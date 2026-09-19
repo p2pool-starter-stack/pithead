@@ -245,6 +245,17 @@ test("a rig with samples renders the range control and the chart canvas, not the
   assert.match(out, /1 Wk/);
 });
 
+// #1859: a bare <canvas> has nothing for a screen reader to read; it needs role="img" plus a
+// label stating what it shows, since axe/AT gets nothing from pixels.
+test("the worker hashrate canvas carries a text alternative (#1859)", () => {
+  const detail = {
+    ...DETAIL,
+    hashrate_history: { hashrate: [{ x: 1000, y: 500 }], markers: [] },
+  };
+  const out = renderToString(readyInstance(detail).render());
+  assert.match(out, /<canvas role="img" aria-label="Hashrate chart: 500\.00 H\/s"/);
+});
+
 test("only the current chart range button is marked active", () => {
   const detail = { ...DETAIL, hashrate_history: { hashrate: [{ x: 1, y: 1 }], markers: [] } };
   const inst = readyInstance(detail);
@@ -303,4 +314,23 @@ test("a detail payload missing hashrate_history entirely still renders (defensiv
   delete withoutChart.hashrate_history;
   const out = renderToString(readyInstance(withoutChart).render());
   assert.match(out, /No hashrate history for this rig yet/);
+});
+
+// --- Live regions (#1859) ---------------------------------------------------------------------
+//
+// The dialog updates its own text asynchronously (a fetch lands, an apply resolves) with no
+// reload for a screen reader to notice — each of these needs a live region or the change is
+// silent to anyone not looking at the screen at that moment.
+
+test("the loading state is a live region", () => {
+  const inst = new WorkerInspect({ name: "rig1", onClose: () => {} });
+  const out = renderToString(inst.render());
+  assert.match(out, /role="status" aria-live="polite">Loading…/);
+});
+
+test("an apply result (StatusLine) is a live region", () => {
+  const inst = readyInstance();
+  inst.state.result = { status: "applied" };
+  const out = renderToString(inst.render());
+  assert.match(out, /role="status" aria-live="polite">\s*applied/i);
 });
