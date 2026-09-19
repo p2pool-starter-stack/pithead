@@ -20,7 +20,9 @@ fi
 
 WORK_DIR="$(mktemp -d)"
 CONTAINER="tari-config-parse-check-$$"
-trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR"; rm -f "$ROOT/build/tari/config.toml"' EXIT
+# rm -rf can leave root-owned files behind (the container ran --user root against $WORK_DIR/node)
+# and exit non-zero on them — `|| true` so cleanup never flips an otherwise-passing run to red.
+trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR" 2>/dev/null || true; rm -f "$ROOT/build/tari/config.toml"' EXIT
 echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$WORK_DIR/.env"
 
 # 00-prelude.sh declares ENV_FILE readonly from PITHEAD_ENV_FILE, so this has to be set first.
