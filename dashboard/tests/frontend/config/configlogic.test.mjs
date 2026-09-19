@@ -33,6 +33,7 @@ const CFG = {
   p2pool: { pool: "mini", stratum_password: "" },
   dashboard: {
     auth: { username: "admin", password: { __secret__: true } },
+    host: "box.lan",
   },
   workers: { list: [{ name: "rig1", host: "10.0.0.5", token: { __secret__: true } }] },
 };
@@ -201,6 +202,9 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
   assert.match(fields["p2pool.pool"].warning, /PPLNS window resets/);
   assert.match(fields["monero.wallet_address"].warning, /payout address/);
   assert.equal(fields["monero.prune"].warning, undefined);
+  // #2367: the password and hostname name their consequence before the operator confirms.
+  assert.match(fields["dashboard.auth.password"].warning, /logged out|locks this session/);
+  assert.match(fields["dashboard.host"].warning, /approval-gated day-two rename/);
 });
 
 test("array values are not form fields (#172)", () => {
@@ -319,7 +323,7 @@ test("markEditable: a missing/empty editable set fails CLOSED — every field no
   }
 });
 
-test("markEditable: host-only fields (e.g. dashboard.auth.password, a security/secret field) stay non-editable", () => {
+test("markEditable: a field absent from every set (editable/confirm/approval) stays non-editable", () => {
   const editableKeys = ["monero.wallet_address", "p2pool.pool"]; // dashboard.auth.* deliberately absent
   const dashboardAccess = markEditable(buildSections(CFG), editableKeys).find(
     (s) => s.name === "Dashboard & access",
