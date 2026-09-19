@@ -47,14 +47,16 @@ seed_cr() {
     printf '{ "monero":{"mode":"local","wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"} }\n' "$WALLET" >"$CR/config.json"
     printf 'DEPLOYMENT_COMPLETED=true\nHOST_IP=box.lan\n' >"$CR/.env"
     : >"$CR/Caddyfile"
-    : >"$CR/data/monero/blockchain" # stand-in for the synced chain
-    : >"$CR/data/tor/hostname"      # stand-in for the onion key material
+    printf 'pithead\n' >"$CR/machine-role" # every provisioned machine gets one (#2347), not just rigs
+    : >"$CR/data/monero/blockchain"        # stand-in for the synced chain
+    : >"$CR/data/tor/hostname"             # stand-in for the onion key material
 }
 # Wrong confirmation word: aborts, changes nothing.
 seed_cr
 out=$(cd "$CR" && printf 'nope\n' | PITHEAD_APPLIANCE=0 PATH="$CR/bin:$PATH" ./pithead config-reset 2>&1) || true
 assert_contains "config-reset aborts on the wrong confirm word" "$out" "Aborted"
 assert_eq "aborted config-reset keeps config.json" "$([ -f "$CR/config.json" ] && echo yes)" "yes"
+assert_eq "aborted config-reset keeps machine-role" "$([ -f "$CR/machine-role" ] && echo yes)" "yes"
 # -y off the appliance: config + rendered files go, data dirs stay, no reboot — just the hint.
 seed_cr
 rebooted="$CR/.rebooted"
@@ -64,6 +66,7 @@ assert_rc "config-reset succeeds" "$?" "0"
 assert_eq "config-reset removes config.json" "$([ -f "$CR/config.json" ] || echo gone)" "gone"
 assert_eq "config-reset removes .env" "$([ -f "$CR/.env" ] || echo gone)" "gone"
 assert_eq "config-reset removes Caddyfile" "$([ -f "$CR/Caddyfile" ] || echo gone)" "gone"
+assert_eq "config-reset removes machine-role (#2347, or pithead-boot's OR'd condition stays armed)" "$([ -f "$CR/machine-role" ] || echo gone)" "gone"
 assert_eq "config-reset KEEPS the monero chain" "$([ -f "$CR/data/monero/blockchain" ] && echo kept)" "kept"
 assert_eq "config-reset KEEPS the Tor onion key" "$([ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 assert_eq "config-reset off the appliance does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
