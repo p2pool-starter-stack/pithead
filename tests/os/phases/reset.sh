@@ -181,12 +181,17 @@ phase_reset() {
     else
         ok "the one-shot marker was consumed by the first surfacing"
     fi
+    # A same-boot re-run of doctor still shows it: the marker is spent, but the tmpfs cache that
+    # answers repeat reads within one boot session has not been cleared yet (only a reboot clears
+    # it) — an operator running doctor twice in one sitting should see consistent output, not have
+    # it flicker to silence mid-session. leg 2 below reboots the guest for real, which is where
+    # this note finally goes silent for good — checked at the end of that leg.
     local doctor_out
     doctor_out=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
     if printf '%s' "$doctor_out" | grep -q "Data reset:"; then
-        bad "doctor still reports the data-reset note after it already surfaced once — a historic wipe is re-WARNing (#1208)"
+        ok "doctor still shows the note within the SAME boot — consistent, not flickering silent mid-session"
     else
-        ok "doctor stays silent on a wipe already surfaced once — no stale re-WARN"
+        bad "doctor went silent within the SAME boot the wizard just surfaced the note in — the cache is not surviving the subshell it must run in (#1208)"
     fi
 
     # ---- leg 2: a wedged /data must be REPAIRED, not erased --------------------------------
@@ -281,5 +286,18 @@ phase_reset() {
         ok "leg 1's factory reset was recorded on the ESP ($wipes_before line(s))"
     else
         bad "leg 1 reformatted /data and left no record on the ESP — a wiped machine is indistinguishable from a fresh one (#1062)"
+    fi
+
+    # ---- one-shot wipe marker, the other half (#1208): a NEW boot finally goes silent ----------
+    # The corrupt-superblock recovery above powered the guest off and back on for real — tmpfs is
+    # cleared, so the same-boot cache from leg 1 is gone. The .pending marker stayed consumed
+    # (leg 2 repaired /data rather than wiping it, so nothing re-armed it). This boot never ran
+    # doctor or the wizard yet, so this is the FIRST read of a truly new boot: it must be silent.
+    local doctor_out2
+    doctor_out2=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
+    if printf '%s' "$doctor_out2" | grep -q "Data reset:"; then
+        bad "doctor still reports leg 1's factory-reset note on a genuinely NEW boot — it re-surfaces forever (#1208)"
+    else
+        ok "a genuinely new boot is silent — the historic wipe surfaced once and stays surfaced only within its own boot"
     fi
 }

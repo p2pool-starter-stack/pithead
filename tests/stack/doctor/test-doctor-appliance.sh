@@ -83,6 +83,11 @@ echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support
 mk_tmpdir CDW
 mkdir -p "$CDW/esp"
 export PITHEAD_PRESEED_DIR="$CDW/esp"
+# Stands in for /run (tmpfs): data_wipe_note()'s one-shot cache has to live in a file, never a
+# shell variable, because every caller reads it through `$(...)` command substitution, which
+# forks a subshell (#1208 job 557/560 — a variable-based cache never worked, since a subshell's
+# writes to it vanish when the subshell exits).
+export PITHEAD_DATA_WIPE_NOTE_CACHE="$CDW/wipe-note-cache.json"
 
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent regardless of the note" "$out" ""
@@ -101,24 +106,33 @@ assert_contains "the WARN names the date" "$out" "2026-08-21T09:00:00Z"
 assert_contains "the WARN points at restoring a backup" "$out" "restore from backup"
 assert_not_contains "a recovery wipe is a WARN, never a FAIL (must not fail the boot health gate)" "$out" "FAIL"
 
-# One-shot (#1208): the WARN above was the first surfacing and consumed the .pending marker — the
-# SAME historic wipe must never re-surface on a later doctor run, however healthy the box has been
-# since (the log line itself, checked below, is untouched — only the marker was consumed).
+# One-shot PER BOOT (#1208): the .pending marker is consumed, but the same-boot cache still
+# answers a re-run within the SAME boot consistently — an operator running doctor twice in one
+# sitting should see the same output, not have it flicker to silence mid-session. The marker
+# itself (checked below) never comes back; only a reboot (tmpfs cleared) truly ends the WARN.
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
-assert_eq "a re-run after the WARN was shown once -> silent, never a stale re-WARN" "$out" ""
+assert_contains "a re-run within the SAME boot -> the SAME WARN, not silence" "$out" "WARN"
+assert_eq "the .pending marker itself stays consumed (never re-armed by a re-run)" \
+    "$([ -f "$CDW/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "absent"
 assert_contains "the underlying wipe log is untouched — only the marker was consumed" \
     "$(cat "$CDW/esp/pithead-data-wiped")" "2026-08-21T09:00:00Z"
+
+# A LATER boot (cache cleared, marker already consumed on disk) is what finally ends it.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a later boot -> silent, never a stale re-WARN (#1208)" "$out" ""
 
 printf '2026-08-19T07:30:00Z factory-reset requested\n' >"$CDW/esp/pithead-data-wiped"
 : >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_not_contains "a deliberate factory-reset -> no WARN (the operator asked for it)" "$out" "WARN"
 assert_contains "a deliberate factory-reset -> still named, informationally" "$out" "2026-08-19T07:30:00Z"
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
-assert_eq "a factory-reset info line is one-shot too" "$out" ""
+assert_eq "a factory-reset info line is one-shot too (later boot -> silent)" "$out" ""
 
-unset PITHEAD_PRESEED_DIR
+unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$CDW"
 unset CDW out
 

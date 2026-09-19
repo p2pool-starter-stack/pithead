@@ -40,35 +40,36 @@ preseed_token() {
 # publish_data_wipe_note, is the only one that ever sees it. A later record_wipe() re-arms the
 # marker, so a genuinely new wipe still gets reported.
 #
-# Cached for the rest of this PROCESS after the first read (success or not): stage_wizard_spool
+# Cached in a tmpfs file for the rest of THIS BOOT after the first read (#1208): every caller
+# reads through `note=$(data_wipe_note)`, and command substitution always forks a subshell — a
+# shell variable set inside one is invisible to the next `$(...)` call, so a plain in-memory cache
+# is a no-op here (a real bug this fix went through once: #1208 job 557/560). stage_wizard_spool
 # re-stages the whole spool on every wizard loop iteration — including the very first, before the
-# container has even started once — so without this, that second call would find the marker its
-# OWN process just consumed already gone and overwrite the still-unseen banner with "{}" (#1208).
-# A later process (a genuinely new boot) starts with no cache and reads the marker file fresh.
+# container has even started once — so without a cache that SURVIVES across subshells, that second
+# call finds the marker the first one already consumed and overwrites the still-unseen banner with
+# "{}". /run is tmpfs: gone on reboot, so a later boot reads the marker file fresh with no cache.
+DATA_WIPE_NOTE_CACHE="${PITHEAD_DATA_WIPE_NOTE_CACHE:-/run/pithead-data-wipe-note.json}"
 #
 # rc 1: no wipe pending (never happened, or already surfaced), unreadable, or a line with no
 # "<when> <reason>" shape to parse.
-_data_wipe_note_read=0
-_data_wipe_note_cached=""
 data_wipe_note() {
-    if [ "$_data_wipe_note_read" = 1 ]; then
-        [ -n "$_data_wipe_note_cached" ] || return 1
-        printf '%s' "$_data_wipe_note_cached"
+    local f="$PRESEED_DIR/pithead-data-wiped" line when reason note
+    if [ ! -f "$f.pending" ]; then
+        [ -s "$DATA_WIPE_NOTE_CACHE" ] || return 1
+        cat "$DATA_WIPE_NOTE_CACHE"
         return 0
     fi
-    _data_wipe_note_read=1
-    local f="$PRESEED_DIR/pithead-data-wiped" line when reason
-    [ -f "$f.pending" ] || return 1
     [ -f "$f" ] || return 1
     line=$(tail -n 1 "$f" 2>/dev/null) || return 1
     case "$line" in *' '*) ;; *) return 1 ;; esac
     when="${line%% *}"
     reason="${line#* }"
     [ -n "$when" ] && [ -n "$reason" ] || return 1
-    rm -f "$f.pending" 2>/dev/null || true
-    _data_wipe_note_cached=$(jq -cn --arg when "$when" --arg reason "$reason" \
+    note=$(jq -cn --arg when "$when" --arg reason "$reason" \
         '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}') || return 1
-    printf '%s' "$_data_wipe_note_cached"
+    rm -f "$f.pending" 2>/dev/null || true
+    printf '%s' "$note" >"$DATA_WIPE_NOTE_CACHE" 2>/dev/null || true
+    printf '%s' "$note"
 }
 
 # Carries the wipe note to the wizard's spool (#1121): the wizard runs in a container whose only

@@ -126,13 +126,19 @@ echo "== unit: data_wipe_note / publish_data_wipe_note — the wipe note reader 
 mk_tmpdir DWN
 mkdir -p "$DWN/esp" "$DWN/spool"
 export PITHEAD_PRESEED_DIR="$DWN/esp"
+# Stands in for /run (tmpfs) across this whole block: every real caller reads through
+# `note=$(data_wipe_note)`, which forks a subshell, so the one-shot cache MUST live in a file, not
+# a shell variable (#1208 job 557/560 — an earlier fix cached in a variable and never worked,
+# since a subshell's writes to it vanish when the subshell exits). "a later boot" below is
+# simulated by removing this file, the same way a reboot clears tmpfs.
+export PITHEAD_DATA_WIPE_NOTE_CACHE="$DWN/wipe-note-cache.json"
 
 run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "no note file -> rc 1" "$?" "1"
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
 run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
-assert_rc "a note with no .pending marker -> rc 1 (record_wipe always drops one; this is belt-and-suspenders)" "$?" "1"
+assert_rc "a note with no .pending marker and no cache -> rc 1 (record_wipe always drops one; this is belt-and-suspenders)" "$?" "1"
 
 : >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
@@ -141,18 +147,28 @@ assert_eq "the last line's timestamp is carried through" "$(printf '%s' "$note" 
 assert_eq "the last line's reason is carried through" "$(printf '%s' "$note" | jq -r '.reason')" \
     "unrecoverable /data reinitialized — everything on it was lost"
 
-# One-shot (#1208): a successful read consumes the .pending marker, so the SAME wipe never
-# surfaces a second time — the log line itself is left untouched (append-only, never cleared).
-run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
-assert_rc "a second read of the same wipe -> rc 1, the marker was already consumed" "$?" "1"
+# MUTATION PROOF (#1208, tier4-kvm job 557/560): a second read of the SAME wipe, in a SEPARATE
+# process — exactly how every real caller invokes this — must return the SAME note, not silence:
+# the .pending marker is already consumed, so only the same-boot cache is left to answer from.
+# This is the regression tier4-kvm caught twice: a variable-based cache is invisible across the
+# subshell command substitution forks, so this assertion is the one that would have failed then.
+note2=$(run_sourced "$SANDBOX" data_wipe_note)
+assert_eq "a second read, separate process, SAME boot -> the SAME note, never silence" "$note2" "$note"
 assert_contains "the underlying log line survives — only the marker is consumed" \
     "$(cat "$DWN/esp/pithead-data-wiped")" "unrecoverable /data reinitialized"
+
+# A LATER boot has no cache (tmpfs, cleared on reboot) and the marker stays consumed — THAT is
+# when a wipe finally stops surfacing, not merely a second read within the same boot.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
+assert_rc "a later boot (cache cleared, marker already consumed) -> rc 1, truly silent" "$?" "1"
 
 printf '2026-08-20T08:00:00Z factory-reset requested\n2026-08-21T09:00:00Z factory-reset requested\n' >"$DWN/esp/pithead-data-wiped"
 : >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "a deliberate factory-reset -> recovery false" "$(printf '%s' "$note" | jq -r '.recovery')" "false"
 assert_eq "append-only log: only the LAST line is read" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
 printf 'garbage\n' >"$DWN/esp/pithead-data-wiped"
 : >"$DWN/esp/pithead-data-wiped.pending"
@@ -160,7 +176,7 @@ run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "a line with no '<when> <reason>' shape -> rc 1, never a made-up note" "$?" "1"
 assert_eq "an unparseable line leaves the marker armed, never silently consumed" \
     "$([ -f "$DWN/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "present"
-rm -f "$DWN/esp/pithead-data-wiped.pending"
+rm -f "$DWN/esp/pithead-data-wiped.pending" "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
 # publish_data_wipe_note carries the note to the wizard's spool — the wizard container's ONLY
 # mount, so it cannot read PRESEED_DIR itself.
@@ -177,19 +193,15 @@ assert_eq "a real note reaches the spool" "$(jq -r '.recovery' "$DWN/spool/data-
 
 # MUTATION PROOF (#1208, tier4-kvm job 557): firstboot-wizard calls stage_wizard_spool TWICE
 # before the wizard container ever serves a single request — once before its retry loop, once as
-# the loop's first statement, both in the SAME process. Consuming the marker inside
-# data_wipe_note() unconditionally made the SECOND call find it already gone and overwrite the
-# still-unseen banner with "{}" before a browser ever loaded it — exactly what the bench caught.
-: >"$DWN/esp/pithead-data-wiped.pending"
-run_sourced "$SANDBOX" eval '
-    publish_data_wipe_note "$1" >/dev/null
-    publish_data_wipe_note "$1" >/dev/null
-' _ "$DWN/spool" >/dev/null 2>&1
-assert_eq "two publishes in the SAME process both see the real note (#1208 regression)" \
+# the loop's first statement — each a SEPARATE `publish_data_wipe_note` process via command
+# substitution. Both must still see the real note, not overwrite each other with "{}".
+run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
+assert_eq "two publishes in SEPARATE processes, same boot, both see the real note (#1208 regression)" \
     "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
 
-# One-shot (#1208): publish_data_wipe_note is itself a surfacing — a LATER process (a genuinely
-# new boot) for the SAME wipe (the marker already consumed on disk) must not re-report it either.
+# One-shot (#1208): a LATER boot (cache cleared, marker already consumed on disk) for the SAME
+# wipe must not re-report it.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
 assert_eq "a later boot's publish of the same wipe -> the spool goes back to empty" "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
@@ -217,9 +229,9 @@ printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on
 assert_eq "booting from removable media never carries the STICK's own note across" \
     "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
-unset PITHEAD_PRESEED_DIR
+unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$DWN"
-unset DWN note
+unset DWN note note2
 
 echo "== unit: is_appliance gates the tarball upgrade =="
 # The appliance's program tree is resynced from the system slot every boot, so a DIY tarball
