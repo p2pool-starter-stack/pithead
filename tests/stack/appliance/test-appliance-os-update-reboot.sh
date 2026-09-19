@@ -44,11 +44,14 @@ chmod +x "$OUR/pithead"
 touch "$OUR/bundle.raucb"
 printf 'release\n' >"$OUR/variant-release"
 printf "RAUC_META_PITHEAD_VARIANT='release'\nRAUC_META_PITHEAD_VERSION='9.9.9'\n" >"$OUR/info-versioned.txt"
+# os_running_version reads $PITHEAD_VERSION, but the real CLI's main dispatch calls
+# export_build_provenance on every invocation, which resets PITHEAD_VERSION from a VERSION file in
+# the cwd (or to empty if absent) BEFORE any verb runs — an inherited env var alone is overwritten.
+printf '1.0.0\n' >"$OUR/VERSION"
 rebooted="$OUR/.rebooted"
 : >"$OUR/calls"
 out=$(cd "$OUR" && PATH="$OUR/bin:$PATH" RAUC_LOG="$OUR/calls" \
     RAUC_INFO_OUT="$OUR/info-versioned.txt" PITHEAD_VARIANT_FILE="$OUR/variant-release" \
-    PITHEAD_VERSION="1.0.0" \
     ./pithead os-update bundle.raucb --yes 2>&1)
 rc=$?
 assert_rc "-y with no --reboot installs cleanly" "$rc" "0"
@@ -65,7 +68,7 @@ rm -f "$rebooted"
 : >"$OUR/calls"
 out=$(cd "$OUR" && PATH="$OUR/bin:$PATH" RAUC_LOG="$OUR/calls" \
     RAUC_INFO_OUT="$OUR/info-versioned.txt" PITHEAD_VARIANT_FILE="$OUR/variant-release" \
-    PITHEAD_VERSION="1.0.0" PITHEAD_REBOOT_CMD="touch $rebooted" \
+    PITHEAD_REBOOT_CMD="touch $rebooted" \
     ./pithead os-update bundle.raucb --yes --reboot </dev/null 2>&1)
 rc=$?
 assert_rc "--reboot with -y succeeds" "$rc" "0"
@@ -77,11 +80,14 @@ rm -f "$rebooted"
 : >"$OUR/calls"
 out=$(cd "$OUR" && PATH="$OUR/bin:$PATH" RAUC_LOG="$OUR/calls" \
     RAUC_INFO_OUT="$OUR/info-versioned.txt" PITHEAD_VARIANT_FILE="$OUR/variant-release" \
-    PITHEAD_VERSION="1.0.0" PITHEAD_REBOOT_CMD="touch $rebooted" \
+    PITHEAD_REBOOT_CMD="touch $rebooted" \
     ./pithead os-update bundle.raucb --reboot </dev/null 2>&1)
 rc=$?
+# bash's `read -p` never writes its prompt when stdin is not a terminal (proven true of `/dev/null`
+# here), so the "Reboot now?" text itself is not observable through a captured, non-tty run —
+# only its consequence is: EOF reads as declined, and the operator is told how to finish it later.
 assert_rc "--reboot without -y, declined by EOF, exits clean" "$rc" "0"
-assert_contains "the reboot prompt was asked" "$out" "Reboot now?"
+assert_contains "an unanswered prompt is treated as declined" "$out" "Not rebooting."
 assert_eq "an unanswered reboot prompt does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
 assert_contains "the operator is told how to finish it later" "$out" "os-update --reboot"
 
@@ -90,7 +96,7 @@ rm -f "$rebooted"
 : >"$OUR/calls"
 out=$(cd "$OUR" && printf 'y\n' | PATH="$OUR/bin:$PATH" RAUC_LOG="$OUR/calls" \
     RAUC_INFO_OUT="$OUR/info-versioned.txt" PITHEAD_VARIANT_FILE="$OUR/variant-release" \
-    PITHEAD_VERSION="1.0.0" PITHEAD_REBOOT_CMD="touch $rebooted" \
+    PITHEAD_REBOOT_CMD="touch $rebooted" \
     ./pithead os-update bundle.raucb --reboot 2>&1)
 rc=$?
 assert_rc "--reboot without -y, confirmed -> succeeds" "$rc" "0"
