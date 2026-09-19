@@ -251,7 +251,18 @@ The unit names are global to the host, so removal is ownership-checked: a checko
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the
 `current` symlink and the versioned directory it targets count as the same checkout. Another
 checkout on the same box (an e2e harness, a bundle smoke test) therefore cannot delete the live
-stack's runner and strand its queued requests.
+stack's runner and strand its queued requests. That physical-path comparison also decides whether
+`apply` needs to touch the runner at all: an `apply` whose config did not change re-provisions
+only when the installed units genuinely differ (a stale checkout path, a container-engine change,
+a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
+(`current` symlink or its versioned directory).
+
+When re-provisioning IS needed, `apply` stops `pithead-control.path` first — so no new request can
+be claimed — then waits up to 30s for a request `control-run-pending` already claimed to finish and
+write its result, and only then rewrites or removes the units. A request still sitting unclaimed in
+`requests/` is not lost either way: the spool file is untouched, and `pithead-control.path` re-fires
+against it as soon as it (or its replacement) is enabled again. If the wait times out, `apply` warns
+and proceeds anyway rather than hanging the operator's apply indefinitely.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a
