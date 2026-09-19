@@ -102,35 +102,40 @@ remove_deactivated_profile_containers() {
 
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
+#
+# The `up` is RETRIED (#2218), same fix and same failure as the boot-time race in #1684: a passenger
+# container (p2pool, stopped/started outside compose by the dashboard's sync-gate/node-down worker,
+# #31/#35) can be mid-transition at the instant compose recreates the stack, and compose aborts the
+# WHOLE up on that container's improper state though it settles within seconds. #1684 retried only
+# the boot release's own `up` call; this retries every caller through the one function they share —
+# apply (#2218), `up`, and upgrade — so a passenger's transition delays the up by seconds and never
+# vetoes it outright.
+COMPOSE_UP_TRIES=${PITHEAD_COMPOSE_UP_TRIES:-3}
+COMPOSE_UP_PAUSE=${PITHEAD_COMPOSE_UP_PAUSE:-3}
 compose_up_checked() {
-    local tmp out rc _attempt
+    # rc/out are seeded because the loop below may never run: a COMPOSE_UP_TRIES of 0, or any value
+    # `seq` refuses, yields no iterations, and an unset rc would be an `unbound variable` abort under
+    # the control runner's `set -u` rather than the honest "the up did not succeed" this returns.
+    #
+    # This retries on ANY compose-up failure, not just the "must be in Created or Stopped state to
+    # be started" shape #2298/#2293 scripted: that message is one instance of the same passenger-
+    # transition race (#2218), and gating the retry on matching it exactly missed every other engine
+    # wording for the identical condition. A real failure (subnet collision, bad image, port clash)
+    # still exhausts the tries and returns compose's own exit code, same as #2298 intended.
+    local tmp out="" rc=1 try
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
-    # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
-    # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
-    # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped
-    # state to be started" (Docker/Podman both use this shape). That resolves itself once the
-    # in-flight transition finishes, so a short second pass recovers it instead of failing an
-    # otherwise-successful config change; a real failure (bad image, port clash, subnet collision)
-    # repeats identically and stays fatal.
-    for _attempt in 1 2; do
+    for try in $(seq "$COMPOSE_UP_TRIES"); do
         tmp="$(mktemp)"
         compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
         rc=${PIPESTATUS[0]}
         out="$(<"$tmp")"
         rm -f "$tmp"
         [ "$rc" -eq 0 ] && return 0
-        case "$out" in
-        *"must be in Created or Stopped state to be started"*)
-            [ "$_attempt" -eq 1 ] && {
-                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
-                sleep 3
-                continue
-            }
-            ;;
-        esac
-        break
+        [ "$try" -lt "$COMPOSE_UP_TRIES" ] || break
+        warn "docker compose up failed (try $try of $COMPOSE_UP_TRIES) — a passenger container may still be mid-transition; retrying in ${COMPOSE_UP_PAUSE}s"
+        sleep "$COMPOSE_UP_PAUSE"
     done
     explain_subnet_collision "$out"
     return "$rc"
