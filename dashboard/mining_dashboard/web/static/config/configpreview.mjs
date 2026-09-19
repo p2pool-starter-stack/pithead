@@ -1,7 +1,10 @@
 // Review and approval modal for one host-produced configuration preview (#1959).
+
+import { Modal } from "../app/modal.mjs";
 import { html } from "../app/preact.mjs";
 
 export const PreviewModal = ({
+  modalRef,
   preview,
   confirmText,
   onConfirmText,
@@ -9,6 +12,7 @@ export const PreviewModal = ({
   onPayoutSuffix,
   onConfirm,
   onCancel,
+  onClose,
   busy,
 }) => {
   const changes = preview.changes || [];
@@ -17,9 +21,10 @@ export const PreviewModal = ({
     ([chain, suffix]) => (payoutSuffixes?.[chain] || "") === suffix,
   );
   const armed = (!preview.destructive || confirmText === "APPLY") && suffixesMatch;
-  return html`<div class="config-modal-backdrop">
-      <div class="card config-modal">
-          <h3>Review changes</h3>
+  // Applying can't be interrupted (the host is mid-commit) — Cancel is disabled and Escape,
+  // wired to the same onCancel below, is a no-op while busy rather than closing underneath it.
+  return html`<${Modal} ref=${modalRef} title="Review changes" onClose=${onClose}
+      onCancel=${() => !busy && onCancel()}>
           ${
             changes.length === 0
               ? html`<p class="text-muted">No configuration changes detected.</p>`
@@ -57,6 +62,7 @@ export const PreviewModal = ({
                          onInput=${(event) => onConfirmText(event.target.value)} /></label>`
               : null
           }
+          ${busy ? html`<p class="text-muted text-xs">Applying — this can't be interrupted.</p>` : null}
           <div class="config-modal-actions">
               <button class="btn-toggle" onClick=${onCancel} disabled=${busy}>Cancel</button>
               <button class="btn-toggle active" onClick=${onConfirm}
@@ -64,6 +70,5 @@ export const PreviewModal = ({
                   ${busy ? "Applying…" : "Confirm & apply"}
               </button>
           </div>
-      </div>
-  </div>`;
+  </${Modal}>`;
 };
