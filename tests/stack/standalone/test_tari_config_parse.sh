@@ -48,7 +48,12 @@ echo "  (image: $TARI_IMAGE)"
 # --network none: the node needs no network to parse config or fail with ConfigError. A config it
 # accepts then tries to reach peers and never exits on its own, so this is bounded (#2341): a
 # container still running after 20s means the config parsed and startup proceeded past it.
+
+# --user root: production runs 1000:1000 against a data dir pithead has chowned to match; this
+# is a config-parse check with no owned data dir, and the image's default non-root user cannot
+# write into it — first seen as a log4rs "Permission denied" masquerading as a ConfigError.
 docker run -d --network none --name "$CONTAINER" \
+    --user root \
     -e WAIT_FOR_TOR=0 \
     -v "$ROOT/build/tari:/var/tari/config:ro" \
     -v "$WORK_DIR/node:/var/tari/node" \
