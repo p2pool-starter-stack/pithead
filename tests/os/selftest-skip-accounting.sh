@@ -155,6 +155,14 @@ for row in "held-chain release" "boot-menu version repair" "/data-floor restore"
     assert_eq "the $row row is enumerated, classed missing" "$(row_class "$row")" "missing"
 done
 
+echo "== #2356: crossupdate's own absent-input gate is a named, classed missing PHASE skip =="
+# Unlike provision's reserved-node row (a mandatory release gate, a documented counted FAILURE),
+# crossupdate is opt-in and excluded from --phase all for the same reason: an input a job simply
+# did not request, not a gap in a row every run must clear.
+_crossupdate_gate="$(grep -A1 -F 'it_skip_phase "crossupdate"' "$HERE/phases/crossupdate.sh")"
+assert_contains "PITHEAD_OLD_IMAGE absent is recorded through it_skip_phase" "$_crossupdate_gate" "PITHEAD_OLD_IMAGE"
+assert_contains "…classed missing, not a bare warning or a failure" "$_crossupdate_gate" "missing"
+
 echo "== #2356: a phase that records nothing is counted as a missing skip, not a silent pass =="
 # _run_phase is the one place tests/os/run.sh invokes every phase from — extracted rather than
 # re-spelled, same reasoning as every other extraction in this file: a copy would agree with
