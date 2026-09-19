@@ -483,12 +483,12 @@ export function formatTimeToShare(sec) {
   return fmtWindowDuration(sec * 1000);
 }
 
-// Egress posture (#170): map a connection's route token to a display glyph + label + CSS token for
-// the Component Health panel. The server (service/egress.py) derives the route from live config; the
-// client only maps it to presentation, no logic of its own (the #61 principle).
+// Egress posture (#170): server-owned route presentation for Component Health.
 export const EGRESS_ROUTES = {
   tor: { icon: "🧅", label: "Tor", cls: "ok" },
   clearnet: { icon: "🌐", label: "Clearnet", cls: "bad" },
+  lan: { icon: "🖧", label: "LAN", cls: "accent" },
+  unknown: { icon: "⚠️", label: "Unverified", cls: "warn" },
   local: { icon: "🏠", label: "Local/LAN", cls: "muted" },
   inactive: { icon: "⚪", label: "Inactive", cls: "muted" },
 };

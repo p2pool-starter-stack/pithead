@@ -17,6 +17,25 @@ test("editableCandidate drops private and prototype-control keys but keeps secre
   assert.deepEqual(out.secret, { __secret__: true });
 });
 
+// #1871: one card states the control-channel-off fact once, links the guide, and keeps the
+// exact setting in a <code> aside; the host file path and ./pithead apply no longer appear as
+// user text. htm drops whitespace at a text/<code> boundary split across a line break unless an
+// explicit ${" "} holds it — the regression this guards is literal concatenation like
+// "Setting:dashboard.control.enabled".
+test("the disabled card states the fact once, links the guide, and keeps the key spaced from its label (#1871)", () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  Object.assign(view.state, { phase: "disabled" });
+  const out = renderToString(view.render());
+  assert.match(out, /docs\/dashboard\.md#configuration-view/);
+  assert.match(out, /<code>dashboard\.control\.enabled<\/code>/);
+  assert.doesNotMatch(out, /Setting:dashboard/);
+  assert.doesNotMatch(out, /setdashboard/);
+  assert.doesNotMatch(out, /truein/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
+});
+
 test("carried SSH configuration is warned about and not proposed", async () => {
   const view = new ConfigView({});
   view.setState = (patch) => Object.assign(view.state, patch);
@@ -91,6 +110,37 @@ test("poll skips the still-present preview result until the commit outcome lands
   const view = new ConfigView({});
   const out = await withFastPoll(fetchStub, () => view.poll(ID, "previewed"));
   assert.equal(out.status, "applied");
+});
+
+test("commit polls its preview id after an empty successful response", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  await withFastPoll(
+    async (url) =>
+      url === "/api/control/commit"
+        ? { status: 202, ok: true, text: async () => "" }
+        : okResult({ status: "applied" }),
+    () => view.commit(),
+  );
+  assert.equal(view.state.phase, "done");
+  assert.equal(view.state.result.status, "applied");
+});
+
+test("commit does not poll after a nonempty response without a result status", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  let calls = 0;
+  await withFastPoll(
+    async () => {
+      calls++;
+      return { status: 202, ok: true, text: async () => "{}", json: async () => ({}) };
+    },
+    () => view.commit(),
+  );
+  assert.equal(calls, 1);
+  assert.equal(view.state.phase, "error");
 });
 
 test("a rejected appliance preview labels the host validation log", async () => {
@@ -304,4 +354,31 @@ test("a CONFIRM change arms Confirm once APPLY is typed (#719)", () => {
   );
   const btnArmed = armed.match(/<button class="btn-toggle active"[^>]*>/)[0];
   assert.doesNotMatch(btnArmed, /disabled/); // now committable
+});
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the review modal is a <dialog>, not a backdrop div", () => {
+  const out = renderToString(
+    PreviewModal({ preview: { changes: [], destructive: false }, confirmText: "", busy: false }),
+  );
+  assert.match(out, /^<dialog class="card config-modal"/);
+  assert.match(out, /role="dialog"/);
+  assert.match(out, /aria-modal="true"/);
+  assert.match(out, /aria-label="Review changes"/);
+  assert.doesNotMatch(out, /config-modal-backdrop/);
+});
+
+test("every UpgradeControl phase modal (confirm/upgrading/done/failed) is a <dialog>", () => {
+  const props = { update: UPDATE, enabled: true };
+  for (const phase of ["confirm", "upgrading", "done", "failed"]) {
+    const inst = new UpgradeControl(props);
+    inst.props = props;
+    inst.state.phase = phase;
+    if (phase === "done") inst.state.result = { status: "upgraded", version: "v9.9.9" };
+    if (phase === "failed") inst.state.result = { error: "boom" };
+    const out = renderToString(inst.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
 });

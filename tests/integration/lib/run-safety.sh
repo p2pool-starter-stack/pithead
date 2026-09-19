@@ -180,6 +180,10 @@ summary() {
         it_warn "did NOT run:"
         echo -e "$IT_SKIPPED_NAMES" >&2
     fi
+    if [ "$IT_ALERT_REFUSED" -gt 0 ]; then
+        it_warn "third-party refusals: $IT_ALERT_REFUSED (an environment fact, not a stack failure — #424)"
+        echo -e "$IT_ALERT_REFUSED_NAMES" >&2
+    fi
     if [ "$IT_FAIL" -gt 0 ]; then
         it_err "failed:  $IT_FAIL"
         echo -e "$IT_FAILED_NAMES" >&2
