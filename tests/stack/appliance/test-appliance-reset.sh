@@ -205,6 +205,9 @@ assert_eq "the wipe is recorded on the ESP" "$([ -f "$DRW/esp/pithead-data-wiped
 assert_contains "the record says what was lost" "$(cat "$DRW/esp/pithead-data-wiped")" "everything on it was lost"
 assert_contains "the record is timestamped" "$(cat "$DRW/esp/pithead-data-wiped")" "$(date -u +%Y-)"
 assert_eq "one wipe, one line" "$(wc -l <"$DRW/esp/pithead-data-wiped" | tr -d ' ')" "1"
+# One-shot marker (#1208): data_wipe_note() consumes THIS, never the log, so a wipe reports once.
+assert_eq "record_wipe re-arms the one-shot marker beside the log" \
+    "$([ -f "$DRW/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "present"
 
 echo "== unit: pithead-data-reset boot_disk_part resolves by PARTLABEL on the boot disk (#926) =="
 # Stubbed findmnt + lsblk (the same PATH-stub shape pithead's own prefill_from_previous_install
