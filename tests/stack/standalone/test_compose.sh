@@ -49,6 +49,7 @@ MONERO_PREP_THREADS=4
 MONERO_RPC_BIND=127.0.0.1
 MONERO_ZMQ_BIND=127.0.0.1
 MONERO_NODE_HOST=172.28.0.26
+MONERO_RPC_URL=http://monero.example:28081
 MONERO_RPC_PORT=18081
 MONERO_ZMQ_PORT=18083
 TARI_GRPC_ADDRESS=172.28.0.27:18142
@@ -57,7 +58,6 @@ COMPOSE_PROFILES=local_node,local_tari
 DASHBOARD_SECURE=true
 HOST_IP=box.lan
 EOF
-
 echo "Validating docker-compose.yml ..."
 if docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config is valid"
@@ -280,7 +280,7 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
-
+jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
