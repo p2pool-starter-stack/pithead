@@ -941,6 +941,7 @@ services:
   # Serves HTTPS or HTTP depending on configuration
   caddy:
     image: caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
+    command: ["caddy", "run", "--config", "/etc/caddy/does-not-exist"]  # manual battery M9: a release whose proxy never starts
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m
