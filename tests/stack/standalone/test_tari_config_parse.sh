@@ -19,6 +19,8 @@ if [ -z "$TARI_IMAGE" ]; then
 fi
 
 WORK_DIR="$(mktemp -d)"
+CONTAINER="tari-config-parse-check-$$"
+trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR"; rm -f "$ROOT/build/tari/config.toml"' EXIT
 echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$WORK_DIR/.env"
 
 # 00-prelude.sh declares ENV_FILE readonly from PITHEAD_ENV_FILE, so this has to be set first.
@@ -31,24 +33,24 @@ source "$ROOT/lib/pithead/19-small-utilities.sh"
 source "$ROOT/lib/pithead/04-status.sh"
 # shellcheck source=lib/pithead/34-inject-service-configs.sh
 source "$ROOT/lib/pithead/34-inject-service-configs.sh"
+# A syntactically valid v3 onion (56-char base32 + .onion, the same fixture value used in
+# tests/stack/control/test-control-diagnostics.sh): minotari_node validates public_addresses as a
+# real multiaddr, so a placeholder that isn't shaped like one fails with its own ConfigError
+# ("invalid multiaddr") before the check ever gets to what it's actually testing.
 # shellcheck disable=SC2034  # read by inject_service_configs (34-inject-service-configs.sh), sourced above
-TARI_ONION="testonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion"
+TARI_ONION="abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion"
 # shellcheck disable=SC2034  # same: read by inject_service_configs. Compose default — a no-op substitution.
 NETWORK_PREFIX="172.28.0"
 
 cd "$ROOT"
 inject_service_configs # renders build/tari/config.toml exactly as `pithead apply`/`setup` would
-
 mkdir -p "$WORK_DIR/node"
-CONTAINER="tari-config-parse-check-$$"
-trap 'docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; rm -rf "$WORK_DIR"; rm -f "$ROOT/build/tari/config.toml"' EXIT
 
 echo "== config-parse: the pinned minotari_node image accepts the rendered config =="
 echo "  (image: $TARI_IMAGE)"
 # --network none: the node needs no network to parse config or fail with ConfigError. A config it
 # accepts then tries to reach peers and never exits on its own, so this is bounded (#2341): a
 # container still running after 20s means the config parsed and startup proceeded past it.
-
 # --user root: production runs 1000:1000 against a data dir pithead has chowned to match; this
 # is a config-parse check with no owned data dir, and the image's default non-root user cannot
 # write into it — first seen as a log4rs "Permission denied" masquerading as a ConfigError.
