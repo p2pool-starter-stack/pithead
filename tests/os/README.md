@@ -159,6 +159,14 @@ scopes the run. A failed assertion is recorded and the run carries on, so one be
 the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
 including fault and reset, and the full run is required once for every RC candidate.
 
+Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
+phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
+being absent produces, when the phase's own code has nowhere to record that — the wrapper itself
+counts it as a `missing` phase skip. And a run where every requested phase skipped this way is not
+a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
+of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
+exit code.
+
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
 re-implemented so the two tier-4 summaries read the same way (#2064). It prints the three buckets
