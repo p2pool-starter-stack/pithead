@@ -135,9 +135,7 @@ assert_eq "scan height: auto -> genesis 0 (full payout history)" "$(rsh auto)" "
 assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
-# Wallet healthcheck (#718): during the multi-hour genesis scan monero-wallet-rpc refuses the RPC,
-# so the check must tolerate an unreachable RPC WHILE the initial-scan marker is present, and turn
-# strict once the RPC first answers. Stub `curl` on PATH to be the RPC up/down control.
+# Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
 HCBIN="$SANDBOX/hc-bin"
 HCDIR="$SANDBOX/hc-wallet"
 mkdir -p "$HCBIN" "$HCDIR"
@@ -149,18 +147,19 @@ run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
 ); }
-# RPC down + marker present (mid initial scan) -> healthy (the whole point of #718).
 mk_curl 7
 : >"$HCDIR/.payout-scanning"
-assert_eq "healthcheck: RPC down but scanning -> healthy (#718)" "$(run_hc)" "0"
-# RPC up -> healthy AND the marker is retired (scan caught up; strict from now on).
+assert_eq "healthcheck: RPC down with fresh scan marker -> healthy (#718)" "$(run_hc)" "0"
+assert_eq "healthcheck: zero scan grace expires immediately (#2268)" "$(PAYOUT_SCAN_GRACE_SEC=0 run_hc)" "1"
+touch -t 200001010000.00 "$HCDIR/.payout-scanning"
+assert_eq "healthcheck: RPC down with expired scan marker -> unhealthy (#2268)" "$(run_hc)" "1"
+: >"$HCDIR/.payout-scanning"
 mk_curl 0
 assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
 # RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
 mk_curl 7
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-# The entrypoint arms the marker on wallet creation so the grace applies from first boot.
 assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="

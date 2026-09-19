@@ -30,7 +30,7 @@ export function tariAnswer(mode) {
 // merge-mine has nowhere to be paid in Tari, and the field carried `required`, so leaving it up
 // there would have blocked submit on a form that never asks the question. `required` stays on it
 // for a yes — that is the same bar the Monero address holds.
-export const TariSection = ({ answer, v, on }) => html`<h3>Tari merge-mining</h3>
+export const TariSection = ({ answer, v, on }) => html`<h2>Tari merge-mining</h2>
     <${RadioField} label="Merge-mine Tari?" name="tari-mode" value=${answer}
         onChange=${on("tariMode")} options=${[
           ["off", "No", "Mine Monero only (default)."],

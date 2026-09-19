@@ -154,7 +154,8 @@ h2 {
   font-size: 1.5rem;
   font-weight: 600;
 }
-h3 {
+h3,
+.wizard-shell h2 {
   margin: 0 0 15px 0;
   font-size: 0.85rem;
   text-transform: uppercase;

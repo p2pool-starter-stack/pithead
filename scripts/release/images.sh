@@ -175,7 +175,7 @@ promote() {
     for suffix in "${IMAGES[@]}"; do
         repo="$(image_for "$suffix")"
         digest="$(get_digest "$suffix")"
-        is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — run without --resume-promote, or stage first."
+        is_digest_ref_for "$digest" "$repo" || die "No valid lowercase sha256 digest for $suffix — stage first."
         log "Promoting $digest -> :$TAG, :latest"
         run docker buildx imagetools create --tag "$repo:$TAG" --tag "$repo:latest" "$digest"
         if [ "$DRY_RUN" -eq 0 ]; then

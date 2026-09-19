@@ -443,8 +443,9 @@ RC1 addendum, still manual after the automated rows run:
 The custom-hostname row is now specific: the wizard's `fixture-box` name must agree across the
 kernel, rendered `HOST_IP`, dashboard header state, certificate DNS and LAN-IP SANs, and active
 Avahi with working mDNS resolution. Its day-two `fixture-next` preview must leave those readings
-unchanged; missing and wrong approvals remain refused. The fake allow-listed callback then applies
-the host-generated preview, and `fixture-next` must survive the unaided reboot and A/B update.
+unchanged; an authenticated commit without the approval envelope remains refused. A confirmed
+ordinary control-route commit then applies the host-generated preview, and `fixture-next` must
+survive the unaided reboot and A/B update.
 The reserved-node `uses chain_id` row is automated but still needs actual reachable node inputs;
 the payout confirmation and human approval click remain manual. #1956 has written the serial
 assertion for boot labels, but none of these tier-4 rows is PASS until the product branches are
