@@ -79,11 +79,38 @@ assert_eq "no raw secret value anywhere in the bundle" "$(grep -rc "ORIGINALTOKE
 echo "== unit: bundle_redact_env — every CONTROL_SECRET_PATHS leaf's .env counterpart is masked (#2342) =="
 # One artifact, two policies was the bug: the control channel (CONTROL_SECRET_PATHS,
 # 30-release-fetch-and-masked-config.sh) and support-bundle's .env redaction (07-support-bundle.sh)
-# drifted apart because the bundle test above only ever spot-checked PROXY_AUTH_TOKEN. This
-# enumerates every CONTROL_SECRET_PATHS leaf's .env rendering (33-render-env.sh) so a new secret
-# leaf reds this test instead of shipping in the clear.
+# drifted apart because the bundle test above only ever spot-checked PROXY_AUTH_TOKEN.
+#
+# THE POPULATION IS MEASURED, NOT LISTED — same discipline as selftest-redact-paths.sh (#1730),
+# which exists for the identical reason (xvb.standby.source drifted out of THAT self-test's
+# vocabulary too, #1723). A hand-typed copy of CONTROL_SECRET_PATHS here would silently stop
+# tracking the product the moment the two diverged. So this sources the product and reads the
+# array back, and holds it against a recorded set below: a leaf added to CONTROL_SECRET_PATHS
+# reds this row, which is the signal to add its .env line to the fixture beneath it.
 BE="$SANDBOX/bundle-env"
 mkdir -p "$BE"
+csp_leaves=$(run_sourced "$BE" eval 'printf %s "$CONTROL_SECRET_PATHS"' | jq -r 'map(join(".")) | sort[]')
+csp_expected='dashboard.auth.password
+healthchecks.ping_url
+monero.node_password
+monero.node_username
+monero.view_key
+notifications.ntfy.token
+notifications.ntfy.url
+p2pool.stratum_password
+tari.view_key
+telegram.bot_token
+workers.api_token
+xvb.standby.source'
+assert_eq "CONTROL_SECRET_PATHS' leaf set matches the recorded set (a new leaf reds here — add its .env line below)" \
+    "$csp_leaves" "$csp_expected"
+
+# One .env line per leaf above (plus the auth leaf's two on-disk forms, hash and fingerprint,
+# since neither is the raw password), plus NOTIFY_WEBHOOK_URLS — notifications.webhooks[] is a jq
+# array stanza render_masked_config masks by path rather than a CONTROL_SECRET_PATHS entry, so it
+# never appears in the recorded set above, but #2342 named it a cleartext leak too. This fixture
+# IS the redaction check's key list, not a second one: the loop below reads it back off this file
+# rather than retyping the names.
 cat >"$BE/env-fixture" <<'EOF'
 DASHBOARD_AUTH_HASH_B64=aGFzaA==
 DASHBOARD_AUTH_PW_FP=fingerprint
@@ -102,14 +129,12 @@ NOTIFY_WEBHOOK_URLS=https://hooks.slack.com/services/T00/B00/SECRETPATH
 HOST_IP=box.lan
 EOF
 be_out=$(run_sourced "$BE" bundle_redact_env <"$BE/env-fixture")
-for key in DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN \
-    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD MONERO_VIEW_KEY TARI_VIEW_KEY \
-    PROXY_STRATUM_PASSWORD HEALTHCHECKS_PING_URL NTFY_URL NTFY_TOKEN XVB_STANDBY_SOURCE \
-    NOTIFY_WEBHOOK_URLS; do
-    assert_contains "bundle_redact_env masks $key (CONTROL_SECRET_PATHS leaf)" "$be_out" "$key=[redacted]"
-done
+while IFS='=' read -r key _; do
+    [ "$key" = HOST_IP ] && continue
+    assert_contains "bundle_redact_env masks $key" "$be_out" "$key=[redacted]"
+done <"$BE/env-fixture"
 assert_contains "bundle_redact_env leaves structural keys alone" "$be_out" "HOST_IP=box.lan"
-unset BE be_out key
+unset BE be_out key csp_leaves csp_expected
 
 echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support conversation gets the fact (#1121) =="
 # Same shape as the pre-seeding block: PITHEAD_PRESEED_DIR stands in for the ESP. Appliance-only
