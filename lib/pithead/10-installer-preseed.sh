@@ -40,9 +40,23 @@ preseed_token() {
 # publish_data_wipe_note, is the only one that ever sees it. A later record_wipe() re-arms the
 # marker, so a genuinely new wipe still gets reported.
 #
+# Cached for the rest of this PROCESS after the first read (success or not): stage_wizard_spool
+# re-stages the whole spool on every wizard loop iteration — including the very first, before the
+# container has even started once — so without this, that second call would find the marker its
+# OWN process just consumed already gone and overwrite the still-unseen banner with "{}" (#1208).
+# A later process (a genuinely new boot) starts with no cache and reads the marker file fresh.
+#
 # rc 1: no wipe pending (never happened, or already surfaced), unreadable, or a line with no
 # "<when> <reason>" shape to parse.
+_data_wipe_note_read=0
+_data_wipe_note_cached=""
 data_wipe_note() {
+    if [ "$_data_wipe_note_read" = 1 ]; then
+        [ -n "$_data_wipe_note_cached" ] || return 1
+        printf '%s' "$_data_wipe_note_cached"
+        return 0
+    fi
+    _data_wipe_note_read=1
     local f="$PRESEED_DIR/pithead-data-wiped" line when reason
     [ -f "$f.pending" ] || return 1
     [ -f "$f" ] || return 1
@@ -52,8 +66,9 @@ data_wipe_note() {
     reason="${line#* }"
     [ -n "$when" ] && [ -n "$reason" ] || return 1
     rm -f "$f.pending" 2>/dev/null || true
-    jq -cn --arg when "$when" --arg reason "$reason" \
-        '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}'
+    _data_wipe_note_cached=$(jq -cn --arg when "$when" --arg reason "$reason" \
+        '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}') || return 1
+    printf '%s' "$_data_wipe_note_cached"
 }
 
 # Carries the wipe note to the wizard's spool (#1121): the wizard runs in a container whose only

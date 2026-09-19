@@ -175,10 +175,23 @@ printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on
 run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
 assert_eq "a real note reaches the spool" "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
 
-# One-shot (#1208): publish_data_wipe_note is itself a surfacing — a second wizard boot for the
-# SAME wipe (the marker already consumed) must not re-report it either.
+# MUTATION PROOF (#1208, tier4-kvm job 557): firstboot-wizard calls stage_wizard_spool TWICE
+# before the wizard container ever serves a single request — once before its retry loop, once as
+# the loop's first statement, both in the SAME process. Consuming the marker inside
+# data_wipe_note() unconditionally made the SECOND call find it already gone and overwrite the
+# still-unseen banner with "{}" before a browser ever loaded it — exactly what the bench caught.
+: >"$DWN/esp/pithead-data-wiped.pending"
+run_sourced "$SANDBOX" eval '
+    publish_data_wipe_note "$1" >/dev/null
+    publish_data_wipe_note "$1" >/dev/null
+' _ "$DWN/spool" >/dev/null 2>&1
+assert_eq "two publishes in the SAME process both see the real note (#1208 regression)" \
+    "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
+
+# One-shot (#1208): publish_data_wipe_note is itself a surfacing — a LATER process (a genuinely
+# new boot) for the SAME wipe (the marker already consumed on disk) must not re-report it either.
 run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
-assert_eq "a second publish of the same wipe -> the spool goes back to empty" "$(cat "$DWN/spool/data-wiped.json")" "{}"
+assert_eq "a later boot's publish of the same wipe -> the spool goes back to empty" "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
 # The fleet-stick rule (same as publish_rig_defaults, #797 R3): a MISSING note must overwrite a
 # PREVIOUS machine's note, never leave it standing — the spool survives on /data between
