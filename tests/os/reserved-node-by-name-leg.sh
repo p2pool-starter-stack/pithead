@@ -11,7 +11,12 @@
 # (wizard_node_probe.py's probe_remote_nodes writes it before the ok/fail branch), so the Tari
 # row's own verdict is readable here without touching the real, once-only accepted submission
 # that follows this leg. Skips (missing, #1365 vocabulary) when the bench carries no reserved
-# Tari node.
+# Tari node, or when the reserved fixture is configured as a bare IPv4 rather than a name: this
+# leg exists to prove NAME resolution, and _resolved_address can only ever return a value equal
+# to its input when that input already parses as an IPv4Address (job 609 read the exact case: a
+# fixture supplying a literal IP always makes "resolved_host == the entered value" true, on
+# CORRECT code, because there was never a name to resolve -- asserting inequality there would
+# reward a fixture-shape mismatch as a product defect, not report one).
 provision_node_preflight_accepts_reserved_name() { # <ip> <authenticated-cookie-jar>
     local ip="$1" jar="$2" th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
     local state cfg code raw body
@@ -19,6 +24,12 @@ provision_node_preflight_accepts_reserved_name() { # <ip> <authenticated-cookie-
         it_skip_leg "reserved Tari node accepted by name during first-boot provisioning (#2351)" "PITHEAD_OS_TARI_NODE_HOST/PITHEAD_OS_TARI_GRPC_PORT not supplied" missing
         return 0
     fi
+    case "$th" in
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+            it_skip_leg "reserved Tari node accepted by name during first-boot provisioning (#2351)" "PITHEAD_OS_TARI_NODE_HOST is a literal IPv4 address on this bench, not a name -- a differently-configured bench's name-shaped fixture would exercise this leg" missing
+            return 0
+            ;;
+    esac
     state=$(curl -fsSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null) || return 1
     cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg th "$th" --argjson grpc "$grpc" '
         .config | .monero.wallet_address = $m | .tari.wallet_address = $t |
