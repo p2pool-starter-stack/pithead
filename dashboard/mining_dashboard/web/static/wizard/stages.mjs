@@ -139,7 +139,15 @@ export const Installing = ({ status }) => html`<div class="card">
     }
 </div>`;
 
-export const Done = ({ status, handoff, savedDashboard, installer, stick, rig, onAck }) => html`<div class="card">
+export const Done = ({
+  status,
+  handoff,
+  savedDashboard,
+  installer,
+  stick,
+  rig,
+  onAck,
+}) => html`<div class="card">
     ${
       handoff && handoff.role === "rig"
         ? html`<h2>Check this rig</h2>
