@@ -85,8 +85,8 @@ function XvbDecisionTable({ calc, coeffDay, hr, energy }) {
               const est = r.yours !== null ? [r.yours, r.yours] : r.study;
               const costNote = r.cost !== null ? `Cost ${formatXmr(r.cost)}.` : "";
               return html`<div class=${r.sustainable ? "" : "text-muted"}>
-                <h4 class="est-heading" title=${r.sustainable ? "" : `Not sustainable at your hashrate — holding this tier needs about ${fmtHashrate(r.threshold)} donated continuously.`}>
-                    ${r.name}${r.sustainable ? "" : " ⚠"}</h4>
+                <h3 class="est-heading" title=${r.sustainable ? "" : `Not sustainable at your hashrate — holding this tier needs about ${fmtHashrate(r.threshold)} donated continuously.`}>
+                    ${r.name}${r.sustainable ? "" : " ⚠"}</h3>
                 <div class="stat-grid">
                     <${StatCard} label="Net (XvB says)"
                         value=${r.sustainable && r.netFace ? fmtMid(r.netFace) : missingNet(r)}
@@ -186,8 +186,8 @@ export function XvbTierBlock({ calc, hr, coeffDay, energy, est }) {
           // face value. A fixed figure, NOT scaled by the what-if hashrate; the heading says so.
           est && est.xvbDay !== null
             ? html`
-        <h4 class="est-heading" title="XvB's published expected reward for the tier your fleet holds now, tempered by measured delivery: scaled to what this wallet's wins measurably paid when enough wins exist, else by the midpoint of the measured delivery band (28–39% of face value). XvB's raw figure shows only in the decision table's own column. A raffle expectation across all qualifiers, not scaled by the what-if hashrate above.">
-            Current Tier Expected Reward — tempered by measured delivery</h4>
+        <h3 class="est-heading" title="XvB's published expected reward for the tier your fleet holds now, tempered by measured delivery: scaled to what this wallet's wins measurably paid when enough wins exist, else by the midpoint of the measured delivery band (28–39% of face value). XvB's raw figure shows only in the decision table's own column. A raffle expectation across all qualifiers, not scaled by the what-if hashrate above.">
+            Current Tier Expected Reward — tempered by measured delivery</h3>
         <${EstTable} unit="XMR" day=${est.xvbDay} month=${est.xvbMonth} year=${est.xvbYear}
                      price=${energy ? energy.xmr_price : 0} currency=${energy ? energy.currency : "USD"} />`
             : null

@@ -339,7 +339,7 @@ export class WorkerInspect extends Component {
             <${StatusLine} result=${upgResult} />
             ${detail.rigforge ? html`<${StatsTable} stats=${detail.rigforge.stats} />` : null}
 
-            <h3 class="mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h3>
+            <h3 class="card-subhead mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h3>
             <${WorkerChartCard}
                 chart=${{
                   hashrate: detail.hashrate_history?.hashrate || [],
@@ -348,7 +348,7 @@ export class WorkerInspect extends Component {
                 range=${chartRange}
                 onRange=${(r) => this.setChartRange(r)} />
 
-            <h3 class="mt-2">Edit config</h3>
+            <h3 class="card-subhead mt-2">Edit config</h3>
             ${
               canEdit
                 ? html`
@@ -386,7 +386,7 @@ export class WorkerInspect extends Component {
                   : html`<p class="text-muted text-small">Config editing is off. Enable dashboard.control (which needs a dashboard password) to edit a rig's config.</p>`
             }
 
-            <h3 class="mt-2">History</h3>
+            <h3 class="card-subhead mt-2">History</h3>
             <${ConfigProvenance} origin=${detail.config_origin} meta=${detail.rig_config_meta} drift=${detail.config_drift} revisionDrift=${detail.config_revision_drift} />
             ${
               (detail.history || []).length
@@ -400,7 +400,7 @@ export class WorkerInspect extends Component {
                 : html`<p class="text-muted text-small">No changes applied from the dashboard yet.</p>`
             }
 
-            <h3 class="mt-2">Hashrate by config version</h3>
+            <h3 class="card-subhead mt-2">Hashrate by config version</h3>
             ${
               (detail.hashrate_by_config || []).length
                 ? html`

@@ -178,7 +178,10 @@
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-.xvb-tier-block h3 {
+/* The block's own title only. Its two .est-heading siblings are h3s too since #1859, and a bare
+ * descendant selector outranks their class — which is what made one .est-heading render as a
+ * block title and the other as itself. */
+.xvb-tier-block h3:not(.est-heading) {
   margin: 0 0 10px 0;
   font-size: 0.75rem;
   font-weight: 600;

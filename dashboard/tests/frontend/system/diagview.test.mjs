@@ -259,7 +259,7 @@ test("the idle card shows all services and offers logs only where the host can r
   assert.equal((out.match(/Run health check/g) || []).length, 1);
   assert.equal((out.match(/<summary>Recent log<\/summary>/g) || []).length, DIAG_CONTAINERS.length);
   assert.equal((out.match(/Show recent log/g) || []).length, DIAG_CONTAINERS.length);
-  for (const service of DIAG_SERVICES) assert.match(out, new RegExp(`<h3>${service}`));
+  for (const service of DIAG_SERVICES) assert.match(out, new RegExp(`<h3 class="card-subhead">${service}`));
   assert.equal((out.match(/owner-only support bundle/g) || []).length, 2);
 });
 
@@ -275,7 +275,7 @@ test("the health result renders service and machine failures with remedies, esca
   const out = renderToString(view);
   const facts = vnodeFacts(view);
   assert.match(out, /monerod is not answering — restart monerod/);
-  assert.match(out, /<h3>Machine checks<\/h3>/);
+  assert.match(out, /<h3 class="card-subhead">Machine checks<\/h3>/);
   assert.ok(facts.text.includes("<script>machine failed</script> — fix it."));
   assert.ok(!facts.tags.includes("script"));
 });

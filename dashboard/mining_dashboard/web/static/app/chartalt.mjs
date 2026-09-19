@@ -3,7 +3,7 @@
 // Split out of chart.mjs, which sits at its file-budget ceiling.
 import { fmtHashrate } from "./logic.mjs";
 
-export function latestPoint(series) {
+function latestPoint(series) {
   for (let i = (series || []).length - 1; i >= 0; i--) {
     if (series[i].y != null) return series[i].y;
   }

@@ -259,7 +259,7 @@ export class DiagnosticsPanel extends Component {
 
   renderService(service, haveReport) {
     return html`<section>
-      <h3>${service.name}
+      <h3 class="card-subhead">${service.name}
         ${
           haveReport
             ? html`<span class=${STATUS_CLS[service.status] || "text-muted"}> — ${service.status}</span>`
@@ -315,7 +315,7 @@ export class DiagnosticsPanel extends Component {
       ${
         haveReport
           ? html`<section>
-          <h3>Machine checks</h3>
+          <h3 class="card-subhead">Machine checks</h3>
           ${
             reportRows.length && groups.machine.length
               ? this.renderChecks(groups.machine)

@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardSlice, clone, renderApp, UI } from '../harness.mjs';
+import { renderToString } from '../helpers/render.mjs';
+import { readyInstance } from '../workers/workerview-helpers.mjs';
 
 // --- App shell / connection states -----------------------------------------------------
 
@@ -37,18 +39,48 @@ test('the App has exactly one header, one main and a labelled nav landmark', () 
     assert.match(html, /<nav class="view-controls" aria-label="View">/);
 });
 
-test('heading levels never skip on the way down, from h1 through every card (#1859)', () => {
-    // axe's heading-order rule: a level may drop by any amount but must never jump UP by more
-    // than one (h2 -> h4 with no h3 between is the violation the issue's counts were about).
-    const levels = [...renderApp().matchAll(/<h([1-6])(?=[\s>])/g)].map((m) => Number(m[1]));
-    assert.ok(levels.length > 10, 'expected many headings across the advanced view');
-    assert.equal(levels[0], 1, 'the brand name must be the page h1');
+const levelsOf = (html) => [...html.matchAll(/<h([1-6])(?=[\s>])/g)].map((m) => Number(m[1]));
+
+function assertContiguous(html, label) {
+    const levels = levelsOf(html);
     for (let i = 1; i < levels.length; i++) {
         assert.ok(
             levels[i] <= levels[i - 1] + 1,
-            `heading jumped from h${levels[i - 1]} to h${levels[i]} at index ${i}`,
+            `${label}: heading jumped from h${levels[i - 1]} to h${levels[i]} at index ${i}`,
         );
     }
+    return levels;
+}
+
+test('heading levels never skip on the way down, from h1 through every card (#1859)', () => {
+    // axe's heading-order rule: a level may drop by any amount but must never jump UP by more
+    // than one. The shallow fixture only reaches h1/h2, so the levels that actually regressed
+    // (the h3s and h4s below a card title) need the deep states as well — an earnings-available
+    // payload for the estimate subheads and the XvB tier block, and Worker Inspect's own dialog.
+    const levels = assertContiguous(renderApp(), 'advanced view');
+    assert.ok(levels.length > 10, 'expected many headings across the advanced view');
+    assert.equal(levels[0], 1, 'the brand name must be the page h1');
+
+    // Earnings available -> the estimate subheads and the XvB tier block with its per-tier rows.
+    const earnings = clone();
+    earnings.earnings.available = true;
+    earnings.earnings.tari_available = true;
+    const deep = assertContiguous(renderApp({ state: earnings }), 'earnings + XvB');
+    assert.ok(deep.includes(3), 'the earnings/XvB state must reach h3');
+
+    // Worker Inspect is a dialog the App only mounts on demand, so drive the component itself.
+    const inspect = renderToString(readyInstance().render());
+    const inspectLevels = assertContiguous(inspect, 'Worker Inspect');
+    assert.ok(inspectLevels.includes(2) && inspectLevels.includes(3), 'dialog h2 then section h3s');
+
+    // The levels the promotion created must actually be exercised, or the walk above proves
+    // nothing about them: a tree of h1/h2 alone can never trip the rule. Both `.est-heading`
+    // instances in xvbview.mjs were promoted from h4 to h3 (to match their `.est-heading`
+    // siblings elsewhere, which were already h3) — that promotion removed the last h4 from the
+    // app, so the walk must see h3 and must never see h4 again.
+    const all = [...levels, ...deep, ...inspectLevels];
+    assert.ok(all.filter((l) => l === 3).length > 0, 'no h3 rendered — the walk never saw one');
+    assert.equal(all.filter((l) => l === 4).length, 0, 'an h4 regressed back in — every heading below a card title must be h3');
 });
 
 // --- Header -----------------------------------------------------------------------------
