@@ -31,7 +31,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -98,12 +98,14 @@ tar -xzf "$INPUT/harness.tar.gz" -C "$MOUNT/harness"
 # v1.20.0's docker-compose.yml sets tmpfs `uid=1000,gid=1000` on wallet-rpc, tari-wallet and
 # xmrig-proxy; Docker accepts it but this appliance's Podman-compatible API rejects it as an
 # unknown mount option (job 480). Later releases dropped the option outright. The signed bundle
-# stays byte-identical on disk; only this guest-local extracted copy is patched, and only after
-# its checksum confirms it is the exact known v1.20.0 file, so an unexpected bundle fails closed
-# instead of being silently rewritten.
+# stays byte-identical on disk; only this guest-local extracted copy is patched. `make_bundle`
+# digest-pins first-party image refs into docker-compose.yml at release-build time, so the
+# packaged file is never byte-identical to the git-tracked source — checksum only the exact
+# tmpfs lines being touched (untouched by digest pinning), not the whole file, so an unexpected
+# bundle fails closed instead of being silently rewritten.
 GUEST_STAGE=baseline-compat
 compose_file="$MOUNT/pithead-v1.20.0/docker-compose.yml"
-[ "$(sha256sum "$compose_file" | cut -d' ' -f1)" = e03172ed17cb54442a38b0b60526862650246fb957c2e56d2a8d0bd8b88b4d14 ]
+[ "$(grep -F ',uid=1000,gid=1000' "$compose_file" | sha256sum | cut -d' ' -f1)" = cffbad16a895b738a4a21025961a8980df516c29c9d03842f0323b2932980405 ]
 sed -i 's/,uid=1000,gid=1000//g' "$compose_file"
 
 GUEST_STAGE=baseline-setup

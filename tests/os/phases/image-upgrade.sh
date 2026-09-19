@@ -131,7 +131,7 @@ _image_upgrade_read_guest_failure() {
     guest_stage="${guest_stage%% exit=*}"
     exit_status="${marker##* exit=}"
     case "$guest_stage" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | upgrade-gate | unattributed) ;;
     *) return 1 ;;
     esac
     [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$guest_stage exit=$exit_status" ] || return 1
