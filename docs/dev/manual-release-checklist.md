@@ -64,6 +64,9 @@ Needs hands, every time:
 - **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
 - **M8 — power cut during the update's write phase.** Pull the plug at the wall.
 - **M10 — power cut during normal mining.** Same, while the stack is live.
+- **M17 — dashboard power off, then the physical power button (#2384).** KVM proves the guest
+  reaches `shut off` on its own and returns when started; only a real button press on real
+  hardware proves the machine boots unaided from it.
 
 M4's mechanics (the wrong-disk guard) now have a KVM analog — see
 [appliance-release.md](appliance-release.md) — so only the real-hardware disk-controller

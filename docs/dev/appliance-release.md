@@ -423,6 +423,14 @@ narrowly extracted endpoints, an endpoint-bound current-startup `uses chain_id` 
 root-side restoration from a mode-600 raw snapshot. Reserved-node credentials must be disposable
 test values. The payout-address confirmation remains manual M16 evidence.
 
+**M17 — dashboard power off, then the physical button (#2384).** From the header's Power
+control, power the appliance off and type `POWEROFF` to confirm. Expected: mining stops, the
+dashboard says plainly that it will not reconnect, and the machine reaches a full stop on its
+own. Then press the machine's physical power button. Expected: it boots unaided and mining
+resumes with no other input. This is the one half of the round trip a VM cannot show — the KVM
+power leg proves the guest reaches `shut off` by itself and comes back when *started*, which is
+not the same claim as firmware bringing a real machine up from a physical button press.
+
 RC1 addendum, still manual after the automated rows run:
 
 - Post-provision apply: perform M16 in the real browser and confirm the screen reconnects after

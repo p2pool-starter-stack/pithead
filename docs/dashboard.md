@@ -1391,6 +1391,24 @@ and the named cause is what tells the two apart before you retry. Either way the
 a working system; wallets, settings, and chain data live on the data partition and are never part
 of an update.
 
+## Rebooting and powering off the appliance
+
+An [appliance](appliance.md) has no host shell, so the header's **Power** control is the only way
+to reboot or cleanly shut it down — the alternative is pulling power on a running machine, which
+is what corrupts A/B and data state (see the appliance troubleshooting notes). Like every other
+disruptive action on this page, the container only asks; the host runs the order itself, after
+writing the result the page is polling — so a request that never lands never leaves you guessing.
+
+- **Reboot.** An ordinary reboot, with no update pending — this is the plain lever, separate from
+  the reboot step inside the OS-update flow above. Type `REBOOT` to confirm. Mining pauses while
+  the machine restarts, typically under five minutes, and the page reconnects and reloads on its
+  own once the dashboard answers again.
+- **Power off.** Type `POWEROFF` to confirm. Mining stops and **the dashboard does not come back
+  on its own** — the page says so plainly, and does not wait or reconnect. The machine restarts
+  only when someone at the box presses its physical power button; that round trip (a clean
+  shutdown, then a press of the button) is the safe way to move or unplug the appliance, and it
+  restarts on its own from there.
+
 ## Tips
 
 - **First visit certificate warning.** With `dashboard.secure: true` (the default), Caddy uses a

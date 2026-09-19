@@ -154,15 +154,15 @@ _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_
 
 # shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/control/test-control-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-backup.sh" && domain_ran test-control-backup.sh "$_d0" "$?" || domain_ran test-control-backup.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/doctor/test-doctor-exposure.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-exposure.sh" && domain_ran test-doctor-exposure.sh "$_d0" "$?" || domain_ran test-doctor-exposure.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-diagnostics.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-diagnostics.sh" && domain_ran test-control-diagnostics.sh "$_d0" "$?" || domain_ran test-control-diagnostics.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-power-verbs.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-power-verbs.sh" && domain_ran test-control-power-verbs.sh "$_d0" "$?" || domain_ran test-control-power-verbs.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-wizard-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-wizard-setup.sh "$_d0" "$?" || domain_ran test-wizard-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-wizard-tari.sh disable=SC2015

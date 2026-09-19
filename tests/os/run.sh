@@ -77,6 +77,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-hostname-leg.sh"
 # shellcheck source=tests/os/appliance-diagnostics-leg.sh
 . "$SCRIPT_DIR/appliance-diagnostics-leg.sh"
+# shellcheck source=tests/os/appliance-power-leg.sh
+. "$SCRIPT_DIR/appliance-power-leg.sh"
 # shellcheck source=tests/os/appliance-config-approval-leg.sh
 . "$SCRIPT_DIR/appliance-config-approval-leg.sh"
 # shellcheck source=tests/os/appliance-tari-mode-leg.sh

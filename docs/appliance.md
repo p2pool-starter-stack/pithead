@@ -580,7 +580,15 @@ An applied change is a real config commit: it goes through the same path as any 
 payout-wallet swap or a clearnet-exposure change still fires the matching Telegram alert.
 
 NOTE: this channel only reads at boot. Inserting the stick into a running machine does nothing
-until you reboot it.
+until you reboot it — use the dashboard's [Power control](dashboard.md#rebooting-and-powering-off-the-appliance)
+to do that without a host shell.
+
+The same control powers the machine off cleanly, which is what to use before moving or unplugging
+it: a mid-write power cut is what strands the system copies and the chain databases, and a clean
+stop is the way not to risk that. Powering off is one-way from the browser by design. The machine
+stays off until someone presses its physical power button, and there is no remote way to bring it
+back — an appliance in a cupboard has no other power control, and the operator who wanted it off
+is the one standing at it. It boots and resumes mining unaided from that press.
 
 ## If something goes wrong
 

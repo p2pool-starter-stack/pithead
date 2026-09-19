@@ -117,6 +117,20 @@ _reboot_wait() { # $1 = the command that reboots the guest, $2 = seconds to wait
     _ssh "$1" >/dev/null 2>&1 || true # the session dies with the reboot
     _wait_new_boot "$before" "$2"
 }
+# A clean shutdown is OBSERVED via libvirt's own domain state, never assumed and never forced
+# (#2384): poll `virsh domstate` until the guest reaches "shut off" on its own — an orderly ACPI
+# poweroff the guest requested of itself — as opposed to `virsh destroy`, which proves nothing
+# about whether the software inside asked to stop cleanly. $1 = seconds to wait.
+_poweroff_wait() {
+    local deadline=$(($(date +%s) + $1)) state=unknown
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(virsh domstate "$VM" 2>/dev/null || echo unknown)
+        [ "$state" = "shut off" ] && return 0
+        sleep 5
+    done
+    info "guest never reached 'shut off' within $1 s — last libvirt state: $state"
+    return 1
+}
 # Classify why _wait_ssh gave up, using only signals that do NOT need a working SSH session — the
 # guest either isn't running, isn't the one we're still probing, or is running and refusing the
 # connection (sshd not up yet, or genuinely dead) vs. not answering the network at all. $1 is the
