@@ -413,9 +413,11 @@ to self-approve disruptive changes.
 The automated battery first keeps the stable `monero.out_peers` `CONFIRM` round trip, then drives
 the sensitive path through the ordinary authenticated control route. It proves a commit without
 the typed confirmation is refused, a confirmed commit applies and audits against the signed-in
-actor without an `approver` field, and a dashboard password remains physical-presence-only. It
-never stops or reloads the control path or service while a request may be in flight. With the
-reserved-node environment
+actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
+each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
+waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
+never drains: an apply re-provisions the control runner, which kills a request in flight and loses
+its result (#2363). With the reserved-node environment
 inputs, it requires the real host preflight, rendered endpoints, the current p2pool container's
 narrowly extracted endpoints, an endpoint-bound current-startup `uses chain_id` round trip, and
 root-side restoration from a mode-600 raw snapshot. Reserved-node credentials must be disposable

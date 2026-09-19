@@ -109,7 +109,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   when it is omitted. A confirmed change must apply and audit without a second approver; the
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
   and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
-  The battery never stops or reloads the control runner while requests may be in flight. Then the
+  Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
+  no queued or claimed request and reds the row if it never drains, because an apply re-provisions
+  the control runner and kills a request in flight (#2363). Then the
   stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`

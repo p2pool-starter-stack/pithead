@@ -77,6 +77,8 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
 
 approval_restore_pending() {
     [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
+    # The apply restarts the control runner (#2363); over a request in flight it loses its result (#2094).
+    _control_requests_drained || return 1
     _ssh 'set -euo pipefail
 install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json
 cd /data/pithead
@@ -321,6 +323,24 @@ _hostname_landed_fallback_self_test() (
     esac
 )
 
+# #2094's root fix at the caller: the restore's own `pithead apply` restarts the control runner
+# (#2363), so a spool that never drains must stop it BEFORE the apply reaches the guest, not after.
+# Driving the real function with one request stuck in requests/ forever must refuse, and must leave
+# `pithead apply` uncalled — removing the `_control_requests_drained` line makes both halves fail.
+# The real `_control_requests_drained` is driven by selftest-run-modules.sh; deleting this caller's
+# call to it fails both halves below.
+_restore_waits_for_control_drain_self_test() (
+    local applied=0 drained=1
+    APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
+    _control_requests_drained() { [ "$drained" -eq 0 ]; }
+    _ssh() { case "$*" in *'pithead apply'*) applied=1 ;; esac }
+    ! approval_restore_pending || return 1
+    [ "$applied" -eq 0 ] || return 1
+    drained=0
+    approval_restore_pending || return 1
+    [ "$applied" -eq 1 ]
+)
+
 # #2297: a blank monero-node-username/password arg must leave monero.node_username/node_password
 # UNTOUCHED, so a live {"__secret__":true} sentinel survives to control_preview's restore — see the
 # comment on remote_node_proposal itself for why an overwrite to "" defeats that restore and trips
@@ -357,6 +377,8 @@ _approval_self_test() {
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
     _hostname_landed_fallback_self_test || f=$((f + 1))
+    _restore_waits_for_control_drain_self_test || f=$((f + 1))
+    grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _physical_presence_password_refusal_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
