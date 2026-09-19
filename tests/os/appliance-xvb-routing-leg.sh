@@ -21,6 +21,32 @@ _xvb_payload() { # <mode> -> base64 Python that actuates then reads the live rou
 
 _xvb_guest_python() { _ssh "printf %s '$1' | base64 -d | podman exec -i dashboard python3 -"; }
 
+_xvb_proxy_ready_payload() {
+    printf '%s\n' "import sys" "from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient" \
+        "from mining_dashboard.config.config import PROXY_API_PORT, PROXY_AUTH_TOKEN, PROXY_HOST" \
+        "cfg = XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_config()" \
+        "sys.exit(0 if isinstance(cfg, dict) else 1)" |
+        base64 | tr -d '\n'
+}
+
+# xmrig-proxy is held stopped by the sync gate (#35) until this leg starts it, fresh, one line
+# above the actuation call. Its container carries no healthcheck (docker-compose.yml), and
+# algo_service.switch_miners swallows a not-yet-listening API as a silent, logged no-op (its
+# get_config returns falsy, so it never calls update_config and never touches state) — exactly the
+# shape job 629 hit: mode stayed null and pools stayed the single-entry startup config, because the
+# switch never ran. Poll the SAME get_config() call switch_miners depends on, so "ready" means what
+# the actuator actually needs, not just an open port.
+_xvb_wait_for_proxy_api() { # -> 0 once the proxy answers a real get_config()
+    local deadline payload
+    payload="$(_xvb_proxy_ready_payload)"
+    deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-60}))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        _xvb_guest_python "$payload" >/dev/null 2>&1 && return 0
+        sleep 2
+    done
+    return 1
+}
+
 _xvb_real_tor_fetch() {
     local payload
     payload="$(base64 <"$SCRIPT_DIR/../integration/lib/xvb-egress-probe.py" | tr -d '\n')"
@@ -102,6 +128,11 @@ phase_provision_xvb_routing() {
         bad "held xmrig-proxy could not start for the bounded XvB actuator injection (guest: $(_xvb_guest_stderr))"
         return 1
     }
+    if ! _xvb_wait_for_proxy_api; then
+        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-60}s of starting — the actuator was never attempted"
+        _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
+        return 1
+    fi
     _xvb_routing_actuation || rc=1
     # Put the guest back the way the fresh appliance holds it (#35): re-assert P2POOL when the
     # actuation bailed mid-transition, so the fourteen rows after this one do not run against a
@@ -112,7 +143,12 @@ phase_provision_xvb_routing() {
 }
 
 _xvb_self_test() {
-    local f=0 payload
+    local f=0 payload real_guest_python
+    # A function redefined inside this self-test REPLACES the one global definition — there is no
+    # lexical scoping to fall back on, and `unset -f` removes it rather than restoring it. Saved
+    # here so the dedicated proxy-readiness drill below can run the REAL _xvb_guest_python (through
+    # a stubbed _ssh) after the case-driven tests have overridden it for their own JSON responses.
+    real_guest_python="$(declare -f _xvb_guest_python)"
     payload="$(_xvb_payload XVB)"
     [ -n "$payload" ] && [ -n "$(_xvb_payload P2POOL)" ] &&
         printf '%s' "$payload" | base64 -d | grep -q 'XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)' &&
@@ -126,6 +162,7 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -144,6 +181,7 @@ _xvb_self_test() {
         case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
         *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
         *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
+        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
         esac
     }
     _xvb_case() { # <label> <want-pass> <want-fail> <want-rc>
@@ -173,6 +211,13 @@ _xvb_self_test() {
     XVBT_START_RC=1
     _xvb_case "a held xmrig-proxy that will not start is a counted red row" 1 1 1
     XVBT_START_RC=0
+
+    # Job 629's own cause: xmrig-proxy started but its API never answered before the actuator was
+    # tried, so the switch silently no-opped. That must be a counted red row on its own, before the
+    # actuator ever runs — not the actuator's "could not switch" row, which would misname the cause.
+    XVBT_PROXY_READY_RC=1
+    _xvb_case "an xmrig-proxy API that never answers after starting is a counted red row" 1 1 1
+    XVBT_PROXY_READY_RC=0
 
     # #2321's own row: the actuator answering nothing must be RED and must reach the summary.
     XVBT_XVB_JSON=""
@@ -228,6 +273,30 @@ _xvb_self_test() {
         f=$((f + 1))
     elif [ "$last_status" != starting ]; then
         printf 'xvb self-test: the timed-out Tor wait did not name the last health it read (%s)\n' "$last_status" >&2
+        f=$((f + 1))
+    fi
+    unset -f sleep
+
+    # Same property, for the proxy-readiness wait: it must ride out a not-yet-listening API rather
+    # than read the first failed get_config() as a verdict. Restore the REAL _xvb_guest_python (see
+    # real_guest_python above) so only _ssh answers, exercising the actual payload plumbing.
+    eval "$real_guest_python"
+    sleep() { command sleep 0.02; }
+    local proxy_answers
+    proxy_answers="$(mktemp)"
+    _ssh() {
+        printf 'x' >>"$proxy_answers"
+        [ "$(wc -c <"$proxy_answers")" -ge 3 ] && return 0 || return 1
+    }
+    if ! XVB_PROXY_READY_TIMEOUT=300 _xvb_wait_for_proxy_api || [ "$(wc -c <"$proxy_answers")" -lt 3 ]; then
+        printf 'xvb self-test: the proxy-API wait gave up on a guest that came up (answers=%s)\n' \
+            "$(wc -c <"$proxy_answers")" >&2
+        f=$((f + 1))
+    fi
+    rm -f "$proxy_answers"
+    _ssh() { return 1; }
+    if XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api; then
+        printf 'xvb self-test: the proxy-API wait reported ready for a guest that never answered\n' >&2
         f=$((f + 1))
     fi
     unset -f sleep
