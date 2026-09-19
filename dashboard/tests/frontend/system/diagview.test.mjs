@@ -349,10 +349,12 @@ test("two service log disclosures keep both results", async () => {
   assert.equal(panel.state.logs.monerod.result.lines, "monerod ready");
 });
 
-test("the card explains how to enable diagnostics when the control channel is off", () => {
+test("the card points at Configuration when the control channel is off, instead of repeating the remedy (#1871)", () => {
   const out = renderToString(inst({ enabled: false }).render());
-  assert.match(out, /dashboard\.control\.enabled/);
+  assert.match(out, /see Configuration/);
   assert.doesNotMatch(out, /Run health check/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
 });
 
 test("the browser service list has not drifted from the host's allowlist", () => {

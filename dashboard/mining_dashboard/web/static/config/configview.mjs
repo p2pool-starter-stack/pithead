@@ -389,14 +389,14 @@ export class ConfigView extends Component {
     } = this.state;
     if (phase === "loading")
       return html`<div class="card"><p class="text-muted">Loading configuration…</p></div>`;
-    if (phase === "disabled") {
+    if (phase === "disabled")
       return html`<div class="card">
           <h2>Configuration</h2>
-          <p>Configuration editing is off (the default). To enable it, set <code>dashboard.control.enabled: true</code>
-          in <code>config.json</code> on the host and
-          run <code>./pithead apply</code>. It requires a dashboard login.</p>
+          <p>The control channel is off (the default). Turning it on lets you edit the
+          configuration, create backups, and run diagnostics, and requires a dashboard login —
+          see the${" "}<a href="https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#configuration-view" target="_blank" rel="noopener noreferrer">Configuration view guide</a>.</p>
+          <p class="text-muted text-xs">Setting:${" "}<code>dashboard.control.enabled</code></p>
       </div>`;
-    }
     if (phase === "error") {
       return html`<div class="card">
           <h2>Configuration</h2>

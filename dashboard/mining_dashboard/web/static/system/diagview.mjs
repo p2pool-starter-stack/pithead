@@ -279,9 +279,7 @@ export class DiagnosticsPanel extends Component {
     if (!this.props.enabled) {
       return html`<div class="card">
         <h2>Service diagnostics</h2>
-        <p>Diagnostics are off with the rest of the control channel. To enable them, set
-        <code>dashboard.control.enabled: true</code> in <code>config.json</code> on the host
-        and run <code>./pithead apply</code>. It requires a dashboard login.</p>
+        <p>Diagnostics are off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
     const { healthPhase, healthResult } = this.state;
