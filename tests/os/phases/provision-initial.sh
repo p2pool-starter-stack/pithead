@@ -71,6 +71,10 @@ _phase_provision_initial_body() {
         rm -f "$jar"
         return 1
     }
+    provision_node_preflight_accepts_reserved_name "$ip" "$jar" || {
+        rm -f "$jar"
+        return 1
+    }
     provision_setup_failure_recovery "$ip" "$jar" "$token" || {
         rm -f "$jar"
         return 1
