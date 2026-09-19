@@ -186,7 +186,8 @@ test("a field edit lands in the candidate, typed, and rewrites the pane (#785)",
   inst.onFieldEdit(pool, "main");
   const staged = inst.buildProposed();
   assert.equal(staged.config.p2pool.pool, "main");
-  assert.equal(staged.config.monero.wallet_address, "4AAAA"); // untouched fields survive
+  // #2365: an untouched field, even a set one, never leaves the form — only what changed does.
+  assert.equal(staged.config.monero, undefined);
   assert.match(inst.state.editText, /"pool": "main"/); // the pane shows the same truth
 });
 
@@ -215,19 +216,21 @@ test("a pane mid-typo keeps the last good candidate and blocks Save with the rea
 
 // --- Masked-secret sentinel semantics survive the candidate model (#508/#440) -----------------
 
-test("an untouched masked secret keeps its sentinel in the staged config", () => {
+// #2365: an untouched secret is indistinguishable from any other untouched field — it stays out
+// of the staged config entirely rather than riding along as its sentinel.
+test("an untouched masked secret never reaches the staged config", () => {
   const inst = readyView();
-  assert.match(inst.state.editText, /__secret__/); // visible in the pane, as a marker
-  assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
+  assert.match(inst.state.editText, /__secret__/); // still visible in the pane, as a marker
+  assert.equal(inst.buildProposed().config.dashboard, undefined);
 });
 
-test("blanking a secret field means KEEP — the sentinel returns, never an empty string", () => {
+test("blanking a secret field means KEEP — a typed-then-reblanked secret drops back out of the staged config", () => {
   const inst = readyView();
   const pw = { key: "dashboard.auth.password", type: "secret", value: "" };
   inst.onFieldEdit(pw, "hunter2hunter2");
   assert.equal(inst.buildProposed().config.dashboard.auth.password, "hunter2hunter2");
   inst.onFieldEdit(pw, "");
-  assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
+  assert.equal(inst.buildProposed().config.dashboard, undefined);
 });
 
 // --- File-fill button (#529, mirrors #518's ~5 lines) ------------------------------------------

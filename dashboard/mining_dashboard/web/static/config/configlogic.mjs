@@ -358,6 +358,27 @@ export function parseConfigJson(text) {
   return { config: cfg };
 }
 
+// The payload a commit actually sends (#2365): the loaded config already carries
+// config.reference.json's placeholder defaults for every unset key (read_config's merge, so the
+// form can render and label them "(default)"). Posting the whole candidate back would turn every
+// one of those placeholders — "node.remote-monero-host.com" included — into an explicit,
+// committed config.json value the operator never typed. Diff against the config as it was loaded
+// and keep only the leaves that actually changed, nested the same way config.json itself is
+// sparse: an untouched default stays absent, exactly like an omitted config.json key.
+export function diffConfig(base, candidate) {
+  const out = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    const prior = isPlainObject(base) ? base[key] : undefined;
+    if (isPlainObject(value) && isPlainObject(prior)) {
+      const nested = diffConfig(prior, value);
+      if (Object.keys(nested).length) out[key] = nested;
+    } else if (JSON.stringify(value) !== JSON.stringify(prior)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 // Live syntax check for the JSON textarea, surfaced inline as the operator types (not only on
 // Save). Blank is not an error yet — the operator hasn't finished typing. Shared with
 // workerlogic.mjs's JSON mode (re-exported from there) so both editors give the same feedback.
