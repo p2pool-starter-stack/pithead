@@ -9,16 +9,17 @@
 # - pithead up, not podman-restart (#792): the stack is compose-managed, so compose owns the
 #   containers' lifecycle. podman-restart started them into its own oneshot cgroup and systemd
 #   SIGKILLed the lot when the unit stopped.
-# - mark-good only on health (#793, #852): commit takes TWO signals, because "the dashboard
-#   answers" is a strict subset of "the stack is alive". First the dashboard answering through
-#   caddy is the end of the derived-config -> caddy -> dashboard chain (any HTTP status is life —
-#   401 is a healthy, locked dashboard). Second `pithead doctor --json` must exit clean: it FAILs
-#   on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing egress
-#   firewall — the mining-dead-but-serving slot a curl-only gate used to mark-good. doctor is
-#   sync-tolerant by construction (chain nodes report healthy early in a days-long sync; the
-#   sync-held miners, #35, never count as crashed), so a still-syncing box commits while a broken
-#   one does not; the one FAIL that may commit is certificate coverage the re-mint could not clear
-#   (#1265, below). A slot that boots but is not healthy stays UNCOMMITTED: that is what A/B is for.
+# - mark-good only on health (#793, #852, #2383): commit takes THREE signals. First the dashboard
+#   answering through caddy is the end of the derived-config -> caddy -> dashboard chain (any HTTP
+#   status is life — 401 is a healthy, locked dashboard). Second `pithead doctor --json` must exit
+#   clean: it FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a
+#   missing egress firewall — the mining-dead-but-serving slot a curl-only gate used to mark-good.
+#   doctor is sync-tolerant by construction (the sync-held miners, #35, never count as crashed), so
+#   a still-syncing box commits; the one FAIL that may commit is certificate coverage the re-mint
+#   could not clear (#1265, below). Third `pithead status` must exit 0: doctor only judges the
+#   revenue containers, so a NON-revenue container (dashboard itself, caddy) left `unhealthy` or
+#   `restarting` passed both older gates — manual battery M9, where a dashboard whose healthcheck
+#   failed still committed. A slot that boots but is not healthy stays UNCOMMITTED: that is A/B.
 set -uo pipefail
 
 # A boot that fails is what A/B fallback exists for — but the fallback is a GRUB decision made at
@@ -36,14 +37,28 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # the last failing run's exact blocking check behind without wearing /data. A plain variable for the
 # same reason BOOT_FAIL_COUNT is one — the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
+# The third signal's own record, same /run/no-/data-wear reasoning as BOOT_DOCTOR_JSON (#2383).
+BOOT_STATUS_LOG=/run/pithead-boot-status.log
+# Each unhealthy/restarting row as "container NAME: reason" — sync-held rows (#31/#35) never carry UNHEALTHY.
+boot_status_blocking() {
+    [ -s "$BOOT_STATUS_LOG" ] || return 0
+    grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
+        sed -E 's/^[[:space:]]*[✗⚠][[:space:]]+([^[:space:]]+)[[:space:]]+/container \1: /'
+}
 boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT"; }
 fail_boot() { # <what went wrong>
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
-    # The rollback verdict names what held the gate (#1265): the last doctor run is still on /run,
-    # and the in-flight flag carries its failing checks to the fallback boot's os_update_rollback_verdict.
-    if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && [ -s "$BOOT_DOCTOR_JSON" ] && command -v jq >/dev/null 2>&1; then
-        jq --slurpfile d "$BOOT_DOCTOR_JSON" '.blocking = [$d[0].checks[]? | select(.status == "fail") | .message]' \
-            "$OS_INFLIGHT" >"$OS_INFLIGHT.tmp" 2>/dev/null && mv -f "$OS_INFLIGHT.tmp" "$OS_INFLIGHT" || rm -f "$OS_INFLIGHT.tmp"
+    # The rollback verdict names what held the gate (#1265, #2383): doctor's and status's last
+    # runs are still on /run, folded into the in-flight flag for os_update_rollback_verdict.
+    if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
+        local doctor_msgs='[]' status_problems
+        [ -s "$BOOT_DOCTOR_JSON" ] && doctor_msgs=$(jq -c '[.checks[]? | select(.status == "fail") | .message]' "$BOOT_DOCTOR_JSON" 2>/dev/null || echo '[]')
+        status_problems=$(boot_status_blocking)
+        if [ "$doctor_msgs" != '[]' ] || [ -n "$status_problems" ]; then
+            jq --argjson d "$doctor_msgs" --arg s "$status_problems" \
+                '.blocking = ($d + (if $s == "" then [] else ($s | split("\n")) end))' \
+                "$OS_INFLIGHT" >"$OS_INFLIGHT.tmp" 2>/dev/null && mv -f "$OS_INFLIGHT.tmp" "$OS_INFLIGHT" || rm -f "$OS_INFLIGHT.tmp"
+        fi
     fi
     local n=0
     [ -f "$BOOT_FAIL_COUNT" ] && n=$(tr -cd '0-9' <"$BOOT_FAIL_COUNT" 2>/dev/null)
@@ -67,18 +82,11 @@ fail_boot() { # <what went wrong>
     exit 1
 }
 
-# CONTENTION IS NOT A BAD SLOT, and on this leg the difference is the box's only recovery (#1342).
-#
-# pithead serialises its mutating windows behind a lock, and there is no systemd ordering between
-# pithead-firstboot and this unit — so `./pithead up` below can collide with the wizard's `setup`,
-# whose window covers prerequisites, onion generation and the symlink update. If that wait times
-# out, `up` fails. Routed through fail_boot that reads as "this slot cannot start the stack": the
-# first reading REBOOTS to fall back to the other slot, and the second declares the fault is not
-# the slot. Both are wrong here. The other slot would meet the same contention, so the fallback
-# buys nothing — and it is spent, and the box then misdiagnoses itself out loud.
-#
-# So a lock timeout gets its own exit: the slot is left uncommitted (the fallback stays armed and
-# UNSPENT), the boot-failure counter is not touched, and nothing reboots.
+# CONTENTION IS NOT A BAD SLOT (#1342): pithead serialises its mutating windows behind a lock, and
+# `./pithead up` below can collide with the wizard's `setup` window (no systemd ordering between
+# pithead-firstboot and this unit). Routed through fail_boot, a lock timeout would misread as "this
+# slot cannot start the stack" and spend the A/B fallback on contention the other slot has too. So
+# a lock timeout gets its own exit: uncommitted, the failure counter untouched, nothing reboots.
 PITHEAD_EX_LOCK_TIMEOUT=75
 fail_boot_contended() { # <what could not be started>
     echo "pithead-boot: $1 — another pithead operation still held the stack when this boot timed out waiting for it. That is contention, NOT a bad slot: the A/B fallback stays armed and is not spent, this boot is not counted against the failure budget, and the machine stays up. Re-run 'systemctl start pithead-boot' once the other operation has finished (journalctl -u pithead-boot)." >&2
@@ -91,19 +99,13 @@ boot_up_failed() { # <exit status of ./pithead up>
     fail_boot "the stack could not be brought up"
 }
 
-# The dashboard's own site address, read from the .env this boot has just rendered (#1140).
-#
-# This probe used to dial https://localhost/, and said in a comment that localhost is a listed site
-# so the answer traverses the real dashboard vhost. That is only true while `dashboard.host` is
-# UNSET: generate_caddyfile adds localhost to the site list inside `is_appliance && [ -z
-# "$DASHBOARD_HOST" ]`. Pin the host — a documented, supported choice — and localhost drops out, the
-# probe reaches Caddy's EMPTY DEFAULT VHOST, and that answers 200 with no body. On the gate that
-# decides whether an A/B update lives, "Caddy is running" was passing as "the dashboard serves".
-#
-# HOST_IP is the value the render itself uses as the first site address, so reading it here means
-# the probe and the site list cannot disagree — one rule, not a second copy of the expansion logic.
-# Falls back to localhost rather than to nothing: an unreadable .env must not turn this gate into a
-# permanent RED, which after #1065 reboots a healthy box.
+# The dashboard's own site address, read from the .env this boot has just rendered (#1140). This
+# probe used to dial https://localhost/, true only while `dashboard.host` is UNSET (localhost is
+# only in the site list then); pin the host and the probe reaches Caddy's EMPTY DEFAULT VHOST,
+# which answers 200 with no body — "Caddy is running" was passing as "the dashboard serves".
+# HOST_IP is the value render itself uses as the first site address, so the probe and the site
+# list cannot disagree. Falls back to localhost on an unreadable .env, never to nothing: that must
+# not turn this gate into a permanent RED, which after #1065 reboots a healthy box.
 gate_env_val() { # <key> — last assignment of KEY in ./.env, empty when absent
     sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1
 }
@@ -116,15 +118,12 @@ gate_url() { # -> scheme://host:port/ for the dashboard's own site
     if [ -z "$port" ]; then [ "$scheme" = https ] && port=443 || port=80; fi
     printf '%s|%s|%s' "$scheme" "$host" "$port"
 }
-# dashboard.host is validated as "a hostname or IP address — letters, digits, dots, hyphens, and
-# colons", so HOST_IP can be an IPv6 literal, and these two exist because of what curl does with one:
-#   - a URL needs it bracketed, or the port reads as part of the address;
-#   - `--resolve` cannot take one at all — curl rejects the whole option with "Couldn't parse
-#     CURLOPT_RESOLVE entry", which fails the request, which on this gate means a healthy box never
-#     commits and #1065 reboots it. Measured against curl 8.7, bracketed and unbracketed alike.
-# A literal needs no resolution anyway: the box owns the address. So --resolve is for NAMES, where
-# it is what keeps the dial on loopback instead of depending on the machine resolving its own mDNS
-# name — the one lookup a boot-time health probe must not be hostage to.
+# HOST_IP can be an IPv6 literal (dashboard.host allows colons), and these two exist because of
+# what curl does with one: a URL needs it bracketed or the port reads as part of the address, and
+# `--resolve` cannot take one at all (curl rejects the option outright, measured on curl 8.7) — a
+# healthy box would never commit and #1065 reboots it. A literal needs no resolution anyway;
+# --resolve is for NAMES, keeping the dial on loopback instead of the box's own mDNS lookup, which
+# a boot-time health probe must not be hostage to.
 gate_target_url() { # <scheme> <host> <port>
     case "$2" in
     *:*) printf '%s://[%s]:%s/' "$1" "$2" "$3" ;;
@@ -149,16 +148,17 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
     [ "$1" = "401" ] || [ "${2:-0}" -gt 0 ]
 }
 
-# BOTH signals, in the one place they are paired (#852). A function rather than a bare `&&` in the
-# commit condition: the only thing asserting that pairing was a grep of this file, whose doctor half
-# matched the header COMMENT on line 15 and stayed green with the doctor call deleted — a gate that
-# lies, inside the gate-honesty machinery. Driven at tier 1 with a stubbed `pithead`; deleting either
-# half turns an assertion red. doctor's verdicts land in /run (volatile, no /data wear): when this
-# gate never passes, the LAST failing run names the blocking check (the battery hit that deadlock).
+# ALL THREE signals, in the one place they are paired (#852, #2383). A function rather than a bare
+# `&&` in the commit condition: the only thing asserting that pairing was once a grep of this file
+# that stayed green with the doctor call deleted — a gate that lies, inside the gate-honesty
+# machinery. Driven at tier 1 with a stubbed `pithead`; deleting any of the three turns an
+# assertion red. Verdicts land in /run (volatile, no /data wear); the LAST failing run names the
+# blocking check (M9 hit the gap doctor alone leaves: a non-revenue container left unhealthy).
 gate_ready() { # <http_code> <size_download>
     gate_answer_is_dashboard "$1" "$2" || return 1
     gate_doctor_ran=1 # this round's verdict file is fresh, so the re-mint below may read it
-    ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null
+    ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
+    ./pithead status >"$BOOT_STATUS_LOG" 2>&1 # third signal (#2383): every container healthy, no restart loop
 }
 
 # The certificate race and its two remedies (#1265). render mints the dashboard certificate BEFORE `up` from

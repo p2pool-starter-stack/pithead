@@ -147,6 +147,8 @@ source "$SCRIPT_DIR/phases/boot.sh" || exit $?
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh

@@ -61,6 +61,7 @@ tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
+tests/stack/appliance/test-appliance-boot-remint.sh	404
 tests/stack/appliance/test-appliance-boot.sh	640
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
