@@ -184,6 +184,49 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Audit + access logs (#349): key-names-not-values audit entries, bounded log growth, Caddyfile log block, hostile log content served inert | spool/log fixtures | 1 ✅ (shell + pytest + node) · 4 (real Caddy writes over Tor — covered by the same onion matrix row) |
 | Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
 
+#### CLI verb ledger (#2348)
+
+The row-per-situation table above answers "how is this behaviour tested"; it does not answer "does
+every verb `pithead` dispatches have a tier-4 answer at all" — that gap is what let five destructive
+verbs go unexercised unnoticed. This ledger is the totality check: one row per name in
+`PITHEAD_COMMANDS` (`lib/pithead/41-subcommand-chaining.sh:6`), locked by
+`tests/stack/test-cli-verb-ledger-lock.sh` so a verb added to the dispatcher without a row here fails
+tier 1. `covered` means a real tier-4 run (DIY bench, KVM battery, or both) exercises the verb, per
+the situations above; `missing` means nothing does yet, with the issue that owns closing the gap;
+`by-design` means the gap is a decision, not an oversight, with the reason inline.
+
+| verb | tier-4 | note |
+|---|---|---|
+| `setup` | covered | DIY bench; KVM firstboot wizard |
+| `apply` | covered | DIY bench; KVM |
+| `render` | covered | DIY bench; KVM boot overlay |
+| `up` | covered | DIY bench; KVM boot overlay |
+| `down` | covered | DIY bench (appliance parity is #2062) |
+| `restart` | covered | DIY bench (appliance parity is #2062) |
+| `upgrade` | covered | DIY bench (`--image-upgrade`, opt-in); KVM OS-update leg (combined hardware run still pending, see Known gaps) |
+| `status` | covered | DIY bench (appliance parity is #2062) |
+| `doctor` | covered | DIY bench; KVM boot overlay |
+| `backup` | covered | DIY bench; KVM |
+| `restore` | covered | DIY bench; KVM (wizard's restore-at-setup flow, not the CLI verb) |
+| `load-images` | covered | KVM boot overlay |
+| `firstboot-wizard` | covered | KVM (`pithead-firstboot.service`) |
+| `local-miner` | covered | KVM rig phase, via `pithead-boot` |
+| `os-update` | covered | KVM (appliance-only verb) |
+| `factory-reset` | covered | KVM (appliance-only verb) |
+| `control-run-pending` | covered | DIY bench |
+| `onion-client-key` | covered | DIY bench (partly, via the control legs) |
+| `uninstall` | missing | #2343, blocked on bench-ci#347 |
+| `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
+| `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
+| `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
+| `config-reset` | missing | #2347 |
+| `support-bundle` | missing | #2342 — its `.env` redactor leaks three secret keys, and the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the redactor, not `support-bundle`) |
+| `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
+| `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
+| `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |
+| `version` | by-design | pure-output verb; tier 1 is the honest ceiling |
+| `help` | by-design | pure-output verb; tier 1 is the honest ceiling |
+
 ### H. Host / infrastructure (real-only)
 
 | Situation | Trigger | Tier |
@@ -447,7 +490,9 @@ Not yet covered. The road to full production confidence.
   revisions and checks authenticated digest manifests, Pithead-image signatures, exact mounts, both
   captured chain anchors, stable durable row payloads plus volatile-state identity/schema, secrets,
   workers, mining, and exact old-baseline restoration; its first recorded
-  combined hardware run remains pending. `reset-dashboard` remains unit-covered.
+  combined hardware run remains pending. The per-verb breadth of the gap — which verbs have no
+  tier-4 run at all, and why — is now the [CLI verb ledger](#cli-verb-ledger-2348) (#2348) rather
+  than one bullet here.
 - Soak / longevity. The bounded `--xvb-routing-smoke` observes one real controller/proxy transition
   and restore. Multi-hour leak, log/DB growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.
