@@ -112,9 +112,18 @@ _pred_monerod_unhealthy() { _monerod_is running unhealthy; }
 _pred_monerod_healthy() { _monerod_is running healthy; }
 _pred_proxy_stopped() { [ "$(svc_state_of "$(service_state xmrig-proxy)")" != "running" ]; }
 _pred_failover_armed() {
-    local st
+    # `/api/state` never carried the raw monero_sync/miner_released/workers_rejected fields
+    # (docs/dev/testing-strategy.md §F: this class of internal state is surfaced through
+    # `sync.monero.state` and the badges list, never as its own machine-queryable booleans) —
+    # so read the same contract the dashboard's own client reads, not internal names that were
+    # never part of the response.
+    local st badges
     st="$(api_state)"
-    [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
+    badges="$(jq_get "$st" '.badges | map(.text) | join("")')"
+    [ "$(jq_get "$st" '.sync.monero.state')" = "done" ] &&
+        [[ "$badges" != *"Miner held"* ]] &&
+        [[ "$badges" != *"Workers rejected"* ]] &&
+        [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }
 _pred_tor_healthy() {
