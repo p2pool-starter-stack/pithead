@@ -125,6 +125,44 @@ test("rigCardNote: the pre-token wording is gone from every case", () => {
   }
 });
 
+// --- control: "off" (#1867) ------------------------------------------------------------------
+// lib/pithead/12-firstboot-wizard.sh adds control:"off" and reason beside the token when the pool
+// host will not resolve to an IPv4 address — render_rig_miner_config is about to leave the rig's
+// control API off, so the card must say that instead of sending the operator to an adopt form the
+// rig will not answer.
+
+const CONTROL_OFF = {
+  ...FULL,
+  control: "off",
+  reason: "the pool host does not resolve to an IPv4 address to pin the control API to",
+};
+
+test("rigCardFields: control off still shows the token row — the feed still needs it", () => {
+  assert.deepEqual(labels(CONTROL_OFF), [
+    "Worker name",
+    "Mines toward",
+    "This machine's address",
+    "Control token",
+  ]);
+});
+
+test("rigCardNote: control off says why instead of naming the adopt form or the token", () => {
+  const note = rigCardNote(CONTROL_OFF);
+  assert.match(note, /control API is off/);
+  assert.match(note, /does not resolve to an IPv4 address/);
+  assert.doesNotMatch(note, /Adopt form/);
+  assert.doesNotMatch(note, /control port 8082/);
+  assert.doesNotMatch(note, new RegExp(CONTROL_OFF.token));
+});
+
+test("rendered: control off puts the reason on the card, not the adopt instruction", () => {
+  const card = renderToString(
+    html`<${Done} status="" handoff=${CONTROL_OFF} installer=${false} stick=${false} onAck=${() => {}} />`,
+  );
+  assert.match(card, /control API is off/);
+  assert.doesNotMatch(card, /Workers → Adopt/);
+});
+
 // --- the card as the wizard actually renders it -----------------------------------------------
 //
 // The rows above are decided here but WIRED in wizard.mjs's Done view, so the logic assertions
