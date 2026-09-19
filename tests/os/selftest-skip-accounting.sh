@@ -155,5 +155,56 @@ for row in "held-chain release" "boot-menu version repair" "/data-floor restore"
     assert_eq "the $row row is enumerated, classed missing" "$(row_class "$row")" "missing"
 done
 
+echo "== #2356: crossupdate's own absent-input gate is a named, classed missing PHASE skip =="
+# Unlike provision's reserved-node row (a mandatory release gate, a documented counted FAILURE),
+# crossupdate is opt-in and excluded from --phase all for the same reason: an input a job simply
+# did not request, not a gap in a row every run must clear.
+_crossupdate_gate="$(grep -A1 -F 'it_skip_phase "crossupdate"' "$HERE/phases/crossupdate.sh")"
+assert_contains "PITHEAD_OLD_IMAGE absent is recorded through it_skip_phase" "$_crossupdate_gate" "PITHEAD_OLD_IMAGE"
+assert_contains "…classed missing, not a bare warning or a failure" "$_crossupdate_gate" "missing"
+
+echo "== #2356: a phase that records nothing is counted as a missing skip, not a silent pass =="
+# _run_phase is the one place tests/os/run.sh invokes every phase from — extracted rather than
+# re-spelled, same reasoning as every other extraction in this file: a copy would agree with
+# itself while the shipped wrapper did something else.
+RUN_PHASE_SRC="$(sed -n '/^_run_phase() {/,/^}$/p' "$HERE/run.sh")"
+assert_contains "the extraction really is the _run_phase wrapper" "$RUN_PHASE_SRC" "it_skip_phase"
+empty_phase() { :; } # a phase that returns having recorded nothing — a missing bench input's shape
+ok_phase() { PASS=$((PASS + 1)); }
+run_phase_result() { # <fake phase function> -> "<IT_SKIPPED_PHASES> <IT_SKIPPED_MISSING> <PASS>"
+    (
+        # Read by the eval'd _run_phase source below, which shellcheck cannot see into.
+        # shellcheck disable=SC2034
+        PASS=0 FAIL=0 IT_SKIPPED=0 IT_SKIPPED_PHASES=0 IT_SKIPPED_LEGS=0 IT_SKIPPED_MISSING=0 \
+            IT_SKIPPED_BY_DESIGN=0 IT_SKIPPED_COVERED=0 IT_SKIPPED_NAMES=""
+        it_warn() { :; }
+        it_err() { :; }
+        eval "$RUN_PHASE_SRC"
+        _run_phase stub "$1"
+        printf '%d %d %d' "$IT_SKIPPED_PHASES" "$IT_SKIPPED_MISSING" "$PASS"
+    )
+}
+assert_eq "a phase that records nothing is counted as a missing PHASE skip" \
+    "$(run_phase_result empty_phase)" "1 1 0"
+assert_eq "a phase that records a pass needs no wrapper skip" "$(run_phase_result ok_phase)" "0 0 1"
+
+echo "== #2356: a run where nothing passed or failed exits non-zero and says so =="
+EXIT_GATE_SRC="$(sed -n '/^# #2356: 0 passed and 0 failed/,/^\[ "\$FAIL" -eq 0 \]$/p' "$HERE/run.sh")"
+assert_contains "the extraction really is the all-skipped exit gate" "$EXIT_GATE_SRC" "no requested phase ran"
+exit_gate() { (
+    # Read by the eval'd exit-gate source below, which shellcheck cannot see into.
+    # shellcheck disable=SC2034
+    PASS="$1" FAIL="$2" PHASE=fixture
+    eval "$EXIT_GATE_SRC"
+); }
+_gate_err="$(exit_gate 0 0 2>&1 1>/dev/null)"
+exit_gate 0 0 >/dev/null 2>&1
+assert_eq "a run where every requested phase skipped exits non-zero" "$?" "1"
+assert_contains "it says no requested phase ran" "$_gate_err" "no requested phase ran"
+exit_gate 3 0 >/dev/null 2>&1
+assert_eq "a run with at least one passed row keeps today's (green) exit code" "$?" "0"
+exit_gate 0 2 >/dev/null 2>&1
+assert_eq "a run with a failed row keeps today's non-zero exit, for the real reason" "$?" "1"
+
 echo "selftest-skip-accounting (os): $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
