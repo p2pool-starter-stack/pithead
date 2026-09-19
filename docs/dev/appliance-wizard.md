@@ -244,6 +244,13 @@ A rejected archive (bad passphrase, wrong format, failed integrity, unparseable 
 page falls back to the form exactly like a rejected typed config. The passphrase file is deleted
 at the top of the call, accepted or not; it never outlives the attempt.
 
+A RigForge-only rig (#1836) has no `config.json` and no dashboard — `record_machine_role` removes
+`rig.json` on any non-rig role and a rig never gets a `config.json` in the first place, so
+`stack_backup` has nothing to archive there (`backup_require_items` refuses without one). Restore
+does not cover that role: a rig's one durable secret is the access token on its credentials card,
+which the operator saves by hand, and getting a rig role back is Set up again, not a restore
+upload.
+
 Deliberately reuses `stack_backup`'s archive format (#786 sub-issue A) rather than inventing a
 second one, and deliberately does NOT reuse `stack_restore` directly — that CLI command mutates
 real state immediately (no staging) and is written for an operator who already has a shell,
