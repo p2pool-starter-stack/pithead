@@ -116,7 +116,7 @@ function DashboardView({
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
             <${CadenceCard} cadence=${state.cadence} />
         </div>
-        <div class="grid-section-label">The Wider Pool</div>
+        <div class="grid-section-label card-advanced">The Wider Pool</div>
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
