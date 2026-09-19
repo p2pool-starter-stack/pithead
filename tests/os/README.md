@@ -97,7 +97,10 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
   the same process before the unsynced controller can return it to P2Pool. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
-  until their chains sync.
+  until their chains sync. Each of its verdicts is a counted row in the phase's own summary and none of
+  them aborts it: a controller that cannot move the live route is one RED row, and the rows after it still
+  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
+  stops the proxy again on every path, including the ones that bail mid-transition.
   Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
   separate injected post-validation setup fault must open a recoverable failed page and retry

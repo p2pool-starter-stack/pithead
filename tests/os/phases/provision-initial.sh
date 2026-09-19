@@ -180,7 +180,7 @@ _phase_provision_initial_body() {
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
-    phase_provision_xvb_routing "$pv_user" "$pv_pass" || return
+    phase_provision_xvb_routing
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"
