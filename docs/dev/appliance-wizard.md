@@ -118,9 +118,12 @@ and returns the report as `node_probe`; nothing writes a `config.json` candidate
 The server resolves a name once, dials that vetted address and stores its numeric form in the
 accepted candidate. Loopback, unspecified, link-local,
 multicast and reserved addresses are refused, including names that resolve to one (#1946). With
-the Tor egress firewall on, every answer must also be in the private LAN or VPN IPv4 ranges the
-mining container can dial. Credentials are used only for the RPC request and never enter the
-report.
+the Tor egress firewall on, a name must answer with at least one address in the private LAN or VPN
+IPv4 ranges the mining container can dial and with no public IPv4 at all; the lowest such address
+is the one pinned. IPv6 answers are ignored rather than refused: the firewall is an IPv4 allowlist
+and only the pinned address reaches the config, so a dual-stack LAN name is accepted on its A
+record instead of sending the operator back to typing the literal address (#2351). Credentials are
+used only for the RPC request and never enter the report.
 
 | Field | Meaning |
 |---|---|

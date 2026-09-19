@@ -68,6 +68,13 @@ def _firewall_enabled(cfg: dict) -> bool:
     return value is not False
 
 
+def _direct(ip) -> bool:
+    """True when the Tor egress firewall's IPv4 allowlist covers this address."""
+    return isinstance(ip, ipaddress.IPv4Address) and any(
+        ip in network for network in _DIRECT_NETWORKS
+    )
+
+
 async def _resolved_address(host: str, port: int, firewall: bool) -> str | tuple[str, str]:
     """Resolve once, returning an allowed address or a refusal reason."""
     if not host or not all(c.isalnum() or c in ".:_-" for c in host) or len(host) > 253:
@@ -93,16 +100,20 @@ async def _resolved_address(host: str, port: int, firewall: bool) -> str | tuple
             "P2Pool runs in a container, so a loopback or host-only address points at the "
             "container instead of this machine. Use the node machine's LAN or VPN address.",
         )
-    if firewall and any(
-        not isinstance(ip, ipaddress.IPv4Address)
-        or not any(ip in network for network in _DIRECT_NETWORKS)
-        for ip in addresses
-    ):
-        return (
-            "address",
-            "The Tor egress firewall lets mining containers dial remote nodes only on private "
-            "LAN or VPN IPv4 ranges. Use that node's private address.",
-        )
+    if firewall:
+        # The firewall is an IPv4 allowlist and only the pinned address ever reaches the config,
+        # so a dual-stack name's AAAA answer beside a usable private A record is not a refusal:
+        # refusing it sent operators back to typing the literal IP (#2351).
+        allowed = sorted((ip for ip in addresses if _direct(ip)), key=int)
+        if not allowed or any(
+            isinstance(ip, ipaddress.IPv4Address) and not _direct(ip) for ip in addresses
+        ):
+            return (
+                "address",
+                "The Tor egress firewall lets mining containers dial remote nodes only on private "
+                "LAN or VPN IPv4 ranges. Use that node's private address.",
+            )
+        return str(allowed[0])
     return str(sorted(addresses, key=lambda address: (address.version, int(address)))[0])
 
 
