@@ -193,6 +193,7 @@ services:
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS}
       - MONERO_VIEW_KEY=${MONERO_VIEW_KEY}
       - PAYOUT_SCAN_HEIGHT=${PAYOUT_SCAN_HEIGHT:-auto}
+      - PAYOUT_SCAN_GRACE_SEC=${PAYOUT_SCAN_GRACE_SEC:-86400}
     ports:
       # Loopback-only publish (mirror monerod, line 108): the host-networked dashboard reaches it at
       # 127.0.0.1:18082; no LAN exposure. rpc-login guards the bridge IP for mining-net peers.
