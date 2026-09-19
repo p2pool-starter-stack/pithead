@@ -38,8 +38,8 @@
 #   PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
 #   PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
 #   GHCR_USER / GHCR_TOKEN  Registry login. Token falls back to GITHUB_TOKEN, then `gh auth token`.
-#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required).
-#   BENCH_CI_APP_SLUG     GitHub App slug (default: bench-ci).
+#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
+#   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box

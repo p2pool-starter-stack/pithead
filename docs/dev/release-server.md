@@ -43,8 +43,10 @@ real chains can, and it is the blocking pre-release gate.
 The dedicated server is not a GitHub Actions self-hosted runner. Tier 4 runs through bench-ci,
 which owns the reservation, runs the full suite against an exact SHA, and publishes
 `bench-ci/tier4` through its dedicated GitHub App. The release lane requires that status from the
-App's numeric id. Once bench-ci provides the App id, a repository administrator must add the same
-context and App `integration_id` to the `main` ruleset.
+App's numeric id, and the `main` ruleset requires the same context pinned to that App's
+`integration_id`. Both were provisioned under
+[#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237); an identical context from
+any other App does not satisfy a pinned entry.
 
 > NOTE: GitHub explicitly recommends against self-hosted runners on public repositories. Any
 > user can open a pull request, and a malicious PR can run arbitrary code on the runner. The
@@ -465,7 +467,7 @@ compose hardening, config rendering, dashboard tests.
 | Gap (not tested live) | Worth filling before release? |
 |---|---|
 | Full (unpruned) Monero live, which a pruned box can't exercise | Low. Stack paths don't differ by prune mode; fakes/config cover it. A multi-day full sync isn't justified. |
-| Protected pre-release gate | Pending bench-ci commit-status publication and the administrator-set `main` rule; `release.sh` requires `bench-ci/tier4` from the configured GitHub App id. |
+| Protected pre-release gate | Wired, not yet exercised: `release.sh` and the `main` ruleset both require `bench-ci/tier4` from the pinned App id, but no tier-4 status has been published yet, so the gate has not run end to end. |
 | Cross-version self-deploy upgrade | Medium. Run the upgrade proof tracked by [#1997](https://github.com/p2pool-starter-stack/pithead/issues/1997), which is blocked by its runnable-environment issue [#2057](https://github.com/p2pool-starter-stack/pithead/issues/2057). It proves authenticated manifest/image identity, mounts, captured chain anchors, durable state, secrets, workers/mining, derived state, and old-baseline restoration. |
 | Cross-version appliance/RAUC upgrade | Medium. The current KVM update builds both slots from one tree; [#2056](https://github.com/p2pool-starter-stack/pithead/issues/2056) tracks an upgrade from a real previous appliance release with provisioned state. |
 | N-1 encrypted backup restore on the appliance | Medium. Same-version restore is covered; [#2001](https://github.com/p2pool-starter-stack/pithead/issues/2001) tracks restoring a supported prior-release backup through the current wizard without a forced resync. |

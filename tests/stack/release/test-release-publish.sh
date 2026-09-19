@@ -156,7 +156,8 @@ bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-
     (
         cd "$ROOT" || exit
         set --
-        export BENCH_CI_APP_ID="$BENCH_EXPECTED_APP_ID" BENCH_CI_APP_SLUG="$BENCH_APP_SLUG"
+        export BENCH_CI_APP_ID="$BENCH_EXPECTED_APP_ID"
+        if [ -n "$BENCH_APP_SLUG" ]; then export BENCH_CI_APP_SLUG="$BENCH_APP_SLUG"; else unset BENCH_CI_APP_SLUG; fi
         # shellcheck disable=SC1090  # dynamic source
         source "$REL" 2>/dev/null
         set +eu
@@ -195,6 +196,9 @@ assert_contains "the missing App-id refusal names its setting" "$bench_no_app_id
 bench_bad_slug="$(bench_tier4_gate '[]' 4242 4242 'Bench CI!' 2>&1)"
 assert_rc "an invalid App slug refuses the release" "$?" "1"
 assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "BENCH_CI_APP_SLUG"
+bench_no_slug="$(bench_tier4_gate '[]' 4242 4242 '' 2>&1)"
+assert_rc "an unset App slug refuses the release" "$?" "1"
+assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$bench_no_slug" "BENCH_CI_APP_SLUG"
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
 release_tree_gate() { # <dry-run> <allow-dirty>

@@ -157,8 +157,9 @@ Release notes, where operators actually read it. The branch model itself is in
    `vX.Y.Z` isn't already released; resolve the component pins into the ingredients manifest.
    The generated executable is copied into the release bundle; its source slices are not.
 2. Bench gate (blocking): require a successful `bench-ci/tier4` commit status for the exact
-   release SHA from the dedicated bench-ci GitHub App. Set `BENCH_CI_APP_ID` to that App's numeric
-   id on the release box; `BENCH_CI_APP_SLUG` defaults to `bench-ci`. The bench runner publishes
+   release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric
+   id) and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no
+   defaults: the gate refuses the cut if either is unset. The bench runner publishes
    the status only after its full tier-4 suite completes. A missing, failed, unreadable, or
    wrong-App status aborts the release before images are built.
 3. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +

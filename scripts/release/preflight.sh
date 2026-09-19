@@ -8,19 +8,22 @@
 # build, instead of mid-gate.
 LINT_TOOLCHAIN=(shellcheck shfmt node npx uv uvx)
 BENCH_TIER4_CONTEXT="bench-ci/tier4"
-BENCH_CI_APP_SLUG="${BENCH_CI_APP_SLUG:-bench-ci}"
 
 require_bench_tier4() {
     command -v gh >/dev/null 2>&1 ||
         die "gh is required to read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
     [[ "${BENCH_CI_APP_ID:-}" =~ ^[1-9][0-9]*$ ]] ||
         die "BENCH_CI_APP_ID must be the numeric id of the installed bench-ci GitHub App."
-    [[ "$BENCH_CI_APP_SLUG" =~ ^[a-z0-9-]+$ ]] || die "BENCH_CI_APP_SLUG is invalid."
+    [[ "${BENCH_CI_APP_SLUG:-}" =~ ^[a-z0-9-]+$ ]] ||
+        die "BENCH_CI_APP_SLUG must be the slug of the installed bench-ci GitHub App (pithead-bench-ci)."
     local app_id statuses state creator="${BENCH_CI_APP_SLUG}[bot]"
     app_id="$(gh api "apps/$BENCH_CI_APP_SLUG" | jq -r '.id // empty')" ||
         die "Could not resolve GitHub App $BENCH_CI_APP_SLUG."
     [ "$app_id" = "$BENCH_CI_APP_ID" ] ||
         die "GitHub App $BENCH_CI_APP_SLUG has id ${app_id:-missing}, expected $BENCH_CI_APP_ID."
+    # ponytail: reads only the first 100 statuses on the commit. A commit carrying more than that,
+    # with the bench-ci entry aged out of the page, reads as missing and REFUSES the release —
+    # it fails closed, never open. Paginate if a release SHA ever collects that many statuses.
     if ! statuses="$(gh api "repos/p2pool-starter-stack/pithead/commits/$GIT_COMMIT/statuses?per_page=100")"; then
         die "Could not read the $BENCH_TIER4_CONTEXT status for release commit $GIT_COMMIT."
     fi
