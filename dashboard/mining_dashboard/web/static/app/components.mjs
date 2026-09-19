@@ -144,10 +144,11 @@ export function App({
   onInspect,
   onCloseInspect,
 }) {
-  // The theme toggle is fixed-position and always available, even before the first data load.
-  // Wrapped in its own landmark (role="region" via the labelled <section>): it's fixed-position
-  // chrome rendered as a sibling of <header>/<main>, not inside either, so without one it would
-  // sit outside every landmark (axe `region`).
+  // Before the first data load there is no header to hold it (#1860), so the loading screen keeps
+  // its own copy — wrapped in its own landmark (labelled <section>), since at that point it is
+  // fixed-position chrome sibling to <main> and nothing else, and would otherwise sit outside
+  // every landmark (axe `region`). Once state exists it lives inside Header, next to the version
+  // badges, and needs no wrapper of its own.
   const switcher = html`<section aria-label="Theme"><${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} /></section>`;
   // Worker Inspect overlay (#185): opened from a worker name in the table; the panel does its own
   // fetch/apply/poll. `key` remounts it when a different worker is picked. Only reachable when the
@@ -167,7 +168,7 @@ export function App({
         <//>`;
   }
   return html`<${Fragment}>
-        <${Header} state=${state} />
+        <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <main id="dashboard-main">
             <${OsVerdictBanner} os=${state.os_update} />
             ${!connected ? html`<div class="disconnected-banner" role="status" aria-live="polite">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
@@ -185,6 +186,5 @@ export function App({
             }
         </main>
         ${inspect}
-        ${switcher}
     <//>`;
 }
