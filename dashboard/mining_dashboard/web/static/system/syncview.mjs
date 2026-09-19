@@ -56,7 +56,8 @@ export function SyncView({ sync }) {
                 <div class="status-text">
                     Synced: ${sync.monero.current} / ${sync.monero.target}<br/>
                     <small>(${sync.monero.remaining} blocks left)</small><br/>
-                    <small class="text-muted">${sync.monero.mode} · DB ${sync.monero.db_size}</small>
+                    <small class="text-muted">${sync.monero.mode} · DB ${sync.monero.db_size}</small><br/>
+                    ${sync.monero.reason ? html`<small class="status-bad">${sync.monero.reason}</small>` : ""}
                 </div>
             </div>
             <div class="card">
@@ -65,7 +66,8 @@ export function SyncView({ sync }) {
                 <div class="status-text">
                     Synced: ${sync.tari.current} / ${sync.tari.target}<br/>
                     <small>(${sync.tari.remaining} blocks left)</small><br/>
-                    <small class="text-muted">${nodeLocation(sync.tari.local)}${sync.tari.local == null ? "" : " node"}</small>
+                    <small class="text-muted">${nodeLocation(sync.tari.local)}${sync.tari.local == null ? "" : " node"}</small><br/>
+                    ${sync.tari.reason ? html`<small class="status-bad">${sync.tari.reason}</small>` : ""}
                 </div>
             </div>
         </div>

@@ -11,7 +11,7 @@ logger = logging.getLogger("TariClient")
 # See README.md for generation instructions (requires grpcio-tools)
 from google.protobuf import empty_pb2
 
-from .generated import base_node_pb2_grpc
+from .generated import base_node_pb2, base_node_pb2_grpc
 
 
 class TariClient:
@@ -28,6 +28,10 @@ class TariClient:
         self._stub = None
         self._last_sync_status = None
         self._last_sync_ts = 0.0
+        # Last probe error text, for the remote-sync-wait reason (#2353) — cleared on the
+        # next successful GetTipInfo, kept across a failed cycle even when a stale cached
+        # sync reading masks the failure from the rest of the status dict.
+        self.last_error = None
 
     def _ensure_channel(self):
         if self._channel is None:
@@ -58,16 +62,17 @@ class TariClient:
             # `reachable` reflects this cycle's live gRPC, independent of the cache below;
             # it drives node-down detection (Issue #31). Added on the returned copy so the
             # cached `_last_sync_status` stays a pristine sync reading.
-            return {**status, "reachable": True}
+            return {**status, "reachable": True, "error": None}
 
         # gRPC unreachable this cycle. Serve the last good state briefly (node is likely
         # just busy), but stop once it's clearly stale so a down node isn't masked forever.
+        # `error` still reflects THIS cycle's failure (#2353) even while stale data is served.
         if (
             self._last_sync_status
             and (time.monotonic() - self._last_sync_ts) <= self._MAX_STALE_SECONDS
         ):
-            return {**self._last_sync_status, "reachable": False}
-        return {"is_syncing": False, "reachable": False}
+            return {**self._last_sync_status, "reachable": False, "error": self.last_error}
+        return {"is_syncing": False, "reachable": False, "error": self.last_error}
 
     async def _fetch_sync_status(self) -> dict | None:
         """
@@ -83,27 +88,43 @@ class TariClient:
             tip = await stub.GetTipInfo(empty_pb2.Empty(), timeout=5)
         except Exception as e:
             logger.error(f"Tari gRPC GetTipInfo error: {e}")
+            self.last_error = str(e)
             await self._reset_channel()
             return None
+        self.last_error = None
 
         local_height = tip.metadata.best_block_height
+        # Surfaced on every reading (synced or not) for the remote-sync-wait reason (#2353):
+        # the node's own state and "fully synced" verdict, independent of our height heuristic.
+        base_node_state = base_node_pb2.BaseNodeState.Name(tip.base_node_state)
+        common = {
+            "initial_sync_achieved": tip.initial_sync_achieved,
+            "base_node_state": base_node_state,
+        }
 
         # The node reports initial sync complete — trust it over any height heuristic.
         if tip.initial_sync_achieved:
             return {
+                **common,
                 "is_syncing": False,
                 "current": local_height,
                 "target": local_height,
                 "percent": 100,
             }
 
-        # Still syncing: ask the node what height it is syncing toward.
+        # Still syncing: ask the node what height it is syncing toward, and its own
+        # sync-state label (#2353) for a reason richer than "not yet".
         target = 0
+        sync_detail = {}
         try:
             progress = await stub.GetSyncProgress(empty_pb2.Empty(), timeout=5)
             if progress.local_height:
                 local_height = progress.local_height
             target = progress.tip_height
+            sync_detail = {
+                "sync_state": base_node_pb2.SyncState.Name(progress.state),
+                "short_desc": progress.short_desc or None,
+            }
         except Exception as e:
             logger.error(f"Tari gRPC GetSyncProgress error: {e}")
             await self._reset_channel()
@@ -111,10 +132,24 @@ class TariClient:
         # No reliable target yet (early startup / between sync rounds): report syncing
         # without a false 100%, so the UI shows a loading state, not a premature ✔.
         if target <= local_height:
-            return {"is_syncing": True, "current": local_height, "target": 0, "percent": 0}
+            return {
+                **common,
+                **sync_detail,
+                "is_syncing": True,
+                "current": local_height,
+                "target": 0,
+                "percent": 0,
+            }
 
         percent = int((local_height / target) * 100)
-        return {"is_syncing": True, "current": local_height, "target": target, "percent": percent}
+        return {
+            **common,
+            **sync_detail,
+            "is_syncing": True,
+            "current": local_height,
+            "target": target,
+            "percent": percent,
+        }
 
     async def close(self):
         # ponytail: intentionally NOT wired into DataService.run()'s shutdown. Doing so means a
