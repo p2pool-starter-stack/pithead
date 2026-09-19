@@ -229,8 +229,17 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and typed
-confirmation to succeed, checks the current p2pool container's narrowly extracted
+root-run battery without overriding `HOME`. The login is a Monero-node credential, not endpoint
+identity, so it is never carried through the dashboard proposal: the row first asserts that
+pushing a login change through the dashboard is refused outright, then proposes the endpoint
+move alone through the dashboard and asserts the preview exposes it behind the combined approval
+gate. The dashboard can only ever preview this combined change, never apply it end to end — its
+own host-side reachability preflight authenticates the staged endpoint with the staged login, and
+a dashboard proposal can never carry a real login — so the row's actual application lands mode,
+endpoint and login together in one host-side config edit (the route "Set up again" names in the
+dashboard's refusal text): never local mode with a foreign login attached to the still-running
+local monerod/wallet-rpc containers, and never remote mode short the login its own reachability
+preflight would demand. The row checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
 endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.
