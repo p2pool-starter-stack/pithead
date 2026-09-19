@@ -79,6 +79,13 @@ MATRIX:
                          then restore the original config. Requires --safety-backup, miners, a
                          recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
                          the gate moves an existing donor route, it does not turn XvB on for you.
+  --alert-egress         also run the live alert-egress leg (#2266): drive `pithead test-alert`
+                         through the real Tor SOCKS proxy, one leg per configured sink
+                         (IT_TELEGRAM_BOT_TOKEN + IT_TELEGRAM_CHAT_ID, IT_NTFY_URL,
+                         IT_WEBHOOK_URLS, IT_HEALTHCHECKS_PING_URL), asserting each answered.
+                         An absent credential self-skips that sink (missing); a third party
+                         refusing the dial reports as its own verdict, never a stack failure.
+                         DESTRUCTIVE-then-restored.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -249,6 +256,10 @@ parse_args() {
             ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
+            shift
+            ;;
+        --alert-egress)
+            RUN_ALERT_EGRESS=1
             shift
             ;;
         --auth-fail-closed)

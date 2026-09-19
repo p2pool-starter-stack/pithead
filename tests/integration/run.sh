@@ -60,6 +60,7 @@ RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
+RUN_ALERT_EGRESS=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -111,6 +112,8 @@ source "$HERE/lib/run-rig-control.sh" || exit $?
 source "$HERE/lib/run-rig-reverse.sh" || exit $?
 # shellcheck source=tests/integration/lib/live-gates.sh
 source "$HERE/lib/live-gates.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-alert-egress.sh
+source "$HERE/lib/run-alert-egress.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -209,6 +212,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario

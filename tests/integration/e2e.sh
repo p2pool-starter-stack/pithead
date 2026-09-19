@@ -87,7 +87,7 @@ OPTIONS:
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
-  --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
+  --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
@@ -167,6 +167,7 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
+[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
@@ -360,7 +361,6 @@ wait_workers() { # <n> <timeout_s>
         sleep 8
     done
 }
-
 # --- Phase 0: preflight -----------------------------------------------------
 preflight() {
     log "Preflight"
@@ -628,7 +628,7 @@ run_harness() {
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
+        harness_pregate "$WORKERS" "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."

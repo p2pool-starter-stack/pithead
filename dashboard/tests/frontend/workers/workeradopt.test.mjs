@@ -41,11 +41,25 @@ function withFetchSequence(responses, fn) {
   let i = 0;
   globalThis.fetch = async (url, opts) => {
     calls.push({ url, body: opts?.body ? JSON.parse(opts.body) : null });
-    const r = responses[i++] || { ok: true, json: async () => ({ status: "error" }) };
-    return { ok: r.ok !== false, status: r.status || 200, json: async () => r.body };
+    const r = responses[i++] || { body: { status: "error" } };
+    return {
+      ok: r.ok !== false,
+      status: r.status || 200,
+      json: async () => r.body,
+      text: async () => ("text" in r ? r.text : JSON.stringify(r.body)),
+    };
   };
   return fn(calls).finally(() => {
     globalThis.fetch = realFetch;
+  });
+}
+
+// poll() sleeps between attempts; fire timers synchronously so a polling test doesn't wait on them.
+function withInstantSleep(fn) {
+  const realTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (cb) => cb();
+  return fn().finally(() => {
+    globalThis.setTimeout = realTimeout;
   });
 }
 
@@ -119,6 +133,26 @@ test("AdoptRigForm: a well-formed submission previews then commits through the c
   assert.equal(inst.state.result.status, "applied");
   assert.equal(inst.state.busy, false);
   assert.match(renderToString(inst.render()), /next worker poll/);
+});
+
+test("AdoptRigForm: an empty successful commit response polls the retained preview id", async () => {
+  const inst = adoptForm();
+  inst.state.token = TOKEN;
+  await withInstantSleep(() =>
+    withFetchSequence(
+      [
+        { body: { workers: { list: [] } } },
+        { body: { id: "req-1", status: "previewed", destructive: false } },
+        { text: "" },
+        { body: { id: "req-1", status: "applied" } },
+      ],
+      async (calls) => {
+        await inst.adopt();
+        assert.equal(calls[3].url, "/api/control/result?id=req-1");
+      },
+    ),
+  );
+  assert.equal(inst.state.result.status, "applied");
 });
 
 test("AdoptRigForm: a rejected preview surfaces the host's reason and never commits", async () => {

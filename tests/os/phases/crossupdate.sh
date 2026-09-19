@@ -18,8 +18,12 @@
 phase_crossupdate() {
     info "phase: crossupdate (a provisioned N-1 guest upgraded to the candidate built from HEAD)"
     local old="${PITHEAD_OLD_IMAGE:-}"
+    # #2356: this is a MISSING skip, not a failure — a job that requested options.old_image would
+    # have run this phase for real; one that did not never could have. Unlike the provision phase's
+    # reserved-node row (a mandatory release gate, a counted failure by design), crossupdate is
+    # opt-in and deliberately excluded from --phase all for exactly this reason.
     [ -n "$old" ] && [ -f "$old" ] || {
-        bad "PITHEAD_OLD_IMAGE not set or not a file — this phase needs bench-ci's tier4-kvm options.old_image (docs/dev/testing-strategy.md)"
+        it_skip_phase "crossupdate" "PITHEAD_OLD_IMAGE not set or not a file — this phase needs bench-ci's tier4-kvm options.old_image (docs/dev/testing-strategy.md)" missing
         return
     }
 
