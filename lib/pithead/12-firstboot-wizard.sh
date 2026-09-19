@@ -285,10 +285,10 @@ firstboot_wizard() {
                 rig_worker=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_pool=$(jq -r '.pool // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
-                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE: a rig serves
-                # no page after this) and this box's address for the adopt form. No login. The same ack still gates the erase.
-                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" \
-                    '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a}' | write_handoff_card "$spool"
+                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
+                # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
