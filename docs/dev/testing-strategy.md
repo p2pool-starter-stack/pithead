@@ -338,6 +338,34 @@ no VM needed, run on every image build.
 | Data-reset repair escalation against REAL damage (#1062): a genuine ext4 image, the same two-byte superblock-magic wipe the battery injects, and the system's own `fsck`/`e2fsck`/`mke2fs` — a repairable image is repaired with its payload intact and never reformatted; a destroyed one still reaches the reformat escape. Only `mount` is stubbed, and its verdict is `e2fsck -fn` on the image itself, never a counter. The stubbed decision-tree block in `tests/stack/appliance/test-appliance-reset.sh` proves marker precedence and escalation order (#1086); this suite proves the repair | `tests/stack/standalone/test_data_reset.sh` | 1 ✅ |
 | Factory reset returns a machine with a fresh identity (machine-id, SSH host key, container store) and records the wipe on the ESP; a wedged `/data` — the superblock corrupted on the real partition — is REPAIRED, not erased: the sentinel planted before the corruption survives and the wipe log does not grow (#1062/#1087) | battery `--phase reset` | 4 ✅ |
 
+### K. Outbound alert delivery over Tor egress (#2266)
+
+Tiers 1-3 prove the alert path and the SOCKS transport against controllable fakes
+(`tests/integration/fakes/fake_hc.py`, `fake_socks.py` — `make test-fakes`) and a local
+listener. What none of them can prove is the part that is not ours: that the third-party
+endpoint still accepts our traffic **from a Tor exit**. Telegram, ntfy.sh, a webhook and
+Healthchecks.io can block, rate-limit or challenge exit nodes at any time, and a fake will
+never refuse us — #424 is the recorded real-world instance of this class, a stuck Tor guard
+silently taking out Healthchecks, Telegram and XvB together.
+
+This buys **one bit per sink** — "the third party still answers us over Tor" — at the cost
+of live credentials on the reserved bench and an outward message per run, so it is a
+classified reachability leg, never a gate blocker.
+
+| Situation | Trigger | Tier |
+|---|---|---|
+| Telegram, ntfy and webhook sinks each answer a real `pithead test-alert` (#2265) dial over the live stack's Tor SOCKS | live stack + operator-supplied `IT_TELEGRAM_BOT_TOKEN`/`IT_TELEGRAM_CHAT_ID`, `IT_NTFY_URL`(+`IT_NTFY_TOKEN`), `IT_WEBHOOK_URLS` | 4 ▶ (`run.sh --alert-egress`) |
+| Healthchecks answers a real ping over Tor — driven directly through the production `HealthchecksClient`, since `test-alert` deliberately excludes this sink ("a ping moves the dead-man switch") | live stack + operator-supplied `IT_HEALTHCHECKS_PING_URL` | 4 ▶ (`run.sh --alert-egress`) |
+| Leg classification: an absent credential self-skips its sink in the `missing` class, named (#1083); a third party refusing the dial is its own counted verdict (a `THIRD-PARTY REFUSAL`, summarized separately from `IT_FAIL`), never a stack failure; a sink `test-alert` still reports unconfigured after this leg configured it IS a stack bug | pure logic, stubbed `rx`/`push_config`/`pithead` | 1 ✅ (`selftest-alert-egress.sh`) |
+
+No credential, URL or chat id reaches the run log: `IT_TELEGRAM_BOT_TOKEN`, `IT_NTFY_URL`,
+`IT_WEBHOOK_URLS` and `IT_HEALTHCHECKS_PING_URL` all match `redact()`'s existing `TOKEN`/
+`NTFY_URL`/`WEBHOOK_URLS`/`PING_URL` vocabulary (`tests/integration/lib.sh`); the operator's
+Telegram chat id is a routing id, not a secret, and is deliberately exempt from redaction
+already (`selftest-redact-vocab.sh`'s `MUST_SURVIVE`) — this leg never echoes it regardless.
+Every credential travels to the box only through `push_config`'s stdin-over-ssh JSON, never a
+shell argument or a log line.
+
 ## What each tier needs from its host
 
 Measured on a macOS host driving the container (#2078), not inferred. "Container" means
