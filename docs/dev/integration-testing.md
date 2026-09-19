@@ -167,8 +167,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    share still inside the PPLNS window. The smoke uses the real donor-tier controller decision;
    it does not inject a raffle result.
 
-> NOTE: Keep the box least-privilege and network-isolated; it holds real keys. This is a
-> self-hosted/manual gate, not something to run on public CI.
+> NOTE: Keep the box least-privilege and network-isolated; it holds real keys. This is a bench-ci
+> tier-4 gate, not something to run on GitHub-hosted CI.
 
 ---
 
