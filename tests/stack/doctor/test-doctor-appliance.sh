@@ -49,14 +49,16 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$VALID_PRIMARY" >"$DJ/config.json"
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-# doctor --json: valid JSON on stdout, the human report on stderr, counters consistent with the
-# check list (info lines are context, not verdicts).
+# doctor --json: valid JSON on stdout, the human report on stderr, summary counters (including
+# info) sum to the full check list (#1807 — a consumer totalling ok+warn+fail alone under-reports
+# by the number of info rows).
 dj_out="$DJ/doctor.json"
 dj_err="$DJ/doctor.err"
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --json >"$dj_out" 2>"$dj_err") || true
 assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("summary")' "$dj_out" 2>/dev/null)" "true"
-assert_eq "doctor --json counters match verdict lines" \
-    "$(jq -r '(.summary.ok + .summary.warn + .summary.fail) == ([.checks[] | select(.status != "info")] | length)' "$dj_out" 2>/dev/null)" "true"
+assert_eq "doctor --json summary has an info count" "$(jq -r '.summary | has("info")' "$dj_out" 2>/dev/null)" "true"
+assert_eq "doctor --json counters sum to the check total" \
+    "$(jq -r '(.summary.ok + .summary.warn + .summary.fail + .summary.info) == (.checks | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
 printf release >"$DJ/variant"
 jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
