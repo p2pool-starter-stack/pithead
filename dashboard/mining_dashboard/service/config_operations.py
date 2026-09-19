@@ -1,8 +1,13 @@
 """Pure classification helpers for the day-two configuration surface."""
 
+# dashboard.auth.password left this set in #2367: the owner ruled every config field must be
+# reachable from the panel, destructive ones warn and confirm rather than refuse. It now falls
+# through to the same typed-confirmation tier as every other unclassified leaf (see
+# confirmed_paths below), gated by CONFIRM_ENV_KEY_PATHS' shell mirror
+# (lib/pithead/42-control-policy-and-host-checks.sh). The two tamper-alarm events stay refused:
+# they are the detection controls for the sensitive changes #1959/#2367 now permit, not secrets.
 NEVER_APPROVE_PATHS = frozenset(
     {
-        "dashboard.auth.password",
         "telegram.events.wallet_changed",
         "telegram.events.clearnet_exposed",
     }
