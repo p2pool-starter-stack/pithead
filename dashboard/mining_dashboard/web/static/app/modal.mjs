@@ -2,11 +2,10 @@
 // own <dialog> already made (#518, workerview.mjs). showModal() gives focus-trapping, Escape, and
 // focus-return-to-opener for free; ::backdrop replaces a hand-rolled overlay div.
 //
-// `onCancel` fires on the dialog's `cancel` event (Escape) AND is the handler callers wire to
-// their own Cancel/Close button — one path for both. The default is always prevented so a caller
-// that wants to refuse cancelling (an upgrade or backup in flight) can just not act on it; a
-// caller that wants to close calls `this.someRef.current.close()` from inside `onCancel`, which
-// fires the native `close` event (wired below) and returns focus to the opener on its own.
+// `onCancel` fires on the dialog's `cancel` event (Escape) and is the same handler callers wire to
+// their Cancel/Close button. The default is ALWAYS prevented, so refusing a cancel (an upgrade or
+// backup in flight) is just not acting on it, and closing means calling close() from inside
+// `onCancel` — which fires the native `close` event and returns focus to the opener on its own.
 import { Component, createRef, html } from "./preact.mjs";
 
 export class Modal extends Component {

@@ -85,7 +85,6 @@
 }
 .config-modal {
   box-sizing: border-box;
-  max-width: 640px;
   width: min(640px, calc(100% - 32px));
   max-height: 80vh;
   overflow-y: auto;
