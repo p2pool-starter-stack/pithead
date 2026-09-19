@@ -45,8 +45,10 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
     printf 'apply=%s audit=%.240s; live identity is the row printed above this one' "$apply" "$audit_v"
 }
 
-physical_presence_password_refusal_verdict() { # <control-result-json>
-    printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+# #2367: the dashboard password left the physical-presence set and now commits behind typed
+# APPLY like any other unlisted leaf, so this proves the commit APPLIES rather than refuses.
+dashboard_password_repoint_applied_verdict() { # <control-result-json>
+    printf '%s' "$1" | jq -e '.status == "applied"' >/dev/null
 }
 
 # The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
@@ -410,10 +412,10 @@ _approval_bind_payload_self_test() {
     printf 'approval-bind-payload self-test passed\n'
 }
 
-_physical_presence_password_refusal_self_test() {
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"use the configuration stick"}' || return 1
-    physical_presence_password_refusal_verdict '{"status":"applied"}' && return 1
-    physical_presence_password_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+_dashboard_password_repoint_applied_self_test() {
+    dashboard_password_repoint_applied_verdict '{"status":"applied"}' || return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"use the configuration stick"}' && return 1
+    dashboard_password_repoint_applied_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
     return 0
 }
 
@@ -422,7 +424,7 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     f=0
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
-    _physical_presence_password_refusal_self_test || f=1
+    _dashboard_password_repoint_applied_self_test || f=1
     _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi

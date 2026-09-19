@@ -126,20 +126,23 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     fi
 
+    # #2367: the owner ruled every config field must be reachable from the panel; the password left
+    # the physical-presence set and now commits behind typed APPLY like any other unlisted leaf.
     live=$(sensitive_live_config) || return
-    proposed=$(printf '%s' "$live" | jq -c '.dashboard.auth.password = "os1966-physical-only"')
+    proposed=$(printf '%s' "$live" | jq -c '.dashboard.auth.password = "os1966-repointed"')
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
-    if ! physical_presence_password_refusal_verdict "$result"; then
-        bad "host approval did not refuse the physical-presence-only dashboard-password edit ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
+    if ! dashboard_password_repoint_applied_verdict "$result"; then
+        bad "dashboard-password repoint did not commit behind typed APPLY ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
         return
     fi
+    DASH_PASS="os1966-repointed" # dashboard_curl reads DASH_USER/DASH_PASS from this frame by dynamic scope
     if ! sensitive_live_config >/dev/null; then
-        bad "physical-presence refusal left the authenticated dashboard login unreadable after 20 retries"
+        bad "dashboard did not accept the new password after the commit"
         return
     fi
-    ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
+    ok "dashboard-password repoint commits behind typed APPLY and the new login works"
 }
 
 _hostname_landed_fallback_self_test() (
@@ -207,7 +210,7 @@ _approval_self_test() {
     _hostname_landed_fallback_self_test || f=$((f + 1))
     _restore_waits_for_control_drain_self_test || f=$((f + 1))
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
-    _physical_presence_password_refusal_self_test || f=$((f + 1))
+    _dashboard_password_repoint_applied_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     # #2333: the reserved-node round trip must stay AFTER the sync-gate-hold checks, not folded
