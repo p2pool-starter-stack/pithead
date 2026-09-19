@@ -223,23 +223,9 @@ phase_stack() {
         return 1
     fi
 
-    # xvb.enabled=true was in the wizard payload (stack_browser_config), but #2330 (#2062) measured
-    # it NOT landing in the guest's persisted config.json by the time the xvb-routing-smoke
-    # invocation reads its own baseline — reproduced on three separate bench runs, root cause still
-    # open. Don't guess at the wizard side from here: apply it directly and verify it actually
-    # stuck, so every invocation from here on reads a config that really has it, regardless of why
-    # the original submission didn't carry it through.
-    _ssh "cd /data/pithead && jq '.xvb.enabled = true' config.json >config.json.stack-xvb && mv config.json.stack-xvb config.json && ./pithead apply -y" >/dev/null 2>&1
-    if [ "$(_ssh 'cd /data/pithead && jq -r .xvb.enabled config.json' 2>/dev/null)" = "true" ]; then
-        ok "stack: xvb.enabled=true confirmed on the guest's persisted config"
-    else
-        bad "stack: could not get xvb.enabled=true to stick in the guest's config.json"
-        return 1
-    fi
-
-    # The DIY gate itself, staged as the ask lays out: a non-destructive read, then the
-    # destructive phases the appliance channel has never run, then the remote-safe scenario
-    # subset, then XvB routing — the appliance channel's first live coverage of each (#2062).
+    # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
+    # channel has never run — its first live coverage of each (#2062). The two parity rows this
+    # guest cannot satisfy are named, with their own issues, after the invocations below.
     #
     # Every invocation below names --scenario (or, for --check, returns before the matrix is
     # even reached). Without one, tests/integration/run.sh's own default is to iterate its FULL
@@ -258,22 +244,13 @@ phase_stack() {
     _stack_run_integration "lifecycle, fault-injection, hardening, auth-fail-closed" \
         --scenario remote-main-secure-tari "${remote_extra[@]}" \
         --lifecycle --fault-injection --hardening --auth-fail-closed
-    # xvb.enabled=true was submitted above; a recent PPLNS share is NOT guaranteed on a scratch
-    # guest whose remote node was only just pointed at — a fresh live-node coverage gap #2062
-    # documents (docs/dev/testing-strategy.md § J), not a defect this phase can manufacture.
-    _stack_run_integration "xvb routing smoke (first appliance-channel run)" \
-        --scenario remote-main-secure-tari "${remote_extra[@]}" --safety-backup --xvb-routing-smoke
-    # remote-tari-main-secure sets monero.mode=local (it exercises a remote TARI node from an
-    # otherwise-local DIY bench, tests/integration/scenarios.sh) — kept scenario-only, never
-    # paired with the destructive phases above, since this guest has no local chain to run them
-    # against; the config-application assertions alone are still a real, appliance-channel first.
-    # Run LAST (#2062, job 447): its own end-of-run restore genuinely fails on this guest — no
-    # local chain to revert to — which corrupts config.json for whatever invocation runs next
-    # (every invocation captures its own BASELINE_CONFIG fresh from the guest's live file). A
-    # scenario known to leave a bad restore must never precede one that depends on that file being
-    # clean, regardless of what else is going on with it — see #2330 for the separate, still-open
-    # question of why BASELINE_CONFIG reads xvb.enabled=false even directly after a clean restore
-    # (job 454, with this ordering already in place).
-    _stack_run_integration "scenario remote-tari-main-secure" \
-        --scenario remote-tari-main-secure "${remote_extra[@]}"
+    # Two more parity rows from #2062's table are deliberately NOT driven here, because this guest
+    # cannot satisfy their inputs and a row that cannot pass proves nothing where it sits:
+    #   * remote-tari-main-secure sets monero.mode=local (tests/integration/scenarios.sh), so it
+    #     starts a local monerod with an empty database on a scratch virtual disk. Job 510 measured
+    #     the whole sync-gated half of that scenario red for that one reason — synced, both ZMQ
+    #     rows, the sync panel, stratum hashes — while the SAME job's remote-node invocations
+    #     passed all of them minutes earlier. Needs a guest with a seeded chain: #2443.
+    #   * --xvb-routing-smoke's Tor-isolation probe fails on this channel and discards its own
+    #     output, so the red is unreadable and cannot be acted on from here: #2444.
 }

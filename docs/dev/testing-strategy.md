@@ -318,7 +318,7 @@ than inventing an appliance-side vocabulary next to it.
 | Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
 | Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
 | Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
-| XvB over Tor, XvB routing | ✓ | partial — the `stack` phase (#2062) runs `--xvb-routing-smoke`, and its baseline rows execute; the routing transition itself skips `missing` until the guest holds a PPLNS share |
+| XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |
 | Shares / hashes flowing end to end | ✓ | ✓ on the `stack` phase's remote-node guest (workers online, stratum hashes advancing — measured, #2062); still `missing` on a local-node guest, which never clears the sync gate (#2063) |
 | Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | partial — the `stack` phase (#2062) applies the remote-safe subset live (`pithead apply -y` per scenario, pool main→mini, re-apply no-op, secrets preserved). Prune, full-DB and local-node scenarios stay `by-design`: a scratch guest holds no chain |
 | Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
@@ -332,38 +332,36 @@ than inventing an appliance-side vocabulary next to it.
 
 What the `stack` phase's first real runs established, and what they cost. A remote-node guest
 provisions, releases and mines: containers up, `/api/state` answering, workers online and stratum
-hashes advancing, within about fifteen minutes of boot. The DIY gate then runs against it in four
-invocations — `--check`, the destructive phases, each remote scenario, and XvB routing — in roughly
-half an hour total. Every invocation names `--scenario`: without one the harness iterates its whole
-15-scenario matrix first, nearly all of it `monero.mode=local`, which a remote-node guest can only
-serve by building a local chain from nothing. Left unscoped that cost over two hours per invocation
-and exhausted a 240-minute job.
+hashes advancing, within about fifteen minutes of boot. The DIY gate then runs against it in two
+invocations — `--check`, then the destructive phases — in about ten minutes. The scenario invocation
+names `--scenario` on purpose (`--check` returns before the matrix is reached): without one the
+harness iterates its whole 15-scenario matrix first, nearly all of it `monero.mode=local`, which a
+remote-node guest can only serve by building a local chain from nothing. Left unscoped that cost over
+two hours per invocation and exhausted a 240-minute job.
 
-Job 447 (#2062) ran the full four-invocation battery against a real reserved node for the first time
-with working RPC/ZMQ credentials on both sides. Three rows that read red there were pre-existing DIY
-gate gaps, all closed by the time this branch merged `develop`: the canonical-node-set assertion
-predated the wizard's own `local_miner` default (#2303), the egress verifier assumed a git checkout on
-the target (#2302), and doctor's egress-firewall row checked wording doctor no longer emits (#2301).
+Three rows that read red on the phase's first real runs were pre-existing DIY gate gaps, all closed
+by the time this branch merged `develop`: the canonical-node-set assertion predated the wizard's own
+`local_miner` default (#2303), the egress verifier assumed a git checkout on the target (#2302), and
+doctor's egress-firewall row checked wording doctor no longer emits (#2301). Two more were this
+phase's own: `--check` ran before the `p2pool` container had started (dashboard and caddy come up
+faster, and the readiness wait only watched those two), which failed every p2pool-dependent row for a
+reason unrelated to any of them; and the `monerod caught up` and sync-panel rows were single-sample
+reads that a Tor-relayed block fetch outlasts. Both fixed here — wait for `p2pool` explicitly, and
+bound both waits at 150s/5s.
 
-Two more rows needed this phase's own fixes, not the DIY gate's. `remote-tari-main-secure` (the one
-scenario that switches the guest to `monero.mode=local`) ran before `--xvb-routing-smoke`, and its own
-end-of-run restore genuinely fails on a guest with no local chain to revert to; the next invocation
-reads `BASELINE_CONFIG` fresh from the guest's live `config.json`, so a corrupted restore there was a
-real risk. Fixed by running that scenario last. Separately, `--check` (the first invocation) ran
-before the `p2pool` container had actually started — dashboard+caddy come up noticeably faster, and
-the readiness wait only checked for those two — so every `p2pool`-dependent assertion (container up,
-workers online, stratum hashes, merge-mining) failed for a reason unrelated to any of them. Fixed by
-waiting for `p2pool` explicitly too (job 454).
+`p2pool merge-mining gRPC round-trip (#1397)` is real, open and appliance-specific: Monero and Tari
+are both independently confirmed synced and reachable, and p2pool still builds no merge-mining
+client. It is a named `by-design` counted skip on `--appliance-channel` rather than a failure,
+tracked as #2326.
 
-Job 454, with both fixes and the invocation order confirmed correct in the DIY gate's own log, still
-showed the XvB smoke's baseline check reading `xvb.enabled=false` immediately after `lifecycle`
-restored cleanly — disproving that the ordering bug was the sole (or even the real) explanation.
-Filed as #2330, still open: whether the wizard fails to persist a submitted `xvb.enabled: true` for a
-remote-node guest, or something else touches it despite the "restored exactly" assertion passing, is
-not yet known. `p2pool merge-mining gRPC round-trip (#1397)` also remains real, new, unexplained
-signal — Monero and Tari both independently confirmed synced and reachable, and p2pool itself never
-builds a merge-mining client. Filed as #2326. Until both close, the `stack` phase reports those two
-rows red — honestly, which is the point.
+Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
+cannot satisfy their inputs, and each carries job 510's row-scoped evidence on its own issue:
+`remote-tari-main-secure` switches the guest to `monero.mode=local`, so it starts a local `monerod`
+with an empty database on a scratch virtual disk and everything behind the sync gate fails
+deterministically — #2443, which needs a guest with a seeded chain. And `--xvb-routing-smoke`'s
+Tor-isolation probe fails on this channel while discarding its own diagnostics, so its red is
+unreadable from here — #2444, which needs the probe to report what it saw before anyone decides what
+the failure means.
 
 | Situation | Trigger | Tier |
 |---|---|---|

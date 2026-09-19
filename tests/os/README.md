@@ -160,12 +160,15 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
   (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
-  --auth-fail-closed`, then the `remote-*` scenario subset, then `--xvb-routing-smoke`. The first
-  live remote-node coverage on either channel (#1446). Reuses the same reserved-node env vars as
-  the `provision` phase's remote-node consumer row below, and skips (by-design) without them.
-  Measured cost: about fifteen minutes to a mining guest, then roughly half an hour for the four
-  DIY-gate invocations. Every invocation names `--scenario` on purpose — the harness's default is
-  its whole 15-scenario matrix, nearly all `monero.mode=local`, which this guest has no chain for.
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
+  coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
+  phase's remote-node consumer row below, and skips (by-design) without them. Measured cost: about
+  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
+  invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
+  nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
+  scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
+  (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
+  diagnostics, so the red is unreadable).
 
 `--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
