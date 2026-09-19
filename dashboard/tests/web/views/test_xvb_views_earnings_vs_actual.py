@@ -144,7 +144,9 @@ class TestEarningsVsActual:
         e = _summary_earnings()
         for tari_local in (None, True, False):
             m = _metrics(tari_local=tari_local)
-            assert build_earnings_vs_actual(m, e, [], now=self.NOW)["tari"]["is_local"] is tari_local
+            assert (
+                build_earnings_vs_actual(m, e, [], now=self.NOW)["tari"]["is_local"] is tari_local
+            )
 
     def test_xvb_counts_wins_in_the_trailing_30d_only(self, _metrics):
         wins = [
