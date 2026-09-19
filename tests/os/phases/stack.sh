@@ -67,6 +67,19 @@ _stack_run_integration() { # <label> <extra args...>
         # rest of the battery already writes through, so it costs nothing to keep.
         bad "DIY gate vs. appliance channel: $label (exit $rc)"
         sed 's/\x1b\[[0-9;]*m//g' "$out"
+        # The DIY gate's own per-scenario capture (lib.sh:capture_artifacts) writes status/doctor/
+        # compose/api-state into results/<scenario>/ on THIS host, and bench-ci collects fixed paths
+        # only — so job 497 could not answer "what did `pithead status` actually say" for a leg that
+        # failed on a status wait (#2062). Route them through this phase's own stdout, which already
+        # tees into the collected kvm-<phase>.log. Already redacted at the point they were written;
+        # logs.txt is skipped (200 container-log lines) and each file is bounded.
+        local f
+        for f in "$SCRIPT_DIR/../integration/results"/*/{status,doctor,compose-ps}.txt \
+            "$SCRIPT_DIR/../integration/results"/*/api-state.json; do
+            [ -f "$f" ] || continue
+            info "  [$label] --- ${f#*results/} ---"
+            sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
+        done
     fi
     grep -a 'of which:' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"

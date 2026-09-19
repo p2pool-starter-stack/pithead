@@ -98,9 +98,8 @@ assert_running_state() {
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"
 
-    # 3+4. Dashboard live, then monerod caught up; local mode settles the sync panel first (#180,
-    #    #54). Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch measured holding
-    #    "not synchronized" past 60s, advancing two reads two minutes apart.
+    # 3+4. Dashboard live, then monerod caught up; local mode settles the panel first (#180/#54).
+    #    Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch held "not synced" past 60s.
     [ "$mode" = "local" ] && wait_for 150 5 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
     st="$(api_state)"
     if [ -z "$st" ]; then
