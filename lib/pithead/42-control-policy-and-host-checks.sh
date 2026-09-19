@@ -58,14 +58,12 @@
 # and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
 # WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
 # TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
-# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — is NOT free-commit. Since #1978 that means
-# tier 3 above (the approval envelope), not the outright refusal this sentence used to describe.
-# PAYOUT_SCAN_HEIGHT and
+# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
 # TARI_WALLET_BIRTHDAY moved to the confirm-gated set below (2026-08 audit reclassification):
 # they're wallet-creation metadata, not a secret, and a wrong value only re-scans from a different
 # height on the wallet's NEXT creation — recoverable, not destructive.
-# Each view key reveals every incoming payout amount/time, so it is never free-commit (tier 3
-# already holds it; named here deliberately). The WALLET_CHANGED and
+# Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
+# (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
 # CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
 # the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
 # lost its write surface, not its job of telling the operator their payout wallet just changed.
