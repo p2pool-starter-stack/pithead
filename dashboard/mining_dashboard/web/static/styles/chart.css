@@ -47,12 +47,16 @@
  * short of fitting and wraps onto its own line, stacking Range/Avg/legend into five rows before
  * any chart data. Below the app's phone breakpoint (#83), collapse each Range/Avg button row into
  * one native <select> instead — desktop/tablet keep the buttons, where they fit on one line.
- * :not(.btn-reset) spares the zoom-reset button, which isn't part of either preset row. */
+ * Scoped to .chart-controls-collapsible (ChartCard's own Range/Avg rows), not the bare
+ * .chart-controls class — that class is shared by WorkerChartCard's range row and the Security
+ * view's log filters, neither of which got a <select> fallback, so hiding their buttons here
+ * would strand them with no control at all. :not(.btn-reset) spares the zoom-reset button, which
+ * isn't part of either preset row. */
 .chart-controls-select {
   display: none;
 }
 @media (max-width: 640px) {
-  .chart-controls .btn-range:not(.btn-reset) {
+  .chart-controls-collapsible .btn-range:not(.btn-reset) {
     display: none;
   }
   .chart-controls-select {

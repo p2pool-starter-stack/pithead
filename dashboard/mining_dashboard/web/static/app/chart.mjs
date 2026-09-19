@@ -474,11 +474,11 @@ export class ChartCard extends Component {
     const zoomed = !!props.window;
     return html`
         <div class="card">
-            <div class="chart-controls" role="group" aria-label="Chart range">
+            <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Chart range">
                 <span class="chart-control-label text-small mr-1">Range:</span>
                 ${rangeControls(RANGES, zoomed, props)}
             </div>
-            <div class="chart-controls" role="group" aria-label="Hashrate averaging window">
+            <div class="chart-controls chart-controls-collapsible" role="group" aria-label="Hashrate averaging window">
                 <span class="chart-control-label text-small mr-1" title="Which hashrate-averaging window the chart plots">Avg:</span>
                 ${avgControls(WINDOWS, WINDOW_HINT, props)}
             </div>
