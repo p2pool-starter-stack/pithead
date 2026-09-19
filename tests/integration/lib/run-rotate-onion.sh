@@ -87,26 +87,30 @@ run_rotate_onion() {
         it_pass "old dashboard onion stops answering after rotation"
     fi
 
-    # Restore the pre-rotation onion identity: swap the ed25519 keys back, force the address back
-    # to a placeholder so the SAME apply-time path that mints an address on first enable
-    # (lib/pithead/40-apply-and-render.sh) re-reads it from the restored hidden-service files —
-    # rather than us guessing it — and re-render the Caddyfile off the recovered address in the
-    # same run. The client-auth keypair isn't re-derived by apply, so write it back directly.
+    # Restore the pre-rotation onion identity. A v3 onion address is DERIVED from its ed25519 key,
+    # so swapping the old key files back reproduces the exact old address with no need to poll tor
+    # for it — write it straight into .env alongside the old client-auth keypair. `apply -y` is
+    # NOT used here: it diffs the fresh render against the live .env and no-ops when nothing
+    # differs (env_changed_keys, lib/pithead/40-apply-and-render.sh), and by the time this .env
+    # write lands there is nothing left to diff. `render` regenerates every derived file
+    # (Caddyfile, authorized_clients) unconditionally from .env instead — it touches no
+    # containers, so caddy still needs its own explicit restart to pick up the file it wrote.
     it_step "restoring the pre-rotation onion directory…"
     rx "
         docker compose stop tor >/dev/null 2>&1 || true
         sudo rm -rf $(quote_arg "$hs_dir")
         sudo mv $(quote_arg "$backup_dir") $(quote_arg "$hs_dir")
-        awk -v pk=$(quote_arg "$old_pub") -v pv=$(quote_arg "$old_priv") '
-            /^DASHBOARD_ONION_ADDRESS=/        { print \"DASHBOARD_ONION_ADDRESS=placeholder\"; next }
+        awk -v a=$(quote_arg "$old_onion") -v pk=$(quote_arg "$old_pub") -v pv=$(quote_arg "$old_priv") '
+            /^DASHBOARD_ONION_ADDRESS=/        { print \"DASHBOARD_ONION_ADDRESS=\" a; next }
             /^DASHBOARD_ONION_CLIENT_PUBKEY=/  { print \"DASHBOARD_ONION_CLIENT_PUBKEY=\" pk; next }
             /^DASHBOARD_ONION_CLIENT_PRIVKEY=/ { print \"DASHBOARD_ONION_CLIENT_PRIVKEY=\" pv; next }
             { print }
         ' .env > .env.itest && mv .env.itest .env
         docker compose up -d tor >/dev/null 2>&1
     " >/dev/null 2>&1
-    pithead apply -y >/dev/null 2>&1
-    wait_status_ok 180 || true
+    pithead render >/dev/null 2>&1
+    rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1
+    wait_status_ok 120 || true
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
