@@ -16,7 +16,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-role | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -35,7 +35,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-role local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -136,7 +136,14 @@ GUEST_STAGE=baseline-setup
 # deployed run identifies which primitive failed without widening the phase-private payload —
 # the same pattern jobs 478-480 used to isolate the reflink mount boundary.
 GUEST_STAGE=local-miner-tree
-[ -x /data/rigforge/rigforge.sh ]
+[ -x /data/rigforge/rigforge.sh ] && [ -d /data/rigforge ]
+# `render_local_miner_config` returns 0 WITHOUT writing its config on exactly two branches: a
+# missing RigForge tree (ruled out above) and a machine_role of `rig`, which reads $PWD/machine-role
+# — $PWD here being the baseline stack dir, not the appliance's own. Job 553 reported
+# local-miner-render, so one of those two fired; assert the role separately so the stage name says
+# which, rather than leaving both behind one verdict.
+GUEST_STAGE=local-miner-role
+[ "$(cat "$MOUNT/current/machine-role" 2>/dev/null || echo pithead)" != rig ]
 
 # `pithead local-miner` renders RigForge's own config.json (a side effect that always happens
 # first, win or lose) THEN runs `rigforge.sh setup`. Job 547 got past the tmpfs fix cleanly —
