@@ -164,14 +164,14 @@ only when every configured endpoint is a private or loopback IP literal, since s
 leaves your network. A hostname can't be proven private without a DNS lookup, so a hostname
 endpoint with Tor off counts as **clearnet**, a real leak.
 
-The topology diagram applies that same rule to the hops that reach a remote monerod or Tari node,
-and keeps three answers apart instead of two. A node reached at a private, loopback or link-local
-IP literal draws as **LAN**: the hop leaves this machine but stays on your network, so it does not
+The topology diagram moves a remote monerod or Tari node outside the host zone and shows both
+gRPC/RPC hops to it without expanding the internal mesh. A private, loopback or link-local IP
+literal draws as **LAN**: the hop leaves this machine but stays on your network, so it does not
 expose your IP and is not counted as a leak. Any other IP literal draws as **clearnet** and is
-counted. A node configured by **hostname** draws as **Unverified** — the diagram will not resolve
-a name to classify it, because that lookup would itself be an egress, and on a Tor-routed stack it
-would cause the exact exposure the panel exists to warn about, on every render. Unverified is not
-counted as a leak either; the panel says it cannot tell rather than guessing in either direction.
+counted. A hostname draws as **Unverified** because the diagram will not resolve it and create a
+DNS egress on every render. A remote node never gets the local daemon's Tor P2P edge or initial-sync
+edge; those describe a node this machine runs. Unverified is not counted as a proven leak, but it
+makes the shared security summary warn instead of claiming all egress uses Tor.
 
 The two **ingress** hops draw as **Incoming**: mining traffic into xmrig-proxy and HTTPS into
 Caddy, with their sources grouped under **Clients**. This keeps client connections distinct from
