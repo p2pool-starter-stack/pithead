@@ -51,6 +51,17 @@ class TestResponsiveLayout:
         css = await _served_css(client)
         assert ".brand-host" in css and "overflow-wrap" in css
 
+    async def test_hero_value_does_not_break_mid_word(self, client):
+        # .hero-value used to share .brand-host's overflow-wrap:anywhere, which licenses a break
+        # inside a short word like "P2POOL" on a narrow hero column (#1870) — .brand-host still
+        # needs "anywhere" for an unbroken hostname, but the hero tile's short mode/hashrate text
+        # doesn't, so it must opt out and instead shrink at the same narrow breakpoint the
+        # badge-row scroll strip uses below.
+        css = await _served_css(client)
+        rule = re.search(r"\.hero-value\s*\{([^}]*)\}", css)
+        assert rule and "overflow-wrap: normal" in rule.group(1)
+        assert re.search(r"@media[^{]*max-width:\s*720px[^}]*\.hero-value\s*\{[^}]*font-size", css)
+
     async def test_host_at_separator_styled_and_rendered(self, client):
         # The "hostname @ ip" subtitle (#119) renders the @ as a dimmed connector span, so the
         # markup must emit `.brand-host-at` and the CSS must carry a matching dimming rule.
