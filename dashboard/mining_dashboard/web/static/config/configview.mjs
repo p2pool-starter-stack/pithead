@@ -41,9 +41,8 @@ export { editableCandidate, PreviewModal };
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
 const POLL_MAX = 90; // 3 minutes — a commit recreates containers, which can take a while
-// #1071: 45 minutes. The old 900s ceiling sat BELOW image-pull bounds: 60s on the release API, 900s on the bundle over Tor, 120s on the
-// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still ahead of it and was reported as a failure. No constant can be provably enough (the pull is
-// unbounded), which is why the message below no longer claims the upgrade failed.
+// #1071: 45 minutes. The old 900s ceiling sat below image-pull bounds (60s release API, 900s bundle over Tor, 120s signature) and failed a healthy slow-circuit upgrade mid-pull.
+// The pull itself is unbounded, so no constant is provably enough — the message below no longer claims the upgrade failed.
 const UPGRADE_POLL_MAX = 1350;
 // Poll /api/control/result until a terminal result lands; shared by the Configuration view, the
 // Upgrade button (#59), and the Backup card (#908). `skip` ignores an intermediate status under
@@ -279,21 +278,23 @@ export class ConfigView extends Component {
     const id = this.state.preview.id;
     this.setState({ phase: "committing" });
     try {
-      // #719: an in-scope disruptive change (preview.destructive) rides its typed confirmation to
-      // the host gate, which requires it before a CONFIRM row proceeds. Friction, not a secret.
+      // #719: an in-scope disruptive change (preview.destructive) rides its typed confirmation to the host gate, which requires it before a CONFIRM row proceeds. Friction, not a secret.
       const body = { id };
       if (this.state.preview.destructive) body.confirm = this.state.confirmText;
       if (this.state.preview.approval_required) {
         body.approve = true;
         body.payout_suffixes = this.state.payoutSuffixes;
       }
-      const res = await fetch("/api/control/commit", {
-        method: "POST",
-        headers: CONTROL_HEADERS,
-        body: JSON.stringify(body),
-      });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      const out = await controlCommitResult(res, id, this.poll.bind(this));
+      const opts = { method: "POST", headers: CONTROL_HEADERS, body: JSON.stringify(body) };
+      let res = null; // #2366: a restart (#622) can drop this request or answer 502/503/504 — poll the id below
+      try {
+        res = await fetch("/api/control/commit", opts);
+      } catch {}
+      const restarting = !res || [502, 503, 504].includes(res.status);
+      if (!restarting && !res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      const out = restarting
+        ? await this.poll(id, "previewed")
+        : await controlCommitResult(res, id, this.poll.bind(this));
       this.setState({ phase: "done", result: out });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
