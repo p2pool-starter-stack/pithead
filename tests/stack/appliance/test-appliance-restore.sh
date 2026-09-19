@@ -29,10 +29,19 @@ RS="$(cd "$SANDBOX" && pwd -P)/restore-consume"
 mkdir -p "$RS/build/tari" "$RS/data/tor" "$RS/data/dashboard" "$RS/bin"
 cp "$STACK" "$RS/pithead"
 cp "$ROOT/build/tari/config.toml.template" "$RS/build/tari/"
+cp "$ROOT/docker-compose.yml" "$RS/docker-compose.yml" # caddy_hash_password_b64 reads the pinned image from here
 cat >"$RS/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   "compose ps --status running -q") exit 0 ;; # empty output -> stack treated as not running
+  *hash-password*)
+    # Fake `caddy hash-password` (matches lib.sh's make_stubs): the restore fixtures below carry a
+    # real dashboard.auth.password, and a restore whose live .env lost its matching fingerprint
+    # (an earlier case in this file re-derived it without one) falls through to actually hashing.
+    _pw="${*##*--plaintext }"
+    _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
+    printf '$2y$14$%s\n' "$_d"
+    ;;
 esac
 exit 0
 EOF
