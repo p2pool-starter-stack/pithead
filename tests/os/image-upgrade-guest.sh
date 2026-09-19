@@ -16,7 +16,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-setup | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-render | local-miner-rigforge | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -35,7 +35,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-setup local-miner-unit miner-share baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-render local-miner-rigforge local-miner-unit miner-share baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -137,11 +137,27 @@ GUEST_STAGE=baseline-setup
 # the same pattern jobs 478-480 used to isolate the reflink mount boundary.
 GUEST_STAGE=local-miner-tree
 [ -x /data/rigforge/rigforge.sh ]
-GUEST_STAGE=local-miner-setup
+
+# `pithead local-miner` renders RigForge's own config.json (a side effect that always happens
+# first, win or lose) THEN runs `rigforge.sh setup`. Job 547 got past the tmpfs fix cleanly —
+# every container including xmrig-proxy started and stayed healthy — but this call still failed,
+# with nothing in the guest journal to say where inside it. Whether config.json exists afterward
+# tells render from rigforge.sh apart without capturing any command output: the appliance's own
+# CLI is pithead's to fix, RigForge's own `setup` is a companion repo's.
+local_miner_rc=0
 (
     cd "$MOUNT/current"
     PITHEAD_APPLIANCE=1 /opt/pithead/pithead local-miner
-)
+) || local_miner_rc=$?
+if [ "$local_miner_rc" -ne 0 ]; then
+    if [ -f /data/rigforge/config.json ]; then
+        GUEST_STAGE=local-miner-rigforge
+    else
+        GUEST_STAGE=local-miner-render
+    fi
+    record_failure "$local_miner_rc"
+fi
+
 GUEST_STAGE=local-miner-unit
 systemctl is-active --quiet xmrig.service
 
