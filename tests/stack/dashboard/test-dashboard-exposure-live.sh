@@ -129,6 +129,7 @@ onion_phase_out=$(
     # shellcheck disable=SC1090
     source "$STACK" 2>/dev/null
     set +e
+    _control_requests_drained() { return 0; } # this leg's own drain gate (#2094); not what this test targets
     approval_capture_restore_snapshot() { return 0; }
     approval_restore_pending() { printf 'RESTORED\n'; }
     _ssh() { # NETWORK_PREFIX grep -> empty, the guard this test targets
@@ -149,6 +150,7 @@ onion_apply_fail_out=$(
     # shellcheck disable=SC1090
     source "$STACK" 2>/dev/null
     set +e
+    _control_requests_drained() { return 0; } # this leg's own drain gate (#2094); not what this test targets
     approval_capture_restore_snapshot() { return 0; }
     approval_restore_pending() { printf 'RESTORED\n'; }
     _ssh() { return 1; } # ./pithead apply -y refuses the onion-enabled config

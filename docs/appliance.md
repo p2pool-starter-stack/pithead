@@ -14,7 +14,10 @@ manage the host.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
-  else runs squeezed, at every boot until the machine has 16 GB.
+  else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
+  the physical console (a serial line can lose a message to a login prompt claiming it at the
+  wrong moment), the line is always in the journal: `journalctl -u pithead-hugepages` on that
+  machine.
 - An internal SSD or NVMe with room for the chains. The stack budgets
   320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
