@@ -233,6 +233,7 @@ Useful flags (full list in `run.sh --help`):
 | `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
+| `--uninstall` | Also run `pithead uninstall` ([#2343](https://github.com/p2pool-starter-stack/pithead/issues/2343)): assert the wrong-confirm-word abort changes nothing, then a real `uninstall -y` removes the compose project, the control-runner systemd units, and the tor egress firewall rules while `config.json` survives byte-for-byte and the `*_DATA_DIR` paths it names survive by size and file count, then `pithead setup` re-provisions the checkout from what was kept and the standard running-state battery confirms no resync. Destructive-then-restored; ssh or local mode; requires `--safety-backup`; ordered last — it tears the checkout down. |
 | `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
 | `--keep` | Don't restore the original config (leave the box on the last scenario). |
 | `--out <dir>` | Where to write the manifest and failure artifacts. |
@@ -400,7 +401,7 @@ inspection (skips the restore). Requires SSH access to the test bench and the mi
 in the order given — how bench-ci's `phases` selection ([bench-ci#46](https://github.com/p2pool-starter-stack/bench-ci/issues/46))
 runs exactly one named phase against a commit without a dedicated `--mode`. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
-`--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
+`--hardening`, `--subnet`, `--uninstall`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
 and anything else is refused before any bench work, never built into a shell string from the raw
 value. Not supported with `--mode check`, which runs nothing but `--check` by design.
@@ -786,6 +787,24 @@ dashboard's SSRF CIDR + Tor SOCKS, `P2POOL_URL`, and the [#344](https://github.c
 onion vhost gateway, runs the standard running-state battery, then brings the box back to its
 baseline subnet. The matrix carries a `local-pruned-main-subnet` row for axis bookkeeping; the
 hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it for real.
+
+### Uninstall (`--uninstall`)
+
+Before this phase, the only harness that ever ran `pithead uninstall`
+([#2343](https://github.com/p2pool-starter-stack/pithead/issues/2343)) was the tier-1 sandbox, with
+`docker`/`sudo` stubbed out — nothing had proven what the verb does to a real engine, kernel, or
+systemd. The phase first asserts the abort path: `uninstall` with the wrong confirm word exits 1,
+logs "Aborted", and leaves `.env` in place. It then snapshots `config.json` and a size + file-count
+fingerprint of every `*_DATA_DIR` named in `.env`, runs `uninstall -y` for real, and asserts the
+compose project is gone, the `pithead-control` systemd units are gone, the `pithead-tor-egress`
+DOCKER-USER rules are gone from the kernel's iptables, `.env` is gone, `config.json` survives
+byte-for-byte, and every data dir's fingerprint is unchanged — and that the verb's own closing
+message names config.json, `backups/`, and each data dir. Finally it runs `pithead setup` against
+the kept `config.json`, waits for the stack to report
+healthy, and runs the standard running-state battery: the round trip the verb's closing message
+promises — re-provisioned from what it kept, no resync. Requires `--safety-backup`: unlike the other
+destructive-then-restored phases, this one tears the checkout down before putting it back itself, so
+there is no ordinary `down`/`apply` restore to fall back on if the re-provisioning step fails.
 
 ---
 
