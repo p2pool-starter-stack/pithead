@@ -60,11 +60,13 @@ run_rotate_secrets() {
         wait_status_ok 240 || true
     fi
 
-    local old_proxy_token old_stratum_pass old_monero_user="" old_monero_pass=""
+    # rotate_secrets regenerates MONERO_PASS only — MONERO_NODE_USERNAME never rotates — so one
+    # user value serves both the old- and new-credential probes below.
+    local old_proxy_token old_stratum_pass old_monero_pass="" monero_user=""
     old_proxy_token="$(env_on_box PROXY_AUTH_TOKEN)"
     old_stratum_pass="$(env_on_box PROXY_STRATUM_PASSWORD)"
     if [ "$local_mode" = 1 ]; then
-        old_monero_user="$(env_on_box MONERO_NODE_USERNAME)"
+        monero_user="$(env_on_box MONERO_NODE_USERNAME)"
         old_monero_pass="$(env_on_box MONERO_NODE_PASSWORD)"
     fi
 
@@ -88,10 +90,10 @@ run_rotate_secrets() {
         it_fail "rotate-secrets left the pre-rotation .bak-<stamp> safety copies" "config.json.bak-* / .env.bak-* not found"
     fi
 
-    local new_proxy_token new_stratum_pass new_monero_user="" new_monero_pass=""
+    local new_proxy_token new_stratum_pass new_monero_pass=""
     new_proxy_token="$(env_on_box PROXY_AUTH_TOKEN)"
     new_stratum_pass="$(env_on_box PROXY_STRATUM_PASSWORD)"
-    [ "$local_mode" = 1 ] && new_monero_user="$(env_on_box MONERO_NODE_USERNAME)" && new_monero_pass="$(env_on_box MONERO_NODE_PASSWORD)"
+    [ "$local_mode" = 1 ] && new_monero_pass="$(env_on_box MONERO_NODE_PASSWORD)"
     assert_ne "PROXY_AUTH_TOKEN rotated" "$new_proxy_token" "$old_proxy_token"
     assert_ne "stratum access-password rotated" "$new_stratum_pass" "$old_stratum_pass"
 
@@ -122,12 +124,12 @@ run_rotate_secrets() {
     # 2. monerod RPC: the exact restart-vs-recreate regression, asserted from the other side (#2344
     #    concern 1) — remote mode owns no local monerod, and rotate_secrets itself skips this credential.
     if [ "$local_mode" = 1 ]; then
-        if [ "$(_rotate_monero_rpc_probe "$new_monero_user" "$new_monero_pass")" = "rpc-ok" ]; then
+        if [ "$(_rotate_monero_rpc_probe "$monero_user" "$new_monero_pass")" = "rpc-ok" ]; then
             it_pass "monerod RPC answers with the new password (recreated, not restarted)"
         else
             it_fail "monerod RPC answers with the new password (recreated, not restarted)" "get_info with the new creds did not return status OK"
         fi
-        if [ "$(_rotate_monero_rpc_probe "$old_monero_user" "$old_monero_pass")" = "rpc-ok" ]; then
+        if [ "$(_rotate_monero_rpc_probe "$monero_user" "$old_monero_pass")" = "rpc-ok" ]; then
             it_fail "monerod RPC refuses the old password" "get_info with the OLD creds still returned status OK"
         else
             it_pass "monerod RPC refuses the old password"
