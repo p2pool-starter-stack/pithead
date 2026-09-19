@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Failure evidence for the battery's os-update leg (#1060). Sourced by tests/os/run.sh; uses
 # its globals (_ssh, SSH_ERR, SERIAL) and prints in its indentation idiom.
-#
 # The ~60% mid-copy death survived four batteries because the evidence of WHO killed the
 # command was discarded at three separate layers: the assertion printed a truncated tail and
 # no exit status; _ssh's client stderr went to a scratch file nothing printed; and the serial
@@ -62,6 +61,7 @@ backup_failure_evidence() {
           echo '-- firstboot journal --'; journalctl -u pithead-firstboot --no-pager -n 30 2>/dev/null" |
         tr -d '\r' | sed 's/^/     | /'
     backup_watch_report
+    tor_health_evidence # 2359
 }
 
 # The #1059 watcher. It caught the mechanism on its first instrumented run, and stays as the
