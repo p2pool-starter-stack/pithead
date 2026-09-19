@@ -412,3 +412,16 @@ test("OsVerdictBanner renders the outcome and nothing without one", () => {
   );
   assert.match(named, /Blocked by: the dashboard certificate does not cover an IPv6 address/);
 });
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the System update modal is a <dialog>, not a backdrop div", () => {
+  const c = inst({ os: { step: "idle" }, enabled: true });
+  c.state.phase = "idle";
+  const out = renderToString(c.render());
+  assert.match(out, /<dialog class="card config-modal"/);
+  assert.match(out, /role="dialog"/);
+  assert.match(out, /aria-modal="true"/);
+  assert.match(out, /aria-label="System update"/);
+  assert.doesNotMatch(out, /config-modal-backdrop/);
+});
