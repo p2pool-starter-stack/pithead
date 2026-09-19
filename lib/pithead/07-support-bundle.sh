@@ -1,10 +1,53 @@
 # `support-bundle` (#77 phase 1): most support is log collection — one command gathers what a
 # report needs into a chmod-600 tarball the operator reviews before sharing. Read-only; nothing
 # leaves the box. Secrets are redacted at the source: config via the control channel's masking
-# (render_masked_config), .env by key pattern, container logs by argv position — p2pool echoes its
-# --rpc-login, both wallet addresses and the service onion on launch, the leak class this exists to
-# stop. The membership of that class was drawn too narrowly until #1585; add to bundle_redact_log,
-# not to a second list.
+# (render_masked_config), .env by a survivor allowlist over the rendered population
+# (bundle_redact_env, #1631), container logs by argv position — p2pool echoes its --rpc-login, both
+# wallet addresses and the service onion on launch, the leak class this exists to stop. The
+# membership of that class was drawn too narrowly until #1585; add to bundle_redact_log, not to a
+# second list.
+
+# The `.env` allowlist, ruled on #1630/#1631: a denylist over a population someone else keeps
+# extending fails silently and in the unsafe direction (it did, four times — #1596, #1609, #1611,
+# #1621). An allowlist inverts the failure mode — a key absent from PITHEAD_ENV_SURVIVOR_KEYS is
+# REDACTED, never printed, so a `render_env` addition nobody classified is safe by construction.
+# Measured against the full 127-key rendered population (33-render-env.sh) at the time of this
+# change; tests/integration/selftest/selftest-bundle-redact-env.sh re-derives that population and
+# fails BY NAME on any key this list and its own classification disagree on.
+PITHEAD_ENV_SURVIVOR_KEYS="CADDY_LOG_DIR CLEARNET_STATE_DIR COMPOSE_PROFILES CONTROL_DIR
+DASHBOARD_CHECK_UPDATES DASHBOARD_CONTROL_ENABLED DASHBOARD_DATA_DIR DASHBOARD_EXPOSE_PUBLIC_IP
+DASHBOARD_FAIL_CLOSED DASHBOARD_ONION_CLIENT_AUTH DASHBOARD_ONION_ENABLED DASHBOARD_SECURE
+DASHBOARD_TZ DEPLOYMENT_COMPLETED HASHRATE_DROP_MINUTES HASHRATE_DROP_THRESHOLD_PCT HOST_PORT
+MONERO_CLEARNET_SYNC MONERO_DATA_DIR MONERO_MEM_LIMIT MONERO_OUT_PEERS MONERO_PREP_THREADS
+MONERO_PRUNE MONERO_RPC_BIND MONERO_RPC_PORT MONERO_WALLET_RPC_URL MONERO_ZMQ_BIND MONERO_ZMQ_PORT
+NETWORK_PREFIX NETWORK_SUBNET NOTIFY_TOR P2POOL_CLEARNET P2POOL_DATA_DIR P2POOL_FLAGS P2POOL_PORT
+P2POOL_URL PAYOUT_CONFIRM_ENABLED PAYOUT_SCAN_HEIGHT PITHEAD_TLS_DIR PROXY_API_PORT
+PROXY_DONATE_LEVEL PROXY_STRATUM_TLS PROXY_TLS_DIR STRATUM_BIND STRATUM_PORT TARI_CLEARNET_SYNC
+TARI_DATA_DIR TARI_GRPC_BIND TARI_MEM_LIMIT TARI_MODE TARI_PAYOUT_CONFIRM_ENABLED TARI_REQUIRED
+TARI_WALLET_BIRTHDAY TARI_WALLET_GRPC_ADDRESS TARI_WALLET_SECRET_FILE TELEGRAM_COMMANDS_ENABLED
+TELEGRAM_DAILY_SUMMARY_TIME TELEGRAM_ENABLED TELEGRAM_EVENT_BLOCK_FOUND
+TELEGRAM_EVENT_CLEARNET_EXPOSED TELEGRAM_EVENT_CONTAINER_UNHEALTHY TELEGRAM_EVENT_DAILY_SUMMARY
+TELEGRAM_EVENT_DB_RESET TELEGRAM_EVENT_DB_UNHEALTHY TELEGRAM_EVENT_DISK_SPACE
+TELEGRAM_EVENT_HASHRATE_LOSS TELEGRAM_EVENT_HASHRATE_LOW TELEGRAM_EVENT_HIGH_REJECT_RATE
+TELEGRAM_EVENT_HUGEPAGES TELEGRAM_EVENT_LOW_RAM TELEGRAM_EVENT_NEW_RELEASE
+TELEGRAM_EVENT_NODE_DOWN TELEGRAM_EVENT_NODE_RECOVERED TELEGRAM_EVENT_PAYOUT_CONFIRMED
+TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_RAFFLE_WIN TELEGRAM_EVENT_STACK_ONLINE
+TELEGRAM_EVENT_SYNC_FINISHED TELEGRAM_EVENT_WALLET_CHANGED TELEGRAM_EVENT_WORKER_JOINED
+TELEGRAM_EVENT_WORKER_LEFT TELEGRAM_EVENT_WORKER_OFFLINE TELEGRAM_EVENT_WORKER_RECOVERED
+TELEGRAM_EVENT_XVB_NO_SHARE TELEGRAM_EVENT_XVB_REGISTRATION TOR_AUTO_HEAL TOR_DATA_DIR
+TOR_EGRESS_FIREWALL WALLET_RPC_USERNAME XMRIG_API_AUTH XMRIG_API_PORT XVB_DONATION_LEVEL
+XVB_ENABLED XVB_POOL_URL XVB_STANDBY_SOURCE XVB_TOR_ENABLED"
+
+# Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
+# onion identity, capability URLs and the handful of addressing fields the ruling classified as
+# topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
+bundle_redact_env() {
+    awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" -F= '
+        BEGIN { n = split(survivors, list, " "); for (i = 1; i <= n; i++) ok[list[i]] = 1 }
+        /^[A-Z][A-Z0-9_]*=/ { if ($1 in ok) print; else print $1 "=[redacted]"; next }
+        { print }
+    '
+}
 
 # Keyed by POSITION and not by shape, which is #1585's ruling: no length bar reaches all three Tari
 # address forms this repo validates (91, 48 and 67 characters, the last non-alphanumeric), and a bar
@@ -76,12 +119,10 @@ stack_support_bundle() {
         [ -f "$tmp/scratch/masked/config.json" ] &&
             cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
     fi
-    # .env with secret-bearing values stripped by key pattern; structure (ports, dirs, modes)
-    # stays — that is what support actually needs.
+    # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
+    # dirs, modes) stays — that is what support actually needs.
     if [ -f .env ]; then
-        awk -F= '/^[A-Z0-9_]+=/ {
-            if ($1 ~ /(PASSWORD|TOKEN|SECRET|KEY|WALLET|ONION|AUTH|PING_URL|CHAT_ID)/) print $1 "=[redacted]";
-            else print; next } { print }' .env >"$tmp/bundle/env.redacted" 2>/dev/null || true
+        bundle_redact_env <.env >"$tmp/bundle/env.redacted" 2>/dev/null || true
     fi
 
     # Container state + recent logs, when an engine is reachable. bundle_redact_log guards the

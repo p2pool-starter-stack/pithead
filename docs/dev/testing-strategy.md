@@ -220,7 +220,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
 | `config-reset` | missing | #2347 |
-| `support-bundle` | missing | #2342 — its `.env` redactor leaks three secret keys, and the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the redactor, not `support-bundle`) |
+| `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
 | `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
 | `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
 | `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |
