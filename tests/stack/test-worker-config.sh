@@ -180,8 +180,10 @@ jq --arg token "$(printf 'é%.0s' {1..32})" '.workers.list[0].token=$token' "$C/
 PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
 assert_eq "non-ASCII text gets no derived read capability" "$(jq -r 'length' "$WREAD")" "0"
 jq '.workers.list[0].token="short-token"' "$C/config.json" >"$C/config.json.tmp" && mv "$C/config.json.tmp" "$C/config.json"
-PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
+WEAK_WARN="$(PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" 2>&1 >/dev/null)"
 assert_eq "weak control tokens get no derived read capability" "$(jq -r 'length' "$WREAD")" "0"
+assert_contains "a too-weak control token is warned about, not silently dropped (#2313)" "$WEAK_WARN" "rig1"
+assert_contains "the weak-token warning names the 32-character floor (#2313)" "$WEAK_WARN" "32+"
 mv "$C/config.before-read-map.json" "$C/config.json"
 PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/dev/null 2>&1
 assert_eq "switching away from 8081 removes stale read credentials" "$(jq -r 'length' "$WREAD")" "0"

@@ -1,0 +1,116 @@
+from io import StringIO
+from unittest.mock import MagicMock, patch
+
+import requests
+
+import mining_dashboard.service.notify.healthchecks as healthchecks_mod
+import mining_dashboard.service.notify.notify_sinks as notify_sinks_mod
+import mining_dashboard.service.notify.test_alert as test_alert
+from mining_dashboard.helper.http import request_failure_class
+from mining_dashboard.service.notify.notify_sinks import NtfySink, WebhookSink
+from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
+
+
+def _response(status):
+    response = requests.Response()
+    response.status_code = status
+    response.url = "https://redacted.invalid"
+    response.raw = MagicMock()
+    response.raw.stream.side_effect = AssertionError("response body was read")
+    response.raw.read.side_effect = AssertionError("response body was read")
+    return response
+
+
+def test_failure_class_fallbacks_are_secret_free():
+    assert request_failure_class(requests.HTTPError()) == "HTTP error"
+    assert request_failure_class(requests.RequestException("SECRET URL")) == "RequestException"
+
+
+def test_unconfigured_sinks_and_healthchecks_are_reported(monkeypatch):
+    output = StringIO()
+    monkeypatch.setattr(
+        healthchecks_mod, "HEALTHCHECKS_PING_URL", "https://healthchecks.invalid/secret"
+    )
+
+    with patch.object(healthchecks_mod, "bounded_get") as healthchecks_ping:
+        assert test_alert.run_test_alert(TelegramNotifier(), [], output) is True
+    healthchecks_ping.assert_not_called()
+    assert output.getvalue().splitlines() == [
+        "Telegram: not configured",
+        "Webhook: not configured",
+        "ntfy: not configured",
+        "Healthchecks: excluded — a ping moves the dead-man switch.",
+    ]
+
+
+def test_default_path_uses_the_real_sink_factories(monkeypatch):
+    notifier_factory = MagicMock(return_value=TelegramNotifier())
+    monkeypatch.setattr(test_alert, "build_default_notifier", notifier_factory)
+    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_WEBHOOK_URLS", ["https://hook.invalid/test"])
+    monkeypatch.setattr(notify_sinks_mod, "NTFY_URL", "https://ntfy.invalid/topic")
+    monkeypatch.setattr(notify_sinks_mod, "NTFY_TOKEN", "")
+    monkeypatch.setattr(notify_sinks_mod, "NOTIFY_TOR", False)
+
+    with patch("requests.post", return_value=_response(200)) as post:
+        assert test_alert.run_test_alert(output=StringIO()) is True
+    notifier_factory.assert_called_once_with()
+    assert [call.args[0] for call in post.call_args_list] == [
+        "https://hook.invalid/test",
+        "https://ntfy.invalid/topic",
+    ]
+
+
+def test_one_failed_sink_does_not_hide_the_other_verdicts_or_secrets():
+    token = "TG-SECRET"
+    webhook_secret = "HOOK-SECRET"
+    ntfy_secret = "NTFY-SECRET"
+    notifier = TelegramNotifier(
+        enabled=True,
+        bot_token=token,
+        chat_id="123",
+        tor_proxy="",
+    )
+    sinks = [
+        WebhookSink(f"https://refused.invalid/{webhook_secret}", tor_proxy=""),
+        WebhookSink("https://rejected.invalid/hook", tor_proxy=""),
+        NtfySink("https://ntfy.invalid/topic", token=ntfy_secret, tor_proxy=""),
+    ]
+    attempts = []
+    responses = []
+
+    def post(url, **kwargs):
+        attempts.append((url, kwargs))
+        if len(attempts) == 1:
+            raise requests.ConnectionError("refused")
+        if len(attempts) == 2:
+            raise requests.Timeout("slow")
+        if len(attempts) == 3:
+            response = _response(302)
+        else:
+            response = _response(200)
+        responses.append(response)
+        return response
+
+    output = StringIO()
+    with patch("requests.post", side_effect=post):
+        assert test_alert.run_test_alert(notifier, sinks, output) is False
+
+    text = output.getvalue()
+    assert text.splitlines() == [
+        "Telegram: FAIL (connection error)",
+        "Webhook 1: FAIL (timeout)",
+        "Webhook 2: FAIL (HTTP 302)",
+        "ntfy: PASS",
+        "Healthchecks: excluded — a ping moves the dead-man switch.",
+    ]
+    assert len(attempts) == 4
+    assert all(kwargs["stream"] is True for _, kwargs in attempts)
+    assert all(kwargs["allow_redirects"] is False for _, kwargs in attempts)
+    assert all(response.raw.stream.call_count == 0 for response in responses)
+    assert all(response.raw.read.call_count == 0 for response in responses)
+    assert attempts[2][1]["json"]["event"] == test_alert.TEST_EVENT
+    assert test_alert.TEST_MESSAGE in attempts[-1][1]["data"].decode()
+    assert token not in text
+    assert webhook_secret not in text
+    assert ntfy_secret not in text
+    assert "invalid" not in text

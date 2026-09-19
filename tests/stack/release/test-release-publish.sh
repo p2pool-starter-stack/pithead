@@ -87,35 +87,11 @@ stage_push_out="$(
 assert_rc "stage_push, real errexit: retries-exhausted digest read still aborts (#557)" "$?" "1"
 assert_contains "stage_push, real errexit: crafted die() reaches the operator (#557)" \
     "$stage_push_out" "Could not read the pushed manifest digest"
-# #557: main()'s --resume-promote branch has the exact same shape (a second, separately-written
-# instance of the bug — found in review, not part of the original 3 sites). Drive the real `main`
-# (preflight/ghcr_login stubbed no-op) with RESUME_PROMOTE=1 and errexit left ON.
-# shellcheck disable=SC1090,SC2034  # dynamic source; the globals are consumed inside main
-resume_out="$(
-    (
-        cd "$ROOT" || exit 1
-        set --
-        source "$REL" 2>/dev/null
-        preflight() { :; }
-        ghcr_login() { :; }
-        promote() { :; }
-        sign_images() { :; }
-        publish() { :; }
-        DRY_RUN=0
-        RESUME_PROMOTE=1
-        IMAGES=(tor)
-        TAG="v9.9.9"
-        STAGING_TAG="v9.9.9-rc.1"
-        REGISTRY="ghcr.io/test"
-        REGISTRY_READ_RETRIES=1
-        REGISTRY_READ_BACKOFF=0
-        buildx_inspect() { return 1; } # every registry read fails -> retries exhaust
-        main
-    ) 2>&1
-)"
-assert_rc "--resume-promote, real errexit: retries-exhausted digest read still aborts (#557)" "$?" "1"
-assert_contains "--resume-promote, real errexit: crafted die() reaches the operator (#557)" \
-    "$resume_out" "Cannot resolve a staged digest"
+# A registry writer can replace a staging tag after stage. There is deliberately no resume path:
+# reject the option before a registry read can treat that mutable tag as approved release bytes.
+resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
+assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
+assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
 echo "== unit: release.sh preflight checks the lint toolchain (#426) =="
 # A reimaged release box loses shellcheck/shfmt/node/uv — the v1.3.0 cut died ~1 min in mid-gate with a
 # bare `shellcheck: not found`. check_release_toolchain must fail fast BEFORE building, naming the tool
@@ -148,6 +124,51 @@ tc_rc=$?
 assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
+echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
+dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
+release_tree_gate() { # <dry-run> <allow-dirty>
+    local dry_run="$1" allow_dirty="$2"
+    (
+        cd "$ROOT" || exit
+        set --
+        # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
+        source "$REL" 2>/dev/null
+        set +eu
+        export DRY_RUN="$dry_run"
+        export ALLOW_DIRTY="$allow_dirty"
+        GIT_COMMIT="$(git rev-parse HEAD)"
+        export GIT_COMMIT
+        require_clean_release_tree
+    )
+}
+dirty_real_allow_out="$(release_tree_gate 0 1 2>&1)"
+assert_rc "dirty real release refuses --allow-dirty" "$?" "1"
+assert_contains "dirty real --allow-dirty refusal requires --dry-run" "$dirty_real_allow_out" "--allow-dirty requires --dry-run"
+assert_rc "dirty real release refuses the worktree" "$(
+    release_tree_gate 0 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run requires --allow-dirty" "$(
+    release_tree_gate 1 0 >/dev/null 2>&1
+    echo $?
+)" "1"
+assert_rc "dirty dry run permits --allow-dirty" "$(
+    release_tree_gate 1 1 >/dev/null 2>&1
+    echo $?
+)" "0"
+git_status_failure="$({
+    cd "$ROOT" || exit
+    set --
+    # shellcheck disable=SC1090,SC2034  # dynamic source; release globals are read by the gate
+    source "$REL" 2>/dev/null
+    set +eu
+    export DRY_RUN=0 ALLOW_DIRTY=0 GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+    git() { return 1; }
+    require_clean_release_tree
+} 2>&1)"
+assert_rc "a failed worktree inspection refuses the release" "$?" "1"
+assert_contains "a failed worktree inspection is diagnosed" "$git_status_failure" "Could not inspect the working tree"
+rm -f "$dirty_marker"
 echo "== unit: release-smoke resolves the upgraded install at ASSERT time (#1068) =="
 # The #59 upgrade never rewrites the old install in place — it extracts a fresh pithead-v<new> and
 # repoints `current`, which is what makes rollback possible. So asserting on the directory the run
