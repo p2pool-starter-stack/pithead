@@ -382,6 +382,7 @@
       "local": true,
       "mode": "Pruned",
       "percent": 100,
+      "reason": null,
       "remaining": 0,
       "state": "done",
       "target": 3000000
@@ -390,6 +391,7 @@
       "current": 50000,
       "local": false,
       "percent": 100,
+      "reason": null,
       "remaining": 0,
       "state": "done",
       "target": 50000

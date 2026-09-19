@@ -378,6 +378,7 @@ def build_sync(metrics, monero_db_size):
             "current": sm.current,
             "target": sm.target,
             "remaining": sm.remaining,
+            "reason": sm.reason,
         }
         if extra:
             out.update(extra)
