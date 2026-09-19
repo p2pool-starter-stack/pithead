@@ -18,6 +18,15 @@ check_release_toolchain() {
     fi
     ok "Lint/test toolchain present (${LINT_TOOLCHAIN[*]})."
 }
+
+require_clean_release_tree() {
+    local tree_status
+    [ "$ALLOW_DIRTY" -eq 0 ] || [ "$DRY_RUN" -eq 1 ] || die "--allow-dirty requires --dry-run."
+    tree_status="$(git status --porcelain)" || die "Could not inspect the working tree at $GIT_COMMIT."
+    [ -z "$tree_status" ] ||
+        { [ "$DRY_RUN" -eq 1 ] && [ "$ALLOW_DIRTY" -eq 1 ]; } ||
+        die "Working tree differs from $GIT_COMMIT. Commit/stash first (or use --allow-dirty with --dry-run)."
+}
 # --- Release signing (#376, #960) -----------------------------------------------------------------
 #
 # Signing is MANDATORY to publish, because it is mandatory to consume. Once `cosign.pub` is committed
@@ -160,13 +169,16 @@ preflight() {
     # release.sh enables errexit before calling this stage.
     # shellcheck disable=SC2164
     cd "$REPO_ROOT"
+    GIT_COMMIT="$(git rev-parse HEAD)"
+    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+    require_clean_release_tree
     log "Building the generated pithead CLI"
     bash scripts/build-pithead.sh || die "Could not build the pithead CLI."
     [ -f VERSION ] && [ -f docker-compose.yml ] || die "VERSION / docker-compose.yml not found at the repo root."
     command -v docker >/dev/null 2>&1 || die "docker is required."
     docker buildx version >/dev/null 2>&1 || die "docker buildx is required (for digest-level promotion)."
-    # Only the test gate needs the lint toolchain — skip the check on the paths that don't run it.
-    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ] && [ "$RESUME_PROMOTE" -eq 0 ]; then
+    # Only the test gate needs the lint toolchain — skip the check when it does not run.
+    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ]; then
         check_release_toolchain
     fi
     apply_signing_defaults
@@ -180,14 +192,9 @@ preflight() {
     is_semver "$STACK_VERSION" || die "VERSION ('$STACK_VERSION') is not SemVer (expected X.Y.Z)."
     TAG="v$STACK_VERSION"
     STAGING_TAG="${TAG}-rc.${RC}"
-    GIT_COMMIT="$(git rev-parse HEAD)"
-    GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
     # Used by the image labels and bundle manifest in the later release stages.
     # shellcheck disable=SC2034
     BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    if [ "$ALLOW_DIRTY" -eq 0 ] && [ -n "$(git status --porcelain)" ]; then
-        die "Working tree is dirty. Commit/stash first, or pass --allow-dirty."
-    fi
     [ "$GIT_BRANCH" = "develop" ] || warn "Releasing from '$GIT_BRANCH', not develop."
 
     if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then

@@ -5,7 +5,7 @@ import { InstallSection } from "./stages.mjs";
 import * as failure from "./wizardfailure.mjs";
 import { MachineName } from "./wizardhostname.mjs";
 import { TariSection, tariAnswer, XvbField } from "./wizardmining.mjs";
-import { Err, Field, Note } from "./wizardparts.mjs";
+import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
 const FIELDS = {
   moneroWallet: { path: "monero.wallet_address" },
@@ -56,11 +56,12 @@ export function renderSetup(app) {
   const v = (name) => pathGet(cfg, FIELDS[name].path);
   const on = (name) => app.edit(FIELDS[name].path);
   const addr = classifyMoneroAddress(v("moneroWallet"));
+  const addrInvalid = !["ok", "empty", "partial"].includes(addr.kind);
   const tg = telegramPairReady(v("telegramToken"), v("telegramChat"));
   const remoteMonero = v("moneroMode") === "remote";
   const tariMode = tariAnswer(v("tariMode"));
   const { installer, disks, chosen, confirm, wipe, dataWiped } = app.state;
-  // The select is stored for a rig and read out of the config for the two coordinators.
+  // The role answer is stored for a rig and read out of the config for the two coordinators.
   const role = app.state.role || (v("localMiner") ? "both" : "pithead");
   const rig = role === "rig";
   // Keep-everything reinstall: the machine's settings, wallets, login and chains all survive,
@@ -109,16 +110,16 @@ export function renderSetup(app) {
         check is failing. Correct the address below and submit again.<//>
         <${failure.ConfigChanges} changes=${app.state.configChanges} />
         <form onSubmit=${app.submit}>
-            <${Field} label="What is this machine?">
-                <select value=${role} onChange=${app.setRole}>
-                    <option value="pithead">Pithead</option>
-                    <option value="both">Pithead + RigForge</option>
-                    <option value="rig">RigForge</option>
-                </select>
-            <//>
-            <${Note}>A Pithead coordinates the mine — nodes, pool and dashboard. A RigForge rig
-            only mines, pointed at a Pithead. The middle choice is a Pithead that also mines
-            with its own CPU.<//>
+            <${RadioField} label="What is this machine?" name="role" value=${role}
+                onChange=${app.setRole} options=${[
+                  ["pithead", "Pithead", "Coordinate the nodes, pool and dashboard."],
+                  [
+                    "both",
+                    "Pithead + RigForge",
+                    "Coordinate the mine and mine with this machine's CPU.",
+                  ],
+                  ["rig", "RigForge", "Mine toward a Pithead without running a dashboard."],
+                ]} />
             ${
               installer &&
               html`<${InstallSection} disks=${disks} chosen=${chosen} confirm=${confirm}
@@ -133,24 +134,24 @@ export function renderSetup(app) {
               diskPicked &&
               !keepEverything &&
               !rig &&
-              html`<h3>Payout address</h3>
+              html`<h2>Payout address</h2>
             <${Note}>Paste it — it is far too long to type, and a typo pays a stranger.<//>
             <${Field} label="Monero payout address">
                 <input class="wizard-mono" value=${v("moneroWallet") || ""} onInput=${on("moneroWallet")}
                     autocomplete="off" autocapitalize="off" spellcheck=${false}
                     placeholder="4… (95 characters)" required />
             <//>
-            <p class=${addr.kind === "ok" || addr.kind === "empty" || addr.kind === "partial" ? "text-muted" : "c-bad"}>
-                ${addr.message}
-            </p>
+            ${
+              (!addrInvalid || app.state.moneroWalletTouched) &&
+              html`<p class=${addrInvalid ? "c-bad" : "text-muted"}>${addr.message}</p>`
+            }
 
-            <h3>Monero node</h3>
-            <${Field} label="Where does Monero data come from?">
-                <select value=${remoteMonero ? "remote" : "local"} onChange=${on("moneroMode")}>
-                    <option value="local">Run the bundled node on this machine (default)</option>
-                    <option value="remote">Use a Monero node I already run</option>
-                </select>
-            <//>
+            <h2>Monero node</h2>
+            <${RadioField} label="Where does Monero data come from?" name="monero-mode"
+                value=${remoteMonero ? "remote" : "local"} onChange=${on("moneroMode")} options=${[
+                  ["local", "Bundled node", "Run it on this machine (default)."],
+                  ["remote", "My node", "Use a Monero node I already run."],
+                ]} />
             ${
               remoteMonero
                 ? html`<div class="wizard-when">
@@ -180,23 +181,25 @@ export function renderSetup(app) {
             <${TariSection} answer=${tariMode} v=${v} on=${on} />
 
 
-            <h3>Mining</h3>
-            <${Field} label="P2Pool sidechain">
-                <select value=${v("pool") || "mini"} onChange=${on("pool")}>
-                    <option value="mini">mini — right for almost every home rig (default)</option>
-                    <option value="nano">nano — a single low-power rig</option>
-                    <option value="main">main — only for very large hashrate</option>
-                </select>
-            <//>
+            <h2>Mining</h2>
+            <${RadioField} label="P2Pool sidechain" name="pool" value=${v("pool") || "mini"}
+                onChange=${on("pool")} options=${[
+                  ["mini", "mini", "Right for almost every home rig (default)."],
+                  ["nano", "nano", "For a single low-power rig."],
+                  ["main", "main", "Only for very large hashrate."],
+                ]} />
             <${Note}>The sidechains are sized by hashrate so miners find shares at a similar
             cadence. Too large a tier means waiting days between shares; it costs nothing to
             change later.<//>
-            <${Field} label="Mine on this machine too?">
-                <select value=${String(v("localMiner") ?? false)} onChange=${on("localMiner")}>
-                    <option value="false">No — this box only coordinates the miners</option>
-                    <option value="true">Yes — this machine also mines with its own CPU (built-in RigForge, default)</option>
-                </select>
-            <//>
+            <${RadioField} label="Mine on this machine too?" name="local-miner"
+                value=${String(v("localMiner") ?? false)} onChange=${on("localMiner")} options=${[
+                  ["false", "No", "This machine only coordinates the miners."],
+                  [
+                    "true",
+                    "Yes",
+                    "Mine with this machine's CPU using the built-in RigForge (default).",
+                  ],
+                ]} />
             ${
               v("localMiner") === true &&
               html`<${Note}>Nothing to install: the machine carries its own RigForge miner,
@@ -207,23 +210,22 @@ export function renderSetup(app) {
             }
             <${XvbField} v=${v} on=${on} />
 
-            <h3>First sync</h3>
-            <${Field} label="Downloading the chain the first time">
-                <select value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")}>
-                    <option value="false">Private, over Tor — takes days</option>
-                    <option value="true">Faster, over the open internet, then Tor afterwards — takes hours</option>
-                </select>
-            <//>
+            <h2>First sync</h2>
+            <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
+                  value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
+                    ["false", "Private, over Tor", "Takes days."],
+                    ["true", "Faster, over the open internet", "Takes hours; use Tor afterwards."],
+                  ]} />
 
 
-            <h3>Dashboard login</h3>
-            <${Field} label="How should the dashboard be protected?">
-                <select value=${app.state.authMode} onChange=${(e) => app.setState({ authMode: e.target.value })}>
-                    <option value="auto">Generate a strong password for me (recommended)</option>
-                    <option value="set">Let me choose the password</option>
-                    <option value="none">No login at all</option>
-                </select>
-            <//>
+            <h2>Dashboard login</h2>
+            <${RadioField} label="How should the dashboard be protected?" name="auth-mode"
+                value=${app.state.authMode} onChange=${(e) => app.setState({ authMode: e.target.value })}
+                options=${[
+                  ["auto", "Generate a password", "Use a strong generated password (recommended)."],
+                  ["set", "Choose a password", "Enter it below."],
+                  ["none", "No login", "Anyone on this network can open the dashboard."],
+                ]} />
             ${
               app.state.authMode === "set"
                 ? html`<div class="wizard-when">
@@ -240,7 +242,7 @@ export function renderSetup(app) {
                     to you on the next screen.<//>`
             }
 
-            <h3>Alerts <span class="text-muted">(optional — skip if you are not sure)</span></h3>
+            <h2>Alerts <span class="text-muted">(optional — skip if you are not sure)</span></h2>
             <${Field} label="Telegram bot token">
                 <input value=${v("telegramToken") || ""} onInput=${on("telegramToken")}
                     autocomplete="off" spellcheck=${false} placeholder="123456:ABC-DEF…" />
@@ -257,12 +259,11 @@ export function renderSetup(app) {
                 untouched. Change these only if you know you need to.<//>
                 ${
                   !remoteMonero &&
-                  html`<${Field} label="Chain size">
-                    <select value=${String(v("prune") ?? true)} onChange=${on("prune")}>
-                        <option value="true">Pruned — 320 GiB budget (default, mines exactly the same)</option>
-                        <option value="false">Full — 320 GiB budget (only if you need the whole chain)</option>
-                    </select>
-                <//>
+                  html`<${RadioField} label="Chain size" name="prune"
+                    value=${String(v("prune") ?? true)} onChange=${on("prune")} options=${[
+                      ["true", "Pruned", "320 GiB budget (default); mines exactly the same."],
+                      ["false", "Full", "320 GiB budget; only if you need the whole chain."],
+                    ]} />
                 ${
                   tariMode !== "off" &&
                   html`<${Note}>A local Tari node adds a 200 GiB budget. At 370 GB, local Monero

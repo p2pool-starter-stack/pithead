@@ -293,6 +293,25 @@ self_test() {
     _case "a build ACCEPTS the same name declared -a (not -r) in two slices (readonly, not declare)" 0 "$rc"
     rm -rf "$plain"
 
+    # 18. #2337: enough slices that the list of their paths overflows a pipe buffer. The build
+    #     used to find its first slice via `printf '%s\n' "$slices" | head -n 1` — under
+    #     `set -o pipefail`, `head` closing its read end after one line, while `printf` still has
+    #     the rest of a multi-line `$slices` queued, kills `printf` on SIGPIPE and aborts an
+    #     ordinary build. A handful of short names never overflows the pipe buffer in one write and
+    #     stays green by luck; enough long names forces it every time.
+    local many i
+    many=$(mktemp -d)
+    mkdir -p "$many/lib/pithead"
+    printf '#!/usr/bin/env bash\nfirst\n' >"$many/lib/pithead/0000-prelude.sh"
+    for i in $(seq 1 2000); do
+        printf ': # filler %04d\n' "$i" >"$many/lib/pithead/$(printf '%04d' "$i")-filler.sh"
+    done
+    printf 'last\n' >"$many/lib/pithead/9999-tail.sh"
+    rc=0
+    PITHEAD_BUILD_ROOT="$many" bash "$BUILD" >/dev/null 2>&1 || rc=$?
+    _case "a build with enough slices to overflow a pipe buffer still exits 0 (#2337)" 0 "$rc"
+    rm -rf "$many"
+
     # The distribution contract: a clean checkout carries no generated CLI, and plain `make`
     # creates an executable ignored copy. Apply the caller's working diff so this case is useful
     # before commit as well as in CI.
@@ -325,12 +344,27 @@ self_test() {
     *"Building the generated pithead CLI"*) _case "the release plan names its CLI build step" 0 0 ;;
     *) _case "the release plan names its CLI build step" 0 1 ;;
     esac
-    local build_line files_line
+    local build_line files_line release_file preflight_call_line workdir_line clean_tree_line
+    release_file="$clone/repo/scripts/release/release.sh"
     build_line=$(grep -n 'Building the generated pithead CLI' "$clone/repo/scripts/release/preflight.sh" | tail -1 | cut -d: -f1)
     files_line=$(grep -n '\[ -f VERSION \]' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1)
     rc=0
     [ -n "$build_line" ] && [ "$build_line" -lt "$files_line" ] || rc=1
     _case "release preflight builds the CLI before reading bundle inputs" 0 "$rc"
+    # Static by design: executing release.sh with --allow-dirty as a control could push or publish
+    # on the exact regressed tree this checks. The release suite drives the gate function safely.
+    rc=0
+    grep -Fxq '    --allow-dirty) ALLOW_DIRTY=1 ;;' "$release_file" || rc=1
+    _case "release argument parsing wires --allow-dirty to its preflight flag" 0 "$rc"
+    preflight_call_line=$(grep -n '^[[:space:]]*preflight$' "$release_file" | cut -d: -f1 || true)
+    workdir_line=$(grep -n '^[[:space:]]*WORKDIR=.*mktemp' "$release_file" | cut -d: -f1 || true)
+    rc=0
+    [ -n "$preflight_call_line" ] && [ -n "$workdir_line" ] && [ "$preflight_call_line" -lt "$workdir_line" ] || rc=1
+    _case "every release route runs preflight before doing release work" 0 "$rc"
+    clean_tree_line=$(grep -n '^[[:space:]]*require_clean_release_tree$' "$clone/repo/scripts/release/preflight.sh" | cut -d: -f1 || true)
+    rc=0
+    [ -n "$clean_tree_line" ] && [ -n "$build_line" ] && [ "$clean_tree_line" -lt "$build_line" ] || rc=1
+    _case "release preflight refuses dirty trees before building release bytes" 0 "$rc"
     rm -rf "$clone"
 
     if [ "$fail" -ne 0 ]; then

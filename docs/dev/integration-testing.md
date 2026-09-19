@@ -143,8 +143,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
 6. Cross-version upgrade: leave the old signed release running at `--dir`. Supply an independently
    prepared private `pithead.tar.gz` and detached signature without a public release or `latest` tag,
    and keep the trusted `cosign.pub` outside that candidate. The signed archive must contain
-   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit — which `make_bundle` does not
-   write yet, so no bundle satisfies this today. There is no standalone candidate producer, but
+   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. `make_bundle` writes it from
+   preflight's approved `GIT_COMMIT`. There is no standalone candidate producer, but
    `release.sh`'s `publish` stage already builds and signs exactly these artifacts (`make_bundle`
    then `sign_bundle`) BEFORE its confirmation prompt and before any tag, push or GitHub release.
    That is the natural place to run this gate: at that point the promoted images carry their real
@@ -477,6 +477,10 @@ and `--list` prints it).
   it moves out of the skip ledger into a pass or a fail, never the other way. Only the matching
   lines cross the wire, which keeps the container's argv line — carrying both wallet addresses,
   the RPC credential and the onion — out of the capture.
+  This whole leg only runs when `tari.mode` is `local` or `remote`: `off`
+  ([#1855](https://github.com/p2pool-starter-stack/pithead/issues/1855)) renders no merge-mine
+  arguments to p2pool at all, so no client is ever built and there is nothing to round-trip — a
+  counted `by-design` skip, not a failure ([#2323](https://github.com/p2pool-starter-stack/pithead/issues/2323)).
 - Dashboard reads live state. `/api/state` is reachable; Monero is synced (`done`); pruned/full
   display matches `monero.prune` ([#32](https://github.com/p2pool-starter-stack/pithead/issues/32)); the sidechain `pool.type` matches `p2pool.pool`.
 - The Monero node's ZMQ endpoint is a live ZMTP publisher. A ZMTP handshake against the node's ZMQ
@@ -614,7 +618,16 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
-  `config.json` hand-edit shows up in the masked prefill (with the token still masked).
+  `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
+  half needs a *usable* read-only credential: with the descriptor's token masked, the dashboard
+  container never holds the real `ACCESS_TOKEN`, only a read-only credential the host derives from
+  it (`render_worker_read_tokens`, `rigforge:api-read:v1`) and RigForge verifies the same way
+  (`derive_read_token`, `util/api-server.py`) — both sides refuse to derive one from a control
+  token under 32 printable ASCII characters ([#2313](https://github.com/p2pool-starter-stack/pithead/issues/2313)).
+  A rig configured with a shorter `ACCESS_TOKEN` never gets a usable enriched feed while adopted —
+  this leg (and the `max_temp_c` ceiling read that feeds it) times out or self-skips rather than
+  passing; `render_masked_config` now warns naming the worker when it drops a too-weak token, and
+  the dashboard container logs the same reason (rate-limited to once per five minutes per host).
 - Auto-rollback ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517), rigforge#236):
   a change the rig rolls back is recorded as `rolled_back` in the worker-apply result and history.
   An absent `IT_RIG_ROLLBACK_CHANGES` is a `[missing]` row with the required input named.

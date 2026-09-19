@@ -382,7 +382,7 @@ stack_restore() {
     restore_commit_stage
 
     # Refresh auxiliary generated files and ownership under the mutation lock.
-    parse_and_validate_config
+    PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state
     resolve_dashboard_host
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env

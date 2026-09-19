@@ -323,10 +323,11 @@ token or a whole config from the stick's FAT partition **is** built — `pithead
 the target by `os/installer/pithead-install`, with the `install` and `media` phases covering it.
 What is still unbuilt is choosing the target disk headlessly — see KNOWN-ISSUES (#979).
 
-KVM analog: `--phase install` automates the mechanics of M3 and M5 (inventory, guards,
-copy completeness, target boot, and reinstall preserving `/data`). The manual cases remain
-about what KVM cannot fake — real firmware's boot order, a real USB controller, and a real
-internal disk.
+KVM analog: `--phase install` automates the mechanics of M3, M4 and M5 (inventory with real
+model/serial, the wrong-disk guard against a second scsi disk, copy completeness, target
+boot, and reinstall preserving `/data`). The manual cases remain about what KVM cannot fake
+— real firmware's boot order, a real USB controller, and a real internal disk.
+M4's "will be erased" wording is pinned at tier 1 from the `empty` state asserted by the KVM row.
 
 **M3 — install to disk.** From the browser, choose the internal disk. Confirm that the
 USB stick itself is **not offered**, that no disk is preselected, and that model, size and
@@ -442,8 +443,9 @@ RC1 addendum, still manual after the automated rows run:
 The custom-hostname row is now specific: the wizard's `fixture-box` name must agree across the
 kernel, rendered `HOST_IP`, dashboard header state, certificate DNS and LAN-IP SANs, and active
 Avahi with working mDNS resolution. Its day-two `fixture-next` preview must leave those readings
-unchanged; missing and wrong approvals remain refused. The fake allow-listed callback then applies
-the host-generated preview, and `fixture-next` must survive the unaided reboot and A/B update.
+unchanged; an authenticated commit without the approval envelope remains refused. A confirmed
+ordinary control-route commit then applies the host-generated preview, and `fixture-next` must
+survive the unaided reboot and A/B update.
 The reserved-node `uses chain_id` row is automated but still needs actual reachable node inputs;
 the payout confirmation and human approval click remain manual. #1956 has written the serial
 assertion for boot labels, but none of these tier-4 rows is PASS until the product branches are

@@ -1,6 +1,6 @@
 import { Component, html, render } from "../app/preact.mjs";
 import { jsonSyntaxError } from "../config/configlogic.mjs";
-import { coerceForPath, pathSet } from "../config/configsync.mjs";
+import { coerceForPath, pathGet, pathSet } from "../config/configsync.mjs";
 import { needsNodeProbe } from "../network/nodeprobe.mjs";
 import { renderRestore, renderRigFields } from "./formparts.mjs";
 import { savedRoleOrSetup } from "./savedrole.mjs";
@@ -45,6 +45,7 @@ export class WizardApp extends Component {
     restorePassphraseVisible: false,
     status: "",
     handoff: null,
+    moneroWalletTouched: false,
   };
 
   // The SERVER decides which step this machine is on (wizard_stage, from the spool). The client
@@ -54,6 +55,10 @@ export class WizardApp extends Component {
     const res = await fetch("/api/wizard-state");
     if (!res.ok) return false;
     const s = await res.json();
+    for (const path of ["monero.wallet_address", "tari.wallet_address"]) {
+      const placeholder = pathGet(s.reference, path);
+      if (placeholder && pathGet(s.config, path) === placeholder) pathSet(s.config, path, "");
+    }
     const next = {
       // The installation medium gets the SAME setup form with an install section folded in —
       // one page, one submission (config + disk + wipe), one credentials card, then the erase.
@@ -132,7 +137,11 @@ export class WizardApp extends Component {
     const raw = e.target.type === "checkbox" ? String(e.target.checked) : e.target.value;
     const cfg = this.state.cfg;
     pathSet(cfg, path, coerceForPath(this.state.reference, path, raw));
-    this.setState({ cfg, jsonText: JSON.stringify(cfg, null, 2) });
+    this.setState({
+      cfg,
+      jsonText: JSON.stringify(cfg, null, 2),
+      ...(path === "monero.wallet_address" ? { moneroWalletTouched: true } : {}),
+    });
   };
 
   // The role reshapes the page the way the disk choice does. "Both" IS the existing
@@ -173,6 +182,7 @@ export class WizardApp extends Component {
       (this.state.disks.find((d) => d.name === this.state.chosen) || {}).state ===
         "pithead-with-data" &&
       this.state.wipe === "keep";
+    if (!rig && !keepEverything) this.setState({ moneroWalletTouched: true });
     // keep means KEEP in every role: no config, no role — the survivor wins.
     const body = keepEverything
       ? {} // the preserved config wins — sending one would only mislead
@@ -333,14 +343,12 @@ export class WizardApp extends Component {
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);
-    return html`<h1>Pithead setup</h1>${view}`;
+    return view;
   }
 }
 
 // Mount only in a browser (node --test imports this module; a bare `document` would break that).
-// Clear #app: the shell ships the heading and "Loading…" inside it, and preact APPENDS (#1868).
 if (typeof document !== "undefined") {
-  document.getElementById("app").replaceChildren();
   render(html`<${WizardApp} />`, document.getElementById("app"));
 }
 
