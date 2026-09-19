@@ -19,7 +19,8 @@
 // closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
 // sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
 // sentinel — "blank means keep" survives the model change.
-import { Component, html } from "../app/preact.mjs";
+import { Modal } from "../app/modal.mjs";
+import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import {
   buildSections,
@@ -154,8 +155,8 @@ export class ConfigView extends Component {
       result: null,
       error: null,
     };
+    this.modalRef = createRef();
   }
-
   componentDidMount() {
     this.load();
   }
@@ -445,7 +446,7 @@ export class ConfigView extends Component {
         </div>
         ${
           phase === "confirm" || phase === "committing"
-            ? html`<${PreviewModal} preview=${preview} confirmText=${confirmText}
+            ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}
                   onPayoutSuffix=${(chain, value) =>
@@ -453,7 +454,8 @@ export class ConfigView extends Component {
                       payoutSuffixes: { ...this.state.payoutSuffixes, [chain]: value },
                     })}
                   onConfirm=${() => this.commit()}
-                  onCancel=${() => this.setState({ phase: "form", preview: null })}
+                  onCancel=${() => this.modalRef.current?.close()}
+                  onClose=${() => this.setState({ phase: "form", preview: null })}
                   busy=${phase === "committing"} />`
             : null
         }
@@ -486,8 +488,13 @@ export class UpgradeControl extends Component {
     super(props);
     // idle | confirm | upgrading | done | failed
     this.state = { phase: "idle", confirmText: "", result: null };
+    this.modalRef = createRef();
   }
-
+  // Upgrading is the one phase with no way back — a no-op; its body says so.
+  cancel() {
+    if (this.state.phase === "upgrading") return;
+    this.modalRef.current?.close();
+  }
   async run() {
     this.setState({ phase: "upgrading" });
     try {
@@ -504,11 +511,11 @@ export class UpgradeControl extends Component {
     const available = enabled && update && update.available;
     if (!available && phase !== "failed") return null;
     const version = update?.latest;
+    const onClose = () => this.setState({ phase: "idle", confirmText: "" });
     let modal = null;
     if (phase === "confirm") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrade to ${version}</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgrade to " + version}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               <p>The host pulls the ${version} release and recreates every container — including
               this dashboard, which goes away for a moment, and the miners' stratum connection,
               which reconnects. Your config, wallet, and chain data are kept.</p>
@@ -516,25 +523,21 @@ export class UpgradeControl extends Component {
                   <input type="text" value=${confirmText}
                       onInput=${(e) => this.setState({ confirmText: e.target.value })} /></label>
               <div class="config-modal-actions">
-                  <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Cancel</button>
+                  <button class="btn-toggle" onClick=${() => this.cancel()}>Cancel</button>
                   <button class="btn-toggle active" disabled=${confirmText !== "UPGRADE"}
                       onClick=${() => this.run()}>Upgrade</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     } else if (phase === "upgrading") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrading to ${version}…</h3>
-              <p class="text-muted">The host is pulling images and recreating containers. This page
-              will briefly disconnect while the dashboard restarts — leave it open; it reports the
-              outcome when the new version is up.</p>
-          </div>
-      </div>`;
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgrading to " + version + "…"}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
+              <p class="text-muted">The host is pulling images and recreating containers — this can't
+              be interrupted. This page will briefly disconnect while the dashboard restarts — leave
+              it open; it reports the outcome when the new version is up.</p>
+      </${Modal}>`;
     } else if (phase === "done") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgraded to ${result.version || version}</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgraded to " + (result.version || version)}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               <p class="status-ok">The stack is running the new release.</p>
               ${
                 result.rollback
@@ -545,18 +548,15 @@ export class UpgradeControl extends Component {
               <div class="config-modal-actions">
                   <button class="btn-toggle active" onClick=${() => window.location.reload()}>Reload the dashboard</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     } else if (phase === "failed") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrade did not complete</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title="Upgrade did not complete"
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               ${upgradeFailure(result, this.props.appliance)}
               <div class="config-modal-actions">
-                  <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Close</button>
+                  <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     }
     return [
       available

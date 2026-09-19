@@ -140,6 +140,102 @@ phase_fault() {
         bad "no longer accepts an update after fault injection"
         printf '%s\n' "$out" | tail -12 | sed 's/^/       /'
     fi
+
+    # Fault D (#2067c, the #1029 class): cut power WHILE a FRESH guest's first boot is loading its
+    # baked container images from the archive (lib/pithead/11-baked-images.sh) — the interrupted
+    # write a real USB stick produces, on a disk this harness can actually destroy mid-write. A
+    # virtual disk cannot show stick-media wear or the firmware's Restore-on-AC-Power-Loss setting
+    # (#2067 says so outright); it can show this half. The repair that runs on every boot
+    # (repair_broken_image_store) is unit-tested already (tests/stack) — this proves it fires from a
+    # REAL virsh destroy, not just the fixture. A fresh guest is required: the guest this phase has
+    # been using already has its images loaded, so the load window this leg needs is already gone.
+    info "fault D — destroy mid first-boot image load (#1029 class)"
+    local fresh_img
+    fresh_img=$(_build_image v1) || {
+        bad "D: v1 image build failed (/tmp/os-fault-build.log)"
+        return
+    }
+    _vm_boot_disk "$fresh_img" || {
+        bad "D: could not boot a fresh guest for the image-load fault"
+        return
+    }
+    if ! wait_serial "Loading this build's container images" 180; then
+        bad "D: the first-boot image load never started — cannot exercise the cut"
+        return
+    fi
+    _wait_ssh 120 || {
+        bad "D: SSH never came up while the first-boot image load ran"
+        return
+    }
+    local before deadline=$(($(date +%s) + 120))
+    before=$(_boot_id) || {
+        bad "D: could not read the boot id before the image-load cut"
+        return
+    }
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        _ssh "pgrep -f '[p]odman.*load' >/dev/null" && break
+        sleep 1
+    done
+    if _ssh "pgrep -f '[p]odman.*load' >/dev/null"; then
+        ok "D: first-boot image load is active"
+    else
+        bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
+        return
+    fi
+    local serial_before=0
+    [ -f "$SERIAL" ] && serial_before=$(wc -c <"$SERIAL")
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "D: could not cut power during the image load"
+        return
+    }
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "D: could not restore power after the image-load cut"
+        return
+    }
+    if _wait_new_boot "$before" 300; then
+        ok "D: survived a power cut mid image load — booted"
+    else
+        # A clean refusal is an acceptable outcome too (#2067c: "repairs the store or refuses with
+        # a legible console message") — only silence is disqualifying. The serial log is
+        # cumulative, so admit only text written after THIS cut, never boot noise from before it.
+        #
+        # The match is the product's OWN narration of this damage class, both from
+        # lib/pithead/11-baked-images.sh, because only those two sentences distinguish a box that
+        # SAW the interrupted load from one that merely kept talking. A generic
+        # /[Ee]rror|[Ff]ail|[Cc]ould not/ matches the "Failed to start ..." chatter every boot
+        # emits, a bricked one included, so it greened exactly the outcome this leg exists to catch.
+        local refusal deadline=$(($(date +%s) + 60))
+        local legible='The container image store is damaged|Could not load the baked image archive'
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
+            grep -qE "$legible" <<<"$refusal" && break
+            sleep 3
+        done
+        if grep -qE "$legible" <<<"${refusal:-}"; then
+            ok "D: refused to continue after the interrupted load, with a legible console message"
+        else
+            # Narrowing the match makes a red actionable only if it says what the console DID say.
+            bad "D: BRICKED — no boot and no legible message after a power cut mid image load (post-cut serial tail: $(tail -c 400 <<<"${refusal:-}" | tr '\n' '|'))"
+        fi
+        return
+    fi
+    # The store check must come AFTER the wizard confirms it served: `_wait_ssh` only means sshd
+    # answered (gated on /data.mount, not on the wizard's own load_baked_images call), so checking
+    # the store immediately raced the repair-then-reload cycle load_baked_images runs before the
+    # wizard ever serves — and lost that race on the very first bench run (measured).
+    if _wait_setup_page 180; then
+        ok "D: install-from-stick still works afterwards — the wizard serves again"
+    else
+        bad "D: the wizard never served after recovering from the image-load cut — the box is not usable"
+    fi
+    local broken
+    broken=$(_ssh 'root=$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null); find "$root/overlay" -maxdepth 2 -name lower -size 0 -print -quit 2>/dev/null')
+    if [ -z "$broken" ]; then
+        ok "D: the image store repaired itself — no zero-length layer metadata left behind"
+    else
+        bad "D: the image store is still damaged after the cut: $broken"
+    fi
 }
 
 # The last-resort path — never yet run against a real disk. Two legs, opt-in (destructive, and
