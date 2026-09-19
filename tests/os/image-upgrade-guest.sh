@@ -8,8 +8,12 @@ LOOP=/data/pithead-image-upgrade.xfs
 OLD_SHA=296fe6af551b773bae49486e98517ac274b896cd
 # Measurement ceiling for the built-in miner's first accepted share (#2057). The deployed run
 # reports the figure it actually took; this bound exists so a miner that never mines fails the
-# gate instead of hanging it.
-MINER_SHARE_BUDGET=1200
+# gate instead of hanging it. Job 639, the first run to ever get this far (local-miner render was
+# broken before it), reported gate-predicate mask 6/15 (tari synced + workers, not monero synced
+# or hashes) still short at the old 1200s ceiling — raised to 1800s, the figure tests/os/lib/core.sh's
+# own SSH_TIMEOUT comment already assumed for "the 1800s local-miner wait" before this constant
+# ever matched it.
+MINER_SHARE_BUDGET=1800
 NEW_SHA="${1:?candidate commit required}"
 GUEST_STAGE=guest-preflight
 
