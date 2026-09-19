@@ -14,7 +14,10 @@ manage the host.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
-  else runs squeezed, at every boot until the machine has 16 GB.
+  else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
+  the physical console (a serial line can lose a message to a login prompt claiming it at the
+  wrong moment), the line is always in the journal: `journalctl -u pithead-hugepages` on that
+  machine.
 - An internal SSD or NVMe with room for the chains. The stack budgets
   320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
@@ -147,11 +150,12 @@ addresses, runs no node, and serves nothing to log into. If a Pithead already an
 network at `pithead.local:3333`, its address is filled in for you; otherwise enter it by hand
 from that machine's own "Point miners at" line. Confirming shows a summary card with the worker
 name, where it mines, this machine's address and a **control token** — **not a login**, because
-a rig has none. The token is shown once — a rig serves no page after this — so copy it now. If you lose
+a rig has none. The token is shown once — a rig serves no page after this — so tap it to select it,
+then copy it now. If you lose
 it, the boot menu's **Set up again** with the same worker name shows the same token again
 (see [The boot menu](#the-boot-menu)). It is what lets that Pithead adopt the rig: in its dashboard, under Workers, the adopt
 form takes this rig's address, control port `8082` and the token. Until you do that, the rig
-still mines and still appears under Workers once it connects, but its row reads as an API error,
+still mines and still appears under Workers once it connects, but its row is badged `not adopted`,
 because the token guards every API on the rig — the miner's own included, so nothing else on the
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
@@ -249,10 +253,6 @@ the time zone (detected from the machine unless set). They are still there to ch
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as
 `root` with the dashboard password. It is set fresh at every boot and never stored on disk.
-Two more switches live only in the setup page's **Advanced** view, deliberately out of the quick
-form: `ssh.enabled` with `ssh.authorized_key` turns on key-only SSH (never passwords) for remote
-debugging. The day-two Configuration view does not list them and cannot approve them remotely;
-changing SSH still requires a configuration stick.
 
 **Already know exactly what you want?** Open **Advanced** at the bottom. It shows the complete
 configuration — every key, with its default filled in — and it *is* what the machine will run:
@@ -306,11 +306,15 @@ Most of the configuration stays editable from the dashboard afterwards — see
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
 password, per-rig worker entries) can be set **here, at install**, but not changed from the
 dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts. Changing them later does not mean reinstalling: write the new settings to a
+redirect your payouts or repoint a rig's control address and token to one it controls. A
+shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
+not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set anything,
-including what no remote channel is allowed to touch.
+media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting, including what no remote channel is allowed to touch. Release images reject
+retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
@@ -522,26 +526,29 @@ next.
 
 **Restore it at setup.** Write a fresh image, boot the machine, and on the setup page choose
 "Restoring an existing Pithead? Upload its backup instead." above the form. Upload the archive
-and its passphrase; the machine decrypts, validates, and provisions itself from what it
+and its passphrase; use **Show passphrase** to check the string while typing it. On the
+installation medium, choose the target disk first; the upload fields then appear below it. The
+machine decrypts, validates, and provisions itself from what it
 restores — the same wallets, the same Tor onion address, the same dashboard login and history,
 on hardware that has never seen them. Provisioning runs to completion and the stack comes up on
 that same boot: the restored configuration is new to this hardware, not a re-run of a finished
 setup, so it is treated as first-time provisioning even though the identity underneath it is not.
-This works on the installation medium's combined page too, alongside the disk choice.
+This works on the installation medium's combined page too.
 
-A wrong passphrase or a damaged archive is rejected with the reason, and the page falls back to
-the normal form — restore never blocks setup. Restore is available at first setup and from the
-saved-setup screen. In both cases it runs through setup again; the day-two `restore` command is
-the separate path for restoring a running stack in place.
+A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
+form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+Restore is available at first setup and from the saved-setup screen. In both cases it runs through
+setup again; the day-two `restore` command is the separate path for restoring a running stack in
+place.
 
 ## Changing settings with a USB stick
 
 Insert a stick carrying a `pithead-config.json` and reboot: the machine validates it, shows
 the exact change on the console, and applies it after a countdown — no password, no browser,
 no keyboard required. This is the same file format the setup wizard reads (see [setting it up
-without a monitor](#setting-it-up-without-a-monitor)), and it can change **any** setting,
-including the ones the dashboard never exposes: the SSH toggle, the dashboard login password,
-and the Telegram alert channel's own identity. That is deliberate. Whoever can insert media
+without a monitor](#setting-it-up-without-a-monitor)), and it can change settings the dashboard
+never exposes, including the dashboard login password and the Telegram alert channel's own
+identity. That is deliberate. Whoever can insert media
 and power the machine off and on already has full authority over it — a shell at the console
 proves the same thing today — so this channel makes that authority usable instead of assuming
 you have a monitor and a working password. It is the recovery path when the dashboard password
@@ -592,9 +599,8 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 `.local` name. Plain `http://` addresses redirect to `https://`, so either spelling works. Wi-Fi is not supported, so a wireless-only network will not work.
 
 **You need a shell on the machine.** Log in at its console as `root` with the dashboard
-password. For SSH, set `ssh.enabled` and `ssh.authorized_key` in the Advanced view at setup —
-key-only, and only if you need it. The dashboard does not offer them after that; a configuration
-stick is the way in later.
+password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
+appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
 **"Wrong token."** The token changes each time the setup service restarts — read the
 current one from the console. After five wrong attempts it mints a new one on purpose.

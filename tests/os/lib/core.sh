@@ -9,6 +9,12 @@ bad() {
     printf '  \033[1;31m✗\033[0m %s\n' "$1"
 }
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
+# The two hooks tests/integration/lib/skip-accounting.sh calls on a skip (it_warn) and on an
+# invented class (it_err): defined here, in this vocabulary, rather than pulled in from
+# tests/integration/lib.sh, which drags in the whole integration harness's globals and secret
+# redaction to get two printf wrappers.
+it_warn() { printf '  \033[1;33m!\033[0m %s\n' "$1" >&2; }
+it_err() { printf '  \033[1;31m!\033[0m %s\n' "$1" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 KEY="$HOME/.ssh/pithead-os-test"
 ip=""
@@ -52,6 +58,32 @@ HARNESS_TARI="126J92Yow5y9UoRFd1DNujPmVFq9C1ZeiYWT95UKxz5Y1rzbfjtHg4SCZS1dk83ivz
 _ssh() {
     timeout "${SSH_TIMEOUT:-5400}" ssh -i "$KEY" -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
+}
+# Wait for the control spool to hold no in-flight request, before any host-side `pithead apply`
+# this harness drives. `apply` re-provisions the control runner (50-control-runner-provisioning.sh)
+# and nothing drains the spool first, so a request still queued in requests/, or already claimed
+# and running, dies with the runner and never gets a result file — and the row that asked for it
+# reports a product failure that did not happen (#2094; bench-ci job 25 killed the runner 3.4 s
+# into a compose up and still reported "the control request never returned" beside its own
+# `live cost_per_kwh=0.17, want 0.17`). That the apply does this at all is the product's own defect
+# (#2363) and is not fixed here: this only stops the BATTERY from driving it over its own requests.
+# The runner claims a request by moving it out of requests/ to a .claim.* file and removes that
+# claim only AFTER writing results/<id>.json, so neither present is the proof that every request
+# reached a result. staged/ is deliberately not counted: it holds previewed intents waiting for
+# their own commit, which is not work in flight, and waiting on it would hang every preview.
+# Bounded, and an unreadable spool never reads as a drained one — the caller reds its row instead
+# of applying blind.
+_control_requests_drained() { # [seconds]
+    local deadline=$(($(date +%s) + ${1:-120})) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" pending
+    while :; do
+        pending=$(_ssh 'ls -1 /data/pithead/data/control/requests/*.json /data/pithead/data/control/.claim.* 2>/dev/null | wc -l')
+        pending=$(printf '%s' "$pending" | tr -cd '0-9')
+        [ "$pending" = 0 ] && return 0
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 3
+    done
+    info "control spool still holds ${pending:-an unreadable count of} in-flight request(s) after the drain deadline — refusing to apply over the runner"
+    return 1
 }
 _wait_ssh() { # $1 seconds — the definition of "not bricked"
     local deadline=$(($(date +%s) + $1)) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"

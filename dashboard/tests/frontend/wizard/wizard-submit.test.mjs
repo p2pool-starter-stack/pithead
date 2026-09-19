@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Done, RestoreSection, WizardApp } from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
+import {
+  Done,
+  Gate,
+  RestoreSection,
+  WizardApp,
+} from "../../../mining_dashboard/web/static/wizard/wizard.mjs";
 import { html } from "../../../mining_dashboard/web/static/app/preact.mjs";
 import { renderToString } from "../helpers/render.mjs";
 import { DISKS, REF, appOn, stateFor, stubServer, stubSetState } from "./wizard-helpers.mjs";
@@ -18,6 +23,10 @@ test("an empty pool address is stopped client-side with a named reason", async (
   globalThis.fetch = real;
   assert.equal(fetched, false);
   assert.match(inst.state.error, /pool address/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Enter the pool address") > out.indexOf("Stratum password"));
+  assert.ok(out.indexOf("Enter the pool address") < out.indexOf("Apply"));
   restore();
 });
 
@@ -89,13 +98,61 @@ test("before a disk is chosen, the page asks ONLY that", async () => {
 // enforces the size cap it can check without a round trip.
 
 test("restore section: names what a restore does and asks for the archive + passphrase", () => {
-  const out = renderToString(
-    html`<${RestoreSection} file=${null} passphrase="" onFile=${() => {}} onPassphrase=${() => {}} />`,
-  );
+  const section = RestoreSection({
+    file: null,
+    passphrase: "",
+    passphraseVisible: false,
+    onFile() {},
+    onPassphrase() {},
+    onPassphraseVisible() {},
+  });
+  const out = renderToString(section);
   assert.match(out, /Restore from a backup/);
   assert.match(out, /emergency-kit passphrase/);
   assert.match(out, /type="file"/);
   assert.match(out, /type="password"/);
+  assert.match(out, /autocomplete="off" autocorrect="off" autocapitalize="off"/);
+  const passphrase = section.props.children.find((child) => child?.props?.label === "Passphrase");
+  assert.equal(passphrase.props.children.props.spellcheck, false);
+  assert.match(out, /Show passphrase/);
+});
+
+const findVNode = (vnode, type, text = "") => {
+  if (!vnode || typeof vnode !== "object") return null;
+  if (Array.isArray(vnode))
+    return vnode.map((child) => findVNode(child, type, text)).find(Boolean);
+  return vnode.type === type && (!text || renderToString(vnode).includes(text))
+    ? vnode
+    : findVNode(vnode.props?.children, type, text);
+};
+
+test("the show-passphrase control reveals and masks the entered passphrase", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  inst.setState({ restoreMode: true, restorePassphrase: "fixture-pw" });
+  const section = findVNode(inst.renderRestore(), RestoreSection);
+  const toggle = () =>
+    RestoreSection(section.props).props.children.find(
+      (child) => child?.type === "label" && renderToString(child).includes("Show passphrase"),
+    ).props.children[0];
+  toggle().props.onChange({ target: { checked: true } });
+  assert.match(renderToString(inst.render()), /type="text" value="fixture-pw"/);
+  toggle().props.onChange({ target: { checked: false } });
+  assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
+  restore();
+});
+
+test("leaving restore masks the retained passphrase before the form reopens", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  inst.setState({
+    restoreMode: true,
+    restorePassphrase: "fixture-pw",
+    restorePassphraseVisible: true,
+  });
+  findVNode(inst.renderRestore(), "button", "Back to").props.onClick();
+  assert.equal(inst.state.restorePassphraseVisible, false);
+  inst.setState({ restoreMode: true });
+  assert.match(renderToString(inst.render()), /type="password" value="fixture-pw"/);
+  restore();
 });
 
 test("the setup form offers a toggle into restore mode, and back again", async () => {
@@ -116,6 +173,7 @@ test("restore mode on the installer asks for the disk before revealing the uploa
   inst.setState({ restoreMode: true });
   const before = renderToString(inst.render());
   assert.match(before, /Target disk/);
+  assert.match(before, /Choose the disk first; the upload fields appear once you pick/);
   assert.doesNotMatch(before, /Restore from a backup/);
   inst.setState({ chosen: "nvme0n1" });
   const after = renderToString(inst.render());
@@ -136,6 +194,10 @@ test("submitRestore refuses with no file chosen, client-side, before any fetch",
   globalThis.fetch = real;
   assert.equal(fetched, false);
   assert.match(inst.state.error, /Choose a backup archive/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Choose a backup archive") < out.indexOf("Restore and provision"));
+  assert.ok(out.indexOf("Choose a backup archive") > out.indexOf("Show passphrase"));
   restore();
 });
 
@@ -214,7 +276,31 @@ test("a rejected restore returns to restore mode with the reason, not the typed-
   restore();
 });
 
+test("a restore network failure shows an actionable error beside the retry", async () => {
+  const { inst, restore } = await appOn([stateFor("setup")]);
+  const file = new File([new Uint8Array(4)], "backup.tar.gz.enc");
+  inst.setState({ restoreMode: true, restoreFile: file });
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch");
+  };
+  await inst.submitRestore({ preventDefault() {} });
+  globalThis.fetch = real;
+  assert.match(inst.state.error, /Could not reach this machine/);
+  const out = renderToString(inst.render());
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf(inst.state.error) < out.indexOf("Restore and provision"));
+  restore();
+});
+
 // --- the token gate: the lockout must read as actionable, not as a dead page -----------------
+
+test("gate errors are announced beside the Continue action", () => {
+  const out = renderToString(html`<${Gate} error="Wrong token." onSubmit=${() => {}} />`);
+  assert.match(out, /role="alert"/);
+  assert.ok(out.indexOf("Wrong token.") > out.indexOf("Token"));
+  assert.ok(out.indexOf("Wrong token.") < out.indexOf("Continue"));
+});
 
 test("auth: a 429 (lockout) shows the console-token message, not the generic wrong-token one", async () => {
   const inst = new WizardApp({});

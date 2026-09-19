@@ -174,7 +174,10 @@ export class DiagnosticsPanel extends Component {
     try {
       const result = await runDiag("diag-doctor", {}, "the health check");
       this.setState({
-        healthPhase: result.status === "applied" ? "done" : "failed",
+        healthPhase:
+          result.doctor && typeof result.doctor === "object" && !Array.isArray(result.doctor)
+            ? "done"
+            : "failed",
         healthResult: result,
       });
     } catch (error) {
@@ -276,9 +279,7 @@ export class DiagnosticsPanel extends Component {
     if (!this.props.enabled) {
       return html`<div class="card">
         <h3>Service diagnostics</h3>
-        <p>Diagnostics are off with the rest of the control channel. To enable them, set
-        <code>dashboard.control.enabled: true</code> in <code>config.json</code> on the host
-        and run <code>./pithead apply</code>. It requires a dashboard login.</p>
+        <p>Diagnostics are off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
     const { healthPhase, healthResult } = this.state;

@@ -19,10 +19,9 @@ source "$HERE/../lib.sh"
 SHA="$(printf 'a%.0s' $(seq 1 64))" # a sha256 — must SURVIVE, see the over-redaction guard below
 
 echo "== redact: an IP address by SCOPE, reserved ranges kept (#1609) =="
-# `pithead doctor` interpolates the host's OWN public addresses into its stratum-exposure WARN
-# (20-doctor-install-checks.sh:27), and `capture_artifacts` puts that through redact() into
-# doctor.txt — which release-gate.yml uploads from a self-hosted runner. No rule reached it: an
-# IP has no secret NAME, no JSON key, and the >=90 SHAPE rule's alphabet excludes `:` and `.`.
+# `capture_artifacts` redacts compose ps, .env and logs before its release-gate artifact upload.
+# Those artifacts can contain public addresses, yet no rule reached an IP: it has no secret NAME,
+# no JSON key, and the >=90 SHAPE rule's alphabet excludes `:` and `.`.
 #
 # The rule is keyed on SCOPE, which is the only property that separates the address to hide from
 # the addresses that make the artifact worth keeping. Loopback, RFC1918, link-local, CGNAT and
@@ -33,9 +32,8 @@ PUB4="203.0.113.45"                           # TEST-NET-3 — a documentation r
 PUB6="2001:db8:1234:5678:90ab:cdef:1234:5678" # full 8-hextet form, the shape `ip addr` prints
 PUB6C="2001:db8::1"                           # the compressed form — fewer colons to match on
 
-# The doctor line itself: two public addresses AND the advice's own 127.0.0.1, on one line. This
-# is the discriminating case for the whole change — it fails if either arm is wrong, in either
-# direction, and it is the exact shape measured in two real bundles.
+# This synthetic doctor-shaped line puts two public addresses and the advice's own 127.0.0.1 on one
+# line. It is the discriminating case for the whole change: it fails if either arm is wrong.
 OUT="$(printf 'WARN This host appears to have a public IP (%s, %s). Set stratum_bind to 127.0.0.1.\n' "$PUB6" "$PUB4" | redact)"
 case "$OUT" in *"$PUB6"*) it_fail "doctor WARN: public IPv6 absent" "address survived: $OUT" ;; *) it_pass "doctor WARN: public IPv6 absent" ;; esac
 case "$OUT" in *"$PUB4"*) it_fail "doctor WARN: public IPv4 absent" "address survived: $OUT" ;; *) it_pass "doctor WARN: public IPv4 absent" ;; esac

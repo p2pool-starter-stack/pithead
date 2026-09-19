@@ -132,7 +132,8 @@ run_pending >/dev/null
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID3" >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "sensitive RPC-LAN change refuses typed APPLY without the envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json" 2>/dev/null)" "rejected"
-assert_contains "sensitive refusal names the typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "typed payout confirmations"
+# The reason moved at the 2026-09-13 perimeter audit: a bind is refused at the default-deny pass, not for a missing envelope.
+assert_contains "sensitive refusal names the perimeter key" "$(jq -r '.error' "$RESULTS/$UUID3.json" 2>/dev/null)" "MONERO_RPC_BIND"
 assert_eq "unconfirmed perimeter change did not touch config.json" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
 # Re-preview because every refused commit consumes its staged copy. An envelope carrying ANY key
 # beyond payout_suffixes is rejected outright — the dashboard cannot smuggle an actor, a preview id
@@ -152,8 +153,20 @@ jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin
 run_pending >/dev/null
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "well-formed envelope applies sensitive change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "confirmed perimeter change landed" "$(jq -r '.monero.rpc_lan_access' "$C/config.json")" "true"
+# the 2026-09-13 perimeter audit: a WELL-FORMED envelope does not reach it either. MONERO_RPC_BIND is a bind, in SECURITY.md's
+# perimeter and in NEVER_COMMITTABLE_ENV_KEYS, and until the 2026-09-13 perimeter audit it APPLIED here — an unlisted key
+# asked for an envelope the container itself writes. test-control-perimeter-tier3.sh has the battery.
+assert_eq "a well-formed envelope does not reach a perimeter key" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "perimeter refusal names the key, not a missing envelope" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_RPC_BIND"
+assert_eq "the LAN-access perimeter change did not land" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
+# Positive control: the envelope still works where the tier is NAMED (2026-09-13 perimeter audit), so the refusals above
+# are a narrowed tier rather than a broken envelope path.
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .telegram.enabled=false)}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+run_pending >/dev/null
+assert_eq "well-formed envelope applies an approval-tier change" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "approval-tier change landed" "$(jq -r '.telegram.enabled' "$C/config.json")" "false"
 assert_contains "confirmed change records the signed-in actor" "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" '"actor":"admin"'
 # #2076: nothing can populate `approver` any more — it was only ever written by the Telegram
 # verifier. An audit row that carries one would mean the removed leg came back.
@@ -165,23 +178,20 @@ jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",hos
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "worker repoint preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
-assert_contains "worker repoint preview names its schema path" "$(jq -r '.changes[].key' "$RESULTS/$UUID3.json")" "workers.list"
+assert_eq "worker repoint preview is rejected, not previewed for approval (2026-09-13 perimeter audit round 2)" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "worker repoint refusal names workers.list" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "workers.list"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "confirmed worker repoint applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "confirmed worker host landed" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.51"
-assert_contains "worker repoint audit names workers.list" "$(grep '"action":"commit","status":"applied"' "$AUDIT" | tail -n 1)" "workers.list"
+assert_eq "a self-written envelope does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
 jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "worker append preview requires approval" "$(jq -r '.approval_required' "$RESULTS/$APPEND_UUID.json")" "true"
+assert_eq "worker append preview is rejected, not previewed for approval" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
 jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "confirmed worker append applies" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "applied"
-assert_eq "confirmed worker append lands the new descriptor" "$(jq -r '.workers.list[] | select(.name=="rig-2") | .host' "$C/config.json")" "192.168.1.52"
-assert_contains "worker append audit names workers.list" \
-    "$(jq -c --arg id "$APPEND_UUID" 'select(.id==$id and .action=="commit" and .status=="applied")' "$AUDIT")" "workers.list"
+assert_eq "a self-written envelope does not commit a worker append" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
+assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '[.workers.list[] | select(.name=="rig-2")] | length' "$C/config.json")" "0"
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},
@@ -207,13 +217,20 @@ jq -n --arg old "$WALLET" --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,act
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "payout preview marks the sensitive class" "$(jq -r '.approval_required' "$RESULTS/$UUID3.json")" "true"
-assert_eq "payout preview old value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .old' "$RESULTS/$UUID3.json")" "$WALLET"
-assert_eq "payout preview new value is complete" "$(jq -r '.preview_values[] | select(.key=="monero.wallet_address") | .new' "$RESULTS/$UUID3.json")" "$NEW_WALLET"
+# These three rows read "marks the sensitive class" and previewed both wallet values in full,
+# which is exactly the edit-then-reject the gate then performed: a payout address is in no
+# committable tier, so the preview now REFUSES it and names the key (2026-09-13 perimeter audit
+# round 2). Preview and gate reach the same verdict, which is what #613 asks of them.
+assert_eq "payout preview is refused, not offered for approval" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "payout preview refusal names the key" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_WALLET_ADDRESS"
+assert_eq "payout preview leaks no wallet value into the result" "$(jq -r '.preview_values // "none"' "$RESULTS/$UUID3.json")" "none"
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:"wrong"}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
 assert_eq "wrong payout suffix is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "wrong payout suffix changed no funds destination" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
+# ...and a CORRECT suffix does not apply it either (2026-09-13 perimeter audit). This row used to read "matching payout
+# suffix applies", and its passing was the shape of the defect: control_validate_approval compared a
+# suffix derived from the STAGED config against one in the envelope, and the container wrote both.
 jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
     monero:{mode:"local",wallet_address:$new,node_username:"u",node_password:"p",prune:false},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
@@ -221,8 +238,29 @@ jq -n --arg new "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:
 run_pending >/dev/null
 jq -n --arg id "$UUID3" --arg suffix "$NEW_WALLET_SUFFIX" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{monero:$suffix}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "matching payout suffix applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "confirmed payout destination landed" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$NEW_WALLET"
+assert_eq "a correct self-written payout suffix does NOT apply the swap" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_contains "the payout refusal names the key, not the suffix" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "MONERO_WALLET_ADDRESS"
+assert_eq "the operator's payout destination is unchanged in config.json" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
+assert_contains "the operator's payout destination is unchanged in .env" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
+
+# The suffix comparison is now reachable only as a unit: no committable tier renders
+# MONERO_/TARI_WALLET_ADDRESS, so the gate refuses before consulting it. Kept covered here so the
+# helper does not rot while it waits for a tier with a real second identity behind it.
+jq --arg w "$NEW_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/suffix-staged.json"
+assert_rc "control_validate_approval accepts the exact final characters" \
+    "$(
+        run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
+            "{\"payout_suffixes\":{\"monero\":\"$NEW_WALLET_SUFFIX\"}}" \
+            "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1
+        echo $?
+    )" "0"
+assert_rc "control_validate_approval refuses a wrong one" \
+    "$(
+        run_sourced "$C" control_validate_approval "$C/suffix-staged.json" admin \
+            '{"payout_suffixes":{"monero":"wrong"}}' \
+            "$(printf 'DEST\tMONERO_WALLET_ADDRESS\tpayout changed')" >/dev/null 2>&1
+        echo $?
+    )" "1"
 
 echo "== black-box: the envelope never crosses the media-only boundary (#1959) =="
 jq -n --arg w "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
@@ -249,16 +287,26 @@ run_pending >/dev/null
 assert_eq "confirmed price-feed change applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
 assert_eq "confirmed price feed landed" "$(jq -r '.dashboard.energy.price_feed' "$C/config.json")" "true"
 
-# Scalar arrays have one dashboard field path. The host audit must collapse element indexes to that
-# same path or the history reconciler will mislabel this approved dashboard edit as a later host edit.
+# A webhook URL reaches a remote endpoint — the class of healthchecks.ping_url, always host-only
+# here. the 2026-09-13 perimeter audit returned NOTIFY_WEBHOOK_URLS there: it had been swept into the unnamed approval tier,
+# so a container could repoint every stack notification behind an envelope it wrote itself.
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .notifications.webhooks=["https://example.com/hook"])}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "confirmed webhook edit applies" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
-assert_eq "scalar-array audit uses the dashboard field path" \
-    "$(jq -r 'select(.action=="commit") | .keys' "$AUDIT" | tail -n 1)" "notifications.webhooks"
+assert_eq "webhook repoint is refused with a self-written envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "config.json gains no webhook" "$(jq -r '.notifications.webhooks // [] | length' "$C/config.json")" "0"
+
+# Scalar arrays have one dashboard field path; the audit must collapse element indexes to it or the
+# history reconciler mislabels a dashboard edit as a later host edit. Asserted on
+# control_changed_config_paths directly (2026-09-13 perimeter audit): notifications.webhooks was the only committable
+# scalar array, and the collapse lives in that function anyway, so this is its proper tier.
+jq '.notifications.webhooks=["https://example.com/hook","https://example.com/two"]' \
+    "$C/config.json" >"$C/scalar-staged.json"
+assert_eq "scalar-array change collapses element indexes to the dashboard field path" \
+    "$(run_sourced "$C" control_changed_config_paths "$C/scalar-staged.json" | tr '\n' ' ' | sed 's/ $//')" \
+    "notifications.webhooks"
 
 echo "== unit: every rendered fixed secret and variable secret stays out of change text (#1959) =="
 for secret_key in DASHBOARD_AUTH_HASH_B64 TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN \

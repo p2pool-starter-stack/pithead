@@ -1,5 +1,19 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+#
+# SCOPE (#2055 G1): legs 1-3 below keep the guest UNPROVISIONED throughout — neither config.json
+# nor machine-role is ever written, so pithead-boot.service's ConditionPathExists never triggers
+# and the unit never runs for the whole of legs 1-3. Their `rauc install`/`mark-good`/`mark-bad`
+# calls drive the A/B bootloader mechanism directly over SSH, standing in for what pithead-boot's
+# health-gated auto-commit would issue on a real boot. Legs 1-3 therefore measure the RAUC/GRUB
+# slot mechanism ONLY: pithead-boot's own render/up/health-gate/commit-or-rollback logic, the
+# data-floor restore and the held-chain release are NOT exercised here — those need a provisioned
+# guest and are leg 4's job (`phase_update_dashboard`, via `_wizard_provision_capture`, which does
+# write config.json and drives the real dashboard-triggered os-update path; see testing-strategy.md
+# row 223/226). Two exceptions ride units with no provisioned-only condition and so stay valid
+# evidence even here: `boot_label_serial_verdict` below (leg 2) reads `pithead-boot-version.service`,
+# which the #1956/#2054 fix deliberately made run on every boot; and the machine-id/SSH-host-key
+# survival checks read `pithead-machine-id`/`pithead-ssh-host-keys`, both unconditional units.
 phase_update() {
     info "phase: update (A/B commit + rollback, driven over test-only SSH)"
     # NO local _ssh/_wait_ssh redefinitions here. Function definitions are global but locals are
@@ -178,7 +192,40 @@ phase_update() {
     [ "$marker" = "v1" ] && ok "ROLLBACK: an operator can return to v1 after committing v2" ||
         bad "expected v1 after the operator rollback, got '$marker'"
 
+    # #2055 G1: legs 1-3 above never write config.json or machine-role, so pithead-boot.service's
+    # ConditionPathExists never triggers on this guest and NOTHING it owns runs here. That absence
+    # is what let #1956 ship: the boot-menu repair rides pithead-boot, and the phase was green for
+    # everything else. The rows below enumerate what legs 1-3 could not see, so a reader of this
+    # phase's output is told rather than left to infer it.
+    #
+    # These three are MISSING, not by-design: each one IS provable, just not by this invocation —
+    # `--phase provision` (or `--phase all`) runs every one of them on this same box, so per
+    # skip-accounting.sh's own test ("could a different invocation of this same harness against
+    # this same box have covered it? Yes -> missing") they are gaps this run has, not holes the
+    # configuration excludes. Calling them by-design would book a real, reachable gap as accepted,
+    # which is #1083's failure mode one level up.
+    it_skip_leg "held-chain release, owned by pithead-boot (#2055 G1)" \
+        "legs 1-3 never provision, so the mid-sync mining-held commit gate (#35) never runs here — tests/os/phases/provision-reboot.sh proves it under --phase provision or --phase all" missing
+    it_skip_leg "boot-menu version repair, owned by pithead-boot (#1956, #2055 G1)" \
+        "legs 1-3 never provision, so the repair path never runs here — leg 2's boot-label row above pins grub.cfg's rendered text only, never the repair that produces it (#2055 G4)" missing
+    it_skip_leg "/data-floor restore after a failed migration, owned by pithead-boot (#1393/#1672)" \
+        "legs 1-3 never provision, so no floor is ever raised or put back here — phase_provision_floor_fallback_leg proves it under --phase provision or --phase all" missing
+
     phase_update_dashboard "$bundle" "${serial_mark:-0}"
+
+    # Recorded AFTER leg 4, and classed on what leg 4 actually did. Claiming "covered by leg 4"
+    # before leg 4 runs would let a red run assert its own proof: leg 4 returns early at any of a
+    # dozen gates (no provisioning, no stack, a failed install), and on every one of those paths
+    # pithead-boot's properties are exactly as unproven as they were in legs 1-3. A skip that says
+    # "covered" on a run where nothing covered it is worse than no skip at all — it is the #1083
+    # failure mode wearing this issue's own fix as a disguise.
+    if [ "${LEG4_PITHEAD_BOOT_PROVED:-0}" = "1" ]; then
+        it_skip_leg "pithead-boot's boot gate, commit-decision health check and update verdict (#2055 G1)" \
+            "legs 1-3 deliberately drive rauc alone and never provision, so pithead-boot never starts there — leg 4 provisioned this same guest and asserted the 'updated' verdict end to end" covered
+    else
+        it_skip_leg "pithead-boot's boot gate, commit-decision health check and update verdict (#2055 G1)" \
+            "legs 1-3 never provision, and leg 4 did not reach its commit verdict on this run, so nothing here exercised pithead-boot at all — a green leg 4 is what covers these" missing
+    fi
 }
 
 # Provision the wizard-gated stack over its real HTTP flow — the slim shape of what

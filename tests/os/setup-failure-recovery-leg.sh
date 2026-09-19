@@ -24,40 +24,54 @@ setup_failure_state_retained() { # <wizard-state-json> <expected-wallet>
         .stage == "failed" and (.error | type == "string" and length > 0) and
         .config.monero.wallet_address == $m and .config.tari.mode == "local"' >/dev/null
 }
-# THE ARMING, and why it is a stub rather than an absence (#2050). All three of the wizard's
-# validations reach caddy_hash_password_b64, which greps the pinned caddy ref straight out of
-# docker-compose.yml. Removing the file therefore faults parse_and_validate_config — which has its
-# own recovery (the page reopens carrying the validator's message) and never calls setup at all.
-# The bench measured exactly that and read it as a hang: the harness sat out its 24x5s poll for a
-# credentials handoff that the validator path correctly never publishes, while the machine was
-# sitting on a reopened form. So the stub keeps the caddy line verbatim and makes everything after
-# it unparseable: validation passes unchanged, the handoff is published, and the first
-# `docker compose` that must actually READ the file — the `up` inside setup's stack_up, well past
-# the render_env that writes DEPLOYMENT_COMPLETED — refuses. That is a post-validation setup
-# failure, which is what this leg is named for.
-SETUP_FAULT_MARK=PITHEAD_OS_2050_STUB
+# THE ARMING (#2061, replacing #2050's). The old stub replaced docker-compose.yml wholesale with
+# an unparseable file (keeping only the caddy image line, for caddy_hash_password_b64), so it broke
+# EVERY `docker compose` call, including the tor-only one `provision_tor` runs at
+# 38-setup-command.sh:43 — three lines before DEPLOYMENT_COMPLETED=true (:44) and the render_env
+# that commits it (:45). Measured on a kept guest 2026-09-11: `setup` died at provision_tor's Tor
+# hidden-service wait, .env still carrying the bootstrap render_env's DEPLOYMENT_COMPLETED=false —
+# the marker was never set, so #2054's clear of it was never exercised.
+#
+# This arming instead retags ONLY the dashboard service's image to one that cannot exist or
+# verify, leaving every other service — "tor" included — untouched and the file still valid
+# Compose. `provision_tor` brings up `-d tor` alone and never looks at the dashboard's image, so it
+# succeeds and setup reaches both render_env calls and DEPLOYMENT_COMPLETED=true. The dashboard's
+# image is not needed again until stack_up's `docker compose up -d` (01-lifecycle.sh), well past
+# the marker: on a signed release build verify_release_images finds it no longer digest-pinned and
+# refuses before any pull; on an unsigned build the pull itself 404s. Either way stack_up's
+# `error()` is what actually fails the (setup) subshell the wizard is running — a post-marker
+# setup failure, which is what this leg is now named for.
+SETUP_FAULT_MARK=pithead-os-2061-nonexistent-tag
+# THE ARMING's retag, as one definition: the SED PROGRAM the remote arm below runs on the live
+# Compose file, and what the self-test pins directly (`_dashboard_retag`) without a guest. Matches
+# only the dashboard's own image line — "pithead-dashboard:" is not a substring of "pithead-tor:"
+# or any other first-party name, so provision_tor's target service is never touched.
+DASHBOARD_RETAG_SED="s#pithead-dashboard:.*#pithead-dashboard:$SETUP_FAULT_MARK#"
+_dashboard_retag() { sed "$DASHBOARD_RETAG_SED"; } # stdin -> stdout; the self-test drives this
+# The fault_report line the arming loop below prints ("seen=0|1 at_failure=DEPLOYMENT_COMPLETED=...")
+# parsed here, once, so the self-test can pin both fields against synthetic reports without a guest.
+_fault_report_marker_seen() { printf '%s' "$1" | grep -oE 'seen=[01]' | cut -d= -f2; }
+_fault_report_marker_at_failure() { printf '%s' "$1" | sed -n 's/.*at_failure=DEPLOYMENT_COMPLETED=//p' | tr -d '\r'; }
 restore_setup_fault() { _ssh "mv -f /run/pithead-os-1966-docker-compose.yml /data/pithead/docker-compose.yml &&
     test -s /data/pithead/docker-compose.yml && test ! -e /run/pithead-os-1966-docker-compose.yml &&
     ! grep -q $SETUP_FAULT_MARK /data/pithead/docker-compose.yml"; }
 provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-token>
     local ip="$1" jar="$2" old_token="$3" handoff="" state code new_token="" tries=0
     local live=/data/pithead/docker-compose.yml backup=/run/pithead-os-1966-docker-compose.yml
-    if _ssh "test -s '$live' && test ! -e '$backup' && mv '$live' '$backup' && test -s '$backup' && { echo '# $SETUP_FAULT_MARK'; grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$backup' | head -1 | sed 's/^/# /'; echo 'services: [ not a compose file'; } >'$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
-        ok "post-validation setup fault is armed: the Compose file still validates and cannot be started"
+    if _ssh "test -s '$live' && test ! -e '$backup' && cp '$live' '$backup' && test -s '$backup' && sed -i '$DASHBOARD_RETAG_SED' '$live' && grep -q '$SETUP_FAULT_MARK' '$live' && grep -qE 'caddy:[0-9.]+@sha256:[a-f0-9]+' '$live'"; then
+        ok "post-marker setup fault is armed: the dashboard image cannot be pulled, but tor still starts"
     else
-        # The arm moves the real file BEFORE it writes and checks the stub, so a failure after
-        # that mv would leave the guest with no usable Compose file and nothing to put it back.
-        # Restore only over an absent file or our OWN stub — never over a file we did not replace,
+        # Restore only over an absent file or our OWN edit — never over a file we did not touch,
         # which is what a stale backup from an earlier run would otherwise be written onto.
         _ssh "test -e '$backup' && { test ! -s '$live' || grep -q $SETUP_FAULT_MARK '$live'; } && mv -f '$backup' '$live'" || true
-        bad "could not arm the disposable post-validation setup fault"
+        bad "could not arm the disposable post-marker setup fault"
         return 1
     fi
     code=$(provision_browser_submit "$ip" "$jar")
     if [ "$code" = "200" ]; then
         ok "the valid setup is accepted before the host-side fault fires"
     else
-        restore_setup_fault || bad "post-validation fault cleanup failed after submit refusal"
+        restore_setup_fault || bad "post-marker fault cleanup failed after submit refusal"
         bad "faulted setup was not accepted for host processing (HTTP ${code:-none})"
         return 1
     fi
@@ -68,25 +82,65 @@ provision_setup_failure_recovery() { # <ip> <authenticated-cookie-jar> <old-toke
         tries=$((tries + 1))
     done
     if [ "$tries" -ge 24 ]; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after handoff timeout"
+        restore_setup_fault || bad "post-marker fault cleanup failed after handoff timeout"
         bad "faulted setup never reached its credentials handoff"
         stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
         return 1
     fi
     if ! curl -fsSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after handoff refusal"
+        restore_setup_fault || bad "post-marker fault cleanup failed after handoff refusal"
         bad "faulted setup credentials could not be acknowledged"
         return 1
     fi
-    if ! _ssh "for i in \$(seq 60); do test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live' && exit 0; sleep 5; done; exit 1"; then
-        restore_setup_fault || bad "post-validation fault cleanup failed after setup timeout"
+    # 25 minutes (seq 1500 x 1s), not the old leg's 5: the fault now fires deep into setup — after
+    # Tor is fully provisioned, the Caddyfile and control-runner units are written, and stack_up has
+    # started pulling every first-party image — not at provision_tor's early 60s Tor timeout, and
+    # this same suite already budgets 1500s elsewhere (provision-initial.sh) for a first-time image
+    # pull to finish. 1s granularity, not 5s: the marker's whole "true" window — from provision_tor's
+    # success to the (setup) subshell's exit — measured under a minute on the bench (#2061), so a
+    # coarser poll risked landing entirely between samples.
+    #
+    # THE DISCRIMINATING ASSERTION (#2061, the operator's return on this leg): the row above just
+    # proves the guest recorded SOME failure — it read exactly the same whether the fault fired
+    # before DEPLOYMENT_COMPLETED was ever set (the #2050 regression this leg replaced) or after.
+    # This loop instead watches .env on every poll and remembers whether it ever caught the marker
+    # `true`, then — at the exact instant it also sees the recorded failure — reads .env's CURRENT
+    # value. A fault that regressed to firing at provision_tor's Tor-hidden-service wait (like the
+    # #2050 stub) leaves .env at the bootstrap render_env's DEPLOYMENT_COMPLETED=false the entire
+    # time — `seen` stays 0 and this turns the row red, rather than printing the same green message
+    # the old arming did on a claim it never actually exercised.
+    local envf=/data/pithead/.env marker_seen="" marker_at_failure="" fault_report=""
+    if ! fault_report=$(_ssh "seen=0
+        for i in \$(seq 1500); do
+            grep -q '^DEPLOYMENT_COMPLETED=true\$' '$envf' 2>/dev/null && seen=1
+            if test -s /data/pithead/data/firstboot/error.txt && test -s '$backup' && grep -q '$SETUP_FAULT_MARK' '$live'; then
+                printf 'seen=%s at_failure=%s\n' \"\$seen\" \"\$(grep '^DEPLOYMENT_COMPLETED=' '$envf' 2>/dev/null)\"
+                exit 0
+            fi
+            sleep 1
+        done
+        exit 1"); then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
         bad "the armed host setup fault never returned a recorded failure"
         return 1
     fi
+    marker_seen=$(_fault_report_marker_seen "$fault_report")
+    marker_at_failure=$(_fault_report_marker_at_failure "$fault_report")
+    if [ "$marker_seen" != "1" ]; then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
+        bad "DEPLOYMENT_COMPLETED was never observed true before the recorded failure — the fault fired before the marker was ever set (a #2050-style regression), not after it (raw: '$fault_report')"
+        return 1
+    fi
+    if [ "$marker_at_failure" != "false" ]; then
+        restore_setup_fault || bad "post-marker fault cleanup failed after setup timeout"
+        bad "DEPLOYMENT_COMPLETED was not cleared by the time the failure was recorded (read '${marker_at_failure:-unset}') — #2054's clear did not run on this fault"
+        return 1
+    fi
+    ok "DEPLOYMENT_COMPLETED was observed true before the fault fired, and false by the time the failure was recorded — the marker was set, then cleared, not skipped (#2054, #2061)"
     if restore_setup_fault; then
-        ok "post-validation setup fault cleanup restores the exact Compose file"
+        ok "post-marker setup fault cleanup restores the exact Compose file"
     else
-        bad "post-validation setup fault cleanup did not restore the Compose file"
+        bad "post-marker setup fault cleanup did not restore the Compose file"
         return 1
     fi
     tries=0
@@ -137,7 +191,33 @@ _setup_failure_self_test() {
     # earlier in this same phase, so a page that handed back THAT attempt instead of the accepted
     # one would otherwise pass.
     ! setup_failure_state_retained "${failed/\"local\"/\"remote\"}" wallet || return 1
-    echo "setup-failure-recovery self-test: failed-page retention controls passed"
+
+    # THE RETAG (#2061): a fixture Compose fragment with three services, so the pattern's specificity
+    # is pinned, not just its match — "pithead-dashboard:" sharing no substring with "pithead-tor:"
+    # is what keeps provision_tor's own target untouched, and a sed pattern that regressed to
+    # matching too broadly (e.g. a bare "image:.*") would retag tor here and redden this row.
+    local compose_fixture got
+    compose_fixture='  tor:
+    image: ghcr.io/x/pithead-tor:dev
+  dashboard:
+    image: ghcr.io/x/pithead-dashboard:dev
+  caddy:
+    image: caddy:2.11.4@sha256:deadbeef'
+    got=$(printf '%s\n' "$compose_fixture" | _dashboard_retag)
+    printf '%s' "$got" | grep -q "pithead-dashboard:$SETUP_FAULT_MARK" || return 1
+    printf '%s' "$got" | grep -q "pithead-tor:dev" || return 1
+    printf '%s' "$got" | grep -q "caddy:2.11.4@sha256:deadbeef" || return 1
+    ! printf '%s' "$got" | grep -q "pithead-dashboard:dev$" || return 1
+
+    # THE DISCRIMINATING ASSERTION's parsing (#2061): both fields, and the two negatives that must
+    # each turn the row red on their own — a fault that never saw the marker true (the #2050-style
+    # regression), and one that saw it true but never cleared it (#2054's clear not running).
+    [ "$(_fault_report_marker_seen 'seen=1 at_failure=DEPLOYMENT_COMPLETED=false')" = "1" ] || return 1
+    [ "$(_fault_report_marker_at_failure 'seen=1 at_failure=DEPLOYMENT_COMPLETED=false')" = "false" ] || return 1
+    [ "$(_fault_report_marker_seen 'seen=0 at_failure=DEPLOYMENT_COMPLETED=false')" = "0" ] || return 1
+    [ "$(_fault_report_marker_at_failure 'seen=1 at_failure=DEPLOYMENT_COMPLETED=true')" = "true" ] || return 1
+
+    echo "setup-failure-recovery self-test: failed-page retention, retag and marker-parsing controls passed"
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then

@@ -140,32 +140,11 @@ echo "== census: no skip may leave the harness through a bare it_warn, by wordin
 # converted sites drifted in one at a time over the harness's life, and each looked reasonable on
 # its own. `it_warn` stays for genuine warnings — a cleanup that did not fully land, a degraded
 # input — which is why the census matches on skip WORDING rather than banning the call.
-census_wording() { # <file> -> skip warnings that never reach a counter
-    grep -n 'it_warn' "$1" |
-        grep -Ei 'skipp(ed|ing)' |
-        grep -v 'it_warn "SKIPPED scenario' |
-        grep -v 'it_warn "▲ SKIPPED WHOLE PHASE' |
-        grep -v 'it_warn "skipped leg'
-}
-
-# The wording rule only catches a drop that SAYS "skipping". It missed one worded "not exposed
-# here" that returned 0 immediately after — so this second rule matches the SHAPE instead: a
-# warning followed straight away by `return 0` is a leg that did not run, whatever its prose.
-# Between them they cover both the drops that announce themselves and the ones that do not.
-#
-# One legitimate warn-then-return exists and is allowlisted by name rather than by a looser
-# regex: `--keep:` reports a deliberate cleanup that was skipped on purpose, not coverage lost.
-# Keeping the allowlist explicit means a NEW warn-then-return has to be looked at by a human
-# before it can be waved through, which is the whole point.
-census_shape() { # <file> -> warn-then-return-0 sites that are not counted skips
-    awk '
-        /it_warn/ { w = NR; t = $0; next }
-        w && NF {
-            if ($0 ~ /^[[:space:]]*return 0[[:space:]]*$/ && t !~ /--keep:/) print w ": " t
-            w = 0
-        }
-    ' "$1"
-}
+# census_wording/_shape/_class live in skip-accounting.sh itself, shared with
+# tests/os/selftest-skip-accounting.sh's identical census over the OS battery's own files (#2064)
+# — one copy of the regex rather than two that are meant to agree.
+census_wording() { skip_census_wording "$@"; }
+census_shape() { skip_census_shape "$@"; }
 census() { # <file> -> every uncounted skip, by either rule
     census_wording "$1"
     census_shape "$1"
@@ -270,10 +249,7 @@ echo "== census: every class argument in the shipped harness is one of the three
 # The runtime guard above only fires on a path that actually RUNS, and most of these skip sites
 # fire only on a bench with a rig attached. A typo like "bydesign" on a leg that skips once a
 # quarter would sit in the tree unnoticed. This census is static, so it sees every site every run.
-census_class() { # <file> -> call sites whose trailing class argument is not one of the three
-    grep -nE 'it_skip_(scenario|phase|leg) .*"[a-z-]+"[[:space:]]*$' "$1" |
-        grep -vE '"(by-design|covered|missing)"[[:space:]]*$'
-}
+census_class() { skip_census_class "$@"; } # shared with tests/os's copy of this census, see above
 for f in "$HERE"/../*.sh "$HERE"/../lib/*.sh; do
     _badcls="$(census_class "$f")"
     assert_eq "no invented skip class in $(basename "$f")" "${_badcls:-none}" "none"
