@@ -146,7 +146,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
-    local raw patched dirty status destructive approval_required mh_shown th_shown
+    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
     # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
@@ -356,7 +356,13 @@ cd /data/pithead && ./pithead apply -y >/dev/null'; then
     if [ "$tries" -lt 60 ]; then
         ok "approved endpoints passed host preflight and p2pool consumed Tari chain_id from the current startup"
     else
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip ($(mm_roundtrip_verdict "$logs"))"
+        # Name the failing sub-condition (#2314's pattern): remote_node_runtime_verdict returns a
+        # bare 1 on whichever of env/cmd/roundtrip broke first, so re-derive each one here rather
+        # than leave the next run guessing between a wrong .env, a p2pool command missing
+        # --merge-mine, and a genuinely absent chain_id line.
+        env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+        cmd_now=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'def val(\$name): index(\$name) as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end; [val(\"--host\"),val(\"--rpc-port\"),val(\"--zmq-port\"),val(\"--merge-mine\")] | @tsv'" 2>/dev/null | tr -d '\r')
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (want host=$mh rpc=$rpc zmq=$zmq tari=$th:$grpc; env: ${env_now:-unreadable}; cmd: ${cmd_now:-unreadable}; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
 
