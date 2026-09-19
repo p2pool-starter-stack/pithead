@@ -217,47 +217,6 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     }
 
-    # #2333: MONERO_NODE_USERNAME/PASSWORD are the reserved node's own RPC login, not endpoint
-    # identity — they stay host-CLI-only (42-control-policy-and-host-checks.sh:123) and the
-    # dashboard perimeter refuses the WHOLE preview the instant either changes, endpoints included
-    # (43-control-approval-and-preview.sh's bad>0 arm: one non-committable key sinks the request
-    # before destructive/approval_required/preview_values are ever populated). A real operator
-    # repointing only host/port through the dashboard form never carries the login with it, so this
-    # leg does not either: the login lands through the host route "Set up again" names in the
-    # refusal text, and the dashboard proposal below only ever moves host/port.
-    if [ -n "$mu" ] || [ -n "$mp" ]; then
-        raw=$(_ssh 'cat /data/pithead/config.json' 2>/dev/null) && [ -n "$raw" ] || {
-            bad "could not read the live config to set the reserved node's RPC login"
-            return
-        }
-        patched=$(printf '%s' "$raw" | jq --arg u "$mu" --arg p "$mp" '
-            (if $u != "" then .monero.node_username = $u else . end) |
-            (if $p != "" then .monero.node_password = $p else . end)') || {
-            bad "could not construct the reserved node's login patch"
-            return
-        }
-        printf '%s' "$patched" | _ssh 'cat >/data/pithead/config.json.os2333-node-login &&
-mv /data/pithead/config.json.os2333-node-login /data/pithead/config.json &&
-cd /data/pithead && ./pithead apply -y >/dev/null' || {
-            bad "could not set the reserved node's RPC login through the host route"
-            return
-        }
-        # MONERO_NODE_USERNAME/PASSWORD are baked into FOUR quadlet units (36-quadlet-units.sh:
-        # monerod, wallet-rpc, p2pool, dashboard), not the dashboard alone — this apply recreates
-        # all four, a heavier reconciliation than any other host-side apply in this leg, all of
-        # which touch the dashboard only. sensitive_live_config's own 60s budget is sized for that
-        # lighter bounce (its comment: "a single curl the instant it returns is a race"); give this
-        # one several such windows before calling it unreachable.
-        tries=0
-        until sensitive_live_config >/dev/null 2>&1; do
-            tries=$((tries + 1))
-            [ "$tries" -lt 4 ] || {
-                bad "dashboard did not become readable again after the reserved node's RPC login landed through the host route (podman: $(_ssh "podman ps -a --format '{{.Names}}:{{.Status}}'" 2>/dev/null | tr '\n' ' '))"
-                return
-            }
-        done
-    fi
-
     # The gap the fixture's non-blank password used to hide entirely: a login change is refused
     # outright, endpoints and all. Assert that on its own, with a synthetic value, so the branch is
     # exercised regardless of what the bench fixture happens to supply.
@@ -334,6 +293,50 @@ cd /data/pithead && ./pithead apply -y >/dev/null' || {
     else
         ok "reserved-node preview exposes node endpoints without node credentials"
     fi
+
+    # #2333: MONERO_NODE_USERNAME/PASSWORD are the reserved node's own RPC login, not endpoint
+    # identity — they stay host-CLI-only (42-control-policy-and-host-checks.sh:123) and the
+    # dashboard perimeter refuses the WHOLE preview the instant either changes, endpoints included
+    # (43-control-approval-and-preview.sh's bad>0 arm: one non-committable key sinks the request
+    # before destructive/approval_required/preview_values are ever populated). A real operator
+    # repointing only host/port through the dashboard form never carries the login with it, so this
+    # leg does not either: the login lands through the host route "Set up again" names in the
+    # refusal text. Landed here, AFTER the endpoint move above is already applied, not before: while
+    # monero.mode was still "local" the login would attach to the still-running local monerod/
+    # wallet-rpc quadlets too (36-quadlet-units.sh) — credentials belonging to a node those
+    # containers never talk to. The endpoint move already retired them (COMPOSE_PROFILES drops
+    # local_node once mode=remote), so only p2pool and dashboard are left to pick up the login.
+    if [ "$node_ok" -eq 1 ] && { [ -n "$mu" ] || [ -n "$mp" ]; }; then
+        if raw=$(_ssh 'cat /data/pithead/config.json' 2>/dev/null) && [ -n "$raw" ]; then
+            if patched=$(printf '%s' "$raw" | jq --arg u "$mu" --arg p "$mp" '
+                (if $u != "" then .monero.node_username = $u else . end) |
+                (if $p != "" then .monero.node_password = $p else . end)'); then
+                if printf '%s' "$patched" | _ssh 'cat >/data/pithead/config.json.os2333-node-login &&
+mv /data/pithead/config.json.os2333-node-login /data/pithead/config.json &&
+cd /data/pithead && ./pithead apply -y >/dev/null'; then
+                    tries=0
+                    until sensitive_live_config >/dev/null 2>&1; do
+                        tries=$((tries + 1))
+                        [ "$tries" -lt 4 ] || {
+                            bad "dashboard did not become readable again after the reserved node's RPC login landed through the host route (podman: $(_ssh "podman ps -a --format '{{.Names}}:{{.Status}}'" 2>/dev/null | tr '\n' ' '))"
+                            node_ok=0
+                            break
+                        }
+                    done
+                else
+                    bad "could not set the reserved node's RPC login through the host route"
+                    node_ok=0
+                fi
+            else
+                bad "could not construct the reserved node's login patch"
+                node_ok=0
+            fi
+        else
+            bad "could not read the live config to set the reserved node's RPC login"
+            node_ok=0
+        fi
+    fi
+
     tries=0 logs=""
     while [ "$tries" -lt 60 ]; do
         logs=$(p2pool_current_startup_merge_lines)
