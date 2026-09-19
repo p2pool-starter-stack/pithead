@@ -191,6 +191,7 @@ phase_rig() {
     *) bad "the rig never self-committed — grubenv: ${genv:-unreadable}" ;;
     esac
     rig_setup_again_legs "$card_tok" "$token" # #1318: Keep it, then Set up again as the same rig (tests/os/setup-again-leg.sh)
+    rig_control_off_leg "$card_tok"           # #1867: a pool host with no IPv4 (tests/os/rig-control-off-leg.sh); restores the rig for the legs below
 
     # ---- A/B update: identical pipeline, identical outcome --------------------------------
     info "update leg — a rig takes a bundle exactly like a coordinator"
