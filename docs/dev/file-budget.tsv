@@ -3,7 +3,7 @@
 # path<TAB>ceiling-in-lines. Ceilings only ever go down; a file at or below 400 lines drops its entry.
 .github/workflows/ci.yml	450
 dashboard/mining_dashboard/client/xmrig_client.py	446
-dashboard/mining_dashboard/config/config.py	695
+dashboard/mining_dashboard/config/config.py	694
 dashboard/mining_dashboard/service/control_service.py	414
 dashboard/mining_dashboard/service/data_helpers.py	430
 dashboard/mining_dashboard/service/data_service.py	653
@@ -16,7 +16,7 @@ dashboard/mining_dashboard/service/workers/worker_config_store.py	448
 dashboard/mining_dashboard/service/xvb/algo_service.py	558
 dashboard/mining_dashboard/sim/donation_model.py	539
 dashboard/mining_dashboard/web/server.py	630
-dashboard/mining_dashboard/web/static/app/chart.mjs	681
+dashboard/mining_dashboard/web/static/app/chart.mjs	663
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	573
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	407
@@ -26,7 +26,9 @@ dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	671
 dashboard/tests/client/test_xmrig_client.py	489
 dashboard/tests/config/test_config.py	445
-dashboard/tests/service/network/test_egress.py	451
+dashboard/tests/frontend/config/configlogic.test.mjs	421
+dashboard/tests/frontend/config/configview.test.mjs	418
+dashboard/tests/service/network/test_egress.py	450
 dashboard/tests/service/test_annotation_coverage.py	579
 dashboard/tests/service/test_collapsed_return_channels.py	402
 dashboard/tests/service/test_control_service.py	495
@@ -82,7 +84,7 @@ tests/stack/test-backup.sh	476
 tests/stack/test-cli.sh	410
 tests/stack/test-config.sh	705
 tests/stack/test-harness-tooling.sh	406
-tests/stack/test-monero-tari.sh	582
+tests/stack/test-monero-tari.sh	581
 tests/stack/test-rig-worker.sh	616
 tests/stack/test-tor-network.sh	780
 tests/stack/test-wizard-setup.sh	417

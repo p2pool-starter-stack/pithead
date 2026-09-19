@@ -77,6 +77,40 @@ async function withFastPoll(fetchStub, fn) {
 
 const UPDATE = { available: true, latest: "v9.9.9", url: "https://example.invalid/rel" };
 
+// #2365: the loaded config merges in config.reference.json's placeholder defaults for every
+// unset key, so the form can show and label them. A single field edit must post only that field
+// — never the whole merged candidate, which still carries every untouched placeholder (a fake
+// Monero remote host among them) as if the operator had typed it.
+test("save posts only the field the operator changed, not the whole merged candidate (#2365)", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  let previewBody;
+  globalThis.fetch = async (url, opts) => {
+    if (url === "/api/config") {
+      return okResult({
+        dashboard: { energy: { price_per_kwh: 0.1 } },
+        monero: { mode: "local", remote: { host: "node.remote-monero-host.com", rpc_port: 18081 } },
+        xvb: { enabled: false, url: "na.xmrvsbeast.com:4247" },
+        _editable_keys: ["dashboard.energy.price_per_kwh"],
+      });
+    }
+    previewBody = JSON.parse(opts.body);
+    return okResult({ status: "previewed", id: ID, changes: [] });
+  };
+  try {
+    await view.load();
+    const field = view.state.sections
+      .flatMap((s) => s.fields)
+      .find((f) => f.key === "dashboard.energy.price_per_kwh");
+    view.onFieldEdit(field, "0.15");
+    await view.save();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(previewBody.config, { dashboard: { energy: { price_per_kwh: 0.15 } } });
+});
+
 // --- Confirm-gated disruptive change in the modal (#719) --------------------------------------
 //
 // An in-scope disruptive change previews as destructive (a CONFIRM row). The modal must warn (⚠),
