@@ -57,6 +57,17 @@ p2pool_held_by_sync_gate() {
         [ "$(_ssh "podman inspect p2pool --format '{{.State.Running}} {{.State.ExitCode}}'" 2>/dev/null | tr -d '\r')" = "false 0" ]
 }
 
+# Bounded the same way as the tari-container teardown loop above it: the check does not settle
+# the instant that loop returns.
+wait_for_p2pool_held_by_sync_gate() {
+    local tries=0
+    while [ "$tries" -lt 30 ] && ! p2pool_held_by_sync_gate; do
+        tries=$((tries + 1))
+        sleep 4
+    done
+    p2pool_held_by_sync_gate
+}
+
 tari_live_config() {
     local live tries
     for tries in 1 2 3 4 5 6; do
@@ -176,12 +187,7 @@ phase_provision_tari_mode_switch() { # <dashboard-user> <dashboard-password> <ph
         rc=1
     fi
 
-    tries=0
-    while [ "$tries" -lt 30 ] && ! p2pool_held_by_sync_gate; do
-        tries=$((tries + 1))
-        sleep 4
-    done
-    if p2pool_held_by_sync_gate; then
+    if wait_for_p2pool_held_by_sync_gate; then
         ok "fresh Monero sync still holds p2pool cleanly after Tari leaves the gate"
     else
         bad "p2pool is not cleanly held by the remaining fresh-Monero sync gate"
@@ -326,12 +332,7 @@ _tari_mode_self_test() {
             esac
         }
         sleep() { :; }
-        tries=0
-        while [ "$tries" -lt 30 ] && ! p2pool_held_by_sync_gate; do
-            tries=$((tries + 1))
-            sleep 4
-        done
-        p2pool_held_by_sync_gate
+        wait_for_p2pool_held_by_sync_gate
         rc=$?
         calls=$(cat "$counter")
         rm -f "$counter"
