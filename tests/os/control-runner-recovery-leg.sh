@@ -28,11 +28,20 @@ _control_recovery_restore() {
 }
 phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password>
     # shellcheck disable=SC2034 # DASH_USER/DASH_PASS: read by dashboard_curl (sibling file) via dynamic scope
-    local ip="$1" DASH_USER="$2" DASH_PASS="$3" cfg rid restarts0 restarts1 status deadline
-    _ssh "grep -qx 'DEPLOYMENT_COMPLETED=true' '$GUEST_ENV'" || {
-        bad "control-runner recovery: guest .env is not DEPLOYMENT_COMPLETED=true before the fault — leg cannot run"
-        return
-    }
+    local ip="$1" DASH_USER="$2" DASH_PASS="$3" cfg rid restarts0 restarts1 status deadline pretries=0
+    # A sibling leg's own control request can still be settling on the guest (the runner drains its
+    # spool on its own schedule) — a single point-in-time read here would blame THIS leg for a
+    # precondition a slow-to-settle predecessor left transiently false. Give it up to 30s to
+    # converge before calling the leg unable to run (#2374): this is the same fault this leg
+    # reproduces on purpose, just arriving from outside instead of from `sed -i` below.
+    while ! _ssh "grep -qx 'DEPLOYMENT_COMPLETED=true' '$GUEST_ENV'"; do
+        pretries=$((pretries + 1))
+        [ "$pretries" -lt 10 ] || {
+            bad "control-runner recovery: guest .env is not DEPLOYMENT_COMPLETED=true before the fault — leg cannot run"
+            return
+        }
+        sleep 3
+    done
     restarts0=$(_control_recovery_nrestarts)
     _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=true/DEPLOYMENT_COMPLETED=false/' '$GUEST_ENV'" || {
         bad "control-runner recovery: could not fault DEPLOYMENT_COMPLETED"
@@ -84,6 +93,7 @@ phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password
 # never retries or never converges is what turns red, not a description of one.
 _control_recovery_self_test() {
     local f=0 PASS=0 FAIL=0 env_state restarts
+    sleep() { :; }                           # the entry precondition and the recovery poll both retry on a real clock (#2374)
     dashboard_config_body() { printf '{}'; } # stubbed dashboard_control_post below ignores its input
 
     # Guard: an .env that is not DEPLOYMENT_COMPLETED=true to start must refuse to run the leg
@@ -98,6 +108,37 @@ _control_recovery_self_test() {
     phase_provision_control_recovery 1.2.3.4 u p >/dev/null
     [ "$FAIL" -eq 1 ] && [ "$PASS" -eq 0 ] || {
         printf 'a non-deployed guest was not refused\n' >&2
+        f=$((f + 1))
+    }
+    unset -f _ssh dashboard_curl dashboard_control_post
+
+    # A guest that is still settling a sibling leg's own request reads DEPLOYMENT_COMPLETED=false
+    # for a few polls, then true: the leg must wait it out rather than blame itself for a
+    # precondition that was never really broken (#2374).
+    local precheck_calls=0
+    env_state=true restarts=0
+    _ssh() {
+        case "$1" in
+        "grep -qx 'DEPLOYMENT_COMPLETED=true' '$GUEST_ENV'")
+            precheck_calls=$((precheck_calls + 1))
+            [ "$precheck_calls" -ge 3 ]
+            ;;
+        "sed -i 's/^DEPLOYMENT_COMPLETED=true/DEPLOYMENT_COMPLETED=false/' '$GUEST_ENV'") env_state=false ;;
+        "sed -i 's/^DEPLOYMENT_COMPLETED=false/DEPLOYMENT_COMPLETED=true/' '$GUEST_ENV'") env_state=true ;;
+        "systemctl show -p NRestarts --value pithead-control.service")
+            [ "$env_state" = false ] && restarts=1
+            echo "$restarts"
+            ;;
+        esac
+    }
+    dashboard_curl() {
+        [ "$env_state" = true ] && echo '{"status":"previewed"}' || echo '{"status":"pending"}'
+    }
+    dashboard_control_post() { echo '{"id":"settles"}'; }
+    PASS=0 FAIL=0
+    phase_provision_control_recovery 1.2.3.4 u p >/dev/null
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 2 ] || {
+        printf 'a precondition that settles within the retry window was not given the chance to (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
         f=$((f + 1))
     }
     unset -f _ssh dashboard_curl dashboard_control_post
