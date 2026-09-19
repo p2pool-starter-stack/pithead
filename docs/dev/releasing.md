@@ -302,7 +302,7 @@ live-node gate that had never once executed
 | Release signing environment + pinned verifier | `release.sh` stage 1 | the cut | yes |
 | Staged-image smoke (pull back, check version) | `release.sh` stage 5 | the cut | yes |
 | `release-smoke` (real cosign, real #59 upgrade) | after publish | you | no — the assets already exist |
-| `release-gate.yml` tier-4 live matrix | on demand | you, via *Run workflow* | no |
+| `release-gate.yml` tier-4 live matrix | never — unclaimable until a runner registers for `[self-hosted, pithead-release]` | nobody | no |
 | Live `--check` sweep on the bench | after deploy | you | no |
 
 The two human-run rows are policy, not automation: the release is not finished until they are green.
