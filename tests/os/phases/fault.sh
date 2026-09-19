@@ -199,16 +199,24 @@ phase_fault() {
         # A clean refusal is an acceptable outcome too (#2067c: "repairs the store or refuses with
         # a legible console message") — only silence is disqualifying. The serial log is
         # cumulative, so admit only text written after THIS cut, never boot noise from before it.
+        #
+        # The match is the product's OWN narration of this damage class, both from
+        # lib/pithead/11-baked-images.sh, because only those two sentences distinguish a box that
+        # SAW the interrupted load from one that merely kept talking. A generic
+        # /[Ee]rror|[Ff]ail|[Cc]ould not/ matches the "Failed to start ..." chatter every boot
+        # emits, a bricked one included, so it greened exactly the outcome this leg exists to catch.
         local refusal deadline=$(($(date +%s) + 60))
+        local legible='The container image store is damaged|Could not load the baked image archive'
         while [ "$(date +%s)" -lt "$deadline" ]; do
             refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
-            grep -qE "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" <<<"$refusal" && break
+            grep -qE "$legible" <<<"$refusal" && break
             sleep 3
         done
-        if grep -qE "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" <<<"${refusal:-}"; then
+        if grep -qE "$legible" <<<"${refusal:-}"; then
             ok "D: refused to continue after the interrupted load, with a legible console message"
         else
-            bad "D: BRICKED — no boot and no legible message after a power cut mid image load"
+            # Narrowing the match makes a red actionable only if it says what the console DID say.
+            bad "D: BRICKED — no boot and no legible message after a power cut mid image load (post-cut serial tail: $(tail -c 400 <<<"${refusal:-}" | tr '\n' '|'))"
         fi
         return
     fi

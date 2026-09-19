@@ -188,9 +188,29 @@ grep -qF "pgrep -f '[p]odman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 
 grep -qF 'serial_before=$(wc -c <"$SERIAL")' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" || exit 1
 ! grep -qF 'if wait_serial "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" 60; then' "$HERE/phases/fault.sh" || exit 1
+# Fault D's refusal arm must key on the product's own damage narration, never on any word a
+# failing boot happens to print: the generic alternation greens a brick (#2067c).
+grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
+! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
 grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
-grep -qF 'm10_recovered() { # <cut number>; every invariant must hold before the next cut' "$HERE/phases/provision-power-cut.sh" || exit 1
-grep -qF 'm10_recovered "$i" || return 1' "$HERE/phases/provision-power-cut.sh" || exit 1
-rm -f "$SERIAL" "$SERIAL.failed"
+# The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
+grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
+# And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
+# the call string anywhere in the file passes just as happily with it hoisted out of the loop,
+# where the invariants would be proven once instead of before every next cut (#2067a).
+m10_call_in_cut_loop() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | grep -qF 'm10_recovered "$i" || return 1'
+}
+m10_call_in_cut_loop "$HERE/phases/provision-power-cut.sh" || exit 1
+# Reality check: the same guard must go RED with the call moved past the loop's `done`. The mutant
+# still CONTAINS the call, so a guard that stays green here is asserting a string, not the property.
+m10_mutant="$SERIAL.m10"
+awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
+     { print }
+     $0 == "    done" && held != "" { print held; held = "" }' \
+    "$HERE/phases/provision-power-cut.sh" >"$m10_mutant"
+grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
+! m10_call_in_cut_loop "$m10_mutant" || exit 1
+rm -f "$SERIAL" "$SERIAL.failed" "$m10_mutant"
 echo "os-run-modules: PASS"
