@@ -152,7 +152,11 @@ _phase_reset_config() {
 
     # The claims that only a real boot can settle (#2347): the onion address is the SAME one —
     # read from TOR_DATA_DIR's hostname files, not .env (#2379) — and the chain resumed rather
-    # than resynced.
+    # than resynced. Neither `bad` below returns: these are terminal verdicts, like leg 1's own
+    # machine-id/host-key checks below in this same file, not guest-availability gates — the
+    # battery's exit code comes from the global PASS/FAIL tally `ok`/`bad` update
+    # (tests/os/lib/core.sh), not from this function's return value, so a red here still fails
+    # the run without needing to skip whatever leg runs next.
     onion_after=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
     if [ -n "$onion_after" ] && [ "$onion_after" = "$onion_before" ]; then
         ok "the onion address survived config-reset unchanged ($onion_after)"
