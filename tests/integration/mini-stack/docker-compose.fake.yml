@@ -72,9 +72,6 @@ services:
       WALLET_RPC_PASSWORD: ""
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
-      # A local webhook gives the payout scenario a real alert transport to observe.
-      NOTIFY_WEBHOOK_URLS: "http://fake-hc:9000/alerts"
-      NOTIFY_TOR: "false"
       PROXY_HOST: "xmrig-proxy"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
