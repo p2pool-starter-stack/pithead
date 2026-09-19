@@ -462,7 +462,14 @@ channels share the final cut commit, one version and one GitHub Release.
 1. On the cut date, land the final cut commit: refresh the top `CHANGELOG.md` section for every
    operator-visible change included since prep and set its heading to the current UTC date.
    `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
-   cut commit. Run `make lint && make test`, and `tests/os/run.sh --phase all` on it. `make lint-sh`
+   cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
+   submit it as a bench-ci `tier4-kvm` job with `phases: ["all"]` against this exact SHA
+   (`~/code/pithead-ci/AGENTS.md`) and record the job id in the release issue. `release.sh`'s own
+   preflight already refuses to cut without a green `bench-ci/tier4` status on this SHA (see
+   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)),
+   so a battery that never ran against this commit blocks stage 1 on its own — submitting it here
+   just means you find that out before investing in the rest of this checklist, not after.
+   `make lint-sh`
    refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
