@@ -173,7 +173,8 @@ Release notes, where operators actually read it. The branch model itself is in
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
    `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds.
 5. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
-   immutable digests. Nothing user-facing points here yet.
+   immutable digests. Nothing user-facing points here yet. The digests exist only for this pipeline
+   run: a failed run must start again and never recovers them from the mutable staging tag.
 6. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
    reports the release version in its OCI label, and carries every target platform (the v1.0.0
    wrong-arch guard). This validates the bytes actually pushed, not the local build — but it does

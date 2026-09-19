@@ -53,13 +53,13 @@ tests/integration/fakes/test_contract.py	439
 tests/integration/lib.sh	691
 tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
+tests/integration/mini-stack/run-mini-stack.sh	409
 tests/integration/selftest/selftest-e2e-phases.sh	507
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest.sh	686
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
 tests/stack/appliance/test-appliance-boot.sh	641
-tests/stack/appliance/test-appliance-build-compose-source.sh	401
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
 tests/stack/appliance/test-appliance-media.sh	409

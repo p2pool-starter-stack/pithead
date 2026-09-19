@@ -87,36 +87,11 @@ stage_push_out="$(
 assert_rc "stage_push, real errexit: retries-exhausted digest read still aborts (#557)" "$?" "1"
 assert_contains "stage_push, real errexit: crafted die() reaches the operator (#557)" \
     "$stage_push_out" "Could not read the pushed manifest digest"
-# #557: main()'s --resume-promote branch has the exact same shape (a second, separately-written
-# instance of the bug — found in review, not part of the original 3 sites). Drive the real `main`
-# (preflight/ghcr_login stubbed no-op) with RESUME_PROMOTE=1 and errexit left ON.
-# shellcheck disable=SC1090,SC2034  # dynamic source; the globals are consumed inside main
-resume_out="$(
-    (
-        cd "$ROOT" || exit 1
-        set --
-        source "$REL" 2>/dev/null
-        preflight() { :; }
-        require_bench_tier4() { :; }
-        ghcr_login() { :; }
-        promote() { :; }
-        sign_images() { :; }
-        publish() { :; }
-        DRY_RUN=0
-        RESUME_PROMOTE=1
-        IMAGES=(tor)
-        TAG="v9.9.9"
-        STAGING_TAG="v9.9.9-rc.1"
-        REGISTRY="ghcr.io/test"
-        REGISTRY_READ_RETRIES=1
-        REGISTRY_READ_BACKOFF=0
-        buildx_inspect() { return 1; } # every registry read fails -> retries exhaust
-        main
-    ) 2>&1
-)"
-assert_rc "--resume-promote, real errexit: retries-exhausted digest read still aborts (#557)" "$?" "1"
-assert_contains "--resume-promote, real errexit: crafted die() reaches the operator (#557)" \
-    "$resume_out" "Cannot resolve a staged digest"
+# A registry writer can replace a staging tag after stage. There is deliberately no resume path:
+# reject the option before a registry read can treat that mutable tag as approved release bytes.
+resume_out="$(cd "$ROOT" && bash "$REL" --resume-promote 2>&1)"
+assert_rc "--resume-promote refuses a replaced staging tag" "$?" "1"
+assert_contains "--resume-promote has no mutable-tag recovery path" "$resume_out" "Unknown option: --resume-promote"
 echo "== unit: release.sh preflight checks the lint toolchain (#426) =="
 # A reimaged release box loses shellcheck/shfmt/node/uv — the v1.3.0 cut died ~1 min in mid-gate with a
 # bare `shellcheck: not found`. check_release_toolchain must fail fast BEFORE building, naming the tool
@@ -199,6 +174,31 @@ assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "
 bench_no_slug="$(bench_tier4_gate '[]' 4242 4242 '' 2>&1)"
 assert_rc "an unset App slug refuses the release" "$?" "1"
 assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$bench_no_slug" "BENCH_CI_APP_SLUG"
+# The gate is only worth anything if it refuses BEFORE release bytes are built and promoted — a gate
+# that ran after stage_push would have already produced the artefacts it is meant to withhold. #2243
+# removed the --resume-promote branch this ordering was previously proven through, so drive the real
+# linear main() with each stage stubbed to a trace. MUTATION PROOF: move require_bench_tier4 below
+# stage_push in release.sh and the expected order goes red.
+gate_order="$SANDBOX/gate-order"
+# shellcheck disable=SC1090,SC2034,SC2329  # dynamic source; stubs are called by the sourced main
+(
+    cd "$ROOT" || exit 1
+    set --
+    source "$REL" 2>/dev/null
+    set +eu
+    preflight() { :; }
+    require_bench_tier4() { printf 'bench\n' >>"$gate_order"; }
+    test_gate() { :; }
+    build_images() { printf 'build\n' >>"$gate_order"; }
+    stage_push() { :; }
+    smoke_test() { :; }
+    promote() { printf 'promote\n' >>"$gate_order"; }
+    sign_images() { :; }
+    publish() { :; }
+    DRY_RUN=0 IMAGES=(tor) TAG=v9.9.9 REGISTRY=ghcr.io/test
+    main
+) >/dev/null 2>&1
+assert_eq "the bench gate runs before any build or promotion" "$(tr '\n' ' ' <"$gate_order")" "bench build promote "
 echo "== unit: release.sh limits dirty trees to dry runs (#2240) =="
 dirty_marker="$(mktemp "$ROOT/.release-allow-dirty-test.XXXXXX")"
 release_tree_gate() { # <dry-run> <allow-dirty>

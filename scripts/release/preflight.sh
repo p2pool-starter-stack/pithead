@@ -204,8 +204,8 @@ preflight() {
     [ -f VERSION ] && [ -f docker-compose.yml ] || die "VERSION / docker-compose.yml not found at the repo root."
     command -v docker >/dev/null 2>&1 || die "docker is required."
     docker buildx version >/dev/null 2>&1 || die "docker buildx is required (for digest-level promotion)."
-    # Only the test gate needs the lint toolchain — skip the check on the paths that don't run it.
-    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ] && [ "$RESUME_PROMOTE" -eq 0 ]; then
+    # Only the test gate needs the lint toolchain — skip the check when it does not run.
+    if [ "$DRY_RUN" -eq 0 ] && [ "$SKIP_TESTS" -eq 0 ]; then
         check_release_toolchain
     fi
     apply_signing_defaults
