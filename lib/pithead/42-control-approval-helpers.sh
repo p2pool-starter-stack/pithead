@@ -23,6 +23,10 @@ control_never_path_changed() { # <staged-file>
     return 1
 }
 
+control_physical_presence_error() {
+    printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
+}
+
 control_carried_ssh() { # <staged-file>
     jq -e --slurpfile live "$CONFIG_FILE" '($live[0] | has("ssh")) and (.ssh == $live[0].ssh)' "$1" >/dev/null 2>&1
 }
