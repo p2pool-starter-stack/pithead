@@ -55,6 +55,7 @@ RUN_HARDENING=0
 RUN_RIGFORGE=0
 RUN_RIGFORGE_CONTROL=0
 RUN_SUBNET=0
+RUN_UNINSTALL=0
 RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
@@ -101,6 +102,8 @@ source "$HERE/lib/run-faults.sh" || exit $?
 source "$HERE/lib/run-hardening.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-uninstall.sh
+source "$HERE/lib/run-uninstall.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rigforge.sh
 source "$HERE/lib/run-rigforge.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-rig-control.sh
@@ -212,6 +215,10 @@ main() {
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
+    # Uninstall absolutely last: it tears the checkout down (containers, images, .env, the
+    # systemd/firewall state) before re-provisioning it from what it kept. Every other phase
+    # assumes a live, applied stack to move between scenarios.
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_UNINSTALL" = "1" ] && run_uninstall_phase
 
     # An image gate always returns the exact old release and its quiesced writable state. Other runs
     # roll back only on failure, then put config.json back where it started. Drop the archive only
