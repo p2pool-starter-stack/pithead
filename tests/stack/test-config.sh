@@ -268,9 +268,9 @@ rc=$?
 assert_rc "valid dashboard.workers applies" "$rc" "0"
 assert_contains "duplicate worker names are warned" "$out" "first-declared"
 assert_contains "a 1.x dashboard.workers[] list is migrated on apply (#1832)" "$out" "Migrated the 1.x config keys"
-# Nothing from the list reaches .env: the dashboard reads it from its config.json mount, and the
-# per-worker token must not leak into a second secrets file.
-if grep -q 'tok_abc123' "$V/.env"; then bad "worker token stays out of .env" "token landed in .env"; else ok "worker token stays out of .env"; fi
+# The masked config.json mount the dashboard reads always sentinels a set token (#440); the raw
+# value rides WORKER_API_TOKENS in the owner-only .env instead, the only place it may land (#2349).
+if grep -q "WORKER_API_TOKENS=.*tok_abc123" "$V/.env"; then ok "worker token rides WORKER_API_TOKENS in .env"; else bad "worker token rides WORKER_API_TOKENS in .env" "token missing from WORKER_API_TOKENS"; fi
 
 # workers.list[] is the only worker key 2.0.0 reads (#506/#1832), so this is the authoritative
 # per-field enumeration; the block above keeps only enough 1.x cases to prove the migrate-then-
@@ -294,13 +294,13 @@ wl_case '[{"name":"rig1","watts":0}]' "non-positive workers.list watts (#260)" "
 wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "workers.list[rig1].watts"
 
 # A valid workers.list[] applies cleanly, leaves the 1.x migration inert, and — like the 1.x shape
-# — never leaks a per-worker token into .env.
+# — rides its token through WORKER_API_TOKENS in .env (#2349), not the masked config.json mount.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_xyz789"}]} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid workers.list applies" "$?" "0"
 assert_not_contains "a canonical workers.list[] config triggers no 1.x migration" "$out" "Migrated the 1.x config keys"
-if grep -q 'tok_xyz789' "$V/.env"; then bad "workers.list token stays out of .env" "token landed in .env"; else ok "workers.list token stays out of .env"; fi
+if grep -q "WORKER_API_TOKENS=.*tok_xyz789" "$V/.env"; then ok "workers.list token rides WORKER_API_TOKENS in .env"; else bad "workers.list token rides WORKER_API_TOKENS in .env" "token missing from WORKER_API_TOKENS"; fi
 
 # Setting BOTH workers.list[] and the removed dashboard.workers[] to DIFFERENT values is a hard
 # error (#506/#1832) — migrating over the new key, or silently picking one, would leave the other a

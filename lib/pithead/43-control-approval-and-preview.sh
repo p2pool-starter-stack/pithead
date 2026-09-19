@@ -84,6 +84,18 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change adds config keys not in the schema (%s) — refusing to commit. %s' "$unknown" "$(_control_host_remedy)"
         return 1
     fi
+    if control_never_path_changed "$staged"; then
+        control_physical_presence_error
+        return 1
+    fi
+    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), refused outright, same as
+    # wallets/firewall/control-channel — #1959 tracks a real second identity a future approval tier
+    # could rejoin. Checked BEFORE default-deny below, or WORKER_API_TOKENS (#2349, unlisted in
+    # every tier) wins the generic refusal by env-var name.
+    if [ "$worker_sensitive" -eq 1 ]; then
+        printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
+        return 1
+    fi
     # Default-deny across ALL THREE committable tiers (control_committable_re, 42-), whatever a row's
     # flag says: a key in none of them fails closed HERE with a refusal, not a demand for an envelope
     # the container writes itself. Keyed off a violation COUNT so a blank row still refuses; past it,
@@ -91,10 +103,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     local committable_re approval_re bad hit
     committable_re=$(control_committable_re)
     bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
-    if control_never_path_changed "$staged"; then
-        control_physical_presence_error
-        return 1
-    fi
     if [ "${bad:-0}" -gt 0 ]; then
         hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
         printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
@@ -103,14 +111,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
-    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), so approval_required (the
-    # self-written envelope) is the same self-approval shape closed above for wallets/firewall/
-    # control-channel. Refused, host-CLI-only, same as the rest — #1959 tracks a real second
-    # identity a future approval tier could rejoin.
-    if [ "$worker_sensitive" -eq 1 ]; then
-        printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
-        return 1
-    fi
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
     # Electricity price feeds are remote control inputs, unlike the local display currency and
     # fixed-price values beside them. They join the same sensitive class even though dashboard.energy
