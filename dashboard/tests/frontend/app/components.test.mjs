@@ -36,6 +36,21 @@ test('the hashrate chart canvas carries a text alternative (#1859)', () => {
     assert.match(renderApp(), /<canvas role="img" aria-label="Hashrate chart: [^"]+"/);
 });
 
+// #1859 (axe empty-table-header): every earnings tab and the XvB tier block render their
+// Day/Month/Year estimate through the shared EstTable, whose header row opened with a bare
+// `<th></th>` for the row-label corner. Fixing the two leaf tables left that shared corner behind,
+// so this sweeps the whole rendered document instead of naming one table: any table that reaches
+// the page with an unlabelled corner fails here, including one added later.
+test('no table reaches the page with an empty header cell (#1859)', () => {
+    const earnings = clone();
+    earnings.earnings.available = true;
+    earnings.earnings.tari_available = true;
+    const html = renderApp({ state: earnings });
+    // Guard against a vacuous pass: the state has to actually render the tables.
+    assert.ok((html.match(/<th[\s>]/g) || []).length > 10, 'expected many header cells to check');
+    assert.doesNotMatch(html, /<th[^>]*>\s*<\/th>/, 'an empty <th></th> is an unlabelled table corner');
+});
+
 // --- Landmarks + heading order (#1859: axe landmark-one-main / region / heading-order) ---------
 
 test('the App has exactly one header, one main and a labelled nav landmark', () => {
