@@ -14,6 +14,12 @@ test('App without state shows the right connection message', () => {
 test('App always renders the theme switcher, even before the first load', () => {
     assert.match(renderApp(), /theme-switcher/);
     assert.match(renderApp({ state: null }), /theme-switcher/);
+    // #1859: before the first load the switcher is fixed-position chrome with no <header> to live
+    // in, so it carries its own labelled landmark — without it axe's `region` rule flags it as
+    // content outside every landmark. Once state exists it sits inside the header and the wrapper
+    // would be redundant, so it is deliberately absent there.
+    assert.match(renderApp({ state: null }), /<section aria-label="Theme">/);
+    assert.doesNotMatch(renderApp(), /<section aria-label="Theme">/);
 });
 
 test('operational App shows a disconnected banner when not connected', () => {

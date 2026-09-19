@@ -439,11 +439,10 @@ export class ConfigView extends Component {
         ${this.renderForm(core, groups)}
         ${this.renderJson(editText, jsonError, busy)}
         <div class="config-actions">
-            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>
-                ${phase === "previewing" ? "Previewing…" : "Save & preview changes"}
-            </button>
+            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>${phase === "previewing" ? "Previewing…" : "Save & preview changes"}</button>
             ${dirty ? html`<button class="btn-toggle" disabled=${busy} onClick=${() => this.load()}>Discard edits</button>` : null}
         </div>
+        <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
           phase === "confirm" || phase === "committing"
             ? html`<${PreviewModal} preview=${preview} confirmText=${confirmText}

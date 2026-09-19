@@ -305,3 +305,39 @@ test("a CONFIRM change arms Confirm once APPLY is typed (#719)", () => {
   const btnArmed = armed.match(/<button class="btn-toggle active"[^>]*>/)[0];
   assert.doesNotMatch(btnArmed, /disabled/); // now committable
 });
+
+// #1859 (the repo owner's cycle-4 addendum names this phase by string): entering the previewing
+// phase only flipped the save button's own label, and the same `busy` flag disables that button —
+// the phase change landed on an element that had just left the focus order, so a screen reader was
+// told nothing. The remedy is a live region that is already in the DOM when the text arrives.
+test("the previewing phase announces itself in a live region, not on the button it disables", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ network: { mtu: 1500 } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(view.state.phase, "form");
+  const EMPTY = /<p class="sr-only" role="status" aria-live="polite"><\/p>/;
+  // Present and empty while the form is idle: a region inserted at the same moment as its text is
+  // not reliably announced, so the element has to ship with the form.
+  assert.match(renderToString(view.render()), EMPTY);
+
+  Object.assign(view.state, { phase: "previewing" });
+  const previewing = renderToString(view.render());
+  assert.match(previewing, /<p class="sr-only" role="status" aria-live="polite">Previewing changes…<\/p>/);
+  // The visible wording rides the button, which this phase disables — the region exists because
+  // that button is what a screen-reader user can no longer reach.
+  assert.match(previewing, /<button class="btn-toggle active" disabled>Previewing…<\/button>/);
+
+  // Clears when the preview resolves (the modal the confirm phase opens needs a preview to draw).
+  Object.assign(view.state, { phase: "confirm", preview: CONFIRM_PREVIEW });
+  assert.match(renderToString(view.render()), EMPTY);
+  // Keyed to the previewing phase, not to `busy`: `busy` also covers the commit, where this line
+  // would otherwise claim a preview was running while the apply was.
+  Object.assign(view.state, { phase: "committing" });
+  assert.doesNotMatch(renderToString(view.render()), /Previewing changes…/);
+});

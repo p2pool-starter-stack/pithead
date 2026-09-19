@@ -166,7 +166,8 @@ h2 {
 }
 /* Card titles were h3 until #1859, and an h3 takes the UA's bold; the bare h2 rule above sets
  * 600, so the weight is restated here rather than left to lighten on promotion. Scoped to the
- * card because .wizard-shell's headings were h2 before and after and keep the 600 they had. */
+ * card because wizard.css already sets 700 on .wizard-shell h2 and loads after this file, so a
+ * shared rule would be a no-op there. */
 .card h2 {
   font-weight: 700;
 }
