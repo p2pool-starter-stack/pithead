@@ -9,6 +9,12 @@
 # round trip the verb's own closing message promises. DESTRUCTIVE, ordered last: it tears the
 # checkout down and puts it back itself, so it does not depend on the box's normal down/apply
 # restore.
+_uninstall_dir_fingerprint() { # <dir> -> "<total-bytes>/<file-count>"
+    printf '%s/%s' \
+        "$(rx "du -sb $(quote_arg "$1") 2>/dev/null | cut -f1")" \
+        "$(rx "find $(quote_arg "$1") -type f 2>/dev/null | wc -l | tr -d ' '")"
+}
+
 run_uninstall_phase() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="uninstall"
@@ -31,7 +37,7 @@ run_uninstall_phase() {
     dirs="$(printf '%s\n' "$dirs" | sed -e 's/^"//' -e 's/"$//')"
     for dir in $dirs; do
         [ -n "$dir" ] || continue
-        fp_before="${fp_before}${dir}=$(rx "du -sb $(quote_arg "$dir") 2>/dev/null | cut -f1")/$(rx "find $(quote_arg "$dir") -type f 2>/dev/null | wc -l | tr -d ' '");"
+        fp_before="${fp_before}${dir}=$(_uninstall_dir_fingerprint "$dir");"
     done
     config_before="$(rx 'cat config.json' 2>/dev/null)"
 
@@ -57,7 +63,7 @@ run_uninstall_phase() {
     for dir in $dirs; do
         [ -n "$dir" ] || continue
         assert_contains "the kept message names $dir" "$uninstall_log" "$dir"
-        fp_after="${fp_after}${dir}=$(rx "du -sb $(quote_arg "$dir") 2>/dev/null | cut -f1")/$(rx "find $(quote_arg "$dir") -type f 2>/dev/null | wc -l | tr -d ' '");"
+        fp_after="${fp_after}${dir}=$(_uninstall_dir_fingerprint "$dir");"
     done
     assert_eq "kept data dirs unchanged on disk (size + file-count fingerprint)" "$fp_after" "$fp_before"
 
