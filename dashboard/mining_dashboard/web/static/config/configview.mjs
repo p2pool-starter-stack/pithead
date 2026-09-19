@@ -408,13 +408,11 @@ export class ConfigView extends Component {
       const ok = result.status === "applied";
       return html`<div class="card">
           <h2>Configuration</h2>
-          <div role="status" aria-live="polite">
-          ${
+          <div role="status" aria-live="polite">${
             ok
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
-          }
-          </div>
+          }</div>
           <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
       </div>`;
     }
