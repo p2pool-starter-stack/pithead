@@ -1,16 +1,13 @@
-// Appliance OS update control: drive the host's staged A/B update flow from the dashboard.
-//
-// The container only ASKS. Every step is one typed intent through the control spool
+// Appliance OS update control: drive the host's staged A/B update flow from the dashboard. The
+// container only ASKS. Every step is one typed intent through the control spool
 // (/api/control/os-update -> the host runner's os-check/os-download/os-verify/os-install/
 // os-reboot verbs); the host re-derives the release target over Tor, downloads to /data with
 // resume, verifies the LOCAL bundle (signature, compatible, downgrade floor) before a slot is
-// touched, and installs into the inactive slot while mining keeps running. Nothing here decides
-// anything — this file only sequences the asks and renders the host's answers.
-//
-// The reboot is its own intent behind a typed confirmation: it is the one step that pauses
-// mining, and nothing may reboot the machine implicitly. After it, the page polls until the
-// dashboard answers again; the post-reboot verdict (updated / rolled back) arrives via the
-// host-persisted state in state.os_update and renders as a banner.
+// touched, and installs into the inactive slot while mining keeps running. The reboot is its own
+// intent behind a typed confirmation — the one step that pauses mining, and nothing reboots the
+// machine implicitly. After it, the page polls until the dashboard answers again; the post-reboot
+// verdict (updated / rolled back) arrives via the host-persisted state in state.os_update and
+// renders as a banner.
 
 import { Component, html } from "../app/preact.mjs";
 import { verdictText } from "./osverdict.mjs";
@@ -126,7 +123,7 @@ export class OsUpdateControl extends Component {
   constructor(props) {
     super(props);
     // phase: closed | idle | checking | downloading | verifying | verified | installing |
-    //        reboot-pending | confirm-reboot | rebooting | error
+    //        reboot-ask | reboot-pending | confirm-reboot | rebooting | error
     this.state = {
       phase: "closed",
       check: null,
@@ -178,21 +175,18 @@ export class OsUpdateControl extends Component {
   }
 
   async download() {
-    // The host only downloads a target IT resolved: target.json is written in exactly one place,
-    // control_os_check. The idle pane offers Download off the passive update badge alone, so on a
-    // fresh appliance the first click posted a version the host had never checked, was refused,
-    // and the error pane's Retry re-posted the identical call — the first thing the feature ever
-    // does, failing forever. Resolve the target here when this flow has not checked yet; check()
-    // reports its own failure and returns nothing, which is the whole error path.
+    // The host only downloads a target it resolved (target.json is written only by
+    // control_os_check): a fresh appliance's first click off the passive badge alone posted an
+    // unchecked version, was refused, and the error pane's Retry re-posted it forever. Resolve
+    // the target here when this flow has not checked yet; check() reports its own failure path.
     let checked = this.state.check;
     if (!checked) {
       checked = await this.check();
       if (!checked) return;
     }
-    // A stale passive badge can offer Download for a release the host then reports as not newer.
-    // Posting it anyway earns "an equal version is nothing to update" and puts the error pane's
-    // Retry back into the same loop this guard exists to break. Fall back to idle instead, where
-    // the pane now renders off the fresh check and offers no Download at all.
+    // A stale passive badge can offer Download for a release the host then reports as not newer;
+    // posting it anyway loops the error pane's Retry forever. Fall back to idle instead, where
+    // the pane renders off the fresh check and offers no Download at all.
     if (checked.newer === false) {
       this.setState({ phase: "idle", check: checked });
       return;
@@ -245,7 +239,7 @@ export class OsUpdateControl extends Component {
         this.fail(out.error || "The install did not complete — the running system is untouched.");
         return;
       }
-      this.setState({ phase: "reboot-pending", result: out });
+      this.setState({ phase: "reboot-ask", result: out });
     } catch (e) {
       this.fail(e);
     }
@@ -321,6 +315,12 @@ export class OsUpdateControl extends Component {
       return html`<p>Installing ${version} into the spare slot — ${pct}%.</p>
           <p class="text-muted">Mining keeps running throughout.</p>`;
     }
+    if (phase === "reboot-ask")
+      return html`<p class="status-ok">${version || "The update"} is installed — reboot now?</p>
+          <div class="config-modal-actions">
+              <button class="btn-toggle" onClick=${() => this.setState({ phase: "closed" })}>Not now</button>
+              <button class="btn-toggle active" onClick=${() => this.setState({ phase: "reboot-pending" })}>Reboot</button>
+          </div>`;
     if (phase === "reboot-pending" || phase === "confirm-reboot")
       return html`<p class="status-ok">${version || "The update"} is installed in the spare slot.</p>
           <p>Reboot to finish. Mining pauses while the machine restarts — typically under five
@@ -384,7 +384,7 @@ export class OsUpdateControl extends Component {
         : " badge-outline";
     const label =
       os.step === "reboot-pending"
-        ? "OS update: reboot to finish"
+        ? `Reboot to finish the update to ${os.version ? (os.version.startsWith("v") ? os.version : "v" + os.version) : "the installed release"}`
         : passive && passive.available
           ? `OS update ${passive.latest}`
           : "OS updates";

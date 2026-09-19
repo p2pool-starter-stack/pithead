@@ -172,7 +172,7 @@ test("OsUpdateControl surfaces a host-remembered reboot-pending step on the butt
   const out = renderToString(
     inst({ os: { step: "reboot-pending", version: "1.19.0" }, enabled: true }).render(),
   );
-  assert.match(out, /reboot to finish/);
+  assert.match(out, /Reboot to finish the update to v1\.19\.0/);
 });
 
 test("releaseNotesHref pins the link to the public GitHub release page", () => {
@@ -231,6 +231,37 @@ test("the downloading modal shows resumable progress, the Tor warning, and Cance
   assert.match(out, /Over Tor — this can be slow/);
   assert.match(out, /resumes where it stopped/);
   assert.match(out, /Cancel/);
+});
+
+test("install() success lands on a plain Reboot now? ask, not straight at the typed gate", async () => {
+  // setState on an unmounted component doesn't land in this.state (see reboot() tests below).
+  const c = inst({ os: { step: "verified", version: "1.19.0" }, enabled: true });
+  const phases = [];
+  const realSetState = c.setState.bind(c);
+  c.setState = (patch) => {
+    if (patch && patch.phase) phases.push(patch.phase);
+    realSetState(patch);
+  };
+  await withFastPoll(
+    async (url, opts) => {
+      if (opts && opts.method === "POST") {
+        return { status: 202, ok: false, json: async () => ({ id: ID, status: "pending" }) };
+      }
+      return okResult({ status: "installed", version: "v1.19.0" });
+    },
+    () => c.install(),
+  );
+  assert.equal(phases[phases.length - 1], "reboot-ask");
+});
+
+test("the reboot-ask pane offers a plain Reboot now? with Reboot and Not now", () => {
+  const c = inst({ os: { step: "reboot-pending", version: "1.19.0" }, enabled: true });
+  c.state.phase = "reboot-ask";
+  const out = renderToString(c.render());
+  assert.match(out, /reboot now\?/);
+  assert.doesNotMatch(out, /Type <code>REBOOT<\/code>/); // the typed gate is one click further, not here
+  assert.match(out, />\s*Not now\s*</);
+  assert.match(out, />\s*Reboot\s*</);
 });
 
 test("the reboot gate requires the typed REBOOT and says mining pauses", () => {
