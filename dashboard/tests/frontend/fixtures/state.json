@@ -156,15 +156,10 @@
       {
         "conns": [
           {
-            "route": "tor",
-            "to": "Tari P2P transport"
-          },
-          {
-            "route": "local",
-            "to": "DNS resolution"
+            "route": "lan",
+            "to": "remote Tari node (gRPC)"
           }
         ],
-        "firewalled": true,
         "name": "tari"
       },
       {
@@ -218,6 +213,10 @@
           {
             "route": "inactive",
             "to": "Tor egress probe"
+          },
+          {
+            "route": "lan",
+            "to": "remote Tari node (sync gRPC)"
           }
         ],
         "firewalled": false,
@@ -240,7 +239,8 @@
       "firewall": true,
       "label": "All egress via Tor",
       "leaks": 0,
-      "level": "ok"
+      "level": "ok",
+      "unverified": 0
     }
   },
   "energy": {
@@ -463,13 +463,6 @@
         "to": "tor"
       },
       {
-        "from": "tari",
-        "kind": "p2p",
-        "label": "Tari P2P",
-        "route": "tor",
-        "to": "tor"
-      },
-      {
         "from": "xmrig-proxy",
         "kind": "egress",
         "label": "XvB donation",
@@ -555,7 +548,7 @@
       },
       {
         "from": "p2pool",
-        "kind": "internal",
+        "kind": "egress",
         "label": "gRPC merge-mine",
         "route": "lan",
         "to": "tari"
@@ -583,7 +576,7 @@
       },
       {
         "from": "dashboard",
-        "kind": "internal",
+        "kind": "egress",
         "label": "gRPC",
         "route": "lan",
         "to": "tari"
@@ -631,13 +624,15 @@
         "id": "monerod",
         "label": "monerod",
         "remote": false,
+        "route": "local",
         "zone": "host"
       },
       {
         "id": "tari",
         "label": "tari",
         "remote": true,
-        "zone": "host"
+        "route": "lan",
+        "zone": "remote"
       },
       {
         "id": "docker",
@@ -662,7 +657,8 @@
       "firewall": true,
       "label": "All egress via Tor",
       "leaks": 0,
-      "level": "ok"
+      "level": "ok",
+      "unverified": 0
     }
   },
   "update": {

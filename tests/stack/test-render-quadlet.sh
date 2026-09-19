@@ -48,6 +48,8 @@ assert_eq "remote node with an empty password keeps --rpc-login (#2278)" \
     "$(sed -n '/^Exec=/p' "$QEMPTY_PASSWORD/p2pool.container")" \
     "Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login rendered-node-user: --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats"
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
+assert_contains "remote render passes TARI_MODE to the dashboard" \
+    "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"TARI_MODE=remote"'
 # The two render targets share one dashboard, and a variable added to the compose service can be
 # left off the quadlet unit with nothing red (#1896: the three DASHBOARD_ONION_* values the header
 # reads reached compose in #1880 and the unit not at all). Pin the DASHBOARD_* cluster, the keys
@@ -101,6 +103,8 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     docker-control.container dashboard.container; do
     assert_eq "quadlet local parity: $f" "$(diff -u "$ROOT/os/quadlet/local/$f" "$QLOCAL/$f" 2>&1 | head -c 300)" ""
 done
+assert_contains "local render passes TARI_MODE to the dashboard" \
+    "$(sed -n 's/^Environment=//p' "$QLOCAL/dashboard.container")" '"TARI_MODE=local"'
 # The payout-confirm variant (bench-proven 2026-07-24): both wallet profiles, 13 files, the
 # dashboard gains the payout env keys only in this set (the others stay byte-identical).
 QPAY="$SANDBOX/quadlet-payout-out"
