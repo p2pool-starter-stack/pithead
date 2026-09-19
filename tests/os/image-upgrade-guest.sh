@@ -16,7 +16,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner | miner-share | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner-tree | local-miner-setup | local-miner-unit | miner-share | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -35,7 +35,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner miner-share baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner-tree local-miner-setup local-miner-unit miner-share baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -126,11 +126,18 @@ GUEST_STAGE=baseline-setup
 # stratum port and starts the same xmrig.service unit a provisioned coordinator runs. The baseline
 # is v1.20.0, which predates that subcommand, so the APPLIANCE's own CLI is invoked against the
 # baseline stack directory rather than the bundle's.
-GUEST_STAGE=local-miner
+# Split into named checkpoints (job 537: the CLI call alone gave no sub-stage) so the next
+# deployed run identifies which primitive failed without widening the phase-private payload —
+# the same pattern jobs 478-480 used to isolate the reflink mount boundary.
+GUEST_STAGE=local-miner-tree
+[ -x /data/rigforge/rigforge.sh ]
+GUEST_STAGE=local-miner-setup
 (
     cd "$MOUNT/current"
     PITHEAD_APPLIANCE=1 /opt/pithead/pithead local-miner
 )
+GUEST_STAGE=local-miner-unit
+systemctl is-active --quiet xmrig.service
 
 # Wait for the miner to reach the state the gate demands, and record how long it took. The budget
 # is a measurement ceiling, not a guess: the run that sets it reports the real figure, and only
