@@ -192,7 +192,10 @@ build() {
         fi
     done <<<"$slices"
 
-    first=$(printf '%s\n' "$slices" | head -n 1)
+    # Parameter expansion, not `printf | head`: `head -n 1` closes its read end after one line,
+    # and under `set -o pipefail` a `printf` SIGPIPE'd on the rest of a multi-line `$slices` fails
+    # the whole pipeline, aborting the build on a working, ordinary invocation (#2337).
+    first=${slices%%$'\n'*}
     if [ "$(head -n 1 "$first")" != "#!/usr/bin/env bash" ]; then
         echo "build-pithead: FATAL — the first slice ($first) does not open with the shebang." \
             "Sort order and file order have diverged; the built artifact would not be executable." >&2
