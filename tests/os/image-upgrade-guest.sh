@@ -138,10 +138,13 @@ GUEST_STAGE=baseline-setup
 GUEST_STAGE=local-miner-tree
 [ -x /data/rigforge/rigforge.sh ] && [ -d /data/rigforge ]
 # `render_local_miner_config` returns 0 WITHOUT writing its config on exactly two branches: a
-# missing RigForge tree (ruled out above) and a machine_role of `rig`, which reads $PWD/machine-role
-# — $PWD here being the baseline stack dir, not the appliance's own. Job 553 reported
-# local-miner-render, so one of those two fired; assert the role separately so the stage name says
-# which, rather than leaving both behind one verdict.
+# missing RigForge tree (ruled out above) and a machine_role of `rig`. Job 553/632 (jobs 553 and
+# 632, before this fix) reported local-miner-render even with both ruled out: 00-prelude.sh's
+# `cd "$SCRIPT_DIR"` runs on EVERY invocation of /opt/pithead/pithead, unconditionally — so `cd
+# "$MOUNT/current"` below never put the CLI's $PWD there, and machine_role() (which reads
+# $PWD/machine-role, with no override before #2057) actually read /opt/pithead/machine-role, the
+# appliance's OWN marker, not the baseline's. Assert the baseline's role directly so the stage
+# name still distinguishes it from a genuine render failure.
 GUEST_STAGE=local-miner-role
 [ "$(cat "$MOUNT/current/machine-role" 2>/dev/null || echo pithead)" != rig ]
 
@@ -151,10 +154,17 @@ GUEST_STAGE=local-miner-role
 # with nothing in the guest journal to say where inside it. Whether config.json exists afterward
 # tells render from rigforge.sh apart without capturing any command output: the appliance's own
 # CLI is pithead's to fix, RigForge's own `setup` is a companion repo's.
+#
+# PITHEAD_CONFIG_FILE/PITHEAD_ENV_FILE/PITHEAD_MACHINE_ROLE_FILE, not `cd`: the CLI's own prelude
+# `cd`s to its SCRIPT_DIR (/opt/pithead) before reading anything, on every invocation, so pointing
+# it at the baseline directory needs the explicit overrides — the same ones the control runner's
+# staged-config preview already relies on for the same reason.
 local_miner_rc=0
 (
     cd "$MOUNT/current"
-    PITHEAD_APPLIANCE=1 /opt/pithead/pithead local-miner
+    PITHEAD_APPLIANCE=1 PITHEAD_CONFIG_FILE="$MOUNT/current/config.json" \
+        PITHEAD_ENV_FILE="$MOUNT/current/.env" PITHEAD_MACHINE_ROLE_FILE="$MOUNT/current/machine-role" \
+        /opt/pithead/pithead local-miner
 ) || local_miner_rc=$?
 if [ "$local_miner_rc" -ne 0 ]; then
     if [ -f /data/rigforge/config.json ]; then

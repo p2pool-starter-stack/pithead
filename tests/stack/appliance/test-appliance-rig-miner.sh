@@ -105,8 +105,8 @@ assert_eq "no marker at all -> pithead (every pre-contract machine)" "$(run_sour
 run_sourced "$MRSB" record_machine_role rig >/dev/null 2>&1
 assert_eq "the marker lands where the boot path reads it" "$(cat "$MRSB/machine-role")" "rig"
 assert_eq "the boot path reads back what was written" "$(run_sourced "$MRSB" machine_role)" "rig"
-printf 'nonsense\n' >"$MRSB/machine-role"
-assert_eq "an unreadable marker degrades to pithead, never to rig" "$(run_sourced "$MRSB" machine_role)" "pithead"
+printf 'nonsense\n' >"$MRSB/machine-role" && assert_eq "an unreadable marker degrades to pithead, never to rig" "$(run_sourced "$MRSB" machine_role)" "pithead"
+printf 'rig\n' >"$MRSB/other-role" && assert_eq "PITHEAD_MACHINE_ROLE_FILE (#2057) wins over \$PWD" "$(PITHEAD_MACHINE_ROLE_FILE="$MRSB/other-role" run_sourced "$MRSB" machine_role)" "rig"
 rm -rf "$MRSB"
 unset MRSB
 
