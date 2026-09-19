@@ -647,7 +647,8 @@ def build_earnings_vs_actual(
         "blocks_30d": tari_conf.get("n_30d") if tari_conf.get("enabled") else None,
         "xtm_30d": tari_conf.get("xtm_30d") if tari_conf.get("enabled") else None,
         "partial": bool((tari_conf.get("partial") or {}).get("30d")),
-        "is_local": bool(metrics.tari_local),  # gates the view-key hint remote mode rejects (#1861)
+        # Tri-state, not coerced to bool: None (tari.mode off) must stay distinct from remote.
+        "is_local": metrics.tari_local,
     }
     stamps = [w.get("ts", 0) or 0 for w in (raffle_wins or [])]
     xvb = {

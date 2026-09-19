@@ -95,6 +95,18 @@ test('ExpectedVsActualCard drops the view-key hint under a REMOTE Tari node — 
     assert.match(out, /Not available with a remote Tari node\./);
 });
 
+test('ExpectedVsActualCard never claims "remote" for Tari switched OFF — is_local is None there, not False (#1861 review)', () => {
+    // tari_is_local() (config.py) returns None when tari.mode is off — a normal, wizard-offered
+    // config, not a remote node. The server must not collapse that into False (xvb_views.py), and
+    // the client's `=== false` check must not treat missing/null as remote either.
+    const s = clone();
+    s.earnings_summary.tari = { available: true, expected_blocks_30d: 0.0052, enabled: false,
+        blocks_30d: null, xtm_30d: null, partial: false, is_local: null };
+    const out = renderApp({ state: s });
+    assert.doesNotMatch(out, /Not available with a remote Tari node\./); // Tari is OFF, not remote
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Tari\./);
+});
+
 test('ExpectedVsActualCard counts Tari blocks and windows XvB wins (#808)', () => {
     const s = clone();
     s.earnings_summary.tari = { available: true, expected_blocks_30d: 0.41, enabled: true,

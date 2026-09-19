@@ -135,6 +135,17 @@ class TestEarningsVsActual:
         )
         assert s["tari"]["blocks_30d"] is None and s["tari"]["xtm_30d"] is None
 
+    def test_tari_is_local_stays_tri_state(self, _metrics):
+        # tari_is_local() (config.py) is None while tari.mode is off — a normal, wizard-offered
+        # config — distinct from True (local) and False (remote). A prior fix coerced this field
+        # with bool(), which collapsed "off" into the same False as "remote" and made the client
+        # falsely claim "Not available with a remote Tari node." for an operator who simply never
+        # turned Tari on (#1861 review). Must pass every value through unchanged.
+        e = _summary_earnings()
+        for tari_local in (None, True, False):
+            m = _metrics(tari_local=tari_local)
+            assert build_earnings_vs_actual(m, e, [], now=self.NOW)["tari"]["is_local"] is tari_local
+
     def test_xvb_counts_wins_in_the_trailing_30d_only(self, _metrics):
         wins = [
             {"ts": self.NOW - 40 * 86_400},  # outside the window
