@@ -18,6 +18,11 @@ if [ -z "$TARI_IMAGE" ]; then
     exit 1
 fi
 
+WORK_DIR="$(mktemp -d)"
+echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$WORK_DIR/.env"
+
+# 00-prelude.sh declares ENV_FILE readonly from PITHEAD_ENV_FILE, so this has to be set first.
+export PITHEAD_ENV_FILE="$WORK_DIR/.env"
 # shellcheck source=lib/pithead/00-prelude.sh
 source "$ROOT/lib/pithead/00-prelude.sh"
 # shellcheck source=lib/pithead/19-small-utilities.sh
@@ -26,11 +31,6 @@ source "$ROOT/lib/pithead/19-small-utilities.sh"
 source "$ROOT/lib/pithead/04-status.sh"
 # shellcheck source=lib/pithead/34-inject-service-configs.sh
 source "$ROOT/lib/pithead/34-inject-service-configs.sh"
-
-WORK_DIR="$(mktemp -d)"
-
-ENV_FILE="$WORK_DIR/.env"
-echo "CLEARNET_STATE_DIR=$WORK_DIR/clearnet-state" >"$ENV_FILE"
 # shellcheck disable=SC2034  # read by inject_service_configs (34-inject-service-configs.sh), sourced above
 TARI_ONION="testonionaddressxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion"
 # shellcheck disable=SC2034  # same: read by inject_service_configs. Compose default — a no-op substitution.
