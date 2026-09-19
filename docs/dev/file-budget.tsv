@@ -58,10 +58,12 @@ tests/integration/selftest/selftest-e2e-phases.sh	507
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest.sh	686
 tests/os/failure-evidence.sh	567
+tests/os/phases/install-restore.sh	402
 tests/os/phases/update.sh	413
 tests/stack/appliance/test-appliance-boot.sh	641
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
+tests/stack/appliance/test-appliance-install.sh	463
 tests/stack/appliance/test-appliance-media.sh	409
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457

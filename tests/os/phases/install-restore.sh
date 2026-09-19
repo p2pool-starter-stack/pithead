@@ -61,7 +61,9 @@ _phase_install_restore() {
     case "$rnames" in
     *dashboard*caddy* | *caddy*dashboard*)
         ok "restore leg: keep-reinstalled machine provisioned — a live stack to back up ($rnames)"
-        # Settle on units, not `podman ps`: the wizard may still hold the mutation lock; 900 s covers Tor.
+        # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
+        # mutation lock through its tor-health wait for minutes after the stack looks live, and a
+        # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
         if ! provisioning_settled 900; then
             bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
             backup_failure_evidence

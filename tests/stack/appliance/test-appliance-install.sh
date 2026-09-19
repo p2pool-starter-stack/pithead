@@ -397,3 +397,67 @@ PATH="$PFSB/bin:$PATH" run_sourced "$SANDBOX" prefill_from_previous_install "$PF
 assert_rc "no install on any disk -> rc 1" "$?" "1"
 rm -rf "$PFSB"
 unset PFSB PF_TREE
+
+echo "== unit: a carried restore rearms a kept target — the two markers go, the chains stay (#2230) =="
+# On a wipe=keep target (state pithead-with-data) carrying a restore archive on the ESP, the
+# installer removes the previous install's config.json and machine-role: both boot owners skip
+# the wizard while either survives, so the carried archive would never be consumed. It must remove
+# NOTHING else — the chain trees are the whole point of `keep`, and restore_apply merges into them
+# rather than forcing a resync. The shipped installer partitions disks, so tier 1 drives the block
+# itself, lifted out of the real file: the sed range is asserted non-empty, so moving the block
+# fails this row instead of vacuously passing it. Two seams, both deliberate and both named: the
+# ESP path is repointed into the sandbox so the carried/not-carried branches are both reachable,
+# and `[ -b` (a device node no unprivileged sandbox can make) is rewritten to `-e` on the
+# stand-in. Everything else — the state guard, the mount, the rm's target list, the failure
+# path — runs as written.
+mk_tmpdir CRSB
+crs_block=$(sed -n '/# A carried restore replaces the old configuration/,/^    fi$/p' "$ROOT/os/installer/pithead-install")
+assert_contains "the carried-restore block is still where this row lifts it from" "$crs_block" 'rm -f "$restore_mnt/pithead/config.json"'
+crs_block=${crs_block//\/boot\/efi\//\"\$CRS_ESP\"\/}
+assert_contains "...and its ESP probe was repointed at the sandbox" "$crs_block" '"$CRS_ESP"/pithead-restore.enc'
+crs_block=${crs_block//\[ -b \"\$data_part\" \]/[ -e \"\$data_part\" ]}
+assert_contains "...and its device-node probe fell through to the stand-in" "$crs_block" '[ -e "$data_part" ]'
+mkdir -p "$CRSB/esp" "$CRSB/part/pithead/data/monero" "$CRSB/part/pithead/data/tari" "$CRSB/part/pithead/data/p2pool"
+printf '{"monero":{"wallet_address":"4kept"}}' >"$CRSB/part/pithead/config.json"
+printf 'coordinator\n' >"$CRSB/part/pithead/machine-role"
+for _c in monero tari p2pool; do printf 'KEEP-%s\n' "$_c" >"$CRSB/part/pithead/data/$_c/chain-sentinel"; done
+# <carried 0|1> -> runs the block over a fresh copy of the fake partition, left in $CRSB/out
+crs_run() {
+    [ "$1" = 1 ] && : >"$CRSB/esp/pithead-restore.enc" || rm -f "$CRSB/esp/pithead-restore.enc"
+    rm -rf "$CRSB/out"
+    cp -a "$CRSB/part" "$CRSB/out" # the partition exists either way; the block decides what is left on it
+    (
+        set +e
+        # shellcheck disable=SC2034  # all three are read inside the evaluated installer block
+        CRS_ESP="$CRSB/esp" state=pithead-with-data target=/dev/fake-target
+        die() {
+            echo "die: $*" >&2
+            exit 1
+        }
+        lsblk() { printf '%s\tdata\n' "$CRSB/stand-in-part"; }
+        mount() { cp -a "$CRSB/part/." "$2/"; } # the partition's contents appear
+        umount() {
+            rm -rf "$CRSB/out"
+            cp -a "$1" "$CRSB/out"
+        } # ...and what is left lands back on it
+        rmdir() { rm -rf "${1:?}"; }
+        eval "crs_main() { $crs_block
+}"
+        crs_main
+    )
+}
+: >"$CRSB/stand-in-part"
+crs_run 1
+assert_rc "the carried-restore branch completes on a kept target" "$?" "0"
+assert_eq "...config.json is cleared, so firstboot re-arms on the restored archive" "$([ -e "$CRSB/out/pithead/config.json" ] || echo gone)" "gone"
+assert_eq "...machine-role is cleared, so pithead-boot does not take the provisioned fork" "$([ -e "$CRSB/out/pithead/machine-role" ] || echo gone)" "gone"
+assert_eq "...the kept monero chain is untouched" "$(cat "$CRSB/out/pithead/data/monero/chain-sentinel" 2>/dev/null)" "KEEP-monero"
+assert_eq "...the kept tari chain is untouched" "$(cat "$CRSB/out/pithead/data/tari/chain-sentinel" 2>/dev/null)" "KEEP-tari"
+assert_eq "...the kept p2pool chain is untouched" "$(cat "$CRSB/out/pithead/data/p2pool/chain-sentinel" 2>/dev/null)" "KEEP-p2pool"
+# Negative control: a keep reinstall with NO archive carried keeps the machine's own identity.
+crs_run 0
+assert_eq "a kept target with no carried archive keeps its config.json" "$(jq -r '.monero.wallet_address' "$CRSB/out/pithead/config.json" 2>/dev/null)" "4kept"
+assert_eq "...and keeps its role marker" "$(cat "$CRSB/out/pithead/machine-role" 2>/dev/null)" "coordinator"
+rm -rf "$CRSB"
+unset CRSB crs_block _c
+unset -f crs_run
