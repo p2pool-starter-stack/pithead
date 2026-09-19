@@ -3,7 +3,8 @@ FROM ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca0
 
 # Install system dependencies required for downloading, verifying, and configuring the node
 # 'gettext-base' provides 'envsubst' for template processing in entrypoint.sh
-RUN apt-get update && apt-get install -y \
+# Retry mirror-sync failures with 5s then 10s backoff (#1802).
+RUN for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done && apt-get install -y \
     wget bzip2 ca-certificates curl gettext-base \
     && rm -rf /var/lib/apt/lists/*
 

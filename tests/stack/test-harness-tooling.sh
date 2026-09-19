@@ -63,7 +63,8 @@ echo "== unit: verify-healthcheck-scripts against the real tree (#1098) =="
 # reaches an appliance.
 bash "$ROOT/scripts/lint/verify-healthcheck-scripts.sh" >/dev/null 2>&1
 assert_rc "every real healthcheck script exists where its own Dockerfile promises (#1098)" "$?" "0"
-
+echo "== unit: image builds retry apt update (#1802) =="
+for image in monero p2pool xmrig-proxy; do assert_contains "image build retries apt update with delayed, bounded backoff (#1802)" "$(cat "$ROOT/build/$image/Dockerfile")" 'for attempt in 1 2 3; do apt-get update && break || { [ "$attempt" = 3 ] && exit 1; sleep "$((attempt * 5))"; }; done'; done
 echo "== unit: patch-coverage overlap self-test (#1000) =="
 # diff-cover exits 0 on "No lines with coverage information" — a vacuous pass. The wrapper's
 # overlap check is what turns that into a loud not-applicable pass or a real failure; its
@@ -172,8 +173,7 @@ whwa_start="$SECONDS"
 whwa_pid=$!
 wait_while_alive "$whwa_pid" whwa_ready
 assert_rc "gives up the moment a holder that never checks in has already died" "$?" "1"
-assert_rc "and does so in under a second, not a fixed wait" \
-    "$([ "$((SECONDS - whwa_start))" -lt 2 ] && echo 0 || echo 1)" "0"
+assert_rc "and does so in under a second, not a fixed wait" "$([ "$((SECONDS - whwa_start))" -lt 2 ] && echo 0 || echo 1)" "0"
 # Force the holder to succeed and exit after CHECK returns false, before liveness is read.
 whwa_go="$SANDBOX/whwa-go"
 rm -f "$whwa_flag" "$whwa_go"
