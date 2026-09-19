@@ -66,14 +66,13 @@ done
 
 output=$(docker logs "$CONTAINER" 2>&1 || true)
 
-if [ "$survived" -eq 0 ] && grep -q "ConfigError" <<<"$output"; then
-    echo "$output" >&2
-    echo "FAIL: minotari_node rejected the rendered config (ConfigError)" >&2
-    exit 1
-fi
 if [ "$survived" -eq 0 ]; then
     echo "$output" >&2
-    echo "FAIL: minotari_node exited before the config-parse window elapsed (no ConfigError, unexpected)" >&2
+    if grep -q "ConfigError" <<<"$output"; then
+        echo "FAIL: minotari_node rejected the rendered config (ConfigError)" >&2
+    else
+        echo "FAIL: minotari_node exited before the config-parse window elapsed (no ConfigError, unexpected)" >&2
+    fi
     exit 1
 fi
 echo "  ✓ minotari_node accepted the rendered config (still running after the parse window, no ConfigError)"
