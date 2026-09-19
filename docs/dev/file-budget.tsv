@@ -63,6 +63,7 @@ tests/os/provision-browser-submit.sh	407
 tests/stack/appliance/test-appliance-boot.sh	640
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
+tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
