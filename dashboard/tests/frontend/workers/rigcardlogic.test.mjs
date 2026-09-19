@@ -134,7 +134,7 @@ test("rigCardNote: the pre-token wording is gone from every case", () => {
 const CONTROL_OFF = {
   ...FULL,
   control: "off",
-  reason: "the pool host does not resolve to an IPv4 address to pin the control API to",
+  reason: "the pool host does not resolve to an IPv4 address to pin it to",
 };
 
 test("rigCardFields: control off still shows the token row — the feed still needs it", () => {
