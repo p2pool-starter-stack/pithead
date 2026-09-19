@@ -4,25 +4,16 @@
 # any bench work, exactly like the --scenario mode restriction next to its call site: --mode check
 # runs nothing but --check, so a destructive addition here would join a run the mode promises never
 # touches anything.
-validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNESS_SSH_FAULT
+validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
     HARNESS_PHASE_ARGS=""
-    HARNESS_SSH_FAULT=0
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
     [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke)
+        --lifecycle | --fault-injection | --fault-injection-ssh | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
-            i=$((i + 1))
-            ;;
-        # #2000: bench-ci sends this phase as a bare token, but run.sh's --fault-injection-ssh
-        # takes the SSH destination as its value — only e2e.sh knows the bench's own alias, so it
-        # appends the pair and this records that it must.
-        --fault-injection-ssh)
-            # shellcheck disable=SC2034 # read by e2e.sh's run_harness, not in this file
-            HARNESS_SSH_FAULT=1
             i=$((i + 1))
             ;;
         --scenario)

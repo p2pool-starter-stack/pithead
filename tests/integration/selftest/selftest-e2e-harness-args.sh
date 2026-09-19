@@ -18,14 +18,14 @@ assert_eq "the extraction is the whole function (opens and closes)" \
 # Drives run_harness with HARNESS_PHASE_ARGS set directly, the way validate_harness_args
 # (lib/harness-args.sh) would leave it — that function's OWN allowlist/quoting is covered by
 # selftest-e2e-boundary.sh; this file only proves run_harness appends whatever it is handed.
-launch_of() { # <harness-phase-args> [harness-ssh-fault] -> the raw launch command string
+launch_of() { # <harness-phase-args> -> the raw launch command string
     local lf sf
     lf="$(mktemp)" sf="$(mktemp)"
     # shellcheck disable=SC2034,SC2329
     (
         exec </dev/null
         MODE=targeted BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
-        SCENARIO="" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1" HARNESS_SSH_FAULT="${2:-0}"
+        SCENARIO="" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1"
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         LAUNCH_FILE="$lf" STDIN_FILE="$sf"
         log() { :; }
@@ -77,12 +77,14 @@ assert_eq "it lands strictly AFTER the mode's own flags, not before" \
 assert_eq "a --scenario NAME pair supplied by validate_harness_args reaches run.sh verbatim" \
     "$(has_phase "$(phase_list_of "$(launch_of " --scenario custom-name")")" custom-name)" "yes"
 
-echo "== #2000: HARNESS_SSH_FAULT appends --fault-injection-ssh with our own BENCH_HOST, and only then =="
-OFF="$(phase_list_of "$(launch_of " --fault-injection" 0)")"
-ON="$(phase_list_of "$(launch_of " --fault-injection" 1)")"
-assert_eq "HARNESS_SSH_FAULT unset: no --fault-injection-ssh reaches run.sh" "$(has_phase "$OFF" --fault-injection-ssh)" "no"
-assert_eq "HARNESS_SSH_FAULT=1: --fault-injection-ssh reaches run.sh" "$(has_phase "$ON" --fault-injection-ssh)" "yes"
-assert_contains "the destination is our own BENCH_HOST (loopback), not a second box" "$ON" "--fault-injection-ssh bench"
+echo "== #2000: the SSH fault token gets our own BENCH_HOST appended as its dest, and only it does =="
+# bench-ci forwards the phase as a BARE token; only the wrapper knows the bench's own alias, so
+# run_harness is what pairs the two. Any other phase must not acquire a destination.
+OFF="$(phase_list_of "$(launch_of " --fault-injection")")"
+ON="$(phase_list_of "$(launch_of " --fault-injection-ssh")")"
+assert_eq "the plain fault phase gets no destination" "$(has_phase "$OFF" --fault-ssh-dest)" "no"
+assert_eq "the SSH fault phase does" "$(has_phase "$ON" --fault-ssh-dest)" "yes"
+assert_contains "and it is our own BENCH_HOST (the box dials itself), not a second box" "$ON" "--fault-ssh-dest bench"
 
 echo ""
 echo "selftest-e2e-harness-args: $IT_PASS passed, $IT_FAIL failed"

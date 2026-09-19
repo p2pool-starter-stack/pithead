@@ -58,11 +58,12 @@ MATRIX:
                          real clock-drift verdict, and tmpfs-fills the dashboard data dir for
                          a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
                          SSH and locally. Slow (healthcheck + node-health debounce).
-  --fault-injection-ssh <h>
-                         run the fault-injection phase with its own rx() calls (lib.sh) going to
-                         <user@host> over SSH instead of this run's --local/--host mode. Implies
-                         --fault-injection. Proves the SSH quoting branch the phase relies on
-                         without moving the rest of the run off --local (#2000).
+  --fault-injection-ssh  run the fault-injection phase with its own rx() calls (lib.sh) going over
+                         SSH instead of this run's --local/--host mode, proving the quoting branch
+                         the phase relies on without moving the rest of the run. Implies
+                         --fault-injection; REQUIRES --fault-ssh-dest (#2000).
+  --fault-ssh-dest <h>   the <user@host> --fault-injection-ssh dials. e2e.sh fills this in with the
+                         bench's own alias, since the selected phase arrives as a bare flag.
   --image-upgrade <old-sha> <new-sha>
                          run `pithead upgrade` from a private candidate release bundle against
                          the already-running old images and prove image revision, chain-data and
@@ -222,11 +223,15 @@ parse_args() {
             shift
             ;;
         --fault-injection-ssh)
+            RUN_FAULTS=1
+            FAULT_SSH=1
+            shift
+            ;;
+        --fault-ssh-dest)
             [ "$#" -ge 2 ] || {
-                it_err "--fault-injection-ssh requires an SSH destination <user@host>."
+                it_err "--fault-ssh-dest requires an SSH destination <user@host>."
                 exit 2
             }
-            RUN_FAULTS=1
             FAULT_SSH_DEST="$2"
             shift 2
             ;;
@@ -323,10 +328,16 @@ parse_args() {
     fi
     case "$FAULT_SSH_DEST" in
     -*)
-        it_err "--fault-injection-ssh needs an SSH destination, got the flag '$FAULT_SSH_DEST'."
+        it_err "--fault-ssh-dest needs an SSH destination, got the flag '$FAULT_SSH_DEST'."
         exit 2
         ;;
     esac
+    # Fail closed: the phase is only proof of the SSH branch if it actually took it, so a token
+    # that arrived without e2e.sh's destination must refuse rather than quietly run --local.
+    if [ "$FAULT_SSH" = "1" ] && [ -z "$FAULT_SSH_DEST" ]; then
+        it_err "--fault-injection-ssh needs --fault-ssh-dest <user@host>; refusing to run the phase locally."
+        exit 2
+    fi
     [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || {
         it_err "--rig-name contains unsupported characters: $RIG_NAME"
         exit 2

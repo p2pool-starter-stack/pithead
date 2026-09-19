@@ -10,18 +10,19 @@ source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/harness-args.sh
 source "$HERE/../lib/harness-args.sh"
 
-echo "== validate_harness_args: the bare phase token only records that e2e.sh must supply a dest =="
+echo "== validate_harness_args: the phase token is forwarded to run.sh unchanged =="
 MODE=targeted
 HARNESS_ARGS=(--fault-injection-ssh)
 validate_harness_args
-assert_eq "sets HARNESS_SSH_FAULT" "$HARNESS_SSH_FAULT" "1"
-# The token carries no value, but run.sh's --fault-injection-ssh REQUIRES one, so emitting it here
-# without the destination would hand run.sh an unparseable flag. e2e.sh appends the pair instead.
-assert_eq "emits no phase flag of its own (e2e.sh appends flag+dest together)" "$HARNESS_PHASE_ARGS" ""
+assert_eq "forwarded raw, like every other phase" "$HARNESS_PHASE_ARGS" " --fault-injection-ssh"
 
-HARNESS_ARGS=(--lifecycle)
-validate_harness_args
-assert_eq "an unrelated phase leaves HARNESS_SSH_FAULT off" "$HARNESS_SSH_FAULT" "0"
+# bench-ci selects a phase by reading THIS allowlist arm: _HARNESS_ALLOWLIST_RE (bench_ci/
+# catalogue.py) takes the first `--a | --b | ...)` arm whose very next line forwards $arg raw, and
+# offers exactly those names. A token in a bespoke arm is invisible to it and can never be
+# submitted (bench-ci#341/#359), so pin the token to that arm rather than merely to the allowlist.
+ARM="$(grep -A1 -E '^[[:space:]]*--lifecycle \|' "$HERE/../lib/harness-args.sh")"
+assert_contains "the token is IN the arm bench-ci reads" "$ARM" "--fault-injection-ssh"
+assert_contains "and that arm is the one that forwards \$arg raw" "$ARM" 'HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"'
 
 echo "== run_fault_injection_maybe: swaps IT_MODE/IT_SSH_DEST for the call, then restores them =="
 INTEGRATION_RUN_SUITE=1
@@ -51,13 +52,18 @@ assert_eq "with a destination: run_fault_injection sees it" "$RUN_FAULT_SEEN_DES
 assert_eq "restored to local after, so the rig lock never sees a non-local mode" "$IT_MODE" "local"
 assert_eq "and IT_SSH_DEST is restored too" "$IT_SSH_DEST" ""
 
-echo "== run-cli.sh: the flag implies --fault-injection and insists on a real destination =="
+echo "== run-cli.sh: the bare token implies --fault-injection and fails closed without a dest =="
+# The whole point of the phase is that it took the SSH branch, so a token that arrived without
+# e2e.sh's destination must refuse — never quietly run --local and report an SSH proof.
 out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-injection-ssh 2>&1)"
-assert_rc "a missing destination is refused" "$?" "2"
-assert_contains "and says what it needed" "$out" "requires an SSH destination"
-out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-injection-ssh --hardening 2>&1)"
-assert_rc "the NEXT flag is never swallowed as the destination" "$?" "2"
+assert_rc "the bare token alone is refused" "$?" "2"
+assert_contains "and says it will not run the phase locally" "$out" "refusing to run the phase locally"
+out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-injection-ssh --fault-ssh-dest --hardening 2>&1)"
+assert_rc "a following flag is never swallowed as the destination" "$?" "2"
 assert_contains "and names the flag it refused to treat as a host" "$out" "got the flag '--hardening'"
+out="$(bash "$HERE/../run.sh" --local --dir /tmp --fault-ssh-dest 2>&1)"
+assert_rc "a dest flag with no value is refused" "$?" "2"
+assert_contains "and says what it needed" "$out" "requires an SSH destination"
 
 echo ""
 echo "selftest-fault-injection-ssh: $IT_PASS passed, $IT_FAIL failed"
