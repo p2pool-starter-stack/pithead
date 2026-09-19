@@ -253,3 +253,91 @@ assert_eq "an already-pinned unit is still skipped (idempotence not simply remov
     "$(cmp -s "$PCE/units/.before" "$PCE/units/pithead-control.service" && echo same || echo rewritten)" "same"
 unset PCE
 unset -f pce_run pce_seed_matching_path
+
+echo "== unit: the idempotence check compares the PHYSICAL checkout dir, not the literal \$PWD (#2363) =="
+# A boot-driven call (WorkingDirectory=/data/pithead, the `current` symlink) chdirs a FRESH bash,
+# which sources $PWD from getcwd(2) — already resolved to the versioned dir. An interactive
+# `cd /data/pithead` shell keeps $PWD as the symlink text instead (the `cd` builtin does not
+# resolve it). Two invocations of the SAME checkout then wrote two different ExecStart strings, so
+# a later routine apply — config truly unchanged — failed the idempotence check on the mismatch
+# and re-provisioned the runner: the bug this issue's bench journal caught (job 25, provision
+# phase — a benign post-provision setting stopped pithead-control.path/.service mid `compose up`).
+PCP="$SANDBOX/pcp"
+mkdir -p "$PCP/units" "$PCP/bin" "$PCP/versions/pithead-v1.9.3/data/control"
+ln -s "$PCP/versions/pithead-v1.9.3" "$PCP/current"
+printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$PCP/bin/uname"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$PCP/bin/systemctl"
+chmod +x "$PCP/bin/uname" "$PCP/bin/systemctl"
+# Seed a unit already written in the PHYSICAL spelling (what this fix always writes), then run
+# from the `current` symlink — one checkout, its two spellings.
+printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCP/versions/pithead-v1.9.3" >"$PCP/units/pithead-control.path"
+printf '[Service]\nType=oneshot\nUser=root\nWorkingDirectory=%s\nRestart=on-failure\nRestartSec=15\nStartLimitIntervalSec=0\nEnvironment=PITHEAD_ENGINE=podman\nExecStart=%s/pithead control-run-pending\n' \
+    "$PCP/versions/pithead-v1.9.3" "$PCP/versions/pithead-v1.9.3" >"$PCP/units/pithead-control.service"
+out="$(
+    cd "$PCP/current" || exit
+    PATH="$PCP/bin:$PATH"
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    log() { :; }
+    sudo() { echo "sudo:$*"; }
+    PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCP/units" DASHBOARD_CONTROL_ENABLED=true \
+        CONTROL_DIR="$PCP/current/data/control" provision_control_runner 2>&1
+)"
+assert_not_contains "unit run via the symlink spelling, already correct in the physical spelling -> no sudo call, runner untouched" "$out" "sudo:"
+unset PCP out
+
+echo "== unit: provision_control_runner drains an in-flight claim before touching the runner (#2363) =="
+# A `.claim.<pid>` file sits directly under \$CONTROL_DIR only while control_run_pending is
+# actively working a request it already took out of requests/ (49-control-request-loop.sh claims
+# by mv before parsing a byte). The runner must stop the TRIGGER first — so no new claim can
+# start — then wait for one already in flight, and only then touch the units.
+PCD="$SANDBOX/pcd"
+mkdir -p "$PCD/units" "$PCD/bin" "$PCD/mine/data/control"
+printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$PCD/bin/uname"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$PCD/bin/systemctl"
+chmod +x "$PCD/bin/uname" "$PCD/bin/systemctl"
+
+pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units (+claim), run the removal branch
+    rm -f "$PCD/mine/data/control/.claim.1"
+    printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$PCD/mine" >"$PCD/units/pithead-control.service"
+    printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCD/mine" >"$PCD/units/pithead-control.path"
+    [ "$1" = yes ] && : >"$PCD/mine/data/control/.claim.1"
+    (
+        cd "$PCD/mine" || exit
+        PATH="$PCD/bin:$PATH"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        log() { :; }
+        sudo() { echo "sudo:$*"; }
+        # Instant and deterministic instead of a real 30s wait: the loop's own re-check after each
+        # poll is what is under test, not a fixed sleep count — so `sleep` either clears the claim
+        # on its first call (proving the wait ends via re-check, not a timer) or never does
+        # (proving the bound fires and the apply still proceeds).
+        if [ "$2" = yes ]; then
+            sleep() { rm -f "$PCD/mine/data/control/.claim.1"; }
+        else
+            sleep() { :; }
+        fi
+        PITHEAD_UNIT_DIR="$PCD/units" DASHBOARD_CONTROL_ENABLED=false \
+            CONTROL_DIR="$PCD/mine/data/control" provision_control_runner 2>&1
+    )
+}
+
+out="$(pcd_run no -)"
+assert_contains "no claim in flight -> stops the trigger, then still removes the units" "$out" "sudo:systemctl stop pithead-control.path"
+[[ "$out" == *"systemctl stop pithead-control.path"*"rm -f"* ]] && order=stop-then-rm || order=other
+assert_eq "no claim in flight -> stop happens BEFORE the units are taken away" "$order" "stop-then-rm"
+assert_not_contains "no claim in flight -> no timeout warning" "$out" "Timed out"
+
+out="$(pcd_run yes yes)"
+assert_not_contains "a claim that clears on the first poll -> no timeout warning" "$out" "Timed out"
+assert_contains "a claim that clears on the first poll -> the drain still ends in the units being removed" "$out" "sudo:rm -f"
+
+out="$(pcd_run yes no)"
+assert_contains "a claim that never clears -> bounded wait times out with a clear message" "$out" "Timed out after 30s"
+[[ "$out" == *"Timed out after 30s"*"sudo:rm -f"* ]] && order=timeout-then-proceed || order=other
+assert_eq "a claim that never clears -> the apply still proceeds after the bound, not stuck forever" "$order" "timeout-then-proceed"
+unset PCD out order
+unset -f pcd_run

@@ -36,6 +36,23 @@ control_units_owner_dir() {
     printf '%s' "$(cd "$dir" 2>/dev/null && pwd -P)$tail"
 }
 
+# Bounded wait for the root runner to finish a request it already claimed (#2363): a `.claim.*`
+# file next to $CONTROL_DIR exists only while control_run_pending is actively working one
+# (49-control-request-loop.sh claims by mv before parsing a byte). Stopping the runner mid-claim
+# kills a request whose requested change already landed — only the result file is lost, so the
+# dashboard caller polls to its own deadline and reports a failure that never happened.
+control_runner_wait_idle() {
+    local waited=0 max_wait=30
+    while compgen -G "$CONTROL_DIR/.claim.*" >/dev/null; do
+        if [ "$waited" -ge "$max_wait" ]; then
+            warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish before re-provisioning the runner — its result may be lost."
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
 # Install (or remove) the systemd trigger for the runner (#33): a path unit that fires
 # `pithead control-run-pending` whenever a request file lands in the spool. Root, because `apply`
 # needs iptables/chown; the service is a FIXED ExecStart with no parameter from the container, so
@@ -44,8 +61,18 @@ control_units_owner_dir() {
 provision_control_runner() {
     [ "$OS_TYPE" == "Linux" ] || return 0
     command -v systemctl >/dev/null 2>&1 || return 0
-    local unit_dir engine
+    local unit_dir engine pwd_p
     unit_dir=$(control_unit_dir)
+    # Physical, never the literal $PWD (#2363): a boot-driven call (WorkingDirectory=/data/pithead,
+    # the symlink) starts a fresh bash, which sources $PWD from getcwd(2) — already resolved. An
+    # interactive `cd /data/pithead` shell keeps $PWD as the symlink text instead, and every
+    # ExecStart/WorkingDirectory line below, plus the idempotence check, embeds it verbatim. Two
+    # invocations of the SAME checkout then wrote two different strings, so a later apply with a
+    # config that had not changed at all still failed the idempotence check and re-provisioned —
+    # the "routine apply restarts the runner" bug, not just a rare one. control_units_owner_dir()
+    # already compared physical paths for ownership; this brings the idempotence check and the
+    # written unit content onto the same footing.
+    pwd_p=$(pwd -P)
     # The engine this install was provisioned WITH, pinned into the unit below (#2059).
     engine=$(container_engine)
     # Enablement must be --runtime wherever the units are runtime units: on the appliance's
@@ -73,6 +100,10 @@ provision_control_runner() {
                 fi
             fi
             log "Removing the dashboard control runner units..."
+            # Stop the trigger FIRST (#2363) — no new claim can start once .path is down — then
+            # wait for one already in flight, and only then take the units away.
+            sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
+            control_runner_wait_idle
             sudo systemctl disable --now pithead-control.path >/dev/null 2>&1 || true
             sudo rm -f "$unit_dir/pithead-control.path" "$unit_dir/pithead-control.service"
             sudo systemctl daemon-reload
@@ -88,7 +119,7 @@ provision_control_runner() {
     # be silently inert on every box already provisioned — including the one the defect was measured
     # on. Falling through costs one sudo write, once, and then converges.
     if grep -qsF "PathExistsGlob=$CONTROL_DIR/requests/*.json" "$unit_dir/pithead-control.path" &&
-        grep -qsF "ExecStart=$PWD/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
+        grep -qsF "ExecStart=$pwd_p/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
         grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service" &&
         grep -qsF "StartLimitIntervalSec=0" "$unit_dir/pithead-control.service"; then
         return 0
@@ -118,6 +149,14 @@ provision_control_runner() {
             return 0
         fi
     fi
+    # A fresh install has nothing running to drain. A re-provision (drifted unit, adoption, steal)
+    # does: stop the trigger BEFORE the rewrite below so no new claim can start, then wait for one
+    # already in flight to finish and write its result (#2363) — same ordering as the removal
+    # branch above.
+    if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
+        sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
+        control_runner_wait_idle
+    fi
     log "Installing the dashboard control runner (systemd path unit)..."
     sudo tee "$unit_dir/pithead-control.service" >/dev/null <<EOF
 [Unit]
@@ -134,7 +173,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=$PWD
+WorkingDirectory=$pwd_p
 # Retries a transient "not fully set up yet" (or any other one-off failure) without waiting for
 # a new request to land — the request already queued is what needs the retry (#2219). 15s: a
 # genuinely-stuck box (setup never completes) retries forever at this pace rather than fast-spinning
@@ -157,7 +196,7 @@ RestartSec=15
 # DETECTED, never hardcoded to podman: the same renderer runs on the DIY channel, where docker is
 # the correct answer. What the unit inherits is whatever the install itself was provisioned with.
 Environment=PITHEAD_ENGINE=$engine
-ExecStart=$PWD/pithead control-run-pending
+ExecStart=$pwd_p/pithead control-run-pending
 EOF
     sudo tee "$unit_dir/pithead-control.path" >/dev/null <<EOF
 [Unit]
