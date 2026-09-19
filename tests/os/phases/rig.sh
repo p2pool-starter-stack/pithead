@@ -34,16 +34,36 @@ phase_rig() {
     # wizard round trip. Stage a TOKENLESS one directly there, exactly as pre-#1836 media would,
     # and boot: the guard must refuse it and fall to the setup page, never mint one unseen. This
     # spends a throwaway copy of the image; the rig boot below uses the untouched original.
-    local land_disk="/srv/code/bench-vm/pithead-rig-token-landing.img" land_loop land_mnt land_tries=0
-    cp "$img" "$land_disk"
-    land_loop=$(losetup -Pf --show "$land_disk")
+    # Every staging step fails LOUDLY: a leg that silently staged nothing would boot a pristine
+    # image, pass the role and page checks for the wrong reason, and report the guard proven.
+    local land_disk="/srv/code/bench-vm/pithead-rig-token-landing.img" land_loop land_mnt land_tries=0 land_warn
+    cp "$img" "$land_disk" || {
+        bad "could not copy the image for the tokenless-landing leg"
+        return
+    }
+    land_loop=$(losetup -Pf --show "$land_disk") || {
+        bad "could not attach a loop device to the tokenless-landing image"
+        return
+    }
     while [ ! -e "${land_loop}p1" ] && [ "$land_tries" -lt 50 ]; do
         sleep 0.1
         land_tries=$((land_tries + 1))
     done
+    [ -e "${land_loop}p1" ] || {
+        bad "the tokenless-landing image's ESP partition never appeared (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
     land_mnt=$(mktemp -d)
-    mount "${land_loop}p1" "$land_mnt"
+    mount "${land_loop}p1" "$land_mnt" || {
+        bad "could not mount the tokenless-landing image's ESP (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
     printf '{"pool":"127.0.0.1:22","worker":"kvm-rig"}' >"$land_mnt/pithead-rig.json"
+    jq -e .pool "$land_mnt/pithead-rig.json" >/dev/null 2>&1 &&
+        ok "the tokenless rig file reads back off the staged ESP before the boot" ||
+        bad "the tokenless rig file did not read back off the staged ESP — the leg would prove nothing"
     umount "$land_mnt"
     rmdir "$land_mnt"
     losetup -d "$land_loop"
@@ -54,9 +74,22 @@ phase_rig() {
         _wait_setup_page 120 &&
             ok "#1843: the machine falls to the setup page instead of mining unadoptably" ||
             bad "#1843: the setup page never came up after the refusal"
+        # POSITIVE evidence that the guard itself ran, which the two checks above cannot give:
+        # a pristine image with nothing staged passes both for the wrong reason. This line comes
+        # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
+        land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
+        [ -n "$land_warn" ] &&
+            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | cut -c1-140)" ||
+            bad "#1843: no 'unusable' line in the boot journal — the guard never ran on this boot"
+        # Refused is still readable: the file may carry a stratum password and a VFAT ESP keeps
+        # no mode 600, so the refusal scrubs it exactly as the consumed path does.
+        _ssh "test ! -e /boot/efi/pithead-rig.json" &&
+            ok "#1843: the refused file was scrubbed off the ESP (it may hold a stratum password)" ||
+            bad "#1843: the refused file still sits on the ESP, unprotected on VFAT"
     else
         bad "the tokenless-landing guest never answered SSH (ip: ${ip:-none})"
     fi
+    rm -f "$land_disk"
 
     _vm_boot_disk "$img" && _wait_ssh 240 || {
         bad "guest never answered SSH (ip: ${ip:-none})"

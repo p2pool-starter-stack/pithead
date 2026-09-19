@@ -177,7 +177,11 @@ The stick mints the control token BEFORE the card (`rig_access_token` in `firstb
 above `write_handoff_card`), so the card the operator confirms on the stick already carries the
 token the installed machine will enforce — the only place that token is ever shown. The landing
 leg therefore requires a well-formed `access_token` in the staged file, alongside the pool it
-already required, and treats a file without one as unusable.
+already required, and treats a file without one as unusable. A refused file is then **scrubbed
+off the ESP exactly as a consumed one is** (`scrub_staged_rig`, shared by both branches): it is
+unusable by definition, it may still carry a `stratum_password`, and a VFAT ESP keeps no mode 600
+to protect one. As with the consumed path and the config pre-seed, the scrub is skipped on
+removable media — that stick is the operator's own fleet tool, theirs to keep.
 
 What changes on a machine: a disk install staged by a stick older than #1836 carries no token,
 so its first boot now stops on the setup page instead of coming up as a rig mining under a token

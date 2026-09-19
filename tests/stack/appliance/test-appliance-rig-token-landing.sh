@@ -16,6 +16,7 @@ out=$(PITHEAD_INSTALL_BIN=/nonexistent run_sourced "$RTLB" firstboot_wizard 2>&1
 assert_contains "the missing token is named" "$out" "unusable"
 [ -f "$RTLB/rig.json" ] && bad "a tokenless staged file lands anyway" "landed" || ok "a tokenless staged file is never landed"
 [ -f "$RTLB/machine-role" ] && bad "a tokenless staged file marks a role anyway" "marked" || ok "no role is marked"
+[ -f "$RTLESP/pithead-rig.json" ] && bad "the refused file sits on the ESP" "still there" || ok "the refused file is scrubbed off the ESP (it may hold a stratum password)"
 printf '{"pool":"10.0.0.5:3333","worker":"shed-3","access_token":"dcfda835679ae98638633f189d9e5979"}' >"$RTLESP/pithead-rig.json"
 run_sourced "$RTLB" firstboot_wizard >/dev/null 2>&1
 assert_eq "a well-formed token lands and rides through unminted" \
