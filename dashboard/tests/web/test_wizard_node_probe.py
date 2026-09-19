@@ -279,26 +279,30 @@ def _fake_resolver(*addresses, error=None):
 
 
 async def test_a_name_resolving_only_to_a_private_ipv4_is_accepted():
-    with _fake_resolver("192.168.1.172"):
-        assert await wizard_node_probe._resolved_address("ci-2.lan", 18142, True) == "192.168.1.172"
+    with _fake_resolver("10.20.30.40"):
+        assert (
+            await wizard_node_probe._resolved_address("node.example", 18142, True) == "10.20.30.40"
+        )
 
 
 async def test_a_dual_stack_name_is_accepted_and_pins_its_private_ipv4():
     """The AAAA answer beside a private A record used to reach the egress refusal outright."""
-    with _fake_resolver("192.168.1.172", "fd00::1"):
-        assert await wizard_node_probe._resolved_address("ci-2.lan", 18142, True) == "192.168.1.172"
+    with _fake_resolver("10.20.30.40", "fd00::1"):
+        assert (
+            await wizard_node_probe._resolved_address("node.example", 18142, True) == "10.20.30.40"
+        )
 
 
 async def test_a_name_answering_only_over_ipv6_keeps_the_egress_refusal():
     with _fake_resolver("fd00::1"):
-        failure = await wizard_node_probe._resolved_address("ci-2.lan", 18142, True)
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
     assert failure[0] == "address"
     assert "IPv4 ranges" in failure[1]
 
 
 async def test_a_name_resolving_to_a_public_address_keeps_the_egress_refusal():
     with _fake_resolver("203.0.113.5"):
-        failure = await wizard_node_probe._resolved_address("ci-2.lan", 18142, True)
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
     assert failure == (
         "address",
         "The Tor egress firewall lets mining containers dial remote nodes only on private "
@@ -307,14 +311,14 @@ async def test_a_name_resolving_to_a_public_address_keeps_the_egress_refusal():
 
 
 async def test_a_name_resolving_to_a_mix_of_private_and_public_keeps_the_egress_refusal():
-    with _fake_resolver("192.168.1.172", "203.0.113.5"):
-        failure = await wizard_node_probe._resolved_address("ci-2.lan", 18142, True)
+    with _fake_resolver("10.20.30.40", "203.0.113.5"):
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
     assert failure[0] == "address"
 
 
 async def test_an_unresolvable_name_keeps_the_dns_refusal():
     with _fake_resolver(error=socket.gaierror("nodename nor servname provided")):
-        failure = await wizard_node_probe._resolved_address("ci-2.lan", 18142, True)
+        failure = await wizard_node_probe._resolved_address("node.example", 18142, True)
     assert failure == ("dns", "The node name did not resolve to an address.")
 
 
@@ -327,12 +331,12 @@ async def test_a_name_resolving_to_a_private_ipv4_is_pinned_into_the_rendered_ca
         return True, "ok", "zmq"
 
     monkeypatch.setattr(wizard_node_probe, "_monero_zmq", zmq)
-    with _fake_resolver("192.168.1.172"):
+    with _fake_resolver("10.20.30.40"):
         cfg = _candidate()
-        cfg["monero"]["remote"]["host"] = "ci-2.lan"
+        cfg["monero"]["remote"]["host"] = "node.example"
         report = await wizard_node_probe.probe_remote_nodes(cfg)
     assert report["ok"] is True
-    assert cfg["monero"]["remote"]["host"] == "192.168.1.172"
+    assert cfg["monero"]["remote"]["host"] == "10.20.30.40"
 
 
 @pytest.fixture
