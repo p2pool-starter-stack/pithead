@@ -40,8 +40,13 @@ control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget
     # with the machine off until someone presses its button, which is this feature's accepted
     # design, and one shared stamp would instead refuse the operator's real sequence — reboot,
     # see it did not help, power off to go and move the box.
+    # The `-newermt now` arm is not redundant: a stamp can carry a FUTURE mtime after the clock
+    # steps backwards (an appliance syncs time at boot, so first boot is exactly when that happens),
+    # and whether a negative age satisfies `-mmin -5` is a findutils detail this must not depend on.
+    # With both arms the window is fail-closed under either reading — a clock step can hold an
+    # operator's second order a while longer, never let a loop through.
     local stamp="$1/.power-stamp.$4"
-    if [ -n "$(find "$stamp" -mmin -5 2>/dev/null)" ]; then
+    if [ -n "$(find "$stamp" \( -mmin -5 -o -newermt now \) 2>/dev/null)" ]; then
         control_os_refuse "$1" "$2" "$3" "$4" rejected "the same power order ran less than five minutes ago — retry in a few minutes."
         return 1
     fi

@@ -36,7 +36,10 @@ phase_provision_power_regressions() {
     # Re-acquire the lease rather than assuming it: a guest that took a DIFFERENT address would
     # otherwise make every probe below fail as "never came back", which is the misreport
     # _ssh_unreachable_reason exists to stop (tests/os/lib/core.sh). Sets the shared `ip`.
-    _wait_dhcp_ip 120 || bad "no DHCP lease after the dashboard-ordered reboot"
+    _wait_dhcp_ip 120 || {
+        bad "no DHCP lease after the dashboard-ordered reboot — every probe below would red for that, not for the product"
+        return
+    }
     _wait_ssh 120 || true
     code=""
     local tries=0 answered=0
@@ -80,7 +83,10 @@ phase_provision_power_regressions() {
         bad "could not start the guest again after the dashboard-ordered poweroff"
         return
     }
-    _wait_dhcp_ip 180 || bad "no DHCP lease after the power-button restart"
+    _wait_dhcp_ip 180 || {
+        bad "no DHCP lease after the power-button restart — every probe below would red for that, not for the product"
+        return
+    }
     if _wait_ssh 300; then
         ok "the guest boots back up once started — the physical-power-button half of the round trip"
     else
