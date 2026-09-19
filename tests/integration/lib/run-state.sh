@@ -108,10 +108,8 @@ assert_running_state() {
     fi
     it_pass "dashboard /api/state reachable"
 
-    if wait_for 150 5 "monerod caught up (RPC)" monero_caught_up; then it_pass "monerod reports synced (RPC)"; else
-        monero_caught_up # wait_for's own return is only timeout-or-not; re-ask for the real verdict.
-        if [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
-    fi
+    wait_for 150 5 "monerod caught up (RPC)" monero_caught_up || true
+    if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
     # 4b. The node's ZMQ endpoint is a live ZMTP PUBLISHER (#1497) — strictly less than "publishes
     #     block notifications", and this row is named for what it proves, not for what the issue
     #     wants. Step 4 is satisfied by a node that can never publish one: an --offline monerod
