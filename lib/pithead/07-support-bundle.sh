@@ -53,10 +53,13 @@ bundle_redact_log() {
 # that is what support actually needs. Keep this pattern in step with CONTROL_SECRET_PATHS
 # (30-release-fetch-and-masked-config.sh): every leaf masked there needs its .env counterpart
 # listed here too, or the same secret ships in cleartext in one artifact while the other redacts
-# it (#2342). tests/stack covers the full enumeration.
+# it (#2342). That array is the floor, not the whole list: a key can carry a secret into .env
+# without being a control-channel leaf — NOTIFY_WEBHOOK_URLS is rendered from a jq array stanza,
+# and XVB_DONOR_ID defaults to "${MONERO_WALLET:0:8}" (33-render-env.sh), so it ships a slice of
+# the payout address under a name no wallet term reaches. tests/stack covers the full enumeration.
 bundle_redact_env() {
     awk -F= '/^[A-Z0-9_]+=/ {
-        if ($1 ~ /(PASSWORD|TOKEN|SECRET|KEY|WALLET|ONION|AUTH|PING_URL|CHAT_ID|WEBHOOK_URLS|NTFY_URL|STANDBY_SOURCE|USERNAME)/) print $1 "=[redacted]";
+        if ($1 ~ /(PASSWORD|TOKEN|SECRET|KEY|WALLET|ONION|AUTH|PING_URL|CHAT_ID|WEBHOOK_URLS|NTFY_URL|STANDBY_SOURCE|USERNAME|DONOR_ID)/) print $1 "=[redacted]";
         else print; next } { print }'
 }
 

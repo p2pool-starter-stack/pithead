@@ -106,11 +106,13 @@ assert_eq "CONTROL_SECRET_PATHS' leaf set matches the recorded set (a new leaf r
     "$csp_leaves" "$csp_expected"
 
 # One .env line per leaf above (plus the auth leaf's two on-disk forms, hash and fingerprint,
-# since neither is the raw password), plus NOTIFY_WEBHOOK_URLS — notifications.webhooks[] is a jq
-# array stanza render_masked_config masks by path rather than a CONTROL_SECRET_PATHS entry, so it
-# never appears in the recorded set above, but #2342 named it a cleartext leak too. This fixture
-# IS the redaction check's key list, not a second one: the loop below reads it back off this file
-# rather than retyping the names.
+# since neither is the raw password), plus two keys that carry a secret into .env WITHOUT being a
+# control-channel leaf, so neither can ever appear in the recorded set: NOTIFY_WEBHOOK_URLS, which
+# render_masked_config masks by path from a jq array stanza; and XVB_DONOR_ID, which
+# 33-render-env.sh:144 defaults to "${MONERO_WALLET:0:8}" — 8 characters of the payout address
+# under a name no wallet term reaches, already secret to redact() and to MUST_REDACT, so the
+# bundle was the one artifact of the three shipping it. This fixture IS the redaction check's key
+# list: the loop below reads it back off this file rather than retyping the names.
 cat >"$BE/env-fixture" <<'EOF'
 DASHBOARD_AUTH_HASH_B64=aGFzaA==
 DASHBOARD_AUTH_PW_FP=fingerprint
@@ -125,6 +127,7 @@ HEALTHCHECKS_PING_URL=https://hc-ping.com/uuid
 NTFY_URL=https://ntfy.sh/pithead-7f3a-private
 NTFY_TOKEN=ntfytoken
 XVB_STANDBY_SOURCE=http://user:pw@node.example:18081
+XVB_DONOR_ID=48Bwtsa1
 NOTIFY_WEBHOOK_URLS=https://hooks.slack.com/services/T00/B00/SECRETPATH
 HOST_IP=box.lan
 EOF
