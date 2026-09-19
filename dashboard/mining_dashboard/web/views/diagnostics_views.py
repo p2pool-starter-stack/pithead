@@ -86,7 +86,7 @@ async def handle_diag_logs(request):
     return web.json_response({"id": rid, "status": "pending"}, status=202)
 
 
-async def handle_onion_client_key(request):
+async def handle_onion_key(request):
     """Ask the host for the dashboard onion's Tor client-auth credential, shown once (#1882).
 
     No body, like backup: the container supplies nothing and decides nothing. The host checks that
