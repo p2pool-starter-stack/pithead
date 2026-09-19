@@ -10,11 +10,15 @@
 # card the operator reads says the control path is off and why instead of naming an adopt form the
 # rig will never answer.
 #
-# The pool is the guest's OWN sshd through `ip6-localhost`, which the image's /etc/hosts carries on
-# the ::1 line only (os/rauc/populate-slot.sh). That is this case's real shape: a host the wizard's
-# pre-commit dial REACHES (so the form is accepted — over IPv6) and `getent ahostsv4` cannot answer
-# for (so there is no address to pin control to). A name resolving to nothing at all is refused at
-# that dial and never produces a card at all, which is a different path.
+# The pool is the guest's OWN sshd, dialed by its IPv6 loopback LITERAL, `[::1]`: job 114 showed
+# `ip6-localhost` is the wrong host for this case on a booted appliance — systemd-resolved (and this
+# very codebase's own worker_adopt.py loopback-alias list) treats it as a general localhost alias and
+# answers it on BOTH families, so `getent ahostsv4` found an A record for it same as for `localhost`.
+# A raw `[::1]` literal never enters NSS at all: `getent ahostsv4` only matches A records for names
+# (or parseable IPv4 literals), and `::1` is neither, so it reliably comes back empty. The dial itself
+# still reaches it (bash's /dev/tcp connects the literal directly, no resolution needed), so the form
+# is still accepted; a host that fails the dial altogether is refused there and never produces a card,
+# which is a different path.
 #
 # The leg restores the rig to 127.0.0.1:22 before it returns — the phase's update and coordinator
 # legs run after it — and that restore doubles as the positive control: the field is conditional.
@@ -56,7 +60,7 @@ rig_control_off_leg() {
     info "control-off leg (#1867) — a pool host with no IPv4 leaves control off, and the card says why"
     _setup_again_boot 300 || return
     _setup_again_session || return
-    card=$(_setup_again_rig_submit kvm-rig ip6-localhost:22 .) || {
+    card=$(_setup_again_rig_submit kvm-rig '[::1]:22' .) || {
         rm -f "$jar"
         return
     }
@@ -109,8 +113,8 @@ rig_control_off_leg() {
 # rows above only mean something if they RED on the card the wizard wrote before this change. The
 # notes are rendered by the real module, so a reverted card logic reds here too.
 _rig_control_off_self_test() {
-    local off='{"role":"rig","worker":"kvm-rig","stratum":"stratum+tcp://ip6-localhost:22","token":"00000000000000000000000000000000","address":"10.0.0.9","control":"off","reason":"the pool host does not resolve to an IPv4 address to pin it to"}'
-    local pre='{"role":"rig","worker":"kvm-rig","stratum":"stratum+tcp://ip6-localhost:22","token":"00000000000000000000000000000000","address":"10.0.0.9"}'
+    local off='{"role":"rig","worker":"kvm-rig","stratum":"stratum+tcp://[::1]:22","token":"00000000000000000000000000000000","address":"10.0.0.9","control":"off","reason":"the pool host does not resolve to an IPv4 address to pin it to"}'
+    local pre='{"role":"rig","worker":"kvm-rig","stratum":"stratum+tcp://[::1]:22","token":"00000000000000000000000000000000","address":"10.0.0.9"}'
     local note_off note_pre
     note_off=$(rig_card_note "$off") || return 1
     note_pre=$(rig_card_note "$pre") || return 1
