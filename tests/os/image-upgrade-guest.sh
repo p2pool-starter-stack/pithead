@@ -12,7 +12,7 @@ GUEST_STAGE=guest-preflight
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -94,6 +94,17 @@ ln -s pithead-v1.20.0 "$MOUNT/current"
 install -m 0600 "$INPUT/config.json" "$MOUNT/pithead-v1.20.0/config.json"
 mkdir "$MOUNT/harness"
 tar -xzf "$INPUT/harness.tar.gz" -C "$MOUNT/harness"
+
+# v1.20.0's docker-compose.yml sets tmpfs `uid=1000,gid=1000` on wallet-rpc, tari-wallet and
+# xmrig-proxy; Docker accepts it but this appliance's Podman-compatible API rejects it as an
+# unknown mount option (job 480). Later releases dropped the option outright. The signed bundle
+# stays byte-identical on disk; only this guest-local extracted copy is patched, and only after
+# its checksum confirms it is the exact known v1.20.0 file, so an unexpected bundle fails closed
+# instead of being silently rewritten.
+GUEST_STAGE=baseline-compat
+compose_file="$MOUNT/pithead-v1.20.0/docker-compose.yml"
+[ "$(sha256sum "$compose_file" | cut -d' ' -f1)" = e03172ed17cb54442a38b0b60526862650246fb957c2e56d2a8d0bd8b88b4d14 ]
+sed -i 's/,uid=1000,gid=1000//g' "$compose_file"
 
 GUEST_STAGE=baseline-setup
 (
