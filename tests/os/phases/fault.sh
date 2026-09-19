@@ -212,6 +212,7 @@ phase_fault() {
         bad "D: could not restore power after the image-load cut"
         return
     }
+    _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A/B above (#2381)
     if _wait_new_boot "$before" 300; then
         ok "D: survived a power cut mid image load — booted"
     else
@@ -224,7 +225,7 @@ phase_fault() {
         # SAW the interrupted load from one that merely kept talking. A generic
         # /[Ee]rror|[Ff]ail|[Cc]ould not/ matches the "Failed to start ..." chatter every boot
         # emits, a bricked one included, so it greened exactly the outcome this leg exists to catch.
-        local refusal deadline=$(($(date +%s) + 60))
+        local refusal deadline=$(($(date +%s) + 60)) verdict
         local legible='The container image store is damaged|Could not load the baked image archive'
         while [ "$(date +%s)" -lt "$deadline" ]; do
             refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
@@ -233,9 +234,11 @@ phase_fault() {
         done
         if grep -qE "$legible" <<<"${refusal:-}"; then
             ok "D: refused to continue after the interrupted load, with a legible console message"
+        elif verdict=$(fault_boot_verdict "$SERIAL" "$serial_before"); then
+            bad "D: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
         else
             # Narrowing the match makes a red actionable only if it says what the console DID say.
-            bad "D: BRICKED — no boot and no legible message after a power cut mid image load (post-cut serial tail: $(tail -c 400 <<<"${refusal:-}" | tr '\n' '|'))"
+            bad "D: BRICKED — $verdict (disqualifying)"
         fi
         return
     fi
