@@ -66,6 +66,100 @@ control_process_request() { # <claimed-file> <control-dir>
     esac
 }
 
+# Bound results/ by age, count and total bytes (#1990): every control request and every dashboard
+# backup lands here and NOTHING removed it, so an appliance an operator leaves running fills /data
+# with status JSON and (far bigger) encrypted archives until control, update and boot-time writes
+# start failing. Defaults, not a product decision — documented in docs/dashboard.md#backup-view,
+# change them there and here together:
+#   - a plain result JSON ages out after CONTROL_RESULT_MAX_AGE_S (1 day) or once more than
+#     CONTROL_RESULT_MAX_COUNT (200) exist;
+#   - a backup archive (and its result JSON) is untouchable for CONTROL_BACKUP_DOWNLOAD_WINDOW_S (1
+#     hour) after it is written — long enough for the operator to fetch it — then ages out once
+#     more than CONTROL_BACKUP_MAX_COUNT (3) exist;
+#   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
+#     oldest-first, well under the smallest supported appliance data partition.
+# os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
+# The single newest plain result also never falls to age/count/bytes: a verb that blocks the
+# drain on a background op (os-download's poll loop) keeps rewriting its own result as the newest
+# file in results/ for as long as it runs, so "newest" IS "whatever is in flight right now" —
+# protecting it needs no request id, just never touching rank 1.
+# Run at the top of every drain (so it never fights an in-flight request — nothing this drain will
+# write exists yet) and from render_derived, the appliance's every-boot pass (#790).
+control_prune_results() { # <control-dir>
+    local cdir="$1"
+    local dir="$cdir/results"
+    [ -d "$dir" ] || return 0
+    local age_min=$(((${CONTROL_RESULT_MAX_AGE_S:-86400}) / 60))
+    local window_min=$(((${CONTROL_BACKUP_DOWNLOAD_WINDOW_S:-3600}) / 60))
+    local max_count="${CONTROL_RESULT_MAX_COUNT:-200}"
+    local max_archives="${CONTROL_BACKUP_MAX_COUNT:-3}"
+    local max_bytes="${CONTROL_RESULTS_MAX_BYTES:-536870912}"
+
+    local archive id kept=0
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
+        [ -f "$dir/$archive" ] || continue
+        # Still inside its download window: untouchable, and does not count against the cap below.
+        [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+        kept=$((kept + 1))
+        if [ "$kept" -gt "$max_archives" ]; then
+            id=$(basename "$archive" .tar.gz.enc)
+            rm -f "$dir/$archive" "$dir/$id.json"
+        fi
+    done
+
+    local newest result n=0
+    newest=""
+    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
+        [ "$result" == "os-update-state.json" ] && continue
+        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        newest="$result"
+        break
+    done
+    # Age and count share one pass (and one skip list) so a backup's own result JSON is never
+    # evicted here while its archive is still protected above — a separate age-only find/-delete
+    # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
+    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
+        [ "$result" == "os-update-state.json" ] && continue
+        [ "$result" == "$newest" ] && continue
+        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        n=$((n + 1))
+        if [ "$n" -ge "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
+            rm -f "$dir/$result"
+        fi
+    done
+
+    local total f
+    total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
+    [ -n "$total" ] || total=0
+    if [ "$total" -gt "$max_bytes" ]; then
+        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
+            [ "$total" -le "$max_bytes" ] && break
+            [ "$f" == "os-update-state.json" ] && continue
+            [ "$f" == "$newest" ] && continue
+            case "$f" in
+            *.tar.gz.enc) [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue ;;
+            # A backup's own result JSON: skip it while its archive is still in its download
+            # window, or the byte cap could evict the status/passphrase and orphan a still-live
+            # archive (the count/age pass above already carries this same pairing).
+            *.json)
+                id="${f%.json}"
+                if [ -f "$dir/$id.tar.gz.enc" ] &&
+                    [ -z "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ]; then
+                    continue
+                fi
+                ;;
+            esac
+            [ -f "$dir/$f" ] || continue
+            rm -f "$dir/$f"
+            # Re-measure via du rather than subtracting wc -c: disk usage rounds to block size,
+            # and a byte-precise running total drifted from the real (block-rounded) figure that
+            # matters on a partition that is actually filling up.
+            total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
+            [ -n "$total" ] || total=0
+        done
+    fi
+}
+
 # `control-run-pending`: drain the request spool, oldest first. Each request is CLAIMED (moved out
 # of requests/) before a byte of it is parsed, so the container can never mutate or replay a
 # request the runner is working on. Fired by the pithead-control systemd path unit.
@@ -93,6 +187,7 @@ control_run_pending() {
     # after that reboot runs it — nulls the passphrase in any kit older than the TTL that still
     # carries one. Belt to the TTL's braces; the passphrase is only ever meant for the live window.
     control_redact_stale_kits "$cdir/results"
+    control_prune_results "$cdir"
     local names name req claim n=0
     # Per-run cap (#33 hardening): a single trigger drains at most this many intents, so a flood in
     # the spool can't hold the root runner for an unbounded stretch — the leftovers wait for the
