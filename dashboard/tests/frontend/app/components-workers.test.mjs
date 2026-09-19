@@ -37,16 +37,27 @@ test('WorkersTable sort headers are real buttons, so keyboard can sort (#671)', 
 });
 
 test('WorkersTable with no workers shows the connect hint instead of a bare table (#385)', () => {
-    // The fixture's host_ip is "Unknown Host" — the hint must fall back to the docs placeholder.
+    // The fixture's host_ip is "Unknown Host" but host_addr carries a real IP — the hint must
+    // fall back to it rather than the docs placeholder (#1873).
     const s = clone();
     s.workers = [];
     const html = renderApp({ state: s });
     assert.match(html, /Workers Alive/);
     assert.match(html, /No workers connected yet/);
-    assert.match(html, /YOUR_STACK_IP:3333/);
+    assert.match(html, new RegExp(`${s.host_addr}:3333`));
+    assert.doesNotMatch(html, /YOUR_STACK_IP/);
     assert.match(html, /docs\/workers\.md/); // links the workers guide
     assert.doesNotMatch(html, /workers-table/); // no empty table skeleton
     assert.doesNotMatch(html, /rig-alpha/);
+});
+
+test('WorkersTable connect hint falls back to the docs placeholder only when host_addr is also unset (#1873)', () => {
+    const s = clone();
+    s.workers = [];
+    s.host_ip = 'Unknown Host';
+    s.host_addr = null;
+    const html = renderApp({ state: s });
+    assert.match(html, /YOUR_STACK_IP:3333/);
 });
 
 test('WorkersTable connect hint uses the real host IP when known (#385)', () => {

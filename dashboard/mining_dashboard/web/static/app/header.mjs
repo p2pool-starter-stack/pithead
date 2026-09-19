@@ -2,11 +2,11 @@ import { UpgradeControl } from "../config/configview.mjs";
 import { OnionUrl } from "../network/onionurl.mjs";
 import { OsUpdateControl } from "../system/osupdate.mjs";
 import { html } from "./preact.mjs";
-import { Badges, cVar, HighUsage, UpdateBadge, VersionBadge } from "./ui.mjs";
+import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } from "./ui.mjs";
 
 // --- Top bar -------------------------------------------------------------------------
 
-function Header({ state }) {
+function Header({ state, theme, onTheme }) {
   const s = state.system,
     hr = state.hashrate,
     appliance = !!state.os_update;
@@ -23,6 +23,7 @@ function Header({ state }) {
                         <${Badges} badges=${state.badges} />
                         <${VersionBadge} version=${state.version} />
                         <${UpdateBadge} update=${state.update} />
+                        <${ThemeSwitcher} theme=${theme} onTheme=${onTheme} />
                         <${UpgradeControl} update=${state.update}
                             enabled=${state.control_enabled && !appliance} appliance=${appliance} />
                         ${

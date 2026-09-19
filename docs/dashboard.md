@@ -311,8 +311,10 @@ XvB's published estimate into the expected side keeps the percent comparing like
 wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
-off shows the config key to set instead of a zero that would read as "earned nothing"; the XvB row
-disappears when XvB is off; a `*` marks a window that reaches back past the oldest recorded payout.
+off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
+Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
+off; a `*` marks a window that reaches back past the oldest recorded payout.
 
 Payouts swing with mining luck — P2Pool pays when the pool finds blocks, and solo Tari blocks are
 rarer still. A sustained gap between expected and actual is the signal worth checking (workers
@@ -623,10 +625,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
-**XMR Network** and **Tari Merge-Mining** each carry a **Node** row saying whether that node runs
-here or somewhere else, and the **Stack Topology & Egress** diagram captions `monerod` and `tari`
-the same way. The difference is operational: a node you run is yours to restart and resync, and a
-node you point at (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
+**XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
+sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
+remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
+Unverified. The difference is
+operational: a node you run is yours to restart and resync, and a node you point at
+(`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
 before this shipped, rather than a node it has decided is local.
