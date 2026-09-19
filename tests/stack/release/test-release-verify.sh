@@ -147,3 +147,55 @@ run_sourced "$CCP" cosign_container_path "$SANDBOX/outside.txt" >/dev/null 2>&1
 assert_rc "a path outside the install dir is refused, not guessed at" "$?" "1"
 run_sourced "$CCP" cosign_container_path "/etc/hosts" >/dev/null 2>&1
 assert_rc "an absolute path elsewhere on the box is refused" "$?" "1"
+
+# The build side of the same gate (#1891): what the appliance BAKES so the verify above can run at
+# all — the release key, the five digest pins verify binds to, and the debug-build escape. It lives
+# in this fragment rather than its own because the behaviour is verify_release_images', which this
+# domain owns; run.sh sits exactly on its file-budget ceiling and a new registration there would
+# have to displace something that file's own position-lock comment protects.
+
+echo "== unit: appliance image signature pins (#1891) =="
+SIG="$SANDBOX/appliance-signature"
+mkdir -p "$SIG/opt/pithead"
+SIG_BI="$(cat "$ROOT/os/build-image.sh")"
+SIG_DF="$(cat "$ROOT/os/rootfs/Dockerfile")"
+assert_contains "the staged five-image compose is digest-pinned before the rootfs build" "$SIG_BI" 'pin_first_party_images os/build/stage/docker-compose.yml'
+assert_contains "a synthetic-compose build (unresolvable version, by design) skips digest pinning" \
+    "$SIG_BI" $'if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then\n    pin_first_party_images'
+assert_contains "a debug registry requires its alternate cosign public key" "$SIG_BI" 'PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required'
+assert_contains "a debug TLS registry bakes the CA for containerized cosign" "$SIG_BI" 'cp "$PITHEAD_REGISTRY_CA" "$stage/opt/pithead/cosign.registry-ca.crt"'
+assert_contains "the Dockerfile bakes the release cosign key" "$SIG_DF" 'config.minimal.json cosign.pub /opt/pithead/'
+printf '%s\n' \
+    'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-tor:${STACK_VERSION:-dev}' \
+    'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-monero:${STACK_VERSION:-dev}' \
+    'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-p2pool:${STACK_VERSION:-dev}' \
+    'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-xmrig-proxy:${STACK_VERSION:-dev}' \
+    'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-dashboard:${STACK_VERSION:-dev}' >"$SIG/compose.yml"
+(
+    export PITHEAD_BUILD_IMAGE_TEST=1
+    set --
+    source "$ROOT/os/build-image.sh"
+    docker() { printf '{"Descriptor":{"digest":"sha256:%064d"}}\n' 1; }
+    pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
+)
+assert_eq "all five provision pulls are immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
+(
+    export PITHEAD_BUILD_IMAGE_TEST=1
+    set --
+    source "$ROOT/os/build-image.sh"
+    docker() { printf '[{"Descriptor":{"digest":"sha256:%064d"}}]\n' 2; }
+    pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
+)
+assert_eq "array-shaped manifest output keeps all five immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
+
+source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
+printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
+printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$SIG/opt/pithead/docker-compose.yml"
+printf '%s\n' \
+    'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}' \
+    'image: caddy:2.11.4@sha256:0000000000000000000000000000000000000000000000000000000000000003' >"$SIG/reference.yml"
+compose_matches_source "$SIG" "$SIG/reference.yml"
+assert_rc "the image verifier removes only first-party digest pins" "$?" 0
+printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-other}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
+compose_matches_source "$SIG" "$SIG/reference.yml"
+assert_rc "the image verifier refuses a changed source tag despite a digest" "$?" 1

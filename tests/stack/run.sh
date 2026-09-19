@@ -66,8 +66,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
-# shellcheck source=tests/stack/appliance/test-appliance-image-signature.sh disable=SC2015
-_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-image-signature.sh" && domain_ran test-appliance-image-signature.sh "$_d0" "$?" || domain_ran test-appliance-image-signature.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
