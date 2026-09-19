@@ -139,7 +139,7 @@ export const Installing = ({ status }) => html`<div class="card">
     }
 </div>`;
 
-export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`<div class="card">
+export const Done = ({ status, handoff, savedDashboard, installer, stick, rig, onAck }) => html`<div class="card">
     ${
       handoff && handoff.role === "rig"
         ? html`<h2>Check this rig</h2>
@@ -174,7 +174,7 @@ export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`
             10 to 30 minutes on a home connection. <strong>This page will stop responding</strong>
             while it happens; that is the machine working, not failing. Its console narrates, and
             when it finishes the dashboard is at
-            ${" "}<code class="wizard-mono">${handoff ? handoff.dashboard : "https://pithead.local"}</code>${" "}
+            ${" "}<code class="wizard-mono">${(handoff && handoff.dashboard) || savedDashboard || "https://pithead.local"}</code>${" "}
             behind the login you just saved.</p>
             <p class="text-muted">${status || "Waiting…"}</p>`
     }
