@@ -55,6 +55,9 @@
 .c-accent {
   color: var(--accent);
 }
+.c-warn {
+  color: var(--warn);
+}
 .c-muted {
   color: var(--text-muted);
 }
