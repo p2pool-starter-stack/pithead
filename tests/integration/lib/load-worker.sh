@@ -80,7 +80,7 @@ sample_load_worker() {
     read -r cpu rss <<<"$sample"
     [[ "$cpu" =~ ^[0-9]+([.][0-9]+)?$ && "$rss" =~ ^[0-9]+$ ]] || return 0
     LOAD_METRICS_SAMPLED=1
-    LOAD_PEAK_CPU="$(awk -v a="$LOAD_PEAK_CPU" -v b="$cpu" 'BEGIN { print a > b ? a : b }')"
+    LOAD_PEAK_CPU="$(awk -v a="$LOAD_PEAK_CPU" -v b="$cpu" 'BEGIN { print (a > b) ? a : b }')"
     [ "$rss" -le "$LOAD_PEAK_RSS" ] || LOAD_PEAK_RSS="$rss"
 }
 
@@ -116,10 +116,22 @@ verify_load_worker() {
     clone_shares="$(printf '%s' "$state" | jq -r --arg n "$LOAD_WORKER_NAME" 'first(.workers[]? | select(.status == "online" and .name == $n) | (.accepted | tonumber?)) // 0')" || clone_shares=0
     latency="$(on_bench "curl -sS -o /dev/null -w '%{time_total}' --max-time 8 http://127.0.0.1:8000/api/state")" || latency=null
     [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null
-    step "load worker evidence: aggregate=${hashes}H/s accepted=${shares} clone_accepted=${clone_shares} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s"
-    on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$hashes") $(quote_arg "$shares") $(quote_arg "$clone_shares") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
-    [ "$names" = "$expected" ] || return 1
-    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) == $workers and all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || return 1
-    [ "$shares" -gt "$LOAD_SHARES_BEFORE" ] 2>/dev/null && [ "$clone_shares" -gt 0 ] 2>/dev/null || return 1
-    [ "$LOAD_SAW_READY" = 1 ] && [ "$LOAD_SAW_FAILOVER" = 1 ] && [ "$LOAD_SAW_RECOVERY" = 1 ] || return 1
+    step "load worker evidence: aggregate=${hashes}H/s accepted=${shares} clone_accepted=${clone_shares} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s saw_ready=${LOAD_SAW_READY} saw_failover=${LOAD_SAW_FAILOVER} saw_recovery=${LOAD_SAW_RECOVERY}"
+    on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s,\"saw_ready\":%s,\"saw_failover\":%s,\"saw_recovery\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$hashes") $(quote_arg "$shares") $(quote_arg "$clone_shares") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") $(quote_arg "$LOAD_SAW_READY") $(quote_arg "$LOAD_SAW_FAILOVER") $(quote_arg "$LOAD_SAW_RECOVERY") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
+    [ "$names" = "$expected" ] || {
+        warn "load worker check failed: worker set mismatch (got '$names', wanted '$expected')"
+        return 1
+    }
+    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) == $workers and all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || {
+        warn "load worker check failed: aggregate hashrate not plausible for $WORKERS worker(s)"
+        return 1
+    }
+    { [ "$shares" -gt "$LOAD_SHARES_BEFORE" ] 2>/dev/null && [ "$clone_shares" -gt 0 ] 2>/dev/null; } || {
+        warn "load worker check failed: accepted shares did not advance (aggregate $LOAD_SHARES_BEFORE -> $shares, clone $clone_shares)"
+        return 1
+    }
+    { [ "$LOAD_SAW_READY" = 1 ] && [ "$LOAD_SAW_FAILOVER" = 1 ] && [ "$LOAD_SAW_RECOVERY" = 1 ]; } || {
+        warn "load worker check failed: route/failover transition not observed (ready=$LOAD_SAW_READY failover=$LOAD_SAW_FAILOVER recovery=$LOAD_SAW_RECOVERY)"
+        return 1
+    }
 }
