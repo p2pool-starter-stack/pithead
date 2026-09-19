@@ -104,6 +104,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
+# shellcheck source=tests/os/fault-boot-verdict.sh
+. "$SCRIPT_DIR/fault-boot-verdict.sh"
 IMAGE=""
 KEEP=0
 PHASE="all"
