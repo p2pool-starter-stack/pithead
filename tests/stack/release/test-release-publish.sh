@@ -125,9 +125,9 @@ assert_rc "missing tool -> preflight fails fast (rc 1)" "$tc_rc" "1"
 assert_contains "the missing tool is named" "$tc_out" "shfmt"
 assert_contains "error points at the provisioning doc" "$tc_out" "release-server.md"
 echo "== unit: release.sh requires the exact-SHA bench tier-4 status (#1996) =="
-bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug]
+bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-slug] [dry-run]
     local BENCH_STATUSES="$1" BENCH_RESOLVED_APP_ID="${2:-4242}"
-    local BENCH_EXPECTED_APP_ID="${3-4242}" BENCH_APP_SLUG="${4-bench-ci}"
+    local BENCH_EXPECTED_APP_ID="${3-4242}" BENCH_APP_SLUG="${4-bench-ci}" BENCH_DRY_RUN="${5:-0}"
     (
         cd "$ROOT" || exit
         set --
@@ -138,6 +138,8 @@ bench_tier4_gate() { # <statuses-json> [resolved-app-id] [expected-app-id] [app-
         set +eu
         # shellcheck disable=SC2034  # consumed by the sourced gate
         GIT_COMMIT=0123456789abcdef0123456789abcdef01234567
+        # shellcheck disable=SC2034  # consumed by the sourced gate; set after the source, which resets it
+        DRY_RUN="$BENCH_DRY_RUN"
         gh() {
             case "$2" in
             apps/bench-ci) printf '{"id":%s}\n' "$BENCH_RESOLVED_APP_ID" ;;
@@ -174,6 +176,14 @@ assert_contains "the invalid-slug refusal names its setting" "$bench_bad_slug" "
 bench_no_slug="$(bench_tier4_gate '[]' 4242 4242 '' 2>&1)"
 assert_rc "an unset App slug refuses the release" "$?" "1"
 assert_contains "the unset-slug refusal names its setting, not a defaulted App" "$bench_no_slug" "BENCH_CI_APP_SLUG"
+# --dry-run previews the verdict instead of dying on it (#1108, signing). MUTATION PROOF: drop the DRY_RUN carve-out from require_bench_tier4 and these go red.
+bench_dry_missing="$(bench_tier4_gate '[]' 4242 4242 bench-ci 1 2>&1)"
+assert_rc "a missing bench status only warns under --dry-run" "$?" "0"
+assert_contains "the dry-run warning still names the required context" "$bench_dry_missing" "bench-ci/tier4"
+bench_dry_no_app_id="$(bench_tier4_gate '[{"context":"bench-ci/tier4","state":"success","creator":{"login":"bench-ci[bot]"}}]' 4242 '' bench-ci 1 2>&1)"
+assert_rc "an unpinned App id only warns under --dry-run" "$?" "0"
+assert_contains "the dry-run warning names the unset setting" "$bench_dry_no_app_id" "BENCH_CI_APP_ID"
+assert_contains "the dry run still performs the status lookup it can" "$bench_dry_no_app_id" "Bench tier-4 gate passed"
 # The gate is only worth anything if it refuses BEFORE release bytes are built and promoted — a gate
 # that ran after stage_push would have already produced the artefacts it is meant to withhold. #2243
 # removed the --resume-promote branch this ordering was previously proven through, so drive the real

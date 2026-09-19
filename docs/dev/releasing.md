@@ -152,43 +152,45 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Pipeline: stage → smoke-test → promote
 
+Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
+additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
+release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+bench publishes that status only after its full tier-4 suite completes; a missing, failed,
+unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
+verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
+
 1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
    `lib/pithead/*.sh`; read the product version from the top-level `VERSION` file; confirm
    `vX.Y.Z` isn't already released; resolve the component pins into the ingredients manifest.
    The generated executable is copied into the release bundle; its source slices are not.
-2. Bench gate (blocking): require a successful `bench-ci/tier4` commit status for the exact
-   release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric
-   id) and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no
-   defaults: the gate refuses the cut if either is unset. The bench runner publishes
-   the status only after its full tier-4 suite completes. A missing, failed, unreadable, or
-   wrong-App status aborts the release before images are built.
-3. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
+2. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
    the `pithead` shell suite + compose validation) and the
    [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) integration matrix against
    the real nodes. Abort the release on any failure. See [Pre-release gate](#pre-release-gate-54).
-4. Build: build the first-party images with the pinned upstream versions baked in and OCI labels
+3. Build: build the first-party images with the pinned upstream versions baked in and OCI labels
    stamped (`org.opencontainers.image.version` = the `VERSION` value, source revision, etc.). The
    dashboard already reads `PITHEAD_VERSION` / git build-args for its header badge
    ([#58](https://github.com/p2pool-starter-stack/pithead/issues/58)); a release build must pass
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
    `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds.
-5. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
+4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
    immutable digests. Nothing user-facing points here yet. The digests exist only for this pipeline
    run: a failed run must start again and never recovers them from the mutable staging tag.
-6. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
+5. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
    reports the release version in its OCI label, and carries every target platform (the v1.0.0
    wrong-arch guard). This validates the bytes actually pushed, not the local build — but it does
    not start a stack, which would collide with the release host's live deployment. A fuller
    functional run is opt-in: set `RELEASE_SMOKE_CMD` to a command to run during this stage, or
    point the [#54](https://github.com/p2pool-starter-stack/pithead/issues/54) harness at the
    staged tag. Abort on failure.
-7. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
+6. Promote by digest: re-tag the exact digests just smoke-tested to `:vX.Y.Z` and `:latest`,
    then push. Promotion is by digest (no rebuild), so the released bundle is bit-for-bit what was
    validated. Same version on every image.
-8. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign each
+7. Sign ([#376](https://github.com/p2pool-starter-stack/pithead/issues/376)): cosign-sign each
    promoted manifest-list digest and the install bundle with the key on the release server. See
    [Signed releases](#signed-releases).
-9. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
+8. Publish GitHub Release: create the git tag `vX.Y.Z`, fast-forward `main` to the tagged commit
    (see [Branch mechanics](#branch-mechanics)), write the release notes from the `CHANGELOG.md`
    entry, and attach release assets: a pinned `docker-compose.yml` / config bundle referencing
    `${STACK_VERSION}=vX.Y.Z`, its detached signature (`pithead.tar.gz.sig`), plus the ingredients
@@ -207,7 +209,7 @@ Release notes, where operators actually read it. The branch model itself is in
    re-pointing it — the draft protects the assets and the publish moment, not the version
    number. A hardware-battery failure after the DIY cut still spends the version, so do not
    start this stage until the appliance tree is believed final.
-10. Post-publish smoke ([#459](https://github.com/p2pool-starter-stack/pithead/issues/459)): run
+9. Post-publish smoke ([#459](https://github.com/p2pool-starter-stack/pithead/issues/459)): run
    `make release-smoke` once against the just-published tag. It downloads the published bundle +
    images and verifies them for real, and — on the previous-release bench box — drives the real #59
    upgrade. See [Post-publish smoke test](#post-publish-smoke-test-459). This is the only step gated
@@ -279,16 +281,21 @@ tolerated-known-failure habit the flag exists to end.
 
 ### Which gates are automated, and which are not
 
-The release lane requires a successful `bench-ci/tier4` status on its release SHA; `main` carries
-the same requirement once its branch ruleset is updated with the bench-ci App's `integration_id`.
-The bench publishes that status after its full tier-4 suite, and `release.sh` checks the exact SHA,
-context, App slug, and numeric App id before it builds. The existing `release-gate.yml` stays
-dispatch-only as an operator tool: no self-hosted runner is registered on this public repository.
+The release lane requires a successful `bench-ci/tier4` status on its release SHA, and the `main`
+ruleset already requires the same context pinned to the bench-ci App's `integration_id` — both
+provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237). The bench
+publishes that status after its full tier-4 suite; `release.sh` checks the exact SHA, context, App
+slug, and numeric App id before stage 1. `release-gate.yml` stays dispatch-only as an operator
+tool, because a self-hosted runner on a key-holding public-repo box is not registered. It
+previously carried a `push: [main]` trigger behind a repo variable nobody set, so every merge
+recorded a *skipped* run — and a skipped job is green, which made `main` display a passing
+live-node gate that had never once executed
+([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)).
 
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
 | `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
-| Bench full tier-4 suite (`bench-ci/tier4`) | release SHA | bench-ci | yes |
+| Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci | yes |
 | `make test` again, on the release box | `release.sh` stage 2 | the cut | yes |
 | #54 live matrix, `--readiness` | `release.sh` stage 2 | the cut | yes |
 | Targeted e2e with a borrowed rig | before `make release` | you | yes — by policy, not by code |
