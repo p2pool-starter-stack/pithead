@@ -311,8 +311,10 @@ XvB's published estimate into the expected side keeps the percent comparing like
 wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
-off shows the config key to set instead of a zero that would read as "earned nothing"; the XvB row
-disappears when XvB is off; a `*` marks a window that reaches back past the oldest recorded payout.
+off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
+Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
+off; a `*` marks a window that reaches back past the oldest recorded payout.
 
 Payouts swing with mining luck — P2Pool pays when the pool finds blocks, and solo Tari blocks are
 rarer still. A sustained gap between expected and actual is the signal worth checking (workers
