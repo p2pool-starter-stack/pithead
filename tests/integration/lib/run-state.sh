@@ -98,11 +98,10 @@ assert_running_state() {
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"
 
-    # 3. Dashboard reachable and reading live state. In local mode, let the monero sync panel finish
-    #    its first poll after the scenario's apply/restart before snapshotting, so step 4 sees settled
-    #    state instead of a cold "loading" (a stuck panel never settles, so the assert still catches the
-    #    #180 regression). Poll, don't sleep (issue #54).
-    [ "$mode" = "local" ] && wait_for 60 3 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
+    # 3+4. Dashboard live, then monerod caught up; local mode settles the sync panel first (#180,
+    #    #54). Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch measured holding
+    #    "not synchronized" past 60s, advancing two reads two minutes apart.
+    [ "$mode" = "local" ] && wait_for 150 5 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
     st="$(api_state)"
     if [ -z "$st" ]; then
         it_fail "dashboard /api/state reachable" "empty response"
@@ -110,8 +109,10 @@ assert_running_state() {
     fi
     it_pass "dashboard /api/state reachable"
 
-    # 4. Monero caught up — per monerod's own get_info, not the dashboard UI field.
-    if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
+    if wait_for 150 5 "monerod caught up (RPC)" monero_caught_up; then it_pass "monerod reports synced (RPC)"; else
+        monero_caught_up # wait_for's own return is only timeout-or-not; re-ask for the real verdict.
+        if [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
+    fi
     # 4b. The node's ZMQ endpoint is a live ZMTP PUBLISHER (#1497) — strictly less than "publishes
     #     block notifications", and this row is named for what it proves, not for what the issue
     #     wants. Step 4 is satisfied by a node that can never publish one: an --offline monerod

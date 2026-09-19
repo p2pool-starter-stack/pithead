@@ -35,6 +35,11 @@ MATRIX:
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
   --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
+  --appliance-channel    this run is driving a KVM appliance guest, not a DIY install (#2062,
+                         tests/os/phases/stack.sh) — the ONLY effect is that the merge-mining
+                         gRPC round-trip (#1397) reports a by-design skip naming #2326 instead of
+                         failing, since that gap is real on the appliance channel and open
+                         separately; every other assertion runs exactly as it does without this flag.
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -199,6 +204,10 @@ parse_args() {
             esac
             REMOTE_TARI_HOST="$2"
             shift 2
+            ;;
+        --appliance-channel)
+            IT_APPLIANCE_CHANNEL=1
+            shift
             ;;
         --pruned-data-dir)
             PRUNED_DATA_DIR="$2"

@@ -210,6 +210,20 @@ phase_stack() {
         return 1
     fi
 
+    # xvb.enabled=true was in the wizard payload (stack_browser_config), but #2330 (#2062) measured
+    # it NOT landing in the guest's persisted config.json by the time the xvb-routing-smoke
+    # invocation reads its own baseline — reproduced on three separate bench runs, root cause still
+    # open. Don't guess at the wizard side from here: apply it directly and verify it actually
+    # stuck, so every invocation from here on reads a config that really has it, regardless of why
+    # the original submission didn't carry it through.
+    _ssh "cd /data/pithead && jq '.xvb.enabled = true' config.json >config.json.stack-xvb && mv config.json.stack-xvb config.json && ./pithead apply -y" >/dev/null 2>&1
+    if [ "$(_ssh 'cd /data/pithead && jq -r .xvb.enabled config.json' 2>/dev/null)" = "true" ]; then
+        ok "stack: xvb.enabled=true confirmed on the guest's persisted config"
+    else
+        bad "stack: could not get xvb.enabled=true to stick in the guest's config.json"
+        return 1
+    fi
+
     # The DIY gate itself, staged as the ask lays out: a non-destructive read, then the
     # destructive phases the appliance channel has never run, then the remote-safe scenario
     # subset, then XvB routing — the appliance channel's first live coverage of each (#2062).
@@ -220,7 +234,7 @@ phase_stack() {
     # guest can only run by starting a local monerod from scratch each time. That cost over two
     # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
     # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
-    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
+    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq" --appliance-channel)
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
     # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty

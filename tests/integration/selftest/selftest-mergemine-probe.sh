@@ -236,6 +236,18 @@ out="$(mm_leg_outcome 0 "")"
 assert_eq "no merge-mining client at all FAILS, and is never a skip — 0 pass, 1 fail, 0 skips" \
     "$(printf '%s' "$out" | cut -d' ' -f1-3)" "0 1 0"
 
+# The appliance channel's OWN reproduced gap (#2062, #2326): the same "absent" verdict, but with
+# IT_APPLIANCE_CHANNEL=1 set (tests/os/phases/stack.sh's --appliance-channel), it must read as a
+# named, counted, by-design skip instead of a failure — every other verdict above stays a FAIL
+# unconditionally; only this one branch is appliance-aware.
+IT_APPLIANCE_CHANNEL=1
+out="$(mm_leg_outcome 0 "")"
+IT_APPLIANCE_CHANNEL=0
+assert_eq "on the appliance channel, the same absent verdict skips instead — 0 pass, 0 fail, 1 counted skip" \
+    "$(printf '%s' "$out" | cut -d' ' -f1-3)" "0 0 1"
+assert_eq "and the skip is classed by-design, not missing" "$(printf '%s' "$out" | cut -d' ' -f4)" "1"
+assert_contains "and the skip names #2326" "$out" "#2326"
+
 # Its sibling, and the reason the two must not share a case: an unreadable container start time
 # is a different failure with a different cause, and it must not be able to stand in for the one
 # above.
