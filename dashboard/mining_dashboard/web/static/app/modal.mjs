@@ -24,6 +24,17 @@ export class Modal extends Component {
     this.dialogRef.current?.close();
   }
 
+  // A parent can drop the modal without cancelling it: a commit lands, a backup finishes, and the
+  // phase it switches to renders something else entirely. Removing an OPEN <dialog> from the DOM
+  // never runs the spec's close-the-dialog steps, and focus-return-to-opener lives in those steps
+  // — focus would fall to <body>, the very bug #1876 is about. So close it on the way out, with
+  // `onClose` suppressed: that callback exists to tell a still-mounted parent to change phase, and
+  // here the parent has already changed it (ConfigView would bounce "done" back to "form").
+  componentWillUnmount() {
+    this.unmounting = true;
+    this.dialogRef.current?.close();
+  }
+
   render() {
     const { title, onCancel, onClose, children } = this.props;
     return html`
@@ -31,7 +42,7 @@ export class Modal extends Component {
               aria-label=${title} onCancel=${(e) => {
                 e.preventDefault();
                 onCancel?.();
-              }} onClose=${onClose}>
+              }} onClose=${(e) => !this.unmounting && onClose?.(e)}>
         <h3 tabindex="-1" ref=${this.titleRef}>${title}</h3>
         ${children}
       </dialog>`;
