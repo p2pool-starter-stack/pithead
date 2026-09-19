@@ -370,9 +370,10 @@ crosses 5%.
 With the control channel on (`dashboard.control.enabled`), a worker's name in the Workers Alive table
 is a link. Click it to open **Worker Inspect** — a dialog with that rig's live telemetry, a hashrate
 chart, an editor for the writable slice of its config, and the change history. Close it with the ✕
-button, a click outside it, or Escape — unless the editor holds an unsaved change (a table edit, or
-JSON text that no longer matches what was loaded), in which case the panel stays open and shows an
-"Unsaved" line under Apply instead of discarding it silently (#1877).
+button, a click outside it, or Escape. A click outside it or Escape is refused while the editor holds
+an unsaved change (a table edit, or JSON text that no longer matches what was loaded): the panel stays
+open and shows an "Unsaved" line under Apply instead of discarding it silently; the ✕ button still
+closes unconditionally (#1877).
 
 A **hashrate** chart sits above the editor: the rig's own `worker_history` samples (~5-minute
 cadence) as a line, with **24 Hr / 1 Wk / All** range buttons — no "1 Mo" button, since at the
