@@ -61,7 +61,8 @@ pcr_run() { # <owner-dir|-> <run-dir> — seed units owned by owner-dir ('-' = n
         set +e
         log() { :; }
         sudo() { echo "sudo:$*"; } # record instead of executing; the disable call's output is redirected in-function
-        PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false provision_control_runner
+        PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false \
+            CONTROL_DIR="$2/data/control" provision_control_runner
     )
 }
 
@@ -280,9 +281,12 @@ out="$(
     source "$STACK"
     set +e
     log() { :; }
-    sudo() { echo "sudo:$*"; }
+    # Record into a side file, not stdout — the install branch redirects `sudo tee`'s (and the
+    # stop/enable calls') output to /dev/null, so an echoing stub is invisible right there too.
+    sudo() { echo "sudo:$*" >>"$PCP/calls"; }
     PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCP/units" DASHBOARD_CONTROL_ENABLED=true \
         CONTROL_DIR="$PCP/current/data/control" provision_control_runner 2>&1
+    cat "$PCP/calls" 2>/dev/null
 )"
 assert_not_contains "unit run via the symlink spelling, already correct in the physical spelling -> no sudo call, runner untouched" "$out" "sudo:"
 unset PCP out
@@ -299,7 +303,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"$PCD/bin/systemctl"
 chmod +x "$PCD/bin/uname" "$PCD/bin/systemctl"
 
 pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units (+claim), run the removal branch
-    rm -f "$PCD/mine/data/control/.claim.1"
+    rm -f "$PCD/mine/data/control/.claim.1" "$PCD/calls"
     printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$PCD/mine" >"$PCD/units/pithead-control.service"
     printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCD/mine" >"$PCD/units/pithead-control.path"
     [ "$1" = yes ] && : >"$PCD/mine/data/control/.claim.1"
@@ -310,7 +314,9 @@ pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units 
         source "$STACK"
         set +e
         log() { :; }
-        sudo() { echo "sudo:$*"; }
+        # Record into a side file, not stdout — the stop/disable calls below redirect their
+        # output to /dev/null, so an echoing stub would be invisible right there.
+        sudo() { echo "sudo:$*" >>"$PCD/calls"; }
         # Instant and deterministic instead of a real 30s wait: the loop's own re-check after each
         # poll is what is under test, not a fixed sleep count — so `sleep` either clears the claim
         # on its first call (proving the wait ends via re-check, not a timer) or never does
@@ -322,6 +328,7 @@ pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units 
         fi
         PITHEAD_UNIT_DIR="$PCD/units" DASHBOARD_CONTROL_ENABLED=false \
             CONTROL_DIR="$PCD/mine/data/control" provision_control_runner 2>&1
+        cat "$PCD/calls" 2>/dev/null
     )
 }
 

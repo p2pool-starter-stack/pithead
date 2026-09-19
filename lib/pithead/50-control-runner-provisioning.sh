@@ -61,7 +61,7 @@ control_runner_wait_idle() {
 provision_control_runner() {
     [ "$OS_TYPE" == "Linux" ] || return 0
     command -v systemctl >/dev/null 2>&1 || return 0
-    local unit_dir engine pwd_p
+    local unit_dir engine pwd_p control_dir_p
     unit_dir=$(control_unit_dir)
     # Physical, never the literal $PWD (#2363): a boot-driven call (WorkingDirectory=/data/pithead,
     # the symlink) starts a fresh bash, which sources $PWD from getcwd(2) — already resolved. An
@@ -73,6 +73,13 @@ provision_control_runner() {
     # already compared physical paths for ownership; this brings the idempotence check and the
     # written unit content onto the same footing.
     pwd_p=$(pwd -P)
+    # $CONTROL_DIR carries the identical two-spellings problem one level removed: it is
+    # "$PWD/data/control" as of parse_and_validate_config's own literal $PWD, so the SAME checkout
+    # produces two different PathExistsGlob strings across a boot-driven call and an interactive
+    # symlink `cd`. ensure_directories runs before this in every real caller, so the directory
+    # already exists; falling back to the unresolved value only matters for a not-yet-provisioned
+    # install, where nothing has been written to compare against yet anyway.
+    control_dir_p=$(cd "$CONTROL_DIR" 2>/dev/null && pwd -P) || control_dir_p="$CONTROL_DIR"
     # The engine this install was provisioned WITH, pinned into the unit below (#2059).
     engine=$(container_engine)
     # Enablement must be --runtime wherever the units are runtime units: on the appliance's
@@ -118,7 +125,7 @@ provision_control_runner() {
     # before that pin existed matches on its glob and ExecStart alone, so a template-only fix would
     # be silently inert on every box already provisioned — including the one the defect was measured
     # on. Falling through costs one sudo write, once, and then converges.
-    if grep -qsF "PathExistsGlob=$CONTROL_DIR/requests/*.json" "$unit_dir/pithead-control.path" &&
+    if grep -qsF "PathExistsGlob=$control_dir_p/requests/*.json" "$unit_dir/pithead-control.path" &&
         grep -qsF "ExecStart=$pwd_p/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
         grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service" &&
         grep -qsF "StartLimitIntervalSec=0" "$unit_dir/pithead-control.service"; then
@@ -203,7 +210,7 @@ EOF
 Description=Watch the pithead control spool for dashboard requests (#33)
 
 [Path]
-PathExistsGlob=$CONTROL_DIR/requests/*.json
+PathExistsGlob=$control_dir_p/requests/*.json
 
 [Install]
 WantedBy=multi-user.target
