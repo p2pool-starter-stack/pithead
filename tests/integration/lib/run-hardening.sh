@@ -52,9 +52,12 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
 # 401 — we deliberately don't hold the login, so its auth challenge counts as reachable). The client
 # key is piped pithead->container stdin entirely on the box: it never crosses to the harness, an ssh
 # argument, or `docker inspect`. Everything runs on the bench (it has docker + the Tor network).
+# <onion> defaults to the box's CURRENT address; the rotate-onion phase (#2345) passes a retired one
+# explicitly to prove it stopped answering — dialing it with the box's current client key on purpose,
+# since that is what an operator holding only the latest key would do.
 _onion_reachable_external() {
-    local onion
-    onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
+    local onion="${1:-}"
+    [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
     [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
     rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
     # onion is [a-z2-7]{56}.onion (safe to embed); the client key stays on the box.
