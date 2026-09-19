@@ -97,6 +97,41 @@ run_lifecycle() {
     else
         it_fail "pithead backup succeeded" "backup returned non-zero"
     fi
+
+    # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
+    # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
+    # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
+    # an EMPTY DB at the new path and silently re-seed the payout-wallet tripwire baseline (#375)
+    # on the next observation. Local mode only: remote mode has no local data dir to move.
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        local carry_old carry_new carry_epoch rows_before rows_after
+        carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
+        if [ -n "$carry_old" ]; then
+            carry_new="${carry_old}-carried"
+            carry_epoch="$(rx 'date +%s')"
+            rows_before="$(dashboard_durable_rows "$carry_epoch")"
+            it_step "confirmed dashboard.data_dir move: $carry_old -> $carry_new…"
+            push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
+            pithead apply -y >/dev/null 2>&1
+            wait_status_ok 180 || true
+            assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
+            rows_after="$(dashboard_durable_rows "$carry_epoch")"
+            if telemetry_rows_continue "$rows_before" "$rows_after"; then
+                it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+            else
+                it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move"
+            fi
+            it_step "reverting dashboard.data_dir back to $carry_old…"
+            push_config "$BASELINE_CONFIG"
+            pithead apply -y >/dev/null 2>&1
+            wait_status_ok 180 || true
+            assert_eq "DASHBOARD_DATA_DIR reverted to the original path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_old"
+        else
+            it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
+        fi
+    else
+        it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
+    fi
 }
 
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
