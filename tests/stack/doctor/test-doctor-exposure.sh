@@ -65,3 +65,12 @@ assert_contains "the appliance verdict names the one route that exists (#1772)" 
 # arm CONTAINS stratum_bind and the appliance arm does not -- so if the surface switch never flipped,
 # the appliance rows red on their own and the differ row could never be the only red. That is the
 # same redundant-control defect #1776's review found in this suite; not repeated here.
+
+echo "== unit: a narrowed bind to the host's OWN public address still warns (#1803) =="
+# The bind x public-IP CASE lives in test-doctor.sh; this domain's angle is the one thing that
+# matrix can't see -- a bind narrowed to 8.8.8.8 itself is exactly as internet-reachable as
+# 0.0.0.0, so it must reach the same withheld-address doctor verdict as the exposed row above,
+# never the "not publicly exposed" OK a LAN-narrowed bind gets.
+_xp_narrowed_public=$(STRATUM_BIND=8.8.8.8 PITHEAD_APPLIANCE=0 PATH="$XPBIN:$PATH" run_sourced "$SANDBOX" check_stratum_exposure doctor 2>&1)
+assert_contains "doctor still warns on a bind narrowed to its own public address (#1803)" "$_xp_narrowed_public" "public IP"
+assert_not_contains "doctor withholds that public bind address too (#1803)" "$_xp_narrowed_public" "8.8.8.8"
