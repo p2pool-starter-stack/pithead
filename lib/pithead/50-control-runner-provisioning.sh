@@ -40,21 +40,10 @@ control_units_owner_dir() {
 # file next to $CONTROL_DIR exists only while control_run_pending is actively working one
 # (49-control-request-loop.sh claims by mv before parsing a byte). Stopping the runner mid-claim
 # kills a request whose requested change already landed — only the result file is lost, so the
-# dashboard caller polls to its own deadline and reports a failure that never happened. Looping
-# over the glob rather than testing it directly: an unquoted `[ -e "$CONTROL_DIR"/.claim.* ]`
-# either expands to nothing (fine) or to MULTIPLE words when more than one claim is in flight,
-# which breaks a single `-e` test.
-control_runner_claims_pending() {
-    local f
-    for f in "$CONTROL_DIR"/.claim.*; do
-        [ -e "$f" ] && return 0
-    done
-    return 1
-}
-
+# dashboard caller polls to its own deadline and reports a failure that never happened.
 control_runner_wait_idle() {
     local waited=0 max_wait=30
-    while control_runner_claims_pending; do
+    while compgen -G "$CONTROL_DIR/.claim.*" >/dev/null; do
         if [ "$waited" -ge "$max_wait" ]; then
             warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish before re-provisioning the runner — its result may be lost."
             return 0
