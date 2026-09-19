@@ -42,6 +42,13 @@ MATRIX:
   --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
                          and the #255 ensure_owner migration: a root-owned file under a data
                          dir must be chowned to the container uid by apply)
+  --reset-dashboard      also run the reset-dashboard phase (#2346): `pithead reset-dashboard`
+                         wipes the .env-named dirs, not an unapplied config.json path (#139),
+                         recreates them owned by APP_UID (#550), leaves the chains untouched
+                         (height never rewinds), brings dashboard/p2pool back healthy, and a
+                         forced real compose failure reaches the friendly retry message instead
+                         of a bare errexit abort (#557). DESTRUCTIVE-then-restored; add
+                         --safety-backup for an extra rollback net.
   --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
                          fails, automatically roll the box back to it (down → restore → up).
                          The archive is removed on success. Recommended for the destructive
@@ -217,6 +224,10 @@ parse_args() {
             ;;
         --lifecycle)
             RUN_LIFECYCLE=1
+            shift
+            ;;
+        --reset-dashboard)
+            RUN_RESET_DASHBOARD=1
             shift
             ;;
         --fault-injection)
