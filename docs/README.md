@@ -17,6 +17,7 @@ stack. The other guides cover individual topics once you're running.
 | [Monitoring & Alerting](monitoring.md) | Optional Healthchecks.io dead-man's switch — get alerted when your host goes down (power loss, crash), even when it can't tell you itself — plus the Prometheus `/metrics` endpoint for Grafana or any scraper. |
 | [Telegram Bot](telegram.md) | Push operator alerts (node down/recovered, worker offline/back, sync finished) to Telegram and query stack status on demand (`/status`, `/hashrate`, `/workers`, `/sync`) — creating a bot, finding your chat id, per-event toggles, and the command list. |
 | [Connecting Miners](workers.md) | Pointing any existing rig at the stack, plus [RigForge](https://github.com/p2pool-starter-stack/rigforge) for setting up new miners. |
+| [Connecting a Wallet](wallets.md) | Pointing an external Monero wallet (phone or another machine) at the bundled node's RPC: the switch, the credentials, and the LAN-only security tradeoffs. |
 | [Architecture](architecture.md) | The eleven services (nine on a default install), how they fit together, the privacy model, and the algorithmic XvB switching engine. |
 | [Privacy & Network Egress](privacy.md) | Every connection the stack makes off-box: what's Tor-routed, what's clearnet today, and how to harden each path. |
 | [Operations & Maintenance](operations.md) | The full `pithead` command reference (including command chaining and tab-completion), upgrades, encrypted backups, rotating the internal secrets, watching for intruders, and troubleshooting. |

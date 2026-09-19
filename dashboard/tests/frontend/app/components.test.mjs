@@ -31,6 +31,15 @@ test('Header renders the brand, server badges, version + update badges', () => {
     assert.match(html, /New release v9\.9\.9 available/); // update badge (#224)
 });
 
+test('the theme switcher lives inside the header, not fixed over the page (#1860)', () => {
+    // It used to render as a sibling of Header, position: fixed over the viewport (overlapping the
+    // chart and the phone hint). It now mounts inside the header's own markup, right of the
+    // version badges, so it scrolls with the page instead of floating over whatever is under it.
+    const html = renderApp();
+    const header = html.slice(html.indexOf('id="top-header"'), html.indexOf('id="hero-band"'));
+    assert.match(header, /class="toggle-group theme-switcher"/);
+});
+
 test('Header surfaces a High Usage badge only when a resource is hot', () => {
     assert.doesNotMatch(renderApp(), /High Usage/); // base fixture is all "ok"
     const s = clone();
@@ -74,6 +83,18 @@ test('chart range buttons include All, active on the default full-history view (
     const weekly = renderApp({ ui: { ...UI, range: '1w' } });
     assert.match(weekly, /class="btn-range active"[^>]*>1 Wk</);
     assert.doesNotMatch(weekly, /class="btn-range active"[^>]*>All</);
+});
+
+test('chart Range/Avg rows carry a collapsed <select> alongside the buttons, labelled to match (#1874)', () => {
+    // Phone width can't fit the button row (the last pill wraps onto its own line, #1874); a
+    // CSS media query swaps to this <select> below the button row rather than script. Its
+    // accessible name is the row's own visible label ("Range"/"Avg"), not the group's
+    // role=group aria-label ("Chart range"/"Hashrate averaging window").
+    const html = renderApp({ ui: { ...UI, range: '1w', avg: '1h' } });
+    assert.match(html, /<select class="chart-controls-select" aria-label="Range"/);
+    assert.match(html, /<option value="1w" selected>1 Wk<\/option>/);
+    assert.match(html, /<select class="chart-controls-select" aria-label="Avg"/);
+    assert.match(html, /<option value="1h" selected>1 Hr<\/option>/);
 });
 
 test('chart legend renders a toggle for every layer, including the marker datasets (#652)', () => {
@@ -144,6 +165,16 @@ test('XMR Network collapses to the headline stats by default', () => {
     assert.doesNotMatch(card, /Network Time/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
     assert.match(card, /Show all \(8\)/); // 7 + the node's local/remote location (#1040)
+});
+
+test('THE WIDER POOL label is gated like its own cards, not shown over an empty grid in Simple view (#1862)', () => {
+    // GlobalStats, NetworkCard and ComponentHealth — everything under this label — are all
+    // card-advanced. Without the same class the label itself stays visible in Simple view even
+    // though its grid renders 0 visible children. "Your Stack" is untouched: Overview
+    // (card-simple) and ExpectedVsActualCard (both views) keep that section non-empty in Simple.
+    const html = renderApp();
+    assert.match(html, /<div class="grid-section-label card-advanced">The Wider Pool<\/div>/);
+    assert.match(html, /<div class="grid-section-label">Your Stack<\/div>/);
 });
 
 test('MoreStats expands to show every stat when toggled, and persists the choice per card, independently of siblings', () => {
