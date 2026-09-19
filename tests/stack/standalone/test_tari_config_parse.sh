@@ -18,7 +18,13 @@ if [ -z "$TARI_IMAGE" ]; then
     exit 1
 fi
 
-WORK_DIR="$(mktemp -d)"
+# tests/stack/lib.sh builds $SANDBOX through mk_tmpdir (#1705's sandbox constructor, refusing
+# closed rather than falling back to the caller's cwd) and arms its own cleanup trap on it; reuse
+# that dir as WORK_DIR instead of a second mktemp -d, and fold its cleanup into the trap below
+# (setting a new EXIT trap replaces lib.sh's, so this one has to cover $SANDBOX itself too).
+# shellcheck source=tests/stack/lib.sh
+source "$ROOT/tests/stack/lib.sh"
+WORK_DIR="$SANDBOX"
 CONTAINER="tari-config-parse-check-$$"
 # rm -rf can leave root-owned files behind (the container ran --user root against $WORK_DIR/node)
 # and exit non-zero on them — `|| true` so cleanup never flips an otherwise-passing run to red.
