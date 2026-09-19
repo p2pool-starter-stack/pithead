@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from mining_dashboard.config.config import HISTORY_RETENTION_SEC
+from mining_dashboard.service.workers.worker_config_store import _bindable
 
 logger = logging.getLogger("StateManager")
 WORKER_HISTORY_RETENTION_SEC = HISTORY_RETENTION_SEC
@@ -240,7 +241,20 @@ class MiningStoreMixin:
         """Record one poll's per-worker hashrate/share-count samples (#196) in a SINGLE
         executemany call — the caller batches every online worker for one wall-clock tick rather
         than issuing N inserts per cycle. 30-day retention. Each row needs ts/name/h15/accepted/
-        rejected; a missing key defaults to 0/''. A no-op on an empty batch."""
+        rejected; a missing key defaults to 0/''. A no-op on an empty batch.
+
+        ``name`` is the rig-chosen worker name off the unauthenticated enriched feed, and
+        ``json.loads`` hands a lone surrogate back verbatim; sqlite3 encodes a TEXT parameter as
+        strict UTF-8 and raises ``UnicodeEncodeError`` on one — a ``ValueError``, NOT a
+        ``sqlite3.Error``, so it would walk through the ``except`` below and out through the
+        caller's ``asyncio.to_thread``, aborting the poll step (#1696 class, second site: #1806).
+
+        This is a batch write, so the fix is per row rather than per call: a row whose ``name``
+        sqlite cannot bind is dropped, and every other rig's sample in the same tick is still
+        recorded — refusing the whole batch over one hostile name would cost every OTHER rig's
+        history sample for that tick too. ``_bindable`` is the same predicate
+        ``worker_config_store`` binds its own rig-chosen strings through (#1696)."""
+        rows = [r for r in rows if _bindable(r.get("name", ""))]
         if not rows:
             return
         prune_ts = rows[0].get("ts", time.time())
