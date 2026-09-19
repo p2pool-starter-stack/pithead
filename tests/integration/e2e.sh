@@ -288,12 +288,10 @@ restore_all() {
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
-
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
     sync="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
     [ -n "$sync" ] && step "post-restore sync state (monero/tari): $sync"
-
     if [ "$CONTROL_PROOF_FAILED" = "1" ]; then
         warn "CONTROL CHANNEL NOT RESTORED on $BENCH_HOST: the live dashboard's config changes and"
         warn "  one-click upgrades will queue into a spool nothing reads, with nothing reporting a fault."
@@ -339,14 +337,12 @@ wait_synced() { # <timeout_s>
         sleep 8
     done
 }
-
 # Nudge the miner's xmrig to reload its (rewritten) config. xmrig watches its config file and
 # reloads on change; the systemctl/SIGHUP fallbacks cover builds that don't. At least one must work;
 # forward paths then poll the test bench for the worker, so the exact mechanism doesn't matter.
 miner_reload() {
     on_miner "sudo -n systemctl restart xmrig >/dev/null 2>&1 || systemctl --user restart xmrig >/dev/null 2>&1 || pkill -HUP -x xmrig >/dev/null 2>&1"
 }
-
 # Poll the test bench's dashboard for at least <n> workers connected.
 wait_workers() { # <n> <timeout_s>
     local want="$1" deadline=$(($(date +%s) + ${2:-180})) got
@@ -459,7 +455,6 @@ provision() {
     local head
     head="$(on_bench "git -C '$E2E_DIR' rev-parse --short HEAD")"
     ok "e2e checkout on $BRANCH @ $head"
-
     # Seed from the LIVE release bundle when one exists (#880): the canonical checkout's config can
     # drift far behind what's actually deployed (a release bumps config.json/.env in the bundle dir,
     # not in CANONICAL_DIR), so seeding from canonical silently exercises + deploys a stale config.
@@ -494,7 +489,6 @@ provision() {
         ok "config seeded from the canonical checkout (data dirs point at the shared chains)"
     fi
 }
-
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
     log "Taking a safety backup of the live stack (the rollback anchor)"
@@ -505,7 +499,6 @@ backup_stack() {
     [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
     ok "safety backup: $SAFETY_ARCHIVE"
 }
-
 # --- Phase 3: borrow the miner ----------------------------------------------
 borrow_miner() {
     [ "$BORROW_MINER" = "1" ] || {
@@ -513,7 +506,6 @@ borrow_miner() {
         return 0
     }
     log "Borrowing $MINER_HOST → pointing it at $BENCH_HOST"
-
     # Undo a run that died borrowed, before this run's backup is minted (#1178) — or the backup
     # enshrines the borrowed state as "the original" and every later restore returns to it.
     # ONE detector, three remedies. "Still borrowed" is: the primary pool names the bench, OR any

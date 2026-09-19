@@ -110,11 +110,9 @@ launch_of() { # <mode> <borrow> [token] -> the raw launch command string
 stdin_of() { # <mode> <borrow> [token] -> what e2e.sh piped into the launch call
     drive_harness "$@" | sed -n 's/^STDIN\t//p'
 }
-
 pregate_of() { # <mode> <borrow> [token] -> the inline readiness/check commands
     drive_harness "$@" | sed -n 's/^PREGATE\t//p'
 }
-
 compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh would launch run.sh with
     # Everything between the runner's positional args and the trailing redirect is the phase list.
     launch_of "$@" | sed -n 's/.*\.e2e-run\.sh[^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* [^ ]* \(.*\) >\/dev\/null.*/\1/p'
@@ -122,7 +120,6 @@ compose_phases() { # <mode> <borrow_miner> [token] -> the phase list e2e.sh woul
 has_phase() { # <phase-list> <flag> -> "yes" | "no"
     case " $1 " in *" $2 "*) echo yes ;; *) echo no ;; esac
 }
-
 # The EXACT set a mode launches, order- and whitespace-independent. This is the fail-closed half:
 # per-flag has_phase checks are a denylist — they can only catch the absences someone thought of,
 # and a mutation that ADDS a destructive phase to --mode check walked straight through them.
@@ -138,7 +135,6 @@ assert_eq "targeted requests the rigforge-control WRITE phase (#1364)" \
 assert_eq "targeted launches EXACTLY its documented phases, and nothing else" \
     "$(phase_set "$TARGETED")" \
     "--auth-fail-closed --lifecycle --rig-control-port --rig-host --rig-name --rigforge --rigforge-control --scenario 8082 local-pruned-main-secure-tari rig1 rig1 "
-
 echo "== --mode matrix keeps everything it had =="
 MATRIX="$(compose_phases matrix 1)"
 assert_eq "matrix still requests the rigforge-control WRITE phase" \
@@ -150,7 +146,6 @@ FOCUSED_MATRIX="$(compose_phases matrix 1 s3cr3t-tok3n local-pruned-main-secure-
 assert_eq "matrix accepts one scenario and explicit bootstrap target without dropping its phases" \
     "$(phase_set "$FOCUSED_MATRIX")" \
     "--auth-fail-closed --fault-injection --hardening --lifecycle --rig-control-port --rig-host --rig-name --rigforge --rigforge-bootstrap-version --rigforge-control --safety-backup --scenario --subnet 8082 local-pruned-main-secure-tari rig1 rig1 v1.17.2 "
-
 echo "== --mode check stays non-destructive (pure reads) =="
 CHECK="$(compose_phases check 1)"
 assert_eq "check does NOT request the write phase" \
@@ -160,7 +155,6 @@ assert_eq "check launches EXACTLY --check — no destructive phase may ever join
 assert_contains "check drives the LIVE checkout, not the undeployed e2e one" "$(launch_of check 0)" "/srv/code/pithead-live"
 assert_eq "a failed readiness read refuses the destructive launch" "$(launch_of targeted 1 '' '' '' readiness)" ""
 assert_eq "a failed live check refuses the destructive launch" "$(launch_of targeted 1 '' '' '' check)" ""
-
 echo "== remote-node endpoints reach both the pregate and detached harness (#1446) =="
 out=$(bash "$E2E_SRC" candidate --remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example --help 2>&1)
 assert_rc "e2e.sh accepts the complete remote endpoint set" "$?" "0"
@@ -182,7 +176,6 @@ assert_eq "no borrowed miner => EXACTLY the rig-free phases, plus --no-mining-as
 contains() { # <haystack> <needle> -> "yes" | "no"
     case "$1" in *"$2"*) echo yes ;; *) echo no ;; esac
 }
-
 echo "== the write phase is SUPPLIED, not just requested (#1378) =="
 # #1364 made the phase REACHABLE. Reachable is not covered: unsupplied, run.sh drops the whole phase
 # unless the bench baseline happens to pin a descriptor (run.sh:2135-2139), #516's enriched-feed leg
@@ -206,7 +199,6 @@ LAUNCH="$(launch_of targeted 1)"
 assert_eq "the launch command does NOT contain the token" "$(contains "$LAUNCH" "s3cr3t-tok3n")" "no"
 assert_eq "the launch passes the token as an environment entry, not an argument" "$(contains "$LAUNCH" 'IT_RIG_TOKEN="$t"')" "yes"
 assert_eq "the token is what e2e.sh pipes to the launch call" "$(stdin_of targeted 1)" "s3cr3t-tok3n"
-
 echo "== rig_supply's rc-0 contract, which e2e.sh's && chain depends on (#1378) =="
 # e2e.sh appends the phase flags with `... && rig_supply && phases=...`. A rig_supply that returned
 # non-zero on any path would silently drop the whole write phase — #1364, reopened and invisible.
