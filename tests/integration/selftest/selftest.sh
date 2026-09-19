@@ -223,7 +223,7 @@ done < <(axis_coverage)
 
 echo "== scenarios: lookup helpers =="
 assert_ne "scenario_names is non-empty" "$(scenario_names | head -n1)" ""
-assert_eq "scenario count matches matrix" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c .)"
+assert_eq "every matrix row has a name and overrides" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c $'\t')"
 assert_contains "overrides lookup works" "$(scenario_overrides remote-main-secure-tari)" "monero.mode=remote"
 # An unknown scenario name must fail (return 1) and print nothing — never silently resolve.
 miss="$(scenario_overrides no-such-scenario)"

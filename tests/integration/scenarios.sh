@@ -51,6 +51,9 @@
 
 # Emit the matrix as `NAME<TAB>overrides…`, one scenario per line. Lines starting with the
 # canonical-first scenario are ordered so the cheapest, most-common config runs first.
+# The third tari.mode (#1855/#1929) needs no external node or extra global: nothing Tari runs
+# or merge-mines, so this proves a machine which declined Tari still mines Monero. Leaving
+# dashboard.tari_required at its default proves render_env forces it false for an off machine.
 scenario_matrix() {
     cat <<'EOF'
 local-pruned-main-secure-tari	monero.mode=local monero.prune=true monero.rpc_lan_access=false p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
@@ -64,11 +67,6 @@ local-pruned-main-clearnet-sync	monero.mode=local monero.prune=true monero.clear
 remote-main-secure-tari	monero.mode=remote p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-subnet	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.subnet=10.84.0.0/24
 remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true tari.mode=remote
-# The third tari.mode (#1855/#1929). Needs no external node and no extra global — that is the
-# point: nothing Tari runs and nothing merge-mines, so this is the one scenario that proves a
-# machine which DECLINED Tari still mines Monero. dashboard.tari_required is left at the default
-# on purpose: render_env forces TARI_REQUIRED=false from the mode, and asserting that here is
-# what catches a regression that would hold the sync gate shut forever on an off machine.
 tari-off-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true tari.mode=off
 local-pruned-main-stratum-tls	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true p2pool.stratum_tls=true
 local-pruned-main-firewall-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.tor_egress_firewall=false
