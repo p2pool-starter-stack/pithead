@@ -6,13 +6,17 @@ INPUT=/run/pithead-image-upgrade
 MOUNT=/data/pithead-image-upgrade-mount
 LOOP=/data/pithead-image-upgrade.xfs
 OLD_SHA=296fe6af551b773bae49486e98517ac274b896cd
+# Measurement ceiling for the built-in miner's first accepted share (#2057). The deployed run
+# reports the figure it actually took; this bound exists so a miner that never mines fails the
+# gate instead of hanging it.
+MINER_SHARE_BUDGET=1200
 NEW_SHA="${1:?candidate commit required}"
 GUEST_STAGE=guest-preflight
 
 record_failure() { # <exit-status>
     local rc="$1"
     case "$GUEST_STAGE" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner | miner-share | upgrade-gate | unattributed) ;;
     *) GUEST_STAGE=unattributed ;;
     esac
     printf 'stage=%s exit=%d\n' "$GUEST_STAGE" "$rc" >"$INPUT/guest-stage"
@@ -31,7 +35,7 @@ verify_bundle_trust() {
 if [ "$NEW_SHA" = --self-test ]; then
     INPUT="$(mktemp -d)"
     trap 'rm -rf "$INPUT"' EXIT
-    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat baseline-setup; do
+    for GUEST_STAGE in reflink-file reflink-format reflink-mountpoint reflink-mount-loop reflink-verify baseline-compat local-miner miner-share baseline-setup; do
         if (record_failure 17); then
             exit 1
         else
@@ -114,6 +118,38 @@ GUEST_STAGE=baseline-setup
     printf '\n' | env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA PITHEAD_APPLIANCE=1 \
         ./pithead setup --skip-deps --skip-optimize
 )
+
+# The gate's success signal is real mining: `run.sh --image-upgrade` refuses --no-mining-asserts,
+# so it needs >=1 proxy worker and a positive stratum hash count from a stack that was set up
+# seconds ago. The appliance ships its own miner (the baked RigForge tree and prebuilt XMRig), and
+# `local-miner` is its one supported invocation — it renders the miner's config at 127.0.0.1's
+# stratum port and starts the same xmrig.service unit a provisioned coordinator runs. The baseline
+# is v1.20.0, which predates that subcommand, so the APPLIANCE's own CLI is invoked against the
+# baseline stack directory rather than the bundle's.
+GUEST_STAGE=local-miner
+(
+    cd "$MOUNT/current"
+    PITHEAD_APPLIANCE=1 /opt/pithead/pithead local-miner
+)
+
+# Wait for the miner to reach the state the gate demands, and record how long it took. The budget
+# is a measurement ceiling, not a guess: the run that sets it reports the real figure, and only
+# the four booleans the gate itself reads are ever written out — no raw state, no topology.
+GUEST_STAGE=miner-share
+miner_start=$SECONDS
+miner_ready=0
+while :; do
+    miner_state="$(curl -fsS --max-time 10 http://127.0.0.1:8000/api/state 2>/dev/null || true)"
+    miner_ready=0
+    [ "$(jq -r '.sync.monero.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 1))
+    [ "$(jq -r '.sync.tari.state // ""' <<<"$miner_state" 2>/dev/null)" = "done" ] && miner_ready=$((miner_ready + 2))
+    [ "$(jq -r '.proxy_workers // 0' <<<"$miner_state" 2>/dev/null)" -ge 1 ] 2>/dev/null && miner_ready=$((miner_ready + 4))
+    [ "$(jq -r '.stratum.total_hashes // 0' <<<"$miner_state" 2>/dev/null)" -gt 0 ] 2>/dev/null && miner_ready=$((miner_ready + 8))
+    printf 'seconds=%d ready=%d\n' "$((SECONDS - miner_start))" "$miner_ready" >"$INPUT/miner-readiness"
+    [ "$miner_ready" -eq 15 ] && break
+    [ "$((SECONDS - miner_start))" -lt "$MINER_SHARE_BUDGET" ] || record_failure 1
+    sleep 10
+done
 
 GUEST_STAGE=upgrade-gate
 monero_host="$(jq -r '.monero.remote.host' "$INPUT/config.json")"

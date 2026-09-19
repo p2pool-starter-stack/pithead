@@ -131,16 +131,31 @@ _image_upgrade_read_guest_failure() {
     guest_stage="${guest_stage%% exit=*}"
     exit_status="${marker##* exit=}"
     case "$guest_stage" in
-    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | upgrade-gate | unattributed) ;;
+    guest-preflight | reflink-file | reflink-format | reflink-mountpoint | reflink-mount-loop | reflink-verify | bundle-trust | baseline-install | baseline-compat | baseline-setup | local-miner | miner-share | upgrade-gate | unattributed) ;;
     *) return 1 ;;
     esac
     [[ "$exit_status" =~ ^[0-9]+$ ]] && [ "$marker" = "stage=$guest_stage exit=$exit_status" ] || return 1
     printf '%s\n' "$marker"
 }
 
+# The built-in miner's measured time to the state the gate demands (#2057). Payload is two
+# integers the guest wrote: the seconds it took, and a 4-bit mask of exactly the booleans the
+# gate itself reads (monero synced, tari synced, workers, hashes). Anything else is refused, so
+# no raw state, secret or topology can reach the log through this path.
+_image_upgrade_read_miner_readiness() {
+    local marker seconds ready
+    marker="$(_ssh 'cat /run/pithead-image-upgrade/miner-readiness' 2>/dev/null)" || return 1
+    seconds="${marker#seconds=}"
+    seconds="${seconds%% ready=*}"
+    ready="${marker##* ready=}"
+    [[ "$seconds" =~ ^[0-9]+$ ]] && [[ "$ready" =~ ^([0-9]|1[0-5])$ ]] || return 1
+    [ "$marker" = "seconds=$seconds ready=$ready" ] || return 1
+    printf '%s %s\n' "$seconds" "$ready"
+}
+
 phase_image_upgrade() {
     info "phase: image-upgrade (signed v1.20.0 -> candidate on guest-local reflink XFS)"
-    local ip="" rc=0 cleanup_rc=0 head guest_failure=""
+    local ip="" rc=0 cleanup_rc=0 head guest_failure="" miner_readiness=""
     _image_upgrade_inputs_valid || {
         bad "image-upgrade requires REMOTE_MONERO_HOST, REMOTE_MONERO_RPC_PORT, REMOTE_MONERO_ZMQ_PORT, REMOTE_TARI_HOST, and PITHEAD_REGISTRY"
         return
@@ -172,7 +187,11 @@ phase_image_upgrade() {
         rc=$?
         guest_failure="$(_image_upgrade_read_guest_failure || true)"
     }
+    miner_readiness="$(_image_upgrade_read_miner_readiness || true)"
     _image_upgrade_clear_guest_inputs || cleanup_rc=1
+    if [ -n "$miner_readiness" ]; then
+        info "built-in miner reached ${miner_readiness%% *}s with gate-predicate mask ${miner_readiness##* }/15"
+    fi
     if _ssh '! mountpoint -q /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade-mount && test ! -e /data/pithead-image-upgrade.xfs && test ! -e /run/pithead-image-upgrade'; then
         ok "guest-local reflink volume and private inputs were torn down"
     else

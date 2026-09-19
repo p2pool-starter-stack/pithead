@@ -245,7 +245,12 @@ The runner exits non-zero if any assertion failed.
 The appliance-owned `tests/os/run.sh --phase image-upgrade` supplies the release-shaped machine
 that this gate needs. It creates its reflink XFS as a sparse loop-mounted file inside the disposable
 KVM guest, verifies the unchanged signed v1.20.0 bundle, and uses the tier-4 remote Monero and Tari
-endpoints. It does not prove that a local chain directory survives without a resync; that larger
+endpoints. The gate's success signal is real mining, so it reserves no rig: the guest mines against
+its own stack with the appliance's built-in miner, started through `pithead local-miner` — the same
+invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The baseline
+predates that subcommand, so the appliance's own CLI runs it against the baseline stack directory.
+The phase reports the seconds the miner took to reach the four states the gate reads, and bounds
+that wait so a miner that never mines fails the gate instead of hanging it. It does not prove that a local chain directory survives without a resync; that larger
 copy-on-write gate is tracked by [#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 Upgrade provenance is written to `image-upgrade-provenance.txt`, including candidate version,
