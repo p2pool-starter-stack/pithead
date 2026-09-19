@@ -10,7 +10,8 @@
 # never depend on the runner being able to resolve the box's dashboard hostname.
 # shellcheck source=tests/integration/lib/parent-lock.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/parent-lock.sh"
-
+source "${BASH_SOURCE[0]%/*}/lib/remote-endpoints.sh"
+source "${BASH_SOURCE[0]%/*}/lib/redact-it-password.sh"
 # --- Output -----------------------------------------------------------------
 # Colour only on a TTY with NO_COLOR unset (https://no-color.org), matching pithead.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -31,14 +32,13 @@ it_log() { echo -e "${IT_GREEN}[ITEST]${IT_RESET} $1"; }
 it_warn() { echo -e "${IT_YELLOW}[ITEST]${IT_RESET} $1" >&2; }
 it_err() { echo -e "${IT_RED}[ITEST]${IT_RESET} $1" >&2; }
 it_step() { echo -e "${IT_DIM}  → $1${IT_RESET}"; }
-
 # --- Secrets hygiene --------------------------------------------------------
 # Redact before anything reaches a log or the terminal. FIVE shapes: KEY=value and JSON "key": "value"
 # share ONE key-SUFFIX vocabulary — add SPELLINGS to BOTH (#1587; #1590 case-insensitive JSON-side;
 # #1611, they had drifted); --flag by NAME; >=90 chars by SHAPE; --wallet/--merge-mine's next token by
 # POSITION (#1596); an IP by SCOPE (#1609), its \x01 sentinel an INVARIANT, not an input guess (#1613).
 redact() {
-    sed -E \
+    redact_it_password | sed -E \
         -e 's/([A-Za-z0-9_]*(PASSWORD|PASSWD|SECRET|TOKEN|LOGIN|USERNAME|USER|KEY|WALLET|WALLET_ADDRESS|PING_URL|NTFY_URL|WEBHOOK_URLS|HASH_B64|PW_FP|DONOR_ID))=.*/\1=<redacted>/; s/(--[a-z-]*(login|password|passwd|secret|token|key))([ =])[^[:space:]]+/\1\3<redacted>/g; s/(--wallet[ =])[^-[:space:]][^[:space:]]*/\1<redacted-address>/g; s/(--merge-mine[ =][^[:space:]]+[[:space:]]+)[^-[:space:]][^[:space:]]*/\1<redacted-address>/g' \
         -e 's/\x01/<ctrl>/g; s/("[A-Za-z0-9_]*(password|passwd|secret|token|login|username|user|key|wallet|wallet_address|ping_url|ntfy_url|webhook_urls|hash_b64|pw_fp|donor_id)"[[:space:]]*:[[:space:]]*")([^"\]|\\.)*/\1<redacted>/gI; s/[a-z2-7]{56}\.onion/<redacted>.onion/g; s/[A-Za-z0-9]{90,}/<redacted-address>/g; s/(^|[^0-9.])(0|10|127|192\.168|169\.254|172\.(1[6-9]|2[0-9]|3[01])|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7]))\./\1\2\x01/g; s/(^|[^0-9.])([0-9]{1,3}(\.[0-9]{1,3}){3})\b/\1<redacted-ip>/g; s/(^|[^0-9a-fA-F:\/])([23][0-9a-fA-F]{3}(:[0-9a-fA-F]{0,4}){2,7})/\1<redacted-ip>/g; s/\x01/./g'
 }
@@ -64,7 +64,7 @@ it_pass() {
 it_fail() {
     IT_FAIL=$((IT_FAIL + 1))
     IT_FAILED_NAMES="${IT_FAILED_NAMES}\n    - ${IT_CURRENT_SCENARIO:-?}: $1"
-    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "${2:-}"
+    printf '    %b✗%b %s\n        %s\n' "$IT_RED" "$IT_RESET" "$1" "$(redact_it_password <<<"${2:-}")"
 }
 
 assert_eq() { if [ "$2" = "$3" ]; then it_pass "$1"; else it_fail "$1" "expected [$3], got [$2]"; fi; }
@@ -213,12 +213,8 @@ resolve_overrides() {
 }
 
 # --- Expectation derivation (pure) ------------------------------------------
-# Given a rendered config.json, list the services we expect to be running. The bundled monerod
-# only runs in local mode (the local_node compose profile) and the bundled tari only runs in
-# local mode (local_tari, #103) — each independently, since the two chains toggle mode on their
-# own axis; in remote mode the matching bundled node must be ABSENT. wallet-rpc/tari-wallet
-# (#381/#462) only run when their view key is set (payout_confirm/tari_payout_confirm). Everything
-# else is always expected. Mirrors stack_status()'s profile gating.
+# Given a rendered config.json, list services we expect running: bundled monerod/tari only in
+# local mode (independent axes, #103); wallet-rpc/tari-wallet only when their view_key is set (#381/#462); everything below always expected (mirrors stack_status()'s profile gating).
 EXPECTED_ALWAYS="caddy dashboard docker-control docker-proxy p2pool tor xmrig-proxy"
 
 expected_services() {
@@ -233,6 +229,10 @@ expected_services() {
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
 
+expected_topology_nodes() { # topology panel's node set (#2303): local-miner only when local_miner.enabled=true
+    local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
+}
 # Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
 absent_services() {
     local config_json="$1" mmode tmode

@@ -37,23 +37,13 @@ name: Scheduled-run watch
 # #1146).
 on:
   schedule:
-    # Mondays 08:00 UTC. THE ORDERING IS LOAD-BEARING, not tidiness: this job reports on the
-    # 05:00 sweep, so it must run after that sweep has FINISHED (ci.yml's own jobs are capped at
-    # 30 minutes each). Move this line earlier and the watch reads a run still in progress, which
-    # it correctly refuses as UNCHECKED — a self-inflicted red every Monday. It also sits after
-    # the 06:00 os-rootfs/lychee, 06:30 pin-watch and 07:00 trivyignore-watch slots so the whole
-    # Monday block stays in one readable order.
+    # Mondays 08:00 UTC, after the other declared Monday slots. GitHub may start any of them hours
+    # late, so the cadence report allows 12 hours before LATE and a full period before MISSED.
     - cron: "0 8 * * 1"
-    # TEMPORARY PROOF SLOT (#1377), and it must be retired. The YAML existing proves nothing — a
-    # `schedule:` on the wrong branch is silent and reports green, which is the false-green trap
-    # this lane is repeatedly asked to prove against. So registration is proven the way #1257
-    # proved trivyignore-watch's: a near-term slot fires once, the `event=schedule` run is put on
-    # record, and then THIS LINE IS DELETED. Retire it in a follow-up PR that cites the run id.
-    - cron: "23 * * * *"
   workflow_dispatch:
 
-# Least privilege (#282). `actions: read` is what lets the job read ci.yml's own run history — it
-# is a read of this repo's Actions metadata and nothing else. `issues: write` is the job's one
+# Least privilege (#282). `actions: read` lets the job read this repo's scheduled-run histories
+# and nothing else. `issues: write` is the job's one
 # output: it never pushes, comments on a PR, or publishes.
 permissions:
   actions: read
@@ -62,14 +52,15 @@ permissions:
 
 jobs:
   scheduled-run-watch:
-    name: Report whether the Monday CVE sweep ran and passed
+    name: Report declared schedule cadence and the Monday CVE sweep
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Collect ci.yml's scheduled-run history
+          fetch-depth: 0
+      - name: Collect declared schedules and server-filtered run history
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -78,8 +69,24 @@ jobs:
           # publish nothing. Every failure here lands as a missing or empty file, and the render
           # script refuses on exactly that and says UNCHECKED — which is the reader's answer.
           mkdir -p watch
-          gh run list --workflow ci.yml --event schedule \
-            --json databaseId,url,createdAt,status,conclusion --limit 20 >watch/runs.json
+          bash scripts/watch/scheduled-run-watch.sh --schedules .github/workflows >watch/schedules.tsv
+          {
+            while IFS=$'\t' read -r file cron; do
+              name=${file##*/}
+              declared=$(git log -1 --format=%ct -S "$cron" -- "$file")
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${name}/runs?event=schedule&per_page=100" >watch/raw.json \
+                && jq -e '.workflow_runs | type == "array"' watch/raw.json >/dev/null \
+                && [[ "$declared" =~ ^[0-9]+$ ]]; then
+                jq -cn --arg path "$file" --arg cron "$cron" --argjson declaredAt "$declared" --slurpfile raw watch/raw.json \
+                  '{path: $path, cron: $cron, declaredAt: $declaredAt, runs: ($raw[0].workflow_runs | map({databaseId: .id, url: .html_url, createdAt: .created_at, status, conclusion}))}'
+              else
+                jq -cn --arg path "$file" --arg cron "$cron" '{path: $path, cron: $cron, declaredAt: null, runs: null}'
+              fi
+            done <watch/schedules.tsv
+          } | jq -s --arg checkedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{checkedAt: $checkedAt, workflows: .}' >watch/cadence.json
+          jq '[.workflows[] | select(.path == ".github/workflows/ci.yml") | .runs[]?]' \
+            watch/cadence.json >watch/runs.json
           # The jobs of the newest run, so a failure can name WHICH job failed. Fetched
           # unconditionally: deciding whether it is needed is the render script's job, and asking
           # the question twice in two places is how the two answers drift.

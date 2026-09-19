@@ -76,18 +76,14 @@ firstboot_wizard() {
     # medium, where staged files are cleaned up by the installer itself. Then fall through to
     # the rig leg below, exactly as a pre-seeded coordinator falls through to setup.
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
-        if jq -e 'type == "object" and ((.pool // "") | length > 0)' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
+        if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
             install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
             record_machine_role rig
-            # Spent: the settings (possibly a stratum password) must not sit on the ESP forever.
-            if ! boot_is_removable; then
-                mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-                rm -f "$PRESEED_DIR/pithead-rig.json" 2>/dev/null ||
-                    warn "Could not remove the consumed rig settings from $PRESEED_DIR — they may hold a password; delete the file."
-            fi
+            scrub_staged_rig consumed # spent, and it may hold a stratum password
             _console "This machine is now a RigForge rig ($(jq -r '.worker // "unnamed"' "$PWD/rig.json" 2>/dev/null))."
         else
             warn "The staged rig settings at $PRESEED_DIR/pithead-rig.json are unusable — opening the setup page."
+            scrub_staged_rig unusable # refused is still readable: same password, same bare ESP
         fi
     fi
     # A machine already carrying the rig role mines, and asks nothing — not even on a stick that
@@ -107,10 +103,10 @@ firstboot_wizard() {
     # the pre-filled combined page instead (below).
     if ! installer_mode_available; then
         # The carried restore first: it holds MORE than a config (keys, database), and once it
-        # lands the config pre-seed guard below sees config.json and stands down.
-        if [ ! -f "$PWD/config.json" ]; then
-            consume_preseed_restore || true
-        fi
+        # lands the config pre-seed guard below sees config.json and stands down. Unconditional —
+        # gating on config.json's own absence let a `wipe=keep` target's PRIOR config.json skip
+        # the carried restore entirely (#2195); consume_preseed_restore itself no-ops (rc 2 idle).
+        consume_preseed_restore || true
         if [ ! -f "$PWD/config.json" ] && consume_preseed_config "$PWD/config.json"; then
             # Spent: config.json lives on /data now, and a plaintext wallet + password must not
             # sit on this machine's unencrypted ESP forever. Only on an INSTALLED machine —
@@ -385,10 +381,10 @@ firstboot_wizard() {
                 # Same isolation the other two validator calls use: a fresh bash so the
                 # validator's own error() exit cannot take this loop with it, and CONFIG_FILE
                 # (readonly) is aimed by the env var rather than reassigned.
-                if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+                if ! post_err=$(PITHEAD_CONFIG_FILE="$PWD/config.json" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
                     printf '%s' "$post_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
-                    rm -f "$PWD/config.json" "$spool/install-request"
+                    rm -f "$PWD/config.json" "$PWD/config.json.bak-1x" "$spool/install-request"
                     warn "The configuration this machine assembled did not pass validation: $post_err"
                     sleep 2
                     continue

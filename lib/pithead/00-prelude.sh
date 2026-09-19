@@ -93,6 +93,17 @@ SKIP_DEPS=0
 # generating in-memory creds so the preview/diff is realistic.
 PITHEAD_DRY_RUN=0
 
+# Missing stamps are old release images: fail closed rather than letting configuration reopen SSH.
+appliance_variant() {
+    local variant_file="${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" variant
+    [ -r "$variant_file" ] || {
+        printf release
+        return
+    }
+    variant=$(tr -d ' \t\r\n' <"$variant_file")
+    [ "$variant" = debug ] && printf debug || printf release
+}
+
 # Detect whether we're being sourced (e.g. by the test suite). When sourced we only define
 # functions/constants and skip all side effects (cd, traps, running main).
 _STACK_SOURCED=0

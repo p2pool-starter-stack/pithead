@@ -10,6 +10,7 @@ from mining_dashboard.config.config import (
     NTFY_URL,
     TOR_SOCKS_PROXY,
 )
+from mining_dashboard.helper.http import raise_for_success, request_failure_class
 
 logger = logging.getLogger("NotifySinks")
 
@@ -41,19 +42,29 @@ class _HttpSink:
         self.timeout = timeout
         self._proxies = {"http": tor_proxy, "https": tor_proxy} if tor_proxy else None
         self.enabled = bool(self.url)
+        self.last_failure = ""
 
     def event_enabled(self, event):
         """This sink pushes every event kind — enabled is the only gate."""
         return self.enabled
 
     def _post(self, **kwargs) -> bool:
+        self.last_failure = ""
         if not self.enabled:
             return False
         try:
-            resp = requests.post(self.url, timeout=self.timeout, proxies=self._proxies, **kwargs)
-            resp.raise_for_status()
+            with requests.post(
+                self.url,
+                timeout=self.timeout,
+                proxies=self._proxies,
+                stream=True,
+                allow_redirects=False,
+                **kwargs,
+            ) as resp:
+                raise_for_success(resp)
             return True
         except requests.RequestException as exc:
+            self.last_failure = request_failure_class(exc)
             # Type only: a requests error message can embed the URL, which may carry a token.
             logger.debug("%s send failed (%s)", self.label, type(exc).__name__)
             return False

@@ -23,6 +23,9 @@ source "$HERE/../lib.sh"
 source "$HERE/../lib/rigforge-apply-settle.sh" # _settle_worker_apply, shared with the max_temp_c leg
 # shellcheck source=tests/integration/lib/rigforge-writable-keys.sh
 source "$HERE/../lib/rigforge-writable-keys.sh"
+# shellcheck source=tests/integration/lib/run-rig-reverse.sh
+export INTEGRATION_RUN_SUITE=1
+source "$HERE/../lib/run-rig-reverse.sh"
 
 # Ledger behavior has its own selftest; this file exercises the writable-key decisions.
 rig_key_mark() { :; }
@@ -265,7 +268,17 @@ echo "== run_rigforge_writable_keys: THE REFUSALS, asserted as behaviour =="
 STUB_DETAIL='{"rig_config":{"pools":[{"url":"a:1"},{"url":"b:2"}],"DONATION":0,"autotune":"disabled","watchdog":"enabled","watchdog_interval_min":5,"max_temp_c":100}}'
 reset_applies
 unset IT_RIG_POOLS_PROBE
-quietly run_rigforge_writable_keys rig1 >/dev/null
+refusal_rows="$({
+    IT_SKIPPED_NAMES=""
+    IT_SKIPPED_BY_DESIGN=0
+    run_rigforge_writable_keys rig1 >/dev/null 2>&1
+    printf '%s|%b' "$IT_SKIPPED_BY_DESIGN" "$IT_SKIPPED_NAMES"
+} 2>&1)"
+assert_contains "autotune refusal is a by-design verdict row" "$refusal_rows" \
+    "[by-design] leg      autotune write (#1236) — starts a real tuning run on borrowed production hardware"
+assert_contains "watchdog refusal is a by-design verdict row" "$refusal_rows" \
+    "[by-design] leg      watchdog write (#1236) — would remove thermal protection from borrowed production hardware"
+assert_contains "both permanent refusals are counted as by-design" "$refusal_rows" "2|"
 assert_eq "autotune is never applied — it would start a real tuning run" \
     "$(applies | grep -c autotune)" "0"
 assert_eq "watchdog is never applied — it would drop thermal protection" \
@@ -302,6 +315,15 @@ unset IT_RIG_POOLS_PROBE
 counts="$(quietly run_rigforge_pools rig1)"
 assert_eq "no IT_RIG_POOLS_PROBE: the leg self-skips, no pass and no fail" "$counts" "0,0"
 assert_eq "and POSTs nothing" "$(applies | grep -c .)" "0"
+pools_rows="$({
+    IT_SKIPPED_NAMES=""
+    IT_SKIPPED_MISSING=0
+    run_rigforge_pools rig1 >/dev/null 2>&1
+    printf '%s|%b' "$IT_SKIPPED_MISSING" "$IT_SKIPPED_NAMES"
+})"
+assert_contains "an absent pools probe is one missing row, never green" "$pools_rows" "1|"
+assert_contains "the pools missing row names the required input" "$pools_rows" \
+    "[missing] leg      pools write (#1002b) — no IT_RIG_POOLS_PROBE"
 
 export IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]'
 reset_applies
@@ -327,19 +349,37 @@ for _shape in '[{"url":"real:1"}]' '[{"url":"real:1","pass":""}]'; do
         "$(applies | grep -c .)" "0"
     assert_eq "and self-skips rather than passing or failing [$_shape]" "$counts" "0,0"
 done
-# A skip that announces the wrong reason is its own small lie, and this leg now has two reasons to
-# skip. Assert each names itself, or a passless record would read as "nothing on record".
+# A skip that announces the wrong reason is its own small lie.
 STUB_DETAIL='{"last_applied":{"pools":[{"url":"real:1"}]}}'
 reset_applies
 err="$(drive_err run_rigforge_pools rig1)"
 assert_contains "the passless skip says the CREDENTIAL is what is missing" "$err" "no usable credential"
+
+echo "== run_rigforge_pools: #2325 — an absent record is SEEDED from IT_RIG_POOLS_PROBE, not skipped =="
+# The precondition this issue is about: a rig this leg has never touched has no .last_applied.pools
+# to restore, and used to skip forever because of it. The probe (by contract, a value the operator
+# has already attested carries `pass`) breaks that circle — it seeds the record with itself, so
+# there is no "original" other than the probe to restore back to.
+STUB_DETAIL='{"last_applied":{}}'
+IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"seedsecret"}]'
+reset_applies
+quietly run_rigforge_pools rig1 >/dev/null
+assert_eq "seeding an absent record still POSTs — it is not skipped (#2325)" "$(applies | grep -c .)" "2"
+assert_eq "the first apply carries the probe — nothing else to seed with" \
+    "$(applies | sed -n 1p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
+assert_eq "the restore is the same probe — there is no other original yet" \
+    "$(applies | sed -n 2p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
+IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]' # restored: the credential-less probe the rest of this file uses
+
+# The #1546 guard survives the seed path: a probe with no `pass` of its own must not seed a
+# credential-less config onto the rig either, and must say so — never a stale "nothing on record".
 STUB_DETAIL='{"last_applied":{}}'
 reset_applies
 err="$(drive_err run_rigforge_pools rig1)"
-assert_contains "the absent-record skip still says the RECORD is what is missing" \
-    "$err" "no dashboard-applied pools on record"
-assert_eq "and the absent-record skip does not claim a credential problem" \
-    "$(printf '%s' "$err" | grep -c 'no usable credential')" "0"
+assert_contains "a credential-less probe can't seed an absent record either (#1546/#2325)" \
+    "$err" "no usable credential"
+assert_eq "and nothing is POSTed — the credential is checked before any seed/apply" \
+    "$(applies | grep -c .)" "0"
 
 STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
 
@@ -351,6 +391,20 @@ assert_eq "and nothing is POSTed" "$(applies | grep -c .)" "0"
 assert_eq "and its credential-shaped input is not copied into the error log" \
     "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
 unset IT_RIG_POOLS_PROBE
+
+echo "== run_rigforge_rollback: an absent rig-specific probe is a missing row, not green or red =="
+unset IT_RIG_ROLLBACK_CHANGES
+counts="$(quietly run_rigforge_rollback rig1)"
+assert_eq "no rollback probe produces no pass and no failure" "$counts" "0,0"
+rollback_rows="$({
+    IT_SKIPPED_NAMES=""
+    IT_SKIPPED_MISSING=0
+    run_rigforge_rollback rig1 >/dev/null 2>&1
+    printf '%s|%b' "$IT_SKIPPED_MISSING" "$IT_SKIPPED_NAMES"
+})"
+assert_contains "an absent rollback probe is one missing row, never green" "$rollback_rows" "1|"
+assert_contains "the rollback missing row names the required input" "$rollback_rows" \
+    "[missing] leg      control-apply auto-rollback (#517) — no IT_RIG_ROLLBACK_CHANGES"
 
 echo ""
 echo "selftest-rigforge-writable-keys: $IT_PASS passed, $IT_FAIL failed"

@@ -7,12 +7,12 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
-
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
+# shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
@@ -27,14 +27,14 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain
 
 # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
+# shellcheck source=tests/stack/dashboard/test-dashboard-exposure-live.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
 # Regression (#1330): test-dashboard-onion.sh must not depend on running after test-dashboard.sh. A
-# `( ... )` subshell forks THIS process and inherits its whole variable table, exported or not — including
-# $auth_hb64/$caddy_https left behind by test-dashboard.sh's `source` above — so a subshell guard would
-# stay green. Only a separate `bash` process is isolated (environment only); $HERE is passed as an argument.
+# A subshell inherits this process's variables, so only a separate `bash` proves isolation.
 # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
 bash -c '
     set -uo pipefail
@@ -51,10 +51,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain
 
 # shellcheck source=tests/stack/test-unit-helpers.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-cli.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-config.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
 
@@ -66,6 +64,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain
 
 # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
@@ -111,12 +111,12 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran te
 # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 
-# The approval gate (#33) — default-deny on security-sensitive changes — together with
-# workers.list[]'s add-only exception (#893) and the #122 SSRF floor on a newly appended entry's
-# host. The whole domain lives in the file and arms its own control sandbox (#1105 R13); this
-# stanza sits at the position the section has always run from.
+# The approval gate (#33): default-deny, workers.list[]'s add-only exception (#893), the #122 SSRF
+# floor; own sandbox (#1105 R13). The tier3 stanza is POSITION-LOCKED: gate_try()/$UUID5 (2026-09-13 perimeter audit).
 # shellcheck source=tests/stack/control/test-control-add-only-ssrf.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
@@ -148,7 +148,6 @@ esac
 # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
 
@@ -181,6 +180,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && do
 
 # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
+
+# shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/appliance/test-appliance-wizard-spool.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-wizard-spool.sh" && domain_ran test-appliance-wizard-spool.sh "$_d0" "$?" || domain_ran test-appliance-wizard-spool.sh "$_d0" "$?"
@@ -233,9 +235,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-firstboot-install
 
 # shellcheck source=tests/stack/test-readonly-verbs-lock.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-readonly-verbs-lock.sh" && domain_ran test-readonly-verbs-lock.sh "$_d0" "$?" || domain_ran test-readonly-verbs-lock.sh "$_d0" "$?"
-
-# shellcheck source=tests/stack/appliance/test-appliance-identity-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity-boot.sh" && domain_ran test-appliance-identity-boot.sh "$_d0" "$?" || domain_ran test-appliance-identity-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-boot-verdicts.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-verdicts.sh" && domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?" || domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-machine-id-journal.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-machine-id-journal.sh" && domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?" || domain_ran test-appliance-machine-id-journal.sh "$_d0" "$?"
 
@@ -247,7 +249,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-media-console.sh"
 # shellcheck source=tests/stack/test-rauc-loop-wait.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-rauc-loop-wait.sh" && domain_ran test-rauc-loop-wait.sh "$_d0" "$?" || domain_ran test-rauc-loop-wait.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/test-lifecycle.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-lifecycle.sh" && domain_ran test-lifecycle.sh "$_d0" "$?" || domain_ran test-lifecycle.sh "$_d0" "$?"
 
@@ -337,11 +338,11 @@ else
     _dd_all=${_dd_sites%%$'\n'*}
     # THE GUARD THAT EARNS ITS PLACE, replacing one that could not: reseeding TOR_DATA_DIR was
     # strictly REDUNDANT, its pass condition being exactly what the CANNOT row asserts, so it could
-    # never red alone. This closes what those rows cannot see -- a second `for var in ..._DATA_DIR;
-    # do` above missing_data_dirs would feed them, through head -1, a set the shipped code no longer
-    # uses, every row green. The awk gap is narrower: a trailing comment after its closing quote
-    # makes it over-read. Wrong input, no wrong output today, so NAMED not guarded.
+    # never red alone. A second site above either live extractor would otherwise feed these rows a
+    # stale list. Sed drops a `for ...; do` line with a trailing comment, and the existing uniqueness guard reds.
+    # Only awk's closing-quote trailing-comment over-read remains unguarded; it does not change today's output.
     assert_eq "the data-dir key list comes from exactly one site (#1776)" "$(printf '%s\n' "$_dd_sites" | grep -c .)" "1"
+    assert_eq "the confirm-key allowlist comes from exactly one site (#1816)" "$(grep -c "^CONTROL_DASHBOARD_CONFIRM_KEYS='" "$STACK")" "1"
     _dd_conf=$(awk "/^CONTROL_DASHBOARD_CONFIRM_KEYS='/{f=1} f{print} f && /'[[:space:]]*\$/{exit}" "$STACK" |
         tr -d "\n'" | sed "s/^CONTROL_DASHBOARD_CONFIRM_KEYS=//;s/  */ /g;s/^ //")
     assert_eq "the dirs doctor warns about that the dashboard CAN repoint (#1776)" \
@@ -397,7 +398,6 @@ assert_eq "no plain doctor verdict still names a CLI verb (#1213)" \
 # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 echo ""
 printf 'pithead tests: \033[1;32m%d passed\033[0m, ' "$PASS"
 if [ "$FAIL" -gt 0 ]; then

@@ -58,6 +58,10 @@ assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("
 assert_eq "doctor --json counters match verdict lines" \
     "$(jq -r '(.summary.ok + .summary.warn + .summary.fail) == ([.checks[] | select(.status != "info")] | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
+printf release >"$DJ/variant"
+jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
+out=$(cd "$DJ" && PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$DJ/variant" PATH="$DJ/bin:$PATH" ./pithead doctor 2>&1 || true)
+assert_contains "release doctor warns that carried SSH is inert" "$out" "ssh.enabled is ignored on this release image"
 out=$(cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --bogus 2>&1 || true)
 assert_contains "doctor rejects unknown options" "$out" "Unknown option"
 # support-bundle: chmod-600 tarball; doctor.json inside; .env secrets redacted by key pattern —
@@ -79,6 +83,11 @@ echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support
 mk_tmpdir CDW
 mkdir -p "$CDW/esp"
 export PITHEAD_PRESEED_DIR="$CDW/esp"
+# Stands in for /run (tmpfs): data_wipe_note()'s one-shot cache has to live in a file, never a
+# shell variable, because every caller reads it through `$(...)` command substitution, which
+# forks a subshell (#1208 job 557/560 — a variable-based cache never worked, since a subshell's
+# writes to it vanish when the subshell exits).
+export PITHEAD_DATA_WIPE_NOTE_CACHE="$CDW/wipe-note-cache.json"
 
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent regardless of the note" "$out" ""
@@ -87,6 +96,7 @@ out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "no note file -> doctor says nothing (not even a section header)" "$out" ""
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent EVEN WITH a note present (a DIY host cannot have one)" "$out" ""
 
@@ -96,12 +106,33 @@ assert_contains "the WARN names the date" "$out" "2026-08-21T09:00:00Z"
 assert_contains "the WARN points at restoring a backup" "$out" "restore from backup"
 assert_not_contains "a recovery wipe is a WARN, never a FAIL (must not fail the boot health gate)" "$out" "FAIL"
 
+# One-shot PER BOOT (#1208): the .pending marker is consumed, but the same-boot cache still
+# answers a re-run within the SAME boot consistently — an operator running doctor twice in one
+# sitting should see the same output, not have it flicker to silence mid-session. The marker
+# itself (checked below) never comes back; only a reboot (tmpfs cleared) truly ends the WARN.
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_contains "a re-run within the SAME boot -> the SAME WARN, not silence" "$out" "WARN"
+assert_eq "the .pending marker itself stays consumed (never re-armed by a re-run)" \
+    "$([ -f "$CDW/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "absent"
+assert_contains "the underlying wipe log is untouched — only the marker was consumed" \
+    "$(cat "$CDW/esp/pithead-data-wiped")" "2026-08-21T09:00:00Z"
+
+# A LATER boot (cache cleared, marker already consumed on disk) is what finally ends it.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a later boot -> silent, never a stale re-WARN (#1208)" "$out" ""
+
 printf '2026-08-19T07:30:00Z factory-reset requested\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_not_contains "a deliberate factory-reset -> no WARN (the operator asked for it)" "$out" "WARN"
 assert_contains "a deliberate factory-reset -> still named, informationally" "$out" "2026-08-19T07:30:00Z"
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
-unset PITHEAD_PRESEED_DIR
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a factory-reset info line is one-shot too (later boot -> silent)" "$out" ""
+
+unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$CDW"
 unset CDW out
 

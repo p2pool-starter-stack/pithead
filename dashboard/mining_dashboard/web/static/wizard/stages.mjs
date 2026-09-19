@@ -1,16 +1,16 @@
 import { html } from "../app/preact.mjs";
 import { rigCardFields, rigCardNote } from "../workers/rigcardlogic.mjs";
-import { Err, Field, Note } from "./wizardparts.mjs";
+import { Err, Field, Note, RadioField } from "./wizardparts.mjs";
 
 export const Gate = ({ error, onSubmit }) => html`<div class="card">
     <p>Enter the one-time token shown on this machine's console or terminal.</p>
-    <${Err}>${error}<//>
     <form onSubmit=${onSubmit}>
         <${Field} label="Token">
             <input name="token" autofocus autocomplete="off" autocapitalize="off"
                 spellcheck=${false} placeholder="pit-XXXXXX" />
         <//>
         <${Note}>Case doesn't matter, and the ${" "}<code>pit-</code>${" "}prefix is optional.<//>
+        <${Err}>${error}<//>
         <button type="submit" class="btn-toggle active">Continue</button>
     </form>
 </div>`;
@@ -37,7 +37,7 @@ export const InstallSection = ({
         ? "ERASES it (Pithead layout, no data partition)"
         : "ERASES everything on it";
   return html`<div>
-    <h3>Install onto</h3>
+    <h2>Install onto</h2>
     <${Field} label="Target disk">
         <select value=${chosen} onChange=${onPick}>
             <option value="" disabled selected=${!chosen}>Choose a disk…</option>
@@ -64,13 +64,12 @@ export const InstallSection = ({
     ${
       picked &&
       picked.state === "pithead-with-data" &&
-      html`<${Field} label="It holds a previous install — what happens to its data?">
-        <select value=${wipe} onChange=${onWipe}>
-            <option value="keep">Keep everything — settings, wallets and the synced chains (default)</option>
-            <option value="data">Fresh start, keep the blockchains — settings and wallets are wiped</option>
-            <option value="all">Wipe everything — the chains re-download from scratch</option>
-        </select>
-    <//>`
+      html`<${RadioField} label="It holds a previous install — what happens to its data?"
+        name="wipe" value=${wipe} onChange=${onWipe} options=${[
+          ["keep", "Keep everything", "Keep settings, wallets and the synced chains (default)."],
+          ["data", "Fresh start", "Keep the blockchains; wipe settings and wallets."],
+          ["all", "Wipe everything", "Download the chains again from scratch."],
+        ]} />`
     }
     ${
       picked &&
@@ -97,8 +96,15 @@ export const InstallSection = ({
 // Restore-at-setup (#909): the config form's alternative — an uploaded encrypted backup +
 // its emergency-kit passphrase. Validation is host-side (the same "container asks, host
 // decides" split as everything else here); this just carries the two answers up.
-export const RestoreSection = ({ file, passphrase, onFile, onPassphrase }) => html`<div>
-    <h3>Restore from a backup</h3>
+export const RestoreSection = ({
+  file,
+  passphrase,
+  passphraseVisible,
+  onFile,
+  onPassphrase,
+  onPassphraseVisible,
+}) => html`<div>
+    <h2>Restore from a backup</h2>
     <${Note}>Upload the encrypted backup archive and its emergency-kit passphrase — shown once,
     when the backup was made. This restores settings, wallets, keys and the dashboard's history;
     the machine then provisions itself from what it restores, exactly as if you had filled in
@@ -108,16 +114,19 @@ export const RestoreSection = ({ file, passphrase, onFile, onPassphrase }) => ht
     <//>
     ${file && html`<p class="text-muted">${file.name} (${Math.round(file.size / 1024)} KB)</p>`}
     <${Field} label="Passphrase">
-        <input type="password" value=${passphrase} onInput=${onPassphrase}
-            autocomplete="off" placeholder="the emergency-kit passphrase" />
+        <input type=${passphraseVisible ? "text" : "password"} value=${passphrase} onInput=${onPassphrase}
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck=${false}
+            placeholder="the emergency-kit passphrase" />
     <//>
+    <label><input type="checkbox" checked=${passphraseVisible}
+        onChange=${onPassphraseVisible} /> Show passphrase</label>
 </div>`;
 
 export const Installing = ({ status }) => html`<div class="card">
     <p><strong>Installing.</strong> Takes a few minutes. Do not power it off.</p>
     ${
       status.startsWith("Installed")
-        ? html`<h3>Installed</h3>
+        ? html`<h2>Installed</h2>
             <ol>
                 <li>Wait for the machine to switch itself off.</li>
                 <li>Remove the USB stick.</li>
@@ -133,14 +142,14 @@ export const Installing = ({ status }) => html`<div class="card">
 export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`<div class="card">
     ${
       handoff && handoff.role === "rig"
-        ? html`<h3>Check this rig</h3>
+        ? html`<h2>Check this rig</h2>
             <p>This is what the machine will be.</p>
-            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class="wizard-mono">${f.value}</code><//>`)}
+            ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class=${f.label === "Control token" ? "wizard-mono wizard-token" : "wizard-mono"}>${f.value}</code><//>`)}
             <${Note}>${rigCardNote(handoff)}<//>
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer && !stick ? "Looks right — erase the disk and install" : "Looks right — save it"}</button>`
         : handoff
-          ? html`<h3>Save this before anything else</h3>
+          ? html`<h2>Save this before anything else</h2>
             <p>This is shown once, here.</p>
             <${Field} label="Dashboard user"><code class="wizard-mono">${handoff.username}</code><//>
             <${Field} label="Dashboard password"><code class="wizard-mono">${handoff.password}</code><//>

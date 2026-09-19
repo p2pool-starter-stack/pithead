@@ -170,6 +170,20 @@ test("a terminal host failure is a failed health check with the host's reason", 
   assert.match(renderToString(panel.render()), /doctor did not return a readable report/);
 });
 
+test("a failed doctor result still renders every unhealthy row", async () => {
+  const fetchStub = async (url) =>
+    url === "/api/control/diag-doctor"
+      ? { status: 202, ok: false, json: async () => ({ id: ID }) }
+      : okResult({ status: "failed", doctor: DOCTOR_DOC });
+  const panel = inst();
+  await withFastPoll(fetchStub, () => panel.runHealth());
+  const out = renderToString(panel.render());
+  assert.equal(panel.state.healthPhase, "done");
+  assert.match(out, /2 failing, 1 warning, 3 ok/);
+  assert.match(out, /monerod is not answering/);
+  assert.match(out, /p2pool is down/);
+});
+
 test("a wait expiry keeps queued-vs-running unknown and does not invent a wedged runner", async () => {
   const fetchStub = async (url) =>
     url === "/api/control/diag-logs"
@@ -335,10 +349,12 @@ test("two service log disclosures keep both results", async () => {
   assert.equal(panel.state.logs.monerod.result.lines, "monerod ready");
 });
 
-test("the card explains how to enable diagnostics when the control channel is off", () => {
+test("the card points at Configuration when the control channel is off, instead of repeating the remedy (#1871)", () => {
   const out = renderToString(inst({ enabled: false }).render());
-  assert.match(out, /dashboard\.control\.enabled/);
+  assert.match(out, /see Configuration/);
   assert.doesNotMatch(out, /Run health check/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
 });
 
 test("the browser service list has not drifted from the host's allowlist", () => {

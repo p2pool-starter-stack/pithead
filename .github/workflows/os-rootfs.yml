@@ -17,13 +17,13 @@ name: OS rootfs scan
 on:
   pull_request:
     # Every PR targets `develop`, which carries os/, so the paths filter alone decides which PRs
-    # build and scan: a change under os/ or to `.trivyignore` (a new mute must be scanned for real —
+    # build and scan: a change under os/ or to `.config/trivyignore` (a new mute must be scanned for real —
     # #1156 added four that were never applied to the appliance). Until 2026-09-06 PRs into the
     # os/-less default branch were excluded here; that exclusion would now skip every PR.
     paths:
       - "os/**"
       - ".github/workflows/os-rootfs.yml"
-      - ".trivyignore"
+      - ".config/trivyignore"
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC, after ci.yml's 05:00 image sweep
   workflow_dispatch:
@@ -49,7 +49,7 @@ jobs:
           persist-credentials: false
       - name: Check the appliance tree exists
         # Only a PR may legitimately miss the tree: a branch cut before the appliance tree existed
-        # can reach this workflow through the .trivyignore path filter. Every other trigger runs on
+        # can reach this workflow through the .config/trivyignore path filter. Every other trigger runs on
         # `develop`, which carries os/, so a miss there means the checkout did not do what it was
         # asked — and a quiet skip would report a green weekly sweep of nothing, which is the exact
         # failure #1162 was filed for. Fail instead.
@@ -86,25 +86,34 @@ jobs:
           os/build-image.sh --stage-only
           docker build -f os/rootfs/Dockerfile -t pithead-os-rootfs:ci \
             --build-arg PITHEAD_UPDATER=rauc .
+      - uses: ./.github/actions/install-trivy # the only step that installs trivy here (#2214)
+        if: steps.tree.outputs.present == 'true'
+        with:
+          version: v0.73.0 # THE live pin, read by `make lint-trivy-parity` — see ci.yml (#1290)
       - name: Scan rootfs for CVEs (Trivy)
         if: steps.tree.outputs.present == 'true'
         # Same gate as ci.yml's image scan: actionable (fixable) HIGH/CRITICAL only; accepted
-        # findings live in .trivyignore with a rationale and how they clear.
+        # findings live in .config/trivyignore with a rationale and how they clear.
         #
         # cache: false for the reason spelled out over ci.yml's scan (#1159) — this is the repo's
         # other trivy call site. It matters more here: the appliance's Debian userland is baked and
         # has no apt at runtime, so this scan is the only eye on podman, netavark, openssl and the
         # kernel between releases, and since #1162 that eye is finally open on a schedule.
+        id: trivy-scan
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          # Explicit on purpose (#1290) — the action's default engine moves whenever the action is
-          # bumped, and scripts/watch/trivyignore-watch.sh's verdicts only mean something when it scans
-          # with the engine the gate runs. `make lint-trivy-parity` holds the two to one value.
-          version: v0.74.0
+          skip-setup-trivy: true # scans with the binary the step above installed (#1290, #2214)
           image-ref: pithead-os-rootfs:ci
           scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-          trivyignores: .trivyignore
+          trivyignores: .config/trivyignore
           cache: "false"
+      - name: Retry Scan rootfs for CVEs (Trivy)
+        if: steps.tree.outputs.present == 'true' && steps.trivy-scan.outcome == 'failure'
+        uses: ./.github/actions/retry-trivy-scan
+        with:
+          image-ref: pithead-os-rootfs:ci
+          trivyignores: .config/trivyignore

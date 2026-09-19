@@ -1,6 +1,6 @@
 # Local test entry points (mirror the GitHub Actions CI jobs).
 .DEFAULT_GOAL := pithead
-.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
+.PHONY: pithead test test-dashboard test-frontend test-patch-coverage test-stack test-netwatch test-compose test-integration test-integration-selftest test-tools test-inventory test-fakes test-mini-stack test-tari-config-parse test-container lint lint-sh lint-py lint-path-references lint-js lint-yaml lint-md lint-proto lint-toml lint-topology lint-file-budget lint-pithead-build lint-trivy-parity print-shellcheck-version print-shfmt-version release release-smoke
 
 pithead: scripts/build-pithead.sh $(wildcard lib/pithead/*.sh) ## Build the generated CLI
 	bash scripts/build-pithead.sh
@@ -33,8 +33,9 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 	@# the images are "covered" only until someone edits a yaml, and nothing says otherwise.
 	bash scripts/install-test-tools.sh --self-test
 
-test-compose: pithead ## Validate docker-compose.yml interpolation + hardening invariants (#90)
+test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)
 	# Globbed, not enumerated — the same reason as ci.yml: an enumerated list silently omits
@@ -50,6 +51,9 @@ test-fakes: ## Fake-daemon contract test — real dashboard clients vs controlla
 
 test-mini-stack: ## Fake-daemon docker mini-stack end-to-end (needs docker; CI)
 	bash tests/integration/mini-stack/run-mini-stack.sh
+
+test-tari-config-parse: pithead ## Feed the rendered Tari config to the pinned minotari_node image (needs docker; CI, #2341)
+	bash tests/stack/standalone/test_tari_config_parse.sh
 
 # The Linux toolchain as an image (#2078), so a contributor on macOS or Windows gets the verdict CI
 # gets instead of the refusal #2041 installed. Pass any target or command through ARGS:
@@ -132,11 +136,11 @@ lint-py: ## ruff lint + format check on all repo Python (ruff runs via uv from t
 lint-js: ## Biome lint + format check on the static frontend (config: biome.json)
 	npx --yes @biomejs/biome@2.5.0 check .
 
-lint-yaml: ## yamllint over all tracked YAML (config: .yamllint)
-	uvx yamllint $(shell git ls-files '*.yml' '*.yaml')
+lint-yaml: ## yamllint over all tracked YAML (config: .config/yamllint.yml)
+	uvx yamllint -c .config/yamllint.yml $(shell git ls-files '*.yml' '*.yaml')
 
-lint-md: ## markdownlint over all Markdown (config: .markdownlint-cli2.jsonc)
-	npx --yes markdownlint-cli2@0.18.1
+lint-md: ## markdownlint over all Markdown (config: .config/.markdownlint-cli2.jsonc)
+	npx --yes markdownlint-cli2@0.18.1 --config .config/.markdownlint-cli2.jsonc
 
 lint-docs-voice: ## Fail if banned marketing words appear in prose docs (house voice: docs/dev/STYLE.md)
 	bash scripts/lint/lint-docs-voice.sh --self-test
@@ -161,20 +165,22 @@ lint-file-budget: ## Fail if a tracked file crosses the 800-line hard ceiling, o
 lint-pithead-build: ## Test the generated CLI build and its ordering/refusal guards
 	bash scripts/build-pithead.sh --self-test
 
-lint-trivy-parity: ## Fail if ci.yml's and os-rootfs.yml's trivy-action steps drift from the version scripts/watch/trivyignore-watch.sh scans with (#1290)
+lint-trivy-parity: ## Fail if a gate workflow's install-trivy version: (the one line that decides the engine) drifts from the version scripts/watch/trivyignore-watch.sh scans with (#1290), or if the cached-installer shape that makes it the only pin breaks (#2214)
 	bash scripts/watch/trivyignore-watch.sh --self-test
 	bash scripts/watch/trivyignore-watch.sh --check-parity
+	bash scripts/lint/lint-trivy-installer-cache.sh --self-test
+	bash scripts/lint/lint-trivy-installer-cache.sh
 
 lint-proto: ## buf lint + build on the vendored Tari protos (config: .../tari/proto/buf.yaml)
 	cd dashboard/mining_dashboard/client/tari/proto && \
 		docker run --rm -v "$$PWD":/workspace --workdir /workspace bufbuild/buf:1.71.0 lint && \
 		docker run --rm -v "$$PWD":/workspace --workdir /workspace bufbuild/buf:1.71.0 build
 
-lint-toml: ## taplo TOML format check (config: .taplo.toml)
+lint-toml: ## taplo TOML format check (config: .config/taplo.toml)
 	@# Tracked files only, never a filesystem walk: taplo's walker panics on any unreadable
 	@# dir (EACCES scandir — e.g. root-owned artifacts under .claude/ agent worktrees).
 	@test -n "$$(git ls-files '*.toml')" || { echo "lint-toml: zero tracked TOML files — refusing a vacuous pass"; exit 1; }
-	git ls-files -z '*.toml' | xargs -0 npx --yes @taplo/cli@0.7.0 fmt --check
+	git ls-files -z '*.toml' | xargs -0 npx --yes @taplo/cli@0.7.0 fmt --check --config .config/taplo.toml
 
 # Cut a release from the private build/test server — GHCR publish, gated on the test suite +
 # the #54 integration matrix (issue #44). Pass options through ARGS, e.g. a safe plan-only preview:

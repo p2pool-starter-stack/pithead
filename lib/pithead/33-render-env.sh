@@ -8,18 +8,14 @@ render_env() {
     # Mode → host / ports / compose profile
     local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
-        mono_host="${NETWORK_PREFIX}.26"
-        rpc_port="18081"
-        zmq_port="18083"
-        mono_rpc_url="http://127.0.0.1:18081"
-        profiles="local_node"
+        mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
+        mono_rpc_url="http://127.0.0.1:18081" # host loopback, not the bridge IP above
     else
         # Reuse the parse-time validated globals — the validated value IS the rendered value.
-        mono_host="$MONERO_REMOTE_HOST"
-        rpc_port="$MONERO_REMOTE_RPC_PORT"
-        zmq_port="$MONERO_REMOTE_ZMQ_PORT"
-        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
+        mono_host="$MONERO_REMOTE_HOST" rpc_port="$MONERO_REMOTE_RPC_PORT" zmq_port="$MONERO_REMOTE_ZMQ_PORT"
         profiles="" # Empty profile disables local monerod
+        # Bracket a literal IPv6 host for URL use (RFC 3986).
+        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
     fi
 
     # Tari mode → gRPC address / compose profile (#103/#1855), mirroring Monero above. local -> the

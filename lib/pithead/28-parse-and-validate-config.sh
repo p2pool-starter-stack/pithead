@@ -17,15 +17,14 @@ parse_and_validate_config() {
         error "$CONFIG_FILE has a config value containing a control character or newline. That is not allowed — it could inject an extra line into the stack's .env. Remove the newline/control character (check secrets like node_password, bot_token, api_token)."
     fi
 
-    # ssh.enabled without a key is a lockout-shaped mistake: sshd would run with nothing to
-    # accept. Key-only by design — password auth never turns on.
-    if [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
+    if is_appliance && [ "$(appliance_variant)" = release ] && jq -e 'has("ssh")' "$CONFIG_FILE" >/dev/null; then
+        [ "${PITHEAD_CONFIG_SET:-0}" != 1 ] || [ "${PITHEAD_CONFIG_CARRIED_SSH:-0}" = 1 ] || error "ssh.enabled is unavailable on a release image; build a debug image for SSH."
+    elif [ "$(jq -r '.ssh.enabled // false' "$CONFIG_FILE")" = "true" ]; then
         case "$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE")" in
         ssh-* | ecdsa-* | sk-*) ;;
         *) error "ssh.enabled is true but ssh.authorized_key is not a public key (expected it to start with ssh-, ecdsa- or sk-). Paste the PUBLIC key (e.g. ~/.ssh/id_ed25519.pub)." ;;
         esac
     fi
-
     # tari.mode (#103/#1855): monero.mode's local/remote switch plus "off" — no merge-mining at all.
     # Read BEFORE the required-fields gate below, which depends on it, and ahead of everything else
     # so a bad value fails first. MISSING-KEY DEFAULT STAYS "local": 1.x never wrote it (#1855).
@@ -34,7 +33,6 @@ parse_and_validate_config() {
     local | remote | off) ;;
     *) error "tari.mode must be \"local\", \"remote\" or \"off\" (got \"$TARI_MODE\")." ;;
     esac
-
     # Required fields. "off" needs no Tari address: nothing merge-mines, so nothing is paid (#1855).
     MONERO_WALLET=$(jq -r '.monero.wallet_address // empty' "$CONFIG_FILE")
     TARI_WALLET=$(jq -r '.tari.wallet_address // empty' "$CONFIG_FILE")

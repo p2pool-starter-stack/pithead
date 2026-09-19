@@ -28,7 +28,7 @@
 #   name a provider assigns only inside a function reaches a domain file as an ordering dependency
 #   and not as a constant. The guard below states that single requirement explicitly.
 # - $CC is assigned here, in the moved text, not inherited.
-# - The lib.sh helpers this domain calls (assert_contains, assert_eq, run_sourced) are likewise
+# - The lib.sh helpers this domain calls (assert_contains, assert_eq, run_sourced_e) are likewise
 #   defined at lib.sh's top level.
 
 : "${SANDBOX:?}"
@@ -42,7 +42,8 @@ mkdir -p "$CC/staged" "$CC/results" "$CC/audit"
 cat >"$CC/self" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$SELF_LOG"
-exit 0
+[ "${SELF_RC:-0}" -eq 0 ] || echo "$*" >&2
+exit "${SELF_RC:-0}"
 EOF
 chmod +x "$CC/self"
 export SELF_LOG="$CC/self.log"
@@ -50,10 +51,11 @@ export PITHEAD_SELF="$CC/self"
 uid_r="11111111-1111-4111-8111-111111111111"
 uid_a="22222222-2222-4222-8222-222222222222"
 uid_x="33333333-3333-4333-8333-333333333333"
+uid_f="44444444-4444-4444-8444-444444444444"
 
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_r" >"$CC/req_r.json"
-run_sourced "$SANDBOX" control_process_request "$CC/req_r.json" "$CC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_r.json" "$CC" >/dev/null 2>&1
 assert_eq "restart intent runs the fixed 'restart' verb" "$(cat "$SELF_LOG")" "restart"
 assert_eq "restart result is applied" "$(jq -r .status "$CC/results/$uid_r.json")" "applied"
 assert_contains "restart is audited with the actor + action" \
@@ -61,13 +63,19 @@ assert_contains "restart is audited with the actor + action" \
 
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_a" >"$CC/req_a.json"
-run_sourced "$SANDBOX" control_process_request "$CC/req_a.json" "$CC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_a.json" "$CC" >/dev/null 2>&1
 assert_eq "apply intent runs the fixed 'apply -y' verb (config re-apply, no edit)" "$(cat "$SELF_LOG")" "apply -y"
 assert_eq "apply result is applied" "$(jq -r .status "$CC/results/$uid_a.json")" "applied"
 
+export SELF_RC=1
+printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_f" >"$CC/req_f.json"
+run_sourced "$SANDBOX" control_process_request "$CC/req_f.json" "$CC" >/dev/null 2>&1
+assert_contains "failed lifecycle result carries the child log separately" "$(jq -r .log "$CC/results/$uid_f.json")" "apply -y"
+unset SELF_RC
+
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"frobnicate","actor":"tester"}\n' "$uid_x" >"$CC/req_x.json"
-run_sourced "$SANDBOX" control_process_request "$CC/req_x.json" "$CC" >/dev/null 2>&1
+run_sourced_e "$SANDBOX" control_process_request "$CC/req_x.json" "$CC" >/dev/null 2>&1
 assert_eq "unknown verb rejected (bounded action set)" "$(jq -r .error "$CC/results/$uid_x.json")" "unknown action"
 assert_eq "unknown verb never runs a host command" "$(cat "$SELF_LOG")" ""
 unset PITHEAD_SELF SELF_LOG
