@@ -59,19 +59,21 @@ assert_contains "verify binds to the pinned digest, not the tag (#451)" \
     "$(cat "$VRI/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/test/pithead-tor@$TOR_DG"
 assert_not_contains "verify never resolves the mutable tag (#451)" "$(cat "$VRI/cosign.log")" "pithead-tor:v9.9.9"
 
-# A debug appliance carries the test registry CA beside the verifier key. Cosign runs in a
-# container, so mount that CA and pass its container path; otherwise it falls back to HTTP against
-# the TLS registry even though podman itself trusts the same CA.
+# A debug appliance carries the test registry CA beside the verifier key, and cosign runs in a
+# container — so the flag names that CA at its path inside the install-dir mount cosign_run already
+# makes. Without the flag cosign falls back to HTTP against the TLS registry even though podman
+# itself trusts the same CA; with a second bind mount for it, cosign_run stops being ONE mount for
+# no gain. Both halves are asserted, so neither can regress silently.
 printf 'test registry CA\n' >"$VRI/cosign.registry-ca.crt"
 : >"$VRI/cosign.log"
 : >"$VRI/docker.log"
 out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" COSIGN_DOCKER_LOG="$VRI/docker.log" \
     PITHEAD_REGISTRY="ghcr.io/test" run_sourced "$VRI" verify_release_images 2>&1)"
 assert_rc "debug-registry CA lets all signatures verify" "$?" "0"
-assert_contains "cosign receives the debug-registry CA" "$(cat "$VRI/cosign.log")" \
-    "verify --key cosign.pub --private-infrastructure --registry-cacert /registry-ca.crt ghcr.io/test/pithead-tor@$TOR_DG"
-assert_contains "cosign container mounts the debug-registry CA read-only" "$(cat "$VRI/docker.log")" \
-    "-v $VRI/cosign.registry-ca.crt:/registry-ca.crt:ro"
+assert_contains "cosign receives the debug-registry CA, named inside the install-dir mount" "$(cat "$VRI/cosign.log")" \
+    "verify --key cosign.pub --private-infrastructure --registry-cacert cosign.registry-ca.crt ghcr.io/test/pithead-tor@$TOR_DG"
+assert_contains "the CA rides the install-dir mount cosign_run already had" "$(cat "$VRI/docker.log")" "-v $VRI:/w:ro"
+assert_not_contains "no second bind mount is added for the CA" "$(cat "$VRI/docker.log")" ":/registry-ca.crt:"
 rm -f "$VRI/cosign.registry-ca.crt"
 
 # A signature that does not verify (fake cosign exits 1): FAIL CLOSED. This is the red test for the

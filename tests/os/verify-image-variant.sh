@@ -28,7 +28,7 @@ else
     # backdoor, and ad-hoc eyeballing is how one ships.
     chk "NO test marker, registry pin, trust or CA (#1892)" '[ ! -e "$ROOT/etc/pithead-test-marker" ] && [ ! -e "$ROOT/etc/containers/registries.conf.d/pithead-test-registry.conf" ] && [ ! -e "$ROOT/etc/containers/certs.d" ] && [ ! -e "$ROOT/opt/pithead/cosign.registry-ca.crt" ] && ! ls "$ROOT"/etc/systemd/system/*/pithead-test-registry.conf >/dev/null 2>&1 && grep -qxF "PITHEAD_ENGINE=podman" "$ROOT/etc/environment" && ! grep -q "^PITHEAD_REGISTRY=" "$ROOT/etc/environment"'
     chk "NO SSH authorized_keys" '[ ! -s "$ROOT/root/.ssh/authorized_keys" ]'
-    chk "release cosign key is baked" '[ -s "$ROOT/opt/pithead/cosign.pub" ]'
+    chk "the baked cosign key IS the release key (a test key here is a backdoor)" 'cmp -s ./cosign.pub "$ROOT/opt/pithead/cosign.pub"'
     chk "ssh service disabled" '! ls "$ROOT"/etc/systemd/system/multi-user.target.wants/ssh.service'
     chk "variant stamp says release" '[ "$(cat "$ROOT/etc/pithead-variant")" = "release" ]'
     # The keyring is the fleet's update trust root. A dev build auto-generates a CN=pithead-dev
