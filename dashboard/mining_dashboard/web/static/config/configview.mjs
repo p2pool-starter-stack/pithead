@@ -34,6 +34,7 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+import { controlCommitResult } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
 
@@ -292,9 +293,7 @@ export class ConfigView extends Component {
         body: JSON.stringify(body),
       });
       if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      let out = await res.json();
-      if (out.status === "pending" || out.status === "previewed")
-        out = await this.poll(id, "previewed");
+      const out = await controlCommitResult(res, id, this.poll.bind(this));
       this.setState({ phase: "done", result: out });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
