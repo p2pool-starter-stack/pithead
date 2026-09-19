@@ -81,6 +81,7 @@ export async function pollResult(id, skip, max = POLL_MAX, timeoutMessage) {
       "Stopped waiting — this can take longer than expected on a slow connection. The host keeps going and finishes on its own; reload in a few minutes to see the result. If the version is unchanged after that, check that dashboard.control is enabled and the pithead-control unit is running.",
   );
 }
+
 const HOST_ONLY_TITLE = "Host-only — edit config.json and run ./pithead apply";
 // #719: an in-scope confirm-gated field IS editable, but committing it is disruptive — the review modal makes you type APPLY. The tooltip sets that expectation up front.
 const CONFIRM_TITLE = "Editable — this change is disruptive; you'll type APPLY to confirm at Save";
@@ -292,7 +293,7 @@ export class ConfigView extends Component {
         body: JSON.stringify(body),
       });
       if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      const out = await controlCommitResult(res, id, (rid, skip) => this.poll(rid, skip));
+      const out = await controlCommitResult(res, id, this.poll.bind(this));
       this.setState({ phase: "done", result: out });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });

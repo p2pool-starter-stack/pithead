@@ -135,7 +135,7 @@ test("commit does not poll after a nonempty response without a result status", a
   await withFastPoll(
     async () => {
       calls++;
-      return { status: 202, ok: true, text: async () => "{}" };
+      return { status: 202, ok: true, text: async () => "{}", json: async () => ({}) };
     },
     () => view.commit(),
   );

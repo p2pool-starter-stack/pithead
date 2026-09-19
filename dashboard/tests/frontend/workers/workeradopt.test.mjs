@@ -54,6 +54,15 @@ function withFetchSequence(responses, fn) {
   });
 }
 
+// poll() sleeps between attempts; fire timers synchronously so a polling test doesn't wait on them.
+function withInstantSleep(fn) {
+  const realTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (cb) => cb();
+  return fn().finally(() => {
+    globalThis.setTimeout = realTimeout;
+  });
+}
+
 // --- Prefill -----------------------------------------------------------------------------------
 
 test("AdoptRigForm: prefills host and the RigForge API ports", () => {
@@ -129,10 +138,8 @@ test("AdoptRigForm: a well-formed submission previews then commits through the c
 test("AdoptRigForm: an empty successful commit response polls the retained preview id", async () => {
   const inst = adoptForm();
   inst.state.token = TOKEN;
-  const realTimeout = globalThis.setTimeout;
-  globalThis.setTimeout = (cb) => cb();
-  try {
-    await withFetchSequence(
+  await withInstantSleep(() =>
+    withFetchSequence(
       [
         { body: { workers: { list: [] } } },
         { body: { id: "req-1", status: "previewed", destructive: false } },
@@ -143,10 +150,8 @@ test("AdoptRigForm: an empty successful commit response polls the retained previ
         await inst.adopt();
         assert.equal(calls[3].url, "/api/control/result?id=req-1");
       },
-    );
-  } finally {
-    globalThis.setTimeout = realTimeout;
-  }
+    ),
+  );
   assert.equal(inst.state.result.status, "applied");
 });
 
