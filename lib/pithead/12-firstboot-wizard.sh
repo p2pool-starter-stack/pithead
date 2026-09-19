@@ -389,7 +389,11 @@ firstboot_wizard() {
                     sleep 2
                     continue
                 fi
-                local stratum_addr dash_user dash_pass
+                # Rename BEFORE the handoff below (#2350): `(setup)` further down applied it too
+                # late — after the operator had already seen and acked the card naming the OLD box.
+                local DASHBOARD_HOST stratum_addr dash_user dash_pass
+                DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$PWD/config.json" 2>/dev/null)" "")
+                reconcile_appliance_hostname
                 stratum_addr="stratum+tcp://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$PWD/config.json" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$PWD/config.json")
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$PWD/config.json")
