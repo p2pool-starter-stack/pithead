@@ -123,16 +123,31 @@ class MiningStoreMixin:
                     "WHERE excluded.source='control' AND audit_events.source='control'",
                     (id, ts, source, actor, action, status, keys),
                 )
+                # Commit the row BEFORE pruning: the prune is best-effort maintenance and must
+                # never be able to roll back or strand the audit row it arrived with.
+                self._conn.commit()
                 if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
                     # ts is the "%Y-%m-%dT%H:%M:%SZ" shape _iso_now/control_audit both write, which
                     # sorts lexicographically same as chronologically, so a same-shape cutoff string
-                    # compares correctly without parsing every row back to epoch.
+                    # compares correctly without parsing every row back to epoch. The GLOB is what
+                    # makes that safe rather than merely true: a mirrored control.log row whose ts
+                    # was missing or charset-stripped arrives as "" (audit_service.recent_changes
+                    # cleans, it does not validate), and "" sorts BELOW every cutoff — so without
+                    # the shape guard the first prune would delete exactly the rows nobody can
+                    # date. An undatable row is kept, matching _entry_epoch's rule that a row with
+                    # no readable ts has no place in a time window. That cannot reopen #724: every
+                    # attacker-reachable writer stamps _iso_now() itself, so an undatable row can
+                    # only come from the host's own already-trimmed control.log.
                     cutoff = time.strftime(
                         "%Y-%m-%dT%H:%M:%SZ",
                         time.gmtime(time.time() - AUDIT_EVENTS_RETENTION_SEC),
                     )
-                    self._conn.execute("DELETE FROM audit_events WHERE ts < ?", (cutoff,))
-                self._conn.commit()
+                    self._conn.execute(
+                        "DELETE FROM audit_events WHERE ts < ? AND ts GLOB "
+                        "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'",
+                        (cutoff,),
+                    )
+                    self._conn.commit()
         except sqlite3.Error as e:
             self._db_error("Audit Event Write Error", e)
 
