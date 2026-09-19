@@ -29,10 +29,18 @@ import { Component, html } from "./preact.mjs";
 // the expectation folds XvB's published estimate in so pct compares like with like. Tari stays
 // BLOCKS (solo merge-mining pays whole blocks — a count, not a percent); the XvB row keeps only
 // its win count, its XMR lives in the combined row by construction. A stream with payout
-// confirmation off shows the config key to set instead of a zero that would read as "earned
-// nothing"; the card yields to nothing when no stream has anything to compare. The table wraps
-// (eva-table) instead of panning — this card never scrolls in either view (#817).
-function ExpectedVsActualCard({ summary }) {
+// confirmation off points at Configuration instead of a zero that would read as "earned nothing"
+// (never for Tari under a remote node, which rejects the view key that would link to — #1861);
+// the card yields to nothing when no stream has anything to compare. The table wraps (eva-table)
+// instead of panning — this card never scrolls in either view (#817).
+// The Configuration view is the only surface an appliance operator sees — a config key
+// ("monero.view_key") printed verbatim is text they can't act on. Point at the view instead,
+// the same inline-button pattern AdvancedHint (components.mjs) uses to switch views.
+const configLink = (onView, section) =>
+  html`<span>Not tracked. Add a view key in <button type="button" class="btn-link"
+    onClick=${() => onView("config")}>Configuration</button> → ${section}.</span>`;
+
+function ExpectedVsActualCard({ summary, onView }) {
   if (!summary) return null;
   const { xmr, tari, xvb } = summary;
   if (!xmr.available && !tari.available && !xvb.enabled) return null;
@@ -51,7 +59,7 @@ function ExpectedVsActualCard({ summary }) {
     label: xmr.includes_xvb ? "Monero + XvB (30d)" : "Monero (30d)",
     expected: xmr.available ? formatXmr(xmr.expected_30d) : "—",
     actual: !xmr.enabled
-      ? "set monero.view_key"
+      ? configLink(onView, "Monero")
       : partialMark(xmr, formatXmr(xmr.actual_30d) + (xmr.pct !== null ? ` (${xmr.pct}%)` : "")),
     dim: !xmr.enabled,
     title:
@@ -80,7 +88,9 @@ function ExpectedVsActualCard({ summary }) {
     // to show (≈ 0.0052 blocks is the honest, legible form).
     expected: tari.available ? `≈ ${Number(tari.expected_blocks_30d.toPrecision(2))} blocks` : "—",
     actual: !tari.enabled
-      ? "set tari.view_key"
+      ? tari.is_local === false
+        ? "Not available with a remote Tari node."
+        : configLink(onView, "Tari")
       : partialMark(
           tari,
           `${tari.blocks_30d} block${tari.blocks_30d === 1 ? "" : "s"} · ${formatXtm(tari.xtm_30d)}`,
@@ -128,7 +138,7 @@ function ExpectedVsActualCard({ summary }) {
                 <tr title=${r.title}>
                     <th scope="row">${r.label}</th>
                     <td class="c-accent">${r.expected}</td>
-                    <td class=${r.dim ? "text-muted" : ""}>${r.actual}</td>
+                    <td class=${r.dim ? "text-muted eva-hint" : ""}>${r.actual}</td>
                 </tr>`,
                 )}
             </tbody>

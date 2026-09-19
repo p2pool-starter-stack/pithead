@@ -53,11 +53,11 @@ harness_finished() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
-harness_pregate() { # <no_mining flags>
+harness_pregate() { # <workers> <no_mining flags>
     local phase
     for phase in readiness check; do
         printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" |
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase $1" || {
+            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" || {
             warn "$phase reported issues (see above) — destructive phases refused"
             return 1
         }

@@ -151,10 +151,17 @@ data_reset_decision() { # $1: data partition, $2: marker file path
 # Append one line to the ESP's wipe log. Best effort by design: an ESP that would not mount must
 # never stop the recovery that gets a bricked box back, so this records what happened when it can
 # and stays silent when it cannot.
+#
+# Also (re-)arms the one-shot marker (#1208): the log itself is append-only and never cleared, so
+# without a separate marker every doctor run and every future wizard boot would re-report THIS
+# wipe forever. data_wipe_note() consumes the marker the first time it surfaces the note; this is
+# the only place that re-arms it, so a NEW wipe always gets its own turn even if a previous one's
+# marker was already consumed.
 record_wipe() { # $1: esp mount dir (may be empty), $2: reason
     [ -n "$1" ] && [ -d "$1" ] || return 0
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time)" "$2" \
         >>"$1/$WIPE_LOG_NAME" 2>/dev/null || true
+    : >"$1/$WIPE_LOG_NAME.pending" 2>/dev/null || true
 }
 
 # Reformat the data partition and reseed the dirs repart would have. DESTRUCTIVE — only ever
