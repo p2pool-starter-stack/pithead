@@ -242,6 +242,13 @@ cd /data/pithead && ./pithead apply -y >/dev/null' || {
             bad "could not set the reserved node's RPC login through the host route"
             return
         }
+        # This apply recreates the dashboard container exactly like every other host-side apply in
+        # this leg — the same race sensitive_live_config's own comment documents. A curl against the
+        # dashboard the instant apply returns hits a container that is not there yet.
+        sensitive_live_config >/dev/null || {
+            bad "dashboard did not become readable again after the reserved node's RPC login landed through the host route"
+            return
+        }
     fi
 
     # The gap the fixture's non-blank password used to hide entirely: a login change is refused
