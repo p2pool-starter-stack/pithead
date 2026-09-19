@@ -134,7 +134,7 @@ export function renderSetup(app) {
               diskPicked &&
               !keepEverything &&
               !rig &&
-              html`<h3>Payout address</h3>
+              html`<h2>Payout address</h2>
             <${Note}>Paste it — it is far too long to type, and a typo pays a stranger.<//>
             <${Field} label="Monero payout address">
                 <input class="wizard-mono" value=${v("moneroWallet") || ""} onInput=${on("moneroWallet")}
@@ -146,7 +146,7 @@ export function renderSetup(app) {
               html`<p class=${addrInvalid ? "c-bad" : "text-muted"}>${addr.message}</p>`
             }
 
-            <h3>Monero node</h3>
+            <h2>Monero node</h2>
             <${RadioField} label="Where does Monero data come from?" name="monero-mode"
                 value=${remoteMonero ? "remote" : "local"} onChange=${on("moneroMode")} options=${[
                   ["local", "Bundled node", "Run it on this machine (default)."],
@@ -181,7 +181,7 @@ export function renderSetup(app) {
             <${TariSection} answer=${tariMode} v=${v} on=${on} />
 
 
-            <h3>Mining</h3>
+            <h2>Mining</h2>
             <${RadioField} label="P2Pool sidechain" name="pool" value=${v("pool") || "mini"}
                 onChange=${on("pool")} options=${[
                   ["mini", "mini", "Right for almost every home rig (default)."],
@@ -210,7 +210,7 @@ export function renderSetup(app) {
             }
             <${XvbField} v=${v} on=${on} />
 
-            <h3>First sync</h3>
+            <h2>First sync</h2>
             <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
                   value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
                     ["false", "Private, over Tor", "Takes days."],
@@ -218,7 +218,7 @@ export function renderSetup(app) {
                   ]} />
 
 
-            <h3>Dashboard login</h3>
+            <h2>Dashboard login</h2>
             <${RadioField} label="How should the dashboard be protected?" name="auth-mode"
                 value=${app.state.authMode} onChange=${(e) => app.setState({ authMode: e.target.value })}
                 options=${[
@@ -242,7 +242,7 @@ export function renderSetup(app) {
                     to you on the next screen.<//>`
             }
 
-            <h3>Alerts <span class="text-muted">(optional — skip if you are not sure)</span></h3>
+            <h2>Alerts <span class="text-muted">(optional — skip if you are not sure)</span></h2>
             <${Field} label="Telegram bot token">
                 <input value=${v("telegramToken") || ""} onInput=${on("telegramToken")}
                     autocomplete="off" spellcheck=${false} placeholder="123456:ABC-DEF…" />

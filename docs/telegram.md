@@ -130,9 +130,15 @@ number — both work.
 ```
 
 `apply` re-renders the stack and restarts the dashboard with the new settings. On the next health
-cycle, alerting is live. To confirm it works end-to-end, you can stop a rig (or briefly stop a
-node) and wait for the offline/down alert — remember the debounce means it's a few minutes, not
-instant, by design.
+cycle, alerting is live. Send a marked test message through every configured notification sink:
+
+```bash
+./pithead test-alert
+```
+
+The command prints one verdict per Telegram, webhook, and ntfy sink without printing a URL or
+token. An unconfigured sink says `not configured`; any failed configured sink makes the command
+exit non-zero. Healthchecks is listed as excluded because its ping moves the dead-man switch.
 
 ---
 
@@ -348,8 +354,7 @@ topic name and subscribe to it.
 
    The URL is the capability, so it is treated as a secret: it lives only in the owner-only `.env`
    and is never printed or logged.
-4. **Test it.** Trigger an alert — stop a worker, or run `./pithead down` then `./pithead up` for a
-   node-down/recovery pair — and confirm it lands on your device.
+4. **Test it.** Run `./pithead test-alert` and confirm the marked message lands on your device.
 
 **Protected topics.** For a self-hosted ntfy with access control, add `"token": "tk_..."` to the
 `ntfy` block; it is sent as an `Authorization: Bearer` header (also a secret).

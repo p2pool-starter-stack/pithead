@@ -115,6 +115,11 @@ Releases are cut on a private build/test server that runs the full Monero and fu
 `make release` (or `pithead release`), runs the pipeline. Nothing is promoted or published until
 every gate is green.
 
+Use `--allow-dirty` with `--dry-run` to rehearse uncommitted changes.
+Every real release path requires a clean worktree so the approved commit is
+the bytes that are built and published. Before bundling, it rebuilds `pithead`
+from its slices and refuses a different generated artifact.
+
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
 > runners (and what does run free on every PR), and the safe self-hosted-runner setup are covered
 > in [Release / Validation Server](release-server.md).
@@ -147,8 +152,8 @@ Release notes, where operators actually read it. The branch model itself is in
 
 ### Pipeline: stage → smoke-test → promote
 
-1. Preflight: build the git-ignored `pithead` executable from `lib/pithead/*.sh`, then check the
-   clean working tree; read the product version from the top-level `VERSION` file; confirm
+1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
+   `lib/pithead/*.sh`; read the product version from the top-level `VERSION` file; confirm
    `vX.Y.Z` isn't already released; resolve the component pins into the ingredients manifest.
    The generated executable is copied into the release bundle; its source slices are not.
 2. Test gate (blocking): run the existing tests (`make test`: lint + dashboard pytest ≥ 80% +
@@ -162,7 +167,8 @@ Release notes, where operators actually read it. The branch model itself is in
    `PITHEAD_RELEASE=1` (and `PITHEAD_VERSION` from `VERSION`) so the badge shows the clean
    `vX.Y.Z` rather than the `dev · branch @ hash` it shows for working-tree builds.
 4. Push to staging: push to a staging tag on GHCR (e.g. `:vX.Y.Z-rc.N`) and capture the
-   immutable digests. Nothing user-facing points here yet.
+   immutable digests. Nothing user-facing points here yet. The digests exist only for this pipeline
+   run: a failed run must start again and never recovers them from the mutable staging tag.
 5. Staging smoke test (gate): pull each staged image back from GHCR and verify it resolves,
    reports the release version in its OCI label, and carries every target platform (the v1.0.0
    wrong-arch guard). This validates the bytes actually pushed, not the local build — but it does

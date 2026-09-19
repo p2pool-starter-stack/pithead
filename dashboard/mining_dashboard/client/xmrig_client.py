@@ -351,7 +351,7 @@ class XMRigWorkerClient:
             f"XMRIG_API_PORT ({XMRIG_API_PORT})"
         )
 
-    def _warn(self, host, name, url, detail):
+    def _warn(self, host, name, url, detail, hint=None):
         now = time.monotonic()
         if now - self._warned.get(host, float("-inf")) < _WARN_INTERVAL_S:
             return
@@ -362,7 +362,7 @@ class XMRigWorkerClient:
             host,
             url,
             detail,
-            self._fix_hint(),
+            hint if hint is not None else self._fix_hint(),
         )
 
     async def get_stats(self, ip, name):
@@ -407,10 +407,9 @@ class XMRigWorkerClient:
         url = f"http://{host}:{port}/1/summary"
         if isinstance(override.get("token"), dict):
             read_token = override.get("read_token")
-            if not read_token:
-                self._warn(
-                    host, name_token, url, "the adopted rig's read credential is unavailable"
-                )
+            if not read_token:  # #2313: usually under RigForge's 32-char read-derivation floor
+                hint = "the control token is likely under RigForge's 32-char read-derivation floor"
+                self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
                 return {"api_ok": False, "adopted": adopted}
             headers = self._auth_header(name_token, read_token)
         else:

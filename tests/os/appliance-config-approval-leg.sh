@@ -21,7 +21,8 @@ APPROVAL_RESTORE_SNAPSHOT=""
 # passed, which is what made the failures read as the runner losing results.
 dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
     printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
-        -H 'X-Pithead-Control: 1' --data-binary @- "https://$ip/api/control/$1" 2>/dev/null
+        -H 'X-Pithead-Control: 1' --data-binary @- -w '\n%{http_code}' \
+        "https://$ip/api/control/$1" 2>/dev/null
 }
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
 
@@ -76,6 +77,8 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
 
 approval_restore_pending() {
     [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
+    # The apply restarts the control runner (#2363); over a request in flight it loses its result (#2094).
+    _control_requests_drained || return 1
     _ssh 'set -euo pipefail
 install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json
 cd /data/pithead
@@ -172,14 +175,23 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
+    # A restart can lose the runner result after the hostname was already applied.  Probe the
+    # authoritative identity once, so the failure payload does not invent a failed commit.
+    local identity_landed=unknown identity_evidence=
+    if [ -z "$result" ]; then
+        if identity_evidence=$(assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"); then
+            identity_landed=landed
+        fi
+    fi
     # The audit must name THIS request and record the signed-in dashboard actor. It must NOT carry
     # an approver: that field had exactly one writer, the removed Telegram verifier (#2076).
-    if printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null &&
+    if { printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || [ "$identity_landed" = landed ]; } &&
         printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[]; .id == $id and .status == "applied" and (.approver // "") == "")' >/dev/null &&
-        assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"; then
+        { [ "$identity_landed" = landed ] || assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"; }; then
         ok "a confirmed day-two hostname commit applies, audits without an approver, and converges live identity"
     else
-        bad "confirmed hostname commit did not bind apply, a clean audit row and live identity ($(approval_bind_payload "$result" "$audit" "$rid"))"
+        [ -z "$identity_evidence" ] || printf '%s\n' "$identity_evidence"
+        bad "confirmed hostname commit did not bind apply, a clean audit row and live identity ($(approval_bind_payload "$result" "$audit" "$rid" "$identity_landed"))"
         return
     fi
 
@@ -188,13 +200,15 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
-    if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null &&
-        dashboard_curl -fsSk -m 8 "https://$ip/api/config" >/dev/null 2>&1; then
-        ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
-    else
-        bad "physical-presence-only config crossed approval or replaced the live dashboard login"
+    if ! physical_presence_password_refusal_verdict "$result"; then
+        bad "host approval did not refuse the physical-presence-only dashboard-password edit ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
         return
     fi
+    if ! sensitive_live_config >/dev/null; then
+        bad "physical-presence refusal left the authenticated dashboard login unreadable after 20 retries"
+        return
+    fi
+    ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
 
     if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ] || [ -z "$th" ] || [ -z "$grpc" ]; then
         bad "reserved-node inputs are missing — set PITHEAD_OS_MONERO_NODE_HOST/RPC_PORT/ZMQ_PORT and PITHEAD_OS_TARI_NODE_HOST/GRPC_PORT for the required consumer proof"
@@ -285,6 +299,48 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     [ "$node_ok" -eq 1 ] || return 1
 }
 
+_hostname_landed_fallback_self_test() (
+    local output
+    sensitive_live_config() { printf '{"dashboard":{"host":"fixture-box"}}'; }
+    hostname_runtime_snapshot() { printf 'unchanged'; }
+    sensitive_preview() {
+        APPROVAL_PREVIEW='{"id":"r1","status":"previewed"}'
+        APPROVAL_REQUEST_ID=r1
+    }
+    dashboard_control_request() { printf '{"status":"rejected","error":"typed payout confirmations"}'; }
+    approval_commit() { printf ''; }
+    _ssh() { printf '%s\n' '{"id":"r1","status":"applied","approver":""}'; }
+    assert_appliance_hostname_identity() { return 0; }
+    ok() { printf 'ok: %s\n' "$1"; }
+    bad() {
+        printf 'bad: %s\n' "$1"
+        return 1
+    }
+    output=$(phase_provision_sensitive_regressions fixture-user fixture-password 2>&1) || true
+    case "$output" in
+    *'ok: a confirmed day-two hostname commit applies, audits without an approver, and converges live identity'*) ;;
+    *) return 1 ;;
+    esac
+)
+
+# #2094's root fix at the caller: the restore's own `pithead apply` restarts the control runner
+# (#2363), so a spool that never drains must stop it BEFORE the apply reaches the guest, not after.
+# Driving the real function with one request stuck in requests/ forever must refuse, and must leave
+# `pithead apply` uncalled — removing the `_control_requests_drained` line makes both halves fail.
+# The real `_control_requests_drained` is driven by selftest-run-modules.sh; deleting this caller's
+# call to it fails both halves below.
+_restore_waits_for_control_drain_self_test() (
+    local applied=0 drained=1
+    APPROVAL_RESTORE_SNAPSHOT=/data/pithead/data/control/.os1966-original-config.json
+    _control_requests_drained() { [ "$drained" -eq 0 ]; }
+    _ssh() { case "$*" in *'pithead apply'*) applied=1 ;; esac }
+    ! approval_restore_pending || return 1
+    [ "$applied" -eq 0 ] || return 1
+    drained=0
+    approval_restore_pending || return 1
+    [ "$applied" -eq 1 ]
+)
+
 # #2297: a blank monero-node-username/password arg must leave monero.node_username/node_password
 # UNTOUCHED, so a live {"__secret__":true} sentinel survives to control_preview's restore — see the
 # comment on remote_node_proposal itself for why an overwrite to "" defeats that restore and trips
@@ -307,7 +363,8 @@ _remote_node_proposal_self_test() {
 }
 
 _approval_self_test() {
-    local f=0
+    local f=0 here
+    here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     mm_roundtrip_verdict 'MergeMiningClientTari tari://127.0.0.1:18142 uses chain_id 0123456789abcdef' >/dev/null || f=$((f + 1))
     mm_roundtrip_verdict 'MergeMiningClientTari worker thread ready' >/dev/null && f=$((f + 1))
     tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://node.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' || f=$((f + 1))
@@ -319,10 +376,14 @@ _approval_self_test() {
     # check dies as a missing command rather than a verdict.
     _control_request_lost_response_self_test || f=$((f + 1))
     _approval_bind_payload_self_test >/dev/null || f=$((f + 1))
+    _hostname_landed_fallback_self_test || f=$((f + 1))
+    _restore_waits_for_control_drain_self_test || f=$((f + 1))
+    grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
+    _physical_presence_password_refusal_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     _remote_node_proposal_self_test || f=$((f + 1))
-    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/phases/provision-initial.sh" || f=$((f + 1))
+    grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1
