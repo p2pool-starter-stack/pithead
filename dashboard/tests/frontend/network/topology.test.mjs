@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    CLIENT_ZONE_NAME, POS, ROUTE_COLOR, ROUTE_NAME, ROUTES, edgePath,
+    CLIENT_ZONE_NAME, POS, REMOTE_POS, ROUTE_COLOR, ROUTE_NAME, ROUTES, edgePath, nodePos,
 } from '../../../mining_dashboard/web/static/network/topology.mjs';
 
 // Canonical node ids — MUST equal service/egress.py TOPOLOGY_NODES ids. The backend half of this
@@ -26,7 +26,15 @@ const NODE_IDS = [
 
 test('POS places every canonical node and nothing extra', () => {
     assert.deepEqual(new Set(Object.keys(POS)), new Set(NODE_IDS));
-    assert.equal(CLIENT_ZONE_NAME, 'Clients');
+    assert.equal(CLIENT_ZONE_NAME, 'Clients / remote nodes');
+});
+
+test('remote nodes move outside the host column', () => {
+    for (const id of ['monerod', 'tari']) {
+        assert.deepEqual(nodePos({ id, remote: true }), REMOTE_POS[id]);
+        assert.ok(REMOTE_POS[id].x < POS['xmrig-proxy'].x);
+        assert.deepEqual(nodePos({ id, remote: false }), POS[id]);
+    }
 });
 
 test('every POS box has finite, positive geometry', () => {
@@ -57,6 +65,7 @@ test('edgePath: column-crossing edges route orthogonally through a clear lane', 
     assert.match(edgePath({ from: 'xmrig-proxy', to: 'tor' }, POS['xmrig-proxy'], POS.tor), /V42/);
     assert.match(edgePath({ from: 'dashboard', to: 'tor' }, POS.dashboard, POS.tor), /V312/);
     assert.match(edgePath({ from: 'p2pool', to: 'tari' }, POS.p2pool, POS.tari), /H254/);
+    assert.match(edgePath({ from: 'p2pool', to: 'tari' }, POS.p2pool, REMOTE_POS.tari), /H112/);
     // A clearnet leak lands on `internet` instead of `tor` but must take the SAME lane.
     assert.match(
         edgePath({ from: 'dashboard', to: 'internet' }, POS.dashboard, POS.internet),
