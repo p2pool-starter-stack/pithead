@@ -126,8 +126,6 @@ stack_upgrade() {
     # setup/apply (#128). Mirrors apply's render preamble; renders to a temp + swaps so preserved
     # secrets (Tor onions, RPC creds, proxy token) survive.
     require_env
-    local old_dashboard_dir
-    old_dashboard_dir=$(env_get DASHBOARD_DATA_DIR)
     ensure_onion_password # #343: auto-generate a dashboard password if the onion is on without one —
     # MUST run before parse_and_validate_config, which rejects an onion enabled with an empty password
     # (mirrors setup/apply; without this, enabling the onion via `upgrade` errored instead of #355).
@@ -141,10 +139,6 @@ stack_upgrade() {
     # only reach here past require_deployed, so the stack IS deployed and the flag must stay true.
     DEPLOYMENT_COMPLETED=true
     render_env "${ENV_FILE}.new"
-    if [ -n "$old_dashboard_dir" ] && [ "$old_dashboard_dir" != "$DASHBOARD_DIR" ] &&
-        [ ! -f "${ENV_FILE}.dashboard-data-from" ]; then
-        (umask 077 && printf '%s\n' "$old_dashboard_dir" >"${ENV_FILE}.dashboard-data-from")
-    fi
     mv "${ENV_FILE}.new" "$ENV_FILE"
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
@@ -162,7 +156,7 @@ stack_upgrade() {
     apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
     # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
     # (a failed move is retried on re-run) and before the recreate mounts the new location.
-    migrate_dashboard_data "$old_dashboard_dir"
+    migrate_dashboard_data
     # Source checkout: rebuild the images from build/. Release install: pull the new published images
     # instead — force a re-pull so a moved tag is refreshed (#44).
     if is_source_checkout; then

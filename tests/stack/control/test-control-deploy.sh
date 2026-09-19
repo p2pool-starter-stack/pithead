@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Control-deploy domain (#1105 Phase 1, module 9): the bundle-deploy layout mechanics —
-# update_current_symlink's `current ->` pointer, migrate_dashboard_data's move/retry/conflict
+# update_current_symlink's `current ->` pointer, migrate_dashboard_data's move/warn/conflict
 # rules for the pre-#455 in-install-dir default, and their end-to-end wiring through a real
 # deploy-box layout (shared data root outside the version dir). All three sections are fully
 # self-contained (their own throwaway sandboxes under $SANDBOX) — no shared control/config
@@ -43,7 +43,7 @@ fi
 
 echo "== unit: migrate_dashboard_data (#455) =="
 # Direct unit calls with the parse-time globals set by hand; docker stubbed (no daemon in tests).
-mig455() { # <workdir> <DASHBOARD_DIR> [old-dir]
+mig455() { # <workdir> <DASHBOARD_DIR> <is_default>
     (
         cd "$1" || exit 1
         # shellcheck disable=SC1090
@@ -52,54 +52,41 @@ mig455() { # <workdir> <DASHBOARD_DIR> [old-dir]
         docker() { :; }
         # shellcheck disable=SC2034  # read by the sourced migrate_dashboard_data
         DASHBOARD_DIR="$2"
-        migrate_dashboard_data "${3:-}"
+        # shellcheck disable=SC2034
+        DASHBOARD_DIR_IS_DEFAULT="$3"
+        migrate_dashboard_data
     )
 }
 M="$SANDBOX/mig"
 mkdir -p "$M/data/dashboard" "$M/shared"
 printf 'olddb' >"$M/data/dashboard/mining_data.db"
 # move-if-default: the old in-install-dir data moves to the shared-root default, DB intact.
-out="$(mig455 "$M" "$M/shared/dashboard" 2>&1)"
+out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "move-if-default succeeds" "$?" "0"
 assert_eq "DB moved intact" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb"
 if [ -e "$M/data/dashboard" ]; then bad "old default gone after move" "still exists"; else ok "old default gone after move"; fi
 # idempotent: nothing at the old default any more -> silent no-op.
-out="$(mig455 "$M" "$M/shared/dashboard" 2>&1)"
+out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "re-run is a no-op" "$?" "0"
 assert_eq "DB survives the re-run" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb"
-# Explicit move: carry the dashboard DB and its payout-wallet alarm baseline to the new path.
-mkdir -p "$M/custom-old"
-printf 'olddb2' >"$M/custom-old/mining_data.db"
-out="$(mig455 "$M" "$M/pinned" "$M/custom-old" 2>&1)"
-assert_rc "custom path: rc 0" "$?" "0"
-assert_eq "custom path: DB moved intact" "$(cat "$M/pinned/mining_data.db")" "olddb2"
-if [ -e "$M/custom-old" ]; then bad "custom path: old directory removed" "still exists"; else ok "custom path: old directory removed"; fi
-# conflict: data at BOTH locations -> hard stop, nothing touched (never guess which DB is live).
+# warn-if-custom: an operator-pinned dashboard.data_dir is never migrated — warn and leave both.
 mkdir -p "$M/data/dashboard"
-printf 'olddb3' >"$M/data/dashboard/mining_data.db"
-out="$(mig455 "$M" "$M/shared/dashboard" 2>&1)"
+printf 'olddb2' >"$M/data/dashboard/mining_data.db"
+out="$(mig455 "$M" "$M/pinned" 0 2>&1)"
+assert_rc "custom path: rc 0" "$?" "0"
+assert_contains "custom path: warns about the leftover" "$out" "$M/data/dashboard"
+assert_eq "custom path: old data untouched" "$(cat "$M/data/dashboard/mining_data.db")" "olddb2"
+if [ -e "$M/pinned/mining_data.db" ]; then bad "custom path: nothing moved" "moved anyway"; else ok "custom path: nothing moved"; fi
+# conflict: data at BOTH locations -> hard stop, nothing touched (never guess which DB is live).
+out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "both-populated: refuses" "$?" "1"
-assert_eq "both-populated: old DB untouched" "$(cat "$M/data/dashboard/mining_data.db")" "olddb3"
+assert_eq "both-populated: old DB untouched" "$(cat "$M/data/dashboard/mining_data.db")" "olddb2"
 assert_eq "both-populated: new DB untouched" "$(cat "$M/shared/dashboard/mining_data.db")" "olddb"
 # empty pre-created target (an earlier ensure_directories mkdir) is not a conflict — the move runs.
 rm -f "$M/shared/dashboard/mining_data.db"
-out="$(mig455 "$M" "$M/shared/dashboard" 2>&1)"
+out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "empty pre-created target: move succeeds" "$?" "0"
-assert_eq "empty pre-created target: DB moved" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb3"
-# The source marker survives an interrupted apply after .env points at the target, then supplies
-# the original live path on retry.
-mkdir -p "$M/retry-old" "$M/retry-new"
-printf 'retrydb' >"$M/retry-old/mining_data.db"
-printf 'conflict' >"$M/retry-new/other"
-printf '%s\n' "$M/retry-old" >"$M/.env.dashboard-data-from"
-out="$(mig455 "$M" "$M/retry-new" "$M/retry-new" 2>&1)"
-assert_rc "interrupted move: conflict keeps refusing" "$?" "1"
-assert_eq "interrupted move: source marker survives" "$(cat "$M/.env.dashboard-data-from")" "$M/retry-old"
-rm -f "$M/retry-new/other"
-out="$(mig455 "$M" "$M/retry-new" "$M/retry-new" 2>&1)"
-assert_rc "interrupted move: retry succeeds" "$?" "0"
-assert_eq "interrupted move: original DB arrives" "$(cat "$M/retry-new/mining_data.db")" "retrydb"
-if [ -e "$M/.env.dashboard-data-from" ]; then bad "interrupted move: source marker cleared" "still exists"; else ok "interrupted move: source marker cleared"; fi
+assert_eq "empty pre-created target: DB moved" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb2"
 
 # Wiring: stack_upgrade migrates BEFORE the containers are recreated and points `current` at the
 # install only AFTER a successful 'compose up' — a failed upgrade must not move the pointer.

@@ -127,22 +127,20 @@ announce_stratum_tls() {
     log "Stratum TLS is ON: rigs may connect with TLS on the same stratum port (cleartext still accepted). Pin this fingerprint on each rig (pools[].tls-fingerprint): $fp"
 }
 
-# Dashboard-data migration (#455): carry the live DB whenever dashboard.data_dir changes, including
-# the old in-install default moving to a shared data root. The payout-wallet tripwire baseline lives
-# in that DB, so starting with an empty target would let a payout swap bundled with the move seed a
-# fresh baseline and suppress the alarm (#1959). Move-then-verify and idempotent; a hard stop when
-# BOTH locations hold data never guesses which DB is live. The pending source survives an interrupted
-# apply after .env changed, so the next run still knows what to move.
+# One-time dashboard-data migration (#455): the dashboard DB used to default INSIDE the install
+# dir (./data/dashboard) — the one data dir that moved with the code on every versioned deploy.
+# When the resolved default now lives under the shared data root, move the old in-install data
+# there once. Move-then-verify and idempotent: a no-op when the old default holds nothing (fresh
+# install, or already migrated), a warning-only when the operator pinned dashboard.data_dir, and
+# a hard stop when BOTH locations hold data — never guess which DB is live. Runs after the config
+# is committed (apply) / right before the containers are recreated (upgrade), so a failed move is
+# retried on the next run and the recreated dashboard always mounts the migrated directory.
 migrate_dashboard_data() {
-    local pending="${ENV_FILE:-.env}.dashboard-data-from"
-    local old="${1:-$PWD/data/dashboard}" new="${DASHBOARD_DIR:-}"
-    [ -f "$pending" ] && IFS= read -r old <"$pending"
-    if [ -z "$new" ] || [ "$old" = "$new" ]; then
-        rm -f "$pending"
-        return 0
-    fi
-    if [ -z "$(ls -A "$old" 2>/dev/null)" ]; then
-        rm -f "$pending"
+    local old="$PWD/data/dashboard" new="${DASHBOARD_DIR:-}"
+    [ -n "$new" ] && [ "$old" != "$new" ] || return 0   # classic layout — nothing to move
+    [ -n "$(ls -A "$old" 2>/dev/null)" ] || return 0    # old default empty/absent — nothing to move
+    if [ "${DASHBOARD_DIR_IS_DEFAULT:-1}" -eq 0 ]; then # operator-pinned path: their data, their call
+        warn "Dashboard data found at the old default $old, but dashboard.data_dir is set explicitly ($new) — leaving both alone. Move or remove $old yourself."
         return 0
     fi
     if [ -n "$(ls -A "$new" 2>/dev/null)" ]; then
@@ -160,7 +158,6 @@ migrate_dashboard_data() {
     if [ "$had_db" -eq 1 ] && [ ! -f "$new/mining_data.db" ]; then
         error "The dashboard DB is missing after the move — check $new and $old before starting the stack."
     fi
-    rm -f "$pending"
     log "Dashboard data migrated to $new."
 }
 
