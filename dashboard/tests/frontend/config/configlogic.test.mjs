@@ -11,6 +11,7 @@ import { test } from "node:test";
 import {
   buildSections,
   classifyGroup,
+  diffConfig,
   isSecretSentinel,
   jsonSyntaxError,
   LOGICAL_GROUPS,
@@ -385,4 +386,36 @@ test("jsonSyntaxError: live check used for inline feedback while typing", () => 
   assert.equal(jsonSyntaxError(""), null); // still typing — not an error yet
   assert.equal(jsonSyntaxError('{"a": 1}'), null);
   assert.match(jsonSyntaxError("{not json"), /Not valid JSON/);
+});
+
+// #2365: the loaded config carries config.reference.json's placeholder defaults for every unset
+// key (read_config's merge). One changed field must yield one key, not the whole merged config —
+// an untouched placeholder default (monero.remote.host below) must never reach the payload.
+test("diffConfig: one changed field yields one key; untouched reference defaults stay out", () => {
+  const base = {
+    dashboard: { energy: { price_per_kwh: 0.1 } },
+    monero: { mode: "local", remote: { host: "node.remote-monero-host.com", rpc_port: 18081 } },
+    xvb: { enabled: false, url: "na.xmrvsbeast.com:4247" },
+  };
+  const candidate = JSON.parse(JSON.stringify(base));
+  candidate.dashboard.energy.price_per_kwh = 0.15;
+  assert.deepEqual(diffConfig(base, candidate), { dashboard: { energy: { price_per_kwh: 0.15 } } });
+});
+
+test("diffConfig: no edits yields an empty payload", () => {
+  const base = { monero: { mode: "local" }, xvb: { url: "na.xmrvsbeast.com:4247" } };
+  const candidate = JSON.parse(JSON.stringify(base));
+  assert.deepEqual(diffConfig(base, candidate), {});
+});
+
+test("diffConfig: an untouched secret sentinel is not treated as a change", () => {
+  const base = { dashboard: { auth: { password: { __secret__: true } } } };
+  const candidate = JSON.parse(JSON.stringify(base));
+  assert.deepEqual(diffConfig(base, candidate), {});
+});
+
+test("diffConfig: a newly typed secret overrides its sentinel", () => {
+  const base = { dashboard: { auth: { password: { __secret__: true } } } };
+  const candidate = { dashboard: { auth: { password: "new-pass" } } };
+  assert.deepEqual(diffConfig(base, candidate), { dashboard: { auth: { password: "new-pass" } } });
 });
