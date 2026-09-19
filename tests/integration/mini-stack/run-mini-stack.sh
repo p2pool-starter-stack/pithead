@@ -78,8 +78,7 @@ assert_stays() { # assert_stays <label> <container> <state> <seconds>
     fi
 }
 
-# The fakes publish control ports to the Docker host. scripts/test-container.sh supplies the host
-# alias because its loopback is the outer runner, not the daemon host (#2078); native runs use local.
+# The fakes publish control ports to the Docker host. scripts/test-container.sh supplies the host alias because its loopback is the outer runner, not the daemon host (#2078); native runs use local.
 HOST_ADDR="${PITHEAD_TEST_HOST:-127.0.0.1}"
 # shellcheck source=tests/integration/mini-stack/control-roundtrip.sh
 source "$HERE/control-roundtrip.sh"
@@ -200,9 +199,7 @@ for _ in $(seq 1 30); do
     sleep 2
 done
 [ "$api_up" = 1 ] && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
-
-log "scenario 0a: payout address approval crosses the real dashboard/host boundary"
-assert_payout_control_roundtrip
+assert_payout_control_roundtrip # 0a. payout address approval crosses the dashboard/host boundary (#1959)
 
 # 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
 #    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
