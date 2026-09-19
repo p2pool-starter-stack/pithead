@@ -26,6 +26,12 @@ test('both node cards say whether the node is this machine\'s or somebody else\'
     // An older payload with no flag must not read as Local — see statcards.test.mjs for why.
     delete s.sync.tari.local;
     assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h5>Node<\/h5><p class="">—</);
+
+    // tari.mode: off (#1849): the backend sends an explicit null, not a missing key — there is no
+    // Tari node at all, so neither Local nor Remote is a true answer. Distinct from the "delete"
+    // case above: null is what a real off-mode payload puts on the wire.
+    s.sync.tari.local = null;
+    assert.match(cardSlice(renderApp({ state: s }), 'card-tari'), /<h5>Node<\/h5><p class="">—</);
 });
 
 test('the XMR Network card reads Monero\'s own location, not Tari\'s (#1040)', () => {

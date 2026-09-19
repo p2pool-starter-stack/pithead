@@ -55,7 +55,7 @@ def local_miner_enabled(path=None) -> bool:
         return False
 
 
-def low_ram_floor_gb(monero_local: bool, tari_local: bool) -> float:
+def low_ram_floor_gb(monero_local: bool, tari_local: bool | None) -> float:
     """The least usable RAM this machine's actual workload wants, in GB."""
     if _LOW_RAM_ENV is not None:
         return float(_LOW_RAM_ENV)
@@ -67,9 +67,9 @@ def low_ram_floor_gb(monero_local: bool, tari_local: bool) -> float:
     )
 
 
-def tari_is_local() -> bool:
-    """Whether this box runs the Tari node, from the operator's authoritative mode."""
-    return TARI_MODE == "local"
+def tari_is_local() -> bool | None:
+    """Whether this box runs the Tari node, from the operator's authoritative mode (None if off)."""
+    return None if TARI_MODE == "off" else TARI_MODE == "local"
 
 
 def monero_is_local() -> bool:

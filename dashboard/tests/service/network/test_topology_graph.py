@@ -30,6 +30,13 @@ def test_tari_mode_not_an_address_prefix_decides_locality(monkeypatch):
     assert config.tari_is_local() is True
 
 
+def test_tari_mode_off_is_neither_local_nor_remote(monkeypatch):
+    # A merge-mining-off machine runs no Tari node at all — "local" or "remote" would both be a
+    # claim about a node that does not exist, so the tri-state answer is None, not False (#1849).
+    monkeypatch.setattr(config, "TARI_MODE", "off")
+    assert config.tari_is_local() is None
+
+
 def test_only_the_relocatable_nodes_carry_a_location():
     # monerod and tari are the only nodes an operator can run somewhere else. Every other node is
     # always this machine's own, so it carries no `remote` key at all — the diagram then has one

@@ -120,8 +120,9 @@ class Metrics:
     # Does each node run on THIS machine, or somebody else's (#1040)? A remote node's health is
     # not the operator's to fix, which is the whole reason the UI has to say which it is. Both
     # default to local — the stock setup — so direct Metrics(...) constructors needn't set them.
+    # tari_local is None when tari.mode is off: there is no Tari node, local or remote, to report.
     monero_local: bool = True
-    tari_local: bool = True
+    tari_local: bool | None = True
 
 
 def build_metrics(latest_data, state_mgr, history=None):
