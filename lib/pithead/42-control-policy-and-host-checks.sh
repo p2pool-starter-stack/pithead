@@ -176,17 +176,23 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
 # host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
 #
-# dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
-# all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
-# config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
-# config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
-# round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
-# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
-# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
-# the "documented exception" this file used to carve out for it contradicted that promise instead
-# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
-# that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
+# dashboard.energy.price_feed and workers.list[] are NOT here because this list cannot see them by
+# path: both are named by path in the gate instead (43-). workers.list[]'s per-entry token (#2349)
+# DOES render an env row (WORKER_API_TOKENS, the masked config mount can only ever hold each token
+# as the {"__secret__": true} sentinel, #440) — deliberately left off every list here too, same as
+# XMRIG_API_TOKEN's URL cousin above: the path-level refusal in 43- already denies the WHOLE
+# workers.list[] block outright (host+token is a credential, SECURITY.md), and admitting the token
+# env row here would let a container-side commit smuggle a fleet-wide credential in behind a path
+# check that only ever looks at workers.list. "Every OTHER config path renders to .env" was claimed
+# here once and was FALSE — local_miner.enabled is a third config.json-only leaf with no porcelain
+# row, discovered by a review of this issue after the first round shipped; the gate now names it
+# explicitly too (43-, ordinary tier, no approval — it is a documented dashboard-editable toggle,
+# docs/workers.md). workers.list[] itself moved from approval-tier to REFUSED outright in that same
+# review: an appended or repointed rig host+token is a credential change, and SECURITY.md promises
+# every credential is never dashboard-committable — the "documented exception" this file used to
+# carve out for it contradicted that promise instead of satisfying it. Treat "every OTHER path
+# renders to .env" as false in general: a schema leaf that renders NOTHING must be named by path in
+# 43- or it is unclassified, not merely unlisted here.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.

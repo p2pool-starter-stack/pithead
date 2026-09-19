@@ -709,11 +709,14 @@ services:
       # How the dashboard reads each worker's own xmrig /1/summary (config.json: workers.*). One
       # configured way, no auto-detection. Defaults = stock RigForge worker (open read-only API,
       # no token, port 8080). api_auth: none (default) | name (Bearer=worker name) | token.
-      # Per-worker overrides (workers.list[], #506) are NOT env — they carry per-rig tokens, so
-      # they stay in the owner-only config.json; the dashboard reads the masked copy (#440).
+      # Per-worker overrides (workers.list[], #506) mostly ride the masked config.json mount
+      # (#440) — except each entry's own token, which the mask replaces with a sentinel (#2349).
+      # The real per-worker tokens travel here instead, the same owner-only .env path as
+      # XMRIG_API_TOKEN below: a JSON {name: token} map, merged over the masked entries.
       - XMRIG_API_PORT=${XMRIG_API_PORT:-8080}
       - XMRIG_API_AUTH=${XMRIG_API_AUTH:-none}
       - XMRIG_API_TOKEN=${XMRIG_API_TOKEN}
+      - WORKER_API_TOKENS=${WORKER_API_TOKENS}
       # The operator-facing stratum port (#172), display-only here: the "point your rigs at
       # host:PORT" hint and the egress topology label track the real published port.
       - STRATUM_PORT=${STRATUM_PORT:-3333}
