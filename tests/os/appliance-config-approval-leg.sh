@@ -242,13 +242,20 @@ cd /data/pithead && ./pithead apply -y >/dev/null' || {
             bad "could not set the reserved node's RPC login through the host route"
             return
         }
-        # This apply recreates the dashboard container exactly like every other host-side apply in
-        # this leg — the same race sensitive_live_config's own comment documents. A curl against the
-        # dashboard the instant apply returns hits a container that is not there yet.
-        sensitive_live_config >/dev/null || {
-            bad "dashboard did not become readable again after the reserved node's RPC login landed through the host route"
-            return
-        }
+        # MONERO_NODE_USERNAME/PASSWORD are baked into FOUR quadlet units (36-quadlet-units.sh:
+        # monerod, wallet-rpc, p2pool, dashboard), not the dashboard alone — this apply recreates
+        # all four, a heavier reconciliation than any other host-side apply in this leg, all of
+        # which touch the dashboard only. sensitive_live_config's own 60s budget is sized for that
+        # lighter bounce (its comment: "a single curl the instant it returns is a race"); give this
+        # one several such windows before calling it unreachable.
+        tries=0
+        until sensitive_live_config >/dev/null 2>&1; do
+            tries=$((tries + 1))
+            [ "$tries" -lt 4 ] || {
+                bad "dashboard did not become readable again after the reserved node's RPC login landed through the host route (podman: $(_ssh "podman ps -a --format '{{.Names}}:{{.Status}}'" 2>/dev/null | tr '\n' ' '))"
+                return
+            }
+        done
     fi
 
     # The gap the fixture's non-blank password used to hide entirely: a login change is refused
