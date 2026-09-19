@@ -28,8 +28,12 @@ _rauc_status() { _ssh "rauc status 2>&1" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*[a
 _assert_rauc_committed() {                                                                    # <label> — the real commit proof: a resolved primary, not just a good OK flag
     local label="$1" rstatus
     rstatus=$(_rauc_status)
-    if printf '%s' "$rstatus" | grep -q "^Activated: *rootfs\." && printf '%s' "$rstatus" | grep -F "(booted)" | grep -q "boot status: good"; then
-        ok "rauc status reports the booted slot committed $label: $(printf '%s' "$rstatus" | grep -E '^(Activated|.*\(booted\))')"
+    # The booted slot's own block is "(/dev/disk/by-partlabel/system-N, ext4, booted)" — the
+    # device path sits BETWEEN the paren and the word, so a bare "(booted)" substring never
+    # matches; and "boot status: good" is two lines below that block header, not on it.
+    if printf '%s' "$rstatus" | grep -q "^Activated: *rootfs\." &&
+        printf '%s' "$rstatus" | grep -A2 -F ", booted)" | grep -q "boot status: good"; then
+        ok "rauc status reports the booted slot committed $label: $(printf '%s' "$rstatus" | grep -E '^Activated|booted\)|boot status')"
     else
         bad "rauc status does not report a committed booted slot $label: $(printf '%s' "$rstatus" | tr '\n' ' ' | cut -c1-600)"
     fi
