@@ -353,7 +353,6 @@ test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
-test-doctor-appliance.sh|key
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
@@ -377,6 +376,7 @@ VDEXP
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
 assert_eq "every PASS label that interpolates a value is one the suite has reviewed" \
     "$(vd_interp_names "$ROOT/tests/stack/lib.sh" "${stack_fragments[@]}")" "$vd_expected"
+
 # The row above is an equality over a set, so a sweep that silently stopped matching would report
 # an empty actual against a non-empty expectation and fail loudly — but it would fail naming the
 # wrong cause. These three drive the extractor over a file written for the purpose, so each
