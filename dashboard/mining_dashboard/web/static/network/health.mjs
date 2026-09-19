@@ -10,11 +10,13 @@ import { StackTopology } from "./topology.mjs";
 // per-component egress list lives on as an expandable drawer for the full text detail / a11y.
 function ComponentHealth({ topology, egress }) {
   if (!topology) return null;
-  const ok = topology.summary.level === "ok";
+  const { level, leaks } = topology.summary;
+  const ok = level === "ok";
+  const summaryClass = ok ? "ok" : leaks ? "bad" : "warn";
   return html`
     <div class="card card-advanced" id="card-egress">
         <h3>Stack Topology & Egress</h3>
-        <div class=${"egress-summary c-" + (ok ? "ok" : "bad")}>
+        <div class=${"egress-summary c-" + summaryClass}>
             ${ok ? "🛡️" : "⚠️"} ${topology.summary.label}
         </div>
         <${StackTopology} topology=${topology} />

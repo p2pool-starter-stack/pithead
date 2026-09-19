@@ -14,9 +14,17 @@ from unittest.mock import patch
 
 from mining_dashboard.web.views import header
 from mining_dashboard.web.views.header import dashboard_onion, host_display_addr
+from mining_dashboard.web.views.views import _egress_badge
 
 ONION = "a" * 56 + ".onion"
 ON = {"DASHBOARD_ONION_ENABLED": "true", "DASHBOARD_ONION_ADDRESS": ONION}
+
+
+def test_unverified_egress_badge_never_claims_clearnet_or_tor_only():
+    label = "2 egress path(s) unverified; Tor-only status cannot be confirmed"
+    badge = _egress_badge({"level": "warn", "leaks": 0, "label": label})
+    assert badge == {"variant": "warn", "text": f"⚠️ {label}", "title": label}
+    assert "clearnet" not in badge["text"]
 
 
 # --- Host address beside the hostname (Issue #119) ------------------------------------
