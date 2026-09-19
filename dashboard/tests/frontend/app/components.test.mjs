@@ -31,6 +31,15 @@ test('Header renders the brand, server badges, version + update badges', () => {
     assert.match(html, /New release v9\.9\.9 available/); // update badge (#224)
 });
 
+test('the theme switcher lives inside the header, not fixed over the page (#1860)', () => {
+    // It used to render as a sibling of Header, position: fixed over the viewport (overlapping the
+    // chart and the phone hint). It now mounts inside the header's own markup, right of the
+    // version badges, so it scrolls with the page instead of floating over whatever is under it.
+    const html = renderApp();
+    const header = html.slice(html.indexOf('id="top-header"'), html.indexOf('id="hero-band"'));
+    assert.match(header, /class="toggle-group theme-switcher"/);
+});
+
 test('Header surfaces a High Usage badge only when a resource is hot', () => {
     assert.doesNotMatch(renderApp(), /High Usage/); // base fixture is all "ok"
     const s = clone();
