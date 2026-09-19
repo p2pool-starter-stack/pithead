@@ -486,7 +486,7 @@ want it gone.
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
 | firewall | the Tor-egress rules this checkout installed |
-| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done`, the mutation lock file |
+| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
 | derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
 | version symlink | `<parent>/current`, only when it points at this checkout |
 

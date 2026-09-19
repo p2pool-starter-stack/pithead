@@ -46,7 +46,7 @@ stack_uninstall() {
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules; .env, Caddyfile, build/tari/config.toml, .pithead-first-run-done, the mutation lock, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules; .env, Caddyfile, build/tari/config.toml, .pithead-first-run-done, and: ${derived_list}"
     log "Kept (yours): config.json, backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
@@ -67,9 +67,10 @@ stack_uninstall() {
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
-    rm -f "$(mutation_lock_path)" 2>/dev/null || true
     for d in "${derived_dirs[@]}"; do
-        rm -rf "$d"
+        # CADDY_LOG_DIR is root:root-owned (31-directories-and-dashboard-state.sh) so the
+        # capability-stripped caddy container can write it; a non-root operator's plain rm fails.
+        rm -rf "$d" 2>/dev/null || sudo rm -rf "$d"
     done
     rm -f "$secret_file"
     # The version symlink (#455) is removed only when it is THIS checkout's: a versioned deploy
