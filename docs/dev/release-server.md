@@ -92,10 +92,12 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
    snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
-   lets the harness snapshot/restore a chain cheaply. It is, however, a hard REQUIREMENT for
-   `--image-upgrade`, which takes `cp --reflink=always` snapshots of every writable mount while
-   the stack is stopped — on a filesystem without reflink that gate refuses to start. On plain ext4-on-SSD the
-   matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
+   lets the harness snapshot/restore a chain cheaply. It is a hard requirement only when this
+   server runs `tests/integration/run.sh --image-upgrade` directly, because that command takes
+   `cp --reflink=always` snapshots of every writable mount while the stack is stopped. The
+   `tier4-kvm` `image-upgrade` phase instead creates and removes a sparse reflink XFS inside its
+   disposable guest; it does not require reflinks on the bench filesystem. On plain ext4-on-SSD
+   the matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
 3. Disk headroom: enough for the chains plus a snapshot / second DB (budget ≥ ~150 GiB free
    beyond the live chains).
@@ -330,14 +332,15 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a REQUIREMENT for
-the `--image-upgrade` gate, which cannot take its rollback snapshots without `cp --reflink=always`.
-On a CoW volume the
-harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on
-fast storage. A loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the
-wrong trade for an active chain. If your root FS is ext4 on an SSD (the common case) you don't
-need CoW at all: the matrix only edits `config.json` and reuses one chain, and `--safety-backup`
-(a `pithead backup` + auto-rollback) isolates the destructive scenarios.
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a requirement for a
+direct `tests/integration/run.sh --image-upgrade` run, which cannot take its rollback snapshots
+without `cp --reflink=always`. The `tier4-kvm` `image-upgrade` phase supplies its own guest-local
+reflink XFS and does not depend on the bench filesystem. On a CoW volume the harness can
+snapshot/restore a chain cheaply for per-scenario isolation, but only if it's on fast storage. A
+loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the wrong trade for an
+active chain. If your root FS is ext4 on an SSD (the common case) you don't need CoW at all: the
+matrix only edits `config.json` and reuses one chain, and `--safety-backup` (a `pithead backup` +
+auto-rollback) isolates the destructive scenarios.
 
 Covering both prune modes. The box mines one mode (its real config). The harness exercises that
 mode against the live chain and skips the other unless you supply a chain for it

@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -35,12 +35,13 @@
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
+#   image-upgrade  signed v1.20.0 -> candidate -> exact rollback on guest-local reflink XFS
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
 #   all     every phase above except crossupdate, in that order — media, fault and reset included
-#           since #1064; rigmedia added since #2069
+#           since #1064; rigmedia added since #2069; image-upgrade added for #2057
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -161,6 +162,8 @@ source "$SCRIPT_DIR/phases/rigmedia.sh" || exit $?
 source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 # shellcheck source=tests/os/phases/reset.sh
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
+# shellcheck source=tests/os/phases/image-upgrade.sh
+source "$SCRIPT_DIR/phases/image-upgrade.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
 require_host
@@ -179,6 +182,7 @@ rigmedia) phase_rigmedia ;;
 media) phase_media ;;
 fault) phase_fault ;;
 reset) phase_reset ;;
+image-upgrade) phase_image_upgrade ;;
 crossupdate) phase_crossupdate ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
@@ -193,6 +197,7 @@ all)
     phase_media
     phase_fault
     phase_reset
+    phase_image_upgrade
     ;;
 *)
     echo "unknown phase: $PHASE" >&2
