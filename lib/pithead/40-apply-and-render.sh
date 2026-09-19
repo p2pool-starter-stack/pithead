@@ -154,6 +154,7 @@ apply() {
     [ -f "$apply_marker" ] && incomplete=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
+    local dashboard_data_dir_old=""
     if [ "${#changed[@]}" -gt 0 ]; then
         echo ""
         log "The following changes will be applied:"
@@ -164,6 +165,9 @@ apply() {
             # confirmation below — one prompt per key, so a Monero+Tari double change can't
             # ride through on a single typed prefix.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
+            # #2360: remember the pre-commit dashboard.data_dir so the carry below (run after the
+            # commit, alongside migrate_dashboard_data) knows where the live DB still sits.
+            [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -283,6 +287,9 @@ apply() {
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
     migrate_dashboard_data
+    # A confirmed A-to-B dashboard.data_dir move (#2360) — distinct from the #455 default move
+    # above, and only reached when DASHBOARD_DATA_DIR was actually in this apply's changed keys.
+    carry_dashboard_data_move "$dashboard_data_dir_old" "$DASHBOARD_DIR"
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).

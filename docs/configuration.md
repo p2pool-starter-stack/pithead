@@ -279,7 +279,12 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 
 > NOTE: `apply` does not copy your existing data into a new location; it only points the
 > container at the new path. If you're relocating data you already have, move the files yourself
-> first (with the stack stopped), then update `data_dir` and run `apply`.
+> first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
+> the one exception: it holds the payout-wallet tamper-tripwire baseline
+> ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
+> carries the live dashboard database to the new path itself — a non-empty target, or a failed or
+> unverified copy, refuses the move instead of guessing which copy is live
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---
 

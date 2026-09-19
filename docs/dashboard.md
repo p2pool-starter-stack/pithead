@@ -1085,6 +1085,14 @@ typed `APPLY` and stays host-CLI only. This is the one place a confirmed data-di
 `./pithead apply`: the destination path is narrowed, because the move is now reachable at dashboard
 trust rather than shell trust.
 
+Once approved, `dashboard.data_dir` is also the one `data_dir` that `apply` carries: it copies the
+live SQLite database to the new path, verifies the copy, then lets the recreate mount it — the
+payout-wallet tripwire's baseline lives in that database (#375), and an empty DB at the new path
+would silently re-seed it, swallowing a payout change bundled with the move. A non-empty target, or
+a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
+([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
+still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
+
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.
 
