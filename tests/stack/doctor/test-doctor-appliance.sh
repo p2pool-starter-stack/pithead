@@ -85,6 +85,8 @@ echo "== unit: bundle_redact_env — every CONTROL_SECRET_PATHS leaf's .env coun
 BE="$SANDBOX/bundle-env"
 mkdir -p "$BE"
 cat >"$BE/env-fixture" <<'EOF'
+DASHBOARD_AUTH_HASH_B64=aGFzaA==
+DASHBOARD_AUTH_PW_FP=fingerprint
 TELEGRAM_BOT_TOKEN=tgtoken
 XMRIG_API_TOKEN=apitoken
 MONERO_NODE_USERNAME=rpcuser
@@ -100,9 +102,10 @@ NOTIFY_WEBHOOK_URLS=https://hooks.slack.com/services/T00/B00/SECRETPATH
 HOST_IP=box.lan
 EOF
 be_out=$(run_sourced "$BE" bundle_redact_env <"$BE/env-fixture")
-for key in TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN MONERO_NODE_USERNAME MONERO_NODE_PASSWORD \
-    MONERO_VIEW_KEY TARI_VIEW_KEY PROXY_STRATUM_PASSWORD HEALTHCHECKS_PING_URL NTFY_URL \
-    NTFY_TOKEN XVB_STANDBY_SOURCE NOTIFY_WEBHOOK_URLS; do
+for key in DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP TELEGRAM_BOT_TOKEN XMRIG_API_TOKEN \
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD MONERO_VIEW_KEY TARI_VIEW_KEY \
+    PROXY_STRATUM_PASSWORD HEALTHCHECKS_PING_URL NTFY_URL NTFY_TOKEN XVB_STANDBY_SOURCE \
+    NOTIFY_WEBHOOK_URLS; do
     assert_contains "bundle_redact_env masks $key (CONTROL_SECRET_PATHS leaf)" "$be_out" "$key=[redacted]"
 done
 assert_contains "bundle_redact_env leaves structural keys alone" "$be_out" "HOST_IP=box.lan"
