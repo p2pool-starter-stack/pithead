@@ -139,12 +139,12 @@ test('Global P2Pool Stats collapses to the headline stats by default (progressiv
     // Headline: the pool's own money/health figures.
     assert.match(card, /Pool Hashrate/);
     assert.match(card, /Blocks Found/);
-    assert.match(card, /<h4>Last Block<\/h4>/);
+    assert.match(card, /<p class="stat-label">Last Block<\/p>/);
     // Detail (sidechain internals, peers, uptime, ...) stays out of the DOM until expanded.
     assert.doesNotMatch(card, /Sidechain Height/);
     assert.doesNotMatch(card, /PPLNS Window/);
     assert.doesNotMatch(card, /PPLNS Weight/);
-    assert.doesNotMatch(card, /<h4>Uptime<\/h4>/);
+    assert.doesNotMatch(card, /<p class="stat-label">Uptime<\/p>/);
     assert.match(card, /class="more-stats-toggle" aria-expanded="false"/);
     assert.match(card, /Show all \(12\)/);
 });

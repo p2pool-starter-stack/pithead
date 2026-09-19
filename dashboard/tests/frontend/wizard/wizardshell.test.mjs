@@ -95,7 +95,9 @@ test("wizard section headings are h2s with the h3 appearance and a fixed top mar
   assert.equal(headings.filter((tag) => tag === "<h3").length, 0, "wizard section headings must not skip h2");
   assert.equal(headings.filter((tag) => tag === "<h2").length, 16, "expected every wizard section heading");
   assert.equal((WIZARD_HTML.match(/<h1(?=[\s>])/g) || []).length + headings.length, 17, "expected one page heading and all 16 section headings");
-  assert.match(LAYOUT_CSS, /h3,\s*\.wizard-shell h2\s*\{/, "wizard h2s keep the section-heading appearance");
+  // `[,{]`, not `{`: #1859 added `.card h2` to this selector list when the dashboard's own card
+  // titles moved h3 -> h2. The claim is that the wizard h2 is IN the rule, not that it is last.
+  assert.match(LAYOUT_CSS, /h3,\s*\.wizard-shell h2\s*[,{]/, "wizard h2s keep the section-heading appearance");
   const h2 = ruleFor(WIZARD_CSS, /\.wizard-shell\s+h2/);
   assert.ok(h2, "expected a `.wizard-shell h2` rule");
   assert.match(h2.body, /margin-top:\s*[1-9]/, "a heading with no top margin reads as the label of the field above it");

@@ -15,9 +15,13 @@
   border: 1px solid var(--border);
   min-width: 0;
 }
-.stat-card h5 {
+/* The tile's label. A <p>, not a heading (#1859): every tile sits directly under its card's own
+ * heading with no section between, so a heading tag here always skipped a level. The weight is
+ * declared because `.stat-card p` below sets 600 and the label used to take the h5's bold. */
+.stat-card .stat-label {
   margin: 0 0 4px 0;
   font-size: 0.7rem;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
 }
@@ -174,7 +178,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-.xvb-tier-block h4 {
+.xvb-tier-block h3 {
   margin: 0 0 10px 0;
   font-size: 0.75rem;
   font-weight: 600;

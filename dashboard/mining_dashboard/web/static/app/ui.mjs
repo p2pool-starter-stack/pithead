@@ -12,7 +12,7 @@ const netCls = (v) => (v !== null && Number.isFinite(v) && v < 0 ? "c-bad" : "c-
 
 const SharesStat = ({ sw, label = "Share in Window" }) => html`
     <div class="stat-card">
-        <h5>${label}</h5>
+        <p class="stat-label">${label}</p>
         <p><span class=${sw.ok ? "status-ok" : "status-bad"}>${sw.count}</span></p>
     </div>`;
 

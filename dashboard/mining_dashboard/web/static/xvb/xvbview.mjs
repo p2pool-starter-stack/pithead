@@ -85,8 +85,8 @@ function XvbDecisionTable({ calc, coeffDay, hr, energy }) {
               const est = r.yours !== null ? [r.yours, r.yours] : r.study;
               const costNote = r.cost !== null ? `Cost ${formatXmr(r.cost)}.` : "";
               return html`<div class=${r.sustainable ? "" : "text-muted"}>
-                <h5 class="est-heading" title=${r.sustainable ? "" : `Not sustainable at your hashrate — holding this tier needs about ${fmtHashrate(r.threshold)} donated continuously.`}>
-                    ${r.name}${r.sustainable ? "" : " ⚠"}</h5>
+                <h4 class="est-heading" title=${r.sustainable ? "" : `Not sustainable at your hashrate — holding this tier needs about ${fmtHashrate(r.threshold)} donated continuously.`}>
+                    ${r.name}${r.sustainable ? "" : " ⚠"}</h4>
                 <div class="stat-grid">
                     <${StatCard} label="Net (XvB says)"
                         value=${r.sustainable && r.netFace ? fmtMid(r.netFace) : missingNet(r)}
@@ -147,7 +147,7 @@ export function XvbTierBlock({ calc, hr, coeffDay, energy, est }) {
   const t = computeXvbTier(hr, calc);
   return html`
     <div class="xvb-tier-block">
-        <h4>XvB Tier (raffle)</h4>
+        <h3>XvB Tier (raffle)</h3>
         ${
           calc.enabled
             ? null
