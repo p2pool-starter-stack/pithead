@@ -20,10 +20,13 @@
 #           up — wizard accepted, setup ran, images pulled and verified, containers running,
 #           dashboard served. This is the phase that catches an appliance whose engine cannot
 #           actually run the product (it happened: pithead speaks docker, the image had only
-#           podman, and every other phase was green).
+#           podman, and every other phase was green). Closes with a power-cut leg (M10, #2067):
+#           three cuts against the LIVE provisioned stack, not a bare guest or a clean reboot.
 #   rig     answer "RigForge" on the same page and prove the OTHER machine this image installs:
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
+#           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
+#           off a real virsh destroy, not just the reboot leg's clean return.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
@@ -33,21 +36,18 @@
 #           it mid-countdown cancels the change. A minimal stick (#965) changes only what it names;
 #           dashboard login, appliance defaults and node credentials survive, old login still works.
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
+#           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
 #   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
 #           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
-#   stack   one stack suite, two channel harnesses (#2062, docs/dev/testing-strategy.md § J):
-#           provision a guest in remote-node mode (an already-synced bench node, so the sync gate
-#           clears and the guest can actually mine) and run tests/integration/run.sh — the DIY
-#           gate — against it: a non-destructive check, then fault-injection/hardening/
-#           auth-fail-closed, then the remote-safe scenario subset, then XvB routing. The first
-#           live remote-node coverage on either channel (#1446). Skips (by-design) without a
-#           reserved bench Monero node.
-#   all     every phase above except crossupdate, in that order — media, fault, reset and stack
-#           included since #1064/#2062; rigmedia added since #2069
+#   stack   the DIY gate (tests/integration/run.sh) against a remote-node guest (#2062, § J):
+#           a non-destructive --check, then --lifecycle --fault-injection --hardening
+#           --auth-fail-closed on remote-main-secure-tari. Skips by-design with no reserved
+#           node; the local-chain scenario (#2443) and XvB routing smoke (#2444) run from neither.
+#   all     every phase above except crossupdate, in order (stack since #2062, rigmedia #2069)
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -132,7 +132,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)

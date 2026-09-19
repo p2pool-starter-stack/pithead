@@ -5,16 +5,21 @@
 # root, the stack in /data/pithead, the control runner as a systemd unit. Every other appliance
 # phase provisions in LOCAL node mode, and a scratch KVM disk can never hold a synced chain, so
 # `provision`'s own miner sits behind the sync gate forever (#35) and the DIY gate's destructive
-# phases — fault injection, hot-apply scenarios, XvB routing — have no live appliance coverage.
+# phases — fault injection, hot-apply scenarios — have no live appliance coverage.
 #
 # Remote-node mode breaks that: the guest points at the bench's ALREADY-SYNCED monerod (and,
 # optionally, an already-synced Tari node) from the very first wizard submit, so p2pool clears the
 # sync gate in minutes rather than never and the guest can actually mine. This is the first live
 # remote-node coverage on either channel (#1446 tracks the DIY gate's own zero routine coverage).
 #
-# docs/dev/testing-strategy.md § J's parity matrix (#2062) names exactly what this phase adds over
-# `provision`: the 15-scenario config matrix's remote-safe subset, fault injection, hardening,
-# auth-fail-closed, and XvB routing — all against the appliance channel for the first time.
+# Two DIY-gate invocations run here, and they are what docs/dev/testing-strategy.md § J's parity
+# matrix (#2062) credits this phase with over `provision`: a non-destructive `--check`, then
+# `--lifecycle --fault-injection --hardening --auth-fail-closed` against remote-main-secure-tari —
+# the remote-safe end of the 15-scenario config matrix, and the appliance channel's first live
+# coverage of each. Two further rows from that matrix are NOT driven here, because this guest
+# cannot satisfy their inputs; the call site below (`phase_stack`) carries the measured reasons:
+# the `monero.mode=local` scenario needs a seeded chain (#2443), and the XvB routing smoke's
+# Tor-isolation probe fails on this channel while discarding its own diagnostics (#2444).
 
 # Shape the wizard's served config for remote-node mode. Mirrors provision_browser_config
 # (tests/os/provision-browser-submit.sh) but for the Both-role remote-node answers instead of the
@@ -31,6 +36,10 @@ stack_browser_config() {
     # because the DIY bench's own persistent config happens to carry it disabled; that is a gap
     # in the assertion's expected list, filed separately, not a config choice for this phase to
     # suppress by diverging from the wizard's default.
+    # xvb.enabled stays true even though no invocation here drives XvB routing today: it is the
+    # baseline the #2444 row will need the moment that probe is readable enough to run from this
+    # phase, and holding it keeps this guest byte-identical to the one job 633 passed against, so
+    # that job stays a valid comparison for the next run rather than a differently-configured one.
     cfg=$(printf '%s' "$1" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" \
         '.monero.wallet_address = $m | .tari.wallet_address = $t | .p2pool.pool = "mini" |
          .xvb.enabled = true') || return 1
