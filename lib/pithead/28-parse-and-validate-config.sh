@@ -323,6 +323,10 @@ parse_and_validate_config() {
         [ "$(dirname "$TOR_DATA_DIR")" == "$_data_root" ]; } || _data_root="$PWD/data"
     _dash_cfg=$(jq -r '.dashboard.data_dir // empty' "$CONFIG_FILE")
     DASHBOARD_DIR=$(resolve_default "$_dash_cfg" "$_data_root/dashboard")
+    # Global, read by migrate_dashboard_data: the #455 migration only ever moves a DEFAULT
+    # location — an operator-pinned dashboard.data_dir is theirs, never touched.
+    DASHBOARD_DIR_IS_DEFAULT=1
+    [ "$DASHBOARD_DIR" == "$_dash_cfg" ] && DASHBOARD_DIR_IS_DEFAULT=0
     # Stratum TLS keypair home (#261): joins the shared data root when one exists — the cert's
     # FINGERPRINT is what every rig pins, so it must survive versioned deploys like the chain
     # data does, not move with the code. Internal (not config-driven), like CONTROL_DIR.

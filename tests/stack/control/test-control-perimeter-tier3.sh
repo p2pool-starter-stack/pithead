@@ -24,8 +24,8 @@ jq -n --arg w "$WALLET" \
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_contains "perimeter baseline applied from the host CLI" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
 # The wallet-change alarm baseline lives in the dashboard DB. Bundle its data-dir move with the
-# payout change below: losing this row would let the restarted dashboard seed the new address as
-# its first observation and suppress the alarm.
+# payout change below and pin what actually happens to that row: an operator-pinned path is left
+# alone (#455), so the baseline stays put rather than being carried (#2360).
 LIVE_DASHBOARD_DIR="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
 MOVED_DASHBOARD_DIR="$C/data/dashboard-moved"
 mkdir -p "$LIVE_DASHBOARD_DIR"
@@ -43,9 +43,13 @@ gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout
 assert_eq "confirmed payout swap applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
 assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$ATTACKER_WALLET"
 assert_contains ".env carries the confirmed payout address" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$ATTACKER_WALLET"
-assert_eq "bundled dashboard-data move preserves the payout alarm baseline" \
-    "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$MOVED_DASHBOARD_DIR/mining_data.db")" "$WALLET"
-if [ -e "$LIVE_DASHBOARD_DIR" ]; then bad "bundled dashboard-data move removes the old path" "still exists"; else ok "bundled dashboard-data move removes the old path"; fi
+# An operator-pinned dashboard.data_dir is never moved for the operator (#455): the run warns and
+# leaves both directories alone, so the live DB — and the payout-wallet alarm baseline in it —
+# stays at the old path. Carrying it across a confirmed move is issue #2360, not this gate.
+assert_eq "operator-pinned dashboard-data move leaves the baseline at the old path" \
+    "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$LIVE_DASHBOARD_DIR/mining_data.db")" "$WALLET"
+if [ -e "$LIVE_DASHBOARD_DIR" ]; then ok "operator-pinned dashboard-data move keeps the old path"; else bad "operator-pinned dashboard-data move keeps the old path" "removed"; fi
+if [ -e "$MOVED_DASHBOARD_DIR/mining_data.db" ]; then bad "operator-pinned move does not carry the DB (#2360)" "carried anyway"; else ok "operator-pinned move does not carry the DB (#2360)"; fi
 
 # Deanonymisation and egress: both applied before the 2026-09-13 perimeter audit, and both are asserted refused token-less
 # in the battery next door — which is exactly how that battery stayed green against this.

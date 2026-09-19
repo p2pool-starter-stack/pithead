@@ -133,7 +133,7 @@ describe_change() {
         ;;
     DASHBOARD_DATA_DIR)
         flag=CONFIRM
-        msg="$key: $old → $new — the live dashboard database is moved there, preserving history and the payout-wallet alarm baseline."
+        msg="$key: $old → $new — the dashboard starts on an EMPTY database there; the existing one stays at $old. Move it yourself with the stack down to keep history and the payout-wallet alarm baseline."
         ;;
     MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR | TOR_DATA_DIR)
         flag=CONFIRM
