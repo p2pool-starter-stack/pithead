@@ -163,7 +163,7 @@ What the boot path reads, written by the host at the moment a role is accepted:
 | File (under `/data/pithead`) | Meaning |
 |---|---|
 | `machine-role` | `pithead`, `both` or `rig`. Absent means `pithead` — every machine provisioned before this contract. The coordinator values are derivable from `config.json` (both IS `local_miner.enabled`); the rig value is load-bearing, because a rig has no `config.json` at all. |
-| `rig.json` | rig role only: `pool`, `worker`, and `stratum_password` when one was set. |
+| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. |
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the
@@ -172,6 +172,12 @@ way the config pre-seed is scrubbed. The stick keeps neither copy after a disk i
 stick whose own `/data` carries the rig marker IS a rig (run-from-USB), and that marker
 outranks installer mode on every later boot — except one chosen from the boot menu's **Set up
 again** entry, which opens the wizard beside the role (below).
+
+The stick mints the control token BEFORE the card (`rig_access_token` in `firstboot_consume_rig`,
+above `write_handoff_card`), so the card the operator confirms on the stick already carries the
+token the installed machine will enforce — the only place that token is ever shown. The landing
+leg refuses a staged file with no well-formed `access_token`: it opens the setup page instead of
+landing and minting a token nobody saw.
 
 **Getting a machine back out of the rig role** is the boot menu's **Set up again** entry
 (#1318) or the installer, never a setting: a rig serves no dashboard and answers on no port, so

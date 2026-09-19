@@ -76,7 +76,7 @@ firstboot_wizard() {
     # medium, where staged files are cleaned up by the installer itself. Then fall through to
     # the rig leg below, exactly as a pre-seeded coordinator falls through to setup.
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
-        if jq -e 'type == "object" and ((.pool // "") | length > 0)' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
+        if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
             install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
             record_machine_role rig
             # Spent: the settings (possibly a stratum password) must not sit on the ESP forever.
