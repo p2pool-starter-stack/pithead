@@ -77,14 +77,17 @@
   gap: 12px;
   min-width: 0;
 }
-/* Below ~720px the brand row (name, status badges, version, update, theme, upgrade control —
- * .flex.items-center, header.mjs) no longer has room to wrap and stacks five-plus items deep,
- * pushing the KPI band below the fold (#1870). A horizontally scrollable strip keeps it one
- * line tall and every item still reachable, instead of a disclosure that hides status at a
- * glance. Scoped to .brand so the header's OTHER .flex.items-center row (the disk-usage line,
- * .text-small.mt-2, which is a sibling of .brand, not a child) keeps wrapping normally. Matches
- * the .hero-value narrow step above. */
-@media (max-width: 720px) {
+/* Between the phone breakpoint and ~720px the brand row (name, status badges, version, update,
+ * theme, upgrade control — .flex.items-center, header.mjs) has no room to wrap and stacks
+ * five-plus items deep, pushing the KPI band below the fold (#1870). A horizontally scrollable
+ * strip keeps it one line tall and every item still reachable, instead of a disclosure that
+ * hides status at a glance. Scoped to .brand so the header's OTHER .flex.items-center row (the
+ * disk-usage line, .text-small.mt-2, which is a sibling of .brand, not a child) keeps wrapping
+ * normally. Matches the .hero-value narrow step above. Lower-bounded at 641px: below 640px
+ * .header .items-center already gets its own row-per-item wrap (sync.css's phone breakpoint) —
+ * this selector's higher specificity (three classes vs. two) would otherwise silently override
+ * that instead of layering with it. */
+@media (min-width: 641px) and (max-width: 720px) {
   .brand .flex.items-center {
     flex-wrap: nowrap;
     overflow-x: auto;
