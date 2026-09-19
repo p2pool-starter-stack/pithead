@@ -106,7 +106,12 @@ assert_rc "validated administrative restore succeeds" "$?" 0
 assert_contains "fixed-file install retains the invoking uid" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 600"
 assert_eq "restored config is owner-only" "$(file_mode "$BK/config.json")" 600
 assert_eq "restored env is owner-only" "$(file_mode "$BK/.env")" 600
-assert_eq "restored Caddyfile is owner-only" "$(file_mode "$BK/Caddyfile")" 600
+# #2329: the Caddyfile must come back world-readable like the normal apply path renders it — a
+# cap_drop:ALL caddy container has no CAP_DAC_OVERRIDE and cannot read a 600 file it doesn't own,
+# so a 600 restore leaves caddy permission-denied on its bind-mounted Caddyfile for the rest of
+# the appliance's life.
+assert_contains "Caddyfile install does not carry the secret-file mode" "$(cat "$CR/sudo.log")" "install -o $(id -u) -g $(id -g) -m 644"
+assert_eq "restored Caddyfile is world-readable" "$(file_mode "$BK/Caddyfile")" 644
 assert_eq "restored config belongs to the invoking operator" "$(file_uid "$BK/config.json")" "$(id -u)"
 assert_eq "restored onion key is owner-only" "$(file_mode "$BK/data/tor/hs_ed25519_secret_key")" 600
 assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/dashboard.db")" 600
