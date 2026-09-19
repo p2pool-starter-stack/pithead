@@ -37,7 +37,7 @@ export const InstallSection = ({
         ? "ERASES it (Pithead layout, no data partition)"
         : "ERASES everything on it";
   return html`<div>
-    <h3>Install onto</h3>
+    <h2>Install onto</h2>
     <${Field} label="Target disk">
         <select value=${chosen} onChange=${onPick}>
             <option value="" disabled selected=${!chosen}>Choose a disk…</option>
@@ -104,7 +104,7 @@ export const RestoreSection = ({
   onPassphrase,
   onPassphraseVisible,
 }) => html`<div>
-    <h3>Restore from a backup</h3>
+    <h2>Restore from a backup</h2>
     <${Note}>Upload the encrypted backup archive and its emergency-kit passphrase — shown once,
     when the backup was made. This restores settings, wallets, keys and the dashboard's history;
     the machine then provisions itself from what it restores, exactly as if you had filled in
@@ -126,7 +126,7 @@ export const Installing = ({ status }) => html`<div class="card">
     <p><strong>Installing.</strong> Takes a few minutes. Do not power it off.</p>
     ${
       status.startsWith("Installed")
-        ? html`<h3>Installed</h3>
+        ? html`<h2>Installed</h2>
             <ol>
                 <li>Wait for the machine to switch itself off.</li>
                 <li>Remove the USB stick.</li>
@@ -139,17 +139,25 @@ export const Installing = ({ status }) => html`<div class="card">
     }
 </div>`;
 
-export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`<div class="card">
+export const Done = ({
+  status,
+  handoff,
+  savedDashboard,
+  installer,
+  stick,
+  rig,
+  onAck,
+}) => html`<div class="card">
     ${
       handoff && handoff.role === "rig"
-        ? html`<h3>Check this rig</h3>
+        ? html`<h2>Check this rig</h2>
             <p>This is what the machine will be.</p>
             ${rigCardFields(handoff).map((f) => html`<${Field} label=${f.label}><code class=${f.label === "Control token" ? "wizard-mono wizard-token" : "wizard-mono"}>${f.value}</code><//>`)}
             <${Note}>${rigCardNote(handoff)}<//>
             <button type="button" class="btn-toggle active" onClick=${onAck}>
                 ${installer && !stick ? "Looks right — erase the disk and install" : "Looks right — save it"}</button>`
         : handoff
-          ? html`<h3>Save this before anything else</h3>
+          ? html`<h2>Save this before anything else</h2>
             <p>This is shown once, here.</p>
             <${Field} label="Dashboard user"><code class="wizard-mono">${handoff.username}</code><//>
             <${Field} label="Dashboard password"><code class="wizard-mono">${handoff.password}</code><//>
@@ -174,7 +182,7 @@ export const Done = ({ status, handoff, installer, stick, rig, onAck }) => html`
             10 to 30 minutes on a home connection. <strong>This page will stop responding</strong>
             while it happens; that is the machine working, not failing. Its console narrates, and
             when it finishes the dashboard is at
-            ${" "}<code class="wizard-mono">${handoff ? handoff.dashboard : "https://pithead.local"}</code>${" "}
+            ${" "}<code class="wizard-mono">${(handoff && handoff.dashboard) || savedDashboard || "https://pithead.local"}</code>${" "}
             behind the login you just saved.</p>
             <p class="text-muted">${status || "Waiting…"}</p>`
     }

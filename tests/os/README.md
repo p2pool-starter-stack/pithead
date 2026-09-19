@@ -110,17 +110,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
   refused global curl and dashboard-listener doctor verdict must agree that no global address is
   served. Doctor's separate stratum public-IP row remains a WARN. The dashboard then
-  drives a benign apply, a typed approval
-  and its missing-token refusal, structured doctor output, a capped/redacted p2pool log tail and
-  the wallet-log refusal, then an encrypted backup; the stack and dashboard must answer again after
-  the backup. Doctor must still return every structured row as an applied diagnostic when its own
-  exit is nonzero with monerod deliberately stopped. A day-two `fixture-next` hostname preview must
-  require the sensitive-change approval and leave the kernel name, mDNS activation, certificate and
-  live config byte-for-byte unchanged. Missing and wrong approval identities are refused. A fake,
-  allow-listed callback then approves the host-generated preview; the changed kernel, dashboard,
-  certificate and mDNS identity must survive both the unaided reboot and closing A/B migration
-  update. A dashboard-password edit remains physical-presence-only. The fixture `curl` recognizes
-  only its two fake Telegram calls and has no route to the real provider. Then the stack must return from a reboot with no
+  drives a benign apply, a typed confirmation and its missing-confirmation refusal, structured
+  doctor output, a capped/redacted p2pool log tail and the wallet-log refusal, then an encrypted
+  backup; the stack and dashboard must answer again after the backup. Doctor must still return
+  every structured row as an applied diagnostic when its own exit is nonzero with monerod
+  deliberately stopped. A day-two `fixture-next` hostname preview must require typed `APPLY` and
+  leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
+  when it is omitted. A confirmed change must apply and audit without a second approver; the
+  changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
+  and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
+  Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
+  no queued or claimed request and reds the row if it never drains, because an apply re-provisions
+  the control runner and kills a request in flight (#2363). Then the
+  stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
   bundle through `pithead os-update` and proves the migration hold: the chain services stay down
@@ -166,6 +168,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
 including fault and reset, and the full run is required once for every RC candidate.
+
+Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
+phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
+being absent produces, when the phase's own code has nowhere to record that — the wrapper itself
+counts it as a `missing` phase skip. And a run where every requested phase skipped this way is not
+a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
+of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
+exit code.
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
@@ -215,8 +225,8 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and fake
-second-identity approval to succeed, checks the current p2pool container's narrowly extracted
+root-run battery without overriding `HOME`. The row requires the host preflight and typed
+confirmation to succeed, checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
 endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.

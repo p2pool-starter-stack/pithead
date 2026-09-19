@@ -171,30 +171,46 @@ if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
     PITHEAD_EXPECT_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)" \
         tests/os/verify-image.sh "$IMAGE" --test || exit $?
 fi
+
+# #2356: a phase can return having recorded nothing at all — no ok/bad, no it_skip_* call of its
+# own (the shape a missing bench input produces when the phase's own code only prints and returns
+# rather than going through the counted skip vocabulary). Left alone, that phase is invisible to
+# PASS/FAIL and to every skip bucket, and the run reads as a clean, empty pass. This wrapper is the
+# one place every phase is invoked from, so it is the one place that can catch that for ALL of them
+# without each phase file having to get its own accounting right: if a phase call adds nothing to
+# PASS, FAIL or any skip bucket, the wrapper itself records the phase as a `missing` skip — an
+# absent input is exactly what "an input would have run it" means.
+_run_phase() { # <phase-name> <phase-function>
+    local before=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
+    "$2"
+    local after=$((PASS + FAIL + IT_SKIPPED + IT_SKIPPED_PHASES + IT_SKIPPED_LEGS))
+    [ "$after" -ne "$before" ] ||
+        it_skip_phase "$1" "produced no passed, failed or skipped row — a required input was likely absent" missing
+}
 case "$PHASE" in
-boot) phase_boot ;;
-update) phase_update ;;
-install) phase_install ;;
-provision) phase_provision ;;
-rig) phase_rig ;;
-rigmedia) phase_rigmedia ;;
-media) phase_media ;;
-fault) phase_fault ;;
-reset) phase_reset ;;
-crossupdate) phase_crossupdate ;;
+boot) _run_phase boot phase_boot ;;
+update) _run_phase update phase_update ;;
+install) _run_phase install phase_install ;;
+provision) _run_phase provision phase_provision ;;
+rig) _run_phase rig phase_rig ;;
+rigmedia) _run_phase rigmedia phase_rigmedia ;;
+media) _run_phase media phase_media ;;
+fault) _run_phase fault phase_fault ;;
+reset) _run_phase reset phase_reset ;;
+crossupdate) _run_phase crossupdate phase_crossupdate ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
     # refusal, the factory reset, the wedged-/data recovery and the media channel omitted (#1064).
-    phase_boot
-    phase_update
-    phase_install
-    phase_provision
-    phase_rig
-    phase_rigmedia
-    phase_media
-    phase_fault
-    phase_reset
+    _run_phase boot phase_boot
+    _run_phase update phase_update
+    _run_phase install phase_install
+    _run_phase provision phase_provision
+    _run_phase rig phase_rig
+    _run_phase rigmedia phase_rigmedia
+    _run_phase media phase_media
+    _run_phase fault phase_fault
+    _run_phase reset phase_reset
     ;;
 *)
     echo "unknown phase: $PHASE" >&2
@@ -215,5 +231,13 @@ printf "  of which: %d missing (an input would have run it), %d by-design (this 
 if [ -n "$IT_SKIPPED_NAMES" ]; then
     echo "did NOT run:" >&2
     echo -e "$IT_SKIPPED_NAMES" >&2
+fi
+# #2356: 0 passed and 0 failed is not a clean run, it is every requested phase skipping — the
+# vacuous-success shape a bench job hit when the fleet's node provider left required inputs unset.
+# A run that executed at least one row (a pass, a fail) keeps today's behaviour below; only the
+# all-skipped case is new.
+if [ "$PASS" -eq 0 ] && [ "$FAIL" -eq 0 ]; then
+    echo "no requested phase ran (--phase $PHASE): every row was skipped" >&2
+    exit 1
 fi
 [ "$FAIL" -eq 0 ]

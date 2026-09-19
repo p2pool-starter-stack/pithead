@@ -103,7 +103,7 @@ function DashboardView({
                           onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow} />
         </div>
         <div class="grid">
-            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip} stratumPort=${state.stratum_port}
+            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip && state.host_ip !== "Unknown Host" ? state.host_ip : state.host_addr} stratumPort=${state.stratum_port}
                              onInspect=${state.control_enabled ? onInspect : null} />
         </div>
         <div class="grid-section-label">Your Stack</div>
@@ -112,11 +112,11 @@ function DashboardView({
             <${XvBStats} state=${state} />
             <${EarningsCard} earnings=${state.earnings} xvb=${state.xvb_calc} energy=${state.energy} />
             <${NodeStats} state=${state} />
-            <${ExpectedVsActualCard} summary=${state.earnings_summary} />
+            <${ExpectedVsActualCard} summary=${state.earnings_summary} onView=${onView} />
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
             <${CadenceCard} cadence=${state.cadence} />
         </div>
-        <div class="grid-section-label">The Wider Pool</div>
+        <div class="grid-section-label card-advanced">The Wider Pool</div>
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
@@ -144,7 +144,8 @@ export function App({
   onInspect,
   onCloseInspect,
 }) {
-  // The theme toggle is fixed-position and always available, even before the first data load.
+  // Before the first data load there is no header to hold it (#1860), so the loading screen keeps
+  // its own copy; once state exists it lives inside Header, next to the version badges.
   const switcher = html`<${ThemeSwitcher} theme=${ui.theme} onTheme=${onTheme} />`;
   // Worker Inspect overlay (#185): opened from a worker name in the table; the panel does its own
   // fetch/apply/poll. `key` remounts it when a different worker is picked. Only reachable when the
@@ -164,7 +165,7 @@ export function App({
         <//>`;
   }
   return html`<${Fragment}>
-        <${Header} state=${state} />
+        <${Header} state=${state} theme=${ui.theme} onTheme=${onTheme} />
         <${OsVerdictBanner} os=${state.os_update} />
         ${!connected ? html`<div class="disconnected-banner">Disconnected — showing data from ${state.last_update}. Retrying…</div>` : null}
         ${
@@ -180,6 +181,5 @@ export function App({
               <//>`
         }
         ${inspect}
-        ${switcher}
     <//>`;
 }

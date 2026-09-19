@@ -22,11 +22,17 @@
 # legs are the ones that can still disagree — what the commit returned, and whether the audit row
 # is the one for THIS request. The audit leg is spelled out here rather than delegated, because
 # the verdict it used to call (approval_audit_verdict) went with the Telegram leg.
-approval_bind_payload() { # <result-json> <audit-jsonl> <request-id>
-    local result="$1" audit="$2" rid="$3" apply audit_v
+approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
+    local result="$1" audit="$2" rid="$3" landed="${4:-}" apply audit_v
     apply=$(printf '%s' "${result:-null}" | jq -r '"\(.status // "none")/\(.error // "no error")"' 2>/dev/null) ||
         apply="unparseable: ${result:0:120}"
-    [ -n "$result" ] || apply="no result — the commit never returned"
+    if [ -z "$result" ]; then
+        if [ "$landed" = landed ]; then
+            apply="requested hostname change landed, but no result file was written — runner completion is unknown"
+        else
+            apply="no result — the commit never returned"
+        fi
+    fi
     # stderr suppressed: on a malformed audit jq writes a parse error, and the row's own `if`
     # already ran this check once — a second copy would land mid-payload, where it reads like a
     # harness crash rather than part of the evidence.
@@ -139,7 +145,7 @@ _control_request_transport_self_test() (
 # fires when the server ANSWERED a refusal would turn every rejection into a full deadline of
 # polling, which is the opposite failure and just as expensive on a 2.5-hour battery.
 _control_request_lost_response_self_test() (
-    local body ip=fixture result polls
+    local body ip=fixture result polls empty_post=0
     body='{"id":"rid-7","confirm":"APPLY"}'
     # A file, not a variable: every poll happens inside a command substitution, so a counter
     # incremented in the shim would be discarded with that subshell and read 0 however many times
@@ -155,10 +161,18 @@ _control_request_lost_response_self_test() (
             ;;
         *)
             cat >/dev/null
-            return 0
+            [ "$empty_post" -eq 1 ] && return 0
+            return 52
             ;;
         esac
     }
+    result=$(dashboard_control_request commit "$body" 30) || return 1
+    case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
+    [ -s "$polls" ] || return 1
+    # A successful empty POST has the same recoverable shape as the transport loss above.
+    sleep() { :; }
+    empty_post=1
+    : >"$polls"
     result=$(dashboard_control_request commit "$body" 30) || return 1
     case "$result" in *'"status":"applied"'*) ;; *) return 1 ;; esac
     [ -s "$polls" ] || return 1
@@ -353,6 +367,9 @@ _approval_bind_payload_self_test() {
     # `unbound` CONTAINS `bound`, so the absence check has to carry the field prefix or it matches
     # the very failure it is meant to exclude.
     case "$out" in *'audit=bound'*) f=$((f + 1)) ;; esac
+    # A lost result file is not a failed commit when the caller has already observed its identity.
+    out=$(approval_bind_payload '' "$audit" "$rid" landed)
+    case "$out" in *'requested hostname change landed, but no result file was written — runner completion is unknown'*'audit=bound'*) ;; *) f=$((f + 1)) ;; esac
     out=$(approval_bind_payload '{"status":' "$audit" "$rid")
     case "$out" in *'apply=unparseable: {"status":'*) ;; *) f=$((f + 1)) ;; esac
     # A malformed audit must produce a payload and NOTHING on stderr.

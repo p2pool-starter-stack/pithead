@@ -685,7 +685,7 @@ capture_artifacts() {
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true
     # config.json is masked BY PATH first (#1630) — redact() is line-wise and cannot see nesting.
     rx '. ./pithead >/dev/null 2>&1; d=$(mktemp -d); render_masked_config "$d"; cat "$d/masked/config.json" 2>/dev/null; rm -rf "$d"' 2>&1 | redact >"${dir}/config.json" || true
-    rx "cat .env" 2>&1 | redact >"${dir}/env.redacted.txt" || true
+    rx '. ./pithead >/dev/null 2>&1; bundle_redact_env <.env' >"${dir}/env.redacted.txt" 2>&1 || true
     api_state | redact >"${dir}/api-state.json" || true
     rx "docker compose logs --tail=200 --no-color" 2>&1 | redact >"${dir}/logs.txt" || true
 }

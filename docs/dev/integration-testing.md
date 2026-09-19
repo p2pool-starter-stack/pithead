@@ -611,9 +611,15 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   reading cannot be written back, the restore target is the dashboard's record of what *it* last
   pushed (`GET /api/worker`'s `.last_applied.pools`), which is un-stripped, and the probe is
   operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
-  guessed value risks a real `rejected` instead of proving the round trip). Self-skips if the
-  dashboard has never applied a `pools` value to this rig before (nothing to safely restore).
-  An absent probe or restorable original is a `[missing]` row, never a pass or an unexplained gate
+  guessed value risks a real `rejected` instead of proving the round trip). If the dashboard has
+  never applied a `pools` value to this rig before, there is nothing on record to restore — so the
+  leg seeds the record with the probe itself
+  ([#2325](https://github.com/p2pool-starter-stack/pithead/issues/2325)): the probe is by contract
+  a value already known safe to apply and carrying a `pass`, so it doubles as "the original" too,
+  and it leaves `.last_applied.pools` seeded for every run after this one. Either way, the value the
+  leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
+  ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
@@ -790,11 +796,13 @@ On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
 `api-state.json`, and `logs.txt` (last 200 lines per service). The end-of-run summary lists
 each failed assertion and points at these.
 
-`config.json` is the one artifact that is not streamed straight through the redactor. A config is a
-document with an enumerable shape, and the stack already classifies it by PATH:
-`render_masked_config` walks `CONTROL_SECRET_PATHS` plus the two variable-length array cases a
-fixed-path walk cannot reach (`workers.list[].token` and `notifications.webhooks[]`, where the
-whole URL is the bearer secret). The capture SOURCES the
+`config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
+the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on
+its own terms rather than by a suffix or substring guess over field names.
+
+`config.json` is classified by PATH: `render_masked_config` walks `CONTROL_SECRET_PATHS` plus the
+two variable-length array cases a fixed-path walk cannot reach (`workers.list[].token` and
+`notifications.webhooks[]`, where the whole URL is the bearer secret). The capture SOURCES the
 box's own `./pithead` and calls that function rather than restating the list or the jq program
 here: sourcing is the shipped contract, since the prelude sets `_STACK_SOURCED` and skips the `cd`,
 the traps and `main`. One classification, one place to change it. The masked document then passes
@@ -805,6 +813,19 @@ renders from the LIVE config at capture time rather than copying the box's pre-r
 as degrading to a stale copy on a render hiccup: an artifact presenting stale state as the state
 under test is the failure this harness exists to catch. If the program cannot be sourced the
 capture writes no config rather than falling back to the raw file, and says so in the artifact.
+
+`env.redacted.txt` is classified by an explicit ALLOWLIST of survivor key NAMES
+([#1631](https://github.com/p2pool-starter-stack/pithead/issues/1631), ruled on #1630): a key
+absent from `PITHEAD_ENV_SURVIVOR_KEYS` (`lib/pithead/07-support-bundle.sh`) is redacted, never
+printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. A
+suffix/substring denylist over the same population had failed four times, each time in the unsafe
+direction, and the harness's own vocabulary disagreed with `support-bundle`'s on 17 of 127 keys —
+`NTFY_URL` among them, a capability URL the bundle left in the clear. The capture sources
+`./pithead` and calls the shipped `bundle_redact_env`, the same function `support-bundle` runs on
+the box, so the two consumers cannot drift back apart: there is one classification, not two lists
+kept in step by hand. `redact()`'s generic stream rules do not run over `.env` at all any more —
+this document gets the allowlist instead, on its own terms, the same way `config.json` gets the
+path walk instead.
 
 ### Reading the verdict — what did not run
 
@@ -910,11 +931,21 @@ inside the screen, so the drift #1611 found cannot reopen quietly. `selftest-red
 including the sentinel cases: a `\x01` in the input must not reconstitute a quad, must not become a
 dot, and must not disturb the protect/restore round trip that keeps the reserved ranges readable.
 `selftest-redact-env.sh` carries
-the `KEY=value` shape separately, including the three Tari address forms as `.env` renders them and
-the survivors that make a bundle worth keeping — a public endpoint, an auth mode string, a routing
-id. Its widening was measured before it shipped: across two archived bundles and the deployed
-`.env` it newly reaches ten keys, the same ten in all three populations, and changes nothing at all
-in the other six captured artifacts.
+the `KEY=value` shape separately for `redact()`'s own generic stream rules — the ones that still
+run over `status.txt`, `doctor.txt`, `compose-ps.txt`, `api-state.json` and `logs.txt` — including
+the three Tari address forms as `.env` renders them and the survivors that make a bundle worth
+keeping. It no longer governs the `.env` capture itself: that document now runs the allowlist
+described above. `selftest-bundle-redact-env.sh` covers that allowlist directly, against the
+shipped `bundle_redact_env`: it re-derives the full 127-key rendered population from `render_env`,
+same as `selftest-redact-vocab.sh` does for the credential-shaped screen below, and fails BY NAME
+on any key its own hand classification and `selftest-redact-vocab.sh`'s do not both account for.
+It pins the four keys the pre-inversion audit found leaking in the bundle by name — `NTFY_URL`,
+`NOTIFY_WEBHOOK_URLS`, `MONERO_NODE_USERNAME` and `XVB_DONOR_ID` — as their own regression rows.
+`selftest-capture-env.sh` is the route test, proving `capture_artifacts` actually calls
+`bundle_redact_env` rather than a paraphrase of it: it runs the real `capture_artifacts` against a
+fake box in `IT_MODE=local`, with an attribution row showing `redact()` alone would have left
+`TELEGRAM_CHAT_ID` and `HOST_IP` in the clear (neither carries a suffix its stream vocabulary
+reaches), then asserts the actual captured artifact redacts both.
 `selftest-redact-vocab.sh` asks the question one level out: not whether a given shape is covered,
 but whether the vocabulary reaches every key that needs it. A suffix list is a denylist over a key
 set that keeps growing, so it fails quietly and in the unsafe direction. The population is read out

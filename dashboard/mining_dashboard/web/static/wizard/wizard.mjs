@@ -45,6 +45,7 @@ export class WizardApp extends Component {
     restorePassphraseVisible: false,
     status: "",
     handoff: null,
+    savedDashboard: "",
     moneroWalletTouched: false,
   };
 
@@ -310,8 +311,13 @@ export class WizardApp extends Component {
   };
 
   ack = async () => {
+    // The server drops the handoff once acknowledged, so the "provisioning" screen that follows
+    // has no handoff of its own to read the applied address from (#2350) — keep the one field it
+    // still needs before loadState() clears it.
+    const savedDashboard = this.state.handoff && this.state.handoff.dashboard;
     await fetch("/handoff-ack", { method: "POST" });
-    await this.loadState(); // the server drops out of the handoff stage; the view follows
+    await this.loadState();
+    if (savedDashboard) this.setState({ savedDashboard });
   };
 
   // The rig role's whole form: where the pool is, what to call the machine, an optional
@@ -340,17 +346,16 @@ export class WizardApp extends Component {
     else if (stage === "installing") view = html`<${Installing} status=${status} />`;
     else if (stage === "done")
       view = html`<${Done} status=${status} handoff=${this.state.handoff}
+        savedDashboard=${this.state.savedDashboard}
         installer=${this.state.installer} stick=${this.state.chosen === "usb"}
         rig=${this.state.role === "rig"} onAck=${this.ack} />`;
     else view = savedRoleOrSetup(this);
-    return html`<h1>Pithead setup</h1>${view}`;
+    return view;
   }
 }
 
 // Mount only in a browser (node --test imports this module; a bare `document` would break that).
-// Clear #app: the shell ships the heading and "Loading…" inside it, and preact APPENDS (#1868).
 if (typeof document !== "undefined") {
-  document.getElementById("app").replaceChildren();
   render(html`<${WizardApp} />`, document.getElementById("app"));
 }
 
