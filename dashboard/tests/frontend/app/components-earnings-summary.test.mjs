@@ -61,18 +61,38 @@ test('ExpectedVsActualCard drops the percent when the server withholds it, toolt
     assert.doesNotMatch(withPct, /No percentage shown/);
 });
 
-test('ExpectedVsActualCard shows the config key when confirmation is off, never a zero (#808)', () => {
+test('ExpectedVsActualCard points at Configuration, not a config key, when Monero confirmation is off (#1861)', () => {
     const s = clone();
     s.earnings_summary.xmr = { available: true, expected_30d: 0.0123, includes_xvb: false,
         enabled: false, actual_30d: null, partial: false, pct: null };
-    s.earnings_summary.tari = { available: true, expected_blocks_30d: 0.0052, enabled: false,
-        blocks_30d: null, xtm_30d: null, partial: false };
     const out = renderApp({ state: s });
-    assert.match(out, /set monero\.view_key/);
-    assert.match(out, /set tari\.view_key/);
+    assert.doesNotMatch(out, /monero\.view_key/); // never the raw config key
+    assert.match(out, /Not tracked\. Add a view key in/);
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Monero\./);
     assert.doesNotMatch(out, /0\.000000 XMR \(/); // no zero-actual masquerading as a figure
+    // The hint cell wraps at spaces only — #1861 found overflow-wrap:anywhere breaking it mid-word.
+    assert.match(cardSlice(out, 'card-expected-vs-actual'), /class="text-muted eva-hint"/);
+});
+
+test('ExpectedVsActualCard points at Configuration for a LOCAL Tari node when confirmation is off (#1861)', () => {
+    const s = clone();
+    s.earnings_summary.tari = { available: true, expected_blocks_30d: 0.0052, enabled: false,
+        blocks_30d: null, xtm_30d: null, partial: false, is_local: true };
+    const out = renderApp({ state: s });
+    assert.doesNotMatch(out, /tari\.view_key/); // never the raw config key
+    assert.match(out, /class="btn-link"[^>]*>Configuration<\/button> → Tari\./);
     // Tari expectation keeps two significant digits — a fraction of a block must never read 0.0.
     assert.match(out, /≈ 0\.0052 blocks/);
+});
+
+test('ExpectedVsActualCard drops the view-key hint under a REMOTE Tari node — the validator rejects it (#1861, #1849)', () => {
+    const s = clone();
+    s.earnings_summary.tari = { available: true, expected_blocks_30d: 0.0052, enabled: false,
+        blocks_30d: null, xtm_30d: null, partial: false, is_local: false };
+    const out = renderApp({ state: s });
+    assert.doesNotMatch(out, /tari\.view_key/);
+    assert.doesNotMatch(out, /→ Tari\./); // no suggestion of a key remote rejects
+    assert.match(out, /Not available with a remote Tari node\./);
 });
 
 test('ExpectedVsActualCard counts Tari blocks and windows XvB wins (#808)', () => {

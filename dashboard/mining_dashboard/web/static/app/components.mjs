@@ -112,7 +112,7 @@ function DashboardView({
             <${XvBStats} state=${state} />
             <${EarningsCard} earnings=${state.earnings} xvb=${state.xvb_calc} energy=${state.energy} />
             <${NodeStats} state=${state} />
-            <${ExpectedVsActualCard} summary=${state.earnings_summary} />
+            <${ExpectedVsActualCard} summary=${state.earnings_summary} onView=${onView} />
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
             <${CadenceCard} cadence=${state.cadence} />
         </div>

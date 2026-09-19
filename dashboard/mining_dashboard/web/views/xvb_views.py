@@ -591,9 +591,7 @@ def build_earnings_vs_actual(
     percent, a count that small is luck either way. **XvB** keeps only its win count and last-win
     recency — its XMR value lives in the combined row by construction.
 
-    Raw numbers out; the client formats. ``actual``/``blocks``/``xtm`` are None while the matching
-    payout-confirmation feature is off — the card then hints at the view key instead of showing a
-    zero that would read as "earned nothing"."""
+    Raw numbers out; the client formats. ``actual``/``blocks``/``xtm`` are None while the matching payout-confirmation feature is off — the card then hints at a view key instead of a zero that would read as "earned nothing" (never for Tari under a remote node — ``is_local`` says so)."""
     now = now if now is not None else time.time()
     conf = earnings["confirmed"]
     tari_conf = earnings["tari_confirmed"]
@@ -649,6 +647,7 @@ def build_earnings_vs_actual(
         "blocks_30d": tari_conf.get("n_30d") if tari_conf.get("enabled") else None,
         "xtm_30d": tari_conf.get("xtm_30d") if tari_conf.get("enabled") else None,
         "partial": bool((tari_conf.get("partial") or {}).get("30d")),
+        "is_local": bool(metrics.tari_local),  # gates the view-key hint remote mode rejects (#1861)
     }
     stamps = [w.get("ts", 0) or 0 for w in (raffle_wins or [])]
     xvb = {
