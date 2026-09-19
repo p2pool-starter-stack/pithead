@@ -73,7 +73,10 @@ for evidence in 'could not hash the blank internal target disk' 'could not list 
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
 expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset'
-actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phase_[a-z]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
+# #2356: every phase call in the `all` arm now runs through _run_phase (the wrapper that counts a
+# phase which recorded nothing as a missing skip instead of a silent pass), so the phase function
+# is the SECOND word on the line, not the whole line.
+actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_phase [a-z]* \(phase_[a-z]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_all" = "$expected_all" ] || exit 1
 (
     actions="" bads=0 destroy_ok=1 list_ok=1 vm_destroy_ok=1 hash_ok=1 ssh_ok=1 copy_ok=1
