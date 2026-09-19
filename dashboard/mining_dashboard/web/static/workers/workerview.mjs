@@ -15,7 +15,7 @@
 import { WorkerChartCard } from "../app/chart.mjs";
 import { loadPref, savePref } from "../app/logic.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
-import { ConfigProvenance, HistoryRow, STATUS_META } from "../config/confighistory.mjs";
+import { ConfigProvenance, HistoryRow } from "../config/confighistory.mjs";
 import { SECRET_HINT } from "../config/configlogic.mjs";
 import { AdoptRigForm } from "./workeradopt.mjs";
 import {
@@ -27,45 +27,12 @@ import {
   jsonSyntaxError,
   parseJsonChanges,
 } from "./workerlogic.mjs";
+import { CONTROL_HEADERS, pollWorkerResult, RigUpgrade, StatusLine } from "./workerupgrade.mjs";
 
-const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
-const POLL_MS = 2000;
-const POLL_MAX = 40; // ~80s — the host dials the rig then polls its /status
-// ~5 min — covers spool latency + the host runner's own 90s rig-poll cap (#597). A rebuild that
-// outlives the cap lands as "accepted"; the badge clears on its own once the rig reports it.
-const UPGRADE_POLL_MAX = 150;
-
-// Poll the shared control-result endpoint until a terminal outcome lands, tolerating a transient fetch failure.
-async function pollWorkerResult(id, max = POLL_MAX) {
-  for (let i = 0; i < max; i++) {
-    await new Promise((r) => setTimeout(r, POLL_MS));
-    let res;
-    try {
-      res = await fetch(`/api/control/result?id=${encodeURIComponent(id)}`);
-    } catch {
-      continue;
-    }
-    if (res.status === 202) continue;
-    if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
-    const out = await res.json();
-    if (out.status && out.status !== "running") return out;
-  }
-  return { status: "pending", note: "still applying — reopen to see the outcome" };
-}
-
-function StatusLine({ result }) {
-  if (!result) return null;
-  const meta = STATUS_META[result.status] || { cls: "text-muted", label: result.status };
-  const detail = result.reason || result.error || result.note || "";
-  return html`
-    <p class=${"text-small mt-1 " + meta.cls}>
-        ${meta.label}${result.change_id ? html` · <span class="font-mono text-xs">${result.change_id}</span>` : null}
-        ${detail ? html`<span class="text-muted"> — ${detail}</span>` : null}
-    </p>`;
-}
-
-// One row of the hashrate-by-config table (#492): a config version + the measured hashrate aggregated over
-// that version's active window. avg/min/max are `null` — rendered as "—" — for a version with no samples yet.
+// One row of the hashrate-by-config table (#492): a config version + the measured hashrate
+// (worker_history) aggregated over that version's active window, so an operator can compare
+// versions empirically ("config #3 did X, config #4 did Y"). avg/min/max are `null` — rendered
+// as "—" — for a version with no samples yet (e.g. the one just applied).
 function HashrateByConfigRow({ row }) {
   return html`
     <tr>
@@ -78,8 +45,9 @@ function HashrateByConfigRow({ row }) {
     </tr>`;
 }
 
-// One table-editor row. `value` falls back to the field's prefilled value until edited. A secret row is a
-// masked password input (#508) — never the raw sentinel JSON — so it can only be left alone or replaced.
+// One table-editor row. `value` falls back to the field's prefilled value until the operator
+// edits it (edits is keyed like ConfigView's own `edits` state). A secret row is a masked
+// password input (#508) — never the raw sentinel JSON — so it can only be left alone or replaced.
 function fieldValue(field, edits) {
   if (field.key in edits) return edits[field.key];
   return field.type === "boolean" ? String(field.value) : field.value;
@@ -109,7 +77,8 @@ function WorkerField({ field, edits, onEdit, busy }) {
 export class WorkerInspect extends Component {
   constructor(props) {
     super(props);
-    // phase: loading | ready | error ; busy = an apply is in flight; mode picks which editor drives apply().
+    // phase: loading | ready | error ; busy = an apply is in flight. mode picks which editor
+    // drives apply(); tableEdits/editText/jsonError are that editor's own state.
     this.state = {
       phase: "loading",
       detail: null,
@@ -120,12 +89,9 @@ export class WorkerInspect extends Component {
       jsonError: null,
       busy: false,
       result: null,
-      // One-click rig upgrade (#597): arm → confirm, its own in-flight flag and result, independent of the editor's.
-      upgArmed: false,
-      upgBusy: false,
-      upgResult: null,
-      // Per-worker hashrate chart (#1013): a range switch refetches ONLY the chart data (loadChart),
-      // never the full load(), so it can't wipe an in-progress config edit.
+      // Per-worker hashrate chart (#1013): its own range preference (persisted, like the editor
+      // mode above) and its own loading flag — a range switch refetches ONLY the chart data
+      // (loadChart), never the full load(), so it can't wipe an in-progress config edit.
       chartRange: loadPref("dashboardWorkerChartRange", ["24h", "1w", "all"], "24h"),
       chartLoading: false,
     };
@@ -168,8 +134,9 @@ export class WorkerInspect extends Component {
     }
   }
 
-  // Hashrate chart range change (#1013): replace ONLY detail.hashrate_history — unlike load(), this must
-  // never reset tableEdits/editText/phase, or a range click mid-edit would silently drop the changes.
+  // Hashrate chart range change (#1013): re-fetch /api/worker at the new range and replace ONLY
+  // detail.hashrate_history — unlike load(), this must never reset tableEdits/editText/phase, or
+  // clicking a range button mid-edit would silently drop the operator's in-progress changes.
   async loadChart(range) {
     this.setState({ chartLoading: true });
     try {
@@ -197,7 +164,8 @@ export class WorkerInspect extends Component {
     this.setState({ editText: text, jsonError: jsonSyntaxError(text) });
   }
 
-  // Fill the JSON textarea from a local file (#518) — a FileReader read, never an upload.
+  // Fill the JSON textarea from a local file (#518) — a FileReader read, never an upload; the
+  // operator still reviews and clicks Apply like any other JSON-mode edit.
   onFilePick(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -247,26 +215,6 @@ export class WorkerInspect extends Component {
     }
   }
 
-  // One-click rig upgrade (#597). POSTs {worker, version} — the HOST re-derives and bounds the target.
-  // 202 means spooled: poll with the long budget (the rig may rebuild its miner, ~10 min).
-  async upgrade() {
-    const version = this.state.detail.rigforge_update.latest;
-    this.setState({ upgArmed: false, upgBusy: true, upgResult: { status: "running" } });
-    try {
-      const res = await fetch("/api/control/worker-upgrade", {
-        method: "POST",
-        headers: CONTROL_HEADERS,
-        body: JSON.stringify({ worker: this.props.name, version }),
-      });
-      let out = await res.json();
-      if (res.status === 202 && out.id) out = await pollWorkerResult(out.id, UPGRADE_POLL_MAX);
-      this.setState({ upgBusy: false, upgResult: out });
-      this.load(); // an applied upgrade clears the badge once the rig reports the new version
-    } catch (e) {
-      this.setState({ upgBusy: false, upgResult: { status: "error", error: String(e) } });
-    }
-  }
-
   render() {
     const { phase, detail, error } = this.state;
     const { name, onClose } = this.props;
@@ -286,19 +234,8 @@ export class WorkerInspect extends Component {
   }
 
   renderBody(detail) {
-    const {
-      mode,
-      tableEdits,
-      editText,
-      jsonError,
-      busy,
-      result,
-      upgArmed,
-      upgBusy,
-      upgResult,
-      chartRange,
-      chartLoading,
-    } = this.state;
+    const { mode, tableEdits, editText, jsonError, busy, result, chartRange, chartLoading } =
+      this.state;
     const canEdit = detail.control_enabled && detail.editable;
     return html`
         <div class="worker-inspect-body">
@@ -307,34 +244,8 @@ export class WorkerInspect extends Component {
                 <${InfoCard} label="Hashrate (1m)" value=${detail.hashrate || "—"} />
                 <${InfoCard} label="RigForge" value=${detail.rigforge ? detail.rigforge.version || "yes" : "—"} />
             </div>
-            ${
-              // This rig runs an older RigForge (#596) — the badge links to the release notes; with control on
-              // and an operator-set host, the one-click upgrade button (#597) appears beside it: arm → confirm → POST → poll.
-              detail.rigforge_update &&
-              detail.rigforge_update.available &&
-              detail.rigforge_update.url
-                ? html`<p class="mt-1"><a class="badge badge-accent" href=${detail.rigforge_update.url}
-                        target="_blank" rel="noopener noreferrer"
-                        title=${"A newer RigForge release is available: " + detail.rigforge_update.latest}
-                     >New RigForge release ${detail.rigforge_update.latest} available ↗</a>${
-                       canEdit && !upgBusy
-                         ? upgArmed
-                           ? html` <button class="btn-toggle" disabled=${busy}
-                                 title=${"Ask the rig to upgrade itself to " + detail.rigforge_update.latest + " now"}
-                                 onClick=${() => this.upgrade()}>Confirm upgrade</button>
-                               <button class="btn-toggle" onClick=${() => this.setState({ upgArmed: false })}>Cancel</button>`
-                           : html` <button class="btn-toggle" disabled=${busy}
-                                 title="Upgrade this rig's RigForge to the latest release (its miner may rebuild, ~10 min)"
-                                 onClick=${() => this.setState({ upgArmed: true, upgResult: null })}>Upgrade rig…</button>`
-                         : null
-}${
-                       upgBusy
-                         ? html` <span class="text-muted text-small">upgrading — a rebuild can take minutes…</span>`
-                         : null
-}</p>`
-                : null
-            }
-            <${StatusLine} result=${upgResult} />
+            <${RigUpgrade} name=${this.props.name} update=${detail.rigforge_update}
+                canEdit=${canEdit} busy=${busy} onDone=${() => this.load()} />
             ${detail.rigforge ? html`<${StatsTable} stats=${detail.rigforge.stats} />` : null}
 
             <h4 class="mt-2">Hashrate${chartLoading ? html` <span class="text-muted text-small">refreshing…</span>` : null}</h4>
@@ -378,7 +289,7 @@ export class WorkerInspect extends Component {
             <div class="mt-1">
                 <button class="btn-toggle" disabled=${busy} onClick=${() => this.apply()}>${busy ? "Applying…" : "Apply to rig"}</button>
             </div>
-            ${this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
+            ${!busy && this.isDirty() ? html`<p class="text-muted text-xs">Unsaved — Apply before closing, or the change is lost.</p>` : null}
             <${StatusLine} result=${result} />`
                 : detail.control_enabled
                   ? html`<${AdoptRigForm} name=${this.props.name} ip=${detail.ip} onAdopted=${() => this.load()} />`
@@ -418,9 +329,12 @@ export class WorkerInspect extends Component {
 const InfoCard = ({ label, value }) => html`
     <div class="stat-card"><h5>${label}</h5><p>${value}</p></div>`;
 
-// The single-rig detail view of the Workers-Alive badge row, as a label → value table (#507). `stats` is
-// the {label, value, variant, title} split of those chips; every value gets the base `.stat-value` colour
-// (#1232), and a warn/bad variant (bad governor, throttling, thermal hold) colours it further.
+// The compact Workers-Alive list renders the enriched feed as a horizontal badge row; here in the
+// single-rig detail view the same server-built metrics read better as a label → value table (#507).
+// `stats` is the {label, value, variant, title} split of the very chips the list uses. A warn/bad
+// variant (bad governor, throttling, thermal hold) also colours its value; every value — including
+// the plain `outline` metrics with no entry below — gets the base `.stat-value` colour/weight
+// (#1232: an uncoloured value used to fall back to the dialog's ambient text and read as disabled).
 const STAT_VALUE_CLS = { ok: "status-ok", warn: "status-warn", bad: "status-bad" };
 export const StatsTable = ({ stats }) =>
   stats && stats.length

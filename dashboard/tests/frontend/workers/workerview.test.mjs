@@ -361,6 +361,13 @@ test("an unsaved edit shows a line under Apply instead of a confirm() prompt", (
   assert.match(out, /Unsaved/);
 });
 
+test("the unsaved-edit line stays out of the way while an apply is in flight", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  inst.state.busy = true; // an apply already carrying those edits to the rig
+  assert.doesNotMatch(renderToString(inst.render()), /Unsaved/);
+});
+
 test("no unsaved-edit line when the panel is clean", () => {
   const out = renderToString(readyInstance().render());
   assert.doesNotMatch(out, /Unsaved/);
