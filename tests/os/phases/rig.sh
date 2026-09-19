@@ -29,6 +29,35 @@ phase_rig() {
         bad "image build failed (/tmp/os-fault-build.log)"
         return
     }
+
+    # #1843: a disk-install rig lands its staged pithead-rig.json straight off the ESP — no
+    # wizard round trip. Stage a TOKENLESS one directly there, exactly as pre-#1836 media would,
+    # and boot: the guard must refuse it and fall to the setup page, never mint one unseen. This
+    # spends a throwaway copy of the image; the rig boot below uses the untouched original.
+    local land_disk="/srv/code/bench-vm/pithead-rig-token-landing.img" land_loop land_mnt land_tries=0
+    cp "$img" "$land_disk"
+    land_loop=$(losetup -Pf --show "$land_disk")
+    while [ ! -e "${land_loop}p1" ] && [ "$land_tries" -lt 50 ]; do
+        sleep 0.1
+        land_tries=$((land_tries + 1))
+    done
+    land_mnt=$(mktemp -d)
+    mount "${land_loop}p1" "$land_mnt"
+    printf '{"pool":"127.0.0.1:22","worker":"kvm-rig"}' >"$land_mnt/pithead-rig.json"
+    umount "$land_mnt"
+    rmdir "$land_mnt"
+    losetup -d "$land_loop"
+    if _vm_boot_disk "$land_disk" && _wait_ssh 240; then
+        [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" = "rig" ] &&
+            bad "a tokenless staged rig file landed anyway — the #1843 guard did not fire" ||
+            ok "#1843: a tokenless staged rig file is refused, never landed as a rig"
+        _wait_setup_page 120 &&
+            ok "#1843: the machine falls to the setup page instead of mining unadoptably" ||
+            bad "#1843: the setup page never came up after the refusal"
+    else
+        bad "the tokenless-landing guest never answered SSH (ip: ${ip:-none})"
+    fi
+
     _vm_boot_disk "$img" && _wait_ssh 240 || {
         bad "guest never answered SSH (ip: ${ip:-none})"
         return
