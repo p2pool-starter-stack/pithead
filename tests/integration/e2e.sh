@@ -620,7 +620,7 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}$([ "${HARNESS_SSH_FAULT:-0}" = "1" ] && printf ' --fault-ssh-dest %s' "$(quote_arg "$BENCH_HOST")")" # bench-ci's phases (#2179), #2000's SSH dest
+    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}$([ "${HARNESS_SSH_FAULT:-0}" = "1" ] && printf ' --fault-injection-ssh %s' "$(quote_arg "$BENCH_HOST")")" # bench-ci's phases (#2179), #2000's SSH dest
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
     printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     local rollback_b64 pools_b64

@@ -77,12 +77,12 @@ assert_eq "it lands strictly AFTER the mode's own flags, not before" \
 assert_eq "a --scenario NAME pair supplied by validate_harness_args reaches run.sh verbatim" \
     "$(has_phase "$(phase_list_of "$(launch_of " --scenario custom-name")")" custom-name)" "yes"
 
-echo "== #2000: HARNESS_SSH_FAULT appends --fault-ssh-dest with our own BENCH_HOST, and only then =="
+echo "== #2000: HARNESS_SSH_FAULT appends --fault-injection-ssh with our own BENCH_HOST, and only then =="
 OFF="$(phase_list_of "$(launch_of " --fault-injection" 0)")"
 ON="$(phase_list_of "$(launch_of " --fault-injection" 1)")"
-assert_eq "HARNESS_SSH_FAULT unset: no --fault-ssh-dest reaches run.sh" "$(has_phase "$OFF" --fault-ssh-dest)" "no"
-assert_eq "HARNESS_SSH_FAULT=1: --fault-ssh-dest reaches run.sh" "$(has_phase "$ON" --fault-ssh-dest)" "yes"
-assert_contains "the destination is our own BENCH_HOST (loopback), not a second box" "$ON" "--fault-ssh-dest bench"
+assert_eq "HARNESS_SSH_FAULT unset: no --fault-injection-ssh reaches run.sh" "$(has_phase "$OFF" --fault-injection-ssh)" "no"
+assert_eq "HARNESS_SSH_FAULT=1: --fault-injection-ssh reaches run.sh" "$(has_phase "$ON" --fault-injection-ssh)" "yes"
+assert_contains "the destination is our own BENCH_HOST (loopback), not a second box" "$ON" "--fault-injection-ssh bench"
 
 echo ""
 echo "selftest-e2e-harness-args: $IT_PASS passed, $IT_FAIL failed"

@@ -17,12 +17,10 @@ validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS, HARNE
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
             i=$((i + 1))
             ;;
-        # #2000: drive the fault-injection phase itself over SSH (rx()'s ssh branch, lib.sh) instead
-        # of the detached runner's usual --local, proving the remote quoting the phase relies on.
-        # Translated to the plain --fault-injection run.sh flag; HARNESS_SSH_FAULT is what switches
-        # the detached runner's transport, not run.sh's own flag surface.
+        # #2000: bench-ci sends this phase as a bare token, but run.sh's --fault-injection-ssh
+        # takes the SSH destination as its value — only e2e.sh knows the bench's own alias, so it
+        # appends the pair and this records that it must.
         --fault-injection-ssh)
-            HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS --fault-injection"
             # shellcheck disable=SC2034 # read by e2e.sh's run_harness, not in this file
             HARNESS_SSH_FAULT=1
             i=$((i + 1))

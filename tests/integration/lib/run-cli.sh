@@ -58,9 +58,11 @@ MATRIX:
                          real clock-drift verdict, and tmpfs-fills the dashboard data dir for
                          a real ENOSPC verdict (#383). DESTRUCTIVE-then-restored; works over
                          SSH and locally. Slow (healthcheck + node-health debounce).
-  --fault-ssh-dest <h>   with --fault-injection: run just that phase's rx() calls (lib.sh) against
-                         <user@host> over SSH instead of the run's own --local/--host mode (#2000).
-                         Proves the SSH quoting branch without moving the rest of the run.
+  --fault-injection-ssh <h>
+                         run the fault-injection phase with its own rx() calls (lib.sh) going to
+                         <user@host> over SSH instead of this run's --local/--host mode. Implies
+                         --fault-injection. Proves the SSH quoting branch the phase relies on
+                         without moving the rest of the run off --local (#2000).
   --image-upgrade <old-sha> <new-sha>
                          run `pithead upgrade` from a private candidate release bundle against
                          the already-running old images and prove image revision, chain-data and
@@ -219,7 +221,12 @@ parse_args() {
             RUN_FAULTS=1
             shift
             ;;
-        --fault-ssh-dest)
+        --fault-injection-ssh)
+            [ "$#" -ge 2 ] || {
+                it_err "--fault-injection-ssh requires an SSH destination <user@host>."
+                exit 2
+            }
+            RUN_FAULTS=1
             FAULT_SSH_DEST="$2"
             shift 2
             ;;
@@ -314,10 +321,12 @@ parse_args() {
         it_err "Provide --host <user@host> or --local. See --help."
         exit 2
     fi
-    if [ -n "$FAULT_SSH_DEST" ] && [ "$RUN_FAULTS" != "1" ]; then
-        it_err "--fault-ssh-dest requires --fault-injection."
+    case "$FAULT_SSH_DEST" in
+    -*)
+        it_err "--fault-injection-ssh needs an SSH destination, got the flag '$FAULT_SSH_DEST'."
         exit 2
-    fi
+        ;;
+    esac
     [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || {
         it_err "--rig-name contains unsupported characters: $RIG_NAME"
         exit 2
