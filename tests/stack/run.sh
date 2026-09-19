@@ -230,9 +230,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-caddyfile-optiona
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rotate-secrets-lock.sh" && domain_ran test-appliance-rotate-secrets-lock.sh "$_d0" "$?" || domain_ran test-appliance-rotate-secrets-lock.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-firstboot-install-lock.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-firstboot-install-lock.sh" && domain_ran test-appliance-firstboot-install-lock.sh "$_d0" "$?" || domain_ran test-appliance-firstboot-install-lock.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-readonly-verbs-lock.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-readonly-verbs-lock.sh" && domain_ran test-readonly-verbs-lock.sh "$_d0" "$?" || domain_ran test-readonly-verbs-lock.sh "$_d0" "$?"
+_d0=$((PASS + FAIL)) && source "$HERE/test-cli-verb-ledger-lock.sh" && domain_ran test-cli-verb-ledger-lock.sh "$_d0" "$?" || domain_ran test-cli-verb-ledger-lock.sh "$_d0" "$?"
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity-boot.sh" && domain_ran test-appliance-identity-boot.sh "$_d0" "$?" || domain_ran test-appliance-identity-boot.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-boot-verdicts.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-boot-verdicts.sh" && domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?" || domain_ran test-appliance-boot-verdicts.sh "$_d0" "$?"
