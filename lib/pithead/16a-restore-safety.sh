@@ -237,7 +237,14 @@ restore_commit_stage() {
     fi
     for path in "${RESTORE_FIXED_PATHS[@]}"; do
         rel="${path#/}"
-        [ ! -e "$RESTORE_STAGE_DIR/$rel" ] || sudo install -o "$owner_uid" -g "$owner_gid" -m 600 "$RESTORE_STAGE_DIR/$rel" "$path" || {
+        # config.json and .env carry secrets and stay owner-only (600); the Caddyfile does not, and
+        # the caddy container reads it as a cap_drop:ALL root with no CAP_DAC_OVERRIDE, so it must
+        # come back world-readable (644) like generate_caddyfile's normal apply-path render — a 600
+        # restore leaves caddy permission-denied on its bind-mounted Caddyfile for the rest of the
+        # appliance's life (#2329).
+        local mode=600
+        [ "$path" != "$PWD/Caddyfile" ] || mode=644
+        [ ! -e "$RESTORE_STAGE_DIR/$rel" ] || sudo install -o "$owner_uid" -g "$owner_gid" -m "$mode" "$RESTORE_STAGE_DIR/$rel" "$path" || {
             restore_discard_stage
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
