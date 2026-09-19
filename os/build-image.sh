@@ -226,7 +226,13 @@ fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
-pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+# A synthetic-compose build (PITHEAD_OS_SYNTHETIC_COMPOSE, see stage_compose above) stamps a
+# version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
+# `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
+# bundle. Pinning digests here would turn that into a build-time failure instead.
+if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+fi
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"
 if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
