@@ -409,3 +409,30 @@ test("a CONFIRM change arms Confirm once APPLY is typed (#719)", () => {
   const btnArmed = armed.match(/<button class="btn-toggle active"[^>]*>/)[0];
   assert.doesNotMatch(btnArmed, /disabled/); // now committable
 });
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the review modal is a <dialog>, not a backdrop div", () => {
+  const out = renderToString(
+    PreviewModal({ preview: { changes: [], destructive: false }, confirmText: "", busy: false }),
+  );
+  assert.match(out, /^<dialog class="card config-modal"/);
+  assert.match(out, /role="dialog"/);
+  assert.match(out, /aria-modal="true"/);
+  assert.match(out, /aria-label="Review changes"/);
+  assert.doesNotMatch(out, /config-modal-backdrop/);
+});
+
+test("every UpgradeControl phase modal (confirm/upgrading/done/failed) is a <dialog>", () => {
+  const props = { update: UPDATE, enabled: true };
+  for (const phase of ["confirm", "upgrading", "done", "failed"]) {
+    const inst = new UpgradeControl(props);
+    inst.props = props;
+    inst.state.phase = phase;
+    if (phase === "done") inst.state.result = { status: "upgraded", version: "v9.9.9" };
+    if (phase === "failed") inst.state.result = { error: "boom" };
+    const out = renderToString(inst.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
+});
