@@ -144,6 +144,8 @@ assert_rc "a note with no .pending marker and no cache -> rc 1 (record_wipe alwa
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "the wedged-partition wipe -> recovery true" "$(printf '%s' "$note" | jq -r '.recovery')" "true"
 assert_eq "the last line's timestamp is carried through" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
+assert_eq "the same-boot cache is chmod 600, not left ambient-umask readable" \
+    "$(stat -c '%a' "$PITHEAD_DATA_WIPE_NOTE_CACHE" 2>/dev/null || stat -f '%Lp' "$PITHEAD_DATA_WIPE_NOTE_CACHE" 2>/dev/null)" "600"
 assert_eq "the last line's reason is carried through" "$(printf '%s' "$note" | jq -r '.reason')" \
     "unrecoverable /data reinitialized — everything on it was lost"
 

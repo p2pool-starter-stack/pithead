@@ -68,7 +68,7 @@ data_wipe_note() {
     note=$(jq -cn --arg when "$when" --arg reason "$reason" \
         '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}') || return 1
     rm -f "$f.pending" 2>/dev/null || true
-    printf '%s' "$note" >"$DATA_WIPE_NOTE_CACHE" 2>/dev/null || true
+    (umask 077 && printf '%s' "$note" >"$DATA_WIPE_NOTE_CACHE") 2>/dev/null || true
     printf '%s' "$note"
 }
 
