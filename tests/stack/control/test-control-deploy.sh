@@ -193,11 +193,11 @@ out="$({
     source "$STACK"
     set +e
     docker() { :; }
-    cp() { : >"$2"; } # a copy that silently truncates — must be CAUGHT, not trusted
+    cp() { : >"${*: -1}"; } # a copy that silently truncates its DEST (cp -p, so $2 is -p's src) — must be CAUGHT, not trusted
     carry_dashboard_data_move "$C/old3" "$C/new3"
-    echo "rc=$?"
 } 2>&1)"
-assert_contains "carry: verifies the copy (doesn't trust cp alone)" "$out" "rc=1"
+rc=$? # error() exits the subshell directly — capture ITS status, not a $? that never runs
+assert_rc "carry: verifies the copy (doesn't trust cp alone)" "$rc" "1"
 if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "realdb" ]; then
     ok "carry: source untouched after a failed verify"
 else
@@ -220,6 +220,8 @@ apply2360() { # <extra-stub-body>
         resolve_dashboard_host() { :; }
         is_deployed() { return 0; }
         onion_missing() { return 1; }
+        # shellcheck disable=SC2034  # read by the sourced apply()'s "not provisioned" guard
+        P2POOL_ONION=p2pa.onion
         inject_service_configs() { :; }
         generate_caddyfile() { :; }
         provision_control_runner() { :; }

@@ -289,7 +289,7 @@ apply() {
     migrate_dashboard_data
     # A confirmed A-to-B dashboard.data_dir move (#2360) — distinct from the #455 default move
     # above, and only reached when DASHBOARD_DATA_DIR was actually in this apply's changed keys.
-    carry_dashboard_data_move "$dashboard_data_dir_old" "$DASHBOARD_DIR"
+    carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).
