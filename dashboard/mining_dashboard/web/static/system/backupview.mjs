@@ -161,9 +161,7 @@ export class BackupPanel extends Component {
       }
       return html`<div class="card">
           <h3>Backup</h3>
-          <p>Backup export is off with the rest of the control channel. To enable it, set
-          <code>dashboard.control.enabled: true</code> in <code>config.json</code> on the host
-          and run <code>./pithead apply</code>. It requires a dashboard login.</p>
+          <p>Backup export is off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
     const { phase, id, result } = this.state;

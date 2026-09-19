@@ -196,9 +196,11 @@ test("BackupPanel on the appliance names the login, not a channel that is coming
   assert.doesNotMatch(out, /config\.json/);
 });
 
-test("BackupPanel off a non-appliance host keeps the remedy — the appliance branch is narrow (#1854)", () => {
+test("BackupPanel off a non-appliance host points at Configuration instead of repeating the remedy (#1871)", () => {
   const out = renderToString(inst({ enabled: false, appliance: false }).render());
-  assert.match(out, /pithead apply/);
+  assert.match(out, /see Configuration/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
 });
 
 test("BackupPanel names both halves the operator has to keep — archive and kit (#1854)", () => {

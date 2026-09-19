@@ -103,7 +103,7 @@ function DashboardView({
                           onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow} />
         </div>
         <div class="grid">
-            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip} stratumPort=${state.stratum_port}
+            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip && state.host_ip !== "Unknown Host" ? state.host_ip : state.host_addr} stratumPort=${state.stratum_port}
                              onInspect=${state.control_enabled ? onInspect : null} />
         </div>
         <div class="grid-section-label">Your Stack</div>
