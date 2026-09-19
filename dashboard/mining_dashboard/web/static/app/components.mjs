@@ -103,7 +103,7 @@ function DashboardView({
                           onToggleSeries=${onToggleSeries} onAvgWindow=${onAvgWindow} />
         </div>
         <div class="grid">
-            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip} stratumPort=${state.stratum_port}
+            <${WorkersTable} workers=${state.workers} summary=${state.proxy_summary} ui=${ui} onSort=${onSort} hostIp=${state.host_ip && state.host_ip !== "Unknown Host" ? state.host_ip : state.host_addr} stratumPort=${state.stratum_port}
                              onInspect=${state.control_enabled ? onInspect : null} />
         </div>
         <div class="grid-section-label">Your Stack</div>
@@ -112,11 +112,11 @@ function DashboardView({
             <${XvBStats} state=${state} />
             <${EarningsCard} earnings=${state.earnings} xvb=${state.xvb_calc} energy=${state.energy} />
             <${NodeStats} state=${state} />
-            <${ExpectedVsActualCard} summary=${state.earnings_summary} />
+            <${ExpectedVsActualCard} summary=${state.earnings_summary} onView=${onView} />
             <${TariCard} tari=${state.tari} local=${state.sync?.tari?.local} />
             <${CadenceCard} cadence=${state.cadence} />
         </div>
-        <div class="grid-section-label">The Wider Pool</div>
+        <div class="grid-section-label card-advanced">The Wider Pool</div>
         <div class="grid grid-columns">
             <${GlobalStats} state=${state} />
             <${NetworkCard} state=${state} />
