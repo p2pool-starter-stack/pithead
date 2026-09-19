@@ -13,43 +13,42 @@
 # install's first boot is always firstboot's, never pithead-boot's; the commit is necessarily
 # deferred to the NEXT boot. That handoff is exactly what this leg measures: does pithead-boot
 # actually run and commit once config.json exists, or does the slot stay stuck the way the field
-# report found it (both slots `bad`, GRUB's own "nothing selectable" fallback silently masking it
-# because the only populated slot is also GRUB's hardcoded default)?
+# report found it (both slots `bad`, "Activated: none")?
+#
+# grubenv's A_TRY=0 is NOT proof of a commit by itself: GRUB's own "nothing selectable" branch
+# (grub.cfg) clears a stale A_TRY back to 0 on EVERY boot where no slot is currently selectable,
+# committed or not — GRUB does this at bootloader time, before the OS or RAUC ever runs. The only
+# signal that actually distinguishes "RAUC committed this slot" from "GRUB fell back to its
+# hardcoded default" is `rauc status` itself resolving a primary slot (`Activated: rootfs.N`, not
+# `none`) — that field comes from RAUC re-deriving the selection at report time, the same
+# `Failed getting primary slot: ... No bootable slot found` warning path the field report hit.
 _read_genv() { _ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' '; }
-_genv_field() { printf '%s' "$1" | grep -oE "(^| )$2=[^ ]*" | tail -1 | cut -d= -f2; } # <genv> <KEY>
-# A_TRY=0 alone is not proof of a commit: GRUB's own "nothing selectable" branch (grub.cfg) clears
-# a stale A_TRY back to 0 on EVERY boot where nothing was selectable, whether or not RAUC ever ran
-# mark-good — and it leaves B_TRY=1 as a side effect no real commit produces (mark-good only ever
-# touches the BOOTED slot). Requiring B_TRY=0 too is what tells the two apart.
-_genv_committed() { # <genv> -> 0 iff slot A is really committed, not just GRUB's fallback artifact
-    [ "$(_genv_field "$1" A_OK)" = 1 ] && [ "$(_genv_field "$1" A_TRY)" = 0 ] && [ "$(_genv_field "$1" B_TRY)" = 0 ]
-}
-_assert_rauc_booted_good() { # <label> — reads rauc status itself, for the PR evidence text
+_genv_field() { printf '%s' "$1" | grep -oE "(^| )$2=[^ ]*" | tail -1 | cut -d= -f2; }        # <genv> <KEY>
+_rauc_status() { _ssh "rauc status 2>&1" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g'; } # ANSI-stripped
+_assert_rauc_committed() {                                                                    # <label> — the real commit proof: a resolved primary, not just a good OK flag
     local label="$1" rstatus
-    rstatus=$(_ssh "rauc status 2>&1" 2>/dev/null)
-    if printf '%s' "$rstatus" | grep -F "(booted)" | grep -q "boot status: good"; then
-        ok "rauc status reports the booted slot good $label: $(printf '%s' "$rstatus" | grep -F booted | tr -s ' ')"
+    rstatus=$(_rauc_status)
+    if printf '%s' "$rstatus" | grep -q "^Activated: *rootfs\." && printf '%s' "$rstatus" | grep -F "(booted)" | grep -q "boot status: good"; then
+        ok "rauc status reports the booted slot committed $label: $(printf '%s' "$rstatus" | grep -E '^(Activated|.*\(booted\))')"
     else
-        bad "rauc status does not report the booted slot good $label: $(printf '%s' "$rstatus" | tr '\n' ' ' | cut -c1-500)"
+        bad "rauc status does not report a committed booted slot $label: $(printf '%s' "$rstatus" | tr '\n' ' ' | cut -c1-600)"
     fi
 }
 _phase_install_commit() {
     info "phase: installed-disk commit (#2352 — seed, deferred first commit, one unaided reboot)"
 
     # The seed proof: A_OK/B_OK, not A_TRY — GRUB unconditionally marks A_TRY=1 the instant it
-    # ATTEMPTS slot A, which already happened by the time SSH answers, seed or no seed. rauc
-    # status is read for the PR's evidence only (info, not asserted): with A_TRY=1 and nothing yet
-    # committed, "no bootable slot found" is the CORRECT, expected reading on every real boot,
-    # not a failure — asserting good here would fail on every honest appliance.
-    local genv rstatus
+    # ATTEMPTS slot A, which already happened by the time SSH answers, seed or no seed.
+    local genv
     genv=$(_read_genv)
     if [ "$(_genv_field "$genv" A_OK)" = 1 ] && [ "$(_genv_field "$genv" B_OK)" = 0 ]; then
         ok "pithead-install seeded the installed disk's grubenv good before any boot gate ran: $genv"
     else
         bad "installed disk's grubenv is not seeded good on first boot — pithead-install's seed did not survive: ${genv:-unreadable}"
     fi
-    rstatus=$(_ssh "rauc status 2>&1" 2>/dev/null)
-    info "rauc status right after install (not yet committed by design): $(printf '%s' "$rstatus" | tr '\n' ' ' | cut -c1-500)"
+    # Not yet committed by design (see header) — logged for the PR's evidence, not asserted:
+    # "no bootable slot found" / Activated: none is the CORRECT reading here, not a failure.
+    info "rauc status right after install: $(_rauc_status | tr '\n' ' ' | cut -c1-600)"
 
     # Boot 1 settling means firstboot consumed the preseed and brought the stack up headlessly —
     # by design (see header) pithead-boot does NOT also run this same boot.
@@ -76,18 +75,16 @@ _phase_install_commit() {
     else
         bad "boot 2 never settled ($(provisioning_state))"
     fi
-    local tries=0
+    # rauc status, not grubenv, is the pass/fail oracle (see header) — polled the same way
+    # provision-reboot.sh polls grubenv, because mark-good can lag settling by a beat.
+    local tries=0 rstatus=""
     while [ "$tries" -lt 18 ]; do
-        genv=$(_read_genv)
-        _genv_committed "$genv" && break
+        rstatus=$(_rauc_status)
+        printf '%s' "$rstatus" | grep -q "^Activated: *rootfs\." && break
         sleep 10
         tries=$((tries + 1))
     done
-    if _genv_committed "$genv"; then
-        ok "boot 2 committed the installed slot for real (A_OK=1 A_TRY=0 B_TRY=0, not GRUB's fallback artifact): $genv"
-    else
-        bad "the installed slot never really committed on boot 2 — grubenv: ${genv:-unreadable} (A_TRY=0 with B_TRY=1 is GRUB's 'nothing selectable' fallback clearing a stale try flag, NOT a commit — exactly what the field report's both-slots-bad state looks like from here)"
-    fi
-    _assert_rauc_booted_good "after boot 2 (the unaided reboot)"
-    unset -f _read_genv _genv_field _genv_committed _assert_rauc_booted_good
+    _assert_rauc_committed "after boot 2 (the unaided reboot)"
+    info "grubenv after boot 2: $(_read_genv)"
+    unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
 }
