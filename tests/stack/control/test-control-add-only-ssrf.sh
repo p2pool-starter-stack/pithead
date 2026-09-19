@@ -36,7 +36,7 @@ RESULTS="$C/data/control/results"
 STAGED="$C/data/control/staged"
 AUDIT="$C/data/control/audit/control.log"
 
-echo "== black-box: approval gate default-denies security-control changes (#33 re-review) =="
+echo "== black-box: sensitive changes require confirmation; physical paths still refuse (#1959) =="
 # describe_change flags only the ENABLE/CHANGE direction of security controls as DEST — disabling
 # dashboard auth, downgrading onion client-auth, clearing the stratum password or repointing the
 # Telegram bot are all INFO rows. The gate must refuse those on the explicit sensitive-key set,
@@ -66,14 +66,13 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
 . "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
-# Clear the stratum access password (disable direction is an INFO row) — refused.
+# Clear the stratum access password (disable direction is an INFO row) — no confirmation refuses.
 jq 'del(.p2pool.stratum_password)' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "stratum-password disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the stratum password" "$(jq -r '.p2pool.stratum_password' "$C/config.json")" "s3cretpw"
 
-# Repoint the Telegram bot (token change is an INFO row; the bot is the operator's ALARM channel,
-# so an attacker must not swap it — #2076 took its write surface, not that job) — refused.
+# Repoint the Telegram bot (token change is an INFO row) — no confirmation refuses.
 jq '.telegram.bot_token="654321:evil-XYZ_abc"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "telegram bot_token repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -89,9 +88,8 @@ gate_try "$C/cand.json"
 assert_eq "onion client-auth downgrade commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps onion client-auth on" "$(jq -r '.dashboard.onion.client_auth' "$C/config.json")" "true"
 
-# TRUE default-deny (#33 re-review round 2): the gate is an ALLOWLIST of editable keys, not a
-# blocklist of sensitive ones, so a key nobody thought to enumerate still refuses. Each candidate
-# below was committable under the blocklist gate — these assertions are the teeth.
+# Unlisted schema-backed values join confirmation rather than direct commit. Each token-less case
+# below proves the fallback cannot silently bypass the operator prompt.
 # p2pool clearnet flip: dials sidechain peers over clearnet, deanonymizing the host IP, no
 # auto-revert.
 jq '.p2pool.clearnet=true' "$C/config.json" >"$C/cand.json"
@@ -114,14 +112,13 @@ assert_eq "config.json keeps healthchecks unset" "$(jq -r '.healthchecks.ping_ur
 jq '.network={tor_egress_firewall:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
 assert_eq "tor-egress-firewall disable commit is refused even with the APPLY token" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tor-egress refusal names the perimeter key, not a missing envelope (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TOR_EGRESS_FIREWALL"
+assert_contains "tor-egress refusal asks for the envelope" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "typed payout confirmations"
 assert_eq "config.json keeps the tor egress firewall unset (defaults on)" "$(jq -r '.network.tor_egress_firewall // "unset"' "$C/config.json")" "unset"
-# Setting a Monero view key (the #381 payout-confirm secret) reveals every incoming amount — a
-# secret, host-only, never confirm-gated. Commit WITH a valid APPLY token: the perimeter gate must
-# still refuse it, proving the typed confirmation is UX friction, not a security bypass (#719).
-jq '.monero.view_key="deadbeef"' "$C/config.json" >"$C/cand.json"
+# A private view key reveals every incoming amount and needs the full confirmation envelope.
+MONERO_VIEW_KEY=$(printf '1%.0s' {1..64})
+jq --arg k "$MONERO_VIEW_KEY" '.monero.view_key=$k' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY
-assert_eq "monero view-key set commit is refused even with the APPLY token" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "monero view-key set refuses APPLY without the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json gains no view key" "$(jq -r '.monero.view_key // "unset"' "$C/config.json")" "unset"
 # XvB pool-URL repoint: redirects donated hashrate to an attacker's pool.
 jq '.xvb.url="attacker.example:4247"' "$C/config.json" >"$C/cand.json"
@@ -156,7 +153,7 @@ jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "workers.list seed applies from the host CLI" "$(jq -r '.workers.list[0].token' "$C/config.json")" "tok_rig1"
 
-# REPOINT, REMOVAL and safe APPEND refuse without approval; test-confirm-approval covers approval.
+# REPOINT, REMOVAL and safe APPEND refuse without confirmation; test-confirm-approval covers it.
 jq '.workers.list=[{name:"rig1",host:"attacker.example",token:"stolen"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "workers.list REPOINT of an existing entry is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
@@ -167,7 +164,7 @@ assert_eq "workers.list REMOVAL of an existing entry is refused" "$(jq -r '.stat
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "workers.list append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "safe worker append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
+assert_contains "safe worker append asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a
@@ -197,11 +194,11 @@ assert_eq "config.json still has exactly rig1 after every SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 unset -f assert_new_worker_host_refused
 
-# A safe LAN address is STILL refused outright: every descriptor change is a credential change.
+# A safe LAN address still refuses without confirmation.
 jq '.workers.list += [{name:"rig3",host:"10.0.0.50",control_port:8082,token:"tok_rig3"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "ordinary LAN append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "ordinary LAN append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
+assert_contains "ordinary LAN append asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json does not gain the unapproved ordinary-LAN rig" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # #893 round 5: an independent review found the battery above was still a STRING classifier under
@@ -267,12 +264,13 @@ unset -f assert_resolved_worker_host_refused
 assert_eq "config.json still has exactly rig1 after every round-5 SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 
-# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — it still hits the same descriptor refusal.
+# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not
+# refuse every name on shape alone; it still reaches the typed confirmation gate.
 printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
+assert_contains "LAN hostname append asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system
@@ -323,7 +321,7 @@ rm -f "$RESULTS/$UUIDE.json" "$STAGED/$UUIDE.json"
 jq '.dashboard.energy={cost_per_kwh:0.25} | .monero.rpc_lan_access=true' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "energy edit bundled with a non-allowlisted key is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "bundled refusal names the perimeter key (2026-09-13 perimeter audit)" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "MONERO_RPC_BIND"
+assert_contains "bundled refusal asks for typed confirmation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps monero LAN access off after the refusal" "$(jq -r '.monero.rpc_lan_access // false' "$C/config.json")" "false"
 assert_eq "config.json keeps the previously-committed energy cost after the refusal" "$(jq -r '.dashboard.energy.cost_per_kwh' "$C/config.json")" "0.18"
 
@@ -377,7 +375,7 @@ assert_contains "commit request smuggling a destructive flag is rejected" "$(jq 
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_eq "commit after result-file tampering is still refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "TELEGRAM_BOT_TOKEN"
+assert_contains "tampered-flag refusal comes from the host-side re-derivation" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps the untampered bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
 
 # Sensitive keys PRESENT but UNCHANGED must not trip the gate: a plain pool-tier change on the

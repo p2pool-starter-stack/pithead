@@ -133,15 +133,15 @@ roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
 roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"
+roundtrip_confirm "TOR_DATA_DIR" '.tor.data_dir="'"$C"'/data/tor2"' '.tor.data_dir' "$C/data/tor2"
 roundtrip_confirm "DASHBOARD_DATA_DIR" '.dashboard.data_dir="'"$C"'/data/dashboard2"' '.dashboard.data_dir' "$C/data/dashboard2"
 roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_port' "3444"
 # PRUNE STARTS OFF IN THE BASELINE ABOVE, and that is not tidiness. monero_prune_flag defaults to
 # TRUE (19-small-utilities.sh), so on a config with no monero.prune key the rendered MONERO_PRUNE is
 # already 1 — setting it to true renders the SAME value, emits no porcelain row, and the commit then
 # "applies" with no typed APPLY because there is nothing for the confirm gate to see. That is how
-# this row read green while proving nothing; only the no-token half above caught it. ENABLE is also
-# the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
-# so a baseline that does not start pruned cannot exercise this key through the gate.
+# this row read green while proving nothing; only the no-token half above caught it. Use the enabling
+# direction here so the explicit CONFIRM row, not the generic destructive path, covers the key.
 roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
@@ -195,6 +195,25 @@ assert_eq "monero.remote.host is inert on a local monero chain" "$(env_now MONER
 assert_eq "monero.remote.rpc_port is inert on a local monero chain" "$(env_now MONERO_RPC_PORT)" "18081"
 assert_eq "monero.remote.zmq_port is inert on a local monero chain" "$(env_now MONERO_ZMQ_PORT)" "18083"
 assert_eq "tari.remote.host is inert on a local tari chain" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
+
+# Inert endpoints still appear as confirmed settings in the editor. They carry no porcelain env
+# row until the chain enters remote mode, so the host must gate their source paths directly.
+jq '.monero.remote.host="stored.example.com" | .tari.remote.grpc_port=10' "$C/config.json" >"$C/cand.json"
+jq --arg id "$UUID5" '{id:$id,action:"preview",actor:"admin",config:.}' "$C/cand.json" >"$C/data/control/requests/$UUID5.json"
+run_pending >/dev/null
+assert_eq "inactive Monero endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="monero.remote.host") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+assert_eq "inactive Tari endpoint previews as CONFIRM" \
+    "$(jq -r '.changes[] | select(.key=="tari.remote.grpc_port") | .flag' "$RESULTS/$UUID5.json")" "CONFIRM"
+gate_try "$C/cand.json"
+assert_eq "inactive endpoints are refused without typed APPLY" \
+    "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+gate_try "$C/cand.json" APPLY
+assert_eq "inactive endpoints apply behind typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "applied"
+assert_eq "confirmed inactive Monero endpoint is stored" "$(jq -r '.monero.remote.host' "$C/config.json")" "stored.example.com"
+assert_eq "confirmed inactive Tari endpoint is stored" "$(jq -r '.tari.remote.grpc_port' "$C/config.json")" "10"
+assert_eq "confirmed inactive Monero endpoint stays inert" "$(env_now MONERO_NODE_HOST)" "172.28.0.26"
+assert_eq "confirmed inactive Tari endpoint stays inert" "$(env_now TARI_GRPC_ADDRESS)" "172.28.0.27:18142"
 
 # tari.mode off renders the SAME fixed placeholder local does (#1855) — the escalation this issue's
 # provenance section checked and ruled out, pinned here instead of left as an argument.

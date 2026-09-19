@@ -23,6 +23,160 @@ control_never_path_changed() { # <staged-file>
     return 1
 }
 
+# Return the first masked capability whose destination changed in a preview request. A sentinel may
+# preserve an existing secret, but it must never let the browser redirect that secret somewhere new.
+control_masked_binding_error() { # <request-file>
+    jq -r --slurpfile live "$CONFIG_FILE" --slurpfile ref "$REFERENCE_CONFIG" '
+        def sentinel: type == "object" and .__secret__ == true;
+        def full($cfg): $ref[0] * $cfg;
+        def global_worker_context($cfg):
+          (full($cfg) | .workers // {}) as $w
+          | if ($w.api_auth // "none") != "token" then []
+            else [["fleet", ($w.api_port // 8080)]]
+              + [($w.list // [])[]?
+                 | select((.token // "") == "")
+                 | ["worker", (.name // ""), (.host // ""), (.port // ($w.api_port // 8080))]]
+            end;
+        def monero_rpc_endpoint($cfg):
+          full($cfg) | [(.monero.mode // "local"), (.monero.remote.host // ""),
+                        (.monero.remote.rpc_port // 18081)];
+        .config as $candidate
+        | [
+            if (($candidate.workers.api_token | sentinel)
+                and (((global_worker_context($candidate) - global_worker_context($live[0])) | length) > 0))
+            then "workers.api_token is masked while a new worker endpoint would receive it — enter the shared token explicitly"
+            else empty end,
+            if ((($candidate.notifications.ntfy.token | sentinel)
+                 and (($candidate.notifications.ntfy.url | sentinel) | not)
+                 and ((full($candidate).notifications.ntfy.url // "") != "")
+                 and ((full($candidate).notifications.ntfy.url // "")
+                      != (full($live[0]).notifications.ntfy.url // ""))))
+            then "notifications.ntfy.url changed while its token was masked — enter the token for the new URL explicitly"
+            else empty end,
+            if (((($candidate.monero.node_username | sentinel)
+                  or ($candidate.monero.node_password | sentinel))
+                 and ((full($candidate).monero.mode // "local") == "remote")
+                 and (monero_rpc_endpoint($candidate) != monero_rpc_endpoint($live[0]))))
+            then "the Monero RPC endpoint changed while its credentials were masked — enter the credentials for the new endpoint explicitly"
+            else empty end
+          ] | .[0] // empty' "$1" 2>/dev/null
+}
+
+# Add synthetic rows for confirmed source paths that are inert in the current mode and therefore
+# absent from apply's env-var porcelain.
+control_mark_config_confirm_rows() { # <newline paths> <porcelain>
+    local paths="$1" out="$2" path endpoint_key
+    if printf '%s\n' "$paths" | grep -qxF 'p2pool.clearnet'; then
+        out=$(printf '%s\n' "$out" | awk -F'\t' 'BEGIN {OFS=FS} $2 == "P2POOL_FLAGS" {$1="CONFIRM"} {print}')
+    fi
+    while IFS= read -r path; do
+        case "$path" in
+        monero.remote.host) endpoint_key=MONERO_NODE_HOST ;;
+        monero.remote.rpc_port) endpoint_key=MONERO_RPC_PORT ;;
+        monero.remote.zmq_port) endpoint_key=MONERO_ZMQ_PORT ;;
+        tari.remote.host | tari.remote.grpc_port) endpoint_key=TARI_GRPC_ADDRESS ;;
+        *) continue ;;
+        esac
+        printf '%s\n' "$out" | awk -F'\t' -v k="$endpoint_key" '$2 == k {found=1} END {exit !found}' && continue
+        out+="${out:+$'\n'}CONFIRM"$'\t'"$path"$'\tRemote node endpoint settings are changing.'
+    done <<<"$paths"
+    printf '%s' "$out"
+}
+
+_control_paths_overlap() { # <normalized-a> <normalized-b>
+    case "${1%/}/" in "${2%/}"/*) return 0 ;; esac
+    case "${2%/}/" in "${1%/}"/*) return 0 ;; esac
+    return 1
+}
+
+# Resolve all five staged data destinations exactly as apply does, then keep every mount disjoint
+# from its peers and from state with a separate owner or trust boundary. Checking lexical and
+# canonical spellings closes both direct ancestor mounts and symlink aliases.
+control_validate_data_dir_overlaps() { # <staged-file>
+    local staged="$1" data_root path lex real i j current_dashboard control_dir clearnet_dir
+    local monero_current tari_current p2pool_current tor_current caddy_dir proxy_tls_dir pithead_tls_dir
+    local -a names=(monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir)
+    local -a paths lexes=() reals=() protected_names protected_paths protected_lexes=() protected_reals=()
+    paths=(
+        "$(resolve_default "$(jq -r '.monero.data_dir // empty' "$staged")" "$PWD/data/monero")"
+        "$(resolve_default "$(jq -r '.tari.data_dir // empty' "$staged")" "$PWD/data/tari")"
+        "$(resolve_default "$(jq -r '.p2pool.data_dir // empty' "$staged")" "$PWD/data/p2pool")"
+        "$(resolve_default "$(jq -r '.tor.data_dir // empty' "$staged")" "$PWD/data/tor")"
+    )
+    data_root=$(dirname "${paths[0]}")
+    [ "$(dirname "${paths[1]}")" = "$data_root" ] &&
+        [ "$(dirname "${paths[2]}")" = "$data_root" ] &&
+        [ "$(dirname "${paths[3]}")" = "$data_root" ] || data_root="$PWD/data"
+    paths+=("$(resolve_default "$(jq -r '.dashboard.data_dir // empty' "$staged")" "$data_root/dashboard")")
+    for path in "${paths[@]}"; do
+        lex=$(realpath -ms -- "$path" 2>/dev/null) || lex=""
+        real=$(realpath -m -- "$path" 2>/dev/null) || real=""
+        [ -n "$lex" ] && [ -n "$real" ] || {
+            printf 'a staged data directory cannot be resolved safely. %s' "$(_control_host_remedy)"
+            return 1
+        }
+        lexes+=("$lex")
+        reals+=("$real")
+    done
+    for ((i = 0; i < ${#paths[@]}; i++)); do
+        for ((j = i + 1; j < ${#paths[@]}; j++)); do
+            if _control_paths_overlap "${lexes[i]}" "${lexes[j]}" ||
+                _control_paths_overlap "${reals[i]}" "${reals[j]}"; then
+                printf 'this move makes %s overlap %s — data destinations must be separate siblings. %s' \
+                    "${names[i]}" "${names[j]}" "$(_control_host_remedy)"
+                return 1
+            fi
+        done
+    done
+
+    monero_current=$(env_get MONERO_DATA_DIR)
+    tari_current=$(env_get TARI_DATA_DIR)
+    p2pool_current=$(env_get P2POOL_DATA_DIR)
+    tor_current=$(env_get TOR_DATA_DIR)
+    current_dashboard=$(env_get DASHBOARD_DATA_DIR)
+    control_dir=$(env_get CONTROL_DIR)
+    clearnet_dir=$(env_get CLEARNET_STATE_DIR)
+    caddy_dir=$(env_get CADDY_LOG_DIR)
+    proxy_tls_dir=$(env_get PROXY_TLS_DIR)
+    pithead_tls_dir=$(env_get PITHEAD_TLS_DIR)
+    [ -n "$monero_current" ] || monero_current="$PWD/data/monero"
+    [ -n "$tari_current" ] || tari_current="$PWD/data/tari"
+    [ -n "$p2pool_current" ] || p2pool_current="$PWD/data/p2pool"
+    [ -n "$tor_current" ] || tor_current="$PWD/data/tor"
+    [ -n "$current_dashboard" ] || current_dashboard="$PWD/data/dashboard"
+    [ -n "$control_dir" ] || control_dir="$PWD/data/control"
+    [ -n "$clearnet_dir" ] || clearnet_dir="$PWD/data/clearnet-state"
+    [ -n "$caddy_dir" ] || caddy_dir="$PWD/data/caddy-logs"
+    [ -n "$proxy_tls_dir" ] || proxy_tls_dir="$PWD/data/proxy-tls"
+    [ -n "$pithead_tls_dir" ] || pithead_tls_dir="$PWD/data/tls"
+    protected_names=(live.monero live.tari live.p2pool live.tor live.dashboard control.state clearnet.state caddy.logs live.proxy-tls staged.proxy-tls caddy.tls)
+    protected_paths=("$monero_current" "$tari_current" "$p2pool_current" "$tor_current" "$current_dashboard"
+        "$control_dir" "$clearnet_dir" "$caddy_dir" "$proxy_tls_dir" "$data_root/proxy-tls" "$pithead_tls_dir")
+    for path in "${protected_paths[@]}"; do
+        lex=$(realpath -ms -- "$path" 2>/dev/null) || lex=""
+        real=$(realpath -m -- "$path" 2>/dev/null) || real=""
+        protected_lexes+=("$lex")
+        protected_reals+=("$real")
+    done
+    for ((i = 0; i < ${#paths[@]}; i++)); do
+        for ((j = 0; j < ${#protected_paths[@]}; j++)); do
+            [ -n "${protected_lexes[j]}" ] && [ -n "${protected_reals[j]}" ] || continue
+            # Keeping any service at its own current mount is intentional; every cross-over is not.
+            if [ "$i" -eq "$j" ] && [ "$j" -lt 5 ] &&
+                [ "${lexes[i]}" = "${protected_lexes[j]}" ] &&
+                [ "${reals[i]}" = "${protected_reals[j]}" ]; then
+                continue
+            fi
+            if _control_paths_overlap "${lexes[i]}" "${protected_lexes[j]}" ||
+                _control_paths_overlap "${reals[i]}" "${protected_reals[j]}"; then
+                printf 'this move makes %s overlap internal or dashboard-writable %s. %s' \
+                    "${names[i]}" "${protected_names[j]}" "$(_control_host_remedy)"
+                return 1
+            fi
+        done
+    done
+}
+
 control_physical_presence_error() {
     printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
 }

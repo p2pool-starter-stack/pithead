@@ -802,9 +802,12 @@ rather than erroring.
 
 > **The view key is a secret. Treat it like a password.** A view key **cannot spend** — it can only
 > scan — but it reveals every incoming payout amount and its timing to anyone who can read it. The
-> stack keeps it in the owner-only `.env`, never logs or echoes it, keeps it off the dashboard
-> Configuration editor, and never puts it on a container command line. It stays on the box: the
-> view-only `monero-wallet-rpc` is published only to the host loopback (`127.0.0.1:18082`), runs
+> stack keeps it in the owner-only `.env`, never logs or echoes it, sends only a masked sentinel to
+> the Configuration editor and browser, and never puts it on a container command line. Replacing it
+> from Configuration requires typed `APPLY`. The wallet receives the key and the dashboard receives
+> its wallet RPC credential at runtime, so masking protects the editor/browser, not a compromised
+> backend process. It stays on the box: the view-only `monero-wallet-rpc` is published only to the
+> host loopback (`127.0.0.1:18082`), runs
 > non-root with a read-only root filesystem, and authenticates the dashboard with a generated
 > password. **Phase 1 is local node only** — scanning through a third-party daemon would change the
 > trust story, so a view key set with `monero.mode: remote` is refused. To rotate it, get a fresh
@@ -818,9 +821,11 @@ Tari wallet) and the stack runs a **view-only** `minotari_console_wallet` agains
 node. The Tari tab of the earnings card then shows **Confirmed** XTM totals (24 hours, 7 days,
 all-time) beside the time-to-block estimate, and the same `payout_confirmed` alert fires once per
 Tari payout, carrying the chain. The Tari view key is a secret and is handled exactly like the
-Monero one — owner-only `.env`, never logged or on a container command line, off the Configuration
-editor — with one extra safeguard: because Tari has no key-import file, the three wallet secrets are
-delivered to the container through a tmpfs secret mount, so they never appear in `docker inspect`.
+Monero one — owner-only `.env`, never logged or on a container command line, and visible to the
+Configuration editor/browser only as a masked sentinel; replacement requires typed `APPLY`. The
+running wallet necessarily receives the key. As an extra safeguard, because Tari has no key-import
+file, the three wallet secrets are delivered through a tmpfs secret mount, so they never appear in
+`docker inspect`.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
 the Unix epoch), not a block height. Leave `tari.view_key` empty and none of the Tari half runs.
 
@@ -964,18 +969,16 @@ the config tab now behave identically.) The pieces:
   have an intentional named group, so a new key cannot silently vanish or drift into an **Other**
   bucket. `workers.list[]` (the per-rig descriptors) isn't a form field
   here — a variable-length list has no single form control for it; edit the complete list in the
-  Advanced JSON pane. Changes to existing rig hosts and tokens require approval.
+  Advanced JSON pane. Changes to rig hosts and tokens require confirmation and pass the host's
+  worker-target checks.
   [Worker Inspect](#worker-inspect) is a different thing:
   it retunes the *rig's own* settings (pools, donation, autotune, watchdog, temperature cap)
   through that rig's control API, never the stack's descriptor list.
 
-  Ordinary fields are editable directly. A smaller set of operationally-disruptive
-  fields — the four service data directories, the stratum port, the clearnet initial-sync toggles,
-  enabling Monero pruning, the Monero outbound-peer count, and the remote Monero and Tari node
-  endpoints — render **editable but confirm-gated**
-  ([#719](https://github.com/p2pool-starter-stack/pithead/issues/719)): editable, tooltipped
-  "you'll type `APPLY` to confirm at Save". Sensitive fields require the signed-in dashboard user
-  and the confirmation envelope described below. All three sets come from the host policy and are surfaced on `GET /api/config`
+  Ordinary fields are editable directly. Every other reference field below the physical-presence
+  boundary renders **editable but confirm-gated**, tooltipped "you'll type `APPLY` to confirm at
+  Save". This includes disruptive settings and values that redirect funds, traffic, credentials or
+  control. All three policy sets are surfaced on `GET /api/config`
   as `_editable_keys`, `_confirm_keys`, and `_approval_keys`, so the form cannot silently choose a
   weaker policy than the commit path.
 - **The Advanced pane** is the whole editable candidate as one text block, for operators who'd rather
@@ -991,50 +994,40 @@ The flow mirrors the CLI's `apply`:
 1. The form/textarea is prefilled from a pre-masked copy of `config.json` the host renders into the
    control spool ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)). Secrets (the
    dashboard password, the Telegram bot token, node RPC credentials, the stratum password) show as
-   "set — leave blank to keep"; their values never enter the dashboard container, let alone the
-   browser — leaving one untouched sends a sentinel back (the Advanced pane shows it as a
-   `__secret__` marker and carries it verbatim), blanking a previously-edited secret field
-   restores the sentinel rather than setting an empty value, and the host swaps in the live
-   value when it stages the change.
+   "set — leave blank to keep"; their values never enter the editor or browser through this mount.
+   Leaving one untouched sends a sentinel back (the Advanced pane shows it as a `__secret__` marker
+   and carries it verbatim), blanking a previously-edited secret field restores the sentinel rather
+   than setting an empty value, and the host swaps in the live value when it stages the change. That
+   reuse is bound to the existing destination: repointing a worker, the Monero RPC endpoint, or an
+   ntfy URL requires entering its associated credential for the new destination. The running
+   dashboard still receives the runtime credentials it needs for node probes, worker reads, and
+   notifications, so a full backend compromise can read those environment values; masking is the
+   editor/browser and raw-config boundary, not process isolation.
 2. **Save & preview changes** stages the edited config on the host, which dry-runs it and returns
    the same change preview `./pithead apply` prints — one row per changed setting, disruptive rows
    (⚠) styled as warnings. A config that fails validation is rejected here with pithead's own
-   error message; nothing is applied. Sensitive changes also show the complete old and new
-   non-secret payout or endpoint value; secret values remain masked.
+   error message; nothing is applied. Sensitive changes also show complete old and new non-secret
+   values; secret values remain masked.
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
    changed. Your typed confirmation rides to the host gate, which requires it before a
    confirm-gated change proceeds — a change confirmed this way is recorded in the audit log as a
    `commit-confirmed` action, distinct from an ordinary commit. A sensitive commit additionally
-   carries a confirmation envelope, which the host validates: it may contain payout suffixes and
-   **nothing else**, so the dashboard cannot smuggle in an actor, a preview id or a self-asserted
-   approver, and the host re-checks each suffix against the staged config rather than the browser's
-   labels. The commit is recorded against the signed-in dashboard user. Until
+   carries a confirmation envelope, which may contain payout suffixes and nothing else; the host
+   re-checks each suffix against the staged config rather than the browser's labels. This shape is
+   typo protection, not identity: the dashboard writes the request actor and the envelope itself.
+   The audit records the signed-in actor reported by the dashboard. Until
    [#2076](https://github.com/p2pool-starter-stack/pithead/issues/2076) this step also required a
    tap in Telegram and recorded a `commit-approved` action with an approver; the bot is read-only
    now, that leg is gone, and nothing writes an approver.
 
-Every reference setting belongs to an explicit policy class. The ordinary allowlist covers routine
-operations. A second, confirm-gated allowlist
-([#719](https://github.com/p2pool-starter-stack/pithead/issues/719)) adds the
-operationally-disruptive-but-recoverable settings — a data-directory move (re-sync), a stratum-port
-change (rigs repoint), a clearnet initial-sync enable (host IP exposed during IBD, auto-reverts),
-enabling Monero pruning, the Monero outbound-peer count (bounded, but the biggest
-steady-state knob on the shared Tor daemon's load), the remote Monero and Tari **node
-endpoints** ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)), and
-**`tari.mode`** — whether this machine merge-mines at all, and whether the bundled Tari node runs
-([#1929](https://github.com/p2pool-starter-stack/pithead/issues/1929)) — which commit
-only behind typed `APPLY`. Turning Tari off stops the node and the merge-mining and removes the
-container, but leaves the chain on disk, so turning it back on resumes rather than re-syncing.
-Turning it on for a machine that has no `tari.wallet_address` also changes a payout destination,
-which is a sensitive change; a machine set up with Tari on can switch freely.
-`monero.mode` is deliberately not in this class: stopping the chain this stack exists to mine is
-not a recoverable operational tweak. Type-to-confirm is intent friction, not authentication. The
-sensitive class covers funds, traffic, control, authentication, and sensitive behavior; it is
-recorded host-side against the preview id, staged digest, and signed-in dashboard actor, and adds
-the typed suffix check for payout destinations. The machine re-derives the changed paths and
-expected suffixes rather than trusting browser labels.
+Every reference setting belongs to a policy class. The ordinary allowlist covers routine
+operations; all remaining values confirm unless they are in the physical-presence set. Typed
+confirmation is intent friction, not authentication. The machine re-derives changed paths and
+expected payout suffixes rather than trusting browser labels. Node endpoints also receive a
+host-side reachability probe, worker targets receive SSRF checks, and dashboard-confirmed data
+directories must stay under data roots the stack already uses.
 Both edit modes use the same policy. Secrets are never included in preview or audit values.
 
 The Telegram approval that once sat on this class was removed in
@@ -1065,9 +1058,9 @@ friction, but the probe means a dashboard cannot park a chain on a node that is 
 node credentials can also be changed through approval, but their secret values stay masked in the
 browser, preview, result, and audit trail.
 
-On an appliance a refusal never tells you to open a shell you do not have: where a DIY host is
-told to edit `config.json` and run `./pithead apply`, the appliance is told the setting is fixed at
-setup and pointed at **Set up again**.
+On an appliance a genuine refusal never tells you to open a shell you do not have: a
+physical-presence change points to the configuration stick, and a destination outside the allowed
+data roots points to **Set up again**.
 
 A dashboard-confirmed data-directory move
 ([#728](https://github.com/p2pool-starter-stack/pithead/issues/728)) is held to a tighter rule than
@@ -1075,11 +1068,14 @@ the same move from the host CLI. The host guard is a blocklist — it refuses th
 (`/`, `$HOME`, bare mounts) but lets a shell operator relocate data anywhere else, which is
 proportionate to shell trust. A confirmed move from the dashboard is instead held to an
 **allowlist**: the new location must sit under the stack's own data root (the install dir's
-`data/`) or a parent the stack already keeps its data in (a co-located data root, #455). A move to
-any other absolute path — another user's home, another service's volume — is refused even with the
-typed `APPLY` and stays host-CLI only. This is the one place a confirmed data-dir move differs from
-`./pithead apply`: the destination path is narrowed, because the move is now reachable at dashboard
-trust rather than shell trust.
+`data/`) or the dedicated parent shared by Monero, Tari, P2Pool, and Tor (#455). A move to any other
+absolute path — another user's home, another service's volume, or a broad parent such as
+`/var/lib` — is refused even with the typed `APPLY` and stays host-CLI only. The same applies below
+the dashboard database, clearnet-state mount, or internal control spool: the dashboard can write
+the first two and the request leg of the third, so none may become an ancestor of a root-owned data
+move. This is the one place a confirmed data-dir move differs from `./pithead apply`: the
+destination path is narrowed, because the move is now reachable at dashboard trust rather than
+shell trust.
 
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.
@@ -1202,11 +1198,9 @@ appliance there is no shell, so where the DIY stack says to run `./pithead apply
 the log view, or the setup page while the machine is still unprovisioned.
 
 Where the appliance offers nothing that would fix it, the report says so and stops, rather than
-naming a command you cannot run or a page that is no longer there. Three cases are worth knowing,
+naming a command you cannot run or a page that is no longer there. Two cases are worth knowing,
 because each is a real dead end rather than an oversight:
 
-- **A payout address is not editable from the dashboard at all**, so the report tells you that
-  correcting it needs console access.
 - **The setup page closes permanently once the machine is provisioned.** Setup that did not finish
   can only be reported after that point, so the report does not send you back to a page that is
   gone.

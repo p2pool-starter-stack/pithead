@@ -58,6 +58,8 @@ assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("
 assert_eq "doctor --json counters match verdict lines" \
     "$(jq -r '(.summary.ok + .summary.warn + .summary.fail) == ([.checks[] | select(.status != "info")] | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
+assert_eq "all dashboard payout remedies point at Configuration + confirmation (#1959)" \
+    "$(grep -c 'payout address.*Open Configuration.*complete the confirmation step' "$STACK")" "5"
 printf release >"$DJ/variant"
 jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
 out=$(cd "$DJ" && PITHEAD_APPLIANCE=1 PITHEAD_VARIANT_FILE="$DJ/variant" PATH="$DJ/bin:$PATH" ./pithead doctor 2>&1 || true)

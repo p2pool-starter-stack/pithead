@@ -161,7 +161,7 @@ async def handle_control_preview(request):
     try:
         # The proposal ships as-is: an untouched secret rides as the {"__secret__": true}
         # sentinel, and the HOST swaps it for the live value when it stages the intent (#440) —
-        # this container never holds a secret the operator didn't just type.
+        # this editor route never receives the existing value from the masked config mount.
         rid = control_service.submit("preview", proposed, actor)
         res = await control_service.wait_result(rid)
     except Exception:

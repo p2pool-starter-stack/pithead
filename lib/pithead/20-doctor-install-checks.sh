@@ -34,13 +34,7 @@ check_stratum_exposure() {
         # redact() does have one (#1609), but that twin guards CI artifact uploads, not the browser.
         msg="This host appears to have a public IP ($pub). The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall."
         if [ "$mode" = doctor ]; then
-            # The appliance arm names only what an appliance operator can actually reach. Blocking
-            # the port at their own router is theirs. The two config remedies are not: neither
-            # STRATUM_BIND nor STRATUM_PASSWORD is in CONTROL_DASHBOARD_EDITABLE_KEYS or
-            # CONTROL_DASHBOARD_CONFIRM_KEYS (42-control-policy-and-host-checks.sh), where the
-            # stratum password is named as deliberately host-only. So it states the diagnosis,
-            # gives the one route that exists, and stops -- #1213's rule at #1772's site.
-            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router, so that only your own network can. Narrowing the listen address or requiring a stratum password is not editable from the dashboard: changing either needs console access to this machine."
+            dr_warn_surface "This host appears to have a public IP. The stratum port $port is unauthenticated by default and cleartext — firewall it to your LAN, set p2pool.stratum_bind to a LAN IP / 127.0.0.1, and/or require a p2pool.stratum_password. See $DOCS_URL/docs/workers.md#firewall." "This machine appears to have a public IP, and the stratum port $port is unauthenticated and cleartext by default — anything on the internet can reach it. Block that port at your router so only your network can reach it. Open Configuration to narrow the listen address or require a stratum password, then complete the confirmation step."
         else
             warn "$msg"
         fi
