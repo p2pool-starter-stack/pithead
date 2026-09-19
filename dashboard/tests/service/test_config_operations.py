@@ -54,9 +54,11 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
         assert path not in cfg["_approval_keys"], path
         assert path in cfg["_confirm_keys"], path
         assert path not in cfg["_editable_keys"], path
+    # #2367: the owner ruled every config field must be reachable from the panel; the password
+    # left the never-approve set and now confirms like any other unlisted leaf.
     assert "dashboard.auth.password" not in cfg["_approval_keys"]
     assert "dashboard.auth.password" not in cfg["_editable_keys"]
-    assert "dashboard.auth.password" not in cfg["_confirm_keys"]
+    assert "dashboard.auth.password" in cfg["_confirm_keys"]
     assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
     assert not any(path.startswith("ssh.") for path in cfg["_confirm_keys"])
     assert "telegram.enabled" in cfg["_approval_keys"]
@@ -79,7 +81,7 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["dashboard.control.enabled"] == "confirm"
     assert classes["p2pool.clearnet"] == "confirm"
     assert classes["dashboard.host"] == "approval"
-    assert "dashboard.auth.password" not in classes
+    assert classes["dashboard.auth.password"] == "confirm"
     assert "telegram.events.wallet_changed" not in classes
     assert "telegram.events.clearnet_exposed" not in classes
     assert not any(p.startswith("ssh.") for p in classes)

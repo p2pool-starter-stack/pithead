@@ -384,6 +384,7 @@ class TestConfirmKeys:
                 **CONFIG["dashboard"],
                 "control": {"enabled": True},
             },
+            "telegram": {**CONFIG["telegram"], "events": {"wallet_changed": True}},
         }
         reference_path = spool / "reference.json"
         reference_path.write_text(json.dumps(reference))
@@ -397,7 +398,9 @@ class TestConfirmKeys:
             "tor.data_dir",
         ):
             assert path in cfg["_confirm_keys"], path
-        assert "dashboard.auth.password" not in cfg["_confirm_keys"]
+        # dashboard.auth.password joins confirm now (#2367); the tamper alarm stays physical-only.
+        assert "dashboard.auth.password" in cfg["_confirm_keys"]
+        assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
         assert "p2pool.pool" not in cfg["_confirm_keys"]
 
     def test_confirm_and_editable_sets_are_disjoint(self, spool):

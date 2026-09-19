@@ -262,17 +262,18 @@ assert_rc "control_validate_approval refuses a wrong one" \
         echo $?
     )" "1"
 
-echo "== black-box: the envelope never crosses the media-only boundary (#1959) =="
-jq -n --arg w "$NEW_WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
-    monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:false},
-    tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
-    dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"replacement-password"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
+echo "== black-box: the dashboard password commits behind typed APPLY and the approval envelope (#2367) =="
+jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.auth.password="replacement-password")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{preview_id:$id,actor:"admin",approver:"tg-7",payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+# A password change is a DEST row (39-describe-change.sh's DASHBOARD_AUTH_HASH_B64 case), so it
+# needs the same envelope a payout change does — an empty payout_suffixes since this isn't one.
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "dashboard password stays physical-presence-only despite a valid envelope" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
-assert_contains "media-only refusal names the configuration stick" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "configuration stick"
-assert_eq "the refusal did not change dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+assert_eq "dashboard password repoint with typed APPLY and the envelope commits" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "applied"
+assert_eq "config.json carries the new password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "replacement-password"
+jq '.dashboard.auth.password="a control passphrase"' "$C/config.json" >"$C/config.restore" && mv "$C/config.restore" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
 echo "== black-box: the remote electricity-price feed joins the sensitive class (#1959) =="
 jq '.dashboard.energy.price_feed=false' "$C/config.json" >"$C/config.energy" && mv "$C/config.energy" "$C/config.json"

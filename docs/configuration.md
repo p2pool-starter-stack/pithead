@@ -122,10 +122,25 @@ also needs `APPLY` typed, and a payout change needs the final eight characters o
 which the host re-checks against the staged file. These are typo protection and deliberate
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
-old and new non-secret values, while credentials and capability URLs stay masked. Two classes
-remain configuration-stick only: `dashboard.auth.password`, and the
-`telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms. These are the
-same physical-presence boundary enforced by the media configuration path, not a browser exception.
+old and new non-secret values, while credentials and capability URLs stay masked and never echo
+back after commit. One class remains configuration-stick only: the
+`telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms — the detection
+controls for the sensitive changes this section otherwise permits, enforced by the same
+physical-presence boundary as the media configuration path, not a browser exception.
+
+Every other field, including the dashboard password, Telegram credentials, the machine hostname,
+and the Healthchecks ping URL, is reachable from the panel behind the confirmation above (#2367):
+
+| Field | Exposed how | Gate |
+|---|---|---|
+| `telegram.enabled` | Configuration view, Dashboard & access | Confirm preview + typed `APPLY` |
+| `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it) | Confirm preview + typed `APPLY` |
+| `telegram.chat_id` | Configuration view, Notifications | Confirm preview + typed `APPLY` |
+| `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
+| `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Not exposed | Physical presence only — see above |
+| `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + approval envelope |
+| `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns this session logs itself out on a mistyped password | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
+| `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` |
 
 When a key is absent from `config.json`, the view uses the value in `config.reference.json` and
 labels it `(default)`. That value is also what the renderer applies; a failed apply is called out so

@@ -78,6 +78,19 @@ gate_try "$C/cand.json"
 assert_eq "telegram bot_token repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the original bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
 
+# #2367: the dashboard password left the physical-presence set (see
+# control-physical-presence-preview.sh, which now proves the wallet-changed alarm stays refused
+# instead). A live password change is a DEST row (39-describe-change.sh's DASHBOARD_AUTH_HASH_B64
+# case), so it needs the same envelope a payout change does, not just typed APPLY...
+jq '.dashboard.auth.password="a replacement control passphrase"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "dashboard password repoint without APPLY is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_eq "config.json keeps the original password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+# ...but, unlike the physical-presence set, DOES commit once typed and approved.
+gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
+assert_eq "dashboard password repoint with APPLY and the envelope commits" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "config.json carries the new password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a replacement control passphrase"
+
 # Downgrade the onion to password-only (client_auth:false is an INFO row in every direction).
 # Baseline first: onion on + client_auth on (the only combo valid with control on), applied.
 jq '.dashboard.onion={enabled:true,client_auth:true}' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
