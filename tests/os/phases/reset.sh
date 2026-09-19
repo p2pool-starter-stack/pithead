@@ -253,4 +253,29 @@ phase_reset() {
     else
         bad "leg 1 reformatted /data and left no record on the ESP — a wiped machine is indistinguishable from a fresh one (#1062)"
     fi
+
+    # ---- one-shot wipe marker (#1208): the WARN/restore-banner surfaces once, then stays silent ---
+    info "leg 2 continued — the recovery wipe just recorded must surface exactly once"
+    # The box already rebooted into the wizard above (_wait_setup_page), and stage_wizard_spool
+    # runs on EVERY wizard start — so by now the wizard's own boot is the FIRST surfacing and has
+    # already consumed the one-shot marker (record_wipe re-armed it moments ago, above).
+    local wiped_json
+    wiped_json=$(_ssh "cat /data/pithead/data/firstboot/data-wiped.json 2>/dev/null")
+    if printf '%s' "$wiped_json" | grep -q '"recovery":true'; then
+        ok "the wizard's spool carried the recovery note (recovery:true) — the first surfacing happened"
+    else
+        bad "the wizard's spool did not carry a recovery:true note after the wedged-/data recovery ($wiped_json)"
+    fi
+    if _ssh "test -f /boot/efi/pithead-data-wiped.pending" 2>/dev/null; then
+        bad "the one-shot marker is still armed after the wizard already surfaced the note — it will re-surface forever (#1208)"
+    else
+        ok "the one-shot marker was consumed by the first surfacing"
+    fi
+    local doctor_out
+    doctor_out=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
+    if printf '%s' "$doctor_out" | grep -q "Data reset:"; then
+        bad "doctor still reports the data-reset note after it already surfaced once — a historic wipe is re-WARNing (#1208)"
+    else
+        ok "doctor stays silent on a wipe already surfaced once — no stale re-WARN"
+    fi
 }

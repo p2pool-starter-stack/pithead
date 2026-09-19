@@ -131,20 +131,36 @@ run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "no note file -> rc 1" "$?" "1"
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
+assert_rc "a note with no .pending marker -> rc 1 (record_wipe always drops one; this is belt-and-suspenders)" "$?" "1"
+
+: >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "the wedged-partition wipe -> recovery true" "$(printf '%s' "$note" | jq -r '.recovery')" "true"
 assert_eq "the last line's timestamp is carried through" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
 assert_eq "the last line's reason is carried through" "$(printf '%s' "$note" | jq -r '.reason')" \
     "unrecoverable /data reinitialized — everything on it was lost"
 
+# One-shot (#1208): a successful read consumes the .pending marker, so the SAME wipe never
+# surfaces a second time — the log line itself is left untouched (append-only, never cleared).
+run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
+assert_rc "a second read of the same wipe -> rc 1, the marker was already consumed" "$?" "1"
+assert_contains "the underlying log line survives — only the marker is consumed" \
+    "$(cat "$DWN/esp/pithead-data-wiped")" "unrecoverable /data reinitialized"
+
 printf '2026-08-20T08:00:00Z factory-reset requested\n2026-08-21T09:00:00Z factory-reset requested\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "a deliberate factory-reset -> recovery false" "$(printf '%s' "$note" | jq -r '.recovery')" "false"
 assert_eq "append-only log: only the LAST line is read" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
 
 printf 'garbage\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "a line with no '<when> <reason>' shape -> rc 1, never a made-up note" "$?" "1"
+assert_eq "an unparseable line leaves the marker armed, never silently consumed" \
+    "$([ -f "$DWN/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "present"
+rm -f "$DWN/esp/pithead-data-wiped.pending"
 
 # publish_data_wipe_note carries the note to the wizard's spool — the wizard container's ONLY
 # mount, so it cannot read PRESEED_DIR itself.
@@ -155,8 +171,14 @@ assert_eq "no temp file left beside the atomic target" \
     "$(find "$DWN/spool" -name '.data-wiped.json.*' | wc -l | tr -d ' ')" "0"
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
 assert_eq "a real note reaches the spool" "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
+
+# One-shot (#1208): publish_data_wipe_note is itself a surfacing — a second wizard boot for the
+# SAME wipe (the marker already consumed) must not re-report it either.
+run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
+assert_eq "a second publish of the same wipe -> the spool goes back to empty" "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
 # The fleet-stick rule (same as publish_rig_defaults, #797 R3): a MISSING note must overwrite a
 # PREVIOUS machine's note, never leave it standing — the spool survives on /data between
@@ -170,6 +192,7 @@ assert_eq "a stale note from a previous machine does not survive an absent one" 
 # Removable boot media: PRESEED_DIR is the STICK's own ESP there, describing the stick, never
 # THIS machine — the publisher must not carry it across even when the stick's ESP holds a note.
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 (
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090

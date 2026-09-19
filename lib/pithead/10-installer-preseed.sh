@@ -32,16 +32,26 @@ preseed_token() {
 # most recent event is the one an operator needs — and prints one JSON object on success:
 # {when, reason, recovery}. "recovery" is false for a deliberate factory-reset (nothing to warn
 # about, the operator asked for it) and true for the wedged-/data case, where the next move is
-# restoring a backup rather than walking through setup as if this were a fresh machine. rc 1:
-# absent, unreadable, or a line with no "<when> <reason>" shape to parse.
+# restoring a backup rather than walking through setup as if this were a fresh machine.
+#
+# One-shot (#1208): the log is never cleared, so gate on a SEPARATE ".pending" marker
+# record_wipe() drops beside it and consume that marker (never the log) on a successful read — the
+# first caller to surface the note, doctor's check_data_wipe_note or the wizard's
+# publish_data_wipe_note, is the only one that ever sees it. A later record_wipe() re-arms the
+# marker, so a genuinely new wipe still gets reported.
+#
+# rc 1: no wipe pending (never happened, or already surfaced), unreadable, or a line with no
+# "<when> <reason>" shape to parse.
 data_wipe_note() {
     local f="$PRESEED_DIR/pithead-data-wiped" line when reason
+    [ -f "$f.pending" ] || return 1
     [ -f "$f" ] || return 1
     line=$(tail -n 1 "$f" 2>/dev/null) || return 1
     case "$line" in *' '*) ;; *) return 1 ;; esac
     when="${line%% *}"
     reason="${line#* }"
     [ -n "$when" ] && [ -n "$reason" ] || return 1
+    rm -f "$f.pending" 2>/dev/null || true
     jq -cn --arg when "$when" --arg reason "$reason" \
         '{when: $when, reason: $reason, recovery: ($reason != "factory-reset requested")}'
 }

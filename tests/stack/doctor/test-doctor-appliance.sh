@@ -91,6 +91,7 @@ out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "no note file -> doctor says nothing (not even a section header)" "$out" ""
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent EVEN WITH a note present (a DIY host cannot have one)" "$out" ""
 
@@ -100,10 +101,22 @@ assert_contains "the WARN names the date" "$out" "2026-08-21T09:00:00Z"
 assert_contains "the WARN points at restoring a backup" "$out" "restore from backup"
 assert_not_contains "a recovery wipe is a WARN, never a FAIL (must not fail the boot health gate)" "$out" "FAIL"
 
+# One-shot (#1208): the WARN above was the first surfacing and consumed the .pending marker — the
+# SAME historic wipe must never re-surface on a later doctor run, however healthy the box has been
+# since (the log line itself, checked below, is untouched — only the marker was consumed).
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a re-run after the WARN was shown once -> silent, never a stale re-WARN" "$out" ""
+assert_contains "the underlying wipe log is untouched — only the marker was consumed" \
+    "$(cat "$CDW/esp/pithead-data-wiped")" "2026-08-21T09:00:00Z"
+
 printf '2026-08-19T07:30:00Z factory-reset requested\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_not_contains "a deliberate factory-reset -> no WARN (the operator asked for it)" "$out" "WARN"
 assert_contains "a deliberate factory-reset -> still named, informationally" "$out" "2026-08-19T07:30:00Z"
+
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a factory-reset info line is one-shot too" "$out" ""
 
 unset PITHEAD_PRESEED_DIR
 rm -rf "$CDW"
