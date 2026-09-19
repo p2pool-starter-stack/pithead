@@ -66,7 +66,14 @@ _phase_install_commit() {
     # config.json exists now, so pithead-boot's condition should hold; its health gate must run
     # and call `rauc status mark-good`. No hands on it — _reboot_wait is the same primitive
     # provision-reboot.sh uses for the provisioned-machine reboot leg.
-    _reboot_wait reboot 300 || bad "installed system never returned from the unaided reboot"
+    # A dead guest here cannot answer anything below (or the reinstall leg that follows) — return
+    # instead of piling up confusing SSH-timeout failures on a connection that is already gone,
+    # the same choice provision-reboot.sh makes on its own reboot leg.
+    _reboot_wait reboot 300 || {
+        bad "installed system never returned from the unaided reboot"
+        unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
+        return 1
+    }
     local rootdev
     rootdev=$(_ssh "lsblk -no PKNAME \$(findmnt -no SOURCE /)" | head -1)
     if [ "$rootdev" = "vda" ]; then

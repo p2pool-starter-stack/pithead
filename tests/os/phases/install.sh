@@ -15,7 +15,7 @@ phase_install() {
     # shellcheck disable=SC2034
     local token="" jar="" scode="" tries2=0 body=""
     _phase_install_initial || return
-    _phase_install_commit
+    _phase_install_commit || return
     _phase_install_reinstall || return
     _phase_install_restore
 }
