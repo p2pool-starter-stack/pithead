@@ -168,6 +168,15 @@ run_rigforge_writable_keys() { # <rig>
 # same source the real editor prefills from when the rig sends no config. It is the best available
 # restore value, but being on record is NOT a guarantee that it carries a credential — so the leg
 # checks, rather than assuming (#1546).
+#
+# #2325: that record can only ever be created by this leg applying a pools value, so requiring one
+# on record before the leg runs was circular — a rig this leg had never touched could never pass its
+# own precondition. When nothing is on record yet, IT_RIG_POOLS_PROBE is the seed: it is by
+# definition a pools value the operator has already attested is safe to apply to this rig and
+# carries a `pass` (its contract, same as always), so it doubles as "the original" too — there was
+# no real prior value to restore, and restoring to the probe leaves `.last_applied.pools` seeded for
+# every run after this one. The #1546 credential check below still runs against whatever ends up in
+# `orig_pools`, seeded or not, so a probe missing its own `pass` is refused rather than applied.
 run_rigforge_pools() { # <rig>
     local rig="$1" orig_pools res status ckeys
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
@@ -179,21 +188,20 @@ run_rigforge_pools() { # <rig>
         return 0
     fi
     orig_pools="$(_worker_detail "$rig" | jq -c '.last_applied.pools // empty' 2>/dev/null)"
-    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. Being ON RECORD does not mean a
-    # value can be written back — a pools array whose entries carry no usable `pass` restores the rig
-    # to a credential-less config, which is the outcome the self-derived-pools refusal exists to
-    # prevent. So the credential is tested FIRST and emptiness only picks the message. Refusing is
-    # the honest answer for the same reason #1236 refuses `.rig_config.pools`: the harness cannot
-    # tell "this rig has no pass" from "it was stripped", and must not guess against a real miner.
-    # The shapes that reach each branch are enumerated as executable cases in the self-test, which
-    # is where they cannot drift out of step with the code.
+    # #2325: nothing on record yet is not a dead end — the probe is the only value this leg has ever
+    # been allowed to trust, so it seeds the record with itself rather than refusing forever.
+    [ -z "$orig_pools" ] && orig_pools="$IT_RIG_POOLS_PROBE"
+    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. Being ON RECORD (or being the
+    # seed above) does not mean a value can be written back — a pools array whose entries carry no
+    # usable `pass` restores the rig to a credential-less config, which is the outcome the
+    # self-derived-pools refusal exists to prevent. Refusing is the honest answer for the same reason
+    # #1236 refuses `.rig_config.pools`: the harness cannot tell "this rig has no pass" from "it was
+    # stripped", and must not guess against a real miner. The shapes that reach this branch are
+    # enumerated as executable cases in the self-test, which is where they cannot drift out of step
+    # with the code.
     if ! printf '%s' "$orig_pools" |
         jq -e 'type == "array" and length > 0 and all(.[]; (.pass? // "") != "")' >/dev/null 2>&1; then
-        if [ -z "$orig_pools" ]; then
-            it_skip_leg "pools write (#1002b)" "rig '$rig' has no dashboard-applied pools on record (.last_applied.pools) — can't read a restorable original; the rig's own .rig_config.pools is credential-stripped and must not be written back"
-        else
-            it_skip_leg "pools write (#1002b)" "rig '$rig' has .last_applied.pools on record, but it carries no usable credential (a missing or empty \`pass\` on at least one entry) — restoring it would apply a credential-less pools config to a real miner, so this refuses rather than guesses (#1546)"
-        fi
+        it_skip_leg "pools write (#1002b)" "rig '$rig' has no usable credential to restore pools with — neither .last_applied.pools nor IT_RIG_POOLS_PROBE carries a non-empty \`pass\` on every entry, and the rig's own .rig_config.pools is credential-stripped and must not be written back (#1546)"
         return 0
     fi
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
