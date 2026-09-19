@@ -190,8 +190,11 @@ run_rigforge_control() {
     else
         it_skip_leg "control result retention (#1990)" "CONTROL_DIR not set on the box"
     fi
-    assert_eq "stack still healthy after repeated control actions and retention pruning (#1990)" \
-        "$(wait_status_ok 60 && echo true || echo false)" "true"
+    # Direct rc, not `$(wait_status_ok && echo true || echo false)`: wait_for's own it_step
+    # progress line ("→ waiting for…") goes to stdout, so that form's captured "got" was never
+    # true/false, it was the progress line — a real 60s job 577 failure on read, not on health.
+    wait_status_ok 240
+    assert_rc "stack still healthy after repeated control actions and retention pruning (#1990)" "$?" "0"
 
     control_rc=$((IT_FAIL > fails_before))
     [ "$control_rc" = 0 ] || capture_artifacts "rigforge-control" "$OUT_DIR"
