@@ -160,6 +160,35 @@ phase_reset() {
         bad "SSH host-key fingerprint survived factory-reset (before: $fp_before, after: ${fp_after:-none})"
     fi
 
+    # ---- one-shot wipe marker (#1208): the note just recorded surfaces once, then stays silent ---
+    info "leg 1 continued — the factory-reset just recorded must surface exactly once"
+    # The wizard that just served the setup page above (line 108) is the FIRST surfacing:
+    # stage_wizard_spool ran as part of that very boot and called publish_data_wipe_note, which
+    # reads and consumes the one-shot marker record_wipe armed during the reset. This is a
+    # deliberate factory-reset (the operator asked for it via `pithead factory-reset -y`), so
+    # recovery is false — informational, never a WARN — but it is still a real note that must be
+    # shown exactly once.
+    local wiped_json
+    wiped_json=$(_ssh "cat /data/pithead/data/firstboot/data-wiped.json 2>/dev/null")
+    if printf '%s' "$wiped_json" | grep -q '"reason":"factory-reset requested"' &&
+        printf '%s' "$wiped_json" | grep -q '"recovery":false'; then
+        ok "the wizard's spool carried the factory-reset note (recovery:false) — the first surfacing happened"
+    else
+        bad "the wizard's spool did not carry the factory-reset note after the wipe ($wiped_json)"
+    fi
+    if _ssh "test -f /boot/efi/pithead-data-wiped.pending" 2>/dev/null; then
+        bad "the one-shot marker is still armed after the wizard already surfaced the note — it will re-surface forever (#1208)"
+    else
+        ok "the one-shot marker was consumed by the first surfacing"
+    fi
+    local doctor_out
+    doctor_out=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
+    if printf '%s' "$doctor_out" | grep -q "Data reset:"; then
+        bad "doctor still reports the data-reset note after it already surfaced once — a historic wipe is re-WARNing (#1208)"
+    else
+        ok "doctor stays silent on a wipe already surfaced once — no stale re-WARN"
+    fi
+
     # ---- leg 2: a wedged /data must be REPAIRED, not erased --------------------------------
     info "leg 2 — a corrupt data-partition superblock must be repaired, with /data still there afterwards"
     # A sentinel standing in for what /data actually holds: the wallets, the Tor onion private keys,
@@ -252,30 +281,5 @@ phase_reset() {
         ok "leg 1's factory reset was recorded on the ESP ($wipes_before line(s))"
     else
         bad "leg 1 reformatted /data and left no record on the ESP — a wiped machine is indistinguishable from a fresh one (#1062)"
-    fi
-
-    # ---- one-shot wipe marker (#1208): the WARN/restore-banner surfaces once, then stays silent ---
-    info "leg 2 continued — the recovery wipe just recorded must surface exactly once"
-    # The box already rebooted into the wizard above (_wait_setup_page), and stage_wizard_spool
-    # runs on EVERY wizard start — so by now the wizard's own boot is the FIRST surfacing and has
-    # already consumed the one-shot marker (record_wipe re-armed it moments ago, above).
-    local wiped_json
-    wiped_json=$(_ssh "cat /data/pithead/data/firstboot/data-wiped.json 2>/dev/null")
-    if printf '%s' "$wiped_json" | grep -q '"recovery":true'; then
-        ok "the wizard's spool carried the recovery note (recovery:true) — the first surfacing happened"
-    else
-        bad "the wizard's spool did not carry a recovery:true note after the wedged-/data recovery ($wiped_json)"
-    fi
-    if _ssh "test -f /boot/efi/pithead-data-wiped.pending" 2>/dev/null; then
-        bad "the one-shot marker is still armed after the wizard already surfaced the note — it will re-surface forever (#1208)"
-    else
-        ok "the one-shot marker was consumed by the first surfacing"
-    fi
-    local doctor_out
-    doctor_out=$(_ssh "cd /data/pithead && PITHEAD_ENGINE=podman ./pithead doctor 2>&1" 2>/dev/null)
-    if printf '%s' "$doctor_out" | grep -q "Data reset:"; then
-        bad "doctor still reports the data-reset note after it already surfaced once — a historic wipe is re-WARNing (#1208)"
-    else
-        ok "doctor stays silent on a wipe already surfaced once — no stale re-WARN"
     fi
 }
