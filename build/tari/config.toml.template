@@ -5,8 +5,6 @@
 # Base directory for blockchain database and logs
 base_path = "/var/tari/node"
 
-network = "mainnet"
-
 [p2p.seeds]
 # DNS seeds are DISABLED for privacy (dns_seeds = [] below), so the node does ZERO seed DNS and
 # bootstraps purely from the onion peer_seeds over Tor (#162). The name servers below are now inert,
