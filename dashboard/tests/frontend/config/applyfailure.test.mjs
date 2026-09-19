@@ -60,6 +60,13 @@ test("a host operator is still told where the previous config was kept", () => {
   assert.ok(out.includes("on the host"));
 });
 
+// #1871 addendum: htm drops the whitespace between "kept at" and the <code> element when the
+// line breaks between them, rendering "kept at<backup path>" with no space.
+test("the host branch keeps a space between 'kept at' and the backup path (#1871)", () => {
+  assert.doesNotMatch(host(), new RegExp(`kept at${BACKUP}`));
+  assert.match(host(), /kept at\s/);
+});
+
 test("an appliance operator is never pointed at a host path they cannot reach", () => {
   const out = appliance();
   // Non-empty and saying the right thing FIRST, so the absence below cannot be an empty render.
