@@ -389,7 +389,8 @@ not proven.
   #2067, not the firmware setting itself). (M11–M14 are the rig-role steps and stay manual
   today — see the manual release checklist — because the `rig` KVM phase does not yet prove an
   accepted share, MSR/hugepages, a dashboard adopt, or a stick-root boot; converting what it can
-  is #1886's first gap.)
+  is #1886's first gap.) #394's gate list still does not name this battery — the same omission
+  #976's own title records for the OS-update path.
 - **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
   KVM battery now measures this rather than leaving it an unread flag: every other guest in
   `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
