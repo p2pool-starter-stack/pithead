@@ -10,6 +10,14 @@ from mining_dashboard.config.config import HISTORY_RETENTION_SEC
 logger = logging.getLogger("StateManager")
 WORKER_HISTORY_RETENTION_SEC = HISTORY_RETENTION_SEC
 RAFFLE_WINS_MAX_ROWS = 5000
+# audit_events retention (#1814): the table was carved out as permanent alongside blocks/payouts/
+# disk_growth, but unlike those it has a partially UNTRUSTED writer — the unauthenticated worker
+# feed's host-edit/rig-edit/rig-drift detections (#724/#1810 cap their RATE, not the table's total).
+# 30 days matches the family convention every other pruned series in this store already uses
+# (worker_history, history, shares, events, share_stats), so audit history survives exactly as long
+# as those do; an operator who wants a longer security trail is the product decision #1814 left
+# open, not this default.
+AUDIT_EVENTS_RETENTION_SEC = HISTORY_RETENTION_SEC
 
 
 def _raffle_wins_max_rows():
@@ -100,7 +108,9 @@ class MiningStoreMixin:
         self, id: str, ts: str, source: str, actor: str, action: str, status: str, keys: str
     ) -> None:
         """Store an audit row; a terminal control result replaces its same-id preview (#530).
-        Deterministic host/rig edit ids stay first-write idempotent. Values never enter ``keys``."""
+        Deterministic host/rig edit ids stay first-write idempotent. Values never enter ``keys``.
+        30-day retention (#1814), probabilistically pruned like every other series in this store —
+        the table is not exempt from #724's disk-fill concern just because it is admin-facing."""
         try:
             with self._db_lock:
                 if not self._conn:
@@ -113,6 +123,15 @@ class MiningStoreMixin:
                     "WHERE excluded.source='control' AND audit_events.source='control'",
                     (id, ts, source, actor, action, status, keys),
                 )
+                if random.random() < 0.05:  # noqa: S311 — pruning sampler, not a security context
+                    # ts is the "%Y-%m-%dT%H:%M:%SZ" shape _iso_now/control_audit both write, which
+                    # sorts lexicographically same as chronologically, so a same-shape cutoff string
+                    # compares correctly without parsing every row back to epoch.
+                    cutoff = time.strftime(
+                        "%Y-%m-%dT%H:%M:%SZ",
+                        time.gmtime(time.time() - AUDIT_EVENTS_RETENTION_SEC),
+                    )
+                    self._conn.execute("DELETE FROM audit_events WHERE ts < ?", (cutoff,))
                 self._conn.commit()
         except sqlite3.Error as e:
             self._db_error("Audit Event Write Error", e)

@@ -282,6 +282,32 @@ class TestAuditEvents:
             )
         assert len(state_manager.get_audit_events(limit=2)) == 2
 
+    def test_old_rows_pruned_from_db_when_cleanup_fires(self, state_manager, monkeypatch):
+        # #1814: audit_events is not exempt from the disk-fill concern #724 raised — two of its
+        # three self-detected sources read the unauthenticated worker feed, same as the other
+        # tables this store already prunes.
+        state_manager.add_audit_event(
+            id="ancient",
+            ts="2020-01-01T00:00:00Z",
+            source="control",
+            actor="",
+            action="commit",
+            status="applied",
+            keys="",
+        )
+        monkeypatch.setattr("mining_dashboard.service.mining_store.random.random", lambda: 0.0)
+        state_manager.add_audit_event(
+            id="fresh",
+            ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            source="control",
+            actor="",
+            action="commit",
+            status="applied",
+            keys="",
+        )
+        ids = {e["id"] for e in state_manager.get_audit_events()}
+        assert ids == {"fresh"}
+
     def test_write_error_flags_db_unhealthy(self, state_manager):
         with state_manager._db_lock:
             state_manager._conn.execute("DROP TABLE audit_events")
