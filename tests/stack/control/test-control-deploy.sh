@@ -146,6 +146,115 @@ upg455_fail=$(
 )
 assert_not_contains "failed upgrade does NOT move the current pointer (#455)" "$upg455_fail" "symlink"
 
+echo "== unit: carry_dashboard_data_move (#2360) =="
+# Direct unit calls, mirroring mig455 above: a confirmed A-to-B dashboard.data_dir move, distinct
+# from the #455 default migration — this one COPIES (never moves) and verifies by content.
+carry2360() { # <workdir> <old> <new>
+    (
+        cd "$1" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        docker() { :; }
+        carry_dashboard_data_move "$2" "$3"
+    )
+}
+C="$SANDBOX/carry"
+mkdir -p "$C/old" "$C/new"
+printf 'livedb' >"$C/old/mining_data.db"
+printf 'wal-bytes' >"$C/old/mining_data.db-wal"
+rmdir "$C/new" # an unpopulated pre-created target (ensure_directories) is not a conflict
+out="$(carry2360 "$C" "$C/old" "$C/new" 2>&1)"
+assert_rc "carry: succeeds" "$?" "0"
+assert_eq "carry: DB copied intact" "$(cat "$C/new/mining_data.db" 2>/dev/null)" "livedb"
+assert_eq "carry: -wal companion copied" "$(cat "$C/new/mining_data.db-wal" 2>/dev/null)" "wal-bytes"
+assert_eq "carry: old copy left in place (never moved)" "$(cat "$C/old/mining_data.db" 2>/dev/null)" "livedb"
+# no DB at the old path: nothing live there, silent no-op.
+mkdir -p "$C/empty-old" "$C/empty-new"
+out="$(carry2360 "$C" "$C/empty-old" "$C/empty-new" 2>&1)"
+assert_rc "carry: no DB at old path is a no-op" "$?" "0"
+if [ -e "$C/empty-new/mining_data.db" ]; then bad "carry: nothing created with no source DB" "created anyway"; else ok "carry: nothing created with no source DB"; fi
+# non-empty target: refuse rather than guess which DB is live; old untouched.
+mkdir -p "$C/old2" "$C/occupied"
+printf 'srcdb' >"$C/old2/mining_data.db"
+printf 'existing' >"$C/occupied/mining_data.db"
+out="$(carry2360 "$C" "$C/old2" "$C/occupied" 2>&1)"
+assert_rc "carry: non-empty target refuses" "$?" "1"
+assert_contains "carry: refusal names the target" "$out" "$C/occupied"
+assert_eq "carry: target DB untouched by refusal" "$(cat "$C/occupied/mining_data.db")" "existing"
+assert_eq "carry: source DB untouched by refusal" "$(cat "$C/old2/mining_data.db")" "srcdb"
+# corrupted/short copy: cmp catches it, refuses, source untouched (simulates a failed/partial cp).
+mkdir -p "$C/old3" "$C/new3"
+printf 'realdb' >"$C/old3/mining_data.db"
+rmdir "$C/new3"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { :; }
+    cp() { : >"$2"; } # a copy that silently truncates — must be CAUGHT, not trusted
+    carry_dashboard_data_move "$C/old3" "$C/new3"
+    echo "rc=$?"
+} 2>&1)"
+assert_contains "carry: verifies the copy (doesn't trust cp alone)" "$out" "rc=1"
+if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "realdb" ]; then
+    ok "carry: source untouched after a failed verify"
+else
+    bad "carry: source untouched after a failed verify" "source was altered"
+fi
+
+echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
+# A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths, after
+# migrate_dashboard_data and before compose recreates. An unchanged data_dir must not call it.
+apply2360() { # <extra-stub-body>
+    (
+        cd "$SANDBOX/apply2360" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        require_env() { :; }
+        ensure_onion_password() { :; }
+        load_preserved_state() { :; }
+        ensure_directories() { :; }
+        resolve_dashboard_host() { :; }
+        is_deployed() { return 0; }
+        onion_missing() { return 1; }
+        inject_service_configs() { :; }
+        generate_caddyfile() { :; }
+        provision_control_runner() { :; }
+        provision_onion_client_auth() { :; }
+        provision_ssh_access() { :; }
+        provision_console_login() { :; }
+        render_local_miner_config() { :; }
+        migrate_compose_project() { :; }
+        apply_tor_egress_firewall() { :; }
+        reconcile_appliance_hostname() { :; }
+        migrate_dashboard_data() { echo migrate; }
+        compose_up_checked() {
+            echo compose
+            return 0
+        }
+        mutation_lock_acquire() { :; }
+        mutation_lock_release() { :; }
+        env_changed_keys() { printf 'DASHBOARD_DATA_DIR\n'; }
+        env_get_file() { [ "$1" = "$ENV_FILE" ] && echo "/old/path" || echo "/new/path"; }
+        describe_change() { printf 'CONFIRM\tdata dir changed\n'; }
+        render_env() { :; }
+        # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
+        parse_and_validate_config() { DASHBOARD_DIR="/new/path"; }
+        carry_dashboard_data_move() { echo "carry:$1:$2"; }
+        apply -y
+    )
+}
+mkdir -p "$SANDBOX/apply2360"
+: >"$SANDBOX/apply2360/.env"
+out="$(apply2360 2>&1)"
+assert_contains "apply: carries with the pre-commit old path" "$out" "carry:/old/path:/new/path"
+assert_eq "apply: carry runs after migrate, before compose" \
+    "$(printf '%s\n' "$out" | grep -xE 'migrate|carry:/old/path:/new/path|compose' | tr '\n' ',')" \
+    "migrate,carry:/old/path:/new/path,compose,"
+
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
 # layout. Proves the default resolution, the apply-time migration, and the upgrade-time
