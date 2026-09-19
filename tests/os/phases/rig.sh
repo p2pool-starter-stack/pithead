@@ -29,6 +29,68 @@ phase_rig() {
         bad "image build failed (/tmp/os-fault-build.log)"
         return
     }
+
+    # #1843: a disk-install rig lands its staged pithead-rig.json straight off the ESP — no
+    # wizard round trip. Stage a TOKENLESS one directly there, exactly as pre-#1836 media would,
+    # and boot: the guard must refuse it and fall to the setup page, never mint one unseen. This
+    # spends a throwaway copy of the image; the rig boot below uses the untouched original.
+    # Every staging step fails LOUDLY: a leg that silently staged nothing would boot a pristine
+    # image, pass the role and page checks for the wrong reason, and report the guard proven.
+    local land_disk="/srv/code/bench-vm/pithead-rig-token-landing.img" land_loop land_mnt land_tries=0 land_warn
+    cp "$img" "$land_disk" || {
+        bad "could not copy the image for the tokenless-landing leg"
+        return
+    }
+    land_loop=$(losetup -Pf --show "$land_disk") || {
+        bad "could not attach a loop device to the tokenless-landing image"
+        return
+    }
+    while [ ! -e "${land_loop}p1" ] && [ "$land_tries" -lt 50 ]; do
+        sleep 0.1
+        land_tries=$((land_tries + 1))
+    done
+    [ -e "${land_loop}p1" ] || {
+        bad "the tokenless-landing image's ESP partition never appeared (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
+    land_mnt=$(mktemp -d)
+    mount "${land_loop}p1" "$land_mnt" || {
+        bad "could not mount the tokenless-landing image's ESP (${land_loop}p1)"
+        losetup -d "$land_loop"
+        return
+    }
+    printf '{"pool":"127.0.0.1:22","worker":"kvm-rig"}' >"$land_mnt/pithead-rig.json"
+    jq -e .pool "$land_mnt/pithead-rig.json" >/dev/null 2>&1 &&
+        ok "the tokenless rig file reads back off the staged ESP before the boot" ||
+        bad "the tokenless rig file did not read back off the staged ESP — the leg would prove nothing"
+    umount "$land_mnt"
+    rmdir "$land_mnt"
+    losetup -d "$land_loop"
+    if _vm_boot_disk "$land_disk" && _wait_ssh 240; then
+        [ "$(_ssh 'cat /data/pithead/machine-role 2>/dev/null' | tr -d '\r\n')" = "rig" ] &&
+            bad "a tokenless staged rig file landed anyway — the #1843 guard did not fire" ||
+            ok "#1843: a tokenless staged rig file is refused, never landed as a rig"
+        _wait_setup_page 120 &&
+            ok "#1843: the machine falls to the setup page instead of mining unadoptably" ||
+            bad "#1843: the setup page never came up after the refusal"
+        # POSITIVE evidence that the guard itself ran, which the two checks above cannot give:
+        # a pristine image with nothing staged passes both for the wrong reason. This line comes
+        # from the guard's own else-branch (lib/pithead/12-firstboot-wizard.sh).
+        land_warn=$(_ssh "journalctl -b --no-pager -o cat | grep -m1 unusable" 2>/dev/null | tr -d '\r')
+        [ -n "$land_warn" ] &&
+            ok "#1843: the guard ran — boot journal: $(printf '%s' "$land_warn" | cut -c1-140)" ||
+            bad "#1843: no 'unusable' line in the boot journal — the guard never ran on this boot"
+        # Refused is still readable: the file may carry a stratum password and a VFAT ESP keeps
+        # no mode 600, so the refusal scrubs it exactly as the consumed path does.
+        _ssh "test ! -e /boot/efi/pithead-rig.json" &&
+            ok "#1843: the refused file was scrubbed off the ESP (it may hold a stratum password)" ||
+            bad "#1843: the refused file still sits on the ESP, unprotected on VFAT"
+    else
+        bad "the tokenless-landing guest never answered SSH (ip: ${ip:-none})"
+    fi
+    rm -f "$land_disk"
+
     _vm_boot_disk "$img" && _wait_ssh 240 || {
         bad "guest never answered SSH (ip: ${ip:-none})"
         return
@@ -162,10 +224,12 @@ phase_rig() {
     _rig_mining_up 24 &&
         ok "the rig returned mining with no hands on it (its unit lives in /run and died with the reboot)" ||
         bad "the rig did not return after the reboot — its runtime unit was never re-rendered"
-    # WHICH unit owns the boot is the whole R4 fork: the wizard's window is closed, pithead-boot runs.
-    [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
+    # XMRig starts before pithead-boot finishes its final mark-good and exit, so its active state
+    # alone is not proof that this RemainAfterExit unit has settled. The shared wait also proves
+    # that the boot unit, rather than the condition-skipped wizard, ran this boot.
+    provisioning_settled 60 && [ "$(_ssh 'systemctl is-active pithead-boot' | tr -d '\r\n')" = "active" ] &&
         ok "pithead-boot owns a provisioned rig's boot" ||
-        bad "pithead-boot did not run on the rig (its condition still excludes a machine with no config.json)"
+        bad "pithead-boot did not finish active on the provisioned rig boot"
     unit_ran_this_boot pithead-firstboot &&
         bad "the first-boot wizard ran again on a provisioned rig" ||
         ok "the wizard window is closed on a provisioned rig (no setup page on every boot)"

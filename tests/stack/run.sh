@@ -27,14 +27,14 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-signing.sh" && domain
 
 # shellcheck source=tests/stack/dashboard/test-dashboard.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard.sh" && domain_ran test-dashboard.sh "$_d0" "$?" || domain_ran test-dashboard.sh "$_d0" "$?"
+# shellcheck source=tests/stack/dashboard/test-dashboard-exposure-live.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh" && domain_ran test-dashboard-exposure-live.sh "$_d0" "$?" || domain_ran test-dashboard-exposure-live.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
 # Regression (#1330): test-dashboard-onion.sh must not depend on running after test-dashboard.sh. A
-# `( ... )` subshell forks THIS process and inherits its whole variable table, exported or not — including
-# $auth_hb64/$caddy_https left behind by test-dashboard.sh's `source` above — so a subshell guard would
-# stay green. Only a separate `bash` process is isolated (environment only); $HERE is passed as an argument.
+# A subshell inherits this process's variables, so only a separate `bash` proves isolation.
 # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
 bash -c '
     set -uo pipefail
@@ -148,7 +148,6 @@ esac
 # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
 
@@ -181,6 +180,9 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && do
 
 # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
+
+# shellcheck source=tests/stack/appliance/test-appliance-rig-token-landing.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-token-landing.sh" && domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?" || domain_ran test-appliance-rig-token-landing.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/appliance/test-appliance-wizard-spool.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-wizard-spool.sh" && domain_ran test-appliance-wizard-spool.sh "$_d0" "$?" || domain_ran test-appliance-wizard-spool.sh "$_d0" "$?"
@@ -247,7 +249,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-media-console.sh"
 # shellcheck source=tests/stack/test-rauc-loop-wait.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-rauc-loop-wait.sh" && domain_ran test-rauc-loop-wait.sh "$_d0" "$?" || domain_ran test-rauc-loop-wait.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 # shellcheck source=tests/stack/test-lifecycle.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-lifecycle.sh" && domain_ran test-lifecycle.sh "$_d0" "$?" || domain_ran test-lifecycle.sh "$_d0" "$?"
 
@@ -397,7 +398,6 @@ assert_eq "no plain doctor verdict still names a CLI verb (#1213)" \
 # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"
 
-# ---------------------------------------------------------------------------
 echo ""
 printf 'pithead tests: \033[1;32m%d passed\033[0m, ' "$PASS"
 if [ "$FAIL" -gt 0 ]; then

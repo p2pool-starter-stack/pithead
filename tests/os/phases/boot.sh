@@ -139,7 +139,7 @@ _secure_boot_guest_leg() {
     if [ "$defined" = 1 ] && wait_serial "login:|Debian GNU/Linux|Pithead setup wizard" 180; then
         booted=1
     fi
-    if verdict=$(secure_boot_boot_verdict "$defined" "$booted"); then
+    if verdict=$(secure_boot_boot_verdict "$defined" "$booted" "$(tr -d ' \t\r\n' <VERSION)"); then
         ok "$verdict"
     else
         bad "$verdict"

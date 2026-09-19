@@ -44,30 +44,32 @@ unset -f prv
 echo "== unit: secure_boot_boot_verdict — Secure Boot ON is measured, not left an unread flag (#2055 G2) =="
 # tests/os/run.sh's phase_boot second guest cannot be driven from here (it needs real KVM +
 # OVMF secure-boot firmware), but the verdict is pure text-matching over two already-observed
-# signals (did virt-install define the guest, did a userspace banner appear) — pulled into
+# signals (did virt-install define the guest, did a userspace banner appear, and image version) —
+# pulled into
 # tests/os/secure-boot-boot-verdict.sh for exactly that reason. The case that matters is the
-# second pair below: a guest that DEFINED successfully but never reached userspace fails, naming
-# the signing gap (pithead#2187) — that is the CURRENT, correct verdict on an appliance with no
-# signing tooling, and the same check flips to a pass with no code change once #2187 lands.
-# Mutation run: treat "did not reach userspace" as a pass (the flag nobody reads the issue warns
-# against) -> this case flips from fail to pass, silently re-hiding the gap.
-sbv() { # <virt-install-defined> <userspace-banner-seen> -> "<rc> <verdict-text>"
+# second pair below: a guest that DEFINED successfully but never reached userspace reports the
+# signing gap without failing the phase for 2.0.0. Later versions require signing, so the same
+# measured non-boot fails and the deferral cannot hide a regression.
+sbv() { # <virt-install-defined> <userspace-banner-seen> <image-version> -> "<rc> <verdict-text>"
     local out rc
     out=$(
         # shellcheck disable=SC1091
         source "$ROOT/tests/os/secure-boot-boot-verdict.sh"
-        secure_boot_boot_verdict "$1" "$2"
+        secure_boot_boot_verdict "$1" "$2" "$3"
     )
     rc=$?
     printf '%s %s' "$rc" "$out"
 }
 assert_eq "guest defined + reaches userspace under SB: passes" \
-    "$(sbv 1 1)" \
+    "$(sbv 1 1 2.0.0)" \
     "0 the image reaches userspace with Secure Boot ON — signing works (or SB was not actually enforced; cross-check the guest's own SecureBoot EFI variable before trusting this as a pass)"
-assert_eq "guest defined but never reaches userspace under SB: fails — today's correct, tracked state" \
-    "$(sbv 1 0)" \
-    "1 the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — this is the current, tracked state, not a battery defect; the row goes green the day #2187's signing lands"
+assert_eq "guest defined but never reaches userspace under SB: records the deferred state" \
+    "$(sbv 1 0 2.0.0)" \
+    "0 the image does NOT reach userspace with Secure Boot ON (pithead#2187: shim-signed is the only signed link in the chain — grub-efi-amd64 and the kernel ship unsigned) — measured, deferred past 2.0.0 to v2.x - post-GA"
+assert_eq "guest defined but never reaches userspace after signing is required: fails" \
+    "$(sbv 1 0 2.0.1)" \
+    "1 the image does NOT reach userspace with Secure Boot ON — signing is required, so this is a regression"
 assert_eq "virt-install could not even define the guest: fails, names it unmeasured (a possible bench firmware gap)" \
-    "$(sbv 0 0)" \
+    "$(sbv 0 0 2.0.0)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
 unset -f sbv

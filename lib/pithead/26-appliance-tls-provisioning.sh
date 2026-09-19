@@ -184,8 +184,8 @@ provision_console_login() {
         warn "Could not set the console login."
 }
 
-# SSH per config (ssh.enabled + ssh.authorized_key) — the appliance's opt-in debug and
-# recovery path (#786). Key-only, never passwords. Everything it writes is DERIVED (#790) and
+# SSH is a build-variant property: debug images carry their baked key; release images never
+# accept config-driven access. Everything this legacy path writes is DERIVED (#790) and
 # lives on tmpfs: the key under /run/pithead-ssh, sshd's override under /run/systemd/system —
 # rebuilt every boot by render, gone on the first boot after the flag turns off, and no key
 # material ever rests on disk outside config.json itself. Appliance-only: a DIY host owns its
@@ -195,12 +195,18 @@ provision_ssh_access() {
     is_appliance || return 0
     command -v systemctl >/dev/null 2>&1 || return 0
     local unit_d="${PITHEAD_UNIT_DIR:-/run/systemd/system}/ssh.service.d"
-    local key_d="${PITHEAD_SSH_RUN_DIR:-/run/pithead-ssh}" en key
+    local key_d="${PITHEAD_SSH_RUN_DIR:-/run/pithead-ssh}" en key variant
     en=$(jq -r '.ssh.enabled // false' "$CONFIG_FILE" 2>/dev/null)
     key=$(jq -r '.ssh.authorized_key // ""' "$CONFIG_FILE" 2>/dev/null)
+    variant=$(appliance_variant)
+    if [ "$variant" = release ]; then
+        [ "$en" != true ] || warn "Ignoring carried ssh.enabled on this release image; SSH is available only in a debug build."
+        en=false
+        key=""
+    fi
     if [ "$en" != "true" ] || [ -z "$key" ]; then
         if [ -e "$unit_d/pithead.conf" ] || [ -d "$key_d" ]; then
-            log "SSH is OFF (ssh.enabled) — removing the runtime access."
+            log "SSH is OFF — removing the runtime access."
             rm -rf "$unit_d" "$key_d"
             sudo systemctl daemon-reload
             sudo systemctl stop ssh >/dev/null 2>&1 || true

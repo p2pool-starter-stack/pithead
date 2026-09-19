@@ -73,7 +73,7 @@ control_backup() { # <id> <actor> <control-dir>
     "$self" backup -y >"$logf" 2>&1 || rc=$?
     unset PITHEAD_BACKUP_PASSPHRASE
     if [ "$rc" -ne 0 ]; then
-        control_write_result "$results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" '{status:"failed",error:$e,ts:(now|floor)}')"
+        control_write_result "$results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" '{status:"failed",log:$e,ts:(now|floor)}')"
         control_audit "$auditf" "$id" "$actor" "backup" "failed"
         rm -f "$logf"
         pass=""

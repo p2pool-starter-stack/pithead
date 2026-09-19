@@ -182,7 +182,7 @@ printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
 # synced chain data must never be forced into a resync); the admin `pithead restore` CLI command
 # has the opposite rule for the same collision (restore_commit_stage's `cp -a --remove-destination`
 # lets the archive win — an operator running that command explicitly wants the archive back). See
-# docs/dev/appliance-wizard.md for that divergence and the tracking issue for unifying it. Distinct
+# docs/operations.md's "Restore collision rules" for that deliberate divergence. Distinct
 # content on each side is what makes this a real collision test: `chain-state` is a name the archive
 # ships too, so restore_apply's `cp -a -n` (no-clobber) is what the collision rows below actually
 # exercise — remove the `-n` and the archive's content would win here instead, and they go red.

@@ -15,6 +15,7 @@ import ipaddress
 # Zones, left-to-right: incoming clients, the host's container bridge, the Tor hub, the Internet.
 ZONE_CLIENTS = "clients"
 ZONE_HOST = "host"
+ZONE_REMOTE = "remote"
 ZONE_TOR = "tor"
 ZONE_NET = "internet"
 
@@ -94,7 +95,7 @@ def node_route(address, *, is_local):
     return LAN if (ip.is_private or ip.is_loopback or ip.is_link_local) else CLEARNET
 
 
-def topology_nodes(*, monero_route, tari_route, local_miner_enabled=False):
+def topology_nodes(*, monero_route, tari_route, tari_enabled=True, local_miner_enabled=False):
     """``TOPOLOGY_NODES`` with the two relocatable nodes marked local or remote (#1040).
 
     monerod and tari are the only nodes an operator can run somewhere else; every other node in
@@ -110,7 +111,14 @@ def topology_nodes(*, monero_route, tari_route, local_miner_enabled=False):
     """
     relocatable = {"monerod": monero_route, "tari": tari_route}
     return [
-        {**n, "remote": relocatable[n["id"]] != LOCAL} if n["id"] in relocatable else n
+        {
+            **n,
+            "zone": ZONE_REMOTE if relocatable[n["id"]] != LOCAL else n["zone"],
+            "remote": relocatable[n["id"]] != LOCAL,
+            "route": relocatable[n["id"]],
+        }
+        if n["id"] in relocatable
+        else n
         for n in TOPOLOGY_NODES
-        if local_miner_enabled or n["id"] != "local-miner"
+        if (local_miner_enabled or n["id"] != "local-miner") and (tari_enabled or n["id"] != "tari")
     ]
