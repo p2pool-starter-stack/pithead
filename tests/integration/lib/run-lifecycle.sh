@@ -97,6 +97,28 @@ run_lifecycle() {
     else
         it_fail "pithead backup succeeded" "backup returned non-zero"
     fi
+
+    # uninstall → setup round trip (#2379): uninstall must delete no data, and a setup after it
+    # must re-provision from the kept config.json with the chain data byte-for-byte unchanged.
+    # MONERO_DATA_DIR is read from .env BEFORE uninstall removes it — the dir itself is a bind
+    # mount, untouched by uninstall, so the same path hashes both before and after.
+    it_step "pithead uninstall -y keeps every byte of data…"
+    local monero_dir cfg_before chain_before uninstall_out
+    monero_dir="$(env_on_box MONERO_DATA_DIR)"
+    cfg_before="$(rx 'sha256sum config.json 2>/dev/null')"
+    chain_before="$(rx "find $(quote_arg "$monero_dir") -type f -exec sha256sum {} + 2>/dev/null | sort")"
+    uninstall_out="$(pithead uninstall -y 2>&1)"
+    assert_contains "uninstall prints the three-column inventory" "$uninstall_out" "Kept (yours):"
+    assert_eq "uninstall keeps config.json byte-identical" "$(rx 'sha256sum config.json 2>/dev/null')" "$cfg_before"
+    assert_eq "uninstall keeps the chain data byte-identical" \
+        "$(rx "find $(quote_arg "$monero_dir") -type f -exec sha256sum {} + 2>/dev/null | sort")" "$chain_before"
+    it_step "pithead setup re-provisions from the kept config…"
+    pithead setup --skip-deps --skip-optimize >/dev/null 2>&1
+    wait_status_ok 240 || true
+    pithead status >/dev/null 2>&1
+    assert_rc "status OK after setup-after-uninstall" "$?" "0"
+    assert_eq "chain data survives the uninstall/setup round trip" \
+        "$(rx "find $(quote_arg "$monero_dir") -type f -exec sha256sum {} + 2>/dev/null | sort")" "$chain_before"
 }
 
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }

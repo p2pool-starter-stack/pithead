@@ -1,8 +1,17 @@
-# `uninstall` (#77 phase 1): the clean exit for the DIY channel — stop and remove what pithead
-# created on this host, keep what the operator owns. Kept: config.json, the data dirs (chains,
-# Tor onion keys, dashboard DB), backups/. Removed: containers, the stack's images, the rendered
-# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules. The
-# appliance has no uninstall — its equivalents are the reset tiers.
+# `uninstall` (#77 phase 1, #2379): the clean exit for the DIY channel — stop and remove
+# everything pithead put on this host, and delete NO data, ever, on any flag. Three named
+# volumes (caddy_data, wallet_data, tari_wallet_data) are pithead's, not the operator's — all
+# three are derived (view-only wallets rebuild from the view keys in config.json, Caddy
+# re-issues its ACME state) — so they go with the containers via `compose down -v`. Everything
+# an operator would call "their data" (chains, Tor onion keys, dashboard history, the p2pool
+# sidechain) is a bind mount and is never touched. The appliance has no uninstall — its
+# equivalents are the reset tiers.
+#
+# uninstall_quote() single-quotes a path for a copy-pasteable shell command (handles spaces and
+# embedded quotes); it is the only formatting helper this needs; the rest of the closing message
+# is plain log lines, one per line, because log() prefixes every call with "[pithead]".
+uninstall_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
 stack_uninstall() {
     local yes=0 arg
     for arg in "$@"; do
@@ -13,14 +22,33 @@ stack_uninstall() {
     done
     [ -f .env ] || error "No .env here — nothing deployed to uninstall. A never-deployed checkout is just a directory: remove it."
     detect_os
-    # The keep-list is read from .env BEFORE it is removed.
-    local data_dirs
-    data_dirs=$(for arg in MONERO TARI P2POOL DASHBOARD TOR; do
-        env_get_file .env "${arg}_DATA_DIR"
-        printf '\n'
-    done | sort -u | tr '\n' ' ')
-    warn "DESTRUCTIVE: stops the stack, removes its containers and images, and deletes the rendered .env and Caddyfile."
-    log "Kept (yours): config.json, backups/, and the data dirs: ${data_dirs:-none recorded}"
+
+    # Every path below is read from .env BEFORE uninstall deletes it.
+    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey
+    for dkey in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
+        d=$(env_get_file .env "$dkey")
+        [ -n "$d" ] && kept_dirs+=("$d")
+    done
+    # #2379 §3: four more directories setup creates (hardcoded under data/, or under the shared
+    # data root for PROXY_TLS_DIR) that the old keep-list never named or removed. None is operator
+    # data — the control spool + audit trail, the clearnet-sync marker, Caddy's access log, and the
+    # stratum TLS keypair — so they are removed individually, by exact path, never `rm -rf data/`.
+    for dkey in CONTROL_DIR CLEARNET_STATE_DIR CADDY_LOG_DIR PROXY_TLS_DIR; do
+        d=$(env_get_file .env "$dkey")
+        [ -n "$d" ] && derived_dirs+=("$d")
+    done
+    # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
+    # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
+    local secret_file="$checkout_dir/data/tari-wallet-secret.env"
+
+    local kept_list derived_list
+    kept_list=$(printf '%s\n' "${kept_dirs[@]}" | sort -u | tr '\n' ' ')
+    derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
+
+    warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules; .env, Caddyfile, build/tari/config.toml, .pithead-first-run-done, and: ${derived_list}"
+    log "Kept (yours): config.json, backups/, and the data dirs: ${kept_list:-none recorded}"
+    log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
         printf "Type 'uninstall' to continue: "
         read -r arg
@@ -30,7 +58,7 @@ stack_uninstall() {
         }
     fi
     remove_tor_egress_firewall 2>/dev/null || true
-    docker compose down --remove-orphans 2>/dev/null ||
+    docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
@@ -38,9 +66,36 @@ stack_uninstall() {
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
-    rm -f .env Caddyfile
-    log "Uninstalled. Still on disk: config.json, backups/, data dirs (${data_dirs:-none}) — remove them yourself for a full wipe."
-    log "Kernel HugePages/GRUB tuning from setup persists; revert in GRUB config if you want it gone."
+    rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
+    for d in "${derived_dirs[@]}"; do
+        # CADDY_LOG_DIR is root:root-owned (31-directories-and-dashboard-state.sh) so the
+        # capability-stripped caddy container can write it; a non-root operator's plain rm fails.
+        rm -rf "$d" 2>/dev/null || sudo rm -rf "$d"
+    done
+    rm -f "$secret_file"
+    # The version symlink (#455) is removed only when it is THIS checkout's: a versioned deploy
+    # dir (pithead-vX.Y.Z) whose sibling `current` still points here. Anything else — a plain
+    # checkout, or a `current` some other version now owns — is left alone.
+    if is_versioned_install_dir "$checkout_dir"; then
+        local parent name
+        parent=$(dirname "$checkout_dir")
+        name=$(basename "$checkout_dir")
+        [ -L "$parent/current" ] && [ "$(readlink "$parent/current")" = "$name" ] && rm -f "$parent/current"
+    fi
+
+    log "Uninstalled."
+    log "Every data directory is still here. To delete pithead's data, run:"
+    if [ "${#kept_dirs[@]}" -gt 0 ]; then
+        local q quoted_kept=""
+        for d in "${kept_dirs[@]}"; do
+            q=$(uninstall_quote "$d")
+            quoted_kept="$quoted_kept $q"
+        done
+        log "  sudo rm -rf${quoted_kept}"
+    fi
+    log "  rm -rf $(uninstall_quote "$checkout_dir/backups") $(uninstall_quote "$checkout_dir/config.json")"
+    log "Then, to remove the program itself:"
+    log "  rm -rf $(uninstall_quote "$checkout_dir")"
 }
 
 # --- First-boot wizard (#77 phase 3) -------------------------------------------------------------
