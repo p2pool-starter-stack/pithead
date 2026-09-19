@@ -112,6 +112,10 @@ run_rotate_onion() {
     rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1
     wait_status_ok 120 || true
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
+    case "$(rx "cat Caddyfile 2>/dev/null")" in
+    *"$old_onion"*) it_pass "Caddyfile names the restored onion's vhost again" ;;
+    *) it_fail "Caddyfile names the restored onion's vhost again" "Caddyfile does not mention $old_onion after restore" ;;
+    esac
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
 }
