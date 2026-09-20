@@ -180,11 +180,29 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
   tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
   asserts the wedged-`/data` recovery reformats it rather than bricking.
+- **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
+  provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
+  already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
+  set) so the sync gate clears in minutes instead of never, then runs `tests/integration/run.sh` —
+  the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
+  (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
+  unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
+  coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
+  phase's remote-node consumer row below; without them the phase records a counted `missing`
+  skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
+  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
+  invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
+  nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
+  scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
+  (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
+  diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means every phase except
+crossupdate, including fault, reset and stack, and the full run is required once for every RC
+candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
