@@ -7,9 +7,18 @@ worker_names() {
     on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty' | sort -u"
 }
 
+# A live bench can carry workers we did not add and do not control (bench-ci's own pool-health
+# probe has joined and left mid-run before). Require the baseline to still be present and our own
+# clone to be online, rather than an exact-set match against a world we do not fully own.
+worker_set_ready() { # <newline-separated online names, sorted>
+    local names="$1"
+    [ -z "$(comm -23 <(printf '%s\n' "$LOAD_BASELINE_NAMES") <(printf '%s\n' "$names"))" ] || return 1
+    grep -Fxq -- "$LOAD_WORKER_NAME" <<<"$names"
+}
+
 start_load_worker() {
     [ "$WORKERS" -eq 3 ] 2>/dev/null || return 0
-    local baseline bin stamp names expected deadline identity
+    local baseline bin stamp names deadline identity
     baseline="$(worker_names)" || return 1
     [ -n "$baseline" ] || return 1
     stamp="$(date +%s)-$$"
@@ -46,11 +55,10 @@ start_load_worker() {
         return 1
     }
     LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0 LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
-    expected="$(printf '%s\n%s\n' "$baseline" "$LOAD_WORKER_NAME" | sort -u)"
     deadline=$(($(date +%s) + 180))
     while :; do
         names="$(worker_names)"
-        if [ "$names" = "$expected" ] && [ "$(wc -l <<<"$names")" -eq $((LOAD_BASELINE_COUNT + 1)) ]; then
+        if worker_set_ready "$names"; then
             WORKERS=$((LOAD_BASELINE_COUNT + 1))
             return 0
         fi
@@ -64,13 +72,12 @@ start_load_worker() {
 
 sample_load_worker() {
     [ -n "$LOAD_WORKER_NAME" ] || return 0
-    local names expected proxy_state sample cpu rss
+    local names proxy_state sample cpu rss
     names="$(worker_names)" || names=""
-    expected="$(printf '%s\n%s\n' "$LOAD_BASELINE_NAMES" "$LOAD_WORKER_NAME" | sort -u)"
     proxy_state="$(on_bench "cd $(quote_arg "$E2E_DIR") || exit 2; services=\$(docker compose ps --services --status running 2>/dev/null) || exit 2; if printf '%s\\n' \"\$services\" | grep -Fxq xmrig-proxy; then echo running; else echo stopped; fi")" || proxy_state=error
     case "$proxy_state" in
     running)
-        if [ "$names" = "$expected" ]; then
+        if worker_set_ready "$names"; then
             [ "$LOAD_SAW_FAILOVER" = 0 ] && LOAD_SAW_READY=1 || LOAD_SAW_RECOVERY=1
         fi
         ;;
@@ -106,11 +113,10 @@ stop_load_worker() {
 
 verify_load_worker() {
     [ -z "$LOAD_WORKER_NAME" ] && return 0
-    local state names expected hashes shares clone_shares latency
+    local state names hashes shares clone_shares latency
     sample_load_worker
     state="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null")" || state='{}'
     names="$(printf '%s' "$state" | jq -r '.workers[]? | select(.status == "online") | .name // empty' | sort -u)"
-    expected="$(printf '%s\n%s\n' "$LOAD_BASELINE_NAMES" "$LOAD_WORKER_NAME" | sort -u)"
     hashes="$(printf '%s' "$state" | jq '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] | add // 0')" || hashes=0
     shares="$(printf '%s' "$state" | jq '[.workers[]? | select(.status == "online") | .accepted | tonumber?] | add // 0')" || shares=0
     clone_shares="$(printf '%s' "$state" | jq -r --arg n "$LOAD_WORKER_NAME" 'first(.workers[]? | select(.status == "online" and .name == $n) | (.accepted | tonumber?)) // 0')" || clone_shares=0
@@ -118,11 +124,11 @@ verify_load_worker() {
     [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null
     step "load worker evidence: aggregate=${hashes}H/s accepted=${shares} clone_accepted=${clone_shares} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s saw_ready=${LOAD_SAW_READY} saw_failover=${LOAD_SAW_FAILOVER} saw_recovery=${LOAD_SAW_RECOVERY}"
     on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s,\"saw_ready\":%s,\"saw_failover\":%s,\"saw_recovery\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$hashes") $(quote_arg "$shares") $(quote_arg "$clone_shares") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") $(quote_arg "$LOAD_SAW_READY") $(quote_arg "$LOAD_SAW_FAILOVER") $(quote_arg "$LOAD_SAW_RECOVERY") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
-    [ "$names" = "$expected" ] || {
-        warn "load worker check failed: worker set mismatch (got '$names', wanted '$expected')"
+    worker_set_ready "$names" || {
+        warn "load worker check failed: baseline worker dropped or clone not online (got '$names', baseline '$LOAD_BASELINE_NAMES', clone '$LOAD_WORKER_NAME')"
         return 1
     }
-    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) == $workers and all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || {
+    printf '%s' "$state" | jq -e --argjson workers "$WORKERS" '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(($r | length) >= $workers and all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || {
         warn "load worker check failed: aggregate hashrate not plausible for $WORKERS worker(s)"
         return 1
     }
