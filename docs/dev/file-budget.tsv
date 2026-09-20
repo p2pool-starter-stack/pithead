@@ -19,7 +19,7 @@ dashboard/mining_dashboard/web/server.py	630
 dashboard/mining_dashboard/web/static/app/chart.mjs	681
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	573
-dashboard/mining_dashboard/web/static/system/osupdate.mjs	407
+dashboard/mining_dashboard/web/static/system/osupdate.mjs	404
 dashboard/mining_dashboard/web/views/views.py	434
 dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	671
