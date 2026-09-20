@@ -115,7 +115,7 @@ export class BackupPanel extends Component {
     const kitText = buildKitText(result);
     const kitHref = "data:text/plain;charset=utf-8," + encodeURIComponent(kitText);
     return html`<div class="card">
-        <h3>Backup created</h3>
+        <h2>Backup created</h2>
         <p class="status-warn">Save this passphrase now — it is shown once and cannot be
         recovered. Without it, the archive is useless.</p>
         <p class="config-error-tail kit-passphrase font-mono">${result.passphrase}</p>
@@ -134,7 +134,7 @@ export class BackupPanel extends Component {
     const error = result && result.error;
     const log = result && result.log;
     return html`<div class="card">
-        <h3>Backup</h3>
+        <h2>Backup</h2>
         <p class="status-bad">Backup did not complete.</p>
         ${error ? html`<p class="status-bad">${error}</p>` : null}
         ${failureLog(log, this.props.appliance, "backup")}
@@ -153,14 +153,14 @@ export class BackupPanel extends Component {
       // password leaves it off DELIBERATELY and permanently. Nothing returns. Name the login.
       if (this.props.appliance) {
         return html`<div class="card">
-            <h3>Backup</h3>
+            <h2>Backup</h2>
             <p>Backup is off because this machine was set up without a dashboard login. The
             control channel it exports through sits behind that login, so it stays off until
             this machine has one — set a password under Set up again in the boot menu.</p>
         </div>`;
       }
       return html`<div class="card">
-          <h3>Backup</h3>
+          <h2>Backup</h2>
           <p>Backup export is off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
@@ -171,7 +171,7 @@ export class BackupPanel extends Component {
     if (phase === "confirm") modal = this.renderConfirm();
     else if (phase === "creating") modal = this.renderCreating();
     return html`<div class="card">
-        <h3>Backup</h3>
+        <h2>Backup</h2>
         <p>Export an encrypted archive of config.json, .env, the Tor onion-service keys, and the
         dashboard database — the state a dead box takes with it. Blockchains are excluded; they
         re-sync.</p>
