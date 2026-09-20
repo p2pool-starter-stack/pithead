@@ -325,7 +325,7 @@ fc_out=$(
     BOOT_STATUS_LOG="$FC/status.log"
     PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
 )
-assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out"     "pithead-boot: held by container dashboard: running but UNHEALTHY"
+assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out" "pithead-boot: held by container dashboard: running but UNHEALTHY"
 unset FC fc_out
 
 unset -f dj bc_run bl_line fv_run

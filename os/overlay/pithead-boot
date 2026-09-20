@@ -37,7 +37,7 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # same reason BOOT_FAIL_COUNT is one — the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
 BOOT_STATUS_LOG=/run/pithead-boot-status.log # third signal's record, same /run reasoning (#2383)
-boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 rows excluded)
+boot_status_blocking() {                     # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 rows excluded)
     [ -s "$BOOT_STATUS_LOG" ] || return 0
     grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
         sed -E 's/^[[:space:]]*[✗⚠][[:space:]]+([^[:space:]]+)[[:space:]]+/container \1: /'
