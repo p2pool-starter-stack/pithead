@@ -122,7 +122,13 @@ p2pool_current_startup_merge_lines() {
     started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
     [ -n "$started" ] || return 1
     printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
-    _ssh "podman logs --since '$started' p2pool 2>&1 | head -n $MM_WINDOW_LINES | grep -a MergeMiningClientTari || true" 2>/dev/null
+    # #2333: MM_WINDOW_LINES (tests/integration/lib/mergemine-probe.sh) is sized against a fast
+    # first connection — the chain_id line lands within the first ~70 lines there. A remote node
+    # p2pool has never dialed before can take far longer, and every retry's capped read then
+    # identically misses a line that eventually lands past the cap: "never connected" and
+    # "connected too late for the window" become indistinguishable. Uncapped here, unlike that
+    # shared helper's own callers, since this leg's own reserved node is exactly that slow case.
+    _ssh "podman logs --since '$started' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
 }
 
 # The leg ahead of this one recreates the dashboard container, so a single curl the instant it
@@ -147,7 +153,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
     local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now
-    local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now full_ok started_now full_logs
+    local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
     # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
@@ -383,18 +389,7 @@ cd /data/pithead && ./pithead apply -y >/dev/null'; then
         case " $flags_now " in *" --socks5 "* | *" --socks5="*) socks5_now=true ;; esac
         tari_endpoint_roundtrip_verdict "$logs" "$th:$grpc" && direct_ok=true
         tari_endpoint_roundtrip_verdict "$logs" "127.0.0.1:$grpc" && bridged_ok=true
-        # p2pool_current_startup_merge_lines caps its capture at MM_WINDOW_LINES (2000) lines of
-        # p2pool's OWN startup output. That is generous for a connection that succeeds in the first
-        # few lines (the common case this cap was sized against), but this is a fresh remote
-        # endpoint p2pool has never dialed before — if the chain_id line lands later than 2000
-        # lines in, every retry's capped capture misses it identically, forever. Recheck the FULL
-        # log, uncapped, for the same success marker before concluding the connection never happened
-        # at all, versus it happening too late for the capped window to see.
-        full_ok=false
-        started_now=$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')
-        full_logs=$(_ssh "podman logs --since '$started_now' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null)
-        tari_endpoint_roundtrip_verdict "$full_logs" "$th:$grpc" && full_ok=true
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok roundtrip_uncapped=$full_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
 
