@@ -36,11 +36,19 @@ _xvb_proxy_ready_payload() {
 # shape job 629 hit: mode stayed null and pools stayed the single-entry startup config, because the
 # switch never ran. Poll the SAME get_config() call switch_miners depends on, so "ready" means what
 # the actuator actually needs, not just an open port.
+#
+# The gate is a one-way latch that only releases once the chain(s) fully sync — never true on this
+# throwaway appliance — so it re-asserts the stop every UPDATE_INTERVAL cycle (30s default,
+# data_gates.py) for as long as we wait. A single start before this loop loses that race outright:
+# jobs 701 and 717 both died to it, one before the API ever answered, one a second after it did.
+# Re-issue the start on every poll (a no-op once already running) so the gate's periodic stop is
+# answered within one 2s poll instead of costing the whole wait.
 _xvb_wait_for_proxy_api() { # -> 0 once the proxy answers a real get_config()
     local deadline payload
     payload="$(_xvb_proxy_ready_payload)"
     deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-60}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
+        _ssh "podman start xmrig-proxy >/dev/null 2>&1"
         _xvb_guest_python "$payload" >/dev/null 2>&1 && return 0
         sleep 2
     done
@@ -305,6 +313,24 @@ _xvb_self_test() {
     _ssh() { return 1; }
     if XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api; then
         printf 'xvb self-test: the proxy-API wait reported ready for a guest that never answered\n' >&2
+        f=$((f + 1))
+    fi
+
+    # #1998 regression (jobs 701, 717): the sync gate (#35) re-stops xmrig-proxy every cycle on
+    # this unsynced appliance, so a wait that starts it once and only polls loses that race. Prove
+    # the wait keeps re-asserting the start itself, not just the one the caller made before it —
+    # a single start call here would time out having never answered, same as the case above.
+    local start_calls=0
+    _ssh() {
+        case "$1" in
+        *"podman start"*) start_calls=$((start_calls + 1)) ;;
+        esac
+        return 1
+    }
+    XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api
+    if [ "$start_calls" -lt 2 ]; then
+        printf 'xvb self-test: the proxy-API wait does not re-assert the start against the sync gate (#1998), only asserted %s time(s)\n' \
+            "$start_calls" >&2
         f=$((f + 1))
     fi
     unset -f sleep
