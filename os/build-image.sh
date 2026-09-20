@@ -77,10 +77,19 @@ fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 
+# Resolve each first-party image to the digest the RELEASE SIGNED, and pin the compose to it.
+# The resolution is scripts/release/release.sh's manifest_digest, on purpose and to the letter: the
+# `Digest:` line of `docker buildx imagetools inspect`, which is the manifest-LIST (index) digest,
+# and the index digest is what sign_images hands to `cosign sign`. A multi-arch tag's per-platform
+# children are NOT signed: `docker manifest inspect --verbose` returns those children, so pinning
+# one (`.[0]`) pins bytes no signature covers and verify_release_images then fails closed on every
+# boot — the exact brick #1891 exists to avoid. `^Digest:` is anchored and `exit` takes the first
+# line because the child entries this output also lists are indented beneath `Manifests:`.
 pin_first_party_images() { # <compose-file> <registry> <stack-version>
     local compose="$1" registry="$2" version="$3" svc digest
     for svc in tor monero p2pool xmrig-proxy dashboard; do
-        digest="$(docker manifest inspect --verbose "${registry}/pithead-${svc}:${version}" 2>/dev/null | jq -r 'if type == "array" then .[0].Descriptor.digest else .Descriptor.digest end // empty')"
+        digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
+            awk '/^Digest:/{print $2; exit}')"
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
             echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
             return 1

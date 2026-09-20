@@ -171,22 +171,37 @@ printf '%s\n' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-p2pool:${STACK_VERSION:-dev}' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-xmrig-proxy:${STACK_VERSION:-dev}' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-dashboard:${STACK_VERSION:-dev}' >"$SIG/compose.yml"
+MF_INDEX="sha256:$(hex64 a)"
+MF_CHILD="sha256:$(hex64 b)"
+# The fake stands in for `docker buildx imagetools inspect` and emits its real shape: the index
+# line at column 0, the per-platform children indented under Manifests:. A child carries an
+# indented Digest: of its own, so the ^ anchor and the first-match exit in pin_first_party_images
+# are both load-bearing here rather than incidental.
+fake_imagetools() {
+    printf 'Name:      example.invalid/pithead-tor:v9.9.9\n'
+    printf 'MediaType: application/vnd.oci.image.index.v1+json\n'
+    printf 'Digest:    %s\n' "$MF_INDEX"
+    printf '\nManifests:\n'
+    printf '  Name:      example.invalid/pithead-tor:v9.9.9@%s\n' "$MF_CHILD"
+    printf '  MediaType: application/vnd.oci.image.manifest.v1+json\n'
+    printf '  Digest:    %s\n' "$MF_CHILD"
+    printf '  Platform:  linux/amd64\n'
+}
 (
     export PITHEAD_BUILD_IMAGE_TEST=1
     set --
     source "$ROOT/os/build-image.sh"
-    docker() { printf '{"Descriptor":{"digest":"sha256:%064d"}}\n' 1; }
+    docker() { fake_imagetools; }
     pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
 )
 assert_eq "all five provision pulls are immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
-(
-    export PITHEAD_BUILD_IMAGE_TEST=1
-    set --
-    source "$ROOT/os/build-image.sh"
-    docker() { printf '[{"Descriptor":{"digest":"sha256:%064d"}}]\n' 2; }
-    pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
-)
-assert_eq "array-shaped manifest output keeps all five immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
+# #1891, the boot-breaking one: cosign signs the manifest-LIST (index) digest — sign_images hands
+# `cosign sign` exactly what release.sh's manifest_digest resolved. A multi-arch tag's per-platform
+# children are not signed at all (ghcr answers 200 for the index's .sig tag and 404 for the amd64
+# child's), so a resolver that pinned a child would pin bytes no signature covers and the
+# fail-closed verify above would refuse on EVERY boot. Pin the index, never the child.
+assert_contains "a manifest list pins the signed index digest" "$(cat "$SIG/compose.yml")" "@$MF_INDEX"
+assert_not_contains "a manifest list never pins an unsigned per-platform child" "$(cat "$SIG/compose.yml")" "$MF_CHILD"
 
 source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
 printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
