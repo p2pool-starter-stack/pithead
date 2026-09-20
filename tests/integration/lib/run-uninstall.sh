@@ -3,16 +3,44 @@
 # --uninstall phase (#2343): `uninstall` is the DIY channel's clean exit and, before this, the
 # only harness that ever ran it was tier-1's sandbox with docker/sudo stubbed out. This proves the
 # abort path changes nothing, the keep-list (config.json + the *_DATA_DIR paths named in the
-# "kept" message) survives on the REAL disk — same size and file count before and after, a wipe or
-# truncation moves either — the kernel firewall rules and the systemd control units it installed
-# are REALLY gone, then that `setup` re-provisions the checkout from what was kept — no resync, the
-# round trip the verb's own closing message promises. DESTRUCTIVE, ordered last: it tears the
-# checkout down and puts it back itself, so it does not depend on the box's normal down/apply
-# restore.
-_uninstall_dir_fingerprint() { # <dir> -> "<total-bytes>/<file-count>"
-    printf '%s/%s' \
-        "$(rx "du -sb $(quote_arg "$1") 2>/dev/null | cut -f1")" \
-        "$(rx "find $(quote_arg "$1") -type f 2>/dev/null | wc -l | tr -d ' '")"
+# "kept" message) survives on the REAL disk, the kernel firewall rules and the systemd control
+# units it installed are REALLY gone, then that `setup` re-provisions the checkout from what was
+# kept — no resync, the round trip the verb's own closing message promises. DESTRUCTIVE, ordered
+# last: it tears the checkout down and puts it back itself, so it does not depend on the box's
+# normal down/apply restore — and it owns its OWN recovery on a failure (see
+# _uninstall_phase_recover) rather than leaning on the harness's generic safety rollback, whose
+# 240s wait is sized for a hot apply, not a full re-provision (#2343 job 635).
+#
+# Job 635's first real-box run measured both snapshots wrong: `fp_before` was taken while the
+# stack was still RUNNING, so a live LMDB/SQLite writer made monero/tari/dashboard look different
+# after uninstall's own shutdown — not a wipe, a shutdown checkpoint the "before" snapshot never
+# saw. Both snapshots are now taken with the stack already stopped (this phase's own `down` before
+# `fp_before`; uninstall's internal `down` on an already-down stack is a no-op), and the aggregate
+# size+count check is replaced with a per-file (size, inode, path) listing, so a real deletion
+# shows up as a named path in the diff instead of a number that a shutdown checkpoint can also move.
+_uninstall_dir_listing() { # <dir> -> "<size> <inode> <relpath>" lines, sorted; a stable snapshot
+    rx "find $(quote_arg "$1") -type f -printf '%s %i %P\n' 2>/dev/null | sort"
+}
+
+_uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing block per dir
+    local dir
+    for dir in $1; do
+        [ -n "$dir" ] || continue
+        printf '=== %s ===\n%s\n' "$dir" "$(_uninstall_dir_listing "$dir")"
+    done
+}
+
+# Self-heal (#2343 job 635): a failure partway through the destructive step below must not strand
+# the box for the outer safety rollback to find — this phase requires --safety-backup, so the
+# pre-run archive is right here. Puts the box back with the SAME restore this phase already
+# validates elsewhere (backup -> restore -> up), not a repeat of whichever step just failed.
+_uninstall_phase_recover() { # <IT_FAIL count before the destructive step>
+    [ "$IT_FAIL" -gt "$1" ] || return 0
+    it_warn "uninstall phase failed — restoring the pre-run safety archive and bringing the stack back…"
+    pithead down >/dev/null 2>&1
+    pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1
+    pithead up >/dev/null 2>&1
+    wait_status_ok 240 || it_warn "uninstall phase recovery did not report healthy — the outer safety rollback will retry"
 }
 
 run_uninstall_phase() {
@@ -32,18 +60,21 @@ run_uninstall_phase() {
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Strips
     # the surrounding quotes dotenv_render_value adds for a path with spaces/$/"/\ (#19); a
     # data dir plain enough to need none round-trips through the strip unchanged.
-    local dirs dir fp_before="" fp_after="" config_before
+    local dirs dir fp_before fp_after config_before
     dirs="$(rx "grep -E '^(MONERO|TARI|P2POOL|DASHBOARD|TOR)_DATA_DIR=' .env 2>/dev/null | cut -d= -f2-" | sort -u)"
     dirs="$(printf '%s\n' "$dirs" | sed -e 's/^"//' -e 's/"$//')"
-    for dir in $dirs; do
-        [ -n "$dir" ] || continue
-        fp_before="${fp_before}${dir}=$(_uninstall_dir_fingerprint "$dir");"
-    done
+    # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
+    # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
+    # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
+    pithead down >/dev/null 2>&1
+    fp_before="$(_uninstall_snapshot_dirs "$dirs")"
     config_before="$(rx 'cat config.json' 2>/dev/null)"
 
+    local fails_before="$IT_FAIL"
     it_step "pithead uninstall -y…"
     if ! pithead uninstall -y >"$OUT_DIR/uninstall.log" 2>&1; then
         it_fail "uninstall succeeded" "see $OUT_DIR/uninstall.log"
+        _uninstall_phase_recover "$fails_before"
         return
     fi
 
@@ -63,16 +94,23 @@ run_uninstall_phase() {
     for dir in $dirs; do
         [ -n "$dir" ] || continue
         assert_contains "the kept message names $dir" "$uninstall_log" "$dir"
-        fp_after="${fp_after}${dir}=$(_uninstall_dir_fingerprint "$dir");"
     done
-    assert_eq "kept data dirs unchanged on disk (size + file-count fingerprint)" "$fp_after" "$fp_before"
+    fp_after="$(_uninstall_snapshot_dirs "$dirs")"
+    if [ "$fp_after" = "$fp_before" ]; then
+        it_pass "kept data dirs unchanged on disk (per-file size+inode listing, stack quiesced both sides)"
+    else
+        it_fail "kept data dirs unchanged on disk (per-file size+inode listing, stack quiesced both sides)" \
+            "$(diff <(printf '%s\n' "$fp_before") <(printf '%s\n' "$fp_after") | head -40)"
+    fi
 
     it_step "re-provisioning from the kept config.json (pithead setup)…"
     if ! pithead setup >"$OUT_DIR/uninstall-setup.log" 2>&1; then
         it_fail "setup re-provisioned the uninstalled checkout" "see $OUT_DIR/uninstall-setup.log"
+        _uninstall_phase_recover "$fails_before"
         return
     fi
     wait_status_ok 240 || it_fail "stack healthy after re-provisioning" "pithead status did not become OK"
     assert_eq "re-provisioned config matches the kept one" "$(rx 'cat config.json' 2>/dev/null)" "$config_before"
     assert_running_state "uninstall" "$BASELINE_CONFIG"
+    _uninstall_phase_recover "$fails_before"
 }
