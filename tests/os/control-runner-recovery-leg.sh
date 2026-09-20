@@ -42,6 +42,9 @@ phase_provision_control_recovery() { # <ip> <dashboard-user> <dashboard-password
         }
         sleep 3
     done
+    # Name the wait when it engaged: a run whose poll absorbed a settling predecessor must be
+    # distinguishable from one where the precondition was true on the first read (#2374).
+    [ "$pretries" -eq 0 ] || info "control-runner recovery: guest .env settled to DEPLOYMENT_COMPLETED=true after $((pretries * 3))s ($pretries retries)"
     restarts0=$(_control_recovery_nrestarts)
     _ssh "sed -i 's/^DEPLOYMENT_COMPLETED=true/DEPLOYMENT_COMPLETED=false/' '$GUEST_ENV'" || {
         bad "control-runner recovery: could not fault DEPLOYMENT_COMPLETED"
@@ -136,11 +139,20 @@ _control_recovery_self_test() {
     }
     dashboard_control_post() { echo '{"id":"settles"}'; }
     PASS=0 FAIL=0
-    phase_provision_control_recovery 1.2.3.4 u p >/dev/null
+    local settled_out # a file, not $(...): a subshell would lose this run's PASS/FAIL counts
+    settled_out=$(mktemp)
+    phase_provision_control_recovery 1.2.3.4 u p >"$settled_out"
     [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 2 ] || {
         printf 'a precondition that settles within the retry window was not given the chance to (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
         f=$((f + 1))
     }
+    # An engaged poll must say so: a green run that waited and a green run that never had to are
+    # otherwise indistinguishable in the transcript (#2374).
+    grep -q 'settled to DEPLOYMENT_COMPLETED=true after 6s (2 retries)' "$settled_out" || {
+        printf 'an engaged precondition poll did not report how long it waited\n' >&2
+        f=$((f + 1))
+    }
+    rm -f "$settled_out"
     unset -f _ssh dashboard_curl dashboard_control_post
 
     # A runner that never retries (NRestarts stays put) must turn red naming the fix as unengaged,
@@ -237,5 +249,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
         FAIL=$((FAIL + 1))
         printf '  bad %s\n' "$1"
     }
+    info() { printf '  info %s\n' "$1"; } # real runs get it from tests/os/lib/core.sh
     _control_recovery_self_test
 fi
