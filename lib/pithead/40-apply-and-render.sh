@@ -72,7 +72,7 @@ render_derived() {
     generate_caddyfile
     provision_onion_client_auth
     provision_control_runner
-    control_prune_results "$CONTROL_DIR" # #1990: bounds results/ every boot (#790), not just per-request
+    control_prune_results "${CONTROL_DIR:-$PWD/data/control}" # #1990: bounds results/ every boot (#790), not just per-request
     provision_ssh_access
     provision_console_login
     render_local_miner_config

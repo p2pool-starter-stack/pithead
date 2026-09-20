@@ -266,8 +266,8 @@ remaining_plain=$(find "$PRC/results" -maxdepth 1 -type f -name '*.json' \
 i=1
 while [ "$i" -le 5 ]; do
     [ -f "$PRC/results/a0a0a0a0-0000-4000-8000-00000000010$i.json" ] &&
-        bad "aged-out result $i is pruned" "still present" ||
-        ok "aged-out result $i is pruned"
+        bad "aged-out result is pruned" "result $i still present" ||
+        ok "aged-out result is pruned"
     i=$((i + 1))
 done
 
@@ -305,25 +305,24 @@ protected_id="a0a0a0a0-0000-4000-8000-000000000501"
 printf 'IN-WINDOW-ARCHIVE-BYTES' >"$PRB/results/$protected_id.tar.gz.enc"
 echo '{"status":"applied","archive":"c.enc","ts":0}' >"$PRB/results/$protected_id.json"
 backdate "$PRB/results/$protected_id.json" 500 # oldest of all — first in line for eviction
-# The cap must clear the floor set by the files pruning can never touch on this filesystem's own
-# block size — os-update-state.json by name, the newest numbered result by the
-# never-evict-the-newest rule the in-flight guarantee above relies on, and the in-window backup
-# pair above — or nothing is left to prune toward and the assertion below would be unsatisfiable
-# by construction, not by a bug.
-floor_bytes=$(du -sk "$PRB/results/os-update-state.json" "$PRB/results/a0a0a0a0-0000-4000-8000-000000000401.json" \
-    "$PRB/results/$protected_id.json" "$PRB/results/$protected_id.tar.gz.enc" |
-    awk '{s+=$1} END{print s * 1024}')
-cap_bytes=$((floor_bytes + 1000))
+# The cap is 1 byte — the smallest a byte cap can be — rather than a computed floor+margin: the
+# achievable floor (os-update-state.json + the never-evict-the-newest result + the in-window
+# backup pair) is however many bytes `du -sk` reports THOSE surviving files as costing, and that
+# depends on the filesystem's own block/directory-entry accounting, which differs enough between
+# filesystems (#1990: this margin was 1000 bytes and reddened on ext4, which counts the
+# directory's own block against the total where the filesystem this was written on did not) that
+# no fixed number is portable. A 1-byte cap forces maximum eviction on every filesystem alike, so
+# the proof is relative — bytes went down, not a guess at what they landed on.
 before_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
-export CONTROL_RESULTS_MAX_BYTES=$cap_bytes CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000
+export CONTROL_RESULTS_MAX_BYTES=1 CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000
 run_sourced "$SANDBOX" control_prune_results "$PRB" >/dev/null 2>&1
 after_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
-[ "$before_bytes" -gt "$cap_bytes" ] &&
+[ "$before_bytes" -gt 1 ] &&
     ok "the sandbox starts over the byte cap (red without the fix)" ||
-    bad "the sandbox starts over the byte cap" "got: $before_bytes bytes, cap $cap_bytes"
-[ "$after_bytes" -le "$cap_bytes" ] &&
-    ok "total bytes stay within CONTROL_RESULTS_MAX_BYTES after pruning" ||
-    bad "total bytes stay within CONTROL_RESULTS_MAX_BYTES after pruning" "got: $after_bytes bytes, cap $cap_bytes"
+    bad "the sandbox starts over the byte cap" "got: $before_bytes bytes"
+[ "$after_bytes" -lt "$before_bytes" ] &&
+    ok "total bytes shrink once they exceed CONTROL_RESULTS_MAX_BYTES" ||
+    bad "total bytes shrink once they exceed CONTROL_RESULTS_MAX_BYTES" "got: $after_bytes bytes, was $before_bytes"
 [ -f "$PRB/results/os-update-state.json" ] &&
     ok "os-update-state.json survives the byte-cap eviction even though it is the oldest file" ||
     bad "os-update-state.json survives the byte-cap eviction even though it is the oldest file" "missing"
@@ -336,4 +335,4 @@ after_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
         "json: $([ -f "$PRB/results/$protected_id.json" ] && echo present || echo missing), archive: $([ -f "$PRB/results/$protected_id.tar.gz.enc" ] && echo present || echo missing)"
 unset CONTROL_RESULTS_MAX_BYTES CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
 unset -f backdate
-unset PRC PRB before_count remaining_plain remaining_archives fresh_id inflight before_bytes after_bytes floor_bytes cap_bytes protected_id
+unset PRC PRB before_count remaining_plain remaining_archives fresh_id inflight before_bytes after_bytes protected_id
