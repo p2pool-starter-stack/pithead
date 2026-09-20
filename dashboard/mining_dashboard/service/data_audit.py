@@ -222,7 +222,7 @@ class DataAuditMixin:
         non-attacker-controlled path)."""
         for w, extra_stats in zip(workers, worker_results, strict=False):
             await worker_change_audit.note_revision_drift(
-                self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR
+                self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR, _RIG_EDIT_WINDOW_SEC
             )
             ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
             if not ctrl:

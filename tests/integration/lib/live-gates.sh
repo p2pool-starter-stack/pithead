@@ -151,7 +151,10 @@ run_image_upgrade() {
     fi
     wait_status_ok 300 || it_fail "stack recovered after image upgrade" "pithead status did not become healthy"
     wait_monero_synced 300 || it_fail "Monero resynchronized after image upgrade" "sync did not reach done"
-    wait_tari_synced 300 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
+    # 1500s, not 300s: this is the same `pithead upgrade` recreate #2455 measured a tari Tor
+    # reconnect at >18min for, and unlike run-matrix.sh/run-rigforge.sh's tari waits, this one
+    # feeds straight into a hard it_fail with no assert_tari_synced_required lag tolerance.
+    wait_tari_synced 1500 || it_fail "Tari resynchronized after image upgrade" "sync did not reach done"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_for 240 5 "the exact pre-upgrade worker set" _pred_worker_set "$before_workers" || it_fail "workers returned after image upgrade" "the exact pre-upgrade worker set did not return"
     [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 360 || it_fail "hashes resumed after image upgrade" "stratum hashes stayed idle"
 
