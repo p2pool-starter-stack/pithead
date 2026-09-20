@@ -97,26 +97,20 @@ _stack_run_integration() { # <label> <extra args...>
     return "$rc"
 }
 
-phase_stack() {
-    local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
-    local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
-    local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
-    info "phase: stack (#2062 — the DIY gate, tests/integration/run.sh, against a remote-node appliance guest)"
-    if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ]; then
-        it_skip_phase "stack" "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
-        return
-    fi
-
-    local img
-    img=$(_build_image stack-v1) || {
-        bad "stack: image build failed (/tmp/os-fault-build.log)"
-        return 1
-    }
+# Provision a remote-node coordinator guest (#2062) from an ALREADY-BUILT image: boot it, submit
+# the remote-node wizard config, wait for the credentials handoff, wait for the stack to release
+# on /api/state, then wait for dashboard+caddy+p2pool to actually be running. Leaves $ip at the
+# guest; sets dash_user/dash_pass (module-global on purpose — every caller reads them straight off
+# this call, the same convention $ip already uses). Two callers now (#2063's rig share leg is the
+# second), which is what earns this its own function rather than living inline in phase_stack.
+# rc 1 = reported via bad(), the caller decides what that costs it.
+_provision_remote_node_coordinator() { # <image> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
+    local img="$1" mh="$2" rpc="$3" zmq="$4" mu="$5" mp="$6" th="$7" grpc="$8"
     _vm_boot_disk "$img" && _wait_ssh 240 || {
-        bad "stack: guest never answered SSH (ip: ${ip:-none})"
+        bad "coordinator guest never answered SSH (ip: ${ip:-none})"
         return 1
     }
-    ok "stack image boots ($ip)"
+    ok "coordinator image boots ($ip)"
 
     local tries=0 token=""
     while [ -z "$token" ] && [ "$tries" -lt 40 ]; do
@@ -125,35 +119,35 @@ phase_stack() {
         tries=$((tries + 1))
     done
     [ -n "$token" ] || {
-        bad "stack: no one-time token ever appeared on the console"
+        bad "no one-time token ever appeared on the coordinator's console"
         return 1
     }
     _wait_setup_page 120 || {
-        bad "stack: wizard gate never served"
+        bad "coordinator wizard gate never served"
         return 1
     }
 
     local jar
     jar=$(mktemp)
     curl -fsSk -c "$jar" -d "token=$token" "https://$ip/auth" -o /dev/null 2>/dev/null || {
-        bad "stack: token was not accepted"
+        bad "coordinator token was not accepted"
         rm -f "$jar"
         return 1
     }
     grep -q "wizard_session" "$jar" || {
-        bad "stack: auth returned no session cookie"
+        bad "coordinator auth returned no session cookie"
         rm -f "$jar"
         return 1
     }
 
     wizard_state_poll "$ip" "$jar" '.config // empty' || {
-        bad "stack: wizard never served a config to shape ($WIZ_STATE_WHY)"
+        bad "coordinator wizard never served a config to shape ($WIZ_STATE_WHY)"
         rm -f "$jar"
         return 1
     }
     local cfg scode sbody
     cfg=$(stack_browser_config "$WIZ_STATE" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
-        bad "stack: remote-node config could not be shaped"
+        bad "coordinator remote-node config could not be shaped"
         rm -f "$jar"
         return 1
     }
@@ -164,15 +158,15 @@ phase_stack() {
         # /submit probes the reserved node's reachability synchronously (wizard_node_probe.py)
         # and 400s with the probe's own reason — surface it, not just the status code, since a
         # remote-node submit failure is far more often a bad host/port/firewall than bad JSON.
-        bad "stack: remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
+        bad "coordinator remote-node config submit did not return 200 (got ${scode:-none}: $(tr -d '\n' <"$sbody" | cut -c1-500))"
         rm -f "$jar" "$sbody"
         return 1
     }
     rm -f "$sbody"
     if [ -n "$th" ]; then
-        ok "stack: remote-node config submitted (monero.mode=remote, tari.mode=remote)"
+        ok "coordinator: remote-node config submitted (monero.mode=remote, tari.mode=remote)"
     else
-        ok "stack: remote-node config submitted (monero.mode=remote, tari.mode=off, #1855)"
+        ok "coordinator: remote-node config submitted (monero.mode=remote, tari.mode=off, #1855)"
     fi
 
     local handoff_body="" htries=0
@@ -183,20 +177,19 @@ phase_stack() {
         htries=$((htries + 1))
     done
     [ "$htries" -lt 24 ] || {
-        bad "stack: no credentials handoff appeared on the page"
+        bad "no credentials handoff appeared on the coordinator's page"
         rm -f "$jar"
         return 1
     }
     curl -sSk -b "$jar" -X POST "https://$ip/handoff-ack" -o /dev/null 2>/dev/null
     rm -f "$jar"
-    ok "stack: handoff acknowledged — provisioning released"
+    ok "coordinator: handoff acknowledged — provisioning released"
 
-    local dash_user dash_pass
     dash_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     dash_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
 
-    # "Release on /api/state": the dashboard's own live state must answer before the DIY gate
-    # (which reads it too) has anything to drive.
+    # "Release on /api/state": the dashboard's own live state must answer before anything that
+    # reads it too (the DIY gate, or #2063's share leg) has anything to drive.
     local deadline=$(($(date +%s) + 900)) released=0
     while [ "$(date +%s)" -lt "$deadline" ]; do
         curl -sSk -u "$dash_user:$dash_pass" -m 5 "https://$ip/api/state" 2>/dev/null | jq -e '.' >/dev/null 2>&1 && {
@@ -206,10 +199,10 @@ phase_stack() {
         sleep 10
     done
     [ "$released" -eq 1 ] || {
-        bad "stack: /api/state never answered — provisioning did not release the stack"
+        bad "coordinator /api/state never answered — provisioning did not release the stack"
         return 1
     }
-    ok "stack: /api/state answers — provisioning released the stack"
+    ok "coordinator: /api/state answers — provisioning released the stack"
 
     # p2pool takes noticeably longer than dashboard+caddy to report ready (image pull, its own
     # startup sequence) — job 454 (#2062) measured --check running against a guest whose p2pool
@@ -226,11 +219,29 @@ phase_stack() {
         sleep 15
     done
     if [[ "$names" == *dashboard* && "$names" == *caddy* && "$names" == *p2pool* ]]; then
-        ok "stack: containers are running (podman: $names)"
+        ok "coordinator: containers are running (podman: $names)"
     else
-        bad "stack: containers never came up (running: '${names:-none}')"
+        bad "coordinator containers never came up (running: '${names:-none}')"
         return 1
     fi
+}
+
+phase_stack() {
+    local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
+    local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
+    local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
+    info "phase: stack (#2062 — the DIY gate, tests/integration/run.sh, against a remote-node appliance guest)"
+    if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ]; then
+        it_skip_phase "stack" "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
+        return
+    fi
+
+    local img
+    img=$(_build_image stack-v1) || {
+        bad "stack: image build failed (/tmp/os-fault-build.log)"
+        return 1
+    }
+    _provision_remote_node_coordinator "$img" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" || return 1
 
     # The DIY gate itself: a non-destructive read, then the destructive phases the appliance
     # channel has never run — its first live coverage of each (#2062). The two parity rows this
