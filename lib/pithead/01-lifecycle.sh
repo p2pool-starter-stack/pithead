@@ -221,7 +221,13 @@ stack_down_except_caddy() {
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
     remove_tor_egress_firewall
     local services
-    services=$(docker compose config --services 2>/dev/null | grep -vxF caddy)
+    # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
+    # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
+    # takes the shell out before the guard below can run. The guard has to see the FILTERED list —
+    # an empty one must never reach `docker compose stop`, which with no arguments stops every
+    # service, caddy included, and walks straight back into the failure this function exists to avoid.
+    services=$(docker compose config --services 2>/dev/null)
+    services=$(printf '%s\n' "$services" | grep -vxF caddy || true)
     [ -n "$services" ] || error "Could not list compose services to stop for the backup."
     # shellcheck disable=SC2086 # word-splitting the service list is the point
     if ! docker compose stop $services; then

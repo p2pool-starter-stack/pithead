@@ -44,6 +44,44 @@ rc=$?
 assert_rc "backup against a running stack exits 0" "$rc" "0"
 stop_line="$(grep '^compose stop' "$DOCKER_LOG" | head -1)"
 assert_contains "backup stops the stack via a targeted compose stop" "$stop_line" "compose stop"
-case "$stop_line" in *caddy*) bad "caddy is excluded from the backup's stop" "$stop_line" ;; *) ok "caddy is excluded from the backup's stop" ;; esac
+case "$stop_line" in
+"") bad "caddy is excluded from the backup's stop" "no 'compose stop' line was captured at all" ;;
+*caddy*) bad "caddy is excluded from the backup's stop" "$stop_line" ;;
+*) ok "caddy is excluded from the backup's stop" ;;
+esac
 assert_not_contains "backup never runs a full compose down" "$(cat "$DOCKER_LOG")" "compose down"
 unset CD DOCKER_LOG rc stop_line
+
+# The caddy filter can legitimately match everything (a compose file whose only service is caddy,
+# or a `config --services` that fails and prints nothing). That must reach the guard and abort with
+# its message. Assigning `config --services | grep -vxF caddy` as one pipeline does not: under the
+# CLI's `set -Eeuo pipefail` a grep matching nothing fails the assignment and errexit takes the
+# shell out before the guard can run (the #2059 trap, documented in 02-tor-egress.sh). stack_backup
+# happens to call this inside `if ! ( ... )`, which suspends errexit and hides the trap, so the
+# function is exercised directly here — the way any future caller would reach it.
+echo "== unit: stack_down_except_caddy — a caddy-only service list reaches the guard (#2364) =="
+CD="$SANDBOX/backup-caddy-only-list"
+mkdir -p "$CD/bin"
+cp "$STACK" "$CD/pithead"
+DOCKER_LOG="$CD/docker.log"
+: >"$DOCKER_LOG"
+cat >"$CD/bin/docker" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >>"$DOCKER_LOG"
+case "\$*" in
+"compose config --services") printf '%s\n' caddy ;;
+esac
+exit 0
+EOF
+cat >"$CD/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+exec "$@"
+EOF
+printf '#!/usr/bin/env bash\nexit 0\n' >"$CD/bin/nft"
+chmod +x "$CD/bin/docker" "$CD/bin/sudo" "$CD/bin/nft"
+out="$( (cd "$CD" && PATH="$CD/bin:$PATH" bash -c 'set -Eeuo pipefail; source ./pithead; stack_down_except_caddy') 2>&1)"
+rc=$?
+if [ "$rc" != "0" ]; then ok "a caddy-only service list fails the stop"; else bad "a caddy-only service list fails the stop" "expected a non-zero rc, got 0"; fi
+assert_contains "the empty filtered list reaches the guard's message" "$out" "Could not list compose services to stop for the backup."
+assert_not_contains "no unargumented compose stop (it would stop caddy too)" "$(cat "$DOCKER_LOG")" "compose stop"
+unset CD DOCKER_LOG rc out
