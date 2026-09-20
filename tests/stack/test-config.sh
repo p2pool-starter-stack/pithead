@@ -172,13 +172,13 @@ assert_contains "tari clearnet enable warns exposure" "$(run_sourced "$SANDBOX" 
 # restore points and proxy.donate_level host-only — a future-dated restore point silently defeats
 # payout-confirmation tamper evidence, and donate traffic bypasses the Tor socks5.
 assert_contains "monero outbound-peer change is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_OUT_PEERS 12 64)" "CONFIRM"
-# 2026-09 operator ruling (#1888): the remote node endpoints joined that tier — they move TRUST, not
-# disk — while the RPC LOGIN CREDENTIALS for the same node did NOT. That row is the control: it is what makes this set able to say NO.
+# #1888 put the remote node endpoints on this tier; #2333/#2367 moved the RPC login on too.
 node_ep="$(run_sourced "$SANDBOX" describe_change MONERO_NODE_HOST 10.0.0.9 10.0.0.11)"
 assert_contains "monero node endpoint is CONFIRM (#1888)" "$node_ep" "CONFIRM"
 assert_contains "monero node endpoint preview names old -> new" "$node_ep" "10.0.0.9 → 10.0.0.11"
 assert_contains "tari node endpoint is CONFIRM (#1888)" "$(run_sourced "$SANDBOX" describe_change TARI_GRPC_ADDRESS a.lan:18142 b.lan:18142)" "CONFIRM"
-assert_not_contains "a remote node's RPC password is NOT confirm-gated" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD old new)" "CONFIRM"
+assert_contains "RPC password is confirm-gated, not refused (#2333/#2367)" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "CONFIRM"
+assert_not_contains "RPC password warning never echoes the value" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "os2333-oldpw"
 
 echo "== unit: explain_subnet_collision (#180) =="
 ov="$(run_sourced "$SANDBOX" explain_subnet_collision "invalid pool request: Pool overlaps with other one on this address space" 2>&1)"
