@@ -99,10 +99,17 @@ run_rotate_secrets() {
 
     # 1. Recreate, not restart: the new token/password must be LIVE in the running containers, and
     #    the old ones must be gone from them — not just written to config.json/.env (#356's shape).
-    if _rotate_proxy_token_accepted "$new_proxy_token"; then
+    #    xmrig-proxy's healthcheck (build/xmrig-proxy/healthcheck.sh) is a bare TCP connect, so
+    #    `pithead status`/wait_status_ok can read it healthy the instant the listener socket binds
+    #    — before the recreated container has finished wiring the new token internally. A real bench
+    #    run hit exactly that: the new token's get_config() failed ~0.3s after wait_status_ok
+    #    returned, while monerod's (heavier) RPC handshake had already settled. Give it the same
+    #    bounded settle window every other post-recreate check in this harness gets, not one
+    #    point-in-time probe.
+    if wait_for 60 3 "xmrig-proxy control API to accept the new PROXY_AUTH_TOKEN" _rotate_proxy_token_accepted "$new_proxy_token"; then
         it_pass "xmrig-proxy control API accepts the new PROXY_AUTH_TOKEN (recreated, not restarted)"
     else
-        it_fail "xmrig-proxy control API accepts the new PROXY_AUTH_TOKEN (recreated, not restarted)" "get_config() with the new token failed"
+        it_fail "xmrig-proxy control API accepts the new PROXY_AUTH_TOKEN (recreated, not restarted)" "get_config() with the new token still failed after 60s"
     fi
     if _rotate_proxy_token_accepted "$old_proxy_token"; then
         it_fail "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN" "get_config() with the OLD token still succeeded"
@@ -110,9 +117,10 @@ run_rotate_secrets() {
         it_pass "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN"
     fi
 
-    # The failure detail never echoes proxy_args itself (or the passwords) — it is the live
-    # --access-password value, and it_fail's output is not secret-redacted the way a captured
-    # artifact is.
+    # The control-API wait above already settled on the recreated container, so .Args (fixed at
+    # container creation, never a wait target of its own) is safe to read once here. The failure
+    # detail never echoes proxy_args itself (or the passwords) — it is the live --access-password
+    # value, and it_fail's output is not secret-redacted the way a captured artifact is.
     local proxy_args
     proxy_args="$(_rotate_proxy_live_args)"
     case "$proxy_args" in
