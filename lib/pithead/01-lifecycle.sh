@@ -207,6 +207,36 @@ stack_down() {
     mutation_lock_release
 }
 
+# Stop every service except caddy — the backup window's own stop (#2364). None of caddy's own
+# runtime state (its Caddyfile bind, its internal-CA data volume) is ever part of the backup
+# archive, and caddy is also the one container fronting the dashboard request that triggered this
+# stop in the first place: a `docker compose down` sends caddy its stop signal while that very
+# request can still be in flight, and podman forcing the container to exit before Caddy finishes
+# draining it can leave its read-only rootfs's `/tmp`/`/config` tmpfs submounts un-torn-down —
+# so it then finds caddy's overlay `merged` directory non-empty when it tries to remove it
+# ("directory not empty"), and `down` fails before any archive is written. Backup does not need
+# caddy stopped at all, so the fix is simply to leave it running across the window.
+stack_down_except_caddy() {
+    mutation_lock_acquire down
+    log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
+    remove_tor_egress_firewall
+    local services
+    # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
+    # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
+    # takes the shell out before the guard below can run. The guard has to see the FILTERED list —
+    # an empty one must never reach `docker compose stop`, which with no arguments stops every
+    # service, caddy included, and walks straight back into the failure this function exists to avoid.
+    services=$(docker compose config --services 2>/dev/null)
+    services=$(printf '%s\n' "$services" | grep -vxF caddy || true)
+    [ -n "$services" ] || error "Could not list compose services to stop for the backup."
+    # shellcheck disable=SC2086 # word-splitting the service list is the point
+    if ! docker compose stop $services; then
+        error "Stack failed to stop — see the error above."
+    fi
+    log "Stack stopped (caddy left running)."
+    mutation_lock_release
+}
+
 stack_restart() { # [tor|monerod]
     # Reject a bad argument BEFORE taking the lock (#1342). Validating inside the window makes a
     # typo wait out someone else's backup — up to PITHEAD_LOCK_TIMEOUT — only to be told it was a

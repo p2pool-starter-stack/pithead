@@ -11,7 +11,8 @@ cat >"$FB/bin/docker" <<'EOF'
 echo "[docker] $*" >>"${DOCKER_LOG:-/dev/null}"
 case "$*" in
   "compose ps --status running -q") echo cid123 ;;
-  "compose down"*) [ "${DOWN_FAIL:-0}" != 1 ] || exit 1 ;;
+  "compose config --services") printf '%s\n' tor monerod tari p2pool dashboard caddy ;;
+  "compose stop"*) [ "${DOWN_FAIL:-0}" != 1 ] || exit 1 ;;
   "compose up"*)
     n=0; [ ! -f "${UP_COUNT:?}" ] || n=$(cat "$UP_COUNT")
     n=$((n + 1)); printf '%s' "$n" >"$UP_COUNT"
