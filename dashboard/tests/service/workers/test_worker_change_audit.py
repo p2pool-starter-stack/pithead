@@ -116,7 +116,8 @@ class TestFloodIsBounded:
 
     def test_a_fresh_revision_every_poll_is_capped(self):
         # A rogue rig incrementing its revision clears the deterministic-id dedup every time, so
-        # unbounded this writes one PERMANENT row per poll. audit_events has no retention DELETE.
+        # unbounded this writes one row per poll. audit_events ages rows out at 30 days (#1814);
+        # this cap is what bounds how many a single device can pile up INSIDE that window.
         svc, sm = _svc()
         try:
             for i in range(_RIG_EDIT_CAP_PER_HOUR + 8):
