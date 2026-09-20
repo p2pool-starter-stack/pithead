@@ -415,4 +415,4 @@ for _ in $(seq 90); do
     fi
     sleep 10
 done
-fail_boot "the stack never became healthy (serving + doctor)"
+fail_boot "the stack never became healthy (serving + doctor + status)"

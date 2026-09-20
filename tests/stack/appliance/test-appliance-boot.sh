@@ -294,7 +294,7 @@ gr_run() { # <doctor-exit> <code> <size> -> ready|held
         cd "$GR" || exit 1
         # shellcheck disable=SC1090
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-        BOOT_DOCTOR_JSON="$GR/doctor.json"
+        BOOT_DOCTOR_JSON="$GR/doctor.json" BOOT_STATUS_LOG="$GR/status.log"
         gate_ready "$2" "$3" && echo ready || echo held
     )
 }
@@ -563,7 +563,7 @@ bg_run() { # <cwd> — one fail_boot in a sandbox, printing "<reboots> <counter>
     (
         cd "$1" 2>/dev/null || exit 1
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-        PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor)" 2>&1
+        PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
     )
 }
 rm -f "$BG"/rebooted.*
@@ -597,7 +597,7 @@ rm -f "$BG"/rebooted.*
 bg_out3=$(
     cd "$BGX" && rmdir "$BGX"
     source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-    PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor)" 2>&1
+    PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
 )
 assert_eq "a counter it cannot write means it does NOT reboot" "$(ls "$BG"/rebooted.* 2>/dev/null | wc -l | tr -d ' ')" "0"
 assert_contains "and it says a reboot it cannot count is a reboot loop" "$bg_out3" "a reboot it cannot count is a reboot loop"

@@ -127,7 +127,7 @@ l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_sleep=$(bl_line '    sleep 10')
-l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor)"')
+l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
     "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
 assert_eq "gate_doctor_ran is reset INSIDE the loop, before the ready check" \
@@ -160,7 +160,7 @@ fv_run() { # <doctor json, or ""> -> "flag=<json> verdict=<json> outcome=<..> co
         OS_INFLIGHT=data/os-update/in-flight.json
         OS_STATE_DIR=data/control/results
         BOOT_DOCTOR_JSON="$FV/doctor.json"
-        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor)" 2>/dev/null
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
     )
     flag=$(jq -rc '.blocking // "absent"' "$FV/data/os-update/in-flight.json" 2>/dev/null)
     printf '1.0.0\n' >"$FV/VERSION" # the fallback boot runs the OLD version
@@ -296,7 +296,7 @@ fs_run() { # <doctor json, or ""> <status log body, or ""> -> "flag=<json>"
         OS_STATE_DIR=data/control/results
         BOOT_DOCTOR_JSON="$FS/doctor.json"
         BOOT_STATUS_LOG="$FS/status.log"
-        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor)" 2>/dev/null
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
     )
     printf 'flag=%s' "$(jq -rc '.blocking // "absent"' "$FS/data/os-update/in-flight.json" 2>/dev/null)"
 }
@@ -323,7 +323,7 @@ fc_out=$(
     # shellcheck disable=SC1090
     source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
     BOOT_STATUS_LOG="$FC/status.log"
-    PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor)" 2>&1
+    PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
 )
 assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out"     "pithead-boot: held by container dashboard: running but UNHEALTHY"
 unset FC fc_out
