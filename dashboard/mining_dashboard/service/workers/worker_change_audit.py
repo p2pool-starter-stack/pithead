@@ -43,11 +43,12 @@ logger = logging.getLogger("WorkerChangeAudit")
 #
 # WHAT THIS PROTECTS IS NARROWER THAN "AN ESTABLISHED RIG", and the gap is the residual worth
 # knowing. Membership in ``_rig_edit_window`` means "this NAME produced an out-of-band detection
-# inside the current window" -- the sole insert is ``data_service._rig_edit_within_cap``, reached
-# only from the two detection paths -- and NOT "this device is known to us". A rig whose config
-# changes all go through the dashboard holds no entry at all, so while a flood holds every slot
-# that rig's FIRST detection is refused and dropped behind the episode marker: the best-behaved
-# rig is the least protected, and a rogue does spend slots on its behalf. That is the price of
+# inside the current window" OR "this name was admitted to write its own ``worker_config_revision``
+# row" (#1811, ``note_revision_drift``'s own reservation, below) -- NOT "this device is known to
+# us". A rig that never reports a RigForge ``config_meta`` and never has an out-of-band edit holds
+# no entry at all, so while a flood holds every slot that rig's FIRST detection is refused and
+# dropped behind the episode marker: the best-behaved rig is the least protected, and a rogue does
+# spend slots on its behalf. That is the price of
 # bounding a device-chosen name space with no authenticated identity to key admission on, and it
 # is DISCLOSED rather than fixed, the way #1696 disclosed its unstorable-name case. What a flood
 # cannot do is displace a name that is already holding a window. Nor is it keyed on something the
@@ -168,7 +169,7 @@ async def record_cap_marker(svc, worker, cap, tipped_by):
     )
 
 
-async def note_revision_drift(svc, worker_row, extra_stats, cap):
+async def note_revision_drift(svc, worker_row, extra_stats, cap, window_sec):
     """Record the revision ``worker_row`` serves now, and audit a config change nothing else sees.
 
     This is the #1551 wiring, for the door #1542 leaves open. ``last_applied`` is a merge of the
@@ -199,17 +200,35 @@ async def note_revision_drift(svc, worker_row, extra_stats, cap):
     between two revisions and does nothing about one incrementing.
 
     A quiet no-op whenever there is nothing to say: no body, no ``config_meta``, an unnamed worker,
-    or a store that returned None — a first sighting, an unmoved revision, a move something already
-    recorded, or a read/write error, since ``note_worker_revision`` fails closed and accuses nobody.
+    a name the #1695 ceiling has not admitted, or a store that returned None — a first sighting, an
+    unmoved revision, a move something already recorded, or a read/write error, since
+    ``note_worker_revision`` fails closed and accuses nobody.
+
+    The #1695 gate runs BEFORE the store write (#1811): the write itself is the permanent-row cost
+    this issue exists to bound, so gating after it, the way the drift-audit cap below does, would
+    still let a name write once per rotation. ``admit_worker`` alone would not close that either —
+    admission there is read-only, and only ``_rig_edit_within_cap`` (reached AFTER a drift is
+    already found) ever inserts into ``svc._rig_edit_window`` — so an ordinary no-drift poll, the
+    common case, would keep passing admission forever without ever spending a slot. Reserving an
+    EMPTY (zero-count) window on first admission is what makes a name's first write actually spend
+    one of the ceiling's ``_WORKERS_MAX`` slots, the same slot a later real detection starts from.
     """
     worker = (worker_row or {}).get("name") or ""
     meta = parse_config_meta(((extra_stats or {}).get("rigforge") or {}).get("config_meta"))
     if not worker or not meta:
         return
+    now = time.time()
+    admitted, first_over = admit_worker(svc, worker, now, window_sec)
+    if admitted and worker not in svc._rig_edit_window:
+        svc._rig_edit_window[worker] = (now, 0)
+    if not admitted:
+        if first_over:
+            await record_cap_marker(svc, worker, cap, "revision-drift")
+        return
     drift = await asyncio.to_thread(svc.state_manager.note_worker_revision, worker, meta)
     if not drift:
         return
-    allowed, first_over = svc._rig_edit_within_cap(worker, time.time())
+    allowed, first_over = svc._rig_edit_within_cap(worker, now)
     if not allowed:
         if first_over:
             await record_cap_marker(svc, worker, cap, "revision-drift")
