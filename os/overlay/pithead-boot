@@ -10,16 +10,15 @@
 #   containers' lifecycle. podman-restart started them into its own oneshot cgroup and systemd
 #   SIGKILLed the lot when the unit stopped.
 # - mark-good only on health (#793, #852, #2383): commit takes THREE signals. First the dashboard
-#   answering through caddy is the end of the derived-config -> caddy -> dashboard chain (any HTTP
-#   status is life — 401 is a healthy, locked dashboard). Second `pithead doctor --json` must exit
-#   clean: it FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a
-#   missing egress firewall — the mining-dead-but-serving slot a curl-only gate used to mark-good.
-#   doctor is sync-tolerant by construction (the sync-held miners, #35, never count as crashed), so
-#   a still-syncing box commits; the one FAIL that may commit is certificate coverage the re-mint
-#   could not clear (#1265, below). Third `pithead status` must exit 0: doctor only judges the
-#   revenue containers, so a NON-revenue container (dashboard itself, caddy) left `unhealthy` or
-#   `restarting` passed both older gates — manual battery M9, where a dashboard whose healthcheck
-#   failed still committed. A slot that boots but is not healthy stays UNCOMMITTED: that is A/B.
+#   answering through caddy is the end of the derived-config -> caddy -> dashboard chain (401 is a
+#   healthy, locked dashboard). Second `pithead doctor --json` must exit clean: it FAILs on a
+#   crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing egress
+#   firewall — the mining-dead-but-serving slot a curl-only gate used to mark-good. doctor is
+#   sync-tolerant (the sync-held miners, #35, never count as crashed); the one FAIL that may commit
+#   is certificate coverage the re-mint could not clear (#1265, below). Third `pithead status` must
+#   exit 0: doctor only judges the revenue containers, so a NON-revenue container left `unhealthy`
+#   or `restarting` passed both older gates — manual battery M9. A slot that boots but is not
+#   healthy stays UNCOMMITTED: that is A/B.
 set -uo pipefail
 
 # A boot that fails is what A/B fallback exists for — but the fallback is a GRUB decision made at
@@ -46,12 +45,13 @@ boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason"
 boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT"; }
 fail_boot() { # <what went wrong>
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
-    # The rollback verdict names what held the gate (#1265, #2383): doctor's and status's last
-    # runs are still on /run, folded into the in-flight flag for os_update_rollback_verdict.
+    local status_problems # named on THIS boot's console (#2383), not just the next boot's verdict
+    status_problems=$(boot_status_blocking)
+    [ -n "$status_problems" ] && printf '%s\n' "$status_problems" | sed 's/^/pithead-boot: held by /' >&2
+    # ...and in the rollback verdict too (#1265): folded into the in-flight flag for the dashboard.
     if [ -n "${OS_INFLIGHT:-}" ] && [ -f "$OS_INFLIGHT" ] && command -v jq >/dev/null 2>&1; then
-        local doctor_msgs='[]' status_problems
+        local doctor_msgs='[]'
         [ -s "$BOOT_DOCTOR_JSON" ] && doctor_msgs=$(jq -c '[.checks[]? | select(.status == "fail") | .message]' "$BOOT_DOCTOR_JSON" 2>/dev/null || echo '[]')
-        status_problems=$(boot_status_blocking)
         if [ "$doctor_msgs" != '[]' ] || [ -n "$status_problems" ]; then
             jq --argjson d "$doctor_msgs" --arg s "$status_problems" \
                 '.blocking = ($d + (if $s == "" then [] else ($s | split("\n")) end))' \
