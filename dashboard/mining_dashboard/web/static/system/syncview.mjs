@@ -20,7 +20,7 @@ export function Gauge({ percent, state }) {
   return html`
     <div class="loader-container">
         <div class="progress-wheel" style=${{ "--p": percent + "%" }}></div>
-        <div class="progress-text">${inner}</div>
+        <div class="progress-text" role="status" aria-live="polite">${inner}</div>
     </div>`;
 }
 
