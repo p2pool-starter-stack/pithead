@@ -59,5 +59,22 @@ echo "== wait_synced honors the timeout it's given (generic, not #2455-specific)
 assert_eq "an already-synced bench returns 0 immediately" "$(run_wait_synced 5 done/done)" "0"
 assert_eq "a bench stuck loading returns 1 once its OWN timeout elapses" "$(run_wait_synced 1 loading/loading)" "1"
 
+# --- The other caller that runs the SAME `pithead upgrade` with the SAME short-wait defect ---
+# run-matrix.sh/run-rigforge.sh also call wait_tari_synced 300, but their wait feeds into
+# assert_tari_synced_required (#746), which already tolerates post-restart lag once Tari has
+# proved synced this run — they are not exposed to #2455's bug. live-gates.sh's run_image_upgrade
+# hard-fails straight off wait_tari_synced with no such tolerance, on the exact `pithead upgrade`
+# #2455 names, so it needs the same ceiling raise.
+LIVE_GATES_SRC="$HERE/../lib/live-gates.sh"
+UPGRADE_SRC="$(sed -n '/^run_image_upgrade() {$/,/^}$/p' "$LIVE_GATES_SRC")"
+assert_eq "run_image_upgrade extraction is the whole function (opens and closes)" \
+    "$(printf '%s\n' "$UPGRADE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_image_upgrade() { } "
+UPGRADE_WAIT_ARG="$(printf '%s\n' "$UPGRADE_SRC" | grep -oE 'wait_tari_synced [0-9]+' | grep -oE '[0-9]+')"
+if [ "${UPGRADE_WAIT_ARG:-0}" -ge 1080 ] 2>/dev/null; then
+    it_pass "run_image_upgrade's wait_tari_synced ceiling (${UPGRADE_WAIT_ARG}s) is >= 1080s (18min, #2455's measurement)"
+else
+    it_fail "run_image_upgrade's wait_tari_synced ceiling is >= 1080s (18min, #2455's measurement)" "got ${UPGRADE_WAIT_ARG:-<none>}s"
+fi
+
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
