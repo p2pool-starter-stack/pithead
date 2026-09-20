@@ -104,13 +104,13 @@ export const NodeProbeReport = ({ report, children }) => {
   // DID proceed, so telling the operator setup had stopped would be the opposite lie.
   const passed = s.ok && s.skipped === 0 && s.rows.every((row) => row.ok);
   return html`<div class="card">
-    <h3 class=${passed ? "c-ok" : "c-bad"}>
+    <h2 class=${passed ? "c-ok" : "c-bad"}>
       ${
         passed
           ? "Every node check this configuration asks for passed."
           : "A node this machine was told to use could not be verified."
       }
-    </h3>
+    </h2>
     ${!s.ok && children && html`<p>${children}</p>`}
     <ul class="config-preview-list">
       ${s.rows.map(
@@ -137,7 +137,7 @@ export function needsNodeProbe(config) {
 export const NodeProbeProgress = ({ config }) => {
   if (!needsNodeProbe(config)) return null;
   return html`<div class="card">
-    <h3>Reaching your remote nodes…</h3>
+    <h2>Reaching your remote nodes…</h2>
     <ul class="config-preview-list">
       ${
         config?.monero?.mode === "remote" &&

@@ -15,7 +15,7 @@ function ComponentHealth({ topology, egress }) {
   const summaryClass = ok ? "ok" : leaks ? "bad" : "warn";
   return html`
     <div class="card card-advanced" id="card-egress">
-        <h3>Stack Topology & Egress</h3>
+        <h2>Stack Topology & Egress</h2>
         <div class=${"egress-summary c-" + summaryClass}>
             ${ok ? "🛡️" : "⚠️"} ${topology.summary.label}
         </div>
