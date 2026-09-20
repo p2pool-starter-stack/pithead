@@ -67,7 +67,12 @@ _phase_provision_initial_body() {
         rm -f "$jar"
         return 1
     }
-    provision_node_preflight_retention "$ip" "$jar" || {
+    provision_node_preflight "$ip" "$jar" unreachable.invalid dns \
+        "The node name did not resolve to an address." "the unreachable Tari consumer" || {
+        rm -f "$jar"
+        return 1
+    }
+    provision_node_preflight "$ip" "$jar" 127.0.0.1 address container "a loopback Tari endpoint" || {
         rm -f "$jar"
         return 1
     }
