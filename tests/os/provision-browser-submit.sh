@@ -66,34 +66,34 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
 provision_page_error() { # <ip> <jar>
     curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
 }
-node_preflight_state_retained() { # <submit-response-json> <wizard-state-json> <expected-wallet>
-    printf '%s' "$1" | jq -e '
-        .error == "The node name did not resolve to an address." and
+node_preflight_refused() { # <response-json> <state-json> <wallet> <host> <reason> <error-substring>
+    printf '%s' "$1" | jq -e --arg reason "$5" --arg err "$6" '
+        (.error | contains($err)) and
         .node_probe.ok == false and .node_probe.configured == 1 and .node_probe.probed == 1 and
-        any(.node_probe.probes[]; .target == "tari" and .reason == "dns" and .ok == false)' >/dev/null &&
-        printf '%s' "$2" | jq -e --arg m "$3" '
+        any(.node_probe.probes[]; .target == "tari" and .reason == $reason and .ok == false)' >/dev/null &&
+        printf '%s' "$2" | jq -e --arg m "$3" --arg h "$4" '
             .stage == "setup" and .config.monero.wallet_address == $m and
-            .config.tari.remote.host == "unreachable.invalid"' >/dev/null
+            .config.tari.remote.host == $h' >/dev/null
 }
 # This refusal is separate from later setup failure recovery: the protocol preflight stays on the
 # form, retains safe answers, and publishes the exact failed Tari row. The caller then submits the
 # corrected local choice; a post-validation setup fault has its own leg once that product seam lands.
-provision_node_preflight_retention() { # <ip> <authenticated-cookie-jar>
-    local ip="$1" jar="$2" state cfg code raw body
+provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <label>
+    local ip="$1" jar="$2" host="$3" reason="$4" err="$5" label="$6" state cfg code raw body
     state=$(curl -fsSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null) || return 1
-    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" '
+    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg h "$host" '
         .config | .monero.wallet_address = $m | .tari.wallet_address = $t |
-        .tari.mode = "remote" | .tari.remote.host = "unreachable.invalid" |
+        .tari.mode = "remote" | .tari.remote.host = $h |
         .tari.remote.grpc_port = 18142 | .p2pool.pool = "mini" | .local_miner.enabled = true') || return 1
     raw=$(curl -sSk -b "$jar" -m 20 --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
         "https://$ip/submit" -w '\n%{http_code}' 2>/dev/null)
     code=${raw##*$'\n'}
     body=${raw%$'\n'*}
     state=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null)
-    if [ "$code" = "400" ] && node_preflight_state_retained "$body" "$state" "$HARNESS_WALLET"; then
-        ok "remote-node preflight refuses the unreachable Tari consumer and retains safe answers"
+    if [ "$code" = "400" ] && node_preflight_refused "$body" "$state" "$HARNESS_WALLET" "$host" "$reason" "$err"; then
+        ok "remote-node preflight refuses $label and retains safe answers"
     else
-        bad "remote-node preflight did not return the named Tari refusal with retained values (HTTP ${code:-none})"
+        bad "remote-node preflight did not refuse $label with retained values (HTTP ${code:-none})"
         return 1
     fi
 }
@@ -293,12 +293,12 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     esac
 }
 _recovery_self_test() {
-    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}'
-    local state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
-    node_preflight_state_retained "$response" "$state" wallet || return 1
-    ! node_preflight_state_retained "${response/\"dns\"/\"protocol\"}" "$state" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"setup\"/\"failed\"}" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"wallet\"/\"lost\"}" wallet || return 1
+    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}' state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
+    node_preflight_refused "$response" "$state" wallet unreachable.invalid dns "The node name did not resolve to an address." || return 1
+    ! node_preflight_refused "${response/\"dns\"/\"protocol\"}" "$state" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"setup\"/\"failed\"}" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"wallet\"/\"lost\"}" wallet unreachable.invalid dns "" || return 1
+    node_preflight_loopback_self_test || return 1
     local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box cfg
     cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":""}}') || return 1
     # #2076: the shaper seeds wallets, mode and host and touches NOTHING under .telegram — an empty
@@ -396,10 +396,10 @@ _wsp_self_test() {
 }
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     set -uo pipefail # what tests/os/run.sh runs the helpers under
-    # shellcheck source=tests/os/appliance-config-approval-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/appliance-config-approval-leg.sh"
     # shellcheck source=tests/os/setup-failure-recovery-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/setup-failure-recovery-leg.sh"
+    . "$(cd "$(dirname "$0")" && pwd)/node-preflight-loopback-leg.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
     _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test
