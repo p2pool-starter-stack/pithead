@@ -35,8 +35,6 @@ NEVER_COMMITTABLE_ENV_KEYS = frozenset(
         "TOR_EGRESS_FIREWALL",
         "MONERO_WALLET_ADDRESS",
         "MONERO_VIEW_KEY",
-        "MONERO_NODE_USERNAME",
-        "MONERO_NODE_PASSWORD",
         "WALLET_RPC_PASSWORD",
         "TARI_VIEW_KEY",
         # NODE ENDPOINTS LEFT THIS LIST ON 2026-09-06 (#1888, operator ruling) — MONERO_NODE_HOST,
@@ -47,9 +45,13 @@ NEVER_COMMITTABLE_ENV_KEYS = frozenset(
         # is no host shell there, so the setting became unchangeable for the life of the machine
         # (#786/#1821). They are now the confirm-gated tier, behind the control channel's own auth
         # plus a host-side reachability probe on the staged endpoint (43-control-approval-and-
-        # preview.sh). Their RPC LOGIN CREDENTIALS — MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD,
-        # still above — did NOT move, and neither did the binds below: address identity is not a
-        # secret, and a listen address is not an endpoint.
+        # preview.sh). Their RPC LOGIN CREDENTIALS — MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD —
+        # LEFT THIS LIST TOO on 2026-09-19 (#2333/#2367, operator ruling): every config field is
+        # dashboard-editable, and a security-sensitive one gets a typed-confirmation warning rather
+        # than an outright refusal. They join the confirm-gated tier alongside the endpoints, never
+        # the free-commit editable tier, and describe_change never echoes the credential's value.
+        # The binds below did NOT move: address identity is not a secret, and a listen address is
+        # not an endpoint.
         # Binds (SECURITY.md's "binds"): the RPC/gRPC listen addresses. DASHBOARD_HOST (above)
         # covers the dashboard's own bind; these are the merge-mined services' local listeners.
         "MONERO_RPC_BIND",
