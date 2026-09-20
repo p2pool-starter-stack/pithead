@@ -143,6 +143,60 @@ test("commit does not poll after a nonempty response without a result status", a
   assert.equal(view.state.phase, "error");
 });
 
+// #2366: the commit request itself recreates the dashboard container, so the browser's own
+// fetch to /api/control/commit can be dropped mid-flight — the panel used to surface that as a
+// raw `TypeError: Failed to fetch` instead of treating it as the expected restart.
+test("commit falls back to polling its preview id when the commit request itself is dropped", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  await withFastPoll(
+    async (url) =>
+      url === "/api/control/commit"
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : okResult({ status: "applied" }),
+    () => view.commit(),
+  );
+  assert.equal(view.state.phase, "done");
+  assert.equal(view.state.result.status, "applied");
+});
+
+// A 502/503/504 while the proxy is up but the app container is restarting is the same expected
+// case, riding the same fallback rather than throwing HTTP 502 immediately.
+test("commit falls back to polling its preview id on a 502/503/504 from the commit request", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  await withFastPoll(
+    async (url) =>
+      url === "/api/control/commit"
+        ? { status: 502, ok: false, text: async () => "" }
+        : okResult({ status: "applied" }),
+    () => view.commit(),
+  );
+  assert.equal(view.state.phase, "done");
+  assert.equal(view.state.result.status, "applied");
+});
+
+// A real failure (4xx/5xx the proxy did not generate) still surfaces its message, not a raw
+// browser error, and does not silently retry it as a restart.
+test("commit surfaces a real HTTP error from the commit request instead of polling", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  view.state.preview = { id: ID, destructive: false };
+  let calls = 0;
+  await withFastPoll(
+    async () => {
+      calls++;
+      return { status: 400, ok: false, text: async () => "bad request" };
+    },
+    () => view.commit(),
+  );
+  assert.equal(calls, 1);
+  assert.equal(view.state.phase, "error");
+  assert.match(view.state.error, /HTTP 400/);
+});
+
 test("a rejected appliance preview labels the host validation log", async () => {
   const view = new ConfigView({ appliance: true });
   view.props = { appliance: true };
@@ -354,4 +408,31 @@ test("a CONFIRM change arms Confirm once APPLY is typed (#719)", () => {
   );
   const btnArmed = armed.match(/<button class="btn-toggle active"[^>]*>/)[0];
   assert.doesNotMatch(btnArmed, /disabled/); // now committable
+});
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the review modal is a <dialog>, not a backdrop div", () => {
+  const out = renderToString(
+    PreviewModal({ preview: { changes: [], destructive: false }, confirmText: "", busy: false }),
+  );
+  assert.match(out, /^<dialog class="card config-modal"/);
+  assert.match(out, /role="dialog"/);
+  assert.match(out, /aria-modal="true"/);
+  assert.match(out, /aria-label="Review changes"/);
+  assert.doesNotMatch(out, /config-modal-backdrop/);
+});
+
+test("every UpgradeControl phase modal (confirm/upgrading/done/failed) is a <dialog>", () => {
+  const props = { update: UPDATE, enabled: true };
+  for (const phase of ["confirm", "upgrading", "done", "failed"]) {
+    const inst = new UpgradeControl(props);
+    inst.props = props;
+    inst.state.phase = phase;
+    if (phase === "done") inst.state.result = { status: "upgraded", version: "v9.9.9" };
+    if (phase === "failed") inst.state.result = { error: "boom" };
+    const out = renderToString(inst.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
 });

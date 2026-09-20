@@ -372,7 +372,10 @@ crosses 5%.
 With the control channel on (`dashboard.control.enabled`), a worker's name in the Workers Alive table
 is a link. Click it to open **Worker Inspect** — a dialog with that rig's live telemetry, a hashrate
 chart, an editor for the writable slice of its config, and the change history. Close it with the ✕
-button, a click outside it, or Escape.
+button, a click outside it, or Escape. A click outside it or Escape is refused while the editor holds
+an unsaved change (a table edit, or JSON text that no longer matches what was loaded): the panel stays
+open and shows an "Unsaved" line under Apply instead of discarding it silently; the ✕ button still
+closes unconditionally (#1877).
 
 A **hashrate** chart sits above the editor: the rig's own `worker_history` samples (~5-minute
 cadence) as a line, with **24 Hr / 1 Wk / All** range buttons — no "1 Mo" button, since at the
@@ -1008,7 +1011,12 @@ The flow mirrors the CLI's `apply`:
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
-   changed. Your typed confirmation rides to the host gate, which requires it before a
+   changed — including this dashboard, for a change that touches its own settings. That request
+   can then drop mid-flight or hit the proxy while the dashboard container is down
+   ([#622](https://github.com/p2pool-starter-stack/pithead/issues/622)); the page treats it as
+   the expected restart, keeps waiting, and settles on the result once the dashboard answers
+   again — never a raw network error, with no manual refresh needed
+   ([#2366](https://github.com/p2pool-starter-stack/pithead/issues/2366)). Your typed confirmation rides to the host gate, which requires it before a
    confirm-gated change proceeds — a change confirmed this way is recorded in the audit log as a
    `commit-confirmed` action, distinct from an ordinary commit. A sensitive commit additionally
    carries a confirmation envelope, which the host validates: it may contain payout suffixes and
