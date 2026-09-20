@@ -85,6 +85,18 @@ test('chart range buttons include All, active on the default full-history view (
     assert.doesNotMatch(weekly, /class="btn-range active"[^>]*>All</);
 });
 
+test('chart Range/Avg rows carry a collapsed <select> alongside the buttons, labelled to match (#1874)', () => {
+    // Phone width can't fit the button row (the last pill wraps onto its own line, #1874); a
+    // CSS media query swaps to this <select> below the button row rather than script. Its
+    // accessible name is the row's own visible label ("Range"/"Avg"), not the group's
+    // role=group aria-label ("Chart range"/"Hashrate averaging window").
+    const html = renderApp({ ui: { ...UI, range: '1w', avg: '1h' } });
+    assert.match(html, /<select class="chart-controls-select" aria-label="Range"/);
+    assert.match(html, /<option value="1w" selected>1 Wk<\/option>/);
+    assert.match(html, /<select class="chart-controls-select" aria-label="Avg"/);
+    assert.match(html, /<option value="1h" selected>1 Hr<\/option>/);
+});
+
 test('chart legend renders a toggle for every layer, including the marker datasets (#652)', () => {
     const html = renderApp();
     for (const label of ['P2Pool (routed)', 'XvB (routed)', 'Shares', 'Events', 'Raffle wins']) {
