@@ -22,11 +22,6 @@
 # rig again — a single-threaded battery script, so the swap is safe exactly as long as nothing
 # reads the globals mid-swap, which nothing here does.
 
-# Both guests run at once for this leg (rig.sh's own guest, kept up throughout, plus a second
-# coordinator guest below): kvm_preflight's default 20480 MiB bar was sized for ONE 16 GiB guest
-# (#1059). Doubling the guest memory and keeping the same margin is the honest bar for two.
-RIG_SHARE_KVM_MIN_AVAIL_MB=$((16384 * 2 + 4096))
-
 # How long to wait for BOTH the rig's and the coordinator's own accepted counters to move off zero,
 # once the rig is mining at the coordinator. p2pool's per-worker stratum difficulty is sized so a
 # share should land in minutes on real hardware; a 4-vCPU guest with no hugepages and no MSR tuning
@@ -45,6 +40,20 @@ _rig_share_coord_teardown() { # <coord-vm> <coord-disk> <coord-serial>
     rm -f "$2" "$3"
 }
 
+# Bail out of rig_share_leg: report $1 (when given), tear down the coordinator guest and return 1.
+# Reads coord_vm/coord_disk/coord_serial off the CALLER's frame (bash dynamic scoping — same trick
+# _setup_again_session already relies on for `token`/`jar` below), so every early-return site here
+# collapses to one line instead of repeating the teardown call.
+_rig_share_abort() {
+    [ -z "${1:-}" ] || bad "$1"
+    _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
+    return 1
+}
+
+# True when $1 (default 0 on empty/unset) is a positive integer — the shared shape of the four
+# accepted-counter checks below, none of which can trust jq to have produced a clean number.
+_gt0() { [ "${1:-0}" -gt 0 ] 2>/dev/null; }
+
 # $1 already-built image (the rig's own v1), $2-$8 the remote-node inputs phase_rig read off the
 # env (mh rpc zmq mu mp th grpc), $9 the rig's own ip (so it can be restored — the coordinator boot
 # below overwrites the global $ip).
@@ -54,9 +63,10 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     local coord_vm="${rig_vm}-coord" coord_disk="${rig_disk%.img}-coord.img" coord_serial="${rig_serial%.log}-coord.log"
 
     info "share leg (#2063) — the rig mines against a coordinator this battery itself boots, not its own sshd"
-    if ! PITHEAD_KVM_MIN_AVAIL_MB="$RIG_SHARE_KVM_MIN_AVAIL_MB" kvm_preflight; then
-        return 1
-    fi
+    # Both guests run at once here (rig.sh's own guest, kept up throughout, plus the coordinator
+    # below): kvm_preflight's default 20480 MiB bar was sized for ONE 16 GiB guest (#1059). Doubling
+    # the guest memory and keeping the same margin is the honest bar for two.
+    PITHEAD_KVM_MIN_AVAIL_MB=$((16384 * 2 + 4096)) kvm_preflight || return 1
 
     VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip=""
     local coord_ok=0 coord_ip="" coord_user="" coord_pass=""
@@ -67,11 +77,7 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         coord_pass="$dash_pass"
     fi
     VM="$rig_vm" DISK="$rig_disk" SERIAL="$rig_serial" ip="$rig_ip"
-    [ "$coord_ok" = 1 ] || {
-        bad "share leg: the coordinator guest never released — cannot prove a share against it"
-        _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
-        return 1
-    }
+    [ "$coord_ok" = 1 ] || _rig_share_abort "share leg: the coordinator guest never released — cannot prove a share against it" || return 1
     ok "share leg: coordinator released at $coord_ip, on the same libvirt network as the rig"
 
     # Re-point the ALREADY-PROVEN rig at the coordinator's stratum, through the same "Set up again"
@@ -81,30 +87,18 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     # shellcheck disable=SC2034  # local on purpose: shadows phase_rig's OWN `token`, so
     # _setup_again_session's dynamically-scoped write below lands here, not in the caller's frame
     local jar="" token="" new_card=""
-    _setup_again_boot 300 || {
-        _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
-        return 1
-    }
-    _setup_again_session || {
-        _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
-        return 1
-    }
+    _setup_again_boot 300 || _rig_share_abort || return 1
+    _setup_again_session || _rig_share_abort || return 1
     new_card=$(_setup_again_rig_submit kvm-rig-share "$coord_ip:3333") || {
         rm -f "$jar"
-        _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
-        return 1
+        _rig_share_abort || return 1
     }
     rm -f "$jar"
     [ -n "${new_card%% *}" ] && ok "share leg: the rig re-provisioned against $coord_ip:3333" ||
         bad "share leg: no card token came back from the re-provisioned rig"
 
-    if _rig_mining_up 36; then
-        ok "share leg: the rig mines again, now at the coordinator"
-    else
-        bad "share leg: the rig never resumed mining against the coordinator"
-        _rig_share_coord_teardown "$coord_vm" "$coord_disk" "$coord_serial"
-        return 1
-    fi
+    _rig_mining_up 36 && ok "share leg: the rig mines again, now at the coordinator" ||
+        _rig_share_abort "share leg: the rig never resumed mining against the coordinator" || return 1
     if _ssh "jq -e '.pools[0].url == \"$coord_ip:3333\"' /data/rigforge/config.json >/dev/null"; then
         ok "share leg: the rig's miner config points at the coordinator, not its own sshd"
     else
@@ -121,15 +115,15 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
         st=$(curl -sSk -u "$coord_user:$coord_pass" -m 10 "https://$coord_ip/api/state" 2>/dev/null)
         rig_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name == "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
         other_accepted=$(printf '%s' "$st" | jq -r '[.workers[]? | select(.name != "kvm-rig-share") | .accepted // 0] | add // 0' 2>/dev/null)
-        [ "${rig_accepted:-0}" -gt 0 ] 2>/dev/null && [ "${other_accepted:-0}" -gt 0 ] 2>/dev/null && break
+        _gt0 "$rig_accepted" && _gt0 "$other_accepted" && break
         sleep 15
     done
-    if [ "${rig_accepted:-0}" -gt 0 ] 2>/dev/null; then
+    if _gt0 "$rig_accepted"; then
         ok "share leg: the rig's worker shows accepted=$rig_accepted on the coordinator it mines at"
     else
         bad "share leg: the rig's worker never showed an accepted share within ${RIG_SHARE_WINDOW_SEC}s (workers: $(printf '%s' "$st" | jq -c '.workers' 2>/dev/null))"
     fi
-    if [ "${other_accepted:-0}" -gt 0 ] 2>/dev/null; then
+    if _gt0 "$other_accepted"; then
         ok "share leg: the coordinator's own built-in miner shows accepted=$other_accepted too — the appliance channel's first live proof past the sync gate"
     else
         bad "share leg: the coordinator's own built-in miner never showed an accepted share within ${RIG_SHARE_WINDOW_SEC}s"
