@@ -163,6 +163,14 @@ _crossupdate_gate="$(grep -A1 -F 'it_skip_phase "crossupdate"' "$HERE/phases/cro
 assert_contains "PITHEAD_OLD_IMAGE absent is recorded through it_skip_phase" "$_crossupdate_gate" "PITHEAD_OLD_IMAGE"
 assert_contains "…classed missing, not a bare warning or a failure" "$_crossupdate_gate" "missing"
 
+echo "== #2062: stack's own absent-input gate is a named, classed missing PHASE skip =="
+# Same shape and same reason as crossupdate above: the reserved remote Monero node is an input a
+# bench either has or does not, not a row every run must clear. It was a bare `info` line, which
+# left a bench that could not run the phase reporting the same tally as one that ran it clean.
+_stack_gate="$(grep -A1 -F 'it_skip_phase "stack"' "$HERE/phases/stack.sh")"
+assert_contains "an absent reserved node is recorded through it_skip_phase" "$_stack_gate" "PITHEAD_OS_MONERO_NODE_HOST"
+assert_contains "…classed missing, not a bare warning or a failure" "$_stack_gate" "missing"
+
 echo "== #2356: a phase that records nothing is counted as a missing skip, not a silent pass =="
 # _run_phase is the one place tests/os/run.sh invokes every phase from — extracted rather than
 # re-spelled, same reasoning as every other extraction in this file: a copy would agree with
