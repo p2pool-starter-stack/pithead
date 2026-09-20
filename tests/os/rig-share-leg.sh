@@ -23,13 +23,12 @@
 # reads the globals mid-swap, which nothing here does.
 
 # How long to wait for BOTH the rig's and the coordinator's own accepted counters to move off zero,
-# once the rig is mining at the coordinator. p2pool's per-worker stratum difficulty is sized so a
-# share should land in minutes on real hardware; a 4-vCPU guest with no hugepages and no MSR tuning
-# is slower — inferred, not measured (the issue's own words). PITHEAD_OS_RIG_SHARE_WINDOW_SEC
-# overrides this once a bench run has actually measured the guest's real time-to-first-share
-# (`--keep`, per the issue's "measure first" ask); until then this is the conservative default, not
-# a proven number.
-RIG_SHARE_WINDOW_SEC="${PITHEAD_OS_RIG_SHARE_WINDOW_SEC:-1800}"
+# once the rig is mining at the coordinator. Measured, not inferred (the issue's own "measure
+# first" ask): job 720 (#2063) had BOTH counters at accepted=1 within ~106s of the rig resuming
+# mining at the coordinator, on a 4-vCPU guest with no hugepages and no MSR tuning. 600s is that
+# measurement with a ~5.5x margin, not the original 1800s guess. PITHEAD_OS_RIG_SHARE_WINDOW_SEC
+# overrides it if a slower bench needs more.
+RIG_SHARE_WINDOW_SEC="${PITHEAD_OS_RIG_SHARE_WINDOW_SEC:-600}"
 
 # Destroy the coordinator guest by name, independent of whatever the global $VM/$DISK/$SERIAL
 # currently point at — called on every exit path below, success or failure, so a red leg never
