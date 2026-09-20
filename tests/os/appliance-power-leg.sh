@@ -11,7 +11,7 @@
 # this round trip a VM cannot itself exercise (recorded in os/KNOWN-ISSUES.md and the manual
 # release checklist's M17).
 
-power_verdict() { # <result-json> <rebooting|shutting-down>
+power_verdict() { # <result-json> <status-string> — true if the result names exactly this status
     printf '%s' "$1" | jq -e --arg s "$2" '.status == $s' >/dev/null
 }
 
@@ -19,15 +19,19 @@ phase_provision_power_regressions() {
     local before result mtries=0 miner_back=0 code
     # --- sys-reboot: the dashboard button, not a raw ssh reboot -------------------------------
     before=$(_boot_id) || info "could not read the boot id before the dashboard-ordered reboot"
-    result=$(dashboard_control_request power '{"action":"reboot"}' 30)
-    if power_verdict "$result" rebooting; then
-        ok "sys-reboot was ordered through the dashboard control channel"
-    else
-        bad "sys-reboot did not order a reboot through the control channel ($(control_result_payload "$result"))"
+    # The polled result RACES the reboot it reports: control_sys_reboot writes it before issuing
+    # `systemctl reboot`, but that order can tear the guest's network down before the poll's next
+    # round trip completes, so "no result" here is expected, not a verdict — exactly the race
+    # tests/os/phases/update-dashboard.sh's own os-reboot leg already discards ("the machine goes
+    # away mid-poll; no id, no reboot"). Only an in-band REJECTED status is trustworthy; the real
+    # proof that the order was accepted AND completed is the new boot below.
+    result=$(dashboard_control_request power '{"action":"reboot"}' 30) || true
+    if power_verdict "$result" rejected; then
+        bad "sys-reboot was refused through the control channel ($(control_result_payload "$result"))"
         return
     fi
     if [ -n "$before" ] && _wait_new_boot "$before" 300; then
-        ok "the guest returned unaided after a dashboard-ordered reboot"
+        ok "sys-reboot was ordered through the dashboard control channel and the guest returned unaided"
     else
         # shellcheck disable=SC2154 # $ip is shared through the assembled runner scope.
         bad "the guest never came back after a dashboard-ordered reboot ($(_ssh_unreachable_reason "$ip"))"
@@ -62,17 +66,17 @@ phase_provision_power_regressions() {
         return
     fi
 
-    # --- sys-poweroff: the guest must reach shut off ON ITS OWN, then only comes back on a hand
-    # at the power button (simulated here as `virsh start`) --------------------------------------
-    result=$(dashboard_control_request power '{"action":"poweroff"}' 30)
-    if power_verdict "$result" shutting-down; then
-        ok "sys-poweroff was ordered through the dashboard control channel"
-    else
-        bad "sys-poweroff did not order a poweroff through the control channel ($(control_result_payload "$result"))"
+    # --- sys-poweroff: same race as the reboot above (podman/caddy die before the poll can read
+    # the already-written result), so the result is fire-and-forget too; `_poweroff_wait` is the
+    # proof. The guest must reach shut off ON ITS OWN, then only comes back on a hand at the power
+    # button (simulated here as `virsh start`). --------------------------------------------------
+    result=$(dashboard_control_request power '{"action":"poweroff"}' 30) || true
+    if power_verdict "$result" rejected; then
+        bad "sys-poweroff was refused through the control channel ($(control_result_payload "$result"))"
         return
     fi
     if _poweroff_wait 180; then
-        ok "the guest reached 'shut off' on its own after the dashboard-ordered poweroff"
+        ok "sys-poweroff was ordered through the dashboard control channel and the guest reached 'shut off' on its own"
     else
         bad "the guest never reached 'shut off' after the dashboard-ordered poweroff"
         return
@@ -115,11 +119,10 @@ phase_provision_power_regressions() {
 
 _power_self_test() {
     local f=0
-    power_verdict '{"status":"rebooting"}' rebooting || f=$((f + 1))
-    power_verdict '{"status":"rejected"}' rebooting && f=$((f + 1))
-    power_verdict '{"status":"shutting-down"}' shutting-down || f=$((f + 1))
-    power_verdict '{"status":"rebooting"}' shutting-down && f=$((f + 1))
-    power_verdict '' rebooting && f=$((f + 1))
+    power_verdict '{"status":"rejected"}' rejected || f=$((f + 1))
+    power_verdict '{"status":"rebooting"}' rejected && f=$((f + 1))
+    power_verdict '{"status":"shutting-down"}' rejected && f=$((f + 1))
+    power_verdict '' rejected && f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-power-leg self-test FAILED: %s checks\n' "$f"
         return 1
