@@ -133,6 +133,19 @@ assert_contains "the unknown-action refusal names it" "$(jq -r '.error' "$PWRES/
 assert_eq "no order was issued for an unknown action" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
 rm -f "$PWRES/$PW1.json"
 
+# The action set now lives in TWO places — the host dispatch `case` (49-control-request-loop.sh) and
+# the route's Python frozenset (power_views.py) — so pin them against each other, in BOTH
+# directions: a verb added host-side only is unreachable behind a route that can never ask for it,
+# and a verb added route-side only 400s at the door. This guard lives here rather than in the
+# dashboard's own pytest suite because that suite runs inside the dashboard image, whose test stage
+# copies only dashboard/ — lib/pithead/ is absent there, and a guard that has to be skipped when
+# its input is missing is how a required check quietly stops checking.
+PW_HOST_ACTIONS=$(sed -n 's/^[[:space:]]*sys-\([a-z-]*\)).*/\1/p' "$ROOT/lib/pithead/49-control-request-loop.sh" | sort | tr '\n' ' ')
+PW_ROUTE_ACTIONS=$(sed -n 's/^POWER_ACTIONS = frozenset({\(.*\)})$/\1/p' "$ROOT/dashboard/mining_dashboard/web/views/power_views.py" |
+    tr -d '"' | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep . | sort | tr '\n' ' ')
+assert_eq "the host case names the two power verbs" "$PW_HOST_ACTIONS" "poweroff reboot "
+assert_eq "the route's frozenset matches the host case exactly, both ways" "$PW_ROUTE_ACTIONS" "$PW_HOST_ACTIONS"
+
 unset -f pwrun pw_intent
 rm -rf "$PWC"
-unset PWC PWREQS PWRES PW1 PW2 pw_off_rc
+unset PWC PWREQS PWRES PW1 PW2 pw_off_rc PW_HOST_ACTIONS PW_ROUTE_ACTIONS

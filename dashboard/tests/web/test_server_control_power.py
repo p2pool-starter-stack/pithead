@@ -1,16 +1,13 @@
 # ruff: noqa: F403, F405
 """Plain power control route (#2384): POST /api/control/power, modelled on the os-update route."""
 
-import re
-from pathlib import Path
-
 from tests.web._server_support import *  # noqa: F403
 
-# The shell case this route's actions must match exactly (49-control-request-loop.sh) — a verb
-# added on one side and not the other must go red here, not silently 400 or be refused host-side.
-_DISPATCH_LOOP = (
-    Path(__file__).resolve().parents[3] / "lib" / "pithead" / "49-control-request-loop.sh"
-).read_text()
+# The drift guard that pins this route's action set against the host dispatch `case` lives in
+# tests/stack/control/test-control-power-verbs.sh, NOT here: the dashboard image's test stage copies
+# only dashboard/, so lib/pithead/ does not exist in the container this suite runs in, and a guard
+# that reached for it would have to be skipped when absent — which is how a required check quietly
+# stops checking. The shell suite has the whole checkout and runs it unconditionally.
 
 
 class TestControlPowerRoute:
@@ -65,16 +62,3 @@ class TestControlPowerRoute:
         )
         assert resp.status == 500
         assert "nonexistent" not in json.dumps(await resp.json())
-
-    def test_action_set_matches_the_host_dispatch_case(self):
-        """BOTH directions. A verb added to only one side must go red rather than 400 silently
-        (route-side gap) or sit unreachable behind a route that can never ask for it (host-side
-        gap) — the latter is the direction a one-way check misses."""
-        from mining_dashboard.web.views.power_views import POWER_ACTIONS
-
-        dispatched = set(re.findall(r"^\s*sys-([a-z-]+)\)", _DISPATCH_LOOP, re.MULTILINE))
-        assert dispatched, "found no sys-* cases in 49-control-request-loop.sh — the regex rotted"
-        assert dispatched == set(POWER_ACTIONS), (
-            f"power action drift: host case has {sorted(dispatched)}, "
-            f"POWER_ACTIONS has {sorted(POWER_ACTIONS)}"
-        )
