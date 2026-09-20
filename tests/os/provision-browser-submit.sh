@@ -66,34 +66,34 @@ provision_browser_submit() { # <ip> <jar> [field=value]...
 provision_page_error() { # <ip> <jar>
     curl -sSk -b "$2" -m 5 "https://$1/api/wizard-state" 2>/dev/null | jq -r '.error // ""' 2>/dev/null
 }
-node_preflight_state_retained() { # <submit-response-json> <wizard-state-json> <expected-wallet>
-    printf '%s' "$1" | jq -e '
-        .error == "The node name did not resolve to an address." and
+node_preflight_refused() { # <response-json> <state-json> <wallet> <host> <reason> <error-substring>
+    printf '%s' "$1" | jq -e --arg reason "$5" --arg err "$6" '
+        (.error | contains($err)) and
         .node_probe.ok == false and .node_probe.configured == 1 and .node_probe.probed == 1 and
-        any(.node_probe.probes[]; .target == "tari" and .reason == "dns" and .ok == false)' >/dev/null &&
-        printf '%s' "$2" | jq -e --arg m "$3" '
+        any(.node_probe.probes[]; .target == "tari" and .reason == $reason and .ok == false)' >/dev/null &&
+        printf '%s' "$2" | jq -e --arg m "$3" --arg h "$4" '
             .stage == "setup" and .config.monero.wallet_address == $m and
-            .config.tari.remote.host == "unreachable.invalid"' >/dev/null
+            .config.tari.remote.host == $h' >/dev/null
 }
 # This refusal is separate from later setup failure recovery: the protocol preflight stays on the
 # form, retains safe answers, and publishes the exact failed Tari row. The caller then submits the
 # corrected local choice; a post-validation setup fault has its own leg once that product seam lands.
-provision_node_preflight_retention() { # <ip> <authenticated-cookie-jar>
-    local ip="$1" jar="$2" state cfg code raw body
+provision_node_preflight() { # <ip> <jar> <host> <reason> <error-substring> <label>
+    local ip="$1" jar="$2" host="$3" reason="$4" err="$5" label="$6" state cfg code raw body
     state=$(curl -fsSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null) || return 1
-    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" '
+    cfg=$(printf '%s' "$state" | jq -c --arg m "$HARNESS_WALLET" --arg t "$HARNESS_TARI" --arg h "$host" '
         .config | .monero.wallet_address = $m | .tari.wallet_address = $t |
-        .tari.mode = "remote" | .tari.remote.host = "unreachable.invalid" |
+        .tari.mode = "remote" | .tari.remote.host = $h |
         .tari.remote.grpc_port = 18142 | .p2pool.pool = "mini" | .local_miner.enabled = true') || return 1
     raw=$(curl -sSk -b "$jar" -m 20 --data-urlencode "config=$cfg" --data-urlencode "auth_mode=auto" \
         "https://$ip/submit" -w '\n%{http_code}' 2>/dev/null)
     code=${raw##*$'\n'}
     body=${raw%$'\n'*}
     state=$(curl -sSk -b "$jar" -m 5 "https://$ip/api/wizard-state" 2>/dev/null)
-    if [ "$code" = "400" ] && node_preflight_state_retained "$body" "$state" "$HARNESS_WALLET"; then
-        ok "remote-node preflight refuses the unreachable Tari consumer and retains safe answers"
+    if [ "$code" = "400" ] && node_preflight_refused "$body" "$state" "$HARNESS_WALLET" "$host" "$reason" "$err"; then
+        ok "remote-node preflight refuses $label and retains safe answers"
     else
-        bad "remote-node preflight did not return the named Tari refusal with retained values (HTTP ${code:-none})"
+        bad "remote-node preflight did not refuse $label with retained values (HTTP ${code:-none})"
         return 1
     fi
 }
@@ -168,9 +168,13 @@ dashboard_control_request() { # <route> <json-body> [deadline-seconds]
 # guest. An empty result is its own sentence: `dashboard_control_request` returns nothing both
 # when the POST was refused and when the request never left pending before its deadline, and a
 # row that printed the same thing for that as for a rejected apply would hide the difference.
-control_result_payload() { # <result-json>
+control_result_payload() { # <result-json> [landed]
     [ -n "$1" ] || {
-        printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        if [ "${2:-}" = landed ]; then
+            printf 'requested change landed, but no result file was written — runner completion is unknown'
+        else
+            printf 'no result — the control request never returned (POST refused, or still pending at its deadline)'
+        fi
         return 0
     }
     printf '%s' "$1" | jq -r '"status=\(.status // "none") error=\(.error // "none") id=\(.id // "none")"' 2>/dev/null ||
@@ -178,7 +182,7 @@ control_result_payload() { # <result-json>
 }
 
 phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
-    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names
+    local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid old peers code names archive pass archive_names live_state
     live=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null) || {
         bad "post-provision control: live config could not be read"
         return
@@ -199,7 +203,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null; then
         ok "post-provision benign setting applies through the dashboard control runner"
     else
-        bad "post-provision benign setting did not land ($(control_result_payload "$result"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e '.dashboard.energy.cost_per_kwh == 0.17' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision benign control request did not complete ($(control_result_payload "$result" "$live_state"); live cost_per_kwh=$(printf '%s' "${live:-null}" | jq -r '.dashboard.energy.cost_per_kwh // "unreadable"' 2>/dev/null || echo unreadable), want 0.17)"
         return
     fi
     # No re-read and no emptiness guard: reaching this line means the row above parsed $live as
@@ -240,7 +246,9 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
         printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null; then
         ok "post-provision disruptive setting applies with typed approval"
     else
-        bad "post-provision approved setting did not land ($(control_result_payload "$result"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
+        live_state=unknown
+        printf '%s' "$live" | jq -e --argjson peers "$peers" '.monero.out_peers == $peers' >/dev/null 2>&1 && live_state=landed
+        bad "post-provision approved control request did not complete ($(control_result_payload "$result" "$live_state"); live out_peers=$(printf '%s' "${live:-null}" | jq -r '.monero.out_peers // "unreadable"' 2>/dev/null || echo unreadable), want $peers)"
         return
     fi
     proposed=$(dashboard_curl -fsSk -m 8 "https://$ip/api/config" 2>/dev/null |
@@ -285,12 +293,12 @@ phase_provision_control_regressions() { # <dashboard-user> <dashboard-password>
     esac
 }
 _recovery_self_test() {
-    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}'
-    local state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
-    node_preflight_state_retained "$response" "$state" wallet || return 1
-    ! node_preflight_state_retained "${response/\"dns\"/\"protocol\"}" "$state" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"setup\"/\"failed\"}" wallet || return 1
-    ! node_preflight_state_retained "$response" "${state/\"wallet\"/\"lost\"}" wallet || return 1
+    local response='{"error":"The node name did not resolve to an address.","node_probe":{"ok":false,"configured":1,"probed":1,"probes":[{"target":"tari","reason":"dns","ok":false}]}}' state='{"stage":"setup","config":{"monero":{"wallet_address":"wallet"},"tari":{"remote":{"host":"unreachable.invalid"}}}}'
+    node_preflight_refused "$response" "$state" wallet unreachable.invalid dns "The node name did not resolve to an address." || return 1
+    ! node_preflight_refused "${response/\"dns\"/\"protocol\"}" "$state" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"setup\"/\"failed\"}" wallet unreachable.invalid dns "" || return 1
+    ! node_preflight_refused "$response" "${state/\"wallet\"/\"lost\"}" wallet unreachable.invalid dns "" || return 1
+    node_preflight_loopback_self_test || return 1
     local HARNESS_WALLET=wallet HARNESS_TARI=tari PROVISION_DASHBOARD_HOST=fixture-box cfg
     cfg=$(provision_browser_config '{"telegram":{"bot_token":"","chat_id":""}}') || return 1
     # #2076: the shaper seeds wallets, mode and host and touches NOTHING under .telegram — an empty
@@ -308,6 +316,7 @@ _recovery_self_test() {
     *) return 1 ;;
     esac
     case "$(control_result_payload '')" in *'never returned'*) ;; *) return 1 ;; esac
+    case "$(control_result_payload '' landed)" in *'change landed'*'completion is unknown'*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"status":"applied"')" in *unparseable*) ;; *) return 1 ;; esac
     case "$(control_result_payload '{"id":"r2"}')" in 'status=none error=none id=r2') ;; *) return 1 ;; esac
     # /api/control/result never echoes the id back — a verb like backup that always resolves
@@ -387,10 +396,10 @@ _wsp_self_test() {
 }
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     set -uo pipefail # what tests/os/run.sh runs the helpers under
-    # shellcheck source=tests/os/appliance-config-approval-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/appliance-config-approval-leg.sh"
     # shellcheck source=tests/os/setup-failure-recovery-leg.sh
     . "$(cd "$(dirname "$0")" && pwd)/setup-failure-recovery-leg.sh"
+    . "$(cd "$(dirname "$0")" && pwd)/node-preflight-loopback-leg.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
     _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test

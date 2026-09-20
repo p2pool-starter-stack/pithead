@@ -100,17 +100,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,
   refused global curl and dashboard-listener doctor verdict must agree that no global address is
   served. Doctor's separate stratum public-IP row remains a WARN. The dashboard then
-  drives a benign apply, a typed approval
-  and its missing-token refusal, structured doctor output, a capped/redacted p2pool log tail and
-  the wallet-log refusal, then an encrypted backup; the stack and dashboard must answer again after
-  the backup. Doctor must still return every structured row as an applied diagnostic when its own
-  exit is nonzero with monerod deliberately stopped. A day-two `fixture-next` hostname preview must
-  require the sensitive-change approval and leave the kernel name, mDNS activation, certificate and
-  live config byte-for-byte unchanged. Missing and wrong approval identities are refused. A fake,
-  allow-listed callback then approves the host-generated preview; the changed kernel, dashboard,
-  certificate and mDNS identity must survive both the unaided reboot and closing A/B migration
-  update. A dashboard-password edit remains physical-presence-only. The fixture `curl` recognizes
-  only its two fake Telegram calls and has no route to the real provider. Then the stack must return from a reboot with no
+  drives a benign apply, a typed confirmation and its missing-confirmation refusal, structured
+  doctor output, a capped/redacted p2pool log tail and the wallet-log refusal, then an encrypted
+  backup; the stack and dashboard must answer again after the backup. Doctor must still return
+  every structured row as an applied diagnostic when its own exit is nonzero with monerod
+  deliberately stopped. A day-two `fixture-next` hostname preview must require typed `APPLY` and
+  leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
+  when it is omitted. A confirmed change must apply and audit without a second approver; the
+  changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
+  and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
+  Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
+  no queued or claimed request and reds the row if it never drains, because an apply re-provisions
+  the control runner and kills a request in flight (#2363). Then the
+  stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
   bundle through `pithead os-update` and proves the migration hold: the chain services stay down
@@ -122,14 +124,24 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
-  failed-update premise.
+  failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
+  provisioned stack is live — every earlier power cut in the battery landed on a bare guest
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
+  asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
+  and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
+  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
+  rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
+  a first version.
 - **rig** — answer `RigForge` on the same page and prove the other machine this image installs:
   it mines from the baked binary with no compile and no clearnet, starts no containers at all,
   and takes an A/B update — install, boot, self-commit on the miner running, persistence —
   exactly like a coordinator. (Uncommitted fallback is the update phase's to prove: a
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
-  everything except this.
+  everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
+  #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
+  `virsh destroy` and that the slot is still committed afterwards.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -143,7 +155,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
-  disqualifying.
+  disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
+  its very first boot is loading the baked container images from the archive — the interrupted
+  write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
+  is the same as #1029 itself: the next boot either repairs the image store or refuses with a
+  legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — the shell-less box's last resort, never before run against a real disk: a
   provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
   marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
@@ -156,6 +172,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
 including fault and reset, and the full run is required once for every RC candidate.
+
+Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
+phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
+being absent produces, when the phase's own code has nowhere to record that — the wrapper itself
+counts it as a `missing` phase skip. And a run where every requested phase skipped this way is not
+a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
+of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
+exit code.
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than
@@ -205,8 +229,8 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and fake
-second-identity approval to succeed, checks the current p2pool container's narrowly extracted
+root-run battery without overriding `HOME`. The row requires the host preflight and typed
+confirmation to succeed, checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
 endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.

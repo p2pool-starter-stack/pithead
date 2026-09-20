@@ -155,13 +155,14 @@ The stack's defaults:
   carry a lone surrogate, which sqlite refuses to store. That refusal is a `ValueError` rather than
   a database error, so it used to travel through the store's fail-closed handlers and end the step:
   an unauthenticated device on the LAN could halt out-of-band detection with one character. Each
-  rig-chosen string is now checked before it is bound, and each caller answers in its own
-  direction. An unstorable change id reads as one this dashboard never sent, so the rig is flagged
-  rather than excused — the opposite direction from a read error, and deliberately so, since
-  treating it as already-known would have let a rig opt out of being audited. An unstorable reason
-  is dropped while the outcome beside it is still recorded. One case is disclosed rather than
-  fixed: a rig whose worker NAME is unstorable is not drift-checked at all for as long as it keeps
-  that name, because a name the database cannot hold is one no later poll can compare against.
+  rig-chosen string `worker_config_store` binds is now checked before it is bound, and each caller
+  answers in its own direction. An unstorable change id reads as one this dashboard never sent, so
+  the rig is flagged rather than excused — the opposite direction from a read error, and
+  deliberately so, since treating it as already-known would have let a rig opt out of being audited.
+  An unstorable reason is dropped while the outcome beside it is still recorded. One case is
+  disclosed rather than fixed: a rig whose worker NAME is unstorable is not drift-checked at all for
+  as long as it keeps that name, because a name the database cannot hold is one no later poll can
+  compare against.
   The `host-edit` and mirrored `control.log` rows are not attacker-controllable and are not capped.
 
 ### Telegram is read-only (#2076)

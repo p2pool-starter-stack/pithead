@@ -60,6 +60,13 @@ test("a host operator is still told where the previous config was kept", () => {
   assert.ok(out.includes("on the host"));
 });
 
+// #1871 addendum: htm drops the whitespace between "kept at" and the <code> element when the
+// line breaks between them, rendering "kept at<backup path>" with no space.
+test("the host branch keeps a space between 'kept at' and the backup path (#1871)", () => {
+  assert.doesNotMatch(host(), new RegExp(`kept at${BACKUP}`));
+  assert.match(host(), /kept at\s/);
+});
+
 test("an appliance operator is never pointed at a host path they cannot reach", () => {
   const out = appliance();
   // Non-empty and saying the right thing FIRST, so the absence below cannot be an empty render.
@@ -100,7 +107,7 @@ test("the appliance branch frames the log instead of leaving it to read as instr
 // that card fails here instead of leaving the appliance pointed at a surface that no longer exists.
 test("the surface the caption names is the heading Service diagnostics actually renders", () => {
   const panel = renderToString(new DiagnosticsPanel({ enabled: false }).render());
-  assert.match(panel, /<h3>Service diagnostics<\/h3>/);
+  assert.match(panel, /<h2>Service diagnostics<\/h2>/);
   assert.ok(renderToString(applyFailure(RESULT, true)).includes("Service diagnostics"));
 });
 
@@ -144,4 +151,15 @@ test("an applied result is untouched by #1769 on either branch", () => {
     assert.match(out, /Changes applied/);
     assert.doesNotMatch(out, /Apply failed/);
   }
+});
+
+// #1859: the outcome (applied or failed) lands with no cue for a screen-reader user who isn't
+// looking at the screen when the async apply resolves — a live region announces it either way.
+test("the done-phase outcome is a live region on both the applied and the failed branch", () => {
+  const applied = new ConfigView({ appliance: false });
+  applied.state = { ...applied.state, phase: "done", result: { status: "applied" } };
+  assert.match(renderToString(applied.render()), /role="status" aria-live="polite">\s*<p class="status-ok">Changes applied/);
+
+  const failed = doneCard({ appliance: false });
+  assert.match(failed, /role="status" aria-live="polite">/);
 });

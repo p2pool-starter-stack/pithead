@@ -37,7 +37,7 @@ function backupLine(result, appliance) {
     return html`<p class="status-bad">Apply failed. Your change was saved but is not running, and
         the previous configuration is kept on this machine.</p>`;
   }
-  return html`<p class="status-bad">Apply failed. The previous config is kept at
+  return html`<p class="status-bad">Apply failed. The previous config is kept at${" "}
       <code>${result.backup || "config.json.bak-control"}</code> on the host.</p>`;
 }
 

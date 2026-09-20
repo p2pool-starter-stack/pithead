@@ -1,7 +1,9 @@
 # Non-fatal heads-up that the unauthenticated stratum port :3333 may face the public internet (#113):
-# warn only when the host has a public IP AND stratum listens on all interfaces (the default bind).
-# Home/NAT hosts (no public IP on an interface) and hosts that narrowed p2pool.stratum_bind stay
-# quiet in setup. $1 = "setup" (emit via warn, only on exposure) or "doctor" (emit OK/WARN/skip).
+# warn when the host has a public IP AND stratum listens on all interfaces (the default bind) OR on
+# one of the host's own public addresses (#1803 -- narrowing the bind to that address is still
+# internet-reachable, not a private one). Home/NAT hosts (no public IP on an interface) and hosts
+# that narrowed p2pool.stratum_bind to a non-public address of their own stay quiet in setup.
+# $1 = "setup" (emit via warn, only on exposure) or "doctor" (emit OK/WARN/skip).
 check_stratum_exposure() {
     local mode="$1" bind pub msg port
     bind="${STRATUM_BIND:-}"
@@ -13,15 +15,22 @@ check_stratum_exposure() {
         [ "$mode" = doctor ] && dr_info "Skipped public-IP exposure check (no 'ip' command; Linux-only)."
         return 0
     fi
+
+    pub="$(host_public_ips)"
     case "$bind" in
     0.0.0.0 | "") ;; # all interfaces — the exposed case
     *)
-        [ "$mode" = doctor ] && dr_ok "Stratum :$port bound to $bind (not all interfaces) — not publicly exposed."
-        return 0
+        # A narrowed bind is only "not publicly exposed" if it isn't itself one of the host's own
+        # public addresses (#1803) -- a bind to 0.0.0.0/24's public interface address is still
+        # reachable from the internet, so that case must fall through to the warning below rather
+        # than short-circuit past it.
+        if ! printf '%s\n' "$pub" | grep -qxF "$bind"; then
+            [ "$mode" = doctor ] && dr_ok "Stratum :$port bound to $bind (not all interfaces) — not publicly exposed."
+            return 0
+        fi
         ;;
     esac
 
-    pub="$(host_public_ips)"
     pub="${pub//$'\n'/, }"
     if [ -n "$pub" ]; then
         # setup's console warn NAMES the address, and keeps naming it: that is the operator's own

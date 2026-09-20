@@ -66,7 +66,18 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
 . "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
-# Clear the stratum access password (disable direction is an INFO row) — no confirmation refuses.
+# Replace the dashboard login (rather than disabling it) and disable control: the preview flags
+# destructive:false — proof the DEST path alone would wave it through — and the commit must still
+# be refused, config untouched. Distinct from the auth-disable case above: a replaced password is a
+# working credential an attacker could log in with, not merely a locked-out dashboard.
+jq '.dashboard.auth.password="a replacement control passphrase" | .dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "dashboard-login replacement commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "dashboard-login replacement refusal names the physical-presence path" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
+assert_eq "config.json keeps the dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
+
+# Clear the stratum access password (disable direction is an INFO row) — refused.
 jq 'del(.p2pool.stratum_password)' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "stratum-password disable commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"

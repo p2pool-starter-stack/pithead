@@ -14,7 +14,10 @@ manage the host.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
-  else runs squeezed, at every boot until the machine has 16 GB.
+  else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
+  the physical console (a serial line can lose a message to a login prompt claiming it at the
+  wrong moment), the line is always in the journal: `journalctl -u pithead-hugepages` on that
+  machine.
 - An internal SSD or NVMe with room for the chains. The stack budgets
   320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
@@ -157,7 +160,8 @@ because the token guards every API on the rig — the miner's own included, so n
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
 IPv4 address (an onion address, say) keeps the token and the read-only feed but runs with
-control off, since RigForge refuses a writable path it cannot pin to one source.
+control off, since RigForge refuses a writable path it cannot pin to one source — the card
+says so and why, instead of pointing you at an adopt form the rig will not answer.
 Where the machine cannot fill a line in, the card leaves that line out rather than
 showing a blank beside its label: with no IPv4 address yet it tells you to read the
 address off the console once the machine is up, and on the rare failure to mint a token
