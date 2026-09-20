@@ -95,12 +95,21 @@ out=$(cd "$V" && printf 'no\n' | PATH="$V/bin:$PATH" ./pithead uninstall 2>&1) |
 assert_contains "uninstall aborts without the confirm word" "$out" "Aborted"
 assert_eq "aborted uninstall keeps .env" "$([ -f "$V/.env" ] && echo yes)" "yes"
 # With -y: rendered files go, the operator's files stay.
-out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+UNINSTALL_DOCKER_LOG="$V/uninstall-docker.log"
+rm -f "$UNINSTALL_DOCKER_LOG"
+out=$(cd "$V" && PATH="$V/bin:$PATH" DOCKER_LOG="$UNINSTALL_DOCKER_LOG" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall names the kept files" "$out" "config.json"
 assert_contains "uninstall displays the decoded data path" "$out" "$kept_dir"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
 assert_eq "uninstall keeps config.json" "$([ -f "$V/config.json" ] && echo yes)" "yes"
+# #2343: `docker rmi` runs only for the pithead-built image, never the pulled third-party one
+# (Tari's shape here) — that image is not "what pithead created", and the next `setup`/`up`
+# cannot get it back except by a fresh registry pull, which the round trip must not depend on.
+assert_eq "uninstall removes the pithead-built image" \
+    "$(grep -c 'rmi ghcr.io/p2pool-starter-stack/pithead-tor:dev' "$UNINSTALL_DOCKER_LOG")" "1"
+assert_eq "uninstall leaves the pulled third-party image alone" \
+    "$(grep -c 'rmi quay.io/tarilabs' "$UNINSTALL_DOCKER_LOG")" "0"
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
 # Re-render the sandbox .env for the sections below — uninstall just deleted it.

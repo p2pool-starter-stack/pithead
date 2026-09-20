@@ -1,8 +1,11 @@
 # `uninstall` (#77 phase 1): the clean exit for the DIY channel — stop and remove what pithead
 # created on this host, keep what the operator owns. Kept: config.json, the data dirs (chains,
-# Tor onion keys, dashboard DB), backups/. Removed: containers, the stack's images, the rendered
-# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules. The
-# appliance has no uninstall — its equivalents are the reset tiers.
+# Tor onion keys, dashboard DB), backups/, and every image `up`/`setup` doesn't build itself
+# (#2343: Tari's minotari_node/console_wallet, Caddy, docker-socket-proxy — `docker rmi`-ing those
+# broke the verb's own round-trip promise the first time it ran on a real box, since nothing
+# re-pulls a pulled image on the next `setup`). Removed: containers, the FIVE pithead-built
+# images, the rendered .env and Caddyfile, this checkout's control-runner units, the egress
+# firewall rules. The appliance has no uninstall — its equivalents are the reset tiers.
 stack_uninstall() {
     local yes=0 arg
     for arg in "$@"; do
@@ -32,9 +35,15 @@ stack_uninstall() {
     remove_tor_egress_firewall 2>/dev/null || true
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
-    # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
+    # Only the images pithead itself builds (`build:` in docker-compose.yml, tagged
+    # $PITHEAD_REGISTRY/pithead-*) — a pulled third-party image (Tari, Caddy, docker-socket-proxy)
+    # is not "what pithead created", and removing it here means the next `setup`/`up` cannot get it
+    # back except by a fresh pull, which fails outright wherever that pull can't reach the
+    # registry. Failures (image in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
-        [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
+        case "$img" in
+        "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-"*) docker rmi "$img" >/dev/null 2>&1 || true ;;
+        esac
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# #2343 job 635: a failure inside the uninstall phase left the box stranded for the harness's
+# generic safety rollback, whose 240s wait is sized for a hot apply, not a full re-provision — the
+# rollback itself then timed out. _uninstall_phase_recover is the phase's own recovery: restore the
+# pre-run safety archive and bring the stack back, whether or not the outer rollback runs at all.
+# This proves that trap fires on a real failure and stays silent otherwise, without a live bench.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tests/integration/lib.sh
+source "$HERE/../lib.sh"
+
+SRC="$(sed -n '/^_uninstall_phase_recover() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+assert_contains "the recovery trap is extractable" "$(printf '%s\n' "$SRC" | head -n1)" "_uninstall_phase_recover() {"
+assert_eq "the extraction is the whole function (closes)" "$(printf '%s\n' "$SRC" | tail -n1)" "}"
+
+PITHEAD_LOG="$(mktemp)"
+trap 'rm -f "$PITHEAD_LOG"' EXIT
+pithead() { printf '%s\n' "$*" >>"$PITHEAD_LOG"; }
+it_warn() { :; }
+wait_status_ok() { return 0; }
+SAFETY_ARCHIVE="/srv/code/pithead-e2e/backups/pithead-backup-fixture.tar.gz"
+eval "$SRC"
+
+# IT_FAIL is lib.sh's own real pass/fail counter (assert_eq increments it on a failed assertion
+# below), and the function under test reads that SAME global — restore it right after each call so
+# the simulated input never corrupts this selftest's own verdict.
+echo "== a failure during the destructive step triggers recovery =="
+real_fail="$IT_FAIL"
+IT_FAIL=$((real_fail + 3))
+_uninstall_phase_recover "$real_fail" # grew past the pre-destructive count: recover
+IT_FAIL="$real_fail"
+assert_eq "recovery brings the stack down first" "$(grep -c '^down$' "$PITHEAD_LOG")" "1"
+assert_eq "recovery restores the exact pre-run archive" \
+    "$(grep -c -F "restore -y $SAFETY_ARCHIVE" "$PITHEAD_LOG")" "1"
+assert_eq "recovery brings the stack back up" "$(grep -c '^up$' "$PITHEAD_LOG")" "1"
+
+echo "== no new failure means no recovery action =="
+: >"$PITHEAD_LOG"
+real_fail="$IT_FAIL"
+_uninstall_phase_recover "$real_fail" # unchanged since the pre-destructive count: nothing to fix
+IT_FAIL="$real_fail"
+assert_eq "an unchanged failure count calls pithead nothing" "$(wc -l <"$PITHEAD_LOG" | tr -d ' ')" "0"
+
+echo "selftest-uninstall-recovery: $IT_PASS passed, $IT_FAIL failed"
+[ "$IT_FAIL" -eq 0 ]
