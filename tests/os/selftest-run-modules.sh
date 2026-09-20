@@ -66,6 +66,19 @@ source "$HERE/phases/reset.sh" || exit $?
 source "$HERE/phases/crossupdate.sh" || exit $?
 # shellcheck source=tests/os/phases/stack.sh
 source "$HERE/phases/stack.sh" || exit $?
+# #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
+# directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
+# the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
+# repo and fail with exit 127 on every bench run instead of here. Assert both the resolved path
+# exists AND the source line itself, so neither a path drift nor a same-string coincidence hides.
+grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" || {
+    echo "stack phase's DIY gate invocation no longer resolves via \$SCRIPT_DIR/../integration/run.sh" >&2
+    exit 1
+}
+[ -x "$SCRIPT_DIR/../integration/run.sh" ] || {
+    echo "stack phase's DIY gate path does not resolve to an executable tests/integration/run.sh" >&2
+    exit 1
+}
 trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_power_cut _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
