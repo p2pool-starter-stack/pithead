@@ -324,7 +324,7 @@ export class ConfigView extends Component {
         ${
           core.length
             ? html`<div class="card config-section config-section-core">
-                <h3>Core</h3>
+                <h2>Core</h2>
                 ${core.map((f) => field(f, true))}
             </div>`
             : null
@@ -392,7 +392,7 @@ export class ConfigView extends Component {
       return html`<div class="card"><p class="text-muted">Loading configuration…</p></div>`;
     if (phase === "disabled")
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
           <p>The control channel is off (the default). Turning it on lets you edit the
           configuration, create backups, and run diagnostics, and requires a dashboard login —
           see the${" "}<a href="https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#configuration-view" target="_blank" rel="noopener noreferrer">Configuration view guide</a>.</p>
@@ -400,7 +400,7 @@ export class ConfigView extends Component {
       </div>`;
     if (phase === "error") {
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
           <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
       </div>`;
@@ -408,12 +408,12 @@ export class ConfigView extends Component {
     if (phase === "done") {
       const ok = result.status === "applied";
       return html`<div class="card">
-          <h3>Configuration</h3>
-          ${
+          <h2>Configuration</h2>
+          <div role="status" aria-live="polite">${
             ok
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
-          }
+          }</div>
           <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
       </div>`;
     }
@@ -440,11 +440,10 @@ export class ConfigView extends Component {
         ${this.renderForm(core, groups)}
         ${this.renderJson(editText, jsonError, busy)}
         <div class="config-actions">
-            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>
-                ${phase === "previewing" ? "Previewing…" : "Save & preview changes"}
-            </button>
+            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>${phase === "previewing" ? "Previewing…" : "Save & preview changes"}</button>
             ${dirty ? html`<button class="btn-toggle" disabled=${busy} onClick=${() => this.load()}>Discard edits</button>` : null}
         </div>
+        <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
           phase === "confirm" || phase === "committing"
             ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}

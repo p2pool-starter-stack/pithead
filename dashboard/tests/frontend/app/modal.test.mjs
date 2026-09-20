@@ -59,5 +59,5 @@ test("the dialog carries its role, modal flag and name", () => {
   assert.match(out, /role="dialog"/);
   assert.match(out, /aria-modal="true"/);
   assert.match(out, /aria-label="Create a backup"/);
-  assert.match(out, /<h3 tabindex="-1">Create a backup<\/h3>/); // focus target on open
+  assert.match(out, /<h2 tabindex="-1">Create a backup<\/h2>/); // focus target on open
 });
