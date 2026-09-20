@@ -57,6 +57,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/secure-boot-boot-verdict.sh"
 # shellcheck source=tests/os/failure-evidence.sh
 . "$SCRIPT_DIR/failure-evidence.sh"
+# shellcheck source=tests/os/tor-health-evidence.sh
+. "$SCRIPT_DIR/tor-health-evidence.sh"
 # shellcheck source=tests/os/zero-container-evidence.sh
 . "$SCRIPT_DIR/zero-container-evidence.sh"
 # shellcheck source=tests/os/bundle-build-evidence.sh
@@ -109,7 +111,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/control-runner-recovery-leg.sh"
 # shellcheck source=tests/os/setup-again-leg.sh
 . "$SCRIPT_DIR/setup-again-leg.sh"
+# shellcheck source=tests/os/rig-control-off-leg.sh
+. "$SCRIPT_DIR/rig-control-off-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
+# shellcheck source=tests/os/fault-boot-verdict.sh
+. "$SCRIPT_DIR/fault-boot-verdict.sh"
 IMAGE=""
 KEEP=0
 PHASE="all"

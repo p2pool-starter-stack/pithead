@@ -45,6 +45,13 @@ regex — the failing image ref survives, because which ref failed is the diagno
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.
 
+`tests/os/tor-health-evidence.sh` covers a third row the same way (#2359, a recurrence of #1945's
+unresolved half): the restore leg's source-provisioning machine can fail with tor never becoming
+healthy, and the only evidence any battery captured for it was the compose orchestration's own
+verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
+healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
+own healthcheck verdict and its own log.
+
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
 
