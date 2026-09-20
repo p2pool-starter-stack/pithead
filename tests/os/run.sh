@@ -45,8 +45,8 @@
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
 #   stack   the DIY gate (tests/integration/run.sh) against a remote-node guest (#2062, § J):
 #           a non-destructive --check, then --lifecycle --fault-injection --hardening
-#           --auth-fail-closed on remote-main-secure-tari. Skips by-design with no reserved
-#           node; the local-chain scenario (#2443) and XvB routing smoke (#2444) run from neither.
+#           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
+#           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
 #   all     every phase above except crossupdate, in order (stack since #2062, rigmedia #2069)
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole

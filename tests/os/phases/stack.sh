@@ -103,7 +103,7 @@ phase_stack() {
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}"
     info "phase: stack (#2062 — the DIY gate, tests/integration/run.sh, against a remote-node appliance guest)"
     if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ]; then
-        info "stack phase SKIPPED (by-design): no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it"
+        it_skip_phase "stack" "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
         return
     fi
 

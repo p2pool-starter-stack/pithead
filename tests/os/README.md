@@ -176,7 +176,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
   --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
   coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
-  phase's remote-node consumer row below, and skips (by-design) without them. Measured cost: about
+  phase's remote-node consumer row below; without them the phase records a counted `missing`
+  skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
   fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
   invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
   nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
