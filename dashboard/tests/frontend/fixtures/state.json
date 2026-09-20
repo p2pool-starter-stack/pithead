@@ -106,6 +106,7 @@
       "blocks_30d": null,
       "enabled": false,
       "expected_blocks_30d": 0.0,
+      "is_local": false,
       "partial": false,
       "xtm_30d": null
     },

@@ -73,3 +73,32 @@ assert_eq "virt-install could not even define the guest: fails, names it unmeasu
     "$(sbv 0 0 2.0.0)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
 unset -f sbv
+
+echo "== unit: fault_boot_verdict — BRICKED only when the serial shows no GRUB, kernel or login (#2381) =="
+# bench-ci job 101's fault phase reported A1 as BRICKED (disqualifying) while its own
+# pithead-os-serial.log.failed showed GRUB naming the current slot and "pithead login:" ten
+# seconds later — the SSH probe failed, not the boot. tests/os/fault-boot-verdict.sh reads the
+# serial console from the byte offset the power cycle started at and tells the two apart.
+# Mutation run: drop the offset and let it scan the whole log -> the earlier boot's own GRUB/login
+# lines "prove" a boot that never happened after THIS power cut, silently hiding a real brick.
+FBV="$SANDBOX/fault-boot-verdict"
+mkdir -p "$FBV"
+# shellcheck source=tests/os/fault-boot-verdict.sh
+source "$ROOT/tests/os/fault-boot-verdict.sh"
+printf 'GNU GRUB  version 2.06\nLoading Linux 6.1.0 ...\nDebian GNU/Linux 12 pithead ttyS0\npithead login: ' \
+    >"$FBV/booted"
+verdict=$(fault_boot_verdict "$FBV/booted" 0)
+assert_rc "a serial log naming GRUB, kernel and login is not BRICKED" "$?" "0"
+assert_contains "…and says the probe failed, not the boot" "$verdict" "the PROBE failed to reach it, not the boot"
+printf 'Powering up......\nqemu: no console output\n' >"$FBV/no-boot"
+verdict=$(fault_boot_verdict "$FBV/no-boot" 0)
+assert_rc "a serial log with no GRUB, kernel or login evidence IS BRICKED" "$?" "1"
+assert_contains "…and quotes the serial's last lines" "$verdict" "qemu: no console output"
+# The earlier boot's login line must not leak across the offset: a fresh power cycle appends to
+# the SAME $SERIAL file rather than truncating it, so only bytes written after the mark count.
+cat "$FBV/booted" "$FBV/no-boot" >"$FBV/combined"
+mark=$(wc -c <"$FBV/booted" | tr -d ' ')
+verdict=$(fault_boot_verdict "$FBV/combined" "$mark")
+assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
+unset -f fault_boot_verdict
+rm -rf "$FBV"

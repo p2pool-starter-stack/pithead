@@ -12,7 +12,8 @@
 // dashboard answers again; the post-reboot verdict (updated / rolled back) arrives via the
 // host-persisted state in state.os_update and renders as a banner.
 
-import { Component, html } from "../app/preact.mjs";
+import { Modal } from "../app/modal.mjs";
+import { Component, createRef, html } from "../app/preact.mjs";
 import { verdictText } from "./osverdict.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -136,8 +137,13 @@ export class OsUpdateControl extends Component {
       confirmText: "",
     };
     this.cancelled = false;
+    this.modalRef = createRef();
   }
-
+  cancel() {
+    const busy = ["checking", "downloading", "verifying", "installing", "rebooting"];
+    if (busy.includes(this.state.phase)) return;
+    this.modalRef.current?.close();
+  }
   // What the host remembers across reloads/reboots: reopen the modal mid-flow honestly.
   stepPhase() {
     const step = (this.props.os && this.props.os.step) || "idle";
@@ -292,34 +298,32 @@ export class OsUpdateControl extends Component {
               ${version ? html`<button class="btn-toggle active" onClick=${() => this.download()}>Retry</button>` : null}
           </div>`;
     if (phase === "checking")
-      return html`<p class="text-muted">Asking the release server over Tor…</p>`;
+      return html`<p class="text-muted">Asking the release server over Tor — this can't be interrupted.</p>`;
     if (phase === "downloading") {
       const b = progress || {};
       const pct = b.total ? Math.floor(((b.bytes || 0) * 100) / b.total) : 0;
       return html`<p>Downloading ${version} — ${fmtMiB(b.bytes || 0) || "0 MiB"} of ${fmtMiB(b.total)} (${pct}%).</p>
           <p class="text-muted">Over Tor — this can be slow. Mining continues; the download survives
-          restarts and resumes where it stopped.</p>
+          restarts and resumes where it stopped. Escape won't close this — Cancel below stops it.</p>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => {
-                this.cancelled = true;
-              }}>Cancel</button>
+              <button class="btn-toggle" onClick=${() => (this.cancelled = true)}>Cancel</button>
           </div>`;
     }
     if (phase === "verifying")
       return html`<p class="text-muted">Verifying the downloaded bundle on the machine — signature,
-          compatibility, and version…</p>`;
+          compatibility, and version — this can't be interrupted…</p>`;
     if (phase === "verified")
       return html`<p class="status-ok">Bundle ${version} verified — signed for this machine.</p>
           <p>Installing writes the spare system slot. Mining keeps running; nothing changes until
           you reboot.</p>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.setState({ phase: "closed" })}>Later</button>
+              <button class="btn-toggle" onClick=${() => this.cancel()}>Later</button>
               <button class="btn-toggle active" onClick=${() => this.install()}>Install</button>
           </div>`;
     if (phase === "installing") {
       const pct = (progress && progress.percent) || 0;
       return html`<p>Installing ${version} into the spare slot — ${pct}%.</p>
-          <p class="text-muted">Mining keeps running throughout.</p>`;
+          <p class="text-muted">Mining keeps running throughout — this can't be interrupted.</p>`;
     }
     if (phase === "reboot-pending" || phase === "confirm-reboot")
       return html`<p class="status-ok">${version || "The update"} is installed in the spare slot.</p>
@@ -330,13 +334,13 @@ export class OsUpdateControl extends Component {
               <input type="text" value=${confirmText}
                   onInput=${(e) => this.setState({ confirmText: e.target.value })} /></label>
           <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.setState({ phase: "closed", confirmText: "" })}>Later</button>
+              <button class="btn-toggle" onClick=${() => this.cancel()}>Later</button>
               <button class="btn-toggle active" disabled=${confirmText !== "REBOOT"}
                   onClick=${() => this.reboot()}>Reboot now</button>
           </div>`;
     if (phase === "rebooting")
-      return html`<p>Rebooting — this page reconnects when the dashboard returns.</p>
-          <p class="text-muted">Leave it open. The result appears as a banner after the restart.</p>`;
+      return html`<p>Rebooting — this page reconnects when the dashboard returns. This can't be
+          interrupted; leave it open. The result appears as a banner after the restart.</p>`;
     // idle: current version, what the host knows, and the next honest step.
     const stepPhase = this.stepPhase();
     const size = (check && check.size) || (passive && passive.raucb_size);
@@ -356,7 +360,7 @@ export class OsUpdateControl extends Component {
                 server now.</p>`
         }
         <div class="config-modal-actions">
-            <button class="btn-toggle" onClick=${() => this.setState({ phase: "closed" })}>Close</button>
+            <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
             <button class="btn-toggle" onClick=${() => this.check()}>Check now</button>
             ${
               stepPhase === "verified"
@@ -395,12 +399,8 @@ export class OsUpdateControl extends Component {
             ${label}
         </button>${
           open
-            ? html`<div class="config-modal-backdrop">
-                <div class="card config-modal">
-                    <h3>System update</h3>
-                    ${this.renderBody()}
-                </div>
-            </div>`
+            ? html`<${Modal} ref=${this.modalRef} title="System update" onCancel=${() => this.cancel()}
+                  onClose=${() => this.setState({ phase: "closed", confirmText: "" })}>${this.renderBody()}</${Modal}>`
             : null
         }`;
   }
