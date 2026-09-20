@@ -14,6 +14,7 @@
 
 import { Modal } from "../app/modal.mjs";
 import { Component, createRef, html } from "../app/preact.mjs";
+import { osBadgeLabel, rebootAskPane, rebootConfirmPane, vtag } from "./osreboot.mjs";
 import { verdictText } from "./osverdict.mjs";
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
@@ -127,7 +128,7 @@ export class OsUpdateControl extends Component {
   constructor(props) {
     super(props);
     // phase: closed | idle | checking | downloading | verifying | verified | installing |
-    //        reboot-pending | confirm-reboot | rebooting | error
+    //        reboot-ask | reboot-pending | confirm-reboot | rebooting | error
     this.state = {
       phase: "closed",
       check: null,
@@ -159,7 +160,7 @@ export class OsUpdateControl extends Component {
   targetVersion() {
     if (this.state.check && this.state.check.version) return this.state.check.version;
     const step = this.props.os || {};
-    if (step.version) return step.version.startsWith("v") ? step.version : "v" + step.version;
+    if (step.version) return vtag(step.version);
     return (this.props.update && this.props.update.latest) || null;
   }
 
@@ -251,7 +252,7 @@ export class OsUpdateControl extends Component {
         this.fail(out.error || "The install did not complete — the running system is untouched.");
         return;
       }
-      this.setState({ phase: "reboot-pending", result: out });
+      this.setState({ phase: "reboot-ask", result: out });
     } catch (e) {
       this.fail(e);
     }
@@ -325,19 +326,20 @@ export class OsUpdateControl extends Component {
       return html`<p>Installing ${version} into the spare slot — ${pct}%.</p>
           <p class="text-muted">Mining keeps running throughout — this can't be interrupted.</p>`;
     }
+    if (phase === "reboot-ask")
+      return rebootAskPane({
+        version,
+        onNotNow: () => this.cancel(),
+        onReboot: () => this.setState({ phase: "reboot-pending" }),
+      });
     if (phase === "reboot-pending" || phase === "confirm-reboot")
-      return html`<p class="status-ok">${version || "The update"} is installed in the spare slot.</p>
-          <p>Reboot to finish. Mining pauses while the machine restarts — typically under five
-          minutes — and if the new version fails its health checks the machine returns to the
-          current one on its own.</p>
-          <label class="config-confirm-type">Type <code>REBOOT</code> to confirm:
-              <input type="text" value=${confirmText}
-                  onInput=${(e) => this.setState({ confirmText: e.target.value })} /></label>
-          <div class="config-modal-actions">
-              <button class="btn-toggle" onClick=${() => this.cancel()}>Later</button>
-              <button class="btn-toggle active" disabled=${confirmText !== "REBOOT"}
-                  onClick=${() => this.reboot()}>Reboot now</button>
-          </div>`;
+      return rebootConfirmPane({
+        version,
+        confirmText,
+        onConfirmText: (e) => this.setState({ confirmText: e.target.value }),
+        onLater: () => this.cancel(),
+        onReboot: () => this.reboot(),
+      });
     if (phase === "rebooting")
       return html`<p>Rebooting — this page reconnects when the dashboard returns. This can't be
           interrupted; leave it open. The result appears as a banner after the restart.</p>`;
@@ -386,12 +388,7 @@ export class OsUpdateControl extends Component {
       (passive && passive.available) || (os.step && os.step !== "idle")
         ? " badge-accent"
         : " badge-outline";
-    const label =
-      os.step === "reboot-pending"
-        ? "OS update: reboot to finish"
-        : passive && passive.available
-          ? `OS update ${passive.latest}`
-          : "OS updates";
+    const label = osBadgeLabel(os, passive);
     const open = phase !== "closed";
     return html`<button class=${"badge version-badge ml-2" + attention}
             title="Check for and apply signed OS image updates"
