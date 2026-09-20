@@ -229,4 +229,14 @@ awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
 grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
 ! m10_call_in_cut_loop "$m10_mutant" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
+
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
+# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
+# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
+# not let this add to; this runner is already the os lane's own self-test entry point and is
+# reached from the same tier-1 row.
+bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null 2>&1 || {
+    echo "#1998 appliance XvB routing leg self-test failed" >&2
+    exit 1
+}
 echo "os-run-modules: PASS"

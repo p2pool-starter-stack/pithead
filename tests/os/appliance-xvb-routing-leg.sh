@@ -149,9 +149,17 @@ _xvb_self_test() {
     # here so the dedicated proxy-readiness drill below can run the REAL _xvb_guest_python (through
     # a stubbed _ssh) after the case-driven tests have overridden it for their own JSON responses.
     real_guest_python="$(declare -f _xvb_guest_python)"
+    local decoded
     payload="$(_xvb_payload XVB)"
+    decoded="$(printf '%s' "$payload" | base64 -d)"
+    # The KEY NAME is checked here because nothing downstream can see it: every case below stubs
+    # _xvb_guest_python, so the payload's own dict lookup never runs and a wrong key reads exactly
+    # like a working one. That is not hypothetical — the payload shipped reading .get('mode') for
+    # five bench rounds, and StateManager stores the field as xvb["current_mode"]
+    # (storage_service.py), so the row reported null no matter what the actuator did.
     [ -n "$payload" ] && [ -n "$(_xvb_payload P2POOL)" ] &&
-        printf '%s' "$payload" | base64 -d | grep -q 'XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)' &&
+        printf '%s' "$decoded" | grep -q 'XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN)' &&
+        printf '%s' "$decoded" | grep -q "get_xvb_stats().get('current_mode')" &&
         ! _xvb_payload SPLIT >/dev/null || {
         printf 'xvb self-test: actuator payload shape\n' >&2
         f=$((f + 1))
