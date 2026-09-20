@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Failure evidence for the battery's os-update leg (#1060). Sourced by tests/os/run.sh; uses
 # its globals (_ssh, SSH_ERR, SERIAL) and prints in its indentation idiom.
-#
 # The ~60% mid-copy death survived four batteries because the evidence of WHO killed the
 # command was discarded at three separate layers: the assertion printed a truncated tail and
 # no exit status; _ssh's client stderr went to a scratch file nothing printed; and the serial
@@ -62,6 +61,7 @@ backup_failure_evidence() {
           echo '-- firstboot journal --'; journalctl -u pithead-firstboot --no-pager -n 30 2>/dev/null" |
         tr -d '\r' | sed 's/^/     | /'
     backup_watch_report
+    tor_health_evidence # 2359
 }
 
 # The #1059 watcher. It caught the mechanism on its first instrumented run, and stays as the
@@ -241,7 +241,7 @@ backup_watch_report() {
 _fe_selftest_reply=""
 _fe_selftest_pgrep=""
 _fe_selftest_rc=0
-_fe_ssh_capture=""
+_fe_ssh_capture="${TMPDIR:-/tmp}/fe-ssh-capture.$$" # a FILE, not text: see _fe_self_test
 
 # Every outcome's unique sentence. The keys are the assertion vocabulary: a case names the one it
 # wants and is checked against all the others.
@@ -351,9 +351,9 @@ _fe_precapture_arms_clean() {
     local sent
     _fe_selftest_reply=""
     _fe_selftest_pgrep="UP"
-    _fe_ssh_capture=""
+    : >"$_fe_ssh_capture"
     backup_precapture >/dev/null
-    sent=$_fe_ssh_capture
+    sent=$(cat "$_fe_ssh_capture")
     case "$sent" in
     *"rm -f /tmp/pithead-1059-watch.log"*"cat >/tmp/pithead-1059-watch.sh"*)
         printf 'ok: the arm call clears any stale log before writing the watcher\n'
@@ -363,7 +363,7 @@ _fe_precapture_arms_clean() {
         _fe_selftest_rc=1
         ;;
     esac
-    _fe_ssh_capture=""
+    : >"$_fe_ssh_capture"
 }
 
 # The other half of the contract. Everything above drives the REPORT against a canned reply; it
@@ -464,7 +464,7 @@ _fe_self_test() {
     # asked to run, which is the only handle tier 1 has on the arm call: that one is fire-and-forget
     # by design, so nothing about it can be read back from a reply.
     _ssh() {
-        _fe_ssh_capture="$_fe_ssh_capture$*"
+        printf '%s' "$*" >>"$_fe_ssh_capture"
         # backup_precapture makes two calls with different jobs, and a case needs to drive them
         # independently: the evidence read, and the arm-check probe. Matched on the probe's own
         # tail rather than on 'pgrep', because backup_watch_report's fetch contains a pgrep too and
@@ -502,19 +502,12 @@ VANISHED at 2026-08-24T01:25:57+00:00"
     # The ONLY quiet case: started, still watching, nothing seen.
     _fe_case "a fully-watched window with no vanish stays quiet" "QUIET" \
         "WATCHOKALIVE:STARTED at 2026-08-24T01:00:00+00:00 pid=1234"
-    # The evidence dump is a /proc sweep: arbitrary cmdlines, which can and do contain this file's
-    # own header vocabulary. A real vanish whose process table mentions a RIVAL outcome must still
-    # report as exactly one outcome — the vanish — because the captured line is indented as evidence
-    # and only a printf writes a header.
-    #
-    # The canned cmdline below carries the header's FIVE-SPACE indentation on purpose, and that
-    # detail is the whole assertion. Without it the poison matched neither the anchored pattern nor
-    # an un-anchored one, so this case passed on the indentation baked into the grep pattern rather
-    # than on the anchor — green even with the ^ removed, which is the plausible edit. A case that
-    # proves the guard only against an implausible mutation is a guard proven by nothing, the exact
-    # shape this branch keeps finding. Caught by the reviewer lane, who removed only the caret.
-    # What makes the discrimination real: the marker sits INSIDE the line, while a genuine header
-    # STARTS it. Anchored, this cannot match; drop the ^ and it does.
+    # A real vanish whose /proc sweep names a RIVAL outcome must still report as exactly one — the
+    # vanish — because only a printf writes a header (the full argument is at _fe_case). The canned
+    # cmdline below carries a header's FIVE-SPACE indentation on purpose, and that detail is the
+    # whole assertion: without it the poison matches neither pattern, so the case would pass on the
+    # indentation baked into the grep rather than on the anchor — green even with the ^ removed,
+    # which is the plausible edit. Caught by the reviewer lane, who removed only the caret.
     _fe_case "a vanish is not confused by its own evidence naming another outcome" \
         "config.json went away during the backup" \
         "WATCHOKALIVE:STARTED at 2026-08-24T01:00:00+00:00 pid=1234
@@ -523,17 +516,12 @@ VANISHED at 2026-08-24T01:25:57+00:00
 4711	tail -f /tmp/pithead-1059-watch.log | grep -F      --- #1059: WATCHER UNREADABLE — this run collected no evidence either way ---"
 
     printf '== unit: #1059 watcher arming ==\n'
-    # pgrep found it: a watcher is on the guest, and arming has nothing to report.
-    #
-    # The evidence reply is not empty, and that is the assertion rather than scenery. This case is
-    # what holds the anchor on the precapture grep, and an empty reply gives an un-anchored grep
-    # nothing to mistake for a header — the case would then pass on there being no input, not on the
-    # anchor. So the readlink target carries the marker with a real header's five-space indentation
-    # INSIDE the line. Anchored, it cannot match: the rendered line opens with the evidence prefix,
-    # not with the header's indentation. Drop the ^ here and this case fails. Reachability is lower
-    # than on the report side, which renders a /proc sweep and has been poisoned for real twice —
-    # ls -la and readlink output carrying an indented marker is contrived. Same class either way,
-    # and a guard proven only against an implausible mutation is what this branch keeps finding.
+    # pgrep found it: a watcher is on the guest, and arming has nothing to report. The evidence
+    # reply is not empty, and that is the assertion rather than scenery: it holds the anchor on the
+    # precapture grep, which an empty reply would let pass on having no input at all. The readlink
+    # target carries the marker at a real header's five-space indentation INSIDE the line, so
+    # anchored it cannot match and dropping the ^ fails this case. Contrived next to the report
+    # side's sweep, which has been poisoned for real twice — same class either way.
     _fe_precapture_case "a watcher confirmed running arms quietly" "QUIET" \
         "lrwxrwxrwx 1 root root 42 Aug 24 01:00 /data/pithead/config.json -> /data/pithead/     --- #1059: WATCHER UNREADABLE, and not a header ---" \
         "UP"
@@ -549,6 +537,18 @@ VANISHED at 2026-08-24T01:25:57+00:00
     _fe_precapture_case "the header starts its own line even when the guest evidence does not" \
         "WATCHER DID NOT START" "/data/pithead/config.json" ""
     _fe_precapture_arms_clean
+    # #2359: the WIRING, end to end. tor_health_evidence lives in its own file (this one is at its
+    # budget ceiling), so only driving backup_failure_evidence proves the call still reaches it.
+    printf '== unit: #2359 backup_failure_evidence asks tor for its own log ==\n'
+    : >"$_fe_ssh_capture"
+    backup_failure_evidence >/dev/null
+    case "$(cat "$_fe_ssh_capture")" in
+    *"podman logs --tail 100 tor"*) printf 'ok: the dump reaches tor'"'"'s own container log\n' ;;
+    *)
+        printf 'FAIL: backup_failure_evidence never asked tor for its own log\n'
+        _fe_selftest_rc=1
+        ;;
+    esac
 
     printf '== unit: #1059 watcher body, run for real against a sandbox file ==\n'
     _fe_watcher_cases
@@ -562,6 +562,6 @@ VANISHED at 2026-08-24T01:25:57+00:00
 }
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
-    _fe_self_test
+    . "$(dirname "${BASH_SOURCE[0]}")/tor-health-evidence.sh" && _fe_self_test
     exit $?
 fi
