@@ -33,13 +33,11 @@ remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> 
     # masks every CONTROL_SECRET_PATHS leaf, and that pair is on it. A blank arg must leave those two
     # fields ALONE so the sentinel survives to staging: control_preview's restore (43-control-
     # approval-and-preview.sh) swaps a sentinel for the live value, but only recognizes the sentinel
-    # SHAPE — overwriting it with a literal "" here defeats that restore before it runs, and an empty
-    # string then reads as a REAL change against the live host-generated local-node creds (23-setup-
-    # and-credentials.sh), which MONERO_NODE_USERNAME/PASSWORD's perimeter (42-control-policy-and-
-    # host-checks.sh: credentials stay host-CLI-only, no allowlist tier) refuses outright — the whole
-    # preview never reaches "previewed", so destructive/approval_required/preview_values are never
-    # populated either. A real operator repointing only host/port through the dashboard form never
-    # touches these fields, so this must not, when they are blank.
+    # SHAPE — overwriting it with a literal "" here would read as a REAL (empty) credential change.
+    # A non-blank arg lands as a real value: MONERO_NODE_USERNAME/PASSWORD are confirm-gated, not
+    # refused (#2333/#2367, the owner's ruling superseding the earlier host-CLI-only stance) — the
+    # same typed-APPLY route the endpoint fields below already use, so the whole combined change
+    # (endpoint + login, when the reserved node needs one) previews and commits in one request.
     printf '%s\0' "$@" | jq -Rsc 'split("\u0000") as $v | ($v[0] | fromjson) |
         .monero.mode="remote" | .monero.remote={host:$v[1],rpc_port:($v[2]|tonumber),zmq_port:($v[3]|tonumber)} |
         (if $v[4] != "" then .monero.node_username=$v[4] else . end) |
@@ -152,7 +150,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
-    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now
+    local status destructive approval_required mh_shown th_shown login_warned env_now cmd_now
     local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
@@ -235,27 +233,21 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     }
 
-    # The gap the fixture's non-blank password used to hide entirely: a login change is refused
-    # outright, endpoints and all. Assert that on its own, with a synthetic value, so the branch is
-    # exercised regardless of what the bench fixture happens to supply.
-    dirty=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "os2333-dashboard-login-probe" "$th" "$grpc") || {
-        bad "reserved-node login-change proposal could not be constructed"
-        return
-    }
-    sensitive_preview "$(dashboard_config_body "$dirty")" || {
-        bad "could not preview a reserved-node login change"
-        return
-    }
-    if printf '%s' "$APPROVAL_PREVIEW" | jq -e '
-        .status == "rejected" and (.error // "" | contains("MONERO_NODE_PASSWORD")) and
-        (.error // "" | contains("not committable from the dashboard"))' >/dev/null; then
-        ok "dashboard preview refuses a Monero node login change even alongside an endpoint move"
-    else
-        bad "dashboard did not refuse a Monero node login change ($(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
-        return
-    fi
-
-    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "" "$th" "$grpc") || {
+    # #2333/#2367: MONERO_NODE_USERNAME/PASSWORD are confirm-gated like the endpoint fields they
+    # travel with here, not refused — the owner's ruling on #2367 (2026-09-19 03:08Z) overruled the
+    # earlier host-CLI-only stance for exactly these two keys: every config field is editable from
+    # the dashboard, and a security-sensitive one warns and asks for the typed confirmation instead
+    # of being refused. So the combined change (mode, endpoint, login) previews and commits through
+    # the ordinary dashboard route in one request — no host-side detour needed.
+    #
+    # p2pool.clearnet (#165) rides in the same proposal: p2pool_outbound_flags
+    # (lib/pithead/19-small-utilities.sh) otherwise wraps p2pool's Tari merge-mining connection in
+    # Tor's SOCKS5 proxy, and Tor's exit policy refuses to relay to a private address — which the
+    # reserved test nodes always are, by the same convention tests/integration/scenarios.sh
+    # documents for its own remote-node scenarios ("the natural choice is the box's own ... LAN
+    # address"). Without it the endpoint lands but p2pool never completes the Tari handshake: it
+    # builds the client and waits on a chain_id gRPC call Tor will never carry to a LAN address.
+    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" | jq -c '.p2pool.clearnet = true') || {
         bad "reserved-node proposal could not be constructed"
         return
     }
@@ -266,11 +258,18 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     approval_required=$(printf '%s' "$preview" | jq -r '.approval_required // false')
     mh_shown=$(printf '%s' "$preview" | jq -e --arg mh "$mh" 'any(.preview_values[]?; .key == "monero.remote.host" and .new == $mh)' >/dev/null 2>&1 && echo true || echo false)
     th_shown=$(printf '%s' "$preview" | jq -e --arg th "$th" 'any(.preview_values[]?; .key == "tari.remote.host" and .new == $th)' >/dev/null 2>&1 && echo true || echo false)
+    login_warned=true
+    if [ -n "$mu" ] && ! printf '%s' "$preview" | jq -e 'any(.changes[]?; .key == "MONERO_NODE_USERNAME" and .flag == "CONFIRM")' >/dev/null 2>&1; then
+        login_warned=false
+    fi
+    if [ -n "$mp" ] && ! printf '%s' "$preview" | jq -e 'any(.changes[]?; .key == "MONERO_NODE_PASSWORD" and .flag == "CONFIRM")' >/dev/null 2>&1; then
+        login_warned=false
+    fi
     if [ "$status" = previewed ] && [ "$destructive" = true ] && [ "$approval_required" = true ] &&
-        [ "$mh_shown" = true ] && [ "$th_shown" = true ]; then
-        ok "reserved-node preview exposes endpoints behind the combined approval gate"
+        [ "$mh_shown" = true ] && [ "$th_shown" = true ] && [ "$login_warned" = true ]; then
+        ok "reserved-node preview warns about the login and exposes endpoints behind the combined approval gate"
     else
-        bad "reserved-node preview did not expose endpoints behind the combined approval gate (status=$status destructive=$destructive approval_required=$approval_required monero_host_shown=$mh_shown tari_host_shown=$th_shown; $(reserved_node_preview_payload "$preview"))"
+        bad "reserved-node preview did not warn/expose correctly (status=$status destructive=$destructive approval_required=$approval_required monero_host_shown=$mh_shown tari_host_shown=$th_shown login_warned=$login_warned; $(reserved_node_preview_payload "$preview"))"
         return
     fi
     rid=$APPROVAL_REQUEST_ID
@@ -281,10 +280,25 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         bad "reachable-node commit crossed the typed confirmation gate"
         return
     fi
+    sensitive_preview "$(dashboard_config_body "$proposed")" || return
+    preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
+    result=$(approval_commit "$rid")
+    if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
+        bad "host preflight refused the reserved nodes ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
+        return
+    fi
     node_ok=1
-    # The preview the operator reads is the only place these endpoints are shown before they are
-    # committed, so it carries the disclosure duty the removed Telegram prompt used to: name both
-    # endpoints in full, and never the node credentials that travel in the same change.
+    audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
+    printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[];
+        .id == $id and .status == "applied" and (.approver // "") == "")' >/dev/null || {
+        bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
+        node_ok=0
+    }
+    # The preview the operator reads is the only place these endpoints and the login change are
+    # shown before they are committed, so it carries the disclosure duty the removed Telegram
+    # prompt used to: name both endpoints in full, warn about the login, and never echo its value
+    # (describe_change's warning text names the key, never $old/$new; CONTROL_SECRET_PATHS masks
+    # the raw value everywhere else in the JSON).
     if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
         any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
         any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
@@ -293,73 +307,10 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     fi
     if { [ -n "$mu" ] && case "$preview" in *"$mu"*) true ;; *) false ;; esac } ||
         { [ -n "$mp" ] && case "$preview" in *"$mp"*) true ;; *) false ;; esac } then
-        bad "reserved-node preview exposed a Monero node credential"
+        bad "reserved-node preview echoed the Monero node credential's value"
         node_ok=0
     else
-        ok "reserved-node preview exposes node endpoints without node credentials"
-    fi
-
-    # #2333: MONERO_NODE_USERNAME/PASSWORD are the reserved node's own RPC login, not endpoint
-    # identity — they stay host-CLI-only (42-control-policy-and-host-checks.sh:123). That is not
-    # just a dashboard-payload rule: the host's OWN reachability preflight for this same commit
-    # (preflight_remote_nodes, lib/pithead/10-node-probe.sh) digest-authenticates against the
-    # STAGED config's node_username/password before it will accept the endpoint move at all, and
-    # that staged copy is whatever the dashboard preview carried forward from the live config —
-    # which never has this reserved node's real login, since the dashboard can never set it. A
-    # dashboard-mediated commit of this combined change is therefore not just refused for
-    # credentials alone (proven above) — the endpoint move ALSO cannot complete through the
-    # dashboard while the node requires auth, because the one gate standing between "previewed"
-    # and "applied" has no way to pass. So the actual application here is the host route the
-    # refusal text names ("Set up again"): mode, endpoint AND login land together in the SAME
-    # apply, atomically — never local mode with a foreign login attached to the still-running
-    # local monerod/wallet-rpc quadlets (36-quadlet-units.sh), and never remote mode short the
-    # login preflight_remote_nodes will demand of it.
-    #
-    # p2pool.clearnet (#165) also has to move with it: p2pool_outbound_flags
-    # (lib/pithead/19-small-utilities.sh) wraps p2pool's Tari merge-mining connection in Tor's
-    # SOCKS5 proxy unless it is true, and Tor's exit policy refuses to relay to a private address —
-    # which the reserved test nodes always are, by the same convention documented for the
-    # tests/integration/ scenario matrix ("the natural choice is the box's own ... LAN address").
-    # Without this the endpoint lands but p2pool never completes the Tari handshake: it builds the
-    # client and waits on a chain_id gRPC call Tor will never carry to a LAN address.
-    if raw=$(_ssh 'cat /data/pithead/config.json' 2>/dev/null) && [ -n "$raw" ]; then
-        if patched=$(printf '%s' "$raw" | jq --arg mh "$mh" --argjson rpc "$rpc" --argjson zmq "$zmq" \
-            --arg th "$th" --argjson grpc "$grpc" --arg u "$mu" --arg p "$mp" '
-            .monero.mode = "remote" | .monero.remote = {host: $mh, rpc_port: $rpc, zmq_port: $zmq} |
-            (if $u != "" then .monero.node_username = $u else . end) |
-            (if $p != "" then .monero.node_password = $p else . end) |
-            .tari.mode = "remote" | .tari.remote = {host: $th, grpc_port: $grpc} |
-            .p2pool.clearnet = true'); then
-            if printf '%s' "$patched" | _ssh 'cat >/data/pithead/config.json.os2333-node &&
-mv /data/pithead/config.json.os2333-node /data/pithead/config.json &&
-cd /data/pithead && ./pithead apply -y >/dev/null'; then
-                after=""
-                tries=0
-                until after=$(sensitive_live_config); do
-                    tries=$((tries + 1))
-                    [ "$tries" -lt 4 ] || break
-                done
-                if [ -n "$after" ] && printf '%s' "$after" | jq -e --arg mh "$mh" --arg th "$th" \
-                    '.monero.mode == "remote" and .monero.remote.host == $mh and .tari.mode == "remote" and .tari.remote.host == $th' >/dev/null 2>&1; then
-                    ok "reserved-node endpoint and RPC login applied together through the host route"
-                elif [ -z "$after" ]; then
-                    bad "dashboard did not become readable again after the reserved-node host route apply (podman: $(_ssh "podman ps -a --format '{{.Names}}:{{.Status}}'" 2>/dev/null | tr '\n' ' '))"
-                    node_ok=0
-                else
-                    bad "reserved-node host-route apply did not land the expected endpoint"
-                    node_ok=0
-                fi
-            else
-                bad "could not apply the reserved node's endpoint and RPC login through the host route"
-                node_ok=0
-            fi
-        else
-            bad "could not construct the reserved node's endpoint-and-login patch"
-            node_ok=0
-        fi
-    else
-        bad "could not read the live config to apply the reserved node's endpoint and RPC login"
-        node_ok=0
+        ok "reserved-node preview warns about the login change without echoing its value"
     fi
 
     tries=0 logs=""

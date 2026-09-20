@@ -143,6 +143,11 @@ roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_po
 # the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
 # so a baseline that does not start pruned cannot exercise this key through the gate.
 roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
+# The reserved-node RPC login (#2333/#2367): unlike the four endpoint keys above, this needs no
+# live dial — preflight_remote_nodes only fires on a changed endpoint key, never on the login
+# alone — so it round-trips here at tier 1 rather than sitting in CONFIRM_TIER1_EXEMPT.
+roundtrip_confirm "MONERO_NODE_USERNAME" '.monero.node_username="os1924-user"' '.monero.node_username' "os1924-user"
+roundtrip_confirm "MONERO_NODE_PASSWORD" '.monero.node_password="os1924-pass"' '.monero.node_password' "os1924-pass"
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
 # TOTALITY, derived from the SHIPPED artifact rather than a hand list — a hand list is blind to the

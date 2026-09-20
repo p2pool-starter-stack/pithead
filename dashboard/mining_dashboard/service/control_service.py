@@ -232,6 +232,12 @@ CONFIRM_ENV_KEY_PATHS = {
     # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
+    # Reserved-node RPC login (#2333/#2367): confirm-gated like the endpoint fields above, on the
+    # owner's ruling that overruled the earlier host-CLI-only stance for exactly these two keys.
+    # Masked like every other CONTROL_SECRET_PATHS leaf — the form prefills the sentinel, never
+    # the live value, and the warning text above never echoes it either.
+    "MONERO_NODE_USERNAME": ("monero.node_username",),
+    "MONERO_NODE_PASSWORD": ("monero.node_password",),
 }
 
 

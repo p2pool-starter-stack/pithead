@@ -156,7 +156,12 @@ describe_change() {
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
         ;;
     MONERO_NODE_USERNAME | MONERO_NODE_PASSWORD)
-        msg="Monero node RPC credential updated ($key)."
+        # #2333/#2367: confirm-gated like the endpoint fields above, never a refusal — the owner's
+        # ruling on both issues. Never echo $old/$new: this is the one warning in this function
+        # whose subject is a secret, and CONTROL_SECRET_PATHS masks it everywhere else for the
+        # same reason.
+        flag=CONFIRM
+        msg="Monero node RPC login changed ($key) — the stack authenticates to its configured node with this credential from now on. If the new value is wrong, the node connection fails closed rather than falling back to the old one; put the old value back to reverse it."
         ;;
     XVB_ENABLED | XVB_POOL_URL | XVB_DONOR_ID | XVB_DONATION_LEVEL)
         msg="XMRvsBeast setting ($key): $old → $new."
