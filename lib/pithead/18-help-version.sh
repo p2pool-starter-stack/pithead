@@ -126,16 +126,22 @@ Maintenance:
                             miner is the whole of it. The boot path runs this on every boot;
                             a no-op outside the appliance.
 
-  os-update BUNDLE [-y|--yes] [--allow-downgrade]
+  os-update BUNDLE [-y|--yes] [--allow-downgrade] [--reboot]
                             Install an OS update bundle into the spare A/B slot (appliance
                             only — runs 'rauc install'). Refuses a bundle older than the
                             running OS (a signed downgrade re-opens fixed holes), and refuses
                             one below the /data migration floor outright. When this system is a
                             debug build (SSH baked in) and the bundle is not, it warns and asks
-                            first: that install removes the SSH channel driving it.
-                              -y, --yes          skip the confirmation prompt.
+                            first: that install removes the SSH channel driving it. On success it
+                            says the update is written to the spare slot, that this machine keeps
+                            running the current version until it reboots, and the exact reboot
+                            command.
+                              -y, --yes          skip the confirmation prompt; with --reboot,
+                                                 also skip the reboot confirmation.
                               --allow-downgrade  install an older bundle on purpose (does not
                                                  override the /data migration floor).
+                              --reboot           reboot to finish the update once it is
+                                                 installed (asks first unless -y is given).
 
   onion-client-key          Print the Tor client-auth line for the dashboard onion —
                             the client PRIVATE key, kept out of 'status'. Add it to your Tor
