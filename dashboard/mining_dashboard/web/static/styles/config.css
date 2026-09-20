@@ -3,7 +3,7 @@
  * keys, and the preview/confirm modal listing the same change rows `pithead apply` prints
  * (DEST rows styled as warnings). Sections regroup around a pinned core group + collapsible
  * natural sections (#529) — collapsed <details>, the same pattern as .egress-details above. */
-.config-section h3 {
+.config-section h2 {
   margin-top: 0;
   text-transform: capitalize;
 }
