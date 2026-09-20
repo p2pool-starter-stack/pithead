@@ -3,7 +3,7 @@
 # first-boot wizard, and A/B update properties. It is the os-image sibling of the integration
 # harness and needs a Linux host with KVM + libvirt.
 #
-#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|all]
+#   tests/os/run.sh --image PATH [--keep] [--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all]
 #
 # Phases:
 #   boot    flash the image to a scratch disk, boot it, assert EFI boot + firstboot wizard up
@@ -43,8 +43,11 @@
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
 #           $PITHEAD_OLD_IMAGE, which only a job that asked for it carries.
-#   all     every phase above except crossupdate, in that order — media, fault and reset included
-#           since #1064; rigmedia added since #2069
+#   stack   the DIY gate (tests/integration/run.sh) against a remote-node guest (#2062, § J):
+#           a non-destructive --check, then --lifecycle --fault-injection --hardening
+#           --auth-fail-closed on remote-main-secure-tari. A bench with no reserved node is a
+#           counted `missing` phase skip; #2443 and #2444 run from neither invocation.
+#   all     every phase above except crossupdate, in order (stack since #2062, rigmedia #2069)
 #
 # A failed assertion is recorded and the run continues, so one bench boot collects the whole
 # battery rather than stopping at the first fault; the run exits non-zero if any assertion failed.
@@ -135,7 +138,7 @@ while [ $# -gt 0 ]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     *)
@@ -173,6 +176,8 @@ source "$SCRIPT_DIR/phases/fault.sh" || exit $?
 source "$SCRIPT_DIR/phases/reset.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$SCRIPT_DIR/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/stack.sh
+source "$SCRIPT_DIR/phases/stack.sh" || exit $?
 require_host
 require_clean_bench
 if [ "$PHASE" = "boot" ] || [ "$PHASE" = "all" ]; then
@@ -206,6 +211,7 @@ media) _run_phase media phase_media ;;
 fault) _run_phase fault phase_fault ;;
 reset) _run_phase reset phase_reset ;;
 crossupdate) _run_phase crossupdate phase_crossupdate ;;
+stack) _run_phase stack phase_stack ;;
 all)
     # ALL of them. This arm once ran five of eight while the release checklist told a maintainer
     # that step 1 covered everything — the mid-write and mid-commit power cuts, the corrupt-bundle
@@ -219,6 +225,7 @@ all)
     _run_phase media phase_media
     _run_phase fault phase_fault
     _run_phase reset phase_reset
+    _run_phase stack phase_stack
     ;;
 *)
     echo "unknown phase: $PHASE" >&2
