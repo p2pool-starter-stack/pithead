@@ -146,7 +146,8 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
-    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now tari_lines
+    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now
+    local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
     # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
@@ -365,17 +366,24 @@ cd /data/pithead && ./pithead apply -y >/dev/null'; then
     if [ "$tries" -lt 60 ]; then
         ok "approved endpoints passed host preflight and p2pool consumed Tari chain_id from the current startup"
     else
-        # Name the failing sub-condition (#2314's pattern): remote_node_runtime_verdict returns a
-        # bare 1 on whichever of env/cmd/roundtrip broke first, so re-derive each one here rather
-        # than leave the next run guessing between a wrong .env, a p2pool command missing
-        # --merge-mine, and a genuinely absent chain_id line.
-        env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
+        # Name the failing sub-condition (#2314's pattern) as PASS/FAIL, not raw values: the log's
+        # own topology redaction replaces every host/port with the same placeholder, so two DIFFERENT
+        # values compare as identical text to a human reading the previous diagnostic. Only an
+        # explicit boolean survives that redaction.
+        env_ok=false cmd_ok=false direct_ok=false bridged_ok=false
+        env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r')
+        printf '%s\n' "$env_now" | grep -qxF "MONERO_NODE_HOST=$mh" &&
+            printf '%s\n' "$env_now" | grep -qxF "MONERO_RPC_PORT=$rpc" &&
+            printf '%s\n' "$env_now" | grep -qxF "MONERO_ZMQ_PORT=$zmq" &&
+            printf '%s\n' "$env_now" | grep -qxF "TARI_GRPC_ADDRESS=$th:$grpc" && env_ok=true
         cmd_now=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'def val(\$name): index(\$name) as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end; [val(\"--host\"),val(\"--rpc-port\"),val(\"--zmq-port\"),val(\"--merge-mine\")] | @tsv'" 2>/dev/null | tr -d '\r')
-        # mm_roundtrip_verdict's grep only ever matches its own success string; when it never fires,
-        # nothing about WHY reaches the log at all. Grab whatever p2pool actually said about Tari —
-        # a connection error, a timeout, a version mismatch — instead of a second silent "absent".
-        tari_lines=$(_ssh "podman logs --since '$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')' p2pool 2>&1 | head -n $MM_WINDOW_LINES | grep -ia tari | head -n 5" 2>/dev/null | tr '\n' '|')
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (want host=$mh rpc=$rpc zmq=$zmq tari=$th:$grpc; env: ${env_now:-unreadable}; cmd: ${cmd_now:-unreadable}; mm log: $(mm_roundtrip_verdict "$logs"); p2pool tari-related log lines: ${tari_lines:-none})"
+        [ "$cmd_now" = "$(printf '%s\t%s\t%s\ttari://%s:%s' "$mh" "$rpc" "$zmq" "$th" "$grpc")" ] && cmd_ok=true
+        flags_now=$(_ssh "podman inspect p2pool --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^P2POOL_FLAGS=//p'" 2>/dev/null | tr -d '\r')
+        socks5_now=false
+        case " $flags_now " in *" --socks5 "* | *" --socks5="*) socks5_now=true ;; esac
+        tari_endpoint_roundtrip_verdict "$logs" "$th:$grpc" && direct_ok=true
+        tari_endpoint_roundtrip_verdict "$logs" "127.0.0.1:$grpc" && bridged_ok=true
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
 
