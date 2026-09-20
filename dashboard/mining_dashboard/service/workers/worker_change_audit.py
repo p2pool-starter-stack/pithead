@@ -28,13 +28,18 @@ logger = logging.getLogger("WorkerChangeAudit")
 # exits. It lives beside the cap's marker for the reason the module docstring gives: one
 # implementation, so the two detections cannot drift apart.
 #
-# NOT one overall row ceiling, and not the retention trim #724 offered beside the per-worker cap.
-# #724 preferred the worker-keyed cap because "it also stops one rogue rig from crowding genuine
-# audit history out of any bounded table", and the mechanism is worth naming: under a trim-oldest
-# bound a flood EVICTS the oldest genuine rows rather than SPENDING a budget. Same harm, different
-# verb, which is why an admission ceiling and a retention trim are not interchangeable. #724's own
-# root cause -- ``audit_events`` is never pruned -- is untouched by this and still holds (the
-# ISSUE is closed; the condition is not).
+# NOT one overall row ceiling. #724 preferred the worker-keyed cap because "it also stops one
+# rogue rig from crowding genuine audit history out of any bounded table", and the mechanism is
+# worth naming: under a bound that trims to the newest N ROWS a flood EVICTS the oldest genuine
+# rows rather than SPENDING a budget. Same harm, different verb, which is why an admission ceiling
+# and a row-cap trim are not interchangeable.
+#
+# That argument reaches a row cap and NOT a time-based retention, which is the distinction #1814
+# turned on: ``audit_events`` now ages rows out at 30 days
+# (``mining_store.AUDIT_EVENTS_RETENTION_SEC``), purely by timestamp and with no source-awareness,
+# so no volume of flooding makes a genuine row leave earlier than its own clock says. #724's root
+# cause -- the table was never pruned at all -- is discharged; this cap still earns its keep by
+# bounding how many rows a single untrusted device can put INSIDE that window.
 #
 # WHAT THIS PROTECTS IS NARROWER THAN "AN ESTABLISHED RIG", and the gap is the residual worth
 # knowing. Membership in ``_rig_edit_window`` means "this NAME produced an out-of-band detection
