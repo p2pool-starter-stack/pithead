@@ -40,7 +40,7 @@ export function StatusLine({ result }) {
   const meta = STATUS_META[result.status] || { cls: "text-muted", label: result.status };
   const detail = result.reason || result.error || result.note || "";
   return html`
-    <p class=${"text-small mt-1 " + meta.cls}>
+    <p class=${"text-small mt-1 " + meta.cls} role="status" aria-live="polite">
         ${meta.label}${result.change_id ? html` · <span class="font-mono text-xs">${result.change_id}</span>` : null}
         ${detail ? html`<span class="text-muted"> — ${detail}</span>` : null}
     </p>`;

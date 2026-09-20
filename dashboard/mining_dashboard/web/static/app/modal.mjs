@@ -43,7 +43,7 @@ export class Modal extends Component {
                 e.preventDefault();
                 onCancel?.();
               }} onClose=${(e) => !this.unmounting && onClose?.(e)}>
-        <h3 tabindex="-1" ref=${this.titleRef}>${title}</h3>
+        <h2 tabindex="-1" ref=${this.titleRef}>${title}</h2>
         ${children}
       </dialog>`;
   }
