@@ -225,7 +225,9 @@ a dashboard proposal can never carry a real login — so the row's actual applic
 endpoint and login together in one host-side config edit (the route "Set up again" names in the
 dashboard's refusal text): never local mode with a foreign login attached to the still-running
 local monerod/wallet-rpc containers, and never remote mode short the login its own reachability
-preflight would demand. The row checks the current p2pool container's narrowly extracted
+preflight would demand. The same edit sets `p2pool.clearnet=true`: p2pool otherwise routes its
+Tari merge-mining connection through Tor, and Tor's exit policy refuses a private address — which
+the reserved test nodes always are. The row checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
 endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.

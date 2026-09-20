@@ -146,7 +146,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
-    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now
+    local raw patched dirty status destructive approval_required mh_shown th_shown env_now cmd_now tari_lines
 
     # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
     # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
@@ -307,13 +307,22 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     # apply, atomically — never local mode with a foreign login attached to the still-running
     # local monerod/wallet-rpc quadlets (36-quadlet-units.sh), and never remote mode short the
     # login preflight_remote_nodes will demand of it.
+    #
+    # p2pool.clearnet (#165) also has to move with it: p2pool_outbound_flags
+    # (lib/pithead/19-small-utilities.sh) wraps p2pool's Tari merge-mining connection in Tor's
+    # SOCKS5 proxy unless it is true, and Tor's exit policy refuses to relay to a private address —
+    # which the reserved test nodes always are, by the same convention documented for the
+    # tests/integration/ scenario matrix ("the natural choice is the box's own ... LAN address").
+    # Without this the endpoint lands but p2pool never completes the Tari handshake: it builds the
+    # client and waits on a chain_id gRPC call Tor will never carry to a LAN address.
     if raw=$(_ssh 'cat /data/pithead/config.json' 2>/dev/null) && [ -n "$raw" ]; then
         if patched=$(printf '%s' "$raw" | jq --arg mh "$mh" --argjson rpc "$rpc" --argjson zmq "$zmq" \
             --arg th "$th" --argjson grpc "$grpc" --arg u "$mu" --arg p "$mp" '
             .monero.mode = "remote" | .monero.remote = {host: $mh, rpc_port: $rpc, zmq_port: $zmq} |
             (if $u != "" then .monero.node_username = $u else . end) |
             (if $p != "" then .monero.node_password = $p else . end) |
-            .tari.mode = "remote" | .tari.remote = {host: $th, grpc_port: $grpc}'); then
+            .tari.mode = "remote" | .tari.remote = {host: $th, grpc_port: $grpc} |
+            .p2pool.clearnet = true'); then
             if printf '%s' "$patched" | _ssh 'cat >/data/pithead/config.json.os2333-node &&
 mv /data/pithead/config.json.os2333-node /data/pithead/config.json &&
 cd /data/pithead && ./pithead apply -y >/dev/null'; then
@@ -362,7 +371,11 @@ cd /data/pithead && ./pithead apply -y >/dev/null'; then
         # --merge-mine, and a genuinely absent chain_id line.
         env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r' | tr '\n' ' ')
         cmd_now=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'def val(\$name): index(\$name) as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end; [val(\"--host\"),val(\"--rpc-port\"),val(\"--zmq-port\"),val(\"--merge-mine\")] | @tsv'" 2>/dev/null | tr -d '\r')
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (want host=$mh rpc=$rpc zmq=$zmq tari=$th:$grpc; env: ${env_now:-unreadable}; cmd: ${cmd_now:-unreadable}; mm log: $(mm_roundtrip_verdict "$logs"))"
+        # mm_roundtrip_verdict's grep only ever matches its own success string; when it never fires,
+        # nothing about WHY reaches the log at all. Grab whatever p2pool actually said about Tari —
+        # a connection error, a timeout, a version mismatch — instead of a second silent "absent".
+        tari_lines=$(_ssh "podman logs --since '$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')' p2pool 2>&1 | head -n $MM_WINDOW_LINES | grep -ia tari | head -n 5" 2>/dev/null | tr '\n' '|')
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (want host=$mh rpc=$rpc zmq=$zmq tari=$th:$grpc; env: ${env_now:-unreadable}; cmd: ${cmd_now:-unreadable}; mm log: $(mm_roundtrip_verdict "$logs"); p2pool tari-related log lines: ${tari_lines:-none})"
         node_ok=0
     fi
 
