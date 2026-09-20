@@ -25,7 +25,7 @@ dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	671
 dashboard/tests/client/test_xmrig_client.py	489
 dashboard/tests/config/test_config.py	445
-dashboard/tests/frontend/config/configview.test.mjs	438
+dashboard/tests/frontend/workers/workerview.test.mjs	409
 dashboard/tests/service/network/test_egress.py	451
 dashboard/tests/service/test_annotation_coverage.py	579
 dashboard/tests/service/test_collapsed_return_channels.py	402
@@ -53,7 +53,6 @@ tests/integration/fakes/test_contract.py	437
 tests/integration/lib.sh	691
 tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
-tests/integration/mini-stack/run-mini-stack.sh	409
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-rigforge-writable-keys.sh	411

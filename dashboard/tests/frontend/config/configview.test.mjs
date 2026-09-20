@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ConfigView, PreviewModal, runUpgrade, UpgradeControl } from "../../../mining_dashboard/web/static/config/configview.mjs";
+import { ConfigView } from "../../../mining_dashboard/web/static/config/configview.mjs";
 import { editableCandidate } from "../../../mining_dashboard/web/static/config/configlogic.mjs";
 import { renderToString } from "../helpers/render.mjs";
 
@@ -74,19 +74,6 @@ async function withFastPoll(fetchStub, fn) {
     globalThis.setTimeout = realTimeout;
   }
 }
-
-const UPDATE = { available: true, latest: "v9.9.9", url: "https://example.invalid/rel" };
-
-// --- Confirm-gated disruptive change in the modal (#719) --------------------------------------
-//
-// An in-scope disruptive change previews as destructive (a CONFIRM row). The modal must warn (⚠),
-// show the type-APPLY box, and keep Confirm disabled until the operator types the literal APPLY.
-const CONFIRM_PREVIEW = {
-  changes: [
-    { flag: "CONFIRM", key: "monero.clearnet_initial_sync", msg: "Clearnet initial sync ENABLED — host IP exposed during IBD." },
-  ],
-  destructive: true,
-};
 
 test("poll rides out a transient fetch failure (container recreate) then returns the result", async () => {
   let calls = 0;
@@ -227,212 +214,47 @@ test("a rejected appliance preview leaves an authored error unlabelled", async (
   assert.doesNotMatch(out, /this machine's own log/);
 });
 
-test("runUpgrade posts the seen version, skips 'running', rides out the restart, returns the outcome", async () => {
-  let posted = null;
-  let polls = 0;
-  const fetchStub = async (url, opts) => {
-    if (url === "/api/control/upgrade") {
-      posted = { body: JSON.parse(opts.body), headers: opts.headers };
-      return { status: 202, ok: false, json: async () => ({ id: ID, status: "pending" }) };
-    }
-    polls++;
-    if (polls === 1) return okResult({ status: "running", version: "v9.9.9" });
-    if (polls === 2) throw new TypeError("Failed to fetch"); // dashboard recreated mid-upgrade
-    return okResult({ status: "upgraded", version: "v9.9.9" });
-  };
-  const out = await withFastPoll(fetchStub, () => runUpgrade("v9.9.9"));
-  assert.equal(out.status, "upgraded");
-  assert.deepEqual(posted.body, { version: "v9.9.9" }); // the proposal — nothing else crosses
-  assert.equal(posted.headers["X-Pithead-Control"], "1"); // CSRF guard rides every mutation
-});
+// Minimal disruptive preview, only for the live-region assertions below — the modal's own
+// rendering of a CONFIRM change is covered in configview-upgrade.test.mjs.
+const CONFIRM_PREVIEW = {
+  changes: [
+    { flag: "CONFIRM", key: "monero.clearnet_initial_sync", msg: "Clearnet initial sync ENABLED — host IP exposed during IBD." },
+  ],
+  destructive: true,
+};
 
-test("runUpgrade rides out a 502/503/504 from the proxy (upstream mid-restart), not just a dropped connection (#622)", async () => {
-  let polls = 0;
-  const fetchStub = async (url) => {
-    if (url === "/api/control/upgrade") {
-      return { status: 202, ok: false, json: async () => ({ id: ID, status: "pending" }) };
-    }
-    polls++;
-    // caddy stays up and answers a gateway error while the dashboard upstream is recreated —
-    // the common self-upgrade state, and the one the old poller misclassified as terminal.
-    if (polls <= 3) return { status: 502, ok: false, json: async () => ({}) };
-    return okResult({ status: "upgraded", version: "v9.9.9" });
-  };
-  const out = await withFastPoll(fetchStub, () => runUpgrade("v9.9.9"));
-  assert.equal(out.status, "upgraded"); // rode out the 502s to the durable result, no throw
-});
-
-test("runUpgrade surfaces a host-side rejection as the outcome, not a throw", async () => {
-  const fetchStub = async (url) =>
-    url === "/api/control/upgrade"
-      ? { status: 202, ok: false, json: async () => ({ id: ID, status: "pending" }) }
-      : okResult({ status: "rejected", error: "already up to date" });
-  const out = await withFastPoll(fetchStub, () => runUpgrade("v9.9.9"));
-  assert.equal(out.status, "rejected");
-  assert.match(out.error, /up to date/);
-});
-
-test("UpgradeControl renders nothing without a newer release or with the channel off", () => {
-  const inst = (props) => {
-    const c = new UpgradeControl(props);
-    c.props = props;
-    return renderToString(c.render());
-  };
-  assert.equal(inst({ update: null, enabled: true }), "");
-  assert.equal(inst({ update: { available: false }, enabled: true }), "");
-  assert.equal(inst({ update: UPDATE, enabled: false }), "");
-  assert.match(inst({ update: UPDATE, enabled: true }), /Upgrade to v9\.9\.9/);
-});
-
-test("the confirm modal arms only on a typed UPGRADE", () => {
-  const props = { update: UPDATE, enabled: true };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "confirm";
-  assert.match(renderToString(inst.render()), /disabled/); // unarmed until typed
-  inst.state.confirmText = "UPGRADE";
-  assert.doesNotMatch(renderToString(inst.render()), /disabled/);
-});
-
-// #637: the host names the restore point in the result — the done modal shows the fresh-dir
-// rollback copy, the failed modal shows the in-place pre-upgrade config/.env copies. A result
-// without the field (an in-place success, an old runner) renders neither sentence.
-test("the done modal names the rollback dir when the result carries one (#637)", () => {
-  const props = { update: UPDATE, enabled: true };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "done";
-  inst.state.result = { status: "upgraded", version: "v9.9.9", rollback: "/srv/pithead-v1.3.1" };
-  assert.match(renderToString(inst.render()), /\/srv\/pithead-v1\.3\.1/);
-  inst.state.result = { status: "upgraded", version: "v9.9.9" };
-  assert.doesNotMatch(renderToString(inst.render()), /rollback copy/);
-});
-
-test("the failed modal names the pre-upgrade config/.env copies when the result carries them (#637)", () => {
-  const props = { update: UPDATE, enabled: true };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "failed";
-  inst.state.result = { status: "failed", error: "boom", backup: "/x/config.json.bak-upgrade-1 /x/.env.bak-upgrade-1" };
-  assert.match(renderToString(inst.render()), /bak-upgrade-1/);
-  inst.state.result = { status: "failed", error: "boom" };
-  assert.doesNotMatch(renderToString(inst.render()), /Pre-upgrade copies/);
-});
-
-test("an appliance upgrade failure labels the log and hides host-only recovery", () => {
-  const props = { update: UPDATE, enabled: true, appliance: true };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "failed";
-  inst.state.result = {
-    status: "failed",
-    log: "upgrade log tail",
-    recovery: "cd /host/path && ./pithead upgrade",
-    backup: "/host/config.json.bak /host/.env.bak",
-  };
-  const out = renderToString(inst.render());
-  assert.match(out, /this machine's own log from the failed\s+upgrade/);
-  assert.match(out, /upgrade log tail/);
-  assert.doesNotMatch(out, /pithead upgrade|\/host\/path|\/host\/config/);
-  assert.match(out, /copies of <code>config\.json<\/code> and\s+<code>\.env<\/code> are kept on this machine/);
-});
-
-test("a host upgrade failure keeps its separate recovery and backup paths", () => {
-  const props = { update: UPDATE, enabled: true, appliance: false };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "failed";
-  inst.state.result = {
-    status: "failed",
-    log: "upgrade log tail",
-    recovery: "cd /host/path && ./pithead upgrade",
-    backup: "/host/config.json.bak /host/.env.bak",
-  };
-  const out = renderToString(inst.render());
-  assert.match(out, /upgrade log tail/);
-  assert.match(out, /cd \/host\/path && \.\/pithead upgrade/);
-  assert.match(out, /\/host\/config\.json\.bak/);
-});
-
-test("an authored upgrade rejection is not mislabeled as a machine log", () => {
-  const props = { update: UPDATE, enabled: true, appliance: true };
-  const inst = new UpgradeControl(props);
-  inst.props = props;
-  inst.state.phase = "failed";
-  inst.state.result = { status: "rejected", error: "already up to date" };
-  const out = renderToString(inst.render());
-  assert.match(out, /already up to date/);
-  assert.doesNotMatch(out, /machine's own log/);
-});
-
-// --- Preview modal (#504) --------------------------------------------------------------
-//
-// dashboard.energy is config.json-only, so the host runner previews an energy edit as a normal
-// INFO change row (not the old, non-committable HOST note). The modal must render it as a pending
-// change and arm Confirm — a non-destructive change needs no typed APPLY.
-test("an INFO change (e.g. dashboard.energy) renders committable and arms Confirm", () => {
-  const preview = {
-    changes: [{ flag: "INFO", key: "dashboard.energy", msg: "Energy calculator settings updated." }],
-    destructive: false,
-  };
-  const out = renderToString(PreviewModal({ preview, confirmText: "", busy: false }));
-  assert.match(out, /Energy calculator settings updated\./); // the change is shown
-  assert.doesNotMatch(out, /No configuration changes detected/);
-  // Confirm is armed: the only disabled control is absent for a non-destructive, non-empty change.
-  assert.doesNotMatch(out, /disabled/);
-});
-
-test("an empty preview leaves Confirm disabled", () => {
-  const out = renderToString(
-    PreviewModal({ preview: { changes: [], destructive: false }, confirmText: "", busy: false }),
-  );
-  assert.match(out, /No configuration changes detected/);
-  assert.match(out, /disabled/); // nothing to commit
-});
-
-test("a CONFIRM change warns and gates Confirm behind the typed APPLY (#719)", () => {
-  const notYet = renderToString(
-    PreviewModal({ preview: CONFIRM_PREVIEW, confirmText: "", busy: false }),
-  );
-  assert.match(notYet, /⚠/); // the disruptive row is warned
-  assert.match(notYet, /host IP exposed during IBD/);
-  assert.match(notYet, /Type <code>APPLY<\/code> to confirm/); // the type-to-confirm box is shown
-  // Confirm is still disabled — the confirm-apply button carries `disabled` until APPLY is typed.
-  const btnNotYet = notYet.match(/<button class="btn-toggle active"[^>]*>/)[0];
-  assert.match(btnNotYet, /disabled/);
-});
-
-test("a CONFIRM change arms Confirm once APPLY is typed (#719)", () => {
-  const armed = renderToString(
-    PreviewModal({ preview: CONFIRM_PREVIEW, confirmText: "APPLY", busy: false }),
-  );
-  const btnArmed = armed.match(/<button class="btn-toggle active"[^>]*>/)[0];
-  assert.doesNotMatch(btnArmed, /disabled/); // now committable
-});
-
-// --- Native <dialog> modal (#1876) -----------------------------------------------------
-
-test("the review modal is a <dialog>, not a backdrop div", () => {
-  const out = renderToString(
-    PreviewModal({ preview: { changes: [], destructive: false }, confirmText: "", busy: false }),
-  );
-  assert.match(out, /^<dialog class="card config-modal"/);
-  assert.match(out, /role="dialog"/);
-  assert.match(out, /aria-modal="true"/);
-  assert.match(out, /aria-label="Review changes"/);
-  assert.doesNotMatch(out, /config-modal-backdrop/);
-});
-
-test("every UpgradeControl phase modal (confirm/upgrading/done/failed) is a <dialog>", () => {
-  const props = { update: UPDATE, enabled: true };
-  for (const phase of ["confirm", "upgrading", "done", "failed"]) {
-    const inst = new UpgradeControl(props);
-    inst.props = props;
-    inst.state.phase = phase;
-    if (phase === "done") inst.state.result = { status: "upgraded", version: "v9.9.9" };
-    if (phase === "failed") inst.state.result = { error: "boom" };
-    const out = renderToString(inst.render());
-    assert.match(out, /<dialog class="card config-modal"/, phase);
-    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+// #1859 (the repo owner's cycle-4 addendum names this phase by string): entering the previewing
+// phase only flipped the save button's own label, and the same `busy` flag disables that button —
+// the phase change landed on an element that had just left the focus order, so a screen reader was
+// told nothing. The remedy is a live region that is already in the DOM when the text arrives.
+test("the previewing phase announces itself in a live region, not on the button it disables", async () => {
+  const view = new ConfigView({});
+  view.setState = (patch) => Object.assign(view.state, patch);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => okResult({ network: { mtu: 1500 } });
+  try {
+    await view.load();
+  } finally {
+    globalThis.fetch = realFetch;
   }
+  assert.equal(view.state.phase, "form");
+  const EMPTY = /<p class="sr-only" role="status" aria-live="polite"><\/p>/;
+  // Present and empty while the form is idle: a region inserted at the same moment as its text is
+  // not reliably announced, so the element has to ship with the form.
+  assert.match(renderToString(view.render()), EMPTY);
+
+  Object.assign(view.state, { phase: "previewing" });
+  const previewing = renderToString(view.render());
+  assert.match(previewing, /<p class="sr-only" role="status" aria-live="polite">Previewing changes…<\/p>/);
+  // The visible wording rides the button, which this phase disables — the region exists because
+  // that button is what a screen-reader user can no longer reach.
+  assert.match(previewing, /<button class="btn-toggle active" disabled>Previewing…<\/button>/);
+
+  // Clears when the preview resolves (the modal the confirm phase opens needs a preview to draw).
+  Object.assign(view.state, { phase: "confirm", preview: CONFIRM_PREVIEW });
+  assert.match(renderToString(view.render()), EMPTY);
+  // Keyed to the previewing phase, not to `busy`: `busy` also covers the commit, where this line
+  // would otherwise claim a preview was running while the apply was.
+  Object.assign(view.state, { phase: "committing" });
+  assert.doesNotMatch(renderToString(view.render()), /Previewing changes…/);
 });

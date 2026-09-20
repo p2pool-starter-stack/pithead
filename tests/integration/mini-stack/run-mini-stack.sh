@@ -14,6 +14,7 @@
 #    4. Tari down (required)      → dashboard REJECTS workers (stops itest-xmrig-proxy) (#31)
 #    5. Tari back                 → dashboard READMITS workers
 #    6. monerod down              → dashboard REJECTS workers (#31/#564)
+#    +. alert sinks (#2263)       → Telegram, webhook, and ntfy receive the real down edge
 #    7. monerod back              → dashboard READMITS workers (#564)
 #    8. monerod busy/mid-reorg    → dashboard REJECTS, then READMITS on recovery
 #    9. monerod + Tari both down  → REJECTS; recovering only one does NOT readmit; both does
@@ -90,94 +91,76 @@ assert_stays() { # assert_stays <label> <container> <state> <seconds>
 HOST_ADDR="${PITHEAD_TEST_HOST:-127.0.0.1}"
 set_monerod() { ctl "http://$HOST_ADDR:28081/control" "{\"mode\":\"$1\"}" || c_bad "set monerod $1" "control POST failed"; }
 set_tari() { ctl "http://$HOST_ADDR:28152/control" "{\"mode\":\"$1\"}" || c_bad "set tari $1" "control POST failed"; }
-fake_ctl() { # <container> <port> <json>
-    compose exec -T "$1" python3 -c '
-import sys
-import urllib.request
-
-request = urllib.request.Request(
-    f"http://127.0.0.1:{sys.argv[1]}/control",
-    data=sys.argv[2].encode(),
-    headers={"Content-Type": "application/json"},
-)
-print(urllib.request.urlopen(request, timeout=5).read().decode())
-' "$2" "$3"
-}
-set_wallet() { fake_ctl fake-wallet-rpc 18082 "$1" >/dev/null || c_bad "set Monero wallet transfers" "control POST failed"; }
-set_tari_wallet() { fake_ctl fake-tari-wallet 18153 "$1" >/dev/null || c_bad "set Tari wallet transfers" "control POST failed"; }
-wallet_calls() { fake_ctl fake-wallet-rpc 18082 '{}' | jq -r '.calls'; }
-tari_wallet_calls() { fake_ctl fake-tari-wallet 18153 '{}' | jq -r '.calls'; }
-wallet_min_height() { fake_ctl fake-wallet-rpc 18082 '{}' | jq -r '.last_min_height'; }
 
 # Healthchecks.io e2e (#79): the fake receiver records each ping path to /hc/pings.log. Poll it
 # until an (extended-regex) pattern shows up, proving the REAL dashboard loop fired that request.
 hc_pings() { compose exec -T fake-hc cat /tmp/pings.log 2>/dev/null; }
-wait_hc() { # wait_hc <label> <ere-pattern> [timeout]
-    local label="$1" pat="$2" timeout="${3:-40}" end
+sink_requests() { compose exec -T fake-sink cat /tmp/requests.log 2>/dev/null; }
+
+# wait_for_line <getter-fn> <log-name> <label> <ere-pattern> [timeout]: poll a fake's log (via its
+# reader function) until a line matches, or time out. hc_pings/sink_requests are the two readers.
+wait_for_line() {
+    local getter="$1" logname="$2" label="$3" pat="$4" timeout="${5:-40}" end
     end=$(($(date +%s) + timeout))
     while :; do
-        hc_pings | grep -Eq "$pat" && {
+        "$getter" | grep -Eq "$pat" && {
             c_ok "$label"
             return 0
         }
         [ "$(date +%s)" -ge "$end" ] && {
-            c_bad "$label" "no line matching /$pat/ in the ping log (got: $(hc_pings | tr '\n' ' '))"
+            c_bad "$label" "no line matching /$pat/ in the $logname log (got: $("$getter" | tr '\n' ' '))"
             return 1
         }
         sleep 1
     done
 }
-
-# Payouts poll every 10th collection cycle; at UPDATE_INTERVAL=2 that's a 20s poll interval, so
-# the deadline must cover at least two of them to catch a poll that lands just after the replay.
-wait_min_height() { # wait_min_height <expected> [timeout]
-    local want="$1" timeout="${2:-50}" end
+wait_hc() { wait_for_line hc_pings ping "$1" "$2" "${3:-40}"; }        # wait_hc <label> <pattern> [timeout]
+wait_sink() { wait_for_line sink_requests sink "$1" "$2" "${3:-40}"; } # wait_sink <label> <pattern> [timeout]
+wait_sink_alerts() {
+    local timeout=40 end
     end=$(($(date +%s) + timeout))
     while :; do
-        [ "$(wallet_min_height)" = "$want" ] && return 0
-        [ "$(date +%s)" -ge "$end" ] && return 1
-        sleep 1
-    done
-}
-
-wait_payout() { # wait_payout <chain> <amount> [timeout]
-    local chain="$1" amount="$2" timeout="${3:-50}" end result
-    end=$(($(date +%s) + timeout))
-    while :; do
-        result="$(
-            compose exec -T dashboard python3 - "$chain" "$amount" <<'PY' 2>&1
-import json
-import sys
-import urllib.request
-
-chain, amount = sys.argv[1], float(sys.argv[2])
-state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
-confirmed = state["earnings"]["confirmed" if chain == "monero" else "tari_confirmed"]
-total = confirmed["xmr_all" if chain == "monero" else "xtm_all"]
-if confirmed.get("enabled") and total == amount:
-    print("OK")
-PY
-        )"
-        [ "$result" = "OK" ] && {
-            c_ok "$chain payout appears in /api/state"
+        if sink_requests | python3 -c '
+import json, sys
+rows = [json.loads(line) for line in sys.stdin if line.strip()]
+paths = {"/botitest-token/sendMessage", "/webhook", "/ntfy"}
+alerts = [row for row in rows if row["method"] == "POST" and "Monero node is DOWN" in row["body"]]
+assert paths == {row["path"] for row in alerts}
+assert len(alerts) == len(paths)
+ntfy = next(row for row in alerts if row["path"] == "/ntfy")
+assert ntfy.get("headers", {}).get("Authorization") == "Bearer itest-token"
+'; then
+            c_ok "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert"
             return 0
-        }
+        fi
         [ "$(date +%s)" -ge "$end" ] && {
-            c_bad "$chain payout appears in /api/state" "$result"
+            c_bad "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert" "$(sink_requests | tr '\n' ' ')"
             return 1
         }
         sleep 1
     done
 }
 
-alert_count() { hc_pings | grep -cx '/alerts' || true; }
-payout_alert_count() { compose exec -T fake-hc sh -c "grep -cx payout_confirmed /tmp/events.log 2>/dev/null || true"; }
+# Poll until the dashboard's REAL process answers /api/state (it binds 127.0.0.1:8000 inside the
+# container) — used after every boot/restart/recreate below, since the container reaching
+# "running" says nothing about the python process inside it being ready yet.
+wait_dashboard_api() { # wait_dashboard_api [tries]
+    local tries="${1:-30}"
+    for _ in $(seq 1 "$tries"); do
+        compose exec -T dashboard python3 -c \
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && return 0
+        sleep 2
+    done
+    return 1
+}
 
 teardown() {
     log "tearing down"
     compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
 trap teardown EXIT
+
+source "$HERE/run-payout-scenario.sh"
 
 log "building images"
 if ! compose build >/dev/null 2>&1; then
@@ -188,18 +171,8 @@ fi
 log "starting the mini-stack (fakes boot mid-sync)"
 compose up -d >/dev/null 2>&1
 
-# Wait for the dashboard's API to answer (it binds 127.0.0.1:8000 inside the container).
 log "waiting for the dashboard API"
-api_up=0
-for _ in $(seq 1 30); do
-    if compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1; then
-        api_up=1
-        break
-    fi
-    sleep 2
-done
-[ "$api_up" = 1 ] && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
+wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
 
 # 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
 #    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
@@ -299,6 +272,7 @@ if [ "$(cstate itest-p2pool)" = "running" ]; then
 else
     c_bad "monerod-outage rejection leaves itest-p2pool running" "itest-p2pool is '$(cstate itest-p2pool)'"
 fi
+wait_sink_alerts
 
 # 7. monerod recovers → readmit (after the recovery-hysteresis window). (#564)
 log "scenario 7: readmits workers when monerod recovers"
@@ -328,11 +302,7 @@ set_tari synced
 #     re-held: both containers stay running across the restart. (#35 persistence)
 log "scenario 10: a dashboard restart does not re-hold a released miner"
 compose restart dashboard >/dev/null 2>&1
-for _ in $(seq 1 30); do
-    compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && break
-    sleep 2
-done
+wait_dashboard_api
 assert_stays "itest-p2pool stays up across restart" itest-p2pool running 6
 assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy running 6
 
@@ -342,67 +312,28 @@ assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy runni
 #     cycle rather than a live toggle.
 log "scenario 11: Tari-optional — sync gate releases on monerod alone; Tari outage does not reject workers"
 compose down -v --remove-orphans >/dev/null 2>&1 || true
-TARI_REQUIRED=false compose up -d >/dev/null 2>&1
-api_up=0
-for _ in $(seq 1 30); do
-    if compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1; then
-        api_up=1
-        break
-    fi
-    sleep 2
-done
-[ "$api_up" = 1 ] && c_ok "Tari-optional stack: dashboard API is up" || c_bad "Tari-optional stack: dashboard API is up" "no /api/state after ~60s"
+TARI_REQUIRED=false TELEGRAM_ENABLED=false NOTIFY_WEBHOOK_URLS='' NTFY_URL='' compose up -d >/dev/null 2>&1
+wait_dashboard_api && c_ok "Tari-optional stack: dashboard API is up" || c_bad "Tari-optional stack: dashboard API is up" "no /api/state after ~60s"
 # Tari is non-blocking, so monerod alone gates the sync-hold; release it to reach steady state.
 set_monerod synced
 assert_state "Tari-optional: released itest-xmrig-proxy running" itest-xmrig-proxy running 90
 set_tari down
 assert_stays "Tari-optional: itest-xmrig-proxy keeps mining through a Tari outage" itest-xmrig-proxy running 8
+set_monerod down
+assert_state "Tari-optional: monerod outage still rejects workers" itest-xmrig-proxy exited 90
+# A dead recorder returns the same empty string as a quiet one: a missing container, a failed
+# exec or an unreadable log would all read as "no requests" and pass this control vacuously.
+# Prove fake-sink is up FIRST, so emptiness means the sinks stayed silent (#2263).
+sink_state="$(cstate itest-fake-sink)"
+if [ "$sink_state" != running ]; then
+    c_bad "disabled alert sinks make no requests" "recorder itest-fake-sink is '$sink_state' — an empty log proves nothing"
+elif [ -z "$(sink_requests)" ]; then
+    c_ok "disabled alert sinks make no requests"
+else
+    c_bad "disabled alert sinks make no requests" "$(sink_requests | tr '\n' ' ')"
+fi
 
-# 12. Payout confirmation (#2267): drive each real wallet client through its network fake, then
-# prove the persisted total is exposed by /api/state and the configured webhook saw one alert.
-# Replaying the same payload must not add either a second total or a second alert; empty wallets
-# remain enabled but invent nothing.
-log "scenario 12: payout confirmation reaches state and alerts exactly once"
-compose exec -T fake-hc sh -c ': > /tmp/pings.log; : > /tmp/events.log'
-set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
-wait_payout monero 0.25
-wait_hc "Monero payout fires one alert" '^/alerts$' 50
-if [ "$(payout_alert_count)" = 1 ]; then c_ok "Monero payout alert fired once"; else c_bad "Monero payout alert fired once" "got $(payout_alert_count)"; fi
-set_wallet '{"transfers":[{"txid":"a1","amount":250000000000,"height":100,"timestamp":1000}]}'
-wait_min_height 100
-if [ "$(payout_alert_count)" = 1 ] && [ "$(wallet_min_height)" = 100 ]; then c_ok "Monero payout replay fires no alert and seeds min_height"; else c_bad "Monero payout replay fires no alert and seeds min_height" "alerts=$(payout_alert_count), min_height=$(wallet_min_height)"; fi
-
-compose exec -T fake-hc sh -c ': > /tmp/pings.log; : > /tmp/events.log'
-set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
-wait_payout tari 2.5
-wait_hc "Tari payout fires one alert" '^/alerts$' 50
-if [ "$(payout_alert_count)" = 1 ]; then c_ok "Tari payout alert fired once"; else c_bad "Tari payout alert fired once" "got $(payout_alert_count)"; fi
-set_tari_wallet '{"transactions":[{"tx_id":7,"amount":2500000,"timestamp":1000,"mined_in_block_height":100}]}'
-sleep 22
-if [ "$(payout_alert_count)" = 1 ]; then c_ok "Tari payout replay fires no alert"; else c_bad "Tari payout replay fires no alert" "got $(payout_alert_count)"; fi
-set_wallet '{"transfers":[]}'
-set_tari_wallet '{"transactions":[]}'
-sleep 22
-empty_state="$(
-    compose exec -T dashboard python3 - <<'PY' 2>&1
-import json
-import urllib.request
-
-state = json.load(urllib.request.urlopen("http://127.0.0.1:8000/api/state", timeout=5))
-monero, tari = state["earnings"]["confirmed"], state["earnings"]["tari_confirmed"]
-if monero.get("enabled") and tari.get("enabled") and monero.get("xmr_all") == 0.25 and tari.get("xtm_all") == 2.5:
-    print("OK")
-PY
-)"
-if [ "$empty_state" = OK ] && [ "$(payout_alert_count)" = 1 ]; then c_ok "empty wallets stay enabled and add nothing"; else c_bad "empty wallets stay enabled and add nothing" "$empty_state; alerts=$(payout_alert_count)"; fi
-
-# Control: disabling payout confirmation constructs neither wallet client nor any wallet dial.
-set_wallet '{"transfers":[],"reset_calls":true}'
-set_tari_wallet '{"transactions":[],"reset_calls":true}'
-PAYOUT_CONFIRM_ENABLED=false TARI_PAYOUT_CONFIRM_ENABLED=false compose up -d --force-recreate dashboard >/dev/null 2>&1
-sleep 22
-if [ "$(wallet_calls)" = 0 ] && [ "$(tari_wallet_calls)" = 0 ]; then c_ok "disabled payout confirmation dials no wallet"; else c_bad "disabled payout confirmation dials no wallet" "Monero=$(wallet_calls), Tari=$(tari_wallet_calls)"; fi
+scenario_payout_confirmation
 
 echo ""
 log "mini-stack: $PASS passed, $FAIL failed"
