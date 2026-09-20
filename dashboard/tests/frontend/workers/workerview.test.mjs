@@ -334,3 +334,76 @@ test("an apply result (StatusLine) is a live region", () => {
   const out = renderToString(inst.render());
   assert.match(out, /role="status" aria-live="polite">\s*applied/i);
 });
+
+// --- Escape / backdrop discarding an unsaved edit (#1877) ----------------------------------
+
+test("Escape (the dialog's cancel event) is prevented while a table edit is unsaved, and the edit survives", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+  assert.deepEqual(inst.state.tableEdits, { DONATION: "9" }); // panel stayed open, edit intact
+});
+
+test("Escape is prevented while the JSON textarea differs from the loaded snapshot", () => {
+  const inst = readyInstance();
+  inst.state.mode = "json";
+  inst.onJsonInput(JSON.stringify({ DONATION: 9 }));
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+});
+
+test("Escape is not prevented when nothing is unsaved", () => {
+  const inst = readyInstance();
+  const vnode = inst.render();
+  let prevented = false;
+  vnode.props.onCancel({ preventDefault: () => (prevented = true) });
+  assert.equal(prevented, false);
+});
+
+test("a backdrop click does not close the dialog while an edit is unsaved", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  let closed = false;
+  inst.dialogRef.current = { close: () => (closed = true) };
+  const vnode = inst.render();
+  vnode.props.onClick({ target: inst.dialogRef.current });
+  assert.equal(closed, false);
+});
+
+test("a backdrop click closes the dialog when there is nothing unsaved", () => {
+  const inst = readyInstance();
+  let closed = false;
+  inst.dialogRef.current = { close: () => (closed = true) };
+  const vnode = inst.render();
+  vnode.props.onClick({ target: inst.dialogRef.current });
+  assert.equal(closed, true);
+});
+
+test("an unsaved edit shows a line under Apply instead of a confirm() prompt", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  const out = renderToString(inst.render());
+  assert.match(out, /Unsaved/);
+});
+
+test("the unsaved-edit line stays out of the way while an apply is in flight", () => {
+  const inst = readyInstance();
+  inst.state.tableEdits = { DONATION: "9" };
+  inst.state.busy = true; // an apply already carrying those edits to the rig
+  assert.doesNotMatch(renderToString(inst.render()), /Unsaved/);
+});
+
+test("no unsaved-edit line when the panel is clean", () => {
+  const out = renderToString(readyInstance().render());
+  assert.doesNotMatch(out, /Unsaved/);
+});
+
+test("the worker title is focusable so componentDidMount can move initial focus there", () => {
+  const out = renderToString(readyInstance().render());
+  assert.match(out, /<h2[^>]*tabindex="-1"[^>]*>Worker · rig1<\/h2>/);
+});

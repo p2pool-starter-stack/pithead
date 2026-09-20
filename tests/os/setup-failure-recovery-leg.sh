@@ -9,7 +9,7 @@
 # does when provisioning fails after the answers were accepted. Both are read by the same phase.
 # `failed`, not `setup`. The two are a real distinction the wizard makes and this verdict had it
 # backwards: a preflight refusal keeps the operator ON the form (`setup`, which
-# node_preflight_state_retained asserts and which passes), while a setup that failed after the
+# node_preflight_refused asserts and which passes), while a setup that failed after the
 # answers were accepted reopens the page as `failed`. The dashboard pins that vocabulary in its own
 # tier 1 (`dashboard/tests/web/test_wizard_recovery.py` asserts `stage == "failed"` twice, and
 # `wizard_recovery.py` branches on it), so this was checkable without a guest all along.
