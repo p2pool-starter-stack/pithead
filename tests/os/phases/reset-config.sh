@@ -12,6 +12,7 @@
 _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
     local onion_before onion_after cr_height_before cr_height_after cr_htries fb_ran boot_ran
+    local cr_want cr_probe cr_what
     onion_before=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
     # monerod's RPC can still be starting even once "stack containers running" above only checked
     # dashboard+caddy — its baked archive is the largest and loads last (appliance-egress-leg.sh's
@@ -52,31 +53,36 @@ _phase_reset_config() {
         bad "config-reset did not flip the boot conditions (firstboot ran: $fb_ran, boot ran: $boot_ran)"
     fi
 
-    if _ssh "test -f /data/pithead/config.json"; then
-        bad "config.json survived config-reset"
-    else
-        ok "config.json is gone"
-    fi
-    if _ssh "test -f /data/pithead/.env"; then
-        bad ".env survived config-reset"
-    else
-        ok ".env is gone"
-    fi
-    if _ssh "test -f /data/pithead/Caddyfile"; then
-        bad "Caddyfile survived config-reset"
-    else
-        ok "Caddyfile is gone"
-    fi
-    if _ssh "nft list table inet pithead_egress" >/dev/null 2>&1; then
-        bad "the Tor-only egress table survived config-reset"
-    else
-        ok "the egress firewall was removed"
-    fi
-    if _ssh "test -d /data/pithead/data/monero"; then
-        ok "the monero chain directory survived config-reset"
-    else
-        bad "the monero chain directory is gone — config-reset wiped a chain it promised to keep"
-    fi
+    # What config-reset must clear, and the one thing it must keep, as a table: one row per probe
+    # instead of one five-line copy per probe. machine-role is a row of its own rather than only
+    # the boot-condition check above, which proves the EFFECT — this proves the mechanism that
+    # produced it, so a future re-arm done some other way is still legible here (#2347).
+    #
+    # `</dev/null` on the probe is load-bearing, not tidiness: `_ssh` runs ssh without -n, and ssh
+    # reads stdin, which inside this loop is the here-doc — the first probe would swallow every
+    # remaining row and the loop would end after one line (measured on the 2026-09-11 battery;
+    # appliance-egress-leg.sh carries the same note for the same reason). A here-doc and never a
+    # pipe, too: `ok`/`bad` increment the run's counters, which a piped subshell would discard.
+    while IFS='|' read -r cr_want cr_probe cr_what; do
+        if _ssh "$cr_probe" </dev/null >/dev/null 2>&1; then
+            if [ "$cr_want" = kept ]; then
+                ok "$cr_what survived config-reset"
+            else
+                bad "$cr_what survived config-reset"
+            fi
+        elif [ "$cr_want" = kept ]; then
+            bad "$cr_what is gone — config-reset removed something it promised to keep"
+        else
+            ok "$cr_what is gone"
+        fi
+    done <<'CR_PROBES'
+gone|test -f /data/pithead/config.json|config.json
+gone|test -f /data/pithead/.env|.env
+gone|test -f /data/pithead/Caddyfile|Caddyfile
+gone|test -f /data/pithead/machine-role|the machine-role marker that held the wizard shut
+gone|nft list table inet pithead_egress|the Tor-only egress table
+kept|test -d /data/pithead/data/monero|the monero chain directory
+CR_PROBES
 
     if _wait_setup_page 120; then
         ok "the wizard gate serves again after config-reset"

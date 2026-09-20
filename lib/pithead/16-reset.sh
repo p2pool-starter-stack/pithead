@@ -108,7 +108,7 @@ config_reset() {
 
     echo -e "${C_RED}[WARNING] This is a DESTRUCTIVE action.${C_RESET}"
     echo "It clears your configuration and reopens the setup wizard."
-    log "Kept: chains, wallets, Tor onion keys, dashboard history — every data directory stays. Only config.json and the files rendered from it go."
+    log "Kept: chains, wallets, Tor onion keys, dashboard history — every data directory stays. Only config.json, the files rendered from it, and the machine-role marker that holds the wizard shut go."
     if [ "$assume_yes" -eq 0 ]; then
         printf "Type 'config-reset' to continue: "
         read -r arg || true

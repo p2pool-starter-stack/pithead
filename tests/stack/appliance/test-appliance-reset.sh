@@ -67,6 +67,10 @@ assert_eq "config-reset removes config.json" "$([ -f "$CR/config.json" ] || echo
 assert_eq "config-reset removes .env" "$([ -f "$CR/.env" ] || echo gone)" "gone"
 assert_eq "config-reset removes Caddyfile" "$([ -f "$CR/Caddyfile" ] || echo gone)" "gone"
 assert_eq "config-reset removes machine-role (#2347, or pithead-boot's OR'd condition stays armed)" "$([ -f "$CR/machine-role" ] || echo gone)" "gone"
+# The operator is told what a DESTRUCTIVE verb takes, and the enumeration drifting from the
+# behaviour is how #2347 stayed invisible: the line named config.json and its rendered files while
+# the marker that actually holds the wizard shut went unmentioned (and, before the fix, unremoved).
+assert_contains "config-reset's keep/remove line names the machine-role marker it removes" "$out" "machine-role"
 assert_eq "config-reset KEEPS the monero chain" "$([ -f "$CR/data/monero/blockchain" ] && echo kept)" "kept"
 assert_eq "config-reset KEEPS the Tor onion key" "$([ -f "$CR/data/tor/hostname" ] && echo kept)" "kept"
 assert_eq "config-reset off the appliance does not reboot" "$([ -f "$rebooted" ] || echo no)" "no"
