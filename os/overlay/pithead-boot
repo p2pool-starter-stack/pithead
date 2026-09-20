@@ -37,10 +37,8 @@ BOOT_FAIL_COUNT=.boot-gate-failures
 # the last failing run's exact blocking check behind without wearing /data. A plain variable for the
 # same reason BOOT_FAIL_COUNT is one — the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
-# The third signal's own record, same /run/no-/data-wear reasoning as BOOT_DOCTOR_JSON (#2383).
-BOOT_STATUS_LOG=/run/pithead-boot-status.log
-# Each unhealthy/restarting row as "container NAME: reason" — sync-held rows (#31/#35) never carry UNHEALTHY.
-boot_status_blocking() {
+BOOT_STATUS_LOG=/run/pithead-boot-status.log # third signal's record, same /run reasoning (#2383)
+boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 rows excluded)
     [ -s "$BOOT_STATUS_LOG" ] || return 0
     grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
         sed -E 's/^[[:space:]]*[✗⚠][[:space:]]+([^[:space:]]+)[[:space:]]+/container \1: /'
@@ -148,17 +146,19 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
     [ "$1" = "401" ] || [ "${2:-0}" -gt 0 ]
 }
 
-# ALL THREE signals, in the one place they are paired (#852, #2383). A function rather than a bare
-# `&&` in the commit condition: the only thing asserting that pairing was once a grep of this file
-# that stayed green with the doctor call deleted — a gate that lies, inside the gate-honesty
-# machinery. Driven at tier 1 with a stubbed `pithead`; deleting any of the three turns an
-# assertion red. Verdicts land in /run (volatile, no /data wear); the LAST failing run names the
-# blocking check (M9 hit the gap doctor alone leaves: a non-revenue container left unhealthy).
+# ALL THREE signals, paired in one place (#852, #2383) so a grep-only assertion cannot go stale —
+# that happened once, when the doctor half matched the header COMMENT with the call deleted.
+# Driven at tier 1 with a stubbed `pithead`; deleting any of the three turns an assertion red.
+# Verdicts land in /run (no /data wear); the LAST failing run names the blocking check.
 gate_ready() { # <http_code> <size_download>
     gate_answer_is_dashboard "$1" "$2" || return 1
     gate_doctor_ran=1 # this round's verdict file is fresh, so the re-mint below may read it
     ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
-    ./pithead status >"$BOOT_STATUS_LOG" 2>&1 # third signal (#2383): every container healthy, no restart loop
+    ./pithead status >"$BOOT_STATUS_LOG" 2>&1 || return 1 # third signal (#2383): every container healthy, no restart loop
+    # status does not count "starting" (inside a healthcheck's start_period) as a problem, so a
+    # fast boot could commit before a doomed healthcheck ran even once (bench-caught: ~74s, inside
+    # dashboard's 60s start_period). Hold until every container has an actual health verdict.
+    ! grep -q 'health check pending' "$BOOT_STATUS_LOG"
 }
 
 # The certificate race and its two remedies (#1265). render mints the dashboard certificate BEFORE `up` from

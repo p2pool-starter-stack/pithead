@@ -220,8 +220,30 @@ assert_eq "doctor clean but status reports an unhealthy/restarting container -> 
     "$(gs_run 0 1 200 4096)" "held"
 assert_eq "doctor itself fails -> held, status is never consulted (cheaper-first ordering)" \
     "$(gs_run 1 0 200 4096)" "held"
+# The bench-caught regression (#2383): status exits 0 while a container is still inside its
+# healthcheck's start_period — informational to an operator, but the gate must not read that as
+# healthy, or a slot with a DOOMED healthcheck commits before it ever ran once (leg 5's own bench
+# run caught this at ~74s, inside the dashboard's 60s start_period). Mutation run: drop the
+# 'health check pending' grep from gate_ready -> this row goes red.
+cat >"$GS/pithead" <<'STARTING'
+#!/usr/bin/env bash
+case "$1" in
+  doctor) exit 0 ;;
+  status) printf '  . dashboard     starting (health check pending)\n'; exit 0 ;;
+esac
+STARTING
+chmod +x "$GS/pithead"
+gs_starting=$(
+    cd "$GS" || exit 1
+    # shellcheck disable=SC1090
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    BOOT_DOCTOR_JSON="$GS/doctor.json"
+    BOOT_STATUS_LOG="$GS/status.log"
+    gate_ready 200 4096 && echo ready || echo held
+)
+assert_eq "status exits 0 but a container is still 'starting' -> held, not committed early" "$gs_starting" "held"
 unset -f gs_run
-unset GS
+unset GS gs_starting
 
 echo "== unit: boot_status_blocking — names the container 'pithead status' called unhealthy or restarting (#2383) =="
 # The exact shape stack_status (lib/pithead/04-status.sh) prints, reproduced here rather than run
