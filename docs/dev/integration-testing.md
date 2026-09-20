@@ -383,8 +383,11 @@ via an `EXIT` trap):
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
 node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-control` when a rig is
-borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain and
-re-confirm the tip in seconds. `check` is pure reads only. `matrix` is the opt-in full destructive
+borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain;
+monerod re-confirms the tip in seconds, but a recreated tari also has to rebuild its Tor circuits
+first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-starter-stack/pithead/issues/2455)) —
+`deploy_branch` waits on that before running the harness, since its own readiness check does not
+retry. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
