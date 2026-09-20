@@ -20,12 +20,12 @@ dashboard/mining_dashboard/web/static/app/chart.mjs	681
 dashboard/mining_dashboard/web/static/app/logic.mjs	534
 dashboard/mining_dashboard/web/static/config/configview.mjs	573
 dashboard/mining_dashboard/web/static/system/osupdate.mjs	407
-dashboard/mining_dashboard/web/static/workers/workerview.mjs	443
 dashboard/mining_dashboard/web/views/views.py	434
 dashboard/mining_dashboard/web/views/xvb_views.py	682
 dashboard/mining_dashboard/wizard/server.py	671
 dashboard/tests/client/test_xmrig_client.py	489
 dashboard/tests/config/test_config.py	445
+dashboard/tests/frontend/config/configview.test.mjs	438
 dashboard/tests/service/network/test_egress.py	451
 dashboard/tests/service/test_annotation_coverage.py	579
 dashboard/tests/service/test_collapsed_return_channels.py	402
@@ -64,6 +64,7 @@ tests/os/provision-browser-submit.sh	407
 tests/stack/appliance/test-appliance-boot.sh	640
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483
+tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
