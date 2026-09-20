@@ -63,10 +63,13 @@ rig_share_leg() { # <image> <mh> <rpc> <zmq> <mu> <mp> <th> <grpc> <rig-ip>
     local coord_vm="${rig_vm}-coord" coord_disk="${rig_disk%.img}-coord.img" coord_serial="${rig_serial%.log}-coord.log"
 
     info "share leg (#2063) — the rig mines against a coordinator this battery itself boots, not its own sshd"
-    # Both guests run at once here (rig.sh's own guest, kept up throughout, plus the coordinator
-    # below): kvm_preflight's default 20480 MiB bar was sized for ONE 16 GiB guest (#1059). Doubling
-    # the guest memory and keeping the same margin is the honest bar for two.
-    PITHEAD_KVM_MIN_AVAIL_MB=$((16384 * 2 + 4096)) kvm_preflight || return 1
+    # kvm_preflight's default 20480 MiB bar (#1059) is sized for ONE more 16 GiB guest, which is
+    # exactly what's being booted here — the rig guest is ALREADY running at this point, so the
+    # live MemAvailable reading already nets its usage out. Doubling the bar (job 719, #2063: host
+    # MemAvailable=31089 MiB with the rig guest already up, comfortably enough for a second 16 GiB
+    # guest) double-counted memory the rig guest already holds and refused a boot the host could
+    # in fact back.
+    kvm_preflight || return 1
 
     VM="$coord_vm" DISK="$coord_disk" SERIAL="$coord_serial" ip=""
     local coord_ok=0 coord_ip="" coord_user="" coord_pass=""
