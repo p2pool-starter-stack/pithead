@@ -11,7 +11,7 @@
 # phases/provision-initial.sh uses.
 _phase_reset_config() {
     info "leg 0 — config-reset must keep chains and the onion address, clear the config, and re-arm the wizard"
-    local onion_before onion_after cr_height_before cr_height_after cr_htries fb_ran boot_ran
+    local onion_before onion_after cr_height_before cr_height_after cr_height_deadline fb_ran boot_ran
     local cr_want cr_probe cr_what
     onion_before=$(_ssh "podman exec tor cat /var/lib/tor/monero/hostname" 2>/dev/null | tr -d '\r')
     # monerod's RPC can still be starting even once "stack containers running" above only checked
@@ -19,7 +19,7 @@ _phase_reset_config() {
     # own comment on the same wait). Poll the full 5 minutes that leg gives monerod, not
     # provision-power-cut.sh's tighter 18x10s, which runs only after the rest of the provision
     # phase has already given monerod plenty of time to start.
-    local cr_height_deadline=$(($(date +%s) + 300))
+    cr_height_deadline=$(($(date +%s) + 300))
     while [ "$(date +%s)" -lt "$cr_height_deadline" ]; do
         cr_height_before=$(_monerod_height)
         [ -n "$cr_height_before" ] && break
@@ -169,12 +169,15 @@ CR_PROBES
     else
         bad "the onion address did not survive config-reset (before: $onion_before, after: ${onion_after:-none})"
     fi
-    cr_htries=0
-    while [ "$cr_htries" -lt 18 ]; do
+    # The same 300 s ceiling the baseline read above gets, and for the same reason: monerod is
+    # the largest image and the last container to answer, so a tighter bound reports "after:
+    # unreadable" for a node that was merely still starting. The structurally identical M10.3
+    # read in provision-power-cut.sh did exactly that on jobs 713 and 715.
+    cr_height_deadline=$(($(date +%s) + 300))
+    while [ "$(date +%s)" -lt "$cr_height_deadline" ]; do
         cr_height_after=$(_monerod_height)
         [ -n "$cr_height_after" ] && break
-        sleep 10
-        cr_htries=$((cr_htries + 1))
+        sleep 5
     done
     if [ -n "$cr_height_after" ] && [ "$cr_height_after" -ge "$cr_height_before" ]; then
         ok "monerod resumed at or past its pre-reset height after config-reset ($cr_height_before -> $cr_height_after) — no resync"
