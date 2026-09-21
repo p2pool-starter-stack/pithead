@@ -305,24 +305,25 @@ protected_id="a0a0a0a0-0000-4000-8000-000000000501"
 printf 'IN-WINDOW-ARCHIVE-BYTES' >"$PRB/results/$protected_id.tar.gz.enc"
 echo '{"status":"applied","archive":"c.enc","ts":0}' >"$PRB/results/$protected_id.json"
 backdate "$PRB/results/$protected_id.json" 500 # oldest of all — first in line for eviction
-# The cap is 1 byte — the smallest a byte cap can be — rather than a computed floor+margin: the
-# achievable floor (os-update-state.json + the never-evict-the-newest result + the in-window
-# backup pair) is however many bytes `du -sk` reports THOSE surviving files as costing, and that
-# depends on the filesystem's own block/directory-entry accounting, which differs enough between
-# filesystems (#1990: this margin was 1000 bytes and reddened on ext4, which counts the
-# directory's own block against the total where the filesystem this was written on did not) that
-# no fixed number is portable. A 1-byte cap forces maximum eviction on every filesystem alike, so
-# the proof is relative — bytes went down, not a guess at what they landed on.
+# The cap is measured from an otherwise-identical directory holding only protected files: `du`
+# includes filesystem-specific directory blocks, so a hand-calculated byte margin is not portable.
 before_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
-export CONTROL_RESULTS_MAX_BYTES=1 CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000
+mkdir -p "$PRB-floor/results"
+cp "$PRB/results/os-update-state.json" "$PRB/results/a0a0a0a0-0000-4000-8000-000000000401.json" \
+    "$PRB/results/$protected_id.json" "$PRB/results/$protected_id.tar.gz.enc" "$PRB-floor/results/"
+floor_bytes=$(du -sk "$PRB-floor/results" | awk '{print $1 * 1024}')
+export CONTROL_RESULTS_MAX_BYTES="$floor_bytes" CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000
 run_sourced "$SANDBOX" control_prune_results "$PRB" >/dev/null 2>&1
 after_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
-[ "$before_bytes" -gt 1 ] &&
+[ "$before_bytes" -gt "$floor_bytes" ] &&
     ok "the sandbox starts over the byte cap (red without the fix)" ||
     bad "the sandbox starts over the byte cap" "got: $before_bytes bytes"
 [ "$after_bytes" -lt "$before_bytes" ] &&
     ok "total bytes shrink once they exceed CONTROL_RESULTS_MAX_BYTES" ||
     bad "total bytes shrink once they exceed CONTROL_RESULTS_MAX_BYTES" "got: $after_bytes bytes, was $before_bytes"
+[ "$after_bytes" -le "$floor_bytes" ] &&
+    ok "total bytes stay within a byte cap that can retain every protected file" ||
+    bad "total bytes stay within a byte cap that can retain every protected file" "got: $after_bytes bytes, cap: $floor_bytes"
 [ -f "$PRB/results/os-update-state.json" ] &&
     ok "os-update-state.json survives the byte-cap eviction even though it is the oldest file" ||
     bad "os-update-state.json survives the byte-cap eviction even though it is the oldest file" "missing"
@@ -333,6 +334,38 @@ after_bytes=$(du -sk "$PRB/results" | awk '{print $1 * 1024}')
     ok "the byte cap never orphans an in-window backup by deleting its result JSON alone" ||
     bad "the byte cap never orphans an in-window backup by deleting its result JSON alone" \
         "json: $([ -f "$PRB/results/$protected_id.json" ] && echo present || echo missing), archive: $([ -f "$PRB/results/$protected_id.tar.gz.enc" ] && echo present || echo missing)"
+
+PRT="$SANDBOX/ctrl1990temps"
+mkdir -p "$PRT/results"
+temp_id="a0a0a0a0-0000-4000-8000-000000000601"
+printf '{"passphrase":"STRANDED-SECRET"}' >"$PRT/results/.$temp_id.json.tmp"
+backdate "$PRT/results/.$temp_id.json.tmp" 120
+printf '{"passphrase":"LIVE-SECRET"}' >"$PRT/results/.fresh.json.tmp"
+export CONTROL_BACKUP_DOWNLOAD_WINDOW_S=60
+run_sourced "$SANDBOX" control_prune_results "$PRT" >/dev/null 2>&1
+[ ! -f "$PRT/results/.$temp_id.json.tmp" ] &&
+    ok "a stale atomic result temp is removed after the download window" ||
+    bad "a stale atomic result temp is removed after the download window" "still present"
+[ -f "$PRT/results/.fresh.json.tmp" ] &&
+    ok "a fresh atomic result temp is not interrupted" ||
+    bad "a fresh atomic result temp is not interrupted" "missing"
+
+PRP="$SANDBOX/ctrl1990pair"
+mkdir -p "$PRP/results"
+echo '{"step":"idle"}' >"$PRP/results/os-update-state.json"
+pair_id="a0a0a0a0-0000-4000-8000-000000000701"
+echo '{"status":"applied","archive":"x.enc"}' >"$PRP/results/$pair_id.json"
+head -c 2000 </dev/zero | tr '\0' x >"$PRP/results/$pair_id.tar.gz.enc"
+backdate "$PRP/results/$pair_id.json" 240
+backdate "$PRP/results/$pair_id.tar.gz.enc" 120
+echo '{"status":"running"}' >"$PRP/results/a0a0a0a0-0000-4000-8000-0000000007ff.json"
+pair_before=$(du -sk "$PRP/results" | awk '{print $1 * 1024}')
+export CONTROL_RESULTS_MAX_BYTES=$((pair_before - 1)) CONTROL_RESULT_MAX_COUNT=100 CONTROL_RESULT_MAX_AGE_S=100000
+run_sourced "$SANDBOX" control_prune_results "$PRP" >/dev/null 2>&1
+[ ! -f "$PRP/results/$pair_id.json" ] && [ ! -f "$PRP/results/$pair_id.tar.gz.enc" ] &&
+    ok "byte eviction removes an expired backup result and archive together" ||
+    bad "byte eviction removes an expired backup result and archive together" "json: $([ -f "$PRP/results/$pair_id.json" ] && echo present || echo missing), archive: $([ -f "$PRP/results/$pair_id.tar.gz.enc" ] && echo present || echo missing)"
 unset CONTROL_RESULTS_MAX_BYTES CONTROL_RESULT_MAX_COUNT CONTROL_RESULT_MAX_AGE_S
+unset CONTROL_BACKUP_DOWNLOAD_WINDOW_S
 unset -f backdate
-unset PRC PRB before_count remaining_plain remaining_archives fresh_id inflight before_bytes after_bytes protected_id
+unset PRC PRB PRT PRP before_count remaining_plain remaining_archives fresh_id inflight before_bytes after_bytes floor_bytes protected_id temp_id pair_id pair_before

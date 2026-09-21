@@ -1282,9 +1282,10 @@ the browser.
 A fresh archive stays downloadable for at least one hour after the backup completes; past that
 window, only the 3 most recent archives are kept. Ordinary control-request results (config
 previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
-limits leave behind is capped at 512 MiB total, oldest first. `os-update-state.json` and the
-result of a request still in flight are never pruned. Pruning runs host-side after every control
-request and on every boot; see `control_prune_results` in
+limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
+(`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone
+exceed it. Pruning runs host-side after every control request and on every boot; see
+`control_prune_results` in
 `lib/pithead/49-control-request-loop.sh` for the exact defaults.
 
 ## Upgrading from the dashboard

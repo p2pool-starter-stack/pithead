@@ -77,14 +77,14 @@ control_process_request() { # <claimed-file> <control-dir>
 #     hour) after it is written — long enough for the operator to fetch it — then ages out once
 #     more than CONTROL_BACKUP_MAX_COUNT (3) exist;
 #   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
-#     oldest-first, well under the smallest supported appliance data partition.
+#     oldest-first, unless the protected files alone exceed it.
 # os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
 # The single newest plain result also never falls to age/count/bytes: a verb that blocks the
 # drain on a background op (os-download's poll loop) keeps rewriting its own result as the newest
 # file in results/ for as long as it runs, so "newest" IS "whatever is in flight right now" —
 # protecting it needs no request id, just never touching rank 1.
-# Run at the top of every drain (so it never fights an in-flight request — nothing this drain will
-# write exists yet) and from render_derived, the appliance's every-boot pass (#790).
+# Run at the top of every drain, after every claimed request, and from render_derived, the
+# appliance's every-boot pass (#790).
 control_prune_results() { # <control-dir>
     local cdir="$1"
     local dir="$cdir/results"
@@ -94,6 +94,11 @@ control_prune_results() { # <control-dir>
     local max_count="${CONTROL_RESULT_MAX_COUNT:-200}"
     local max_archives="${CONTROL_BACKUP_MAX_COUNT:-3}"
     local max_bytes="${CONTROL_RESULTS_MAX_BYTES:-536870912}"
+
+    # Atomic result writes use only dot-prefixed *.tmp names. A killed writer can leave one with a
+    # backup kit's plaintext passphrase; remove it only after the download window, never while a
+    # normal atomic rename can still be in flight.
+    find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
 
     local archive id kept=0
     for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
@@ -137,20 +142,23 @@ control_prune_results() { # <control-dir>
             [ "$f" == "os-update-state.json" ] && continue
             [ "$f" == "$newest" ] && continue
             case "$f" in
-            *.tar.gz.enc) [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue ;;
-            # A backup's own result JSON: skip it while its archive is still in its download
-            # window, or the byte cap could evict the status/passphrase and orphan a still-live
-            # archive (the count/age pass above already carries this same pairing).
+            *.tar.gz.enc)
+                [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                id="${f%.tar.gz.enc}"
+                rm -f "$dir/$f" "$dir/$id.json"
+                ;;
+            # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
             *.json)
                 id="${f%.json}"
-                if [ -f "$dir/$id.tar.gz.enc" ] &&
-                    [ -z "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ]; then
-                    continue
+                if [ -f "$dir/$id.tar.gz.enc" ]; then
+                    [ -n "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                    rm -f "$dir/$f" "$dir/$id.tar.gz.enc"
+                else
+                    rm -f "$dir/$f"
                 fi
                 ;;
+            *) rm -f "$dir/$f" ;;
             esac
-            [ -f "$dir/$f" ] || continue
-            rm -f "$dir/$f"
             # Re-measure via du rather than subtracting wc -c: disk usage rounds to block size,
             # and a byte-precise running total drifted from the real (block-rounded) figure that
             # matters on a partition that is actually filling up.
@@ -226,6 +234,7 @@ control_run_pending() {
         fi
         control_process_request "$claim" "$cdir"
         rm -f "$claim"
+        control_prune_results "$cdir"
         n=$((n + 1))
     done <<<"$names"
     log "Processed $n control request(s)."
