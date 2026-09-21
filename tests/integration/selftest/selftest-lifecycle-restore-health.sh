@@ -12,16 +12,16 @@ LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecyc
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 
-drive_restore() { # <healthy: yes|no> -> function-rc|failure-count
+drive_restore() { # <healthy: yes|no> [backup-fails|archive-missing] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
-        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1"
+        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}"
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
-        pithead() { return 0; }
+        pithead() { [ "$RESTORE_CASE" != backup-fails ] || [ "$1" != backup ]; }
         wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
         env_on_box() { :; }
         has_compose_profile() { return 1; }
@@ -33,7 +33,7 @@ drive_restore() { # <healthy: yes|no> -> function-rc|failure-count
         assert_pool_switched() { :; }
         assert_eq() { :; }
         quote_arg() { printf '%s' "$1"; }
-        rx() { case "$1" in ls*) printf 'backups/pithead-backup-test.tar.gz' ;; esac }
+        rx() { case "$1" in ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;; esac }
         eval "$LIFECYCLE_SRC"
         run_lifecycle >/dev/null
         printf '%s|%s' "$?" "$IT_FAIL"
@@ -42,6 +42,8 @@ drive_restore() { # <healthy: yes|no> -> function-rc|failure-count
 
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
+assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
+assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archive-missing)" "1|1"
 
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"

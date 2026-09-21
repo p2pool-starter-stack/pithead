@@ -3,6 +3,7 @@
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
+    local lifecycle_ok=1
     echo ""
     it_log "── lifecycle + failover phase ──────────────────────"
 
@@ -85,25 +86,26 @@ run_lifecycle() {
             pithead down >/dev/null 2>&1
             pithead restore -y "$arch" >/dev/null 2>&1
             pithead up >/dev/null 2>&1
-            local restore_ok=1
             if wait_status_ok 240 && pithead status >/dev/null 2>&1; then
                 it_pass "status OK after restore"
             else
                 it_fail "status OK after restore" "pithead status did not recover after backup restore"
-                restore_ok=0
+                lifecycle_ok=0
             fi
             # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
             # cold on a peer-timing state (#54, #687).
             assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
             assert_eq "restore preserves secrets" "$(secret_fingerprint)" "$fp_b"
             rx "rm -f $(quote_arg "$arch")" >/dev/null 2>&1 || true
-            [ "$restore_ok" = 1 ]
         else
             it_fail "backup produced an archive" "no backups/pithead-backup-*.tar.gz"
+            lifecycle_ok=0
         fi
     else
         it_fail "pithead backup succeeded" "backup returned non-zero"
+        lifecycle_ok=0
     fi
+    [ "$lifecycle_ok" = 1 ]
 }
 
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
