@@ -81,21 +81,27 @@ run_lifecycle() {
             local backed_pool
             backed_pool="$(jq_get "$(api_state)" '.pool.type')"
             # Diverge from the backed-up state, then restore it back.
-            push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")"
-            pithead apply -y >/dev/null 2>&1
-            pithead down >/dev/null 2>&1
-            pithead restore -y "$arch" >/dev/null 2>&1
-            pithead up >/dev/null 2>&1
-            if wait_status_ok 240 && pithead status >/dev/null 2>&1; then
-                it_pass "status OK after restore"
+            if push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
+                pithead apply -y >/dev/null 2>&1 &&
+                pithead down >/dev/null 2>&1 &&
+                pithead restore -y "$arch" >/dev/null 2>&1 &&
+                pithead up >/dev/null 2>&1; then
+                if wait_status_ok 240 && pithead status >/dev/null 2>&1; then
+                    it_pass "status OK after restore"
+                else
+                    it_fail "status OK after restore" "pithead status did not recover after backup restore"
+                    lifecycle_ok=0
+                fi
+                # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
+                # cold on a peer-timing state (#54, #687).
+                local failures_before="$IT_FAIL"
+                assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
+                assert_eq "restore preserves secrets" "$(secret_fingerprint)" "$fp_b"
+                [ "$IT_FAIL" -le "$failures_before" ] || lifecycle_ok=0
             else
-                it_fail "status OK after restore" "pithead status did not recover after backup restore"
+                it_fail "backup restore round-trip succeeded" "apply, down, restore, or up returned non-zero"
                 lifecycle_ok=0
             fi
-            # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
-            # cold on a peer-timing state (#54, #687).
-            assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
-            assert_eq "restore preserves secrets" "$(secret_fingerprint)" "$fp_b"
             rx "rm -f $(quote_arg "$arch")" >/dev/null 2>&1 || true
         else
             it_fail "backup produced an archive" "no backups/pithead-backup-*.tar.gz"
