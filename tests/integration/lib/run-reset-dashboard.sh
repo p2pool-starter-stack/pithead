@@ -47,7 +47,8 @@ run_reset_dashboard() {
         it_fail "monerod RPC before reset-dashboard" "get_info unreachable before the reset"
         return
     fi
-    mblock_before="$(monero_block_identity "$mheight")"
+    # get_info.height is one past get_info.top_block_hash's height.
+    mblock_before="$(monero_block_identity "$((mheight - 1))")"
     if [ -z "$mblock_before" ]; then
         it_fail "monerod block identity before reset-dashboard" "get_block_header_by_height failed before the reset"
         return
@@ -90,7 +91,7 @@ run_reset_dashboard() {
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
     assert_eq "p2pool container running after reset" "$(svc_state_of "$(service_state p2pool)")" "running"
 
-    # Chains untouched: height never rewinds, and the block at the pre-reset height is byte-for-byte
+    # Chains untouched: height never rewinds, and the pre-reset tip block is byte-for-byte
     # the same block after — proving the data dir survived rather than being wiped and resynced.
     # The dashboard container is recreated above, so its first RPC request can race its connection
     # to monerod even after status is healthy. Wait for the existing RPC instead of reporting this
@@ -102,7 +103,7 @@ run_reset_dashboard() {
     if [ -n "$mblock_before" ] && chain_tip_valid "$mtip2"; then
         assert_num_ge "monerod height never rewound across reset-dashboard (#139)" "$mheight2" "$mheight"
         assert_eq "the pre-reset monero block is still the same block (chain untouched, #139)" \
-            "$(monero_block_identity "$mheight")" "$mblock_before"
+            "$(monero_block_identity "$((mheight - 1))")" "$mblock_before"
     else
         it_fail "monero chain-untouched check" "get_info unreachable before or after the reset"
     fi
