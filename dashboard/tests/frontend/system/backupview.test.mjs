@@ -208,3 +208,19 @@ test("BackupPanel names both halves the operator has to keep — archive and kit
   assert.match(out, /Keep both halves/);
   assert.match(out, /passphrase/);
 });
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the backup confirm and creating modals are <dialog>s, not backdrop divs", () => {
+  const titles = { confirm: "Create a backup", creating: "Creating a backup…" };
+  for (const phase of ["confirm", "creating"]) {
+    const c = inst({ enabled: true });
+    c.state.phase = phase;
+    const out = renderToString(c.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.match(out, /role="dialog"/, phase);
+    assert.match(out, /aria-modal="true"/, phase);
+    assert.match(out, new RegExp(`aria-label="${titles[phase].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
+});
