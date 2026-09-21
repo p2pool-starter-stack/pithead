@@ -2,6 +2,7 @@
 LOAD_WORKER_DIR="" LOAD_WORKER_CONFIG="" LOAD_WORKER_LOG=""
 LOAD_WORKER_NAME="" LOAD_BORROWED_NAME="" LOAD_SHARES_BEFORE=0
 LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0 LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
+LOAD_MAX_HASHES=0 LOAD_MAX_SHARES=0 LOAD_MAX_CLONE_SHARES=0
 
 worker_names() {
     on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty | select(test(\"^[^[:cntrl:]]+$\"))' | sort -u"
@@ -63,6 +64,7 @@ start_load_worker() {
         return 1
     }
     LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0 LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
+    LOAD_MAX_HASHES=0 LOAD_MAX_SHARES="$LOAD_SHARES_BEFORE" LOAD_MAX_CLONE_SHARES=0
     deadline=$(($(date +%s) + 180))
     while :; do
         names="$(worker_names)"
@@ -79,8 +81,15 @@ start_load_worker() {
 
 sample_load_worker() {
     [ -n "$LOAD_WORKER_NAME" ] || return 0
-    local names proxy_state sample cpu rss
-    names="$(worker_names)" || names=""
+    local state names hashes shares clone_shares proxy_state sample cpu rss
+    state="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null")" || state='{}'
+    names="$(printf '%s' "$state" | jq -r '.workers[]? | select(.status == "online") | .name // empty | select(test("^[^[:cntrl:]]+$"))' | sort -u)"
+    hashes="$(printf '%s' "$state" | jq -r '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | if all($r[]; isfinite and . >= 0) then ($r | add // 0) else 0 end')" || hashes=0
+    shares="$(printf '%s' "$state" | jq -r '[.workers[]? | select(.status == "online") | .accepted | tonumber?] | add // 0')" || shares=0
+    clone_shares="$(printf '%s' "$state" | jq -r --arg n "$LOAD_WORKER_NAME" 'first(.workers[]? | select(.status == "online" and .name == $n) | (.accepted | tonumber?)) // 0')" || clone_shares=0
+    if [[ "$hashes" =~ ^[0-9]+([.][0-9]+)?$ ]]; then LOAD_MAX_HASHES="$(awk -v a="$LOAD_MAX_HASHES" -v b="$hashes" 'BEGIN { print (a > b) ? a : b }')"; fi
+    if [[ "$shares" =~ ^[0-9]+$ ]] && [ "$shares" -gt "$LOAD_MAX_SHARES" ]; then LOAD_MAX_SHARES="$shares"; fi
+    if [[ "$clone_shares" =~ ^[0-9]+$ ]] && [ "$clone_shares" -gt "$LOAD_MAX_CLONE_SHARES" ]; then LOAD_MAX_CLONE_SHARES="$clone_shares"; fi
     proxy_state="$(on_bench "cd $(quote_arg "$E2E_DIR") || exit 2; services=\$(docker compose ps --services --status running 2>/dev/null) || exit 2; if printf '%s\\n' \"\$services\" | grep -Fxq xmrig-proxy; then echo running; else echo stopped; fi")" || proxy_state=error
     case "$proxy_state" in
     running)
@@ -120,27 +129,18 @@ stop_load_worker() {
 
 verify_load_worker() {
     [ -z "$LOAD_WORKER_NAME" ] && return 0
-    local state names hashes shares clone_shares latency
+    local latency
     sample_load_worker
-    state="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null")" || state='{}'
-    names="$(printf '%s' "$state" | jq -r '.workers[]? | select(.status == "online") | .name // empty' | sort -u)"
-    hashes="$(printf '%s' "$state" | jq '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] | add // 0')" || hashes=0
-    shares="$(printf '%s' "$state" | jq '[.workers[]? | select(.status == "online") | .accepted | tonumber?] | add // 0')" || shares=0
-    clone_shares="$(printf '%s' "$state" | jq -r --arg n "$LOAD_WORKER_NAME" 'first(.workers[]? | select(.status == "online" and .name == $n) | (.accepted | tonumber?)) // 0')" || clone_shares=0
     latency="$(on_bench "curl -sS -o /dev/null -w '%{time_total}' --max-time 8 http://127.0.0.1:8000/api/state")" || latency=null
     [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null
-    step "load worker evidence: aggregate=${hashes}H/s accepted=${shares} clone_accepted=${clone_shares} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s saw_ready=${LOAD_SAW_READY} saw_failover=${LOAD_SAW_FAILOVER} saw_recovery=${LOAD_SAW_RECOVERY}"
-    on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s,\"saw_ready\":%s,\"saw_failover\":%s,\"saw_recovery\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$hashes") $(quote_arg "$shares") $(quote_arg "$clone_shares") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") $(quote_arg "$LOAD_SAW_READY") $(quote_arg "$LOAD_SAW_FAILOVER") $(quote_arg "$LOAD_SAW_RECOVERY") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
-    grep -Fxq -- "$LOAD_WORKER_NAME" <<<"$names" || {
-        warn "load worker check failed: clone is no longer online (got '$names', clone '$LOAD_WORKER_NAME')"
-        return 1
-    }
-    printf '%s' "$state" | jq -e '[.workers[]? | select(.status == "online") | (.h15 // .h60 // 0 | numbers)] as $r | select(all($r[]; isfinite and . >= 0)) | $r | add | select(isfinite and . > 0)' >/dev/null || {
+    step "load worker evidence: aggregate=${LOAD_MAX_HASHES}H/s accepted=${LOAD_MAX_SHARES} clone_accepted=${LOAD_MAX_CLONE_SHARES} process_sampled=${LOAD_METRICS_SAMPLED} peak_cpu=${LOAD_PEAK_CPU}% peak_rss=${LOAD_PEAK_RSS}KiB dashboard_latency=${latency}s saw_ready=${LOAD_SAW_READY} saw_failover=${LOAD_SAW_FAILOVER} saw_recovery=${LOAD_SAW_RECOVERY}"
+    on_bench "mkdir -p $(quote_arg "$E2E_DIR/results") && printf '{\"load_worker\":\"%s\",\"aggregate_hashrate_hs\":%s,\"accepted\":%s,\"clone_accepted\":%s,\"process_sampled\":%s,\"peak_cpu_pct\":%s,\"peak_rss_kib\":%s,\"dashboard_latency_s\":%s,\"saw_ready\":%s,\"saw_failover\":%s,\"saw_recovery\":%s}\\n' $(quote_arg "$LOAD_WORKER_NAME") $(quote_arg "$LOAD_MAX_HASHES") $(quote_arg "$LOAD_MAX_SHARES") $(quote_arg "$LOAD_MAX_CLONE_SHARES") $(quote_arg "$LOAD_METRICS_SAMPLED") $(quote_arg "$LOAD_PEAK_CPU") $(quote_arg "$LOAD_PEAK_RSS") $(quote_arg "$latency") $(quote_arg "$LOAD_SAW_READY") $(quote_arg "$LOAD_SAW_FAILOVER") $(quote_arg "$LOAD_SAW_RECOVERY") > $(quote_arg "$E2E_DIR/results/multi-worker-metrics.json")" || return 1
+    awk -v n="$LOAD_MAX_HASHES" 'BEGIN { exit !(n > 0) }' || {
         warn "load worker check failed: aggregate hashrate not plausible"
         return 1
     }
-    [ "$shares" -gt "$LOAD_SHARES_BEFORE" ] 2>/dev/null || {
-        warn "load worker check failed: accepted shares did not advance (aggregate $LOAD_SHARES_BEFORE -> $shares, clone $clone_shares)"
+    [ "$LOAD_MAX_SHARES" -gt "$LOAD_SHARES_BEFORE" ] 2>/dev/null || {
+        warn "load worker check failed: accepted shares did not advance (aggregate $LOAD_SHARES_BEFORE -> $LOAD_MAX_SHARES, clone $LOAD_MAX_CLONE_SHARES)"
         return 1
     }
     { [ "$LOAD_SAW_READY" = 1 ] && [ "$LOAD_SAW_FAILOVER" = 1 ] && [ "$LOAD_SAW_RECOVERY" = 1 ]; } || {

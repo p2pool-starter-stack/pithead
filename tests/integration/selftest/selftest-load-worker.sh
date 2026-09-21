@@ -26,11 +26,10 @@ case "$load_src" in *'umask 077'*'mktemp -d'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'owned()'*'cleanup-failed'*'kill -KILL'*'trap fail EXIT'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'test -z'*'wait'*'rm -rf --'*) ;; *) exit 1 ;; esac
 case "$load_src" in *'jq -er'*'LOAD_SHARES_BEFORE" =~ ^[0-9]+$'*'stop_load_worker'*) ;; *) exit 1 ;; esac
-case "$sample_src" in *'docker compose ps --services --status running'*'worker_set_ready "$names"'*'LOAD_SAW_RECOVERY=1'*'LOAD_SAW_FAILOVER=1'*'LOAD_METRICS_SAMPLED=1'*'LOAD_PEAK_CPU='*'LOAD_PEAK_RSS='*) ;; *) exit 1 ;; esac
-case "$verify_src" in *'grep -Fxq -- "$LOAD_WORKER_NAME"'*'all('*'isfinite'*'. >= 0'*) ;; *) exit 1 ;; esac
-case "$verify_src" in *'.accepted | tonumber?'*'quote_arg "$clone_shares"'*'[ "$shares" -gt "$LOAD_SHARES_BEFORE" ]'*) ;; *) exit 1 ;; esac
+case "$sample_src" in *'LOAD_MAX_HASHES='*'LOAD_MAX_SHARES='*'docker compose ps --services --status running'*'worker_set_ready "$names"'*'LOAD_SAW_RECOVERY=1'*'LOAD_SAW_FAILOVER=1'*'LOAD_METRICS_SAMPLED=1'*) ;; *) exit 1 ;; esac
+case "$verify_src" in *'LOAD_MAX_HASHES'*'LOAD_MAX_SHARES'*'[ "$LOAD_MAX_SHARES" -gt "$LOAD_SHARES_BEFORE" ]'*) ;; *) exit 1 ;; esac
 case "$verify_src" in *'sample_load_worker'*'load worker evidence:'*'process_sampled'*'multi-worker-metrics.json'*'LOAD_SAW_READY'*'LOAD_SAW_FAILOVER'*'LOAD_SAW_RECOVERY'*) ;; *) exit 1 ;; esac
-case "$verify_src" in *'all($r[]; isfinite and . >= 0)'*'isfinite and . > 0'*) ;; *) exit 1 ;; esac
+case "$verify_src" in *'clone is no longer online'*) exit 1 ;; esac
 case "$verify_src" in *'LOAD_METRICS_SAMPLED" = 1'*) exit 1 ;; esac
 grep -Fqx '    [[ "$latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] || latency=null' <<<"$verify_src" || exit 1
 case "$stop_src" in *'pithead-e2e-load\.'*'cleanup-failed'*'/proc/'*'kill -TERM'*'rm -rf'*) ;; *) exit 1 ;; esac
@@ -73,3 +72,29 @@ worker_set_ready "$(printf 'bench-ci-e2e\nminer-3\npithead-e2e-load-clone\n')" |
     exit 1
 }
 echo "  ✓ capacity plus clone and the refreshed borrowed label passes; replacement, too few workers, or no clone fails"
+
+echo "== sample_load_worker: retains live evidence before harness restoration =="
+on_bench() {
+    case "$1" in
+    *api/state*) printf '%s\n' "$SAMPLE_STATE" ;;
+    *'docker compose'*) printf '%s\n' running ;;
+    *) return 1 ;;
+    esac
+}
+on_miner() { printf '%s\n' '12.5 2048'; }
+quote_arg() { printf '%q' "$1"; }
+E2E_DIR=/tmp/pithead-e2e
+LOAD_WORKER_DIR=/tmp/pithead-e2e-load.test
+LOAD_WORKER_CONFIG=$LOAD_WORKER_DIR/config.json
+LOAD_MAX_HASHES=0 LOAD_MAX_SHARES=0 LOAD_MAX_CLONE_SHARES=0
+LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0
+LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
+SAMPLE_STATE='{"workers":[{"name":"miner-1","status":"online","h15":100,"accepted":2},{"name":"miner-2","status":"online","h15":100,"accepted":1},{"name":"pithead-e2e-load-clone","status":"online","h15":100,"accepted":2}]}'
+sample_load_worker
+SAMPLE_STATE='{"workers":[]}'
+sample_load_worker
+[ "$LOAD_MAX_HASHES" = 300 ] && [ "$LOAD_MAX_SHARES" = 5 ] && [ "$LOAD_MAX_CLONE_SHARES" = 2 ] && [ "$LOAD_METRICS_SAMPLED" = 1 ] || {
+    echo "FAIL: live hash/share/process evidence was not retained"
+    exit 1
+}
+echo "  ✓ live hash/share/process evidence survives a later empty API state"
