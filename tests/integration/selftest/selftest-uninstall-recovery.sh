@@ -14,6 +14,9 @@ SRC="$(sed -n '/^_uninstall_phase_recover() {/,/^}$/p' "$HERE/../lib/run-uninsta
 assert_contains "the recovery trap is extractable" "$(printf '%s\n' "$SRC" | head -n1)" "_uninstall_phase_recover() {"
 assert_eq "the extraction is the whole function (closes)" "$(printf '%s\n' "$SRC" | tail -n1)" "}"
 
+DIRS_SRC="$(sed -n '/^_uninstall_data_dirs() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+assert_contains "the data-directory reader is extractable" "$(printf '%s\n' "$DIRS_SRC" | head -n1)" "_uninstall_data_dirs() {"
+
 PHASE="$(sed -n '/^run_uninstall_phase() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
 assert_contains "the rebuilt stack is checked against its kept config" "$PHASE" \
     "assert_running_state \"uninstall\" \"\$config_before\" \"\$setup_secret_fp\""
@@ -21,17 +24,34 @@ assert_contains "the rebuilt proxy and onion state must be populated" "$PHASE" \
     "grep -qE '^PROXY_AUTH_TOKEN=.+\$' .env"
 assert_contains "the preservation snapshot includes backups" "$PHASE" "backups"
 assert_contains "the preservation snapshot hashes file contents" "$PHASE" "_uninstall_snapshot_dirs"
-assert_contains "the keep-list decodes dotenv-rendered data paths" "$PHASE" "env_get_file .env"
+assert_contains "the keep-list uses the decoded data-directory reader" "$PHASE" "_uninstall_data_dirs"
 assert_contains "the keep-list requires every configured data directory" "$PHASE" "[ \"\$dir_count\" -ne 5 ]"
 assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" "_uninstall_file_hash config.json"
 
 PITHEAD_LOG="$(mktemp)"
-trap 'rm -f "$PITHEAD_LOG"' EXIT
+DIRS_FIXTURE="$(mktemp -d)"
+trap 'rm -f "$PITHEAD_LOG"; rm -rf "$DIRS_FIXTURE"' EXIT
 pithead() { printf '%s\n' "$*" >>"$PITHEAD_LOG"; }
 it_warn() { :; }
 wait_status_ok() { return 0; }
 SAFETY_ARCHIVE="/tmp/pithead-backup-fixture.tar.gz"
 eval "$SRC"
+
+# shellcheck disable=SC2016  # the fixture is a separate shell sourced by _uninstall_data_dirs.
+printf '%s\n' \
+    'env_get_file() { local line; line=$(grep -E "^$2=" "$1"); printf "%s" "${line#*=}"; }' \
+    >"$DIRS_FIXTURE/pithead"
+printf '%s\n' \
+    'MONERO_DATA_DIR=/data/monero' \
+    'TARI_DATA_DIR=/data/tari' \
+    'P2POOL_DATA_DIR=/data/p2pool' \
+    'DASHBOARD_DATA_DIR=/data/dashboard' \
+    'TOR_DATA_DIR=/data/tor' \
+    >"$DIRS_FIXTURE/.env"
+rx() { bash -c "$1"; }
+eval "$DIRS_SRC"
+dirs_output="$(cd "$DIRS_FIXTURE" && _uninstall_data_dirs)"
+assert_eq "the decoded data-directory reader emits five lines" "$(printf '%s\n' "$dirs_output" | wc -l | tr -d ' ')" "5"
 
 # IT_FAIL is lib.sh's own real pass/fail counter (assert_eq increments it on a failed assertion
 # below), and the function under test reads that SAME global — restore it right after each call so

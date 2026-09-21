@@ -40,6 +40,11 @@ _uninstall_file_hash() { # <file> -> sha256, failing if the file cannot be hashe
     printf '%s\n' "${checksum%% *}"
 }
 
+_uninstall_data_dirs() { # decoded configured data paths, one per line
+    # shellcheck disable=SC2016  # $key expands in the remote shell rx invokes.
+    rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; printf "\\n"; done'
+}
+
 # Self-heal (#2343 job 635): a failure partway through the destructive step below must not strand
 # the box for the outer safety rollback to find — this phase requires --safety-backup, so the
 # pre-run archive is right here. Puts the box back with the SAME restore this phase already
@@ -70,8 +75,7 @@ run_uninstall_phase() {
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Reuse
     # env_get_file so a dotenv-rendered path with spaces, $, quotes, or escapes round-trips.
     local dirs raw_dirs dir dir_count snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
-    # shellcheck disable=SC2016  # $key expands in the remote shell rx invokes.
-    if ! raw_dirs="$(rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; done')"; then
+    if ! raw_dirs="$(_uninstall_data_dirs)"; then
         it_fail "configured data directories are readable before uninstall" "could not read .env with env_get_file"
         return
     fi
