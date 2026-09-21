@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # pithead-boot's status record carries secrets, so it must not inherit a readable-by-others mode.
 echo "== unit: boot status record is private and installed with its stack-health helper (#2383) =="
 _bsh=$(mktemp -d)

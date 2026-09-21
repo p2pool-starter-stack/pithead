@@ -29,11 +29,16 @@ phase_update_healthgate_leg() {
         return
     fi
     ok "leg 5: built the fault bundle: $(basename "$fbundle")"
-    _stage_bundle "$fbundle" && _install_or_fail "leg 5" && ok "leg 5: fault bundle installed into the spare slot" ||
+    _stage_bundle "$fbundle" && _install_or_fail "leg 5" && ok "leg 5: fault bundle installed into the spare slot" || {
         bad "leg 5: could not stage or install the fault bundle"
+        return
+    }
     # No mark-good here, deliberately: a plain reboot into the freshly installed slot, the same
     # shape an automatic A/B boot takes with nobody watching. pithead-boot's own gate decides this.
-    _reboot_wait reboot 300 || bad "leg 5: guest never returned after booting the fault slot"
+    _reboot_wait reboot 300 || {
+        bad "leg 5: guest never returned after booting the fault slot"
+        return
+    }
     marker=$(SSH_TIMEOUT=20 _ssh cat /etc/pithead-test-marker 2>/dev/null)
     [ "$marker" = "v3fault" ] && ok "leg 5: the fault slot booted (v3fault)" ||
         bad "leg 5: expected v3fault booted after install, got '${marker:-none}'"

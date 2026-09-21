@@ -6,10 +6,9 @@
 #   functions of config.json plus the program. An A/B update swaps the whole program, so the
 #   derived layer is rebuilt every boot by construction; staleness and corruption become
 #   structurally impossible instead of detected.
-# - pithead up, not podman-restart (#792): the stack is compose-managed, so compose owns the
-#   containers' lifecycle. podman-restart started them into its own oneshot cgroup and systemd
-#   SIGKILLed the lot when the unit stopped.
-# - mark-good only on health (#793, #852): commit takes TWO signals, because "the dashboard
+# - pithead up, not podman-restart (#792): compose owns the stack's containers; podman-restart put
+#   them in its oneshot cgroup and systemd SIGKILLed them when the unit stopped.
+# - mark-good only on health (#793, #852, #2383): commit takes THREE signals, because "the dashboard
 #   answers" is a strict subset of "the stack is alive". First the dashboard answering through
 #   caddy is the end of the derived-config -> caddy -> dashboard chain (any HTTP status is life —
 #   401 is a healthy, locked dashboard). Second `pithead doctor --json` must exit clean: it FAILs
@@ -17,7 +16,8 @@
 #   firewall — the mining-dead-but-serving slot a curl-only gate used to mark-good. doctor is
 #   sync-tolerant by construction (chain nodes report healthy early in a days-long sync; the
 #   sync-held miners, #35, never count as crashed), so a still-syncing box commits while a broken
-#   one does not; the one FAIL that may commit is certificate coverage the re-mint could not clear
+#   one does not. Third `pithead status` must pass: it catches unhealthy and restarting containers
+#   doctor does not judge. The one FAIL that may commit is certificate coverage the re-mint could not clear
 #   (#1265, below). A slot that boots but is not healthy stays UNCOMMITTED: that is what A/B is for.
 set -uo pipefail
 
