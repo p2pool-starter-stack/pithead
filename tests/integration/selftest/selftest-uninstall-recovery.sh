@@ -32,6 +32,7 @@ assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" 
 assert_contains "container cleanup checks the pre-uninstall inventory without .env" "$PHASE" "compose_ids_before"
 assert_contains "container cleanup requires a working Docker inventory" "$PHASE" "docker container ls -aq --no-trunc"
 assert_contains "unit cleanup uses successful unfiltered systemd inventories" "$PHASE" "systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend"
+assert_contains "the snapshot stops services without preempting uninstall cleanup" "$PHASE" "docker compose stop >/dev/null"
 
 PITHEAD_LOG="$(mktemp)"
 DIRS_FIXTURE="$(mktemp -d)"

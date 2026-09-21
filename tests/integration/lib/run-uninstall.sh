@@ -14,8 +14,8 @@
 # Job 635's first real-box run measured both snapshots wrong: `fp_before` was taken while the
 # stack was still RUNNING, so a live LMDB/SQLite writer made monero/tari/dashboard look different
 # after uninstall's own shutdown — not a wipe, a shutdown checkpoint the "before" snapshot never
-# saw. Both snapshots are now taken with the stack already stopped (this phase's own `down` before
-# `fp_before`; uninstall's internal `down` on an already-down stack is a no-op), and the aggregate
+# saw. Both snapshots are now taken with the stack stopped but still present (`docker compose stop`
+# before `fp_before`; uninstall's internal `down` must still remove its containers and firewall), and the aggregate
 # size+count check is replaced with per-file content hashes, so a real deletion or rewrite
 # shows up as a named path in the diff instead of a number that a shutdown checkpoint can also move.
 _uninstall_dir_listing() { # <dir> -> "<sha256> <path>" lines, sorted; a stable snapshot
@@ -95,8 +95,8 @@ run_uninstall_phase() {
     # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
     # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
     # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
-    if ! pithead down >/dev/null 2>&1; then
-        it_fail "stack quiesced before uninstall snapshot" "pithead down failed"
+    if ! rx 'docker compose stop >/dev/null'; then
+        it_fail "stack quiesced before uninstall snapshot" "docker compose stop failed"
         return
     fi
     snapshot_paths="${dirs}"$'\nbackups'
