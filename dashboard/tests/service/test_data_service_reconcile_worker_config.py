@@ -158,9 +158,8 @@ class TestReconcileWorkerConfig:
             sm.close()
 
     def test_unknown_control_history_entry_is_not_flagged_rig_edit(self):
-        # A ring entry this dashboard never spooled is reconcile-only, never a rig-edit source —
-        # it was never the newest change_id in some earlier poll, so it was never a candidate for
-        # that flag. Only `control` (the current newest) can still trigger rig-edit.
+        # History reconciles existing rows; only `control` (the current slot) creates rig-edit
+        # events for changes this dashboard never spooled.
         svc, sm = self._svc_with_real_storage()
         try:
             worker_results = [
@@ -194,6 +193,26 @@ class TestReconcileWorkerConfig:
             ]
             asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
             assert self._status_of(sm)["status"] == "applied"
+        finally:
+            sm.close()
+
+    def test_control_history_stops_at_producer_limit(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted", change_id="cid-in")
+            self._seed(sm, "accepted", change_id="cid-over")
+            sm.worker_config_change_known = MagicMock(wraps=sm.worker_config_change_known)
+            sm.reconcile_worker_config_status = MagicMock(wraps=sm.reconcile_worker_config_status)
+            duplicate = {"change_id": "cid-in", "status": "applied", "reason": None}
+            over = {"change_id": "cid-over", "status": "applied", "reason": None}
+            worker_results = [
+                {"rigforge": {"control_history": [None] * 10 + [duplicate] * 10 + [over]}}
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert sm.worker_config_change_known.call_count == 10
+            assert sm.reconcile_worker_config_status.call_count == 10
+            assert self._status_of(sm, change_id="cid-in")["status"] == "applied"
+            assert self._status_of(sm, change_id="cid-over")["status"] == "accepted"
         finally:
             sm.close()
 

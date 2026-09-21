@@ -36,13 +36,14 @@ logger = logging.getLogger("DataService")
 # untrusted source can make permanent. See service/workers/worker_change_audit.py.
 _RIG_EDIT_CAP_PER_HOUR = 12
 _RIG_EDIT_WINDOW_SEC = 3600
+_CONTROL_HISTORY_LIMIT = 20
 
 
 def _terminal_control_history(extra_stats):
     """Yield terminal entries from rigforge#519's additive ``control_history`` ring."""
     rf = extra_stats.get("rigforge") if isinstance(extra_stats, dict) else None
     history = rf.get("control_history") if isinstance(rf, dict) else None
-    for entry in history if isinstance(history, list) else []:
+    for entry in history[:_CONTROL_HISTORY_LIMIT] if isinstance(history, list) else []:
         if not isinstance(entry, dict):
             continue
         change_id, status = entry.get("change_id"), entry.get("status")
@@ -241,8 +242,8 @@ class DataAuditMixin:
                 self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR, _RIG_EDIT_WINDOW_SEC
             )
             ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
-            # #1702: sweep the ring before touching `ctrl` — reconcile-only (never rig-edit), an
-            # unknown entry here was never the newest change_id in some earlier poll either.
+            # #1702: history only reconciles existing rows; only the current slot can create a
+            # rig-edit event.
             for change_id, status, reason in _terminal_control_history(extra_stats):
                 if ctrl and change_id == ctrl["change_id"]:
                     continue
