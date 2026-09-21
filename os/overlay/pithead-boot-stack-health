@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # pithead-boot's stack-health signal (#2383), split from pithead-boot at its file-budget ceiling.
 # `status` prints credentials and the remote-access address, so its transient record is 0600.
 BOOT_STATUS_LOG=/run/pithead-boot-status.log
@@ -25,6 +26,7 @@ gate_answer_is_dashboard() { # <http_code> <size_download>
 # ALL THREE signals, paired in one place (#852, #2383) so a grep-only assertion cannot go stale.
 gate_ready() { # <http_code> <size_download>
     gate_answer_is_dashboard "$1" "$2" || return 1
+    # shellcheck disable=SC2034 # read by pithead-boot's sourced main loop
     gate_doctor_ran=1
     ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
     boot_status_ready
