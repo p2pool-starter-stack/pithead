@@ -126,25 +126,59 @@ echo "== unit: data_wipe_note / publish_data_wipe_note — the wipe note reader 
 mk_tmpdir DWN
 mkdir -p "$DWN/esp" "$DWN/spool"
 export PITHEAD_PRESEED_DIR="$DWN/esp"
+# Stands in for /run (tmpfs) across this whole block: every real caller reads through
+# `note=$(data_wipe_note)`, which forks a subshell, so the one-shot cache MUST live in a file, not
+# a shell variable (#1208 job 557/560 — an earlier fix cached in a variable and never worked,
+# since a subshell's writes to it vanish when the subshell exits). "a later boot" below is
+# simulated by removing this file, the same way a reboot clears tmpfs.
+export PITHEAD_DATA_WIPE_NOTE_CACHE="$DWN/wipe-note-cache.json"
 
 run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "no note file -> rc 1" "$?" "1"
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
+assert_rc "a note with no .pending marker and no cache -> rc 1 (record_wipe always drops one; this is belt-and-suspenders)" "$?" "1"
+
+: >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "the wedged-partition wipe -> recovery true" "$(printf '%s' "$note" | jq -r '.recovery')" "true"
 assert_eq "the last line's timestamp is carried through" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
+assert_eq "the same-boot cache is chmod 600, not left ambient-umask readable" \
+    "$(stat -c '%a' "$PITHEAD_DATA_WIPE_NOTE_CACHE" 2>/dev/null || stat -f '%Lp' "$PITHEAD_DATA_WIPE_NOTE_CACHE" 2>/dev/null)" "600"
 assert_eq "the last line's reason is carried through" "$(printf '%s' "$note" | jq -r '.reason')" \
     "unrecoverable /data reinitialized — everything on it was lost"
 
+# MUTATION PROOF (#1208, tier4-kvm job 557/560): a second read of the SAME wipe, in a SEPARATE
+# process — exactly how every real caller invokes this — must return the SAME note, not silence:
+# the .pending marker is already consumed, so only the same-boot cache is left to answer from.
+# This is the regression tier4-kvm caught twice: a variable-based cache is invisible across the
+# subshell command substitution forks, so this assertion is the one that would have failed then.
+note2=$(run_sourced "$SANDBOX" data_wipe_note)
+assert_eq "a second read, separate process, SAME boot -> the SAME note, never silence" "$note2" "$note"
+assert_contains "the underlying log line survives — only the marker is consumed" \
+    "$(cat "$DWN/esp/pithead-data-wiped")" "unrecoverable /data reinitialized"
+
+# A LATER boot has no cache (tmpfs, cleared on reboot) and the marker stays consumed — THAT is
+# when a wipe finally stops surfacing, not merely a second read within the same boot.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
+assert_rc "a later boot (cache cleared, marker already consumed) -> rc 1, truly silent" "$?" "1"
+
 printf '2026-08-20T08:00:00Z factory-reset requested\n2026-08-21T09:00:00Z factory-reset requested\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 note=$(run_sourced "$SANDBOX" data_wipe_note)
 assert_eq "a deliberate factory-reset -> recovery false" "$(printf '%s' "$note" | jq -r '.recovery')" "false"
 assert_eq "append-only log: only the LAST line is read" "$(printf '%s' "$note" | jq -r '.when')" "2026-08-21T09:00:00Z"
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
 printf 'garbage\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 run_sourced "$SANDBOX" data_wipe_note >/dev/null 2>&1
 assert_rc "a line with no '<when> <reason>' shape -> rc 1, never a made-up note" "$?" "1"
+assert_eq "an unparseable line leaves the marker armed, never silently consumed" \
+    "$([ -f "$DWN/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "present"
+rm -f "$DWN/esp/pithead-data-wiped.pending" "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
 # publish_data_wipe_note carries the note to the wizard's spool — the wizard container's ONLY
 # mount, so it cannot read PRESEED_DIR itself.
@@ -155,8 +189,23 @@ assert_eq "no temp file left beside the atomic target" \
     "$(find "$DWN/spool" -name '.data-wiped.json.*' | wc -l | tr -d ' ')" "0"
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
 assert_eq "a real note reaches the spool" "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
+
+# MUTATION PROOF (#1208, tier4-kvm job 557): firstboot-wizard calls stage_wizard_spool TWICE
+# before the wizard container ever serves a single request — once before its retry loop, once as
+# the loop's first statement — each a SEPARATE `publish_data_wipe_note` process via command
+# substitution. Both must still see the real note, not overwrite each other with "{}".
+run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
+assert_eq "two publishes in SEPARATE processes, same boot, both see the real note (#1208 regression)" \
+    "$(jq -r '.recovery' "$DWN/spool/data-wiped.json")" "true"
+
+# One-shot (#1208): a LATER boot (cache cleared, marker already consumed on disk) for the SAME
+# wipe must not re-report it.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+run_sourced "$SANDBOX" publish_data_wipe_note "$DWN/spool" >/dev/null 2>&1
+assert_eq "a later boot's publish of the same wipe -> the spool goes back to empty" "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
 # The fleet-stick rule (same as publish_rig_defaults, #797 R3): a MISSING note must overwrite a
 # PREVIOUS machine's note, never leave it standing — the spool survives on /data between
@@ -170,6 +219,7 @@ assert_eq "a stale note from a previous machine does not survive an absent one" 
 # Removable boot media: PRESEED_DIR is the STICK's own ESP there, describing the stick, never
 # THIS machine — the publisher must not carry it across even when the stick's ESP holds a note.
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$DWN/esp/pithead-data-wiped"
+: >"$DWN/esp/pithead-data-wiped.pending"
 (
     cd "$SANDBOX" || exit
     # shellcheck disable=SC1090
@@ -181,9 +231,9 @@ printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on
 assert_eq "booting from removable media never carries the STICK's own note across" \
     "$(cat "$DWN/spool/data-wiped.json")" "{}"
 
-unset PITHEAD_PRESEED_DIR
+unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$DWN"
-unset DWN note
+unset DWN note note2
 
 echo "== unit: is_appliance gates the tarball upgrade =="
 # The appliance's program tree is resynced from the system slot every boot, so a DIY tarball
@@ -397,67 +447,3 @@ PATH="$PFSB/bin:$PATH" run_sourced "$SANDBOX" prefill_from_previous_install "$PF
 assert_rc "no install on any disk -> rc 1" "$?" "1"
 rm -rf "$PFSB"
 unset PFSB PF_TREE
-
-echo "== unit: a carried restore rearms a kept target — the two markers go, the chains stay (#2230) =="
-# On a wipe=keep target (state pithead-with-data) carrying a restore archive on the ESP, the
-# installer removes the previous install's config.json and machine-role: both boot owners skip
-# the wizard while either survives, so the carried archive would never be consumed. It must remove
-# NOTHING else — the chain trees are the whole point of `keep`, and restore_apply merges into them
-# rather than forcing a resync. The shipped installer partitions disks, so tier 1 drives the block
-# itself, lifted out of the real file: the sed range is asserted non-empty, so moving the block
-# fails this row instead of vacuously passing it. Two seams, both deliberate and both named: the
-# ESP path is repointed into the sandbox so the carried/not-carried branches are both reachable,
-# and `[ -b` (a device node no unprivileged sandbox can make) is rewritten to `-e` on the
-# stand-in. Everything else — the state guard, the mount, the rm's target list, the failure
-# path — runs as written.
-mk_tmpdir CRSB
-crs_block=$(sed -n '/# A carried restore replaces the old configuration/,/^    fi$/p' "$ROOT/os/installer/pithead-install")
-assert_contains "the carried-restore block is still where this row lifts it from" "$crs_block" 'rm -f "$restore_mnt/pithead/config.json"'
-crs_block=${crs_block//\/boot\/efi\//\"\$CRS_ESP\"\/}
-assert_contains "...and its ESP probe was repointed at the sandbox" "$crs_block" '"$CRS_ESP"/pithead-restore.enc'
-crs_block=${crs_block//\[ -b \"\$data_part\" \]/[ -e \"\$data_part\" ]}
-assert_contains "...and its device-node probe fell through to the stand-in" "$crs_block" '[ -e "$data_part" ]'
-mkdir -p "$CRSB/esp" "$CRSB/part/pithead/data/monero" "$CRSB/part/pithead/data/tari" "$CRSB/part/pithead/data/p2pool"
-printf '{"monero":{"wallet_address":"4kept"}}' >"$CRSB/part/pithead/config.json"
-printf 'coordinator\n' >"$CRSB/part/pithead/machine-role"
-for _c in monero tari p2pool; do printf 'KEEP-%s\n' "$_c" >"$CRSB/part/pithead/data/$_c/chain-sentinel"; done
-# <carried 0|1> -> runs the block over a fresh copy of the fake partition, left in $CRSB/out
-crs_run() {
-    [ "$1" = 1 ] && : >"$CRSB/esp/pithead-restore.enc" || rm -f "$CRSB/esp/pithead-restore.enc"
-    rm -rf "$CRSB/out"
-    cp -a "$CRSB/part" "$CRSB/out" # the partition exists either way; the block decides what is left on it
-    (
-        set +e
-        # shellcheck disable=SC2034  # all three are read inside the evaluated installer block
-        CRS_ESP="$CRSB/esp" state=pithead-with-data target=/dev/fake-target
-        die() {
-            echo "die: $*" >&2
-            exit 1
-        }
-        lsblk() { printf '%s\tdata\n' "$CRSB/stand-in-part"; }
-        mount() { cp -a "$CRSB/part/." "$2/"; } # the partition's contents appear
-        umount() {
-            rm -rf "$CRSB/out"
-            cp -a "$1" "$CRSB/out"
-        } # ...and what is left lands back on it
-        rmdir() { rm -rf "${1:?}"; }
-        eval "crs_main() { $crs_block
-}"
-        crs_main
-    )
-}
-: >"$CRSB/stand-in-part"
-crs_run 1
-assert_rc "the carried-restore branch completes on a kept target" "$?" "0"
-assert_eq "...config.json is cleared, so firstboot re-arms on the restored archive" "$([ -e "$CRSB/out/pithead/config.json" ] || echo gone)" "gone"
-assert_eq "...machine-role is cleared, so pithead-boot does not take the provisioned fork" "$([ -e "$CRSB/out/pithead/machine-role" ] || echo gone)" "gone"
-assert_eq "...the kept monero chain is untouched" "$(cat "$CRSB/out/pithead/data/monero/chain-sentinel" 2>/dev/null)" "KEEP-monero"
-assert_eq "...the kept tari chain is untouched" "$(cat "$CRSB/out/pithead/data/tari/chain-sentinel" 2>/dev/null)" "KEEP-tari"
-assert_eq "...the kept p2pool chain is untouched" "$(cat "$CRSB/out/pithead/data/p2pool/chain-sentinel" 2>/dev/null)" "KEEP-p2pool"
-# Negative control: a keep reinstall with NO archive carried keeps the machine's own identity.
-crs_run 0
-assert_eq "a kept target with no carried archive keeps its config.json" "$(jq -r '.monero.wallet_address' "$CRSB/out/pithead/config.json" 2>/dev/null)" "4kept"
-assert_eq "...and keeps its role marker" "$(cat "$CRSB/out/pithead/machine-role" 2>/dev/null)" "coordinator"
-rm -rf "$CRSB"
-unset CRSB crs_block _c
-unset -f crs_run

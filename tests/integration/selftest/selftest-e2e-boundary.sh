@@ -47,6 +47,21 @@ rejected_before_ssh_args() { # <label> [args...] -> asserts rc!=0 and ssh never 
     fi
 }
 
+echo "== --workers is validated before it reaches the remote shell commands it's interpolated into =="
+rejected_before_ssh_args "a non-numeric --workers never reaches SSH" --workers 'bad'
+rejected_before_ssh_args "metacharacters in --workers never reach SSH" --workers '1;touch'
+rejected_before_ssh_args "a negative --workers never reaches SSH" --workers '-1'
+rejected_before_ssh_args "zero --workers never reaches SSH" --workers '0'
+# Positive control: the guard rejects bad values without also rejecting good ones.
+rm -f "$MARKER"
+env PATH="$TMP:/usr/bin:/bin" SSH_MARKER="$MARKER" BENCH_HOST=bench MINER_HOST=rig \
+    bash "$HERE/../e2e.sh" candidate --mode targeted --workers 2 >/dev/null 2>&1
+if [ -e "$MARKER" ]; then
+    it_pass "a valid --workers reaches SSH (the guard doesn't over-reject)"
+else
+    it_fail "a valid --workers reaches SSH (the guard doesn't over-reject)" "ssh never called"
+fi
+
 echo "== --harness-arg (#2179): only the run.sh phase allowlist reaches the harness, never a shell =="
 rejected_before_ssh_args "an unlisted flag never reaches SSH" --harness-arg '--image-upgrade'
 rejected_before_ssh_args "a bare shell metacharacter never reaches SSH" --harness-arg ';touch'

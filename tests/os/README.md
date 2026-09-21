@@ -45,6 +45,13 @@ regex — the failing image ref survives, because which ref failed is the diagno
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.
 
+`tests/os/tor-health-evidence.sh` covers a third row the same way (#2359, a recurrence of #1945's
+unresolved half): the restore leg's source-provisioning machine can fail with tor never becoming
+healthy, and the only evidence any battery captured for it was the compose orchestration's own
+verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
+healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
+own healthcheck verdict and its own log.
+
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
 
@@ -125,14 +132,30 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
-  failed-update premise.
+  failed-update premise. The power-cut leg (M10, #2067) then cuts power three times WHILE the
+  provisioned stack is live — every earlier power cut in the battery landed on a bare guest
+  (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
+  asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
+  and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
+  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
+  rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
+  a first version.
 - **rig** — answer `RigForge` on the same page and prove the other machine this image installs:
   it mines from the baked binary with no compile and no clearnet, starts no containers at all,
   and takes an A/B update — install, boot, self-commit on the miner running, persistence —
   exactly like a coordinator. (Uncommitted fallback is the update phase's to prove: a
   provisioned rig commits the moment its miner is up, so the uncommitted window closes by
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
-  everything except this.
+  everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
+  #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
+  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
+  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
+  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
+  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
+  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -146,7 +169,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   takes effect, and the stick is consumed so it cannot re-apply. A second reboot proves pulling
   the stick mid-countdown cancels the change instead.
 - **fault** — power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is
-  disqualifying.
+  disqualifying. A closing leg (the #1029 class, #2067) boots a FRESH guest and destroys it while
+  its very first boot is loading the baked container images from the archive — the interrupted
+  write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
+  is the same as #1029 itself: the next boot either repairs the image store or refuses with a
+  legible console message, never silence, and the wizard must still serve afterwards.
 - **reset** — the shell-less box's last resort, never before run against a real disk: a
   provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
   marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
@@ -154,11 +181,37 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
+- **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
+  provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
+  already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
+  set) so the sync gate clears in minutes instead of never, then runs `tests/integration/run.sh` —
+  the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
+  (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
+  unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
+  coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
+  phase's remote-node consumer row below; without them the phase records a counted `missing`
+  skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
+  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
+  invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
+  nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
+  scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
+  (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
+  diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means every phase except
+crossupdate, including fault, reset and stack, and the full run is required once for every RC
+candidate.
+
+Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
+phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
+being absent produces, when the phase's own code has nowhere to record that — the wrapper itself
+counts it as a `missing` phase skip. And a run where every requested phase skipped this way is not
+a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
+of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
+exit code.
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than

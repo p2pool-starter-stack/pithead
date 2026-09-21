@@ -76,18 +76,14 @@ firstboot_wizard() {
     # medium, where staged files are cleaned up by the installer itself. Then fall through to
     # the rig leg below, exactly as a pre-seeded coordinator falls through to setup.
     if [ -f "$PRESEED_DIR/pithead-rig.json" ] && ! installer_mode_available && [ ! -f "$PWD/rig.json" ]; then
-        if jq -e 'type == "object" and ((.pool // "") | length > 0)' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
+        if jq -e 'type == "object" and ((.pool // "") | length > 0) and ((.access_token // "") | test("^[0-9a-f]{32}$"))' "$PRESEED_DIR/pithead-rig.json" >/dev/null 2>&1 &&
             install -m 600 "$PRESEED_DIR/pithead-rig.json" "$PWD/rig.json" 2>/dev/null; then
             record_machine_role rig
-            # Spent: the settings (possibly a stratum password) must not sit on the ESP forever.
-            if ! boot_is_removable; then
-                mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-                rm -f "$PRESEED_DIR/pithead-rig.json" 2>/dev/null ||
-                    warn "Could not remove the consumed rig settings from $PRESEED_DIR — they may hold a password; delete the file."
-            fi
+            scrub_staged_rig consumed # spent, and it may hold a stratum password
             _console "This machine is now a RigForge rig ($(jq -r '.worker // "unnamed"' "$PWD/rig.json" 2>/dev/null))."
         else
             warn "The staged rig settings at $PRESEED_DIR/pithead-rig.json are unusable — opening the setup page."
+            scrub_staged_rig unusable # refused is still readable: same password, same bare ESP
         fi
     fi
     # A machine already carrying the rig role mines, and asks nothing — not even on a stick that
@@ -289,10 +285,10 @@ firstboot_wizard() {
                 rig_worker=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_pool=$(jq -r '.pool // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
-                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE: a rig serves
-                # no page after this) and this box's address for the adopt form. No login. The same ack still gates the erase.
-                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" \
-                    '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a}' | write_handoff_card "$spool"
+                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
+                # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -393,7 +389,11 @@ firstboot_wizard() {
                     sleep 2
                     continue
                 fi
-                local stratum_addr dash_user dash_pass
+                # Rename BEFORE the handoff below (#2350): `(setup)` further down applied it too
+                # late — after the operator had already seen and acked the card naming the OLD box.
+                local DASHBOARD_HOST stratum_addr dash_user dash_pass
+                DASHBOARD_HOST=$(resolve_default "$(jq -r '.dashboard.host // empty' "$PWD/config.json" 2>/dev/null)" "")
+                reconcile_appliance_hostname
                 stratum_addr="stratum+tcp://$(hostname).local:$(jq -r '.p2pool.stratum_port // 3333' "$PWD/config.json" 2>/dev/null || echo 3333)"
                 dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$PWD/config.json")
                 dash_pass=$(jq -r '.dashboard.auth.password // ""' "$PWD/config.json")

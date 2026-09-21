@@ -72,9 +72,6 @@ services:
       WALLET_RPC_PASSWORD: ""
       TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
       TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
-      # A local webhook gives the payout scenario a real alert transport to observe.
-      NOTIFY_WEBHOOK_URLS: "http://fake-hc:9000/alerts"
-      NOTIFY_TOR: "false"
       PROXY_HOST: "xmrig-proxy"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
@@ -87,7 +84,15 @@ services:
       # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
-    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc]
+      TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
+      TELEGRAM_BOT_TOKEN: "itest-token"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
+      TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-http://fake-sink:9000}"
+      NOTIFY_WEBHOOK_URLS: "${NOTIFY_WEBHOOK_URLS-http://fake-sink:9000/webhook}"
+      NTFY_URL: "${NTFY_URL-http://fake-sink:9000/ntfy}"
+      NTFY_TOKEN: "itest-token"
+      NOTIFY_TOR: "false"
+    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink]
 
   fake-monerod:
     image: *fake_image
@@ -153,7 +158,16 @@ services:
     container_name: itest-fake-hc
     networks: [itestnet]
     entrypoint: []
-    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log", "--event-log", "/tmp/events.log"]
+    command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log"]
+    volumes:
+      - "../fakes:/fakes:ro"
+
+  fake-sink:
+    image: *fake_image
+    container_name: itest-fake-sink
+    networks: [itestnet]
+    entrypoint: []
+    command: ["python3", "/fakes/fake_sink.py", "--port", "9000"]
     volumes:
       - "../fakes:/fakes:ro"
 
