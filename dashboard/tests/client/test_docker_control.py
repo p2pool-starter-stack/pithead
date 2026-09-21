@@ -81,6 +81,7 @@ class TestUrl:
     def test_tcp_scheme_rewritten_to_http(self):
         c = DockerControl(proxy_url="tcp://172.28.0.30:2375")
         assert c.base_url == "http://172.28.0.30:2375"
+        assert c.lock_file == "/pithead-lock"
 
 
 class TestStopStart:
