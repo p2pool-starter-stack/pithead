@@ -4,7 +4,7 @@ import time
 import uuid
 
 from mining_dashboard.client.xmrig_client import (
-    parse_worker_control_history,
+    _CONTROL_TERMINAL,
     parse_worker_control_status,
 )
 from mining_dashboard.config import config
@@ -36,6 +36,18 @@ logger = logging.getLogger("DataService")
 # untrusted source can make permanent. See service/workers/worker_change_audit.py.
 _RIG_EDIT_CAP_PER_HOUR = 12
 _RIG_EDIT_WINDOW_SEC = 3600
+
+
+def _terminal_control_history(extra_stats):
+    """Yield terminal entries from rigforge#519's additive ``control_history`` ring."""
+    rf = extra_stats.get("rigforge") if isinstance(extra_stats, dict) else None
+    history = rf.get("control_history") if isinstance(rf, dict) else None
+    for entry in history if isinstance(history, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        change_id, status = entry.get("change_id"), entry.get("status")
+        if isinstance(change_id, str) and change_id and status in _CONTROL_TERMINAL:
+            yield change_id, status, entry.get("reason")
 
 
 class DataAuditMixin:
@@ -195,7 +207,7 @@ class DataAuditMixin:
         still mid-change, or an unreachable/offline rig (``{}``) all parse to ``None`` via
         ``parse_worker_control_status`` and are a quiet no-op.
 
-        Before touching ``ctrl``, also sweeps ``parse_worker_control_history`` (rigforge#519's ring,
+        Before touching ``ctrl``, also sweeps ``_terminal_control_history`` (rigforge#519's ring,
         #1702) for any entry this dashboard already spooled — reconcile-only, never rig-edit.
 
         A TERMINAL report whose ``change_id`` this dashboard never spooled (``worker_config`` has no
@@ -231,17 +243,17 @@ class DataAuditMixin:
             ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
             # #1702: sweep the ring before touching `ctrl` — reconcile-only (never rig-edit), an
             # unknown entry here was never the newest change_id in some earlier poll either.
-            for entry in parse_worker_control_history(extra_stats):
-                if ctrl and entry["change_id"] == ctrl["change_id"]:
+            for change_id, status, reason in _terminal_control_history(extra_stats):
+                if ctrl and change_id == ctrl["change_id"]:
                     continue
                 if await asyncio.to_thread(
-                    self.state_manager.worker_config_change_known, entry["change_id"]
+                    self.state_manager.worker_config_change_known, change_id
                 ):
                     await asyncio.to_thread(
                         self.state_manager.reconcile_worker_config_status,
-                        entry["change_id"],
-                        entry["status"],
-                        entry["reason"],
+                        change_id,
+                        status,
+                        reason,
                     )
             if not ctrl:
                 continue

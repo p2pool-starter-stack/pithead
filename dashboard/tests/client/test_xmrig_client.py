@@ -6,7 +6,6 @@ from mining_dashboard.client import xmrig_client as xc
 from mining_dashboard.client.xmrig_client import (
     XMRigWorkerClient,
     parse_rigforge,
-    parse_worker_control_history,
     parse_worker_control_status,
 )
 
@@ -488,18 +487,3 @@ def test_parse_worker_control_status_full_terminal_vocabulary():
             "status": status,
             "reason": "rig-supplied",
         }
-
-
-def test_parse_worker_control_history_yields_only_terminal_entries():
-    block = {
-        **RIGFORGE_BLOCK,
-        "control_history": [
-            {"change_id": "a", "status": "applied"},
-            {"change_id": "b", "status": "started"},
-            {"status": "failed"},
-            "malformed",
-        ],
-    }
-    assert list(parse_worker_control_history({"rigforge": block})) == [
-        {"change_id": "a", "status": "applied", "reason": None}
-    ]
