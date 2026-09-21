@@ -6,12 +6,15 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 
+echo "== lifecycle restore health gates fault injection (#2501) =="
+
 LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 
 drive_restore() { # <healthy: yes|no> -> function-rc|failure-count
     (
+        # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1"
         it_log() { :; }; it_step() { :; }; it_pass() { :; }; it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
@@ -38,6 +41,7 @@ assert_contains "the extracted gate includes lifecycle and fault injection" "$MA
 
 drive_gate() { # <lifecycle-rc> -> fault-ran
     (
+        # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
         RUN_LIFECYCLE=1 RUN_FAULTS=1 rig_control_ok=1 fault_ran=no lifecycle_rc="$1"
         run_lifecycle() { return "$lifecycle_rc"; }
         run_fault_injection() { fault_ran=yes; }
