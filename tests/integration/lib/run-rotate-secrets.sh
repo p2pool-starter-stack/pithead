@@ -21,6 +21,12 @@ _rotate_proxy_token_accepted() { # <token> -> rc 0 if the proxy answered
     printf '%s' "$1" | rx "docker exec -i dashboard python3 -c 'import sys; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT; XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, sys.stdin.read()).get_config()' >/dev/null 2>&1" --stdin
 }
 
+_rotate_proxy_summary() {
+    rx "docker exec dashboard python3 -c 'import json; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN; print(json.dumps(XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, PROXY_AUTH_TOKEN).get_summary()))' 2>/dev/null"
+}
+_rotate_proxy_upstream_active() { [ "$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.upstreams.active // 0' 2>/dev/null)" -gt 0 ] 2>/dev/null; }
+_rotate_proxy_accepted_after() { [ "$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.results.accepted // 0' 2>/dev/null)" -gt "$1" ] 2>/dev/null; }
+
 # Tier-4 leg for `rotate-secrets` (#2344): the CLI verb has never run on a bench, so nothing proves
 # monerod, p2pool and the proxy survive a credential rotation, or that a restart-instead-of-recreate
 # regression (#356's shape) would be caught. DESTRUCTIVE-then-restored via the harness's own safety
@@ -82,7 +88,11 @@ run_rotate_secrets() {
     if [ -n "$bak_config" ] && [ -n "$bak_env" ]; then
         assert_eq "config.json.bak-<stamp> is owner-only (600)" "$(rx "stat -c %a $(quote_arg "$bak_config")" 2>/dev/null)" "600"
         assert_eq ".env.bak-<stamp> is owner-only (600)" "$(rx "stat -c %a $(quote_arg "$bak_env")" 2>/dev/null)" "600"
-        rx "rm -f $(quote_arg "$bak_config") $(quote_arg "$bak_env")" >/dev/null 2>&1 || true
+        if rx "rm -f $(quote_arg "$bak_config") $(quote_arg "$bak_env") && ! test -e $(quote_arg "$bak_config") && ! test -e $(quote_arg "$bak_env")" >/dev/null 2>&1; then
+            it_pass "rotate-secrets cleanup removes its owner-only .bak-<stamp> copies"
+        else
+            it_fail "rotate-secrets cleanup removes its owner-only .bak-<stamp> copies" "the old-secret backup copy remained or could not be removed"
+        fi
     else
         it_fail "rotate-secrets left the pre-rotation .bak-<stamp> safety copies" "config.json.bak-* / .env.bak-* not found"
     fi
@@ -122,15 +132,15 @@ run_rotate_secrets() {
         it_pass "xmrig-proxy control API refuses the old PROXY_AUTH_TOKEN"
     fi
 
-    # The control-API wait above already settled on the recreated container, so .Args (fixed at
-    # container creation, never a wait target of its own) is safe to read once here. The failure
+    # The control-API wait above already settled on the recreated container, so its running argv is
+    # safe to read once here. The failure
     # detail never echoes proxy_args itself (or the passwords) — it is the live --access-password
     # value, and it_fail's output is not secret-redacted the way a captured artifact is.
     local proxy_args
     proxy_args="$(_rotate_proxy_live_args)"
     case "$proxy_args" in
-    *"$new_stratum_pass"*) it_pass "xmrig-proxy live argv carries the NEW stratum access-password (no-rig-mode credential check, #2344)" ;;
-    *) it_fail "xmrig-proxy live argv carries the NEW stratum access-password (no-rig-mode credential check, #2344)" "new value not found in the live --access-password argv" ;;
+    *"$new_stratum_pass"*) it_pass "xmrig-proxy live argv carries the NEW stratum access-password" ;;
+    *) it_fail "xmrig-proxy live argv carries the NEW stratum access-password" "new value not found in the live --access-password argv" ;;
     esac
     case "$proxy_args" in
     *"$old_stratum_pass"*) it_fail "xmrig-proxy live argv no longer carries the OLD stratum access-password" "old value still live in the --access-password argv" ;;
@@ -154,15 +164,27 @@ run_rotate_secrets() {
         it_skip_leg "monerod RPC credential rotation" "monero.mode=remote — the credential belongs to the remote node; rotate_secrets itself skips it" "by-design"
     fi
 
-    # 3. p2pool reconnected to monerod and the proxy to p2pool (#2344 concern 1/2): status aggregates
-    #    node reachability + container health, and the dashboard's own live proxy read needs p2pool
-    #    routed through the proxy's config to answer at all.
+    # 3. A live upstream is stronger than the configured route: it confirms the proxy has connected
+    #    to p2pool. With a reserved miner, an accepted post-rotation share proves the full route,
+    #    including p2pool's usable Monero connection.
     pithead status >/dev/null 2>&1
     assert_rc "pithead status OK after the rotate-secrets recreate" "$?" "0"
-    if [ -n "$(proxy_active_route)" ]; then
-        it_pass "dashboard reads a live xmrig-proxy pool route after rotation (proxy connected to p2pool)"
+    if wait_for 60 3 "xmrig-proxy to connect to its p2pool upstream" _rotate_proxy_upstream_active; then
+        it_pass "xmrig-proxy has an active p2pool upstream after rotation"
     else
-        it_fail "dashboard reads a live xmrig-proxy pool route after rotation (proxy connected to p2pool)" "proxy_active_route returned nothing"
+        it_fail "xmrig-proxy has an active p2pool upstream after rotation" "summary never reported an active upstream"
+    fi
+    if [ -n "${RIG_NAME:-}" ]; then
+        local accepted_before
+        accepted_before="$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.results.accepted // 0' 2>/dev/null)"
+        if wait_borrow_rearm rotate-stratum && wait_for 300 5 "the reserved miner to submit an accepted share with the new stratum password" _rotate_proxy_accepted_after "${accepted_before:-0}"; then
+            it_pass "reserved miner reconnected and submitted an accepted share with the new stratum password"
+        else
+            it_fail "reserved miner reconnected and submitted an accepted share with the new stratum password" "the proxy accepted count did not advance after the credential change"
+        fi
+        wait_borrow_rearm restore-stratum || it_fail "reserved miner's temporary stratum credential restored" "controller did not verify the pre-rotation borrowed config"
+    else
+        it_pass "no reserved miner attached: running proxy argv proves the rotated stratum credential"
     fi
 
     # Restore: the harness's own safety backup is the anchor (#2344) — a second archive here would

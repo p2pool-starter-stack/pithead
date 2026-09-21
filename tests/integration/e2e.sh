@@ -177,8 +177,7 @@ on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
-MINER_CFG_BACKUP=""
-RESTORED=0
+MINER_CFG_BACKUP=""; RESTORED=0
 RESTORE_PROOF_FAILED=0
 # Separate from RESTORE_PROOF_FAILED on purpose (#1085). That flag's message is the #971
 # credential-bake incident's, and its remediation — "re-bake from disk: docker compose up -d" —
@@ -225,6 +224,10 @@ restore_all() {
         # proof succeeds; miner_reload's status only gates forward test progress.
         if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
             miner_reload
+            if [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ]; then
+                on_miner "rm -f '$MINER_ROTATE_CFG_BACKUP'" || warn "restored miner config but retained its temporary stratum backup for operator repair."
+                MINER_ROTATE_CFG_BACKUP=""
+            fi
             ok "$MINER_HOST repointed to its original pool(s); backup pruned"
             # Belt-and-braces (#1178): the backup predates the tag, so a straight cp/cmp restore has
             # no way to know whether a rig-id=pithead-e2e pool is in it. Should always be a no-op —
@@ -640,10 +643,7 @@ run_harness() {
     local rc="" waited=0
     while :; do
         if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
-            step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
-            repoint_miner || die "Failed to reapply the borrowed-pool fixture."
-            wait_workers "$WORKERS" 180 || die "Borrowed miner did not reconnect after pool re-arm."
-            printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || die "Failed to acknowledge the borrowed-pool fixture."
+            handle_borrow_rearm "$rearm_request" "$rearm_ack" "$rearm_id" || die "Failed to apply a borrowed-miner handshake request; reservation retained for operator repair."
         fi
         if on_bench "test -f '$E2E_DIR/results/e2e-harness.done'"; then
             rc="$(on_bench "cat '$E2E_DIR/results/e2e-harness.done'")"
