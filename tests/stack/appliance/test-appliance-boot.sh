@@ -492,7 +492,7 @@ SYNCSCRIPT="$ROOT/os/overlay/pithead-sync"
 mk_tmpdir SSB
 mkdir -p "$SSB/opt-pithead" "$SSB/opt-rigforge/util" "$SSB/opt-rigforge/prebuilt/xmrig/build"
 for f in pithead pithead-completion.bash VERSION docker-compose.yml \
-    config.reference.json config.core-keys.json config.minimal.json cosign.pub; do
+    config.reference.json config.core-keys.json config.minimal.json cosign.pub cosign.registry-ca.crt; do
     printf 'pithead-program' >"$SSB/opt-pithead/$f"
 done
 printf 'program-v2' >"$SSB/opt-rigforge/rigforge.sh"
@@ -514,16 +514,17 @@ assert_eq "prebuilt seeded into the workspace where 'already built' finds it" \
     "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig" 2>/dev/null)" "bin-v2"
 assert_eq "the commit marker rides with the seed" \
     "$(cat "$SSB/data/rigforge/data/worker/xmrig/.rigforge-commit" 2>/dev/null)" "commit-B"
+assert_eq "the debug registry CA reaches the runtime verifier" "$(cat "$SSB/data/pithead/cosign.registry-ca.crt" 2>/dev/null)" "pithead-program"
 [ -e "$SSB/data/rigforge/prebuilt" ] && bad "prebuilt/ is a seed, never a synced tree" "synced" ||
     ok "prebuilt/ is a seed, never a synced tree"
 # State survives a re-run: the rendered config and a native rebuild of the SAME pin stay put.
 printf '{"pools":[{"url":"127.0.0.1:3333"}]}' >"$SSB/data/rigforge/config.json"
 printf 'native-rebuild' >"$SSB/data/rigforge/data/worker/xmrig/build/xmrig"
 run_sync >/dev/null 2>&1
-assert_eq "config.json (state) survives the resync" \
-    "$(cat "$SSB/data/rigforge/config.json")" '{"pools":[{"url":"127.0.0.1:3333"}]}'
-assert_eq "a same-pin native rebuild is left alone" \
-    "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
+assert_eq "config.json (state) survives the resync" "$(cat "$SSB/data/rigforge/config.json")" '{"pools":[{"url":"127.0.0.1:3333"}]}'
+assert_eq "a same-pin native rebuild is left alone" "$(cat "$SSB/data/rigforge/data/worker/xmrig/build/xmrig")" "native-rebuild"
+rm -f "$SSB/opt-pithead/cosign.registry-ca.crt" && run_sync >/dev/null 2>&1
+[ ! -e "$SSB/data/pithead/cosign.registry-ca.crt" ] && ok "a later release removes the stale debug registry CA" || bad "a later release removes the stale debug registry CA" "still present"
 # A new pin arrives with a new image AND its new prebuilt: the cached build is replaced, so the
 # on-box clone path never needs to run.
 printf 'commit-C\n' >"$SSB/opt-rigforge/prebuilt/xmrig/.rigforge-commit"
@@ -622,7 +623,7 @@ osh_all="$(printf '%s' "$OSH" | sed -n '/^all)/,/^    ;;/p')"
 for ph in boot update install provision rig media fault reset; do
     assert_contains "--phase all runs phase_$ph" "$osh_all" "phase_$ph"
 done
-assert_contains "the battery's own build pins the commit verify-image checks against" "$OSH" 'PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh'
+assert_contains "the battery pins the commit and passes the debug registry key to verify-image" "$OSH" 'PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"'
 assert_contains "the supplied boot image is verified before the KVM phase" "$(printf '%s\n' "$OSH" | sed -n '/^require_clean_bench$/,/^case "\$PHASE" in/p')" 'tests/os/verify-image.sh "$IMAGE" --test || exit $?'
 VIS="$(cat "$ROOT/tests/os/verify-image.sh")"
 # Wiring the guard on is only half of it: the two ends have to speak the same shape. build-image.sh
@@ -631,10 +632,8 @@ VIS="$(cat "$ROOT/tests/os/verify-image.sh")"
 # that refuses nothing, pointed the other way. Bench-proven on the KVM image; asserted here because
 # verify-image needs a loop device and root, which tier-1 has neither of.
 assert_contains "the harness hands over the full sha build-image.sh stamps" "$OSH" 'expect="$(git rev-parse HEAD 2>/dev/null || true)"'
-assert_not_contains "the harness does not hand over a short sha the stamp never equals" "$OSH" \
-    'rev-parse --short HEAD'
-assert_contains "the expected-commit check matches on a prefix, so a short sha still verifies" "$VIS" \
-    'case "$BUILT" in "$PITHEAD_EXPECT_COMMIT"*)'
+assert_not_contains "the harness does not hand over a short sha the stamp never equals" "$OSH" 'rev-parse --short HEAD'
+assert_contains "the expected-commit check matches on a prefix, so a short sha still verifies" "$VIS" 'case "$BUILT" in "$PITHEAD_EXPECT_COMMIT"*)'
 assert_contains "a skipped check is counted, not silent" "$VIS" "SKIP=\$((SKIP + 1))"
 assert_contains "skipped checks refuse to report a verified image" "$VIS" "were SKIPPED, so this is not a verified image"
 unset OSH osh_all VIS
