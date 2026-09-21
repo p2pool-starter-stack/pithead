@@ -402,7 +402,9 @@ Five steps, each answering a hardware-validated failure:
    derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing
    egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
-   `pithead status` must exit 0 — every expected container running and healthy, none restarting.
+   `pithead status` must exit 0 — every expected container running and healthy, none restarting;
+   only a miner deliberately created/exited/stopped by the sync gate, or a chain service explicitly
+   withheld by a pending data migration, is exempt. Restarting or unhealthy services still fail.
    doctor judges only the revenue containers, so before #2383 a *non-revenue* container left
    `unhealthy` (the dashboard's own healthcheck failing, caddy in a restart loop) passed both
    earlier gates while the box's own status command already called it broken: manual battery M9
