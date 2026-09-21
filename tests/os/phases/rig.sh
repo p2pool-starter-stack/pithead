@@ -357,5 +357,19 @@ phase_rig() {
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
     [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" ||
         bad "expected v2 on the rig after commit, got '$marker'"
+
+    # #2063: no accepted share has ever been proven on the appliance channel — this rig's own pool
+    # is its own sshd (#796), by design. A coordinator this battery itself boots in remote-node mode
+    # (#2062's precondition) clears the sync gate, so the rig can mine into a real p2pool instead.
+    local rn_mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rn_rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" rn_zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
+    if [ -z "$rn_mh" ] || [ -z "$rn_rpc" ] || [ -z "$rn_zmq" ]; then
+        it_skip_leg "the rig mines an accepted share against a booted coordinator (#2063)" \
+            "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
+    else
+        rig_share_leg "$img" "$rn_mh" "$rn_rpc" "$rn_zmq" \
+            "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" \
+            "${PITHEAD_OS_TARI_NODE_HOST:-}" "${PITHEAD_OS_TARI_GRPC_PORT:-}" "$ip"
+    fi
+
     rig_setup_again_coordinator_leg "$token" # #1318: Set up again as a coordinator, from the updated slot
 }

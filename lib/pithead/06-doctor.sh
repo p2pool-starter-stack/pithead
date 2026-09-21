@@ -370,7 +370,8 @@ doctor_json() {
          | {version: $version, exit: $rc,
             summary: {ok: map(select(.status == "ok")) | length,
                       warn: map(select(.status == "warn")) | length,
-                      fail: map(select(.status == "fail")) | length},
+                      fail: map(select(.status == "fail")) | length,
+                      info: map(select(.status == "info")) | length},
             checks: .}' "$DR_JSON_FILE"
     rm -f "$DR_JSON_FILE"
     unset DR_JSON_FILE
