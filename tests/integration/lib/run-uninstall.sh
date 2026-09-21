@@ -132,14 +132,18 @@ run_uninstall_phase() {
         return
     fi
 
-    local compose_ids control_units firewall_rules
-    compose_ids=0
-    while IFS= read -r dir; do
-        [ -n "$dir" ] || continue
-        rx "docker container inspect $(quote_arg "$dir") >/dev/null 2>&1" && compose_ids=$((compose_ids + 1))
-    done <<<"$compose_ids_before"
-    assert_eq "compose project removed" "$compose_ids" "0"
-    if ! control_units="$(rx 'systemctl list-unit-files "pithead-control*" --no-legend 2>/dev/null || [ $? -eq 1 ]; systemctl list-units --all "pithead-control*" --no-legend 2>/dev/null || [ $? -eq 1]')"; then
+    local compose_ids compose_count control_units firewall_rules
+    if ! compose_ids="$(rx 'docker container ls -aq --no-trunc')"; then
+        it_fail "compose project removed" "docker container ls failed"
+    else
+        compose_count=0
+        while IFS= read -r dir; do
+            [ -n "$dir" ] || continue
+            printf '%s\n' "$compose_ids" | grep -Fxq "$dir" && compose_count=$((compose_count + 1))
+        done <<<"$compose_ids_before"
+        assert_eq "compose project removed" "$compose_count" "0"
+    fi
+    if ! control_units="$(rx 'systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend')"; then
         it_fail "control-runner systemd units removed" "systemctl inspection failed"
     else
         assert_eq "control-runner systemd units removed" "$(printf '%s\n' "$control_units" | grep -c pithead-control || true)" "0"
