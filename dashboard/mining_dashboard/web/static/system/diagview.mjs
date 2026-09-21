@@ -259,13 +259,13 @@ export class DiagnosticsPanel extends Component {
 
   renderService(service, haveReport) {
     return html`<section>
-      <h4>${service.name}
+      <h3 class="card-subhead">${service.name}
         ${
           haveReport
             ? html`<span class=${STATUS_CLS[service.status] || "text-muted"}> — ${service.status}</span>`
             : null
         }
-      </h4>
+      </h3>
       ${
         haveReport
           ? this.renderChecks(service.checks)
@@ -278,7 +278,7 @@ export class DiagnosticsPanel extends Component {
   render() {
     if (!this.props.enabled) {
       return html`<div class="card">
-        <h3>Service diagnostics</h3>
+        <h2>Service diagnostics</h2>
         <p>Diagnostics are off with the rest of the control channel — see Configuration.</p>
       </div>`;
     }
@@ -288,7 +288,7 @@ export class DiagnosticsPanel extends Component {
     const reportRows = haveReport ? doctorRows(healthResult.doctor) : [];
     const summary = haveReport ? doctorSummary(healthResult.doctor) : null;
     return html`<div class="card">
-      <h3>Service diagnostics</h3>
+      <h2>Service diagnostics</h2>
       <p>Run the host's read-only health check once. Every service and the machine checks appear
       below; open a service's recent log only when you need it.</p>
       <button class="btn-toggle active" disabled=${healthPhase === "waiting"}
@@ -313,7 +313,7 @@ export class DiagnosticsPanel extends Component {
       ${
         haveReport
           ? html`<section>
-          <h4>Machine checks</h4>
+          <h3 class="card-subhead">Machine checks</h3>
           ${
             reportRows.length && groups.machine.length
               ? this.renderChecks(groups.machine)

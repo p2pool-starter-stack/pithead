@@ -319,9 +319,9 @@ wait_bench_healthy() { # <timeout_s>
     done
 }
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
-# the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as
-# a direct check that the sync-detection logic settles correctly against the reused chains.
+# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
+# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
+# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -331,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the harness will wait further on real sync signals"
+            warn "sync panels still '$st' after $((${1:-300}))s — the readiness check right after this will judge tari on what it just saw"
             return 1
         }
         sleep 8
@@ -588,7 +588,7 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 300 || true # let the recreated monerod/tari re-confirm their tip before the harness pre-check
+    wait_synced 1500 || true # 1500s (25min) covers tari's real reconnect; #2455 measured >18min, and the readiness check right after this never retries
     ok "branch deployed; stack reconciled"
 }
 

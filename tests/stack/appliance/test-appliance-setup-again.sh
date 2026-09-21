@@ -155,4 +155,12 @@ assert_eq "...and both card writers call write_handoff_card (the guard's positiv
 rm -rf "$HCSB"
 unset HCSB
 
+# #1867: the KVM rig phase's control-off leg (tests/os/rig-control-off-leg.sh) judges the card this
+# same wizard writes for a pool host with no IPv4. Its rows only mean something if they RED on the
+# card written with that change reverted, so its --self-test drives the predicate against both
+# shapes and renders each note through the page's own module. Driven here, the lowest tier that can.
+echo "== unit: the rig control-off card verdict the KVM leg uses (#1867) =="
+bash "$ROOT/tests/os/rig-control-off-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "green on the control-off card, red on the card written without the field" "$?" "0"
+
 unset SAWB SAESP out
