@@ -60,12 +60,11 @@ run_uninstall_phase() {
     assert_contains "aborted uninstall reports nothing changed" "$abort_out" "Aborted"
     assert_eq ".env still present after the abort" "$(rx 'test -f .env && echo yes || echo no')" "yes"
 
-    # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Strips
-    # the surrounding quotes dotenv_render_value adds for a path with spaces/$/"/\ (#19); a
-    # data dir plain enough to need none round-trips through the strip unchanged.
+    # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Reuse
+    # env_get_file so a dotenv-rendered path with spaces, $, quotes, or escapes round-trips.
     local dirs dir snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
-    dirs="$(rx "grep -E '^(MONERO|TARI|P2POOL|DASHBOARD|TOR)_DATA_DIR=' .env 2>/dev/null | cut -d= -f2-" | sort -u)"
-    dirs="$(printf '%s\n' "$dirs" | sed -e 's/^"//' -e 's/"$//')"
+    # shellcheck disable=SC2016  # $key expands in the remote shell rx invokes.
+    dirs="$(rx 'source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; done' | sort -u)"
     # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
     # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
     # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
@@ -79,7 +78,10 @@ run_uninstall_phase() {
         return
     fi
     config_before="$(rx 'cat config.json' 2>/dev/null)"
-    config_before_fp="$(printf '%s' "$config_before" | sha256sum | cut -d' ' -f1)"
+    if ! config_before_fp="$(rx "sha256sum config.json | cut -d' ' -f1")"; then
+        it_fail "config.json is readable before uninstall" "sha256sum config.json failed"
+        return
+    fi
     if ! img="$(rx 'docker compose config --images')"; then
         it_fail "compose image inventory captured" "docker compose config --images failed"
         return

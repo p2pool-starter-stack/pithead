@@ -21,6 +21,8 @@ assert_contains "the rebuilt proxy and onion state must be populated" "$PHASE" \
     "grep -qE '^PROXY_AUTH_TOKEN=.+\$' .env"
 assert_contains "the preservation snapshot includes backups" "$PHASE" "backups"
 assert_contains "the preservation snapshot hashes file contents" "$PHASE" "_uninstall_snapshot_dirs"
+assert_contains "the keep-list decodes dotenv-rendered data paths" "$PHASE" "env_get_file .env"
+assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" "sha256sum config.json"
 
 PITHEAD_LOG="$(mktemp)"
 trap 'rm -f "$PITHEAD_LOG"' EXIT
