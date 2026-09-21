@@ -56,6 +56,10 @@ for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
 quote_arg() { printf '%q' "$1"; }
 rx() { printf '%s\n%s' "$1" "$(cat)"; }
+[[ "$(_rotate_proxy_live_args)" == *'/proc/1/cmdline'* ]] || {
+    echo "rotate-secrets must inspect xmrig-proxy's running argv" >&2
+    exit 1
+}
 proxy_probe="$(_rotate_proxy_token_accepted 'token with space')"
 [[ "$proxy_probe" == *'docker exec -i dashboard'* &&
     "$proxy_probe" == *'sys.stdin.read()'* && "$proxy_probe" == *'token with space'* ]] || {

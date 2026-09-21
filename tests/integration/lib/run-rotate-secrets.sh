@@ -1,12 +1,9 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
-# xmrig-proxy's live argv (#2344): --http-access-token carries PROXY_AUTH_TOKEN, --access-password
-# is appended by the wrapper entrypoint from PROXY_STRATUM_PASSWORD (never a compose command item,
-# #152) and is the credential rigs must send. docker inspect, not the compose render or .env — a
-# restart-instead-of-recreate regression (the exact failure rotate-secrets exists to avoid, #356's
-# shape) would leave a STALE value here even though config.json/.env already carry the new one.
-_rotate_proxy_live_args() { rx "docker inspect xmrig-proxy --format '{{json .Args}}' 2>/dev/null"; }
+# xmrig-proxy's live argv (#2344): its entrypoint appends --access-password from
+# PROXY_STRATUM_PASSWORD, so Docker's configured `.Args` is deliberately not the live command.
+_rotate_proxy_live_args() { rx "docker exec xmrig-proxy sh -c 'tr \"\\0\" \"\\n\" </proc/1/cmdline' 2>/dev/null"; }
 
 # Host-side authed get_info — the same probe restore-proof.sh runs after an e2e restore, here run
 # against THIS box's live monerod. Echoes rpc-ok only when monerod actually accepts <user>:<pass>
