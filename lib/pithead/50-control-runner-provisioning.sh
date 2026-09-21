@@ -73,13 +73,6 @@ provision_control_runner() {
     # already compared physical paths for ownership; this brings the idempotence check and the
     # written unit content onto the same footing.
     pwd_p=$(pwd -P)
-    # $CONTROL_DIR carries the identical two-spellings problem one level removed: it is
-    # "$PWD/data/control" as of parse_and_validate_config's own literal $PWD, so the SAME checkout
-    # produces two different PathExistsGlob strings across a boot-driven call and an interactive
-    # symlink `cd`. ensure_directories runs before this in every real caller, so the directory
-    # already exists; falling back to the unresolved value only matters for a not-yet-provisioned
-    # install, where nothing has been written to compare against yet anyway.
-    control_dir_p=$(cd "$CONTROL_DIR" 2>/dev/null && pwd -P) || control_dir_p="$CONTROL_DIR"
     # The engine this install was provisioned WITH, pinned into the unit below (#2059).
     engine=$(container_engine)
     # Enablement must be --runtime wherever the units are runtime units: on the appliance's
@@ -117,6 +110,11 @@ provision_control_runner() {
         fi
         return 0
     fi
+    # $CONTROL_DIR carries the identical two-spellings problem one level removed: it is
+    # "$PWD/data/control" as of parse_and_validate_config's own literal $PWD, so the SAME checkout
+    # produces two different PathExistsGlob strings across a boot-driven call and an interactive
+    # symlink `cd`. Disabled-control callers need not parse a control directory at all.
+    control_dir_p=$(cd "$CONTROL_DIR" 2>/dev/null && pwd -P) || control_dir_p="$CONTROL_DIR"
     # Already installed for this checkout — keep the routine apply sudo-free. (-F: both paths
     # are literals — versioned dirs carry dots (pithead-v1.9.3), and the glob star must not
     # read as a regex repeat.)
