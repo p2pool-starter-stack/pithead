@@ -30,7 +30,7 @@ run_reset_dashboard() {
     if ! decoy_config="$(printf '%s' "$BASELINE_CONFIG" | jq --arg dashboard "$decoy_dashboard" --arg p2pool "$decoy_p2pool" \
         '.dashboard.data_dir=$dashboard | .p2pool.data_dir=$p2pool')" ||
         ! push_config "$decoy_config" ||
-        ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker")" >/dev/null 2>&1; then
+        ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") $(quote_arg "$decoy_dashboard") $(quote_arg "$decoy_p2pool") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker") && : > $(quote_arg "$decoy_dashboard/.itest-marker") && : > $(quote_arg "$decoy_p2pool/.itest-marker")" >/dev/null 2>&1; then
         it_fail "reset-dashboard phase preconditions" "could not write the decoy config and live-dir markers"
         return
     fi
@@ -64,16 +64,16 @@ run_reset_dashboard() {
     pithead reset-dashboard -y >/dev/null 2>&1
     assert_rc "reset-dashboard succeeds" "$?" "0"
 
-    # #139: the LIVE .env dirs were wiped (marker gone); the unapplied config-only decoys, never
-    # created by apply, were never touched either.
+    # #139: the LIVE .env dirs were wiped (marker gone); the unapplied config-only decoy markers
+    # survived.
     assert_eq "reset wiped the .env dashboard dir, not the config-only one" \
         "$(rx "test -e $(quote_arg "$dashboard_dir/.itest-marker") && echo present || echo gone")" "gone"
     assert_eq "reset wiped the .env p2pool dir, not the config-only one" \
         "$(rx "test -e $(quote_arg "$p2pool_dir/.itest-marker") && echo present || echo gone")" "gone"
     assert_eq "reset never touched the unapplied config-only dashboard dir (#139)" \
-        "$(rx "test -e $(quote_arg "$decoy_dashboard") && echo present || echo absent")" "absent"
+        "$(rx "test -e $(quote_arg "$decoy_dashboard/.itest-marker") && echo present || echo absent")" "present"
     assert_eq "reset never touched the unapplied config-only p2pool dir (#139)" \
-        "$(rx "test -e $(quote_arg "$decoy_p2pool") && echo present || echo absent")" "absent"
+        "$(rx "test -e $(quote_arg "$decoy_p2pool/.itest-marker") && echo present || echo absent")" "present"
 
     # #550: recreated dirs are owned by the container uid (APP_UID=1000) — the mkdir-then-chown
     # order this leg proves against a live filesystem, not a shadowed stub.
