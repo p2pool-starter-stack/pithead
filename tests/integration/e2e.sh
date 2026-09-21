@@ -87,7 +87,7 @@ OPTIONS:
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
-  --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
+  --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
@@ -167,6 +167,7 @@ case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targe
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
+[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
@@ -318,9 +319,9 @@ wait_bench_healthy() { # <timeout_s>
     done
 }
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
-# the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as
-# a direct check that the sync-detection logic settles correctly against the reused chains.
+# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
+# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
+# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -330,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the harness will wait further on real sync signals"
+            warn "sync panels still '$st' after $((${1:-300}))s — the readiness check right after this will judge tari on what it just saw"
             return 1
         }
         sleep 8
@@ -360,7 +361,6 @@ wait_workers() { # <n> <timeout_s>
         sleep 8
     done
 }
-
 # --- Phase 0: preflight -----------------------------------------------------
 preflight() {
     log "Preflight"
@@ -588,7 +588,7 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 300 || true # let the recreated monerod/tari re-confirm their tip before the harness pre-check
+    wait_synced 1500 || true # 1500s (25min) covers tari's real reconnect; #2455 measured >18min, and the readiness check right after this never retries
     ok "branch deployed; stack reconciled"
 }
 
@@ -628,7 +628,7 @@ run_harness() {
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
+        harness_pregate "$WORKERS" "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."

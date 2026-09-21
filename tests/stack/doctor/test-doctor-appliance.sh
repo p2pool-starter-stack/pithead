@@ -49,14 +49,16 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$VALID_PRIMARY" >"$DJ/config.json"
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-# doctor --json: valid JSON on stdout, the human report on stderr, counters consistent with the
-# check list (info lines are context, not verdicts).
+# doctor --json: valid JSON on stdout, the human report on stderr, summary counters (including
+# info) sum to the full check list (#1807 — a consumer totalling ok+warn+fail alone under-reports
+# by the number of info rows).
 dj_out="$DJ/doctor.json"
 dj_err="$DJ/doctor.err"
 (cd "$DJ" && PATH="$DJ/bin:$PATH" ./pithead doctor --json >"$dj_out" 2>"$dj_err") || true
 assert_eq "doctor --json has checks + summary" "$(jq -r 'has("checks") and has("summary")' "$dj_out" 2>/dev/null)" "true"
-assert_eq "doctor --json counters match verdict lines" \
-    "$(jq -r '(.summary.ok + .summary.warn + .summary.fail) == ([.checks[] | select(.status != "info")] | length)' "$dj_out" 2>/dev/null)" "true"
+assert_eq "doctor --json summary has an info count" "$(jq -r '.summary | has("info")' "$dj_out" 2>/dev/null)" "true"
+assert_eq "doctor --json counters sum to the check total" \
+    "$(jq -r '(.summary.ok + .summary.warn + .summary.fail + .summary.info) == (.checks | length)' "$dj_out" 2>/dev/null)" "true"
 assert_contains "doctor --json human report on stderr" "$(cat "$dj_err")" "Diagnostics summary"
 printf release >"$DJ/variant"
 jq '. + {ssh: {enabled: true}}' "$DJ/config.json" >"$DJ/config.json.next" && mv "$DJ/config.json.next" "$DJ/config.json"
@@ -83,6 +85,11 @@ echo "== unit: check_data_wipe_note — doctor surfaces the wipe note, a support
 mk_tmpdir CDW
 mkdir -p "$CDW/esp"
 export PITHEAD_PRESEED_DIR="$CDW/esp"
+# Stands in for /run (tmpfs): data_wipe_note()'s one-shot cache has to live in a file, never a
+# shell variable, because every caller reads it through `$(...)` command substitution, which
+# forks a subshell (#1208 job 557/560 — a variable-based cache never worked, since a subshell's
+# writes to it vanish when the subshell exits).
+export PITHEAD_DATA_WIPE_NOTE_CACHE="$CDW/wipe-note-cache.json"
 
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent regardless of the note" "$out" ""
@@ -91,6 +98,7 @@ out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "no note file -> doctor says nothing (not even a section header)" "$out" ""
 
 printf '2026-08-21T09:00:00Z unrecoverable /data reinitialized — everything on it was lost\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=0 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_eq "off the appliance -> silent EVEN WITH a note present (a DIY host cannot have one)" "$out" ""
 
@@ -100,12 +108,33 @@ assert_contains "the WARN names the date" "$out" "2026-08-21T09:00:00Z"
 assert_contains "the WARN points at restoring a backup" "$out" "restore from backup"
 assert_not_contains "a recovery wipe is a WARN, never a FAIL (must not fail the boot health gate)" "$out" "FAIL"
 
+# One-shot PER BOOT (#1208): the .pending marker is consumed, but the same-boot cache still
+# answers a re-run within the SAME boot consistently — an operator running doctor twice in one
+# sitting should see the same output, not have it flicker to silence mid-session. The marker
+# itself (checked below) never comes back; only a reboot (tmpfs cleared) truly ends the WARN.
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_contains "a re-run within the SAME boot -> the SAME WARN, not silence" "$out" "WARN"
+assert_eq "the .pending marker itself stays consumed (never re-armed by a re-run)" \
+    "$([ -f "$CDW/esp/pithead-data-wiped.pending" ] && echo present || echo absent)" "absent"
+assert_contains "the underlying wipe log is untouched — only the marker was consumed" \
+    "$(cat "$CDW/esp/pithead-data-wiped")" "2026-08-21T09:00:00Z"
+
+# A LATER boot (cache cleared, marker already consumed on disk) is what finally ends it.
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a later boot -> silent, never a stale re-WARN (#1208)" "$out" ""
+
 printf '2026-08-19T07:30:00Z factory-reset requested\n' >"$CDW/esp/pithead-data-wiped"
+: >"$CDW/esp/pithead-data-wiped.pending"
 out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
 assert_not_contains "a deliberate factory-reset -> no WARN (the operator asked for it)" "$out" "WARN"
 assert_contains "a deliberate factory-reset -> still named, informationally" "$out" "2026-08-19T07:30:00Z"
+rm -f "$PITHEAD_DATA_WIPE_NOTE_CACHE"
 
-unset PITHEAD_PRESEED_DIR
+out=$(PITHEAD_APPLIANCE=1 run_sourced "$SANDBOX" check_data_wipe_note 2>&1)
+assert_eq "a factory-reset info line is one-shot too (later boot -> silent)" "$out" ""
+
+unset PITHEAD_PRESEED_DIR PITHEAD_DATA_WIPE_NOTE_CACHE
 rm -rf "$CDW"
 unset CDW out
 

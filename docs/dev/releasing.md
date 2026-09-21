@@ -121,7 +121,7 @@ the bytes that are built and published. Before bundling, it rebuilds `pithead`
 from its slices and refuses a different generated artifact.
 
 > How to provision and harden that server, why end-to-end validation can't run on GitHub-hosted
-> runners (and what does run free on every PR), and the safe self-hosted-runner setup are covered
+> runners (and what does run free on every PR), and how bench-ci owns the release gate are covered
 > in [Release / Validation Server](release-server.md).
 
 ### Branch mechanics
@@ -151,6 +151,14 @@ Release notes, where operators actually read it. The branch model itself is in
 [#1076]: https://github.com/p2pool-starter-stack/pithead/issues/1076
 
 ### Pipeline: stage → smoke-test → promote
+
+Ahead of stage 1, and outside the numbered pipeline the tool prints, `release.sh` runs one
+additional preflight check: it requires a successful `bench-ci/tier4` commit status on the exact
+release SHA from the dedicated bench-ci GitHub App. Both `BENCH_CI_APP_ID` (that App's numeric id)
+and `BENCH_CI_APP_SLUG` (`pithead-bench-ci`) are required on the release box, with no defaults. The
+bench publishes that status only after its full tier-4 suite completes; a missing, failed,
+unreadable, or wrong-App status aborts the cut before anything is built. Under `--dry-run` the
+verdict is printed as a warning and the rehearsal continues, so a preview still runs end to end.
 
 1. Preflight: check the clean working tree, then build the git-ignored `pithead` executable from
    `lib/pithead/*.sh`; read the product version from the top-level `VERSION` file; confirm
@@ -273,28 +281,31 @@ tolerated-known-failure habit the flag exists to end.
 
 ### Which gates are automated, and which are not
 
-Every gate below runs at cut time or is run by hand. **Nothing gates an update of `main`**, and no
-workflow claims to ([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)):
-`release-gate.yml` is dispatch-only, because a self-hosted runner on a key-holding box is not
-registered. It previously carried a `push: [main]` trigger behind a repo variable nobody set, so
-every merge recorded a *skipped* run — and a skipped job is green, which made `main` display a
-passing live-node gate that had never once executed.
+The release lane requires a successful `bench-ci/tier4` status on its release SHA, and the `main`
+ruleset already requires the same context pinned to the bench-ci App's `integration_id` — both
+provisioned under [#2237](https://github.com/p2pool-starter-stack/pithead/issues/2237). The bench
+publishes that status after its full tier-4 suite; `release.sh` checks the exact SHA, context, App
+slug, and numeric App id before stage 1. `release-gate.yml` stays dispatch-only as an operator
+tool, because a self-hosted runner on a key-holding public-repo box is not registered. It
+previously carried a `push: [main]` trigger behind a repo variable nobody set, so every merge
+recorded a *skipped* run — and a skipped job is green, which made `main` display a passing
+live-node gate that had never once executed
+([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)).
 
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
 | `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
+| Bench full tier-4 suite (`bench-ci/tier4`) | before `release.sh` stage 1 | bench-ci | yes |
 | `make test` again, on the release box | `release.sh` stage 2 | the cut | yes |
 | #54 live matrix, `--readiness` | `release.sh` stage 2 | the cut | yes |
 | Targeted e2e with a borrowed rig | before `make release` | you | yes — by policy, not by code |
 | Release signing environment + pinned verifier | `release.sh` stage 1 | the cut | yes |
 | Staged-image smoke (pull back, check version) | `release.sh` stage 5 | the cut | yes |
 | `release-smoke` (real cosign, real #59 upgrade) | after publish | you | no — the assets already exist |
-| `release-gate.yml` tier-4 live matrix | on demand | you, via *Run workflow* | no |
+| `release-gate.yml` tier-4 live matrix | never — unclaimable until a runner registers for `[self-hosted, pithead-release]` | nobody | no |
 | Live `--check` sweep on the bench | after deploy | you | no |
 
 The two human-run rows are policy, not automation: the release is not finished until they are green.
-To move `release-gate.yml` into the automated column, register the runner first — see
-[Release / Validation Server](release-server.md) and the note at the top of the workflow.
 
 ## Signed releases
 
