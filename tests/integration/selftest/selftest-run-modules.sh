@@ -54,6 +54,16 @@ source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 source "$ROOT/lib/run-alert-egress.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
+proxy_probe=""
+quote_arg() { printf '%q' "$1"; }
+rx() { proxy_probe="$1"; }
+_rotate_proxy_token_accepted 'token with space'
+[[ "$proxy_probe" == *'docker exec -e PROXY_AUTH_TOKEN=token\ with\ space dashboard'* &&
+    "$proxy_probe" == *'os.environ["PROXY_AUTH_TOKEN"]'* ]] || {
+    echo "rotate-secrets proxy token is not passed as a quoted environment value" >&2
+    exit 1
+}
+
 pithead() {
     printf '%s\n' \
         'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed' \

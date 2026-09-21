@@ -21,7 +21,7 @@ _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-fail
 # than whatever the dashboard currently holds. get_config() calls raise_for_status(), so a 401
 # (wrong/old token) makes the python process exit non-zero; a real answer exits 0.
 _rotate_proxy_token_accepted() { # <token> -> rc 0 if the proxy answered
-    rx "docker exec dashboard python3 -c 'from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT; XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, $(quote_arg "$1")).get_config()' >/dev/null 2>&1"
+    rx "docker exec -e PROXY_AUTH_TOKEN=$(quote_arg "$1") dashboard python3 -c 'import os; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT; XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, os.environ[\"PROXY_AUTH_TOKEN\"]).get_config()' >/dev/null 2>&1"
 }
 
 # Tier-4 leg for `rotate-secrets` (#2344): the CLI verb has never run on a bench, so nothing proves
