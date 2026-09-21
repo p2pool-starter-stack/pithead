@@ -26,7 +26,11 @@
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
 #           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
-#           off a real virsh destroy, not just the reboot leg's clean return.
+#           off a real virsh destroy, not just the reboot leg's clean return. Closes with a share
+#           leg (#2063): a second, concurrent guest provisioned in remote-node mode (the coordinator
+#           #2062's `stack` phase boots), the rig re-pointed at its stratum, and BOTH the rig's own
+#           worker and the coordinator's built-in miner showing an accepted share on
+#           /api/state — a bench with no reserved node counts it a `missing` leg skip.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
@@ -115,6 +119,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/rig-share-leg.sh
+. "$SCRIPT_DIR/rig-share-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
