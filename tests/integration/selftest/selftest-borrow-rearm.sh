@@ -58,7 +58,7 @@ assert_eq "a stale or different run's acknowledgement is refused" "$(drive_wrong
 
 HARNESS_SRC="$(sed -n '/^run_harness() {$/,/^}$/p' "$HERE/../e2e.sh")"
 controller_rearm_line="$(printf '%s\n' "$HARNESS_SRC" | grep -n 'repoint_miner ||' | cut -d: -f1)"
-controller_workers_line="$(printf '%s\n' "$HARNESS_SRC" | grep -n 'wait_workers "$WORKERS"' | tail -n1 | cut -d: -f1)"
+controller_workers_line="$(printf '%s\n' "$HARNESS_SRC" | grep -n 'wait_load_workers 180' | tail -n1 | cut -d: -f1)"
 controller_ack_line="$(printf '%s\n' "$HARNESS_SRC" | grep -n "cat > '\$rearm_ack'" | cut -d: -f1)"
 assert_eq "controller reloads and observes the worker before acknowledging re-arm" \
     "$([ "$controller_rearm_line" -lt "$controller_workers_line" ] && [ "$controller_workers_line" -lt "$controller_ack_line" ] && echo yes)" "yes"
