@@ -12,7 +12,7 @@ LIFECYCLE_SRC="$(sed -n '/^run_lifecycle() {$/,/^}$/p' "$HERE/../lib/run-lifecyc
 assert_eq "the extraction is the whole lifecycle function" \
     "$(printf '%s\n' "$LIFECYCLE_SRC" | sed -n '1p;$p' | tr '\n' ' ')" "run_lifecycle() { } "
 
-drive_restore() { # <healthy: yes|no> [backup-fails|archive-missing|restore-fails|verify-fails] -> function-rc|failure-count
+drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}"
@@ -22,8 +22,9 @@ drive_restore() { # <healthy: yes|no> [backup-fails|archive-missing|restore-fail
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         pithead() {
-            [ "$RESTORE_CASE:$1" != backup-fails:backup ] &&
-                [ "$RESTORE_CASE:$1" != restore-fails:restore ]
+            case "$RESTORE_CASE:$1" in
+            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
+            esac
         }
         wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
         env_on_box() { :; }
@@ -49,7 +50,10 @@ assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
 assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archive-missing)" "1|1"
+assert_eq "a failed apply fails lifecycle" "$(drive_restore yes apply-fails)" "1|1"
+assert_eq "a failed down fails lifecycle" "$(drive_restore yes down-fails)" "1|1"
 assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)" "1|1"
+assert_eq "a failed up fails lifecycle" "$(drive_restore yes up-fails)" "1|1"
 assert_eq "a failed restore verification fails lifecycle" "$(drive_restore yes verify-fails)" "1|1"
 
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
