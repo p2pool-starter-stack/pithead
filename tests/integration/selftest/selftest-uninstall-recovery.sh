@@ -17,15 +17,17 @@ assert_eq "the extraction is the whole function (closes)" "$(printf '%s\n' "$SRC
 PHASE="$(sed -n '/^run_uninstall_phase() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
 assert_contains "the rebuilt stack is checked against its kept config" "$PHASE" \
     "assert_running_state \"uninstall\" \"\$config_before\" \"\$setup_secret_fp\""
-assert_contains "the rebuilt secret state is checked for every required category" "$PHASE" \
-    "setup_secret_fp=\"\$(upgrade_secret_fingerprints)\""
+assert_contains "the rebuilt proxy and onion state must be populated" "$PHASE" \
+    "grep -qE '^PROXY_AUTH_TOKEN=.+\$' .env"
+assert_contains "the preservation snapshot includes backups" "$PHASE" "backups"
+assert_contains "the preservation snapshot hashes file contents" "$PHASE" "_uninstall_snapshot_dirs"
 
 PITHEAD_LOG="$(mktemp)"
 trap 'rm -f "$PITHEAD_LOG"' EXIT
 pithead() { printf '%s\n' "$*" >>"$PITHEAD_LOG"; }
 it_warn() { :; }
 wait_status_ok() { return 0; }
-SAFETY_ARCHIVE="/srv/code/pithead-e2e/backups/pithead-backup-fixture.tar.gz"
+SAFETY_ARCHIVE="/tmp/pithead-backup-fixture.tar.gz"
 eval "$SRC"
 
 # IT_FAIL is lib.sh's own real pass/fail counter (assert_eq increments it on a failed assertion

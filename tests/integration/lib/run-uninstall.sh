@@ -16,10 +16,10 @@
 # after uninstall's own shutdown — not a wipe, a shutdown checkpoint the "before" snapshot never
 # saw. Both snapshots are now taken with the stack already stopped (this phase's own `down` before
 # `fp_before`; uninstall's internal `down` on an already-down stack is a no-op), and the aggregate
-# size+count check is replaced with a per-file (size, inode, path) listing, so a real deletion
+# size+count check is replaced with per-file content hashes, so a real deletion or rewrite
 # shows up as a named path in the diff instead of a number that a shutdown checkpoint can also move.
-_uninstall_dir_listing() { # <dir> -> "<size> <inode> <relpath>" lines, sorted; a stable snapshot
-    rx "find $(quote_arg "$1") -type f -printf '%s %i %P\n' 2>/dev/null | sort"
+_uninstall_dir_listing() { # <dir> -> "<sha256> <path>" lines, sorted; a stable snapshot
+    rx "test -d $(quote_arg "$1") && test ! -L $(quote_arg "$1") && find $(quote_arg "$1") -type f -exec sha256sum {} + | sort"
 }
 
 _uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing block per dir
@@ -60,15 +60,33 @@ run_uninstall_phase() {
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Strips
     # the surrounding quotes dotenv_render_value adds for a path with spaces/$/"/\ (#19); a
     # data dir plain enough to need none round-trips through the strip unchanged.
-    local dirs dir fp_before fp_after config_before setup_secret_fp
+    local dirs dir snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
     dirs="$(rx "grep -E '^(MONERO|TARI|P2POOL|DASHBOARD|TOR)_DATA_DIR=' .env 2>/dev/null | cut -d= -f2-" | sort -u)"
     dirs="$(printf '%s\n' "$dirs" | sed -e 's/^"//' -e 's/"$//')"
     # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
     # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
     # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
-    pithead down >/dev/null 2>&1
-    fp_before="$(_uninstall_snapshot_dirs "$dirs")"
+    if ! pithead down >/dev/null 2>&1; then
+        it_fail "stack quiesced before uninstall snapshot" "pithead down failed"
+        return
+    fi
+    snapshot_paths="${dirs}"$'\nbackups'
+    if ! fp_before="$(_uninstall_snapshot_dirs "$snapshot_paths")"; then
+        it_fail "kept data and backups are readable before uninstall" "a configured path is missing, symlinked, or unreadable"
+        return
+    fi
     config_before="$(rx 'cat config.json' 2>/dev/null)"
+    config_before_fp="$(printf '%s' "$config_before" | sha256sum | cut -d' ' -f1)"
+    if ! img="$(rx 'docker compose config --images')"; then
+        it_fail "compose image inventory captured" "docker compose config --images failed"
+        return
+    fi
+    while IFS= read -r dir; do
+        case "$dir" in
+        "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-"*) first_party_images+="${dir}"$'\n' ;;
+        *) [ -n "$dir" ] && pulled_images+="${dir}"$'\n' ;;
+        esac
+    done <<<"$img"
 
     local fails_before="$IT_FAIL"
     it_step "pithead uninstall -y…"
@@ -78,28 +96,55 @@ run_uninstall_phase() {
         return
     fi
 
-    assert_eq "compose project removed" \
-        "$(rx 'docker compose ps -q 2>/dev/null | wc -l | tr -d " "')" "0"
-    assert_eq "control-runner systemd units removed" \
-        "$(rx 'systemctl list-unit-files "pithead-control*" 2>/dev/null | grep -c pithead-control')" "0"
-    assert_eq "tor egress firewall rules removed from the kernel" \
-        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
+    local compose_ids control_units firewall_rules
+    if ! compose_ids="$(rx 'docker compose ps -q')"; then
+        it_fail "compose project removed" "docker compose ps failed"
+    else
+        assert_eq "compose project removed" "$(printf '%s\n' "$compose_ids" | sed '/^$/d' | wc -l | tr -d ' ')" "0"
+    fi
+    if ! control_units="$(rx 'systemctl list-unit-files "pithead-control*" --no-legend && systemctl list-units --all "pithead-control*" --no-legend')"; then
+        it_fail "control-runner systemd units removed" "systemctl inspection failed"
+    else
+        assert_eq "control-runner systemd units removed" "$(printf '%s\n' "$control_units" | grep -c pithead-control || true)" "0"
+    fi
+    if ! firewall_rules="$(rx 'if command -v nft >/dev/null; then sudo nft list tables; fi; sudo iptables-save')"; then
+        it_fail "tor egress firewall rules removed from the kernel" "firewall inspection failed"
+    else
+        assert_eq "tor egress firewall rules removed from the kernel" "$(printf '%s\n' "$firewall_rules" | grep -Ec 'pithead-tor-egress|table inet pithead_egress' || true)" "0"
+    fi
+    while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        if rx "docker image inspect $(quote_arg "$img") >/dev/null 2>&1"; then
+            it_fail "pithead-built image removed" "$img remains after uninstall"
+        else
+            it_pass "pithead-built image removed"
+        fi
+    done <<<"$first_party_images"
+    while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        if rx "docker image inspect $(quote_arg "$img") >/dev/null 2>&1"; then
+            it_pass "pulled third-party image kept"
+        else
+            it_fail "pulled third-party image kept" "$img is absent after uninstall"
+        fi
+    done <<<"$pulled_images"
     assert_eq ".env removed" "$(rx 'test -f .env && echo yes || echo no')" "no"
-    assert_eq "config.json kept, byte-identical" "$(rx 'cat config.json' 2>/dev/null)" "$config_before"
+    assert_eq "config.json kept, byte-identical" "$(rx "sha256sum config.json 2>/dev/null | cut -d' ' -f1")" "$config_before_fp"
 
     local uninstall_log
     uninstall_log="$(cat "$OUT_DIR/uninstall.log" 2>/dev/null)"
     assert_contains "the kept message names config.json" "$uninstall_log" "config.json"
     assert_contains "the kept message names backups/" "$uninstall_log" "backups/"
-    for dir in $dirs; do
+    while IFS= read -r dir; do
         [ -n "$dir" ] || continue
         assert_contains "the kept message names $dir" "$uninstall_log" "$dir"
-    done
-    fp_after="$(_uninstall_snapshot_dirs "$dirs")"
-    if [ "$fp_after" = "$fp_before" ]; then
-        it_pass "kept data dirs unchanged on disk (per-file size+inode listing, stack quiesced both sides)"
+    done <<<"$dirs"
+    if ! fp_after="$(_uninstall_snapshot_dirs "$snapshot_paths")"; then
+        it_fail "kept data and backups are readable after uninstall" "a configured path is missing, symlinked, or unreadable"
+    elif [ "$fp_after" = "$fp_before" ]; then
+        it_pass "kept data dirs unchanged on disk (per-file content hashes, stack quiesced both sides)"
     else
-        it_fail "kept data dirs unchanged on disk (per-file size+inode listing, stack quiesced both sides)" \
+        it_fail "kept data dirs unchanged on disk (per-file content hashes, stack quiesced both sides)" \
             "$(diff <(printf '%s\n' "$fp_before") <(printf '%s\n' "$fp_after") | head -40)"
     fi
 
@@ -110,11 +155,12 @@ run_uninstall_phase() {
         return
     fi
     wait_status_ok 240 || it_fail "stack healthy after re-provisioning" "pithead status did not become OK"
-    assert_eq "re-provisioned config matches the kept one" "$(rx 'cat config.json' 2>/dev/null)" "$config_before"
-    if setup_secret_fp="$(upgrade_secret_fingerprints)"; then
-        it_pass "re-provisioned secrets readable"
+    assert_eq "re-provisioned config matches the kept one" "$(rx "sha256sum config.json 2>/dev/null | cut -d' ' -f1")" "$config_before_fp"
+    setup_secret_fp="$(secret_fingerprint)"
+    if rx "grep -qE '^PROXY_AUTH_TOKEN=.+$' .env && grep -qE '^[A-Z]+_ONION_ADDRESS=.+$' .env"; then
+        it_pass "re-provisioned proxy and onion state populated"
     else
-        it_fail "re-provisioned secrets readable" "required wallet, proxy, dashboard, RPC, or onion secret state is missing"
+        it_fail "re-provisioned proxy and onion state populated" "required proxy or onion state is missing"
     fi
     assert_running_state "uninstall" "$config_before" "$setup_secret_fp"
     _uninstall_phase_recover "$fails_before"

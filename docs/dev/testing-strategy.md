@@ -223,7 +223,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
-| `uninstall` | missing | #2343, blocked on bench-ci#347 |
+| `uninstall` | tier 4 | #2343 — targeted `tier4-e2e` `uninstall` phase |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
