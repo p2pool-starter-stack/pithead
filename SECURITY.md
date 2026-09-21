@@ -94,7 +94,7 @@ The stack's defaults:
   behind the same typed confirmation, on the owner's #2367 ruling (2026-09-19): every config field
   is editable from the dashboard, and a security-sensitive one warns rather than refuses. The
   preview names the field changing and never echoes the credential's value; masked like every
-  other secret in the editor prefill (`config_operations.SECRET_PATHS`). A dashboard-confirmed
+  other secret in the editor prefill (`control_service.SECRET_PATHS`). A dashboard-confirmed
   data-directory move is further held to an **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI
