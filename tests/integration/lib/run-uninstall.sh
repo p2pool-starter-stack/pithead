@@ -33,6 +33,13 @@ _uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing b
     done <<<"$1"
 }
 
+_uninstall_file_hash() { # <file> -> sha256, failing if the file cannot be hashed
+    local checksum
+    checksum="$(rx "sha256sum $(quote_arg "$1")")" || return
+    [[ "$checksum" =~ ^[0-9a-fA-F]{64}[[:space:]] ]] || return 1
+    printf '%s\n' "${checksum%% *}"
+}
+
 # Self-heal (#2343 job 635): a failure partway through the destructive step below must not strand
 # the box for the outer safety rollback to find — this phase requires --safety-backup, so the
 # pre-run archive is right here. Puts the box back with the SAME restore this phase already
@@ -62,9 +69,25 @@ run_uninstall_phase() {
 
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Reuse
     # env_get_file so a dotenv-rendered path with spaces, $, quotes, or escapes round-trips.
-    local dirs dir snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
+    local dirs raw_dirs dir dir_count snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
     # shellcheck disable=SC2016  # $key expands in the remote shell rx invokes.
-    dirs="$(rx 'source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; done' | sort -u)"
+    if ! raw_dirs="$(rx 'set -e; source ./pithead </dev/null; for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do env_get_file .env "$key"; done')"; then
+        it_fail "configured data directories are readable before uninstall" "could not read .env with env_get_file"
+        return
+    fi
+    dir_count=0
+    while IFS= read -r dir; do
+        if [ -z "$dir" ]; then
+            it_fail "configured data directories are readable before uninstall" "a configured data directory is empty"
+            return
+        fi
+        dir_count=$((dir_count + 1))
+    done <<<"$raw_dirs"
+    if [ "$dir_count" -ne 5 ]; then
+        it_fail "configured data directories are readable before uninstall" "expected five configured data directories, got $dir_count"
+        return
+    fi
+    dirs="$(printf '%s\n' "$raw_dirs" | sort -u)"
     # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
     # stopped stack, so a clean-shutdown checkpoint (dashboard's sqlite -wal/-shm, tor's lock
     # file) already happened before either is taken, and can't be mistaken for uninstall wiping it.
@@ -78,7 +101,7 @@ run_uninstall_phase() {
         return
     fi
     config_before="$(rx 'cat config.json' 2>/dev/null)"
-    if ! config_before_fp="$(rx "sha256sum config.json | cut -d' ' -f1")"; then
+    if ! config_before_fp="$(_uninstall_file_hash config.json)"; then
         it_fail "config.json is readable before uninstall" "sha256sum config.json failed"
         return
     fi
@@ -134,7 +157,11 @@ run_uninstall_phase() {
         fi
     done <<<"$pulled_images"
     assert_eq ".env removed" "$(rx 'test -f .env && echo yes || echo no')" "no"
-    assert_eq "config.json kept, byte-identical" "$(rx "sha256sum config.json 2>/dev/null | cut -d' ' -f1")" "$config_before_fp"
+    if ! fp_after="$(_uninstall_file_hash config.json)"; then
+        it_fail "config.json kept, byte-identical" "sha256sum config.json failed after uninstall"
+    else
+        assert_eq "config.json kept, byte-identical" "$fp_after" "$config_before_fp"
+    fi
 
     local uninstall_log
     uninstall_log="$(cat "$OUT_DIR/uninstall.log" 2>/dev/null)"
@@ -160,7 +187,11 @@ run_uninstall_phase() {
         return
     fi
     wait_status_ok 240 || it_fail "stack healthy after re-provisioning" "pithead status did not become OK"
-    assert_eq "re-provisioned config matches the kept one" "$(rx "sha256sum config.json 2>/dev/null | cut -d' ' -f1")" "$config_before_fp"
+    if ! fp_after="$(_uninstall_file_hash config.json)"; then
+        it_fail "re-provisioned config matches the kept one" "sha256sum config.json failed after setup"
+    else
+        assert_eq "re-provisioned config matches the kept one" "$fp_after" "$config_before_fp"
+    fi
     setup_secret_fp="$(secret_fingerprint)"
     if rx "grep -qE '^PROXY_AUTH_TOKEN=.+$' .env && grep -qE '^[A-Z]+_ONION_ADDRESS=.+$' .env"; then
         it_pass "re-provisioned proxy and onion state populated"

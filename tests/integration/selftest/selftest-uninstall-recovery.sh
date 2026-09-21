@@ -22,7 +22,8 @@ assert_contains "the rebuilt proxy and onion state must be populated" "$PHASE" \
 assert_contains "the preservation snapshot includes backups" "$PHASE" "backups"
 assert_contains "the preservation snapshot hashes file contents" "$PHASE" "_uninstall_snapshot_dirs"
 assert_contains "the keep-list decodes dotenv-rendered data paths" "$PHASE" "env_get_file .env"
-assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" "sha256sum config.json"
+assert_contains "the keep-list requires every configured data directory" "$PHASE" "[ \"\$dir_count\" -ne 5 ]"
+assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" "_uninstall_file_hash config.json"
 
 PITHEAD_LOG="$(mktemp)"
 trap 'rm -f "$PITHEAD_LOG"' EXIT
