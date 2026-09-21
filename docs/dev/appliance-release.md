@@ -294,7 +294,7 @@ is the only thing standing between the hand-written boot path and a fleet.
 | `rig` | The removable image installs the RigForge role, which mines from the baked binary with no stack containers and follows the A/B update contract. M13 cuts power while it mines, then requires a new boot, unattended mining, and the committed slot to return. | Printed by the run |
 | `media` | The physical-presence config stick shows the exact diff, applies after its countdown, is consumed, and cancels when removed mid-countdown. | Printed by the run |
 | `fault` | three power cuts mid-write; a deliberately corrupted bundle is refused without crashing and without bricking; a power cut inside the commit window; operator rollback after all of it; Fault D cuts an active first-boot baked-image load and requires the wizard and repaired image store afterwards; the box is still updatable afterwards | 15 |
-| `reset` | leg 1, the real `pithead factory-reset` off a provisioned machine: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | 17 |
+| `reset` | leg 0, the real `pithead config-reset` off a provisioned machine: it clears the config and re-arms the wizard while preserving the monero chain and Tor onion identity through reconfiguration. Leg 1, the real `pithead factory-reset`: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | 17 |
 
 A **brick is disqualifying, not deducted** — any run that leaves a machine unable to boot
 fails the release regardless of the rest.
@@ -381,12 +381,15 @@ the morning.
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
 rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
 [the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) covers only the virtualized subset: it proves the
-wizard's rig card and role select, that a rig submits toward a pool (against a faked listener, so
-it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, a
-virsh power cut with unattended mining and slot commit recovery, and the A/B update leg committing
-on a rig. It proves none of an accepted share at a real coordinator, MSR tuning or hugepages via
-`doctor`, a dashboard-driven adopt or config push, or firmware Restore-on-AC-Power-Loss on a real
-rig. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+wizard's rig card and role select, that a rig submits toward a pool, volatile journald, an unaided
+plain reboot, a virsh power cut with unattended mining and slot commit recovery, and the A/B update
+leg committing on a rig. Its own share leg (#2063) then re-points the rig at a SECOND, concurrent
+guest the battery itself boots as a remote-node coordinator (the same precondition as #2062) and
+proves an accepted share both ways — the rig's own worker and the coordinator's built-in miner —
+so an accepted share at a real p2pool is no longer manual-only. What it still does not prove: MSR
+tuning or hugepages via `doctor` (a KVM guest cannot take RandomX MSR writes), a dashboard-driven
+adopt or config push, or firmware Restore-on-AC-Power-Loss on a real rig — those still need a real
+loaner box. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
 (`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
 internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
 no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays

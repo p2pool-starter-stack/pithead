@@ -148,7 +148,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
   everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
   #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
-  `virsh destroy` and that the slot is still committed afterwards.
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
+  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
+  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
+  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
+  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
+  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -167,13 +173,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk: a
-  provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
-  marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
-  and old container images gone, the seeded dirs back, and a FRESH host identity (SSH host-key
-  fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
-  corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
-  rather than bricking.
+- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
+  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+  `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
+  while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
+  data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
+  and requiring the monero chain directory to survive, monerod's height to resume at or past its
+  pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
+  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
+  it comes back to the wizard with the provisioned config and old container images gone, the
+  seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
+  tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
+  asserts the wedged-`/data` recovery reformats it rather than bricking.
 - **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
   provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
   already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
