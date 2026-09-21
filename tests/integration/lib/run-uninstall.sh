@@ -21,7 +21,7 @@
 _uninstall_dir_listing() { # <dir> -> "<sha256> <path>" lines, sorted; a stable snapshot
     local command
     command="test -d $(quote_arg "$1") && test ! -L $(quote_arg "$1") && find $(quote_arg "$1") -type f -exec sha256sum {} + | sort"
-    rx "bash -o pipefail -c $(quote_arg "$command")"
+    rx "sudo -n bash -o pipefail -c $(quote_arg "$command")"
 }
 
 _uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing block per dir

@@ -16,6 +16,8 @@ assert_eq "the extraction is the whole function (closes)" "$(printf '%s\n' "$SRC
 
 DIRS_SRC="$(sed -n '/^_uninstall_data_dirs() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
 assert_contains "the data-directory reader is extractable" "$(printf '%s\n' "$DIRS_SRC" | head -n1)" "_uninstall_data_dirs() {"
+LISTING_SRC="$(sed -n '/^_uninstall_dir_listing() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+assert_contains "the data snapshot reads root-owned Tor state with noninteractive sudo" "$LISTING_SRC" "sudo -n bash -o pipefail"
 
 PHASE="$(sed -n '/^run_uninstall_phase() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
 assert_contains "the rebuilt stack is checked against its kept config" "$PHASE" \
