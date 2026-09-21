@@ -86,8 +86,10 @@ restore_staged_members_safe() {
 
 # An archive may carry generated files for round-trip compatibility, but they are never policy
 # inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
-# trees, validate them as single-line generated values, then use the normal writers to rebuild
-# .env and Caddyfile from the staged, validated config. This runs before any live path is touched.
+# trees, including the stable dashboard-login hash when its password fingerprint still matches the
+# restored config. Validate them as single-line generated values, then use the normal writers to
+# rebuild .env and Caddyfile from the staged, validated config. This runs before any live path is
+# touched.
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
     local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
     local key value count kind
@@ -106,6 +108,8 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         onion) [[ "$value" =~ ^(placeholder|[a-z2-7]{56}\.onion)$ ]] || return 1 ;;
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
         bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
+        base64) printf '%s' "$value" | openssl base64 -d -A >/dev/null 2>&1 || return 1 ;;
+        sha256) [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1 ;;
         esac
         printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
     done <<'EOF'
@@ -119,6 +123,8 @@ P2POOL_ONION_ADDRESS onion
 DASHBOARD_ONION_ADDRESS onion
 DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
+DASHBOARD_AUTH_HASH_B64 base64
+DASHBOARD_AUTH_PW_FP sha256
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \

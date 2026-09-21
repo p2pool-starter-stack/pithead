@@ -151,6 +151,22 @@ assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DA
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
 
+# Bcrypt is salted. When the archived password still matches config.json, retain the generated hash
+# so restore does not rotate a correct dashboard login.
+dashboard_password=dashboard-pass-123
+dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
+jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
+    "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
+awk -v fp="$dashboard_fingerprint" '
+    /^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ=="; next }
+    /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next }
+    { print }
+' "$BK/.env" >"$ROOTS/${BK#/}/.env"
+cr_archive "$CR/dashboard-auth.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
+assert_rc "restore accepts a matching dashboard login hash" "$?" 0
+assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" c3RhbGUtZml4dHVyZQ==
+
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
 cat >>"$ROOTS/${BK#/}/.env" <<'EOF'
