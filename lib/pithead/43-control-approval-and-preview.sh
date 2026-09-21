@@ -1,6 +1,7 @@
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 worker_sensitive=0 needs_confirm=0
+    control_policy_gate "$staged" || return 1
     # Fail closed if we cannot re-derive the change set (the staged config was validated at
     # preview, so a dry-run failure here means something changed — refuse).
     local carried_ssh=0

@@ -190,6 +190,14 @@ control_preview_policy_error() { # <staged-file>
     fi
 }
 
+control_policy_gate() { # <staged-file>
+    local policy_error
+    if policy_error=$(control_preview_policy_error "$1"); then
+        printf '%s' "$policy_error"
+        return 1
+    fi
+}
+
 _control_host_remedy() {
     if is_appliance; then
         printf 'That setting is not changeable from the dashboard on an appliance; it is fixed when the machine is set up, so use "Set up again" if you need to change it.'
