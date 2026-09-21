@@ -286,7 +286,7 @@ assert_contains "re-apply re-attempts the recreate" "$out" "retrying"
 if [ -f "$A/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
 assert_eq "marker cleared after a successful retry" "$mk" "absent"
 
-echo "== black-box: compose_up_checked retries a transient container-state race (#2293, covered by #2218's general retry) =="
+echo "== black-box: compose_up_checked retries a transient container-state race once (#2293) =="
 # A docker stub that fails `compose up` with the exact state-conflict shape observed on bench-ci job
 # 388 (a container still mid-transition from its own prior start) on the FIRST call only, then
 # succeeds — proving the retry happens inside a single apply, not across a second dashboard commit.
@@ -331,10 +331,10 @@ MONERO_OUT_PEERS=48
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","out_peers":49}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$R2/config.json"
 RACE_CNT="$R2/race-count"
-out="$(cd "$R2" && RACE_CNT_FILE="$RACE_CNT" PITHEAD_COMPOSE_UP_PAUSE=0 PATH="$R2/bin:$PATH" ./pithead apply -y 2>&1)"
+out="$(cd "$R2" && RACE_CNT_FILE="$RACE_CNT" PATH="$R2/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "apply survives a transient container-state race on the first compose up (rc 0)" "$rc" "0"
-assert_contains "apply reports the transient race and retries within the same run" "$out" "try 1 of 3"
+assert_contains "apply reports the transient race and retries within the same run" "$out" "retrying once"
 assert_eq "compose up was called exactly twice (one retry)" "$(cat "$RACE_CNT")" "2"
 if [ -f "$R2/.env.apply-incomplete" ]; then mk=present; else mk=absent; fi
 assert_eq "no incomplete marker survives a same-run retry that succeeded" "$mk" "absent"

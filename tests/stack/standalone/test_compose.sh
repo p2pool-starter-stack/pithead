@@ -167,9 +167,9 @@ jq_assert() { # <label> <filter> [json, default $JSON]
 jq_assert "docker-proxy cannot POST (read-only API)" '(.services["docker-proxy"].environment.POST // "0") != "1"'
 jq_assert "docker-control is start/stop only (no exec/image ops)" \
     '.services["docker-control"].environment | (.POST=="1" and .ALLOW_START=="1" and .ALLOW_STOP=="1" and ((.EXEC // "0") != "1") and ((.IMAGES // "0") != "1") and ((.ALLOW_PAUSE // "0") != "1") and ((.ALLOW_UNPAUSE // "0") != "1"))'
-# Both proxies mount the Docker socket read-only.
 jq_assert "docker socket mounted read-only in both proxies" \
     '[.services["docker-proxy"], .services["docker-control"]] | all((.volumes // []) | any((.source == "/var/run/docker.sock") and (.read_only == true)))'
+jq_assert "dashboard mounts the pithead mutation lock read-only without replacing it (#2218)" '[.services[] | (.volumes // [])[] | select(.target == "/pithead-lock")] | length == 1 and .[0].type == "bind" and .[0].read_only == true and .[0].bind.create_host_path == false'
 # Socket-proxy isolation (#345): neither proxy is on the mining bridge, and each is published ONLY to
 # the host loopback — so no mining container (monerod/tari/p2pool/xmrig-proxy) can reach the Docker
 # API to read secrets (inspect) or start/stop containers.

@@ -337,3 +337,20 @@ assert_eq "a versioned install keys its lock on the deploy root its siblings sha
     "$([ -f "$LKROOT/.pithead.lock" ] && echo present || echo absent)" "present"
 assert_eq "and leaves no second, uncontendable lock inside the version dir" \
     "$([ -f "$LKROOT/pithead-v1.0.0/.pithead.lock" ] && echo present || echo absent)" "absent"
+
+# compose_up passes the already-resolved host path into Compose interpolation. That is the source
+# bind-mounted into the dashboard, so an override and a versioned deploy cannot silently coordinate
+# on a different inode from the CLI hold.
+lock_compose_path_probe() {
+    (
+        cd "$LKROOT/pithead-v1.0.0" || exit 9
+        export PITHEAD_LOCK_FILE="$LKFILE"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        docker() { printf '%s' "$PITHEAD_LOCK_FILE"; }
+        compose_up -d
+    )
+}
+assert_eq "compose gives the dashboard the same resolved lock path the CLI holds (#2218)" \
+    "$(lock_compose_path_probe)" "$LKFILE"
+unset -f lock_compose_path_probe

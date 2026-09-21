@@ -85,9 +85,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   failover, so a `docker compose up` could reach that container between states. Compose aborts
   the whole `up` when one container is in an improper lifecycle state, which failed the apply
   outright — the configuration was written, the containers were not recreated, and the box was
-  left needing a manual `pithead apply` nobody was there to run. The `up` is now retried a
-  bounded number of times, so a passing restart delays it by seconds instead of failing it,
-  while a genuine failure is still reported with the same guidance as before.
+  left needing a manual `pithead apply` nobody was there to run. Dashboard container start/stop
+  requests now take the same advisory lock as CLI mutations, so either operation waits for the
+  other to finish instead of sending overlapping lifecycle requests to the engine.
 
 - **The setup wizard's restore accepts a genuine backup from a prior supported release.** A
   backup made by the v1.20.0 Compose bundle stores its files under whatever directory the

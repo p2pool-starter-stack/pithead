@@ -633,8 +633,8 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads masked config,
-      # results, and the audit log, nothing else (see SECURITY.md).
+      # The raw config.json is never mounted — a fully compromised container reads only masked
+      # config and the bounded non-secret/read-only surfaces documented in SECURITY.md.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the
@@ -647,6 +647,14 @@ services:
       # reads, so the Configuration view's pinned core section is never a second hand-maintained
       # list. No secrets — it's a list of dotted key paths, not values.
       - ./config.core-keys.json:/host-config/config.core-keys.json:ro
+      # The exact advisory-lock inode pithead holds around compose mutations (#2218). Read-only is
+      # enough for flock and keeps the semi-trusted dashboard from altering the holder record.
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:-.pithead.lock}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       - HOST_IP=${HOST_IP:-127.0.0.1}
       # Timezone for dashboard timestamps/charts. Set via `dashboard.timezone` in config.json
