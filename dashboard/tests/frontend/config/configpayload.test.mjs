@@ -6,7 +6,7 @@ import { explicitCandidate } from "../../../mining_dashboard/web/static/config/c
 const pristine = {
   dashboard: {
     auth: { password: { __secret__: true } },
-    energy: { price_per_kwh: 0.1 },
+    energy: { cost_per_kwh: 0.1 },
   },
   monero: { mode: "local", remote: { host: "node.remote-monero-host.com", rpc_port: 18081 } },
   p2pool: { pool: "mini" },
@@ -16,7 +16,7 @@ const defaults = ["monero.remote.host", "monero.remote.rpc_port", "xvb.url"];
 const explicit = {
   dashboard: {
     auth: { password: { __secret__: true } },
-    energy: { price_per_kwh: 0.1 },
+    energy: { cost_per_kwh: 0.1 },
   },
   monero: { mode: "local" },
   p2pool: { pool: "mini" },
@@ -29,12 +29,12 @@ test("untouched reference defaults stay out while explicit values and secrets su
 
 test("one changed field is retained without materializing unrelated defaults", () => {
   const candidate = structuredClone(pristine);
-  candidate.dashboard.energy.price_per_kwh = 0.15;
+  candidate.dashboard.energy.cost_per_kwh = 0.15;
   assert.deepEqual(explicitCandidate(pristine, candidate, defaults), {
     ...explicit,
     dashboard: {
       ...explicit.dashboard,
-      energy: { price_per_kwh: 0.15 },
+      energy: { cost_per_kwh: 0.15 },
     },
   });
 });

@@ -315,7 +315,7 @@ esac
 
 # #2365: the browser sends the whole explicit config (so unchanged credentials survive) but omits
 # untouched reference defaults. A one-field edit must still produce one preview row and audit key.
-jq '.dashboard.energy.price_per_kwh=0.15' "$C/config.json" |
+jq '.dashboard.energy.cost_per_kwh=0.15' "$C/config.json" |
     jq -n --arg id "$UUID2" --arg actor admin --slurpfile cfg /dev/stdin \
         '{id:$id,action:"preview",actor:$actor,config:$cfg[0]}' >"$REQS/$UUID2.json"
 run_pending >/dev/null
@@ -327,7 +327,7 @@ assert_eq "one-field candidate commits" "$(jq -r '.status' "$RESULTS/$UUID2.json
 assert_eq "one-field commit preserves an explicit credential" \
     "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
 assert_eq "one-field commit audits only its key (#2365)" \
-    "$(tail -n 1 "$AUDIT" | jq -r '.keys')" "DASHBOARD_ENERGY"
+    "$(tail -n 1 "$AUDIT" | jq -r '.keys')" "dashboard.energy.cost_per_kwh"
 
 # Expired staged intent (older than the 10-min commit window) → rejected as expired and cleared.
 # Age it ~15 min: past the 10-min expiry the commit enforces, but INSIDE the 60-min stale sweep so
