@@ -287,7 +287,8 @@ fs_run() { # <doctor json, or ""> <status log body, or ""> -> "flag=<json>"
     mkdir -p "$FS/data/os-update" "$FS/data/control/results"
     printf '{"from":"1.0.0","to":"1.0.1"}\n' >"$FS/data/os-update/in-flight.json"
     [ -n "$1" ] && printf '%s\n' "$1" >"$FS/doctor.json"
-    [ -n "$2" ] && printf '%s\n' "$2" >"$FS/status.log"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' "$2" >"$FS/pithead"
+    chmod +x "$FS/pithead" # fail_boot must refresh this real status output
     (
         cd "$FS" || exit 1
         # shellcheck disable=SC1090
@@ -313,17 +314,16 @@ echo "== unit: fail_boot names the container on ITS OWN console, with no update 
 # The bench-caught gap: leg 5 installs the fault bundle the cheap way (a raw rauc install, like
 # legs 1-3), which never arms OS_INFLIGHT — so the in-flight-flag path above never fires, and a
 # console-only echo is the only way this boot's own journal can name the container at all.
-# Mutation run: drop the direct `printf ... | sed` line from fail_boot -> this row goes red.
 FC="$BR/fail-console"
 rm -rf "$FC"
 mkdir -p "$FC"
-printf '  ⚠ dashboard     running but UNHEALTHY\n' >"$FC/status.log"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' '  ⚠ dashboard     running but UNHEALTHY' >"$FC/pithead"
+chmod +x "$FC/pithead" # fail_boot must refresh this real status output
 fc_out=$(
     cd "$FC" || exit 1
     # shellcheck disable=SC1090
     source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-    BOOT_STATUS_LOG="$FC/status.log"
-    PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
+    BOOT_STATUS_LOG="$FC/status.log" PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
 )
 assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out" "pithead-boot: held by container dashboard: running but UNHEALTHY"
 unset FC fc_out

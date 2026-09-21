@@ -32,14 +32,14 @@ set -uo pipefail
 # too the counter is spent and the machine stays up and says so. The counter lives on /data so it
 # survives the reboot and the slot switch; if it cannot be written this refuses to reboot at all.
 BOOT_FAIL_COUNT=.boot-gate-failures
-# Where doctor's verdicts land while this gate is looping: /run, so a gate that never passes leaves
-# the last failing run's exact blocking check behind without wearing /data. A plain variable for the
-# same reason BOOT_FAIL_COUNT is one — the suite points it somewhere writable.
+# Where doctor's verdicts land while this gate is looping: /run leaves the last failing check without
+# wearing /data. A plain variable: the suite points it somewhere writable.
 BOOT_DOCTOR_JSON=/run/pithead-boot-doctor.json
 boot_gate_passed() { rm -f "$BOOT_FAIL_COUNT"; }
 fail_boot() { # <what went wrong>
     echo "pithead-boot: $1 — slot left uncommitted so A/B fallback stays armed" >&2
-    local status_problems # named on THIS boot's console (#2383), not just the next boot's verdict
+    local status_problems
+    boot_status || true # named on this boot, even if the dashboard probe did not reach status
     status_problems=$(boot_status_blocking)
     [ -n "$status_problems" ] && printf '%s\n' "$status_problems" | sed 's/^/pithead-boot: held by /' >&2
     # The rollback verdict names what held the gate (#1265): the last doctor run is still on /run,
