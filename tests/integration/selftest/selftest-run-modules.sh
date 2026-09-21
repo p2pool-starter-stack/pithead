@@ -54,15 +54,19 @@ source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 source "$ROOT/lib/run-alert-egress.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 
-proxy_probe=""
 quote_arg() { printf '%q' "$1"; }
-rx() { proxy_probe="$1"; }
-_rotate_proxy_token_accepted 'token with space'
-[[ "$proxy_probe" == *'docker exec -e PROXY_AUTH_TOKEN=token\ with\ space dashboard'* &&
-    "$proxy_probe" == *'os.environ["PROXY_AUTH_TOKEN"]'* ]] || {
-    echo "rotate-secrets proxy token is not passed as a quoted environment value" >&2
+rx() { printf '%s\n%s' "$1" "$(cat)"; }
+proxy_probe="$(_rotate_proxy_token_accepted 'token with space')"
+[[ "$proxy_probe" == *'docker exec -i dashboard'* &&
+    "$proxy_probe" == *'sys.stdin.read()'* && "$proxy_probe" == *'token with space'* ]] || {
+    echo "rotate-secrets proxy token is not passed over stdin" >&2
     exit 1
 }
+if grep -Fq 'assert_ne "PROXY_AUTH_TOKEN rotated"' "$ROOT/lib/run-rotate-secrets.sh" ||
+    grep -Fq 'assert_ne "stratum access-password rotated"' "$ROOT/lib/run-rotate-secrets.sh"; then
+    echo "rotate-secrets must not format prior credentials in a generic assertion" >&2
+    exit 1
+fi
 
 pithead() {
     printf '%s\n' \

@@ -13,7 +13,7 @@ _rotate_proxy_live_args() { rx "docker inspect xmrig-proxy --format '{{json .Arg
 # over RPC digest auth, proving the credential is live in the running container rather than just
 # written to config.json/.env.
 _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-fail
-    rx "url=\$(grep -E '^MONERO_RPC_URL=' .env 2>/dev/null | cut -d= -f2-); [ -n \"\$url\" ] || url=http://127.0.0.1:18081; body=\$(printf 'user = %s\n' \"\$(printf '%s:%s' $(quote_arg "$1") $(quote_arg "$2") | jq -Rs .)\" | curl -fsS --max-time 8 --digest -K - \"\$url/get_info\" 2>/dev/null); printf '%s' \"\$body\" | jq -e '.status==\"OK\"' >/dev/null 2>&1 && echo rpc-ok || echo rpc-fail"
+    jq -nc --arg user "$1" --arg pass "$2" '{user:$user,pass:$pass}' | rx 'auth=$(cat); url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=http://127.0.0.1:18081; body=$(printf "user = %s\n" "$(printf "%s" "$auth" | jq -r "[.user,.pass] | join(\":\") | @json")" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null); printf "%s" "$body" | jq -e ".status==\"OK\"" >/dev/null 2>&1 && echo rpc-ok || echo rpc-fail' --stdin
 }
 
 # Dial xmrig-proxy's control API from the dashboard container (same network, same client the
@@ -21,7 +21,7 @@ _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-fail
 # than whatever the dashboard currently holds. get_config() calls raise_for_status(), so a 401
 # (wrong/old token) makes the python process exit non-zero; a real answer exits 0.
 _rotate_proxy_token_accepted() { # <token> -> rc 0 if the proxy answered
-    rx "docker exec -e PROXY_AUTH_TOKEN=$(quote_arg "$1") dashboard python3 -c 'import os; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT; XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, os.environ[\"PROXY_AUTH_TOKEN\"]).get_config()' >/dev/null 2>&1"
+    printf '%s' "$1" | rx "docker exec -i dashboard python3 -c 'import sys; from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient; from mining_dashboard.config.config import PROXY_HOST, PROXY_API_PORT; XMRigProxyClient(PROXY_HOST, PROXY_API_PORT, sys.stdin.read()).get_config()' >/dev/null 2>&1" --stdin
 }
 
 # Tier-4 leg for `rotate-secrets` (#2344): the CLI verb has never run on a bench, so nothing proves
@@ -94,8 +94,16 @@ run_rotate_secrets() {
     new_proxy_token="$(env_on_box PROXY_AUTH_TOKEN)"
     new_stratum_pass="$(env_on_box PROXY_STRATUM_PASSWORD)"
     [ "$local_mode" = 1 ] && new_monero_pass="$(env_on_box MONERO_NODE_PASSWORD)"
-    assert_ne "PROXY_AUTH_TOKEN rotated" "$new_proxy_token" "$old_proxy_token"
-    assert_ne "stratum access-password rotated" "$new_stratum_pass" "$old_stratum_pass"
+    if [ "$new_proxy_token" != "$old_proxy_token" ]; then
+        it_pass "PROXY_AUTH_TOKEN rotated"
+    else
+        it_fail "PROXY_AUTH_TOKEN rotated" "rotated value equals its prior value"
+    fi
+    if [ "$new_stratum_pass" != "$old_stratum_pass" ]; then
+        it_pass "stratum access-password rotated"
+    else
+        it_fail "stratum access-password rotated" "rotated value equals its prior value"
+    fi
 
     # 1. Recreate, not restart: the new token/password must be LIVE in the running containers, and
     #    the old ones must be gone from them — not just written to config.json/.env (#356's shape).
