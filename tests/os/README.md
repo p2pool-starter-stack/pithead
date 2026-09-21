@@ -255,16 +255,11 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
 root-run battery without overriding `HOME`. The login is a Monero-node credential, not endpoint
-identity, so it is never carried through the dashboard proposal: the row first asserts that
-pushing a login change through the dashboard is refused outright, then proposes the endpoint
-move alone through the dashboard and asserts the preview exposes it behind the combined approval
-gate. The dashboard can only ever preview this combined change, never apply it end to end — its
-own host-side reachability preflight authenticates the staged endpoint with the staged login, and
-a dashboard proposal can never carry a real login — so the row's actual application lands mode,
-endpoint and login together in one host-side config edit (the route "Set up again" names in the
-dashboard's refusal text): never local mode with a foreign login attached to the still-running
-local monerod/wallet-rpc containers, and never remote mode short the login its own reachability
-preflight would demand. The same edit sets `p2pool.clearnet=true`: p2pool otherwise routes its
+identity, but the dashboard carries it with the endpoint under the typed confirmation: the preview
+warns without echoing either credential, then the confirmed commit stages mode, endpoint and login
+together for the host-side reachability preflight. This never leaves local mode with a foreign
+login attached to the still-running local monerod/wallet-rpc containers, or remote mode short the
+login its own preflight needs. The same edit sets `p2pool.clearnet=true`: p2pool otherwise routes its
 Tari merge-mining connection through Tor, and Tor's exit policy refuses a private address — which
 the reserved test nodes always are. The row checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
