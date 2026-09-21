@@ -246,6 +246,16 @@ def parse_worker_control_status(payload):
     return {"change_id": change_id, "status": status, "reason": ctrl.get("reason")}
 
 
+def parse_worker_control_history(payload):
+    """Yield terminal entries from rigforge#519's additive ``control_history`` ring."""
+    rf = payload.get("rigforge") if isinstance(payload, dict) else None
+    history = rf.get("control_history") if isinstance(rf, dict) else None
+    for entry in history if isinstance(history, list) else []:
+        control = parse_worker_control_status({"rigforge": {"control": entry}})
+        if control:
+            yield control
+
+
 def _safe_probe_host(ip) -> str | None:
     """Return a safe host string to probe, or None.
 

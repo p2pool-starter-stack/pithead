@@ -4,6 +4,7 @@ import time
 import uuid
 
 from mining_dashboard.client.xmrig_client import (
+    parse_worker_control_history,
     parse_worker_control_status,
 )
 from mining_dashboard.config import config
@@ -194,6 +195,9 @@ class DataAuditMixin:
         still mid-change, or an unreachable/offline rig (``{}``) all parse to ``None`` via
         ``parse_worker_control_status`` and are a quiet no-op.
 
+        Before touching ``ctrl``, also sweeps ``parse_worker_control_history`` (rigforge#519's ring,
+        #1702) for any entry this dashboard already spooled — reconcile-only, never rig-edit.
+
         A TERMINAL report whose ``change_id`` this dashboard never spooled (``worker_config`` has no
         row for it — checked via ``worker_config_change_known``) is a change the RIG applied on its
         own: reconciling it would be a silent no-op anyway (the ``WHERE status='accepted'`` UPDATE
@@ -225,6 +229,20 @@ class DataAuditMixin:
                 self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR, _RIG_EDIT_WINDOW_SEC
             )
             ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
+            # #1702: sweep the ring before touching `ctrl` — reconcile-only (never rig-edit), an
+            # unknown entry here was never the newest change_id in some earlier poll either.
+            for entry in parse_worker_control_history(extra_stats):
+                if ctrl and entry["change_id"] == ctrl["change_id"]:
+                    continue
+                if await asyncio.to_thread(
+                    self.state_manager.worker_config_change_known, entry["change_id"]
+                ):
+                    await asyncio.to_thread(
+                        self.state_manager.reconcile_worker_config_status,
+                        entry["change_id"],
+                        entry["status"],
+                        entry["reason"],
+                    )
             if not ctrl:
                 continue
             known = await asyncio.to_thread(

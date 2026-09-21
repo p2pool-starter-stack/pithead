@@ -130,6 +130,54 @@ class TestReconcileWorkerConfig:
         finally:
             sm.close()
 
+    def test_superseded_change_reconciles_from_control_history(self):
+        # #1702: change A applies, then change B applies on the SAME rig before the dashboard's
+        # next poll. `rigforge.control` (the single-slot mirror) now names only B — without the
+        # rigforge#519 ring, row A would stay 'accepted' forever. Both terminate inside one poll.
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted", change_id="cid-a")
+            self._seed(sm, "accepted", change_id="cid-b")
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control": {"change_id": "cid-b", "status": "applied"},
+                        "control_history": [
+                            {"change_id": "cid-a", "status": "applied", "reason": None},
+                            {"change_id": "cid-b", "status": "applied", "reason": None},
+                        ],
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert self._status_of(sm, change_id="cid-a")["status"] == "applied"
+            assert self._status_of(sm, change_id="cid-b")["status"] == "applied"
+            # Both change_ids are the dashboard's own — no rig-edit row for either.
+            assert sm.get_audit_events() == []
+        finally:
+            sm.close()
+
+    def test_unknown_control_history_entry_is_not_flagged_rig_edit(self):
+        # A ring entry this dashboard never spooled is reconcile-only, never a rig-edit source —
+        # it was never the newest change_id in some earlier poll, so it was never a candidate for
+        # that flag. Only `control` (the current newest) can still trigger rig-edit.
+        svc, sm = self._svc_with_real_storage()
+        try:
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control": None,
+                        "control_history": [
+                            {"change_id": "cid-unknown", "status": "applied", "reason": None}
+                        ],
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert sm.get_audit_events() == []
+        finally:
+            sm.close()
+
     def test_multiple_workers_reconciled_independently(self):
         svc, sm = self._svc_with_real_storage()
         try:
