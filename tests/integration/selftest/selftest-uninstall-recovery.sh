@@ -29,6 +29,8 @@ assert_contains "the preservation snapshot hashes file contents" "$PHASE" "_unin
 assert_contains "the keep-list uses the decoded data-directory reader" "$PHASE" "_uninstall_data_dirs"
 assert_contains "the keep-list requires every configured data directory" "$PHASE" "[ \"\$dir_count\" -ne 5 ]"
 assert_contains "the config snapshot hashes the file bytes on the box" "$PHASE" "_uninstall_file_hash config.json"
+assert_contains "container cleanup checks the pre-uninstall inventory without .env" "$PHASE" "compose_ids_before"
+assert_contains "unit cleanup accepts systemd's no-match exit" "$PHASE" "[ \$? -eq 1 ]"
 
 PITHEAD_LOG="$(mktemp)"
 DIRS_FIXTURE="$(mktemp -d)"

@@ -74,7 +74,7 @@ run_uninstall_phase() {
 
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Reuse
     # env_get_file so a dotenv-rendered path with spaces, $, quotes, or escapes round-trips.
-    local dirs raw_dirs dir dir_count snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img
+    local dirs raw_dirs dir dir_count snapshot_paths fp_before fp_after config_before config_before_fp setup_secret_fp first_party_images pulled_images img compose_ids_before
     if ! raw_dirs="$(_uninstall_data_dirs)"; then
         it_fail "configured data directories are readable before uninstall" "could not read .env with env_get_file"
         return
@@ -113,6 +113,10 @@ run_uninstall_phase() {
         it_fail "compose image inventory captured" "docker compose config --images failed"
         return
     fi
+    if ! compose_ids_before="$(rx 'docker compose ps -aq')" || [ -z "$compose_ids_before" ]; then
+        it_fail "compose container inventory captured" "docker compose ps -aq returned no containers"
+        return
+    fi
     while IFS= read -r dir; do
         case "$dir" in
         "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-"*) first_party_images+="${dir}"$'\n' ;;
@@ -129,12 +133,13 @@ run_uninstall_phase() {
     fi
 
     local compose_ids control_units firewall_rules
-    if ! compose_ids="$(rx 'docker compose ps -q')"; then
-        it_fail "compose project removed" "docker compose ps failed"
-    else
-        assert_eq "compose project removed" "$(printf '%s\n' "$compose_ids" | sed '/^$/d' | wc -l | tr -d ' ')" "0"
-    fi
-    if ! control_units="$(rx 'systemctl list-unit-files "pithead-control*" --no-legend && systemctl list-units --all "pithead-control*" --no-legend')"; then
+    compose_ids=0
+    while IFS= read -r dir; do
+        [ -n "$dir" ] || continue
+        rx "docker container inspect $(quote_arg "$dir") >/dev/null 2>&1" && compose_ids=$((compose_ids + 1))
+    done <<<"$compose_ids_before"
+    assert_eq "compose project removed" "$compose_ids" "0"
+    if ! control_units="$(rx 'systemctl list-unit-files "pithead-control*" --no-legend 2>/dev/null || [ $? -eq 1 ]; systemctl list-units --all "pithead-control*" --no-legend 2>/dev/null || [ $? -eq 1]')"; then
         it_fail "control-runner systemd units removed" "systemctl inspection failed"
     else
         assert_eq "control-runner systemd units removed" "$(printf '%s\n' "$control_units" | grep -c pithead-control || true)" "0"
