@@ -23,10 +23,16 @@ crs_run() {
         set +e
         # shellcheck disable=SC2034  # read inside the evaluated installer block
         CRS_ESP="$CRSB/esp" state=pithead-with-data target=/dev/fake-target
-        die() { echo "die: $*" >&2; exit 1; }
+        die() {
+            echo "die: $*" >&2
+            exit 1
+        }
         lsblk() { printf '%s\tdata\n' "$CRSB/stand-in-part"; }
         mount() { cp -a "$CRSB/part/." "$2/"; }
-        umount() { rm -rf "$CRSB/out"; cp -a "$1" "$CRSB/out"; }
+        umount() {
+            rm -rf "$CRSB/out"
+            cp -a "$1" "$CRSB/out"
+        }
         rmdir() { rm -rf "${1:?}"; }
         eval "crs_main() { $crs_block
 }"
