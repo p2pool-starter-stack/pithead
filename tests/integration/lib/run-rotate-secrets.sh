@@ -13,7 +13,7 @@ _rotate_proxy_live_args() { rx "docker inspect xmrig-proxy --format '{{json .Arg
 # over RPC digest auth, proving the credential is live in the running container rather than just
 # written to config.json/.env.
 _rotate_monero_rpc_probe() { # <user> <pass> -> rpc-ok | rpc-fail
-    jq -nc --arg user "$1" --arg pass "$2" '{user:$user,pass:$pass}' | rx 'auth=$(cat); url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=http://127.0.0.1:18081; body=$(printf "user = %s\n" "$(printf "%s" "$auth" | jq -r "[.user,.pass] | join(\":\") | @json")" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null); printf "%s" "$body" | jq -e ".status==\"OK\"" >/dev/null 2>&1 && echo rpc-ok || echo rpc-fail' --stdin
+    printf '%s\0%s' "$1" "$2" | jq -Rs 'split("\u0000") | {user: .[0], pass: .[1]}' | rx 'auth=$(cat); url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=http://127.0.0.1:18081; body=$(printf "user = %s\n" "$(printf "%s" "$auth" | jq -r "[.user,.pass] | join(\":\") | @json")" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null); printf "%s" "$body" | jq -e ".status==\"OK\"" >/dev/null 2>&1 && echo rpc-ok || echo rpc-fail' --stdin
 }
 
 # Dial xmrig-proxy's control API from the dashboard container (same network, same client the

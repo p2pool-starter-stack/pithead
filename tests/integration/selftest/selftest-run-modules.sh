@@ -67,6 +67,14 @@ if grep -Fq 'assert_ne "PROXY_AUTH_TOKEN rotated"' "$ROOT/lib/run-rotate-secrets
     echo "rotate-secrets must not format prior credentials in a generic assertion" >&2
     exit 1
 fi
+rpc_probe="$(_rotate_monero_rpc_probe fixture-user fixture-pass)"
+rpc_command="${rpc_probe%%$'\n'*}"
+rpc_stdin="${rpc_probe#*$'\n'}"
+[[ "$rpc_command" == *'auth=$(cat)'* && "$rpc_command" != *fixture-* &&
+    "$rpc_stdin" == *fixture-user* && "$rpc_stdin" == *fixture-pass* ]] || {
+    echo "rotate-secrets Monero credentials are not passed over stdin" >&2
+    exit 1
+}
 
 pithead() {
     printf '%s\n' \
