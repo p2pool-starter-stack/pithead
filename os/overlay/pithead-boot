@@ -370,7 +370,7 @@ for _ in $(seq 90); do
         gate_pass=1
     elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then
         gate_remint_cert || true # a bounded, narrow re-mint (#1265); the next round re-judges
-        gate_cert_advisory && gate_pass=1
+        gate_cert_advisory_ready && gate_pass=1
     fi
     if [ "$gate_pass" = 1 ]; then
         command -v rauc >/dev/null 2>&1 && rauc status mark-good

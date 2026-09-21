@@ -413,9 +413,10 @@ Five steps, each answering a hardware-validated failure:
    from early in a days-long initial sync, and the sync-held miners (p2pool/xmrig-proxy, stopped
    by the dashboard until the node catches up) never count as crashed by doctor, nor against
    `status`'s own exit code — so a still-syncing box commits while a genuinely broken one does
-   not. The one FAIL that still commits is certificate coverage the boot-time re-mint could not
-   clear (#1265): that drift is the machine's address list, not the slot. A slot that boots but is
-   not healthy stays uncommitted on purpose: that is the state A/B fallback exists for.
+   not. Certificate coverage the boot-time re-mint could not clear still commits only after
+   `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
+   that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
+   for.
    Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
    update before provisioning reverts.
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,

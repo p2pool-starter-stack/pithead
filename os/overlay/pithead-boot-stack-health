@@ -10,6 +10,7 @@ boot_status() {
     install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
     ./pithead status >"$BOOT_STATUS_LOG" 2>&1
 }
+boot_status_ready() { boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG"; }
 
 # Did that answer come from the DASHBOARD, or from Caddy answering for a Host it has no site for?
 # The default vhost's reply is 200 with a zero-length body. Everything the dashboard vhost produces
@@ -26,6 +27,7 @@ gate_ready() { # <http_code> <size_download>
     gate_answer_is_dashboard "$1" "$2" || return 1
     gate_doctor_ran=1
     ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
-    boot_status || return 1
-    ! grep -q 'health check pending' "$BOOT_STATUS_LOG"
+    boot_status_ready
 }
+
+gate_cert_advisory_ready() { gate_cert_advisory && boot_status_ready; }
