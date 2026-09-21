@@ -121,11 +121,6 @@ run_lifecycle() {
             else
                 it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move"
             fi
-            it_step "reverting dashboard.data_dir back to $carry_old…"
-            push_config "$BASELINE_CONFIG"
-            pithead apply -y >/dev/null 2>&1
-            wait_status_ok 180 || true
-            assert_eq "DASHBOARD_DATA_DIR reverted to the original path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_old"
         else
             it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
         fi

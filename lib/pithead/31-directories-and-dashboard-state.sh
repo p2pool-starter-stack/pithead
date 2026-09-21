@@ -171,8 +171,7 @@ migrate_dashboard_data() {
 # wallet-changed alert. Copy — never move: the operator's old path is theirs to keep or clean up,
 # unlike the #455 in-install default this function never removes it. Verify by content compare,
 # then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
-# target, a failed or unverified copy) leaves the old data untouched and errors under the apply
-# marker, so the next apply retries.
+# target, a failed or unverified copy) leaves the old data and the active path untouched.
 carry_dashboard_data_move() {
     local old="$1" new="$2"
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
@@ -186,11 +185,15 @@ carry_dashboard_data_move() {
     local f
     for f in mining_data.db mining_data.db-wal mining_data.db-shm; do
         [ -f "$old/$f" ] || continue
-        cp -p "$old/$f" "$new/$f" ||
+        if ! cp -p "$old/$f" "$new/$f"; then
+            docker compose start dashboard >/dev/null 2>&1 || true
             error "Could not copy $old/$f to $new — the live dashboard data is still at $old, untouched. Fix the problem, then re-run."
+        fi
     done
-    cmp -s "$old/mining_data.db" "$new/mining_data.db" ||
+    if ! cmp -s "$old/mining_data.db" "$new/mining_data.db"; then
+        docker compose start dashboard >/dev/null 2>&1 || true
         error "The dashboard DB copy to $new did not verify (content mismatch) — the live data is still at $old, untouched. Fix the problem, then re-run."
+    fi
     log "Dashboard database carried to $new (the copy at $old was left in place)."
 }
 

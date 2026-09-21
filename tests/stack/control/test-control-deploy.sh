@@ -192,12 +192,13 @@ out="$({
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { :; }
+    docker() { printf '%s\n' "$*" >&2; }
     cp() { : >"${*: -1}"; } # a copy that silently truncates its DEST (cp -p, so $2 is -p's src) — must be CAUGHT, not trusted
     carry_dashboard_data_move "$C/old3" "$C/new3"
 } 2>&1)"
 rc=$? # error() exits the subshell directly — capture ITS status, not a $? that never runs
 assert_rc "carry: verifies the copy (doesn't trust cp alone)" "$rc" "1"
+assert_contains "carry: restarts dashboard after a failed verify" "$out" "compose start dashboard"
 if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "realdb" ]; then
     ok "carry: source untouched after a failed verify"
 else
@@ -205,8 +206,8 @@ else
 fi
 
 echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
-# A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths, after
-# migrate_dashboard_data and before compose recreates. An unchanged data_dir must not call it.
+# A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before
+# committing the new env or recreating compose. An unchanged data_dir must not call it.
 apply2360() { # <extra-stub-body>
     (
         cd "$SANDBOX/apply2360" || exit 1
@@ -246,6 +247,7 @@ apply2360() { # <extra-stub-body>
         # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
         parse_and_validate_config() { DASHBOARD_DIR="/new/path"; }
         carry_dashboard_data_move() { echo "carry:$1:$2"; }
+        mv() { echo mv; }
         apply -y
     )
 }
@@ -253,9 +255,9 @@ mkdir -p "$SANDBOX/apply2360"
 : >"$SANDBOX/apply2360/.env"
 out="$(apply2360 2>&1)"
 assert_contains "apply: carries with the pre-commit old path" "$out" "carry:/old/path:/new/path"
-assert_eq "apply: carry runs after migrate, before compose" \
-    "$(printf '%s\n' "$out" | grep -xE 'migrate|carry:/old/path:/new/path|compose' | tr '\n' ',')" \
-    "migrate,carry:/old/path:/new/path,compose,"
+assert_eq "apply: carry runs before committing the new env and compose" \
+    "$(printf '%s\n' "$out" | grep -xE 'carry:/old/path:/new/path|mv|migrate|compose' | tr '\n' ',')" \
+    "carry:/old/path:/new/path,mv,migrate,compose,"
 
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box

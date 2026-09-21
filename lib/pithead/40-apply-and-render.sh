@@ -215,9 +215,11 @@ apply() {
         fi
 
         # After every confirm above (the typed wallet redirect, the disruptive-change y/N):
-        # committing the rendered .env is where apply starts mutating.
+        # carry the DB before the rendered .env switches its mount. A refusal therefore leaves
+        # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
+        carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -287,9 +289,6 @@ apply() {
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
     migrate_dashboard_data
-    # A confirmed A-to-B dashboard.data_dir move (#2360) — distinct from the #455 default move
-    # above, and only reached when DASHBOARD_DATA_DIR was actually in this apply's changed keys.
-    carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).
