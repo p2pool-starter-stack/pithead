@@ -25,16 +25,26 @@ run_reset_dashboard() {
 
     # #139: point config.json at decoy dirs WITHOUT applying, so .env (the live deployment) still
     # names the real dirs. reset-dashboard must wipe those, never the unapplied config-only paths.
-    local decoy_dashboard="${dashboard_dir}.CONFIGONLY" decoy_p2pool decoy_config
-    decoy_p2pool="${p2pool_dir}.CONFIGONLY"
-    local cleanup_decoys
-    cleanup_decoys="rm -rf $(quote_arg "$decoy_dashboard") $(quote_arg "$decoy_p2pool")"
+    local decoy_dashboard decoy_p2pool decoy_config decoy_paths
+    if ! decoy_paths="$(rx "dashboard=\$(mktemp -d $(quote_arg "${dashboard_dir}.CONFIGONLY.XXXXXX")) || exit; p2pool=\$(mktemp -d $(quote_arg "${p2pool_dir}.CONFIGONLY.XXXXXX")) || { rm -rf -- \"\$dashboard\"; exit 1; }; printf '%s\\n%s\\n' \"\$dashboard\" \"\$p2pool\"")"; then
+        it_fail "reset-dashboard phase preconditions" "could not create isolated config-only decoys"
+        return
+    fi
+    RESET_DASHBOARD_DECOY_DASHBOARD="$(printf '%s\n' "$decoy_paths" | sed -n '1p')"
+    RESET_DASHBOARD_DECOY_P2POOL="$(printf '%s\n' "$decoy_paths" | sed -n '2p')"
+    if [ -z "$RESET_DASHBOARD_DECOY_DASHBOARD" ] || [ -z "$RESET_DASHBOARD_DECOY_P2POOL" ]; then
+        reset_dashboard_cleanup
+        it_fail "reset-dashboard phase preconditions" "isolated config-only decoys were incomplete"
+        return
+    fi
+    decoy_dashboard="$RESET_DASHBOARD_DECOY_DASHBOARD"
+    decoy_p2pool="$RESET_DASHBOARD_DECOY_P2POOL"
     if ! decoy_config="$(printf '%s' "$BASELINE_CONFIG" | jq --arg dashboard "$decoy_dashboard" --arg p2pool "$decoy_p2pool" \
         '.dashboard.data_dir=$dashboard | .p2pool.data_dir=$p2pool')" ||
         ! push_config "$decoy_config" ||
         ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") $(quote_arg "$decoy_dashboard") $(quote_arg "$decoy_p2pool") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker") && : > $(quote_arg "$decoy_dashboard/.itest-marker") && : > $(quote_arg "$decoy_p2pool/.itest-marker")" >/dev/null 2>&1; then
         it_fail "reset-dashboard phase preconditions" "could not write the decoy config and live-dir markers"
-        rx "$cleanup_decoys" >/dev/null 2>&1 || true
+        reset_dashboard_cleanup
         return
     fi
 
@@ -48,20 +58,20 @@ run_reset_dashboard() {
     mheight="${mtip%% *}"
     if ! chain_tip_valid "$mtip"; then
         it_fail "monerod RPC before reset-dashboard" "get_info unreachable before the reset"
-        rx "$cleanup_decoys" >/dev/null 2>&1 || true
+        reset_dashboard_cleanup
         return
     fi
     # get_info.height is one past get_info.top_block_hash's height.
     mblock_before="$(monero_block_identity "$((mheight - 1))")"
     if [ -z "$mblock_before" ]; then
         it_fail "monerod block identity before reset-dashboard" "get_block_header_by_height failed before the reset"
-        rx "$cleanup_decoys" >/dev/null 2>&1 || true
+        reset_dashboard_cleanup
         return
     fi
     theight="$(jq_get "$(api_state)" '.sync.tari.current')"
     if [[ ! "$theight" =~ ^[0-9]+$ ]]; then
         it_fail "tari chain-untouched precondition" "dashboard did not report a numeric height before the reset"
-        rx "$cleanup_decoys" >/dev/null 2>&1 || true
+        reset_dashboard_cleanup
         return
     fi
 
@@ -124,7 +134,7 @@ run_reset_dashboard() {
     # A failed reset may have left the stack unhealthy; do not inject a second destructive fault
     # into that state. The harness's normal restore path owns recovery for this failed phase.
     if [ "$IT_FAIL" -gt "$failures_before_reset" ]; then
-        rx "$cleanup_decoys" >/dev/null 2>&1 || true
+        reset_dashboard_cleanup
         return
     fi
 
@@ -144,7 +154,7 @@ run_reset_dashboard() {
             it_fail "reset-dashboard compose-failure fixture" "could not create the isolated p2pool name blocker"
             pithead up >/dev/null 2>&1 || true
             wait_status_ok 240 || true
-            rx "$cleanup_decoys" >/dev/null 2>&1 || true
+            reset_dashboard_cleanup
             return
         fi
         assert_rc "reset-dashboard exits 1 on a real compose failure (#557 fail-closed unchanged)" "$fail_rc" "1"
@@ -160,5 +170,5 @@ run_reset_dashboard() {
     else
         it_fail "#557 forced compose-failure check" "could not read the dashboard container's image to build a name-clash blocker"
     fi
-    rx "$cleanup_decoys" >/dev/null 2>&1 || true
+    reset_dashboard_cleanup
 }
