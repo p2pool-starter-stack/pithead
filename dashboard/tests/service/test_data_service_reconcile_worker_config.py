@@ -178,6 +178,25 @@ class TestReconcileWorkerConfig:
         finally:
             sm.close()
 
+    def test_malformed_control_history_entry_is_skipped(self):
+        svc, sm = self._svc_with_real_storage()
+        try:
+            self._seed(sm, "accepted")
+            worker_results = [
+                {
+                    "rigforge": {
+                        "control_history": [
+                            None,
+                            {"change_id": "cid-1", "status": "applied", "reason": None},
+                        ]
+                    }
+                }
+            ]
+            asyncio.run(svc._reconcile_worker_config(self._workers("rig1"), worker_results))
+            assert self._status_of(sm)["status"] == "applied"
+        finally:
+            sm.close()
+
     def test_multiple_workers_reconciled_independently(self):
         svc, sm = self._svc_with_real_storage()
         try:
