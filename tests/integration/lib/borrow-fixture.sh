@@ -35,7 +35,7 @@ rotate_borrowed_stratum_password() { # stdin: new password
     on_miner "
         umask 077; secret=\$(mktemp) || exit 1; trap 'rm -f \"\$secret\"' EXIT
         IFS= read -r pass || test -n \"\$pass\" || exit 1; printf '%s' \"\$pass\" >\"\$secret\" || exit 1
-        cp -a '$MINER_XMRIG_CONFIG' '$MINER_ROTATE_CFG_BACKUP' || exit 1
+        test -e '$MINER_ROTATE_CFG_BACKUP' || cp -a '$MINER_XMRIG_CONFIG' '$MINER_ROTATE_CFG_BACKUP' || exit 1
         jq --arg b '$BENCH_HOST' --rawfile p \"\$secret\" '
             .pools |= map(if (.url | ascii_downcase | contains(\$b)) then .pass = \$p else . end)' \
             '$MINER_XMRIG_CONFIG' > '$MINER_XMRIG_CONFIG.e2e.tmp' \
@@ -63,6 +63,8 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
     "$run_id restore-stratum")
         step "restoring the reserved miner's temporary stratum credential…"
         restore_borrowed_stratum_password || return 1
+        printf '%s' "$action" | on_bench "cat > '$ack'"
+        return
         ;;
     "$run_id rearm")
         step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
@@ -70,5 +72,5 @@ handle_borrow_rearm() { # <request> <ack> <run-id>
         ;;
     *) return 1 ;;
     esac
-    wait_workers "$WORKERS" 180 && printf '%s' "$run_id" | on_bench "cat > '$ack'"
+    wait_workers "$WORKERS" 180 && printf '%s' "$action" | on_bench "cat > '$ack'"
 }

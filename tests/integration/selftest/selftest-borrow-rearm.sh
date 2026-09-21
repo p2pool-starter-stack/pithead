@@ -18,10 +18,12 @@ assert_eq "verified pool re-arm is after RigForge control and before lifecycle/s
 drive_rearm() { # <ack: 0|1> -> request-exists|failure-count
     (
         IT_FAIL=0
+        ack_on_wait="$1"
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         it_pass() { :; }
         wait_for() {
             shift 3
+            [ "$ack_on_wait" = 1 ] && [ "$1" = _borrow_rearm_ack_matches ] && printf '%s %s' "$IT_BORROW_REARM_TOKEN" "$2" >"$IT_BORROW_REARM_ACK"
             "$@"
         }
         d="$(mktemp -d)"
@@ -29,7 +31,6 @@ drive_rearm() { # <ack: 0|1> -> request-exists|failure-count
         IT_BORROW_REARM_REQUEST="$d/request"
         IT_BORROW_REARM_ACK="$d/ack"
         IT_BORROW_REARM_TOKEN=run-123
-        [ "$1" = 0 ] || printf '%s' "$IT_BORROW_REARM_TOKEN" >"$IT_BORROW_REARM_ACK"
         wait_borrow_rearm || true
         printf '%s|%s\n' "$(test -f "$IT_BORROW_REARM_REQUEST" && echo yes)" "$IT_FAIL"
     )
@@ -49,7 +50,7 @@ drive_wrong_ack() {
         d="$(mktemp -d)"
         trap 'rm -rf "$d"' EXIT
         IT_BORROW_REARM_REQUEST="$d/request" IT_BORROW_REARM_ACK="$d/ack" IT_BORROW_REARM_TOKEN=run-123
-        printf stale-run >"$IT_BORROW_REARM_ACK"
+        printf 'stale-run rearm' >"$IT_BORROW_REARM_ACK"
         wait_borrow_rearm || true
         printf '%s\n' "$IT_FAIL"
     )
@@ -59,14 +60,14 @@ assert_eq "a stale or different run's acknowledgement is refused" "$(drive_wrong
 assert_eq "a credential-rotation request names its action without the secret" "$(
     d="$(mktemp -d)"; trap 'rm -rf "$d"' RETURN
     IT_BORROW_REARM_REQUEST="$d/request" IT_BORROW_REARM_ACK="$d/ack" IT_BORROW_REARM_TOKEN=run-123
-    printf run-123 >"$IT_BORROW_REARM_ACK"; it_fail() { :; }; it_pass() { :; }; wait_for() { shift 3; "$@"; }
+    printf 'run-123 rotate-stratum' >"$IT_BORROW_REARM_ACK"; it_fail() { :; }; it_pass() { :; }; wait_for() { shift 3; "$@"; }
     wait_borrow_rearm rotate-stratum; cat "$IT_BORROW_REARM_REQUEST"
 )" "run-123 rotate-stratum"
 
 HANDLER_SRC="$(sed -n '/^handle_borrow_rearm() {/,/^}$/p' "$HERE/../lib/borrow-fixture.sh")"
 controller_rearm_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n 'repoint_miner ||' | cut -d: -f1)"
 controller_workers_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n 'wait_workers "$WORKERS"' | cut -d: -f1)"
-controller_ack_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n "cat > '\$ack'" | cut -d: -f1)"
+controller_ack_line="$(printf '%s\n' "$HANDLER_SRC" | grep -n "cat > '\$ack'" | tail -n1 | cut -d: -f1)"
 assert_eq "controller reloads and observes the worker before acknowledging re-arm" \
     "$([ "$controller_rearm_line" -lt "$controller_workers_line" ] && [ "$controller_workers_line" -le "$controller_ack_line" ] && echo yes)" "yes"
 

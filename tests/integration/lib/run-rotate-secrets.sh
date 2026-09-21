@@ -26,6 +26,7 @@ _rotate_proxy_summary() {
 }
 _rotate_proxy_upstream_active() { [ "$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.upstreams.active // 0' 2>/dev/null)" -gt 0 ] 2>/dev/null; }
 _rotate_proxy_accepted_after() { [ "$(printf '%s' "$(_rotate_proxy_summary)" | jq -r '.results.accepted // 0' 2>/dev/null)" -gt "$1" ] 2>/dev/null; }
+_rotate_p2pool_monero_live() { rx "test \$((\$(date +%s) - \$(stat -c %Y \$(quote_arg "$(env_on_box P2POOL_DATA_DIR)/stats/network/stats"))) -lt 90 && jq -e '.height > 0 and .difficulty > 0' \$(quote_arg "$(env_on_box P2POOL_DATA_DIR)/stats/network/stats") >/dev/null"; }
 
 # Tier-4 leg for `rotate-secrets` (#2344): the CLI verb has never run on a bench, so nothing proves
 # monerod, p2pool and the proxy survive a credential rotation, or that a restart-instead-of-recreate
@@ -173,6 +174,11 @@ run_rotate_secrets() {
         it_pass "xmrig-proxy has an active p2pool upstream after rotation"
     else
         it_fail "xmrig-proxy has an active p2pool upstream after rotation" "summary never reported an active upstream"
+    fi
+    if wait_for 90 3 "p2pool to refresh its Monero-backed network stats" _rotate_p2pool_monero_live; then
+        it_pass "p2pool refreshed live Monero-backed network stats after rotation"
+    else
+        it_fail "p2pool refreshed live Monero-backed network stats after rotation" "network stats were stale or lacked a synced height/difficulty"
     fi
     if [ -n "${RIG_NAME:-}" ]; then
         local accepted_before

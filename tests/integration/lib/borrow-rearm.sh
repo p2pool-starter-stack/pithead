@@ -8,11 +8,12 @@ wait_borrow_rearm() { # [action]
         it_fail "borrowed-pool re-arm handshake configured" "ack path or token is empty"
         return 1
     }
-    printf '%s %s' "$IT_BORROW_REARM_TOKEN" "${1:-rearm}" >"$IT_BORROW_REARM_REQUEST" || {
+    local action="${1:-rearm}"
+    rm -f "$IT_BORROW_REARM_ACK" && printf '%s %s' "$IT_BORROW_REARM_TOKEN" "$action" >"$IT_BORROW_REARM_REQUEST" || {
         it_fail "borrowed-pool re-arm requested after RigForge control (#1994)" "could not write request marker"
         return 1
     }
-    if wait_for 120 2 "the e2e controller to re-arm the borrowed miner pool" _borrow_rearm_ack_matches; then
+    if wait_for 120 2 "the e2e controller to re-arm the borrowed miner pool" _borrow_rearm_ack_matches "$action"; then
         it_pass "borrowed miner points at the test stack after RigForge control (#1994)"
         return 0
     fi
@@ -21,5 +22,5 @@ wait_borrow_rearm() { # [action]
 }
 
 _borrow_rearm_ack_matches() {
-    [ "$(cat "$IT_BORROW_REARM_ACK" 2>/dev/null)" = "$IT_BORROW_REARM_TOKEN" ]
+    [ "$(cat "$IT_BORROW_REARM_ACK" 2>/dev/null)" = "$IT_BORROW_REARM_TOKEN $1" ]
 }

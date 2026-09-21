@@ -223,7 +223,7 @@ restore_all() {
         # required if every reload mechanism fails. The caller keeps the backup until that byte
         # proof succeeds; miner_reload's status only gates forward test progress.
         if on_miner "cp -a '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && chmod 600 '$MINER_XMRIG_CONFIG' && cmp -s '$MINER_CFG_BACKUP' '$MINER_XMRIG_CONFIG' && rm -f '$MINER_CFG_BACKUP'"; then
-            miner_reload
+            miner_reload || RESTORE_PROOF_FAILED=1
             if [ -n "${MINER_ROTATE_CFG_BACKUP:-}" ]; then
                 on_miner "rm -f '$MINER_ROTATE_CFG_BACKUP'" || warn "restored miner config but retained its temporary stratum backup for operator repair."
                 MINER_ROTATE_CFG_BACKUP=""
@@ -241,7 +241,7 @@ restore_all() {
                     miner_reload
             fi
         else
-            warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."
+            warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."; RESTORE_PROOF_FAILED=1
         fi
     fi
 
