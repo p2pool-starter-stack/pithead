@@ -233,7 +233,7 @@ out="$({
     source "$STACK"
     set +e
     docker() { :; }
-    cp() { [ "$2" = "$C/old-wal/mining_data.db-wal" ] && : >"$3" || command cp "$@"; }
+    cp() { [ "$3" = "$C/old-wal/mining_data.db-wal" ] && : >"$4" || command cp "$@"; }
     carry_dashboard_data_move "$C/old-wal" "$C/new-wal"
 } 2>&1)"
 assert_rc "carry: verifies the WAL companion" "$?" "1"

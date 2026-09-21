@@ -219,7 +219,7 @@ apply() {
         # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
-        [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] && carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
+        { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; } && carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
