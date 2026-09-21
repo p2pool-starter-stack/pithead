@@ -133,6 +133,14 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Stop/start fails → retry next cycle (idempotent) | docker error | 1 ✅ |
 | `dashboard.fail_closed` (#490): default off never holds on an unrecoverable failure (alert-only); `true` holds (reusing #35's stop/start), releases once it clears (not a one-way latch), no-op before the sync gate releases | `is_db_unrecoverable() ∨ containers.is_confirmed_bad("dashboard")` | 1 ✅ · 3 ▶ |
 
+### C1. Outbound third-party integrations
+
+| Situation | Trigger | Tier |
+|---|---|---|
+| Healthchecks.io liveness ping reaches the configured receiver | dashboard loop | 3 ▶ (`fake_hc`) |
+| Telegram, webhook, and ntfy receive a configured node-down alert; disabled sinks make no request | monerod down / disabled configuration | 3 ▶ (`fake_sink`) |
+| Telegram *command* polling (`getUpdates`) rides the same `TELEGRAM_API_BASE` seam the alert path does, but is off by default (`TELEGRAM_COMMANDS_ENABLED`) and the mini-stack never enables it — the seam is proven outbound-only here | dashboard loop | 1 ✅ (mocked transport) |
+
 ### D. Container health verdicts (`pithead status`)
 
 | Situation | Trigger | Tier |
@@ -182,7 +190,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Appliance certificate (#1132/#1141): one shared name-list builder feeds both Caddy's site list and the certificate's SAN list, the mint re-mints only on a real list change (not a `hostname -I` re-order) and reuses otherwise, `doctor` FAILs on a name the certificate doesn't cover or a certificate within 30 days of expiry, WARNs (never FAILs) on an unreadable certificate file. `render` (which mints the certificate) always runs BEFORE `up` creates either compose bridge (`mining_net`, `proxy_net`) this boot, while `doctor`'s re-check runs from the boot health gate's retry loop, always AFTER `up` — an address that only exists post-`up` reads as "served but uncovered" unless something accounts for it (#1051/#reboot-leg-fix: this is what stranded both the reboot leg's commit gate and, independently, the OS-update 'updated' verdict behind a boot gate that never passed). `mining_net`'s gateway is excludable by a config-known literal and stays inside the shared, engine-free builder; `proxy_net`'s subnet is Docker/podman auto-assigned (#345) with no literal to exclude it by, so ONLY `doctor`'s certificate check asks the engine, live, for it — and if the engine can't answer (daemon restart, socket permission slip, anything at all), that check WARNs and skips the coverage FAIL for every auto-expanded address this run rather than risk FAILing a healthy box on a tooling hiccup (bridge interfaces outlive an engine blip, so the ambiguity is real); an uncovered PINNED/base name still FAILs regardless, since deriving it needs no engine at all | sourced fns / fixture certs (real `openssl`) / stubbed `docker` `network inspect` (per-network calls, both the resolved and the unreachable-engine shapes) | 1 ✅ (`tests/stack`) · 4 (deferred — a real Caddy TLS handshake surviving a moved DHCP lease needs the KVM battery / bench) |
 | Control channel (#33): `apply --dry-run` preview, runner claim/validate/commit, fail-closed flag, rw/ro spool mounts | spool files / sourced fns | 1 ✅ (shell + pytest + compose) · 4 (systemd path unit on a real box — not yet a matrix row) |
 | Audit + access logs (#349): key-names-not-values audit entries, bounded log growth, Caddyfile log block, hostile log content served inert | spool/log fixtures | 1 ✅ (shell + pytest + node) · 4 (real Caddy writes over Tor — covered by the same onion matrix row) |
-| Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
+| Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the existing dashboard-spooled rows reconcile from both the newest `control` slot and the first 20 raw entries in rigforge#519's terminal `control_history` ring, so two outcomes inside one poll do not leave the older one `accepted` while malformed or duplicate entries cannot expand the producer's budget; the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/test_data_service_reconcile_worker_config.py::TestReconcileWorkerConfig`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
 
 #### CLI verb ledger (#2348)
 
@@ -278,13 +286,90 @@ accept/reject — which only a real xmrig-proxy binary can prove.
 
 The flashed image is the second distribution channel, and it follows the same rule as
 everything else: logic at tier 1, reality at tier 4 — there is no separate model for it.
-Tier 4 has one meaning (what only reality proves) and two harnesses, one per channel: the
-live matrix for a DIY install, the KVM battery (`tests/os/run.sh`, see
-[`tests/os/README.md`](../../tests/os/README.md)) for the flashed image. The battery needs
-KVM + libvirt + root — the bench, not CI — and is the release gate for the image
-([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below it:
-static assertions against the built rootfs (variant stamp, baked units, watchdog config),
+Tier 4 has one meaning (what only reality proves) and one stack suite, two channel harnesses:
+`tests/integration/run.sh` (the live matrix, what the release gate runs against a DIY install)
+IS the stack-behaviour suite — containers, config hot-apply, fault injection, XvB routing,
+secret preservation, backup/restore — it just only ever pointed at one of the two channels the
+product ships. The KVM battery (`tests/os/run.sh`, see
+[`tests/os/README.md`](../../tests/os/README.md)) drives the flashed image through the same
+kind of behaviour from the other side: podman through the docker shim, read-only root, the
+stack in `/data/pithead`, the control runner as a systemd unit. Neither harness is a subset of
+the other — the battery's `provision` phase provisions in LOCAL node mode, so a scratch KVM disk
+can never hold a synced chain and everything behind the sync gate (`tests/os/phases/provision-initial.sh`)
+never runs there; the `stack` phase (#2062) closes part of that gap by provisioning a guest in
+REMOTE node mode against an already-synced bench node and running the live matrix against it.
+The battery needs KVM + libvirt + root — the bench, not CI — and is the release gate for the
+image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below
+it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
+
+Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
+15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
+`--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
+`--image-upgrade`, and it had never once run against the appliance runtime before the `stack`
+phase. The battery carries 433 assertions, ~72 of them about the running stack, and by design is
+blind to everything behind the sync gate — a scratch guest on a local node never syncs, so
+nothing downstream of "released" ran there. The parity table below classifies every gap a `✗`
+names: `by-design` means structurally inapplicable to that channel — a scratch KVM guest cannot
+hold a chain, so a local-node battery row cannot exercise prune/full-DB switching or a real
+clearnet-egress surface, and a borrowed physical RigForge rig never targets the `stack` phase's
+remote-node coordinator — and `missing` means nothing about the channel rules it out, only that
+no harness runs it there yet. Both classes and the `by-design`/`covered`/`missing` three-way
+split come from the live matrix's own skip accounting
+(`tests/integration/lib/skip-accounting.sh`, #1365/#1083); the `stack` phase surfaces that same
+three-bucket summary from each of its live-matrix invocations in the battery's own output rather
+than inventing an appliance-side vocabulary next to it.
+
+| Behaviour | DIY gate (`tests/integration`) | Appliance gate (`tests/os`) |
+|---|---|---|
+| Containers up, `pithead status` verdicts | ✓ | ✓ |
+| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
+| Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
+| Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
+| XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |
+| Shares / hashes flowing end to end | ✓ | ✓ workers online and stratum hashes advancing on the `stack` phase's remote-node guest (#2062); ✓ an ACCEPTED share, from both the coordinator's own built-in miner and a second, rig-role guest pointed at it, on the `rig` phase's own share leg (#2063 — the two-guest proof this table used to carry as a `✗`). Still `missing` on a local-node guest, which never clears the sync gate |
+| Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | partial — the `stack` phase (#2062) applies the remote-safe subset live (`pithead apply -y` per scenario, pool main→mini, re-apply no-op, secrets preserved). Prune, full-DB and local-node scenarios stay `by-design`: a scratch guest holds no chain |
+| Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
+| Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
+| Node down → reject workers → readmit | ✓ (fault injection) | ✗ by-design — measured, not predicted: the DIY gate skips fault injection and the node-down failover leg in remote mode ("no local monerod to break/stop"), so the `stack` phase's remote-node topology cannot reach them. Closing this needs a local-node guest with a chain, not a flag |
+| Tor / dashboard fault recovery | ✓ | partial (backup restart). The DIY gate's `--hardening` phase is `by-design` on the `stack` phase's guest too ("remote mode: no local containers/systemd to exercise") |
+| RigForge worker apply / upgrade | ✓ (borrowed physical rig) | ✗ by-design — the `rig` phase's share leg (#2063) proves the rig mines and its shares are accepted, not that the dashboard's Worker Inspect can push a config change to it; that still needs a borrowed physical rig |
+| OS update through the dashboard, A/B commit, migration hold | n/a | ✓ |
+| Boot, install, media channel, power-cut faults, factory reset | n/a | ✓ |
+| Remote-node mode, live | ✗ (zero routine coverage, #1446) | ✓ — the `stack` phase (#2062) provisions `monero.mode=remote` at a reserved node from the first wizard submit, clears the sync gate and mines. The first live remote-node coverage on either channel |
+
+What the `stack` phase's first real runs established, and what they cost. A remote-node guest
+provisions, releases and mines: containers up, `/api/state` answering, workers online and stratum
+hashes advancing, within about fifteen minutes of boot. The DIY gate then runs against it in two
+invocations — `--check`, then the destructive phases — in about ten minutes. The scenario invocation
+names `--scenario` on purpose (`--check` returns before the matrix is reached): without one the
+harness iterates its whole 15-scenario matrix first, nearly all of it `monero.mode=local`, which a
+remote-node guest can only serve by building a local chain from nothing. Left unscoped that cost over
+two hours per invocation and exhausted a 240-minute job.
+
+Three rows that read red on the phase's first real runs were pre-existing DIY gate gaps, all closed
+by the time this branch merged `develop`: the canonical-node-set assertion predated the wizard's own
+`local_miner` default (#2303), the egress verifier assumed a git checkout on the target (#2302), and
+doctor's egress-firewall row checked wording doctor no longer emits (#2301). Two more were this
+phase's own: `--check` ran before the `p2pool` container had started (dashboard and caddy come up
+faster, and the readiness wait only watched those two), which failed every p2pool-dependent row for a
+reason unrelated to any of them; and the `monerod caught up` and sync-panel rows were single-sample
+reads that a Tor-relayed block fetch outlasts. Both fixed here — wait for `p2pool` explicitly, and
+bound both waits at 150s/5s.
+
+`p2pool merge-mining gRPC round-trip (#1397)` is real, open and appliance-specific: Monero and Tari
+are both independently confirmed synced and reachable, and p2pool still builds no merge-mining
+client. It is a named `by-design` counted skip on `--appliance-channel` rather than a failure,
+tracked as #2326.
+
+Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
+cannot satisfy their inputs, and each carries job 510's row-scoped evidence on its own issue:
+`remote-tari-main-secure` switches the guest to `monero.mode=local`, so it starts a local `monerod`
+with an empty database on a scratch virtual disk and everything behind the sync gate fails
+deterministically — #2443, which needs a guest with a seeded chain. And `--xvb-routing-smoke`'s
+Tor-isolation probe fails on this channel while discarding its own diagnostics, so its red is
+unreadable from here — #2444, which needs the probe to report what it saw before anyone decides what
+the failure means.
 
 | Situation | Trigger | Tier |
 |---|---|---|

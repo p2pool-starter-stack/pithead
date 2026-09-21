@@ -45,6 +45,13 @@ regex — the failing image ref survives, because which ref failed is the diagno
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.
 
+`tests/os/tor-health-evidence.sh` covers a third row the same way (#2359, a recurrence of #1945's
+unresolved half): the restore leg's source-provisioning machine can fail with tor never becoming
+healthy, and the only evidence any battery captured for it was the compose orchestration's own
+verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
+healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
+own healthcheck verdict and its own log.
+
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
 
@@ -141,7 +148,13 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   design.) A rig serves no dashboard, so one that silently never mines is invisible to
   everything except this. The reboot leg proves a CLEAN return; a power-cut leg (M13's rig half,
   #2067) then destroys the guest mid-mining and asserts the same "mining unaided" fact off a real
-  `virsh destroy` and that the slot is still committed afterwards.
+  `virsh destroy` and that the slot is still committed afterwards. Its share leg (#2063) closes
+  with the one thing every other row here cannot show: an ACCEPTED share. It boots a second,
+  concurrent guest as a remote-node coordinator (`stack`'s own #2062 helper, from the SAME image —
+  no second build), re-points the already-proven rig at that guest's stratum through the "Set up
+  again" menu entry, and reads the coordinator's own `/api/state` until BOTH the rig's worker and
+  the coordinator's built-in miner show `accepted > 0`. A bench with no reserved remote Monero node
+  counts it a `missing` leg skip, the same env vars the `stack` phase needs.
 - **rigmedia** — M14, #1829/#2069: the other rig a user can have. Boots the image as removable
   media beside a blank internal disk (the install phase's own boot shape, USB bus,
   `removable=on`) and answers `RigForge` without ever installing. Asserts the rig mines from the
@@ -167,11 +180,29 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
   corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
   rather than bricking.
+- **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
+  provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
+  already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
+  set) so the sync gate clears in minutes instead of never, then runs `tests/integration/run.sh` —
+  the DIY gate that `release-gate.yml` runs and that has never once driven the appliance runtime
+  (podman through the docker shim, read-only root, `/data/pithead`, the control runner as a systemd
+  unit) — against it: a non-destructive `--check`, then `--lifecycle --fault-injection --hardening
+  --auth-fail-closed` against the `remote-main-secure-tari` scenario. The first live remote-node
+  coverage on either channel (#1446). Reuses the same reserved-node env vars as the `provision`
+  phase's remote-node consumer row below; without them the phase records a counted `missing`
+  skip (#2356) rather than a bare line, so a bench that cannot run it says so in the tally. Measured cost: about
+  fifteen minutes to a mining guest, then about ten for the two DIY-gate invocations. The scenario
+  invocation names `--scenario` on purpose — the harness's default is its whole 15-scenario matrix,
+  nearly all `monero.mode=local`, which this guest has no chain for. Two parity rows are out of
+  scope here for want of inputs this guest cannot give them: the `monero.mode=local` scenario
+  (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
+  diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
-the whole battery; the run exits non-zero if anything failed. `all` means all nine phases,
-including fault and reset, and the full run is required once for every RC candidate.
+the whole battery; the run exits non-zero if anything failed. `all` means every phase except
+crossupdate, including fault, reset and stack, and the full run is required once for every RC
+candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
