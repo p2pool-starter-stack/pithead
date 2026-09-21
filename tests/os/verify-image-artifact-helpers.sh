@@ -27,11 +27,11 @@ compose_reference() { # <image-root> <out-file>
 }
 
 compose_matches_source() { # <image-root> <reference-file>
-    local actual="$2.actual" rc suffix expected pinned
+    local actual="$2.actual" rc suffix expected_count pinned_count
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
-        expected="$(grep -oE "pithead-${suffix}:[^[:space:]@]+" "$2" | head -1)" || return 1
-        pinned="$(grep -oE "pithead-${suffix}:[^[:space:]@]+@sha256:[0-9a-f]{64}" "$1/opt/pithead/docker-compose.yml" | head -1)" || return 1
-        [ -n "$expected" ] && [ "${pinned%@sha256:*}" = "$expected" ] || return 1
+        expected_count="$(grep -oE "pithead-${suffix}:[^[:space:]@]+" "$2" | wc -l)"
+        pinned_count="$(grep -oE "pithead-${suffix}:[^[:space:]@]+@sha256:[0-9a-f]{64}" "$1/opt/pithead/docker-compose.yml" | wc -l)"
+        [ "$expected_count" -gt 0 ] && [ "$expected_count" = "$pinned_count" ] || return 1
     done
     sed -E '/pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):/s/@sha256:[0-9a-f]{64}//' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
     cmp -s "$actual" "$2"

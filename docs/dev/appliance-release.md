@@ -200,6 +200,8 @@ Two build variants, chosen by one flag:
   (so a `pithead` verb run by hand over SSH pulls from the same place, #1931), and tells podman
   how to trust it — the CA file named by `PITHEAD_REGISTRY_CA` for a TLS registry, or an insecure
   entry without one — and requires `PITHEAD_REGISTRY_COSIGN_PUB` for that registry's signed images.
+  For the no-CA debug route, cosign explicitly permits HTTP too; a release image or a custom
+  release-registry override never does.
   The staged five service references are digest-pinned and verified before provision; the release
   variant uses the shipped release key, while the debug variant replaces it with that alternate key.
   A failed verification refuses the pull and leaves the wizard/console error visible. The release

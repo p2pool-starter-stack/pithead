@@ -80,13 +80,20 @@ rm -f "$VRI/cosign.registry-ca.crt"
 
 # Without a CA, the existing debug-build route configures podman for the registry's HTTP endpoint.
 # Cosign must opt into HTTP on that route only; otherwise the alternate key is present but unusable.
+printf 'debug\n' >"$VRI/pithead-variant"
 : >"$VRI/cosign.log"
 out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" \
-    PITHEAD_REGISTRY="debug.invalid:5000" run_sourced "$VRI" verify_release_images 2>&1)"
+    PITHEAD_REGISTRY="debug.invalid:5000" PITHEAD_VARIANT_FILE="$VRI/pithead-variant" run_sourced "$VRI" verify_release_images 2>&1)"
 assert_rc "HTTP debug-registry signatures verify" "$?" "0"
 assert_contains "no-CA debug verification permits HTTP" "$(cat "$VRI/cosign.log")" \
     "verify --key cosign.pub --private-infrastructure --allow-http-registry debug.invalid:5000/pithead-tor@$TOR_DG"
 assert_not_contains "HTTP debug verification never invents a CA" "$(cat "$VRI/cosign.log")" "--registry-cacert"
+
+: >"$VRI/cosign.log"
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" \
+    PITHEAD_REGISTRY="custom.invalid:5000" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "custom release registry signatures verify over TLS" "$?" "0"
+assert_not_contains "custom release registry never permits HTTP" "$(cat "$VRI/cosign.log")" "--allow-http-registry"
 
 # A signature that does not verify (fake cosign exits 1): FAIL CLOSED. This is the red test for the
 # whole feature — bypass or soften the verification and it goes green-to-broken.
@@ -222,6 +229,12 @@ source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
 cp "$SIG/compose.yml" "$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier removes only first-party digest pins" "$?" 0
+cp "$SIG/reference.yml" "$SIG/reference.duplicate.yml"
+printf '%s\n' "$(grep 'pithead-monero:' "$SIG/reference.yml" | head -1)" >>"$SIG/reference.duplicate.yml"
+cp "$SIG/compose.yml" "$SIG/opt/pithead/docker-compose.yml"
+tail -1 "$SIG/reference.duplicate.yml" >>"$SIG/opt/pithead/docker-compose.yml"
+compose_matches_source "$SIG" "$SIG/reference.duplicate.yml"
+assert_rc "the image verifier requires every duplicate first-party reference to be pinned" "$?" 1
 missing_pin_accepted=""
 for suffix in tor monero p2pool xmrig-proxy dashboard; do
     sed -E "/pithead-${suffix}:/s/@sha256:[0-9a-f]{64}//" "$SIG/compose.yml" >"$SIG/opt/pithead/docker-compose.yml"
