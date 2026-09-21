@@ -38,6 +38,7 @@ run_fault_injection() {
 
 IT_MODE="local"
 IT_SSH_DEST=""
+FAULT_SSH=0
 FAULT_SSH_DEST=""
 run_fault_injection_maybe
 assert_eq "no destination: IT_MODE stays local for the call" "$RUN_FAULT_SEEN_MODE" "local"
@@ -45,6 +46,14 @@ assert_eq "no destination: IT_MODE is still local after" "$IT_MODE" "local"
 
 IT_MODE="local"
 IT_SSH_DEST=""
+FAULT_SSH=0
+FAULT_SSH_DEST="runner@bench"
+run_fault_injection_maybe
+assert_eq "a destination without the selector stays local for the call" "$RUN_FAULT_SEEN_MODE" "local"
+
+IT_MODE="local"
+IT_SSH_DEST=""
+FAULT_SSH=1
 FAULT_SSH_DEST="runner@bench"
 run_fault_injection_maybe
 assert_eq "with a destination: run_fault_injection sees IT_MODE=ssh" "$RUN_FAULT_SEEN_MODE" "ssh"

@@ -254,7 +254,7 @@ run_fault_injection() {
 # calls, then restore it — the rig lock and every other phase must keep seeing the mode main()
 # started with (rig_lock_parent_use refuses a non-local IT_MODE, lib/parent-lock.sh).
 run_fault_injection_maybe() {
-    if [ -z "$FAULT_SSH_DEST" ]; then
+    if [ "$FAULT_SSH" != "1" ]; then
         run_fault_injection
         return
     fi
