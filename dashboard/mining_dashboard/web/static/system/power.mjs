@@ -39,25 +39,27 @@ export class PowerControl extends Component {
 
   async reboot() {
     this.setState({ phase: "rebooting", error: "" });
+    let id;
     try {
-      const id = await powerAction("reboot");
-      const out = await pollOsResult(id, null, 30).catch(() => null); // rejected -> never rebooted
-      if (out?.status === "rejected") return this.fail(out.error || "The reboot was refused.");
-    } catch {
-      /* the reboot cuts the answer off — the reconnect poll below is the real signal */
+      id = await powerAction("reboot");
+    } catch (e) {
+      return this.fail(e);
     }
+    const out = await pollOsResult(id, null, 30).catch(() => null); // reboot cuts the answer off
+    if (out?.status === "rejected") return this.fail(out.error || "The reboot was refused.");
     this.reconnect();
   }
 
   async poweroff() {
     this.setState({ phase: "powering-off", error: "" });
+    let id;
     try {
-      const id = await powerAction("poweroff");
-      const out = await pollOsResult(id, null, 30).catch(() => null);
-      if (out?.status === "rejected") return this.fail(out.error || "The power-off was refused.");
-    } catch {
-      /* the machine is going down — no further answer is expected */
+      id = await powerAction("poweroff");
+    } catch (e) {
+      return this.fail(e);
     }
+    const out = await pollOsResult(id, null, 30).catch(() => null); // machine may be down
+    if (out?.status === "rejected") return this.fail(out.error || "The power-off was refused.");
     this.setState({ phase: "powered-off" });
   }
 

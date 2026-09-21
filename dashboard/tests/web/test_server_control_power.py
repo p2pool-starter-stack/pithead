@@ -55,6 +55,12 @@ class TestControlPowerRoute:
         )
         assert resp.status == 400
 
+    @pytest.mark.parametrize("body", [None, [], "reboot", 42])
+    async def test_rejects_non_object_json_body(self, control_client, control_spool, body):
+        resp = await control_client.post("/api/control/power", json=body, headers=CONTROL_HEADERS)
+        assert resp.status == 400
+        assert list((control_spool / "requests").iterdir()) == []
+
     async def test_spool_failure_is_sanitized(self, control_client, monkeypatch):
         monkeypatch.setattr(control_service.config, "CONTROL_REQUESTS_DIR", "/nonexistent/requests")
         resp = await control_client.post(

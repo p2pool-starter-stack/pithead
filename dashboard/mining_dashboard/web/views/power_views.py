@@ -30,6 +30,8 @@ async def handle_control_power(request):
         body = await request.json()
     except Exception:
         raise web.HTTPBadRequest(text="Body must be JSON.") from None
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="Body must be a JSON object.")
     action = body.get("action")
     if action not in POWER_ACTIONS:
         raise web.HTTPBadRequest(

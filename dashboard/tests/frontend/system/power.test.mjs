@@ -122,6 +122,17 @@ test("reboot() surfaces a host refusal instead of reconnecting", async () => {
   assert.match(failedWith, /already running/);
 });
 
+test("reboot() surfaces a submission failure instead of reconnecting", async () => {
+  const c = inst({ enabled: true });
+  let reconnectCalled = false;
+  let failedWith = null;
+  c.reconnect = () => { reconnectCalled = true; };
+  c.fail = (e) => { failedWith = String((e && e.message) || e); };
+  await withFastPoll(async () => { throw new Error("HTTP 500"); }, () => c.reboot());
+  assert.equal(reconnectCalled, false);
+  assert.match(failedWith, /HTTP 500/);
+});
+
 test("poweroff() does NOT start the reconnect poll — the machine is not coming back on its own", async () => {
   // setState on an unmounted component lands in _nextState, not this.state (same caveat
   // osupdate.test.mjs works around), so the final phase is read off the last setState call
@@ -169,4 +180,12 @@ test("poweroff() surfaces a host refusal", async () => {
     () => c.poweroff(),
   );
   assert.match(failedWith, /appliance/);
+});
+
+test("poweroff() surfaces a submission failure instead of claiming shutdown", async () => {
+  const c = inst({ enabled: true });
+  let failedWith = null;
+  c.fail = (e) => { failedWith = String((e && e.message) || e); };
+  await withFastPoll(async () => { throw new Error("HTTP 500"); }, () => c.poweroff());
+  assert.match(failedWith, /HTTP 500/);
 });
