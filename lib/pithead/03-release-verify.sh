@@ -100,6 +100,8 @@ verify_release_images() {
     # mount already carries it into the container — a relative name, like --key on the same command.
     if [ -f cosign.registry-ca.crt ]; then
         cosign_registry_args=(--registry-cacert cosign.registry-ca.crt)
+    elif [ -n "${PITHEAD_REGISTRY:-}" ] && [ "$PITHEAD_REGISTRY" != "ghcr.io/p2pool-starter-stack" ]; then
+        cosign_registry_args=(--allow-http-registry)
     fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"

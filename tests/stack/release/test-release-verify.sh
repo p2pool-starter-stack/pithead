@@ -51,13 +51,14 @@ assert_contains "verifier-missing abort names docker, not a host cosign" "$out" 
 # (--private-infrastructure), against the EXACT @sha256 digest compose pins and pulls (#451 — bound
 # to the same bytes, not the mutable tag).
 : >"$VRI/cosign.log"
-out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" \
-    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" PITHEAD_REGISTRY="" \
+    STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
 assert_rc "valid signatures -> pull proceeds" "$?" "0"
 assert_eq "all 5 first-party images verified" "$(grep -c '^\[cosign\] verify ' "$VRI/cosign.log")" "5"
 assert_contains "verify binds to the pinned digest, not the tag (#451)" \
-    "$(cat "$VRI/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/test/pithead-tor@$TOR_DG"
+    "$(cat "$VRI/cosign.log")" "verify --key cosign.pub --private-infrastructure ghcr.io/p2pool-starter-stack/pithead-tor@$TOR_DG"
 assert_not_contains "verify never resolves the mutable tag (#451)" "$(cat "$VRI/cosign.log")" "pithead-tor:v9.9.9"
+assert_not_contains "release verification never permits HTTP" "$(cat "$VRI/cosign.log")" "--allow-http-registry"
 
 # A debug appliance carries the test registry CA beside the verifier key, and cosign runs in a
 # container — so the flag names that CA at its path inside the install-dir mount cosign_run already
@@ -72,9 +73,20 @@ out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" COSIGN_DOCKER_
 assert_rc "debug-registry CA lets all signatures verify" "$?" "0"
 assert_contains "cosign receives the debug-registry CA, named inside the install-dir mount" "$(cat "$VRI/cosign.log")" \
     "verify --key cosign.pub --private-infrastructure --registry-cacert cosign.registry-ca.crt ghcr.io/test/pithead-tor@$TOR_DG"
+assert_not_contains "TLS debug verification never permits HTTP" "$(cat "$VRI/cosign.log")" "--allow-http-registry"
 assert_contains "the CA rides the install-dir mount cosign_run already had" "$(cat "$VRI/docker.log")" "-v $VRI:/w:ro"
 assert_not_contains "no second bind mount is added for the CA" "$(cat "$VRI/docker.log")" ":/registry-ca.crt:"
 rm -f "$VRI/cosign.registry-ca.crt"
+
+# Without a CA, the existing debug-build route configures podman for the registry's HTTP endpoint.
+# Cosign must opt into HTTP on that route only; otherwise the alternate key is present but unusable.
+: >"$VRI/cosign.log"
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_LOG="$VRI/cosign.log" \
+    PITHEAD_REGISTRY="debug.invalid:5000" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "HTTP debug-registry signatures verify" "$?" "0"
+assert_contains "no-CA debug verification permits HTTP" "$(cat "$VRI/cosign.log")" \
+    "verify --key cosign.pub --private-infrastructure --allow-http-registry debug.invalid:5000/pithead-tor@$TOR_DG"
+assert_not_contains "HTTP debug verification never invents a CA" "$(cat "$VRI/cosign.log")" "--registry-cacert"
 
 # A signature that does not verify (fake cosign exits 1): FAIL CLOSED. This is the red test for the
 # whole feature — bypass or soften the verification and it goes green-to-broken.
@@ -171,6 +183,9 @@ printf '%s\n' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-p2pool:${STACK_VERSION:-dev}' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-xmrig-proxy:${STACK_VERSION:-dev}' \
     'image: ${PITHEAD_REGISTRY:-example.invalid}/pithead-dashboard:${STACK_VERSION:-dev}' >"$SIG/compose.yml"
+cp "$SIG/compose.yml" "$SIG/reference.yml"
+printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$SIG/compose.yml"
+printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$SIG/reference.yml"
 MF_INDEX="sha256:$(hex64 a)"
 MF_CHILD="sha256:$(hex64 b)"
 # The fake stands in for `docker buildx imagetools inspect` and emits its real shape: the index
@@ -194,7 +209,7 @@ fake_imagetools() {
     docker() { fake_imagetools; }
     pin_first_party_images "$SIG/compose.yml" example.invalid v9.9.9
 )
-assert_eq "all five provision pulls are immutable" "$(grep -c '@sha256:' "$SIG/compose.yml")" 5
+assert_eq "all five provision pulls are immutable" "$(grep 'pithead-' "$SIG/compose.yml" | grep -c '@sha256:')" 5
 # #1891, the boot-breaking one: cosign signs the manifest-LIST (index) digest — sign_images hands
 # `cosign sign` exactly what release.sh's manifest_digest resolved. A multi-arch tag's per-platform
 # children are not signed at all (ghcr answers 200 for the index's .sig tag and 404 for the amd64
@@ -204,13 +219,15 @@ assert_contains "a manifest list pins the signed index digest" "$(cat "$SIG/comp
 assert_not_contains "a manifest list never pins an unsigned per-platform child" "$(cat "$SIG/compose.yml")" "$MF_CHILD"
 
 source "$ROOT/tests/os/verify-image-artifact-helpers.sh"
-printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
-printf 'image: caddy:2.11.4@sha256:%064d\n' 3 >>"$SIG/opt/pithead/docker-compose.yml"
-printf '%s\n' \
-    'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}' \
-    'image: caddy:2.11.4@sha256:0000000000000000000000000000000000000000000000000000000000000003' >"$SIG/reference.yml"
+cp "$SIG/compose.yml" "$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier removes only first-party digest pins" "$?" 0
-printf 'image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-other}@sha256:%064d\n' 2 >"$SIG/opt/pithead/docker-compose.yml"
+missing_pin_accepted=""
+for suffix in tor monero p2pool xmrig-proxy dashboard; do
+    sed -E "/pithead-${suffix}:/s/@sha256:[0-9a-f]{64}//" "$SIG/compose.yml" >"$SIG/opt/pithead/docker-compose.yml"
+    compose_matches_source "$SIG" "$SIG/reference.yml" && missing_pin_accepted="${missing_pin_accepted}${suffix} "
+done
+assert_eq "the image verifier requires valid pins on all five first-party images" "$missing_pin_accepted" ""
+sed -E '/pithead-tor:/s/STACK_VERSION:-dev/STACK_VERSION:-other/' "$SIG/compose.yml" >"$SIG/opt/pithead/docker-compose.yml"
 compose_matches_source "$SIG" "$SIG/reference.yml"
 assert_rc "the image verifier refuses a changed source tag despite a digest" "$?" 1
