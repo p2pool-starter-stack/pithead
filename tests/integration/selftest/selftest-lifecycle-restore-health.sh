@@ -15,13 +15,18 @@ assert_eq "the extraction is the whole lifecycle function" \
 drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
-        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0
+        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 STATUS_COUNT=0
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         pithead() {
+            if [ "$1" = status ]; then
+                STATUS_COUNT=$((STATUS_COUNT + 1))
+                [ "$RESTORE_CASE" != status-fails ] || [ "$STATUS_COUNT" -ne 2 ]
+                return
+            fi
             case "$RESTORE_CASE:$1" in
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
             esac
@@ -40,7 +45,9 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         assert_pool_switched() {
             [ "$RESTORE_CASE:$1" != "verify-fails:restore reverts the pool to the backed-up value" ] || it_fail
         }
-        assert_eq() { :; }
+        assert_eq() {
+            [ "$RESTORE_CASE:$1" != "secret-fails:restore preserves secrets" ] || it_fail
+        }
         quote_arg() { printf '%s' "$1"; }
         rx() { case "$1" in ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;; esac }
         eval "$LIFECYCLE_SRC"
@@ -51,6 +58,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
 
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
+assert_eq "a failed post-restore status fails lifecycle" "$(drive_restore yes status-fails)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
 assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archive-missing)" "1|1"
 assert_eq "a failed config push fails lifecycle" "$(drive_restore yes push-config-fails)" "1|1"
@@ -59,6 +67,7 @@ assert_eq "a failed down fails lifecycle" "$(drive_restore yes down-fails)" "1|1
 assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)" "1|1"
 assert_eq "a failed up fails lifecycle" "$(drive_restore yes up-fails)" "1|1"
 assert_eq "a failed restore verification fails lifecycle" "$(drive_restore yes verify-fails)" "1|1"
+assert_eq "a failed restored-secret assertion fails lifecycle" "$(drive_restore yes secret-fails)" "1|1"
 
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
