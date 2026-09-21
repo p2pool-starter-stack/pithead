@@ -246,7 +246,10 @@ apply2360() { # <extra-stub-body>
         render_env() { :; }
         # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
         parse_and_validate_config() { DASHBOARD_DIR="/new/path"; }
-        carry_dashboard_data_move() { echo "carry:$1:$2"; }
+        carry_dashboard_data_move() {
+            echo "carry:$1:$2"
+            [ "${CARRY2360_FAIL:-}" = 1 ] && exit 1
+        }
         mv() { echo mv; }
         apply -y
     )
@@ -258,6 +261,9 @@ assert_contains "apply: carries with the pre-commit old path" "$out" "carry:/old
 assert_eq "apply: carry runs before committing the new env and compose" \
     "$(printf '%s\n' "$out" | grep -xE 'carry:/old/path:/new/path|mv|migrate|compose' | tr '\n' ',')" \
     "carry:/old/path:/new/path,mv,migrate,compose,"
+out="$(CARRY2360_FAIL=1 apply2360 2>&1)"
+assert_rc "apply: failed carry refuses the env switch" "$?" "1"
+assert_not_contains "apply: failed carry never commits the new env" "$out" "mv"
 
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
