@@ -25,9 +25,15 @@ run_reset_dashboard() {
 
     # #139: point config.json at decoy dirs WITHOUT applying, so .env (the live deployment) still
     # names the real dirs. reset-dashboard must wipe those, never the unapplied config-only paths.
-    local decoy_dashboard="${dashboard_dir}.CONFIGONLY" decoy_p2pool="${p2pool_dir}.CONFIGONLY"
-    push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$decoy_dashboard" "p2pool.data_dir=$decoy_p2pool")"
-    rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker")" >/dev/null 2>&1
+    local decoy_dashboard="${dashboard_dir}.CONFIGONLY" decoy_p2pool decoy_config
+    decoy_p2pool="${p2pool_dir}.CONFIGONLY"
+    if ! decoy_config="$(printf '%s' "$BASELINE_CONFIG" | jq --arg dashboard "$decoy_dashboard" --arg p2pool "$decoy_p2pool" \
+        '.dashboard.data_dir=$dashboard | .p2pool.data_dir=$p2pool')" ||
+        ! push_config "$decoy_config" ||
+        ! rx "mkdir -p $(quote_arg "$dashboard_dir") $(quote_arg "$p2pool_dir") && : > $(quote_arg "$dashboard_dir/.itest-marker") && : > $(quote_arg "$p2pool_dir/.itest-marker")" >/dev/null 2>&1; then
+        it_fail "reset-dashboard phase preconditions" "could not write the decoy config and live-dir markers"
+        return
+    fi
 
     local operator_uid
     operator_uid="$(rx 'id -u' 2>/dev/null)"
@@ -37,9 +43,22 @@ run_reset_dashboard() {
     local mtip mheight mblock_before theight
     mtip="$(monero_chain_tip)"
     mheight="${mtip%% *}"
-    chain_tip_valid "$mtip" && mblock_before="$(monero_block_identity "$mheight")"
+    if ! chain_tip_valid "$mtip"; then
+        it_fail "monerod RPC before reset-dashboard" "get_info unreachable before the reset"
+        return
+    fi
+    mblock_before="$(monero_block_identity "$mheight")"
+    if [ -z "$mblock_before" ]; then
+        it_fail "monerod block identity before reset-dashboard" "get_block_header_by_height failed before the reset"
+        return
+    fi
     theight="$(jq_get "$(api_state)" '.sync.tari.current')"
+    if [[ ! "$theight" =~ ^[0-9]+$ ]]; then
+        it_fail "tari chain-untouched precondition" "dashboard did not report a numeric height before the reset"
+        return
+    fi
 
+    local failures_before_reset="$IT_FAIL"
     it_step "pithead reset-dashboard -y…"
     pithead reset-dashboard -y >/dev/null 2>&1
     assert_rc "reset-dashboard succeeds" "$?" "0"
@@ -73,6 +92,10 @@ run_reset_dashboard() {
 
     # Chains untouched: height never rewinds, and the block at the pre-reset height is byte-for-byte
     # the same block after — proving the data dir survived rather than being wiped and resynced.
+    # The dashboard container is recreated above, so its first RPC request can race its connection
+    # to monerod even after status is healthy. Wait for the existing RPC instead of reporting this
+    # required acceptance assertion as a missing skip.
+    wait_for 120 5 "monerod RPC after reset-dashboard" monero_chain_tip || true
     local mtip2 mheight2
     mtip2="$(monero_chain_tip)"
     mheight2="${mtip2%% *}"
@@ -81,24 +104,38 @@ run_reset_dashboard() {
         assert_eq "the pre-reset monero block is still the same block (chain untouched, #139)" \
             "$(monero_block_identity "$mheight")" "$mblock_before"
     else
-        it_skip_leg "monero chain-untouched check" "monerod get_info unreachable before or after the reset" "missing"
+        it_fail "monero chain-untouched check" "get_info unreachable before or after the reset"
     fi
-    if [[ "$theight" =~ ^[0-9]+$ ]]; then
-        local theight2
-        theight2="$(jq_get "$(api_state)" '.sync.tari.current')"
+    local theight2
+    theight2="$(jq_get "$(api_state)" '.sync.tari.current')"
+    if [[ "$theight2" =~ ^[0-9]+$ ]]; then
         assert_num_ge "tari height never rewound across reset-dashboard" "$theight2" "$theight"
+    else
+        it_fail "tari chain-untouched check" "dashboard did not report a numeric height before and after the reset"
     fi
+
+    # A failed reset may have left the stack unhealthy; do not inject a second destructive fault
+    # into that state. The harness's normal restore path owns recovery for this failed phase.
+    [ "$IT_FAIL" -le "$failures_before_reset" ] || return
 
     # #557: force a REAL compose failure once and prove the friendly branch fires instead of a bare
     # errexit abort. A foreign container squatting the p2pool container_name blocks `docker compose
     # up` exactly like a real name conflict would.
     if [ -n "$blocker_image" ]; then
         it_step "forcing a real compose failure to exercise the #557 friendly-failure branch…"
-        rx "docker rm -f p2pool >/dev/null 2>&1; docker create --name p2pool $(quote_arg "$blocker_image")" >/dev/null 2>&1
-        local fail_out fail_rc
-        fail_out="$(pithead reset-dashboard -y 2>&1)"
-        fail_rc=$?
-        rx "docker rm -f p2pool" >/dev/null 2>&1
+        # Hold Pithead's mutation window across the foreign container, and remove only its captured
+        # ID from an EXIT trap. The actual verb inherits the lock, so no other CLI command can race
+        # a legitimate p2pool back into the name before cleanup.
+        local fail_result fail_out fail_rc
+        fail_result="$(rx "source ./pithead; mutation_lock_acquire reset-dashboard-test; blocker=''; complete=0; cleanup() { [ -z \"\$blocker\" ] || docker rm -f \"\$blocker\" >/dev/null 2>&1 || true; [ \"\$complete\" = 1 ] || PITHEAD_LOCK_HELD=1 ./pithead up >/dev/null 2>&1 || true; mutation_lock_release; }; trap cleanup EXIT; docker rm -f p2pool >/dev/null 2>&1; blocker=\$(docker create --name p2pool $(quote_arg "$blocker_image")) || exit 0; if PITHEAD_LOCK_HELD=1 ./pithead reset-dashboard -y 2>&1; then rc=0; else rc=\$?; fi; complete=1; printf '\n__reset_dashboard_rc=%s\n' \"\$rc\"")"
+        fail_rc="$(printf '%s\n' "$fail_result" | sed -n 's/^__reset_dashboard_rc=//p' | tail -n1)"
+        fail_out="$(printf '%s\n' "$fail_result" | sed '/^__reset_dashboard_rc=/d')"
+        if [[ ! "$fail_rc" =~ ^[0-9]+$ ]]; then
+            it_fail "reset-dashboard compose-failure fixture" "could not create the isolated p2pool name blocker"
+            pithead up >/dev/null 2>&1 || true
+            wait_status_ok 240 || true
+            return
+        fi
         assert_rc "reset-dashboard exits 1 on a real compose failure (#557 fail-closed unchanged)" "$fail_rc" "1"
         assert_contains "reset-dashboard: friendly compose-failure branch reached, not a bare errexit abort (#557)" \
             "$fail_out" "did NOT come back up"
@@ -110,6 +147,6 @@ run_reset_dashboard() {
         pithead status >/dev/null 2>&1
         assert_rc "status OK after recovering from the forced compose failure" "$?" "0"
     else
-        it_skip_leg "#557 forced compose-failure check" "could not read the dashboard container's image to build a name-clash blocker" "missing"
+        it_fail "#557 forced compose-failure check" "could not read the dashboard container's image to build a name-clash blocker"
     fi
 }
