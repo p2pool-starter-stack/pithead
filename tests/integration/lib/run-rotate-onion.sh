@@ -1,6 +1,35 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 
+# The EXIT trap must see these: the hidden-service identity is outside config.json/.env.
+ROTATE_ONION_RESTORE_ARMED=0
+ROTATE_ONION_HS_DIR=""
+ROTATE_ONION_BACKUP_DIR=""
+ROTATE_ONION_OLD_ADDRESS=""
+ROTATE_ONION_OLD_PUBKEY=""
+ROTATE_ONION_OLD_PRIVKEY=""
+
+rotate_onion_restore() {
+    [ "$ROTATE_ONION_RESTORE_ARMED" = "1" ] || return 0
+    rx "
+        set -e
+        docker compose stop tor >/dev/null 2>&1 || true
+        sudo rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
+        sudo mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
+        awk -v a=$(quote_arg "$ROTATE_ONION_OLD_ADDRESS") -v pk=$(quote_arg "$ROTATE_ONION_OLD_PUBKEY") -v pv=$(quote_arg "$ROTATE_ONION_OLD_PRIVKEY") '
+            /^DASHBOARD_ONION_ADDRESS=/        { print \"DASHBOARD_ONION_ADDRESS=\" a; next }
+            /^DASHBOARD_ONION_CLIENT_PUBKEY=/  { print \"DASHBOARD_ONION_CLIENT_PUBKEY=\" pk; next }
+            /^DASHBOARD_ONION_CLIENT_PRIVKEY=/ { print \"DASHBOARD_ONION_CLIENT_PRIVKEY=\" pv; next }
+            { print }
+        ' .env > .env.itest
+        mv .env.itest .env
+        docker compose up -d tor >/dev/null 2>&1
+    " >/dev/null 2>&1 || return 1
+    pithead render >/dev/null 2>&1 &&
+        rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1 || return 1
+    ROTATE_ONION_RESTORE_ARMED=0
+}
+
 # Tier-4 leg for `rotate-dashboard-onion` (#2345): 0 invocations under tests/integration or
 # tests/os before this — tier-1 only ever runs it sourced against a stubbed engine. This proves,
 # on a real box: the new address answers over the real Tor network, the OLD address stops
@@ -52,6 +81,12 @@ run_rotate_onion() {
         it_skip_phase "rotate-onion" "could not back up $hs_dir before rotating — refusing to rotate what we can't restore" "missing"
         return 0
     fi
+    ROTATE_ONION_RESTORE_ARMED=1
+    ROTATE_ONION_HS_DIR="$hs_dir"
+    ROTATE_ONION_BACKUP_DIR="$backup_dir"
+    ROTATE_ONION_OLD_ADDRESS="$old_onion"
+    ROTATE_ONION_OLD_PUBKEY="$old_pub"
+    ROTATE_ONION_OLD_PRIVKEY="$old_priv"
 
     it_step "rotating the dashboard onion…"
     pithead rotate-dashboard-onion -y >/dev/null 2>&1
@@ -101,42 +136,12 @@ run_rotate_onion() {
         it_pass "old dashboard onion stops answering after rotation"
     fi
 
-    # Restore the pre-rotation onion identity. A v3 onion address is DERIVED from its ed25519 key,
-    # so swapping the old key files back reproduces the exact old address with no need to poll tor
-    # for it — write it straight into .env alongside the old client-auth keypair. `apply -y` is
-    # NOT used here: it diffs the fresh render against the live .env and no-ops when nothing
-    # differs (env_changed_keys, lib/pithead/40-apply-and-render.sh), and by the time this .env
-    # write lands there is nothing left to diff. `render` regenerates every derived file
-    # (Caddyfile, authorized_clients) unconditionally from .env instead — it touches no
-    # containers, so caddy still needs its own explicit restart to pick up the file it wrote.
     it_step "restoring the pre-rotation onion directory…"
-    # set -e: without it, each of these is a separate statement that keeps going after a failure
-    # (this harness never runs with -e; see run.sh), which would silently mask a failed `mv` of
-    # $backup_dir — the one place this leg holds the retired private keys on disk past the
-    # rotation itself — and let a later line's exit code report success anyway.
-    if rx "
-        set -e
-        docker compose stop tor >/dev/null 2>&1 || true
-        sudo rm -rf $(quote_arg "$hs_dir")
-        sudo mv $(quote_arg "$backup_dir") $(quote_arg "$hs_dir")
-        awk -v a=$(quote_arg "$old_onion") -v pk=$(quote_arg "$old_pub") -v pv=$(quote_arg "$old_priv") '
-            /^DASHBOARD_ONION_ADDRESS=/        { print \"DASHBOARD_ONION_ADDRESS=\" a; next }
-            /^DASHBOARD_ONION_CLIENT_PUBKEY=/  { print \"DASHBOARD_ONION_CLIENT_PUBKEY=\" pk; next }
-            /^DASHBOARD_ONION_CLIENT_PRIVKEY=/ { print \"DASHBOARD_ONION_CLIENT_PRIVKEY=\" pv; next }
-            { print }
-        ' .env > .env.itest
-        mv .env.itest .env
-        docker compose up -d tor >/dev/null 2>&1
-    " >/dev/null 2>&1; then
+    if rotate_onion_restore; then
         it_pass "pre-rotation onion directory restored"
     else
         it_fail "pre-rotation onion directory restored" "the restore command failed on the box — check for a leftover $backup_dir holding the retired keys"
     fi
-    # Unconditional and idempotent: a successful mv above already consumed $backup_dir, so this is
-    # a no-op then; it only does real work — and only then matters — on the failure path above.
-    rx "sudo rm -rf $(quote_arg "$backup_dir")" >/dev/null 2>&1
-    pithead render >/dev/null 2>&1
-    rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1
     wait_status_ok 120 || true
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
     case "$(rx "cat Caddyfile 2>/dev/null")" in

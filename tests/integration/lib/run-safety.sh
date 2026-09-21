@@ -87,6 +87,11 @@ safety_rollback_if_failed() {
 # — e.g. the rig-key ledger's (#1379) — because `trap … EXIT` replaces rather than appends.
 safety_abort_restore() {
     local original_rc=$? restore_failed=0
+    # config.json/.env backups do not include the onion identity directory.
+    if [ "${ROTATE_ONION_RESTORE_ARMED:-0}" = "1" ] && ! rotate_onion_restore; then
+        restore_failed=1
+        it_warn "interrupted onion rotation could not restore its original identity"
+    fi
     # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
     # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
     # so the restore is attempted.
