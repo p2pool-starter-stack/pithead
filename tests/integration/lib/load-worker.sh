@@ -1,19 +1,26 @@
 # shellcheck shell=bash
 LOAD_WORKER_DIR="" LOAD_WORKER_CONFIG="" LOAD_WORKER_LOG=""
-LOAD_WORKER_NAME="" LOAD_SHARES_BEFORE=0
+LOAD_WORKER_NAME="" LOAD_BORROWED_NAME="" LOAD_SHARES_BEFORE=0
 LOAD_PEAK_CPU=0 LOAD_PEAK_RSS=0 LOAD_METRICS_SAMPLED=0 LOAD_SAW_READY=0 LOAD_SAW_FAILOVER=0 LOAD_SAW_RECOVERY=0
 
 worker_names() {
-    on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty' | sort -u"
+    on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '.workers[]? | select(.status == \"online\") | .name // empty | select(test(\"^[^[:cntrl:]]+$\"))' | sort -u"
+}
+
+refresh_load_borrowed_name() {
+    [ -n "$LOAD_WORKER_NAME" ] || return 0
+    LOAD_BORROWED_NAME="$(on_miner "jq -er '.pools[0].user | strings | select(test(\"^[^[:cntrl:]]+$\"))' $(quote_arg "$MINER_XMRIG_CONFIG")")" || return 1
 }
 
 # A live bench can carry workers we did not add and do not control, and the RigForge control phase
 # intentionally rewrites the borrowed worker's label. Require the requested distinct capacity and
-# our clone, rather than retaining a label neither this gate nor the harness owns.
+# our clone, and the borrowed miner's current configured label. The control re-arm refreshes that
+# label before lifecycle starts, so a renamed rig remains attributable without accepting a replacement.
 worker_set_ready() { # <newline-separated online names, sorted>
     local names="$1"
     [ "$(grep -c . <<<"$names")" -ge "$WORKERS" ] 2>/dev/null || return 1
     grep -Fxq -- "$LOAD_WORKER_NAME" <<<"$names"
+    grep -Fxq -- "$LOAD_BORROWED_NAME" <<<"$names"
 }
 
 start_load_worker() {
@@ -28,6 +35,10 @@ start_load_worker() {
     fi
     LOAD_WORKER_CONFIG="$LOAD_WORKER_DIR/config.json"
     LOAD_WORKER_LOG="$LOAD_WORKER_DIR/xmrig.log"
+    refresh_load_borrowed_name || {
+        stop_load_worker
+        return 1
+    }
     bin="$(on_miner "for b in $(quote_arg "${MINER_XMRIG_CONFIG%/*}/xmrig") \$(command -v xmrig 2>/dev/null); do [ -x \"\$b\" ] && { printf '%s\\n' \"\$b\"; break; }; done")"
     [ -n "$bin" ] || {
         warn "cannot find the borrowed rig's XMRig binary"
@@ -38,7 +49,7 @@ start_load_worker() {
         stop_load_worker
         return 1
     }
-    identity="$(on_miner "umask 077; p=''; start=''; owned() { test -n \"\$p\" && test -r \"/proc/\$p/stat\" || return 1; test -n \"\$start\" || return 2; test \"\$(awk '{print \$22}' \"/proc/\$p/stat\")\" = \"\$start\" || return 2; tr '\\0' '\\n' </proc/\$p/cmdline | grep -Fxq -- $(quote_arg "$LOAD_WORKER_CONFIG") || return 2; }; fail() { trap - EXIT HUP INT TERM; owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; kill -TERM \"\$p\" || true; i=0; while test \"\$i\" -lt 10; do owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; sleep 1; i=\$((i + 1)); done; owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; kill -KILL \"\$p\" || true; sleep 1; owned; x=\$?; test \"\$x\" = 1 || touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; trap fail EXIT HUP INT TERM; nohup $(quote_arg "$bin") --config $(quote_arg "$LOAD_WORKER_CONFIG") --threads=1 >$(quote_arg "$LOAD_WORKER_LOG") 2>&1 & p=\$!; start=\$(awk '{print \$22}' /proc/\$p/stat) || exit 1; printf '%s %s\\n' \"\$p\" \"\$start\" > $(quote_arg "$LOAD_WORKER_DIR/identity") || exit 1; trap - EXIT HUP INT TERM; printf '%s %s' \"\$p\" \"\$start\"")"
+    identity="$(on_miner "umask 077; p=''; start=''; owned() { test -n \"\$p\" && test -r \"/proc/\$p/stat\" || return 1; test -n \"\$start\" || return 2; test \"\$(awk '{print \$22}' \"/proc/\$p/stat\")\" = \"\$start\" || return 2; tr '\\0' '\\n' </proc/\$p/cmdline | grep -Fxq -- $(quote_arg "$LOAD_WORKER_CONFIG") || return 2; }; fail() { trap - EXIT HUP INT TERM; if test -n \"\$p\" && test -z \"\$start\"; then kill -TERM \"\$p\" 2>/dev/null || true; wait \"\$p\" 2>/dev/null || true; rm -rf -- $(quote_arg "$LOAD_WORKER_DIR"); exit 1; fi; owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; kill -TERM \"\$p\" || true; i=0; while test \"\$i\" -lt 10; do owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; sleep 1; i=\$((i + 1)); done; owned; x=\$?; test \"\$x\" = 1 && exit 1; test \"\$x\" = 2 && { touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; kill -KILL \"\$p\" || true; sleep 1; owned; x=\$?; test \"\$x\" = 1 || touch $(quote_arg "$LOAD_WORKER_DIR/cleanup-failed"); exit 1; }; trap fail EXIT HUP INT TERM; nohup $(quote_arg "$bin") --config $(quote_arg "$LOAD_WORKER_CONFIG") --threads=1 >$(quote_arg "$LOAD_WORKER_LOG") 2>&1 & p=\$!; start=\$(awk '{print \$22}' /proc/\$p/stat) || exit 1; printf '%s %s\\n' \"\$p\" \"\$start\" > $(quote_arg "$LOAD_WORKER_DIR/identity") || exit 1; trap - EXIT HUP INT TERM; printf '%s %s' \"\$p\" \"\$start\"")"
     [[ "$identity" =~ ^([0-9]+)\ ([0-9]+)$ ]] || {
         stop_load_worker
         return 1

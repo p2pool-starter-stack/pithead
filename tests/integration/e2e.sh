@@ -640,6 +640,7 @@ run_harness() {
         if [ "$BORROW_MINER" = "1" ] && on_bench "test -f '$rearm_request' && test ! -f '$rearm_ack'"; then
             step "RigForge changed rendered miner state; reapplying the borrowed-pool fixture (#1994)…"
             repoint_miner || harness_fail "Failed to reapply the borrowed-pool fixture." || return 1
+            refresh_load_borrowed_name || harness_fail "Failed to read the rearmed borrowed-worker label." || return 1
             wait_workers "$WORKERS" 180 || harness_fail "Borrowed miner did not reconnect after pool re-arm." || return 1
             printf '%s' "$rearm_id" | on_bench "cat > '$rearm_ack'" || harness_fail "Failed to acknowledge the borrowed-pool fixture." || return 1
         fi
