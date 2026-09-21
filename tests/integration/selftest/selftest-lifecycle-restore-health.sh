@@ -15,7 +15,7 @@ assert_eq "the extraction is the whole lifecycle function" \
 drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
-        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}"
+        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
@@ -33,7 +33,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         api_state() { printf '{}'; }
         secret_fingerprint() { printf fingerprint; }
         render_scenario_config() { printf '{}'; }
-        push_config() { :; }
+        push_config() {
+            PUSH_COUNT=$((PUSH_COUNT + 1))
+            [ "$RESTORE_CASE" != push-config-fails ] || [ "$PUSH_COUNT" -ne 2 ]
+        }
         assert_pool_switched() {
             [ "$RESTORE_CASE:$1" != "verify-fails:restore reverts the pool to the backed-up value" ] || it_fail
         }
@@ -50,6 +53,7 @@ assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
 assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archive-missing)" "1|1"
+assert_eq "a failed config push fails lifecycle" "$(drive_restore yes push-config-fails)" "1|1"
 assert_eq "a failed apply fails lifecycle" "$(drive_restore yes apply-fails)" "1|1"
 assert_eq "a failed down fails lifecycle" "$(drive_restore yes down-fails)" "1|1"
 assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)" "1|1"
