@@ -232,7 +232,7 @@ out="$({
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { :; }
+    docker() { printf '%s\n' "$*" >&2; }
     cp() { [ "$3" = "$C/old-wal/mining_data.db-wal" ] && : >"$4" || command cp "$@"; }
     carry_dashboard_data_move "$C/old-wal" "$C/new-wal"
 } 2>&1)"
