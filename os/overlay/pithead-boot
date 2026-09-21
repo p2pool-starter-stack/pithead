@@ -322,13 +322,13 @@ fi
 OS_INFLIGHT=data/os-update/in-flight.json
 OS_STATE_DIR=data/control/results
 os_update_rollback_verdict
-
-# Containers are DERIVED too (#798): the baked archives ship in the slot, but podman's store
-# lives on /data and the image tag is constant across releases — a keep-reinstall or A/B
-# update ran RC-old containers under an RC-new OS until this loaded them. ONE loader, shared
-# with the first-boot wizard (load_baked_images): sha-keyed, so a normal boot pays one sha256
-# per archive, and 'up' below recreates on the image-id change.
+# Reload derived containers before finishing a target restore or the ordinary render (#798).
 ./pithead load-images
+[ ! -f .restore-incomplete ] || fail_boot "the carried restore is incomplete; run the installer restore again"
+if [ -f .restore-pending ]; then
+    ./pithead firstboot-wizard --restore-pending </dev/null || fail_boot "the carried restore could not finish setup"
+    rm -f .restore-pending || fail_boot "the carried restore marker could not be cleared"
+fi
 
 # Physical-presence configuration channel (#786 sub-issue D): a removable stick carrying a
 # validated pithead-config.json is applied here, before render, so a changed config drives the

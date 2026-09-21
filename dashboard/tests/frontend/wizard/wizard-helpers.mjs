@@ -47,6 +47,7 @@ const stateFor = (stage, extra = {}) => ({
   error: null,
   disks: [],
   handoff: null,
+  restore_enabled: true,
   ...extra,
 });
 

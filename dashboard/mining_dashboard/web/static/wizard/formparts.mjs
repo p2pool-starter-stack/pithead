@@ -47,7 +47,7 @@ export function renderRestore(app) {
   } = app.state;
   const diskPicked = !installer || Boolean(chosen);
   return html`<div class="card">
-        <p>Upload an encrypted Pithead backup instead of filling in the form below. The machine
+        <p>Upload a Pithead backup instead of filling in the form below. The machine
         decrypts, validates and provisions itself from what it restores.${
           installer && !diskPicked
             ? " Choose the disk first; the upload fields appear once you pick."

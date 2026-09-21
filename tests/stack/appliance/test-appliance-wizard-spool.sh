@@ -40,6 +40,19 @@ run_sourced "$WSS" eval 'ln() { command ln "$@"; rm -f "$WSS/spool/request"; com
 assert_rc "replacement during pinning fails closed" "$?" 1
 assert_eq "replacement target is unchanged" "$(cat "$WSS/target")" sentinel
 rm -f "$WSS/spool/request"
+touch "$WSS/spool/submission-staging"
+printf '{}' >"$WSS/spool/config.json"
+printf '{}' >"$WSS/spool/rig-request.json"
+printf archive >"$WSS/spool/restore-archive"
+for consumer in 'firstboot_consume_spool "$WSS/spool"' 'firstboot_consume_rig "$WSS/spool"' 'firstboot_consume_restore "$WSS/spool"'; do
+    run_sourced "$WSS" eval "$consumer" >/dev/null 2>&1
+    assert_rc "a partial generation is not consumed" "$?" 2
+done
+assert_eq "partial triggers remain for startup cleanup" "$(find "$WSS/spool" -maxdepth 1 \( -name config.json -o -name rig-request.json -o -name restore-archive \) | wc -l | tr -d ' ')" 3
+run_sourced "$WSS" wizard_clear_submission_transaction "$WSS/spool"
+assert_rc "startup clears a partial transaction" "$?" 0
+assert_eq "startup clears a partial config trigger" "$([ -e "$WSS/spool/config.json" ] || echo gone)" gone
+rm -f "$WSS/spool/rig-request.json" "$WSS/spool/restore-archive"
 # Caller proof: the dial occurs between parsing and promotion. Change the original request at
 # that point; every field that lands must still come from the private snapshot.
 printf '{"pool":"example.test:3333","worker":"original","stratum_password":"fixture"}' >"$WSS/spool/rig-request.json"
@@ -51,6 +64,32 @@ run_sourced "$WSS" eval 'bash() { printf "{}" >"$WSS/spool/config.json"; }; firs
 assert_rc "config acceptance promotes the validated snapshot" "$?" 0
 assert_eq "the promoted config is the snapshot, not the replaced request" "$(jq -c . "$WSS/config.json")" '{"fixture":true}'
 assert_eq "accepted config is private" "$(stat -c '%a' "$WSS/config.json")" 600
+mkdir -p "$WSS/outside/.host.fixture"
+printf sentinel >"$WSS/outside/.host.fixture/value"
+ln -s "$WSS/outside" "$WSS/spool-link"
+run_sourced "$WSS" clear_legacy_wizard_snapshots "$WSS/spool-link"
+assert_rc "legacy cleanup rejects a symlinked spool" "$?" 1
+assert_eq "a symlinked spool cannot redirect cleanup" "$(cat "$WSS/outside/.host.fixture/value")" sentinel
+mkdir -p "$WSS/restart-stage/.restore.crash" "$WSS/restart-carry" "$WSS/restart-submit/.host.crash"
+printf stage-secret >"$WSS/restart-stage/.restore.crash/value"
+printf carry-secret >"$WSS/restart-carry/pass"
+printf snapshot-secret >"$WSS/restart-submit/.host.crash/value"
+run_sourced "$WSS" clear_restore_stages "$WSS/restart-stage"
+assert_rc "restart clears crash-left decrypted stages" "$?" 0
+run_sourced "$WSS" clear_restore_carry "$WSS/restart-carry"
+assert_rc "restart clears crash-left restore carry" "$?" 0
+run_sourced "$WSS" clear_legacy_wizard_snapshots "$WSS/restart-submit"
+assert_rc "restart clears crash-left private snapshots" "$?" 0
+assert_eq "restart leaves no plaintext restore artifacts" "$(find "$WSS" -name '*-secret' -o -name '.restore.crash' -o -name '.host.crash')" ""
+mkdir -p "$WSS/restart-outside"
+printf cleanup-secret >"$WSS/restart-outside/value"
+ln -s "$WSS/restart-outside" "$WSS/restart-stage/.restore.escape"
+out=$(run_sourced "$WSS" clear_restore_stages "$WSS/restart-stage" 2>&1)
+assert_rc "restart refuses a redirected restore stage" "$?" 1
+assert_contains "restore-stage cleanup failure is visible" "$out" 'Could not clear temporary restore staging safely'
+assert_not_contains "restore-stage cleanup failure hides content" "$out" cleanup-secret
+assert_eq "restore-stage cleanup never follows a symlink" "$(cat "$WSS/restart-outside/value")" cleanup-secret
+rm -f "$WSS/restart-stage/.restore.escape"
 
 mk_tmpdir WBK
 mkdir -p "$WBK/preseed"
@@ -67,8 +106,73 @@ sleep() { exit 7; }; firstboot_wizard'
 PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS" >/dev/null 2>&1
 assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
 assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
+mkdir -p "$WBK/installed/preseed" "$WBK/installed/data/firstboot"
+printf live-config-sentinel >"$WBK/installed/config.json"
+touch "$WBK/installed/data/firstboot/submission-active"
+WBR_STUBS="$WBK_STUBS
+setup_again_mode() { return 0; }
+firstboot_consume_restore() { touch data/firstboot/submission-active; return 1; }"
+PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBR_STUBS" >/dev/null 2>&1
+assert_rc "installed-machine rejected restore returns to the form" "$?" 7
+assert_eq "installed-machine rejected restore preserves the live config" "$(cat "$WBK/installed/config.json")" live-config-sentinel
+assert_eq "rejected restore releases its submission transaction" "$([ -e "$WBK/installed/data/firstboot/submission-active" ] || echo gone)" gone
+WBF_STUBS="$WBK_STUBS
+setup_again_mode() { return 0; }
+firstboot_consume_restore() { return 3; }
+error() { exit 11; }"
+PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBF_STUBS" >/dev/null 2>&1
+assert_rc "accepted restore cleanup failure stops the wizard" "$?" 11
+WBP_STUBS="$WBK_STUBS
+consume_preseed_restore() { return 3; }
+error() { exit 12; }"
+PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBP_STUBS" >/dev/null 2>&1
+assert_rc "legacy applied-stage cleanup failure stops first boot" "$?" 12
 rm -rf "$WBK"
-unset WBK WBK_STUBS
+unset WBK WBK_STUBS WBR_STUBS WBF_STUBS WBP_STUBS
+mk_tmpdir WRS
+mkdir -p "$WRS/data/firstboot" "$WRS/restore" "$WRS/carry" "$WRS/preseed"
+printf '{}' >"$WRS/config.json"
+printf plaintext-secret >"$WRS/restore/restore-archive"
+printf passphrase-secret >"$WRS/restore/restore-passphrase"
+printf candidate-secret >"$WRS/restore/config.json"
+printf card-secret >"$WRS/restore/handoff.json"
+printf carry-secret >"$WRS/carry/pass"
+WRS_STUBS='machine_role() { echo pithead; }; setup_again_mode() { return 1; }
+installer_mode_available() { return 1; }; consume_preseed_restore() { return 1; }
+consume_preseed_config() { return 2; }; ensure_appliance_dashboard_password() { :; }
+apply_appliance_defaults() { :; }; record_machine_role() { :; }
+setup() { [ ! -e "$WRS/restore/restore-archive" ] && [ ! -e "$WRS/restore/restore-passphrase" ] && [ ! -e "$WRS/restore/config.json" ] && [ ! -e "$WRS/restore/handoff.json" ] && [ ! -e "$WRS/carry" ] || exit 9; exit 7; }
+firstboot_wizard'
+PITHEAD_PRESEED_DIR="$WRS/preseed" PITHEAD_RESTORE_SUBMISSION_DIR="$WRS/restore" \
+    PITHEAD_RESTORE_CARRY_DIR="$WRS/carry" run_sourced "$WRS" eval "$WRS_STUBS" >/dev/null 2>&1
+assert_rc "restart clears restore secrets before an existing-config early return" "$?" 7
+rm -rf "$WRS"
+unset WRS WRS_STUBS
+printf '{"monero":{"wallet_address":"4retry","node_password":"restore-secret"},"dashboard":{"auth":{"password":"restore-secret"}},"notifications":{"token":"restore-secret"}}' >"$WSS/candidate.json"
+run_sourced "$WSS" eval 'installer_mode_available() { return 1; }; wizard_publish_retry_config "$WSS/spool" "$WSS/candidate.json" 1'
+assert_rc "installer retry publication uses the latched session mode" "$?" 0
+assert_contains "installer retry keeps non-secret answers" "$(cat "$WSS/spool/last-attempt.json")" 4retry
+assert_not_contains "installer retry persists no restored credential" "$(cat "$WSS/spool/last-attempt.json")" restore-secret
+mkdir -p "$WSS/carry"
+touch "$WSS/spool/restore-inflight" "$WSS/carry/pass"
+run_sourced "$WSS" wizard_clear_restore_state 0 "$WSS/spool" "$WSS/spool" "$WSS/carry"
+assert_rc "abandoned restore cleanup succeeds" "$?" 0
+assert_eq "abandoned restore clears its in-flight marker" "$([ -e "$WSS/spool/restore-inflight" ] || echo gone)" gone
+assert_eq "abandoned restore clears its volatile carry" "$([ -e "$WSS/carry" ] || echo gone)" gone
+run_sourced "$WSS" eval 'install() { return 99; }; rm() { return 99; }; wizard_restore_installer_preseeds "" 0'
+assert_rc "restore cleanup leaves installer pre-seeds untouched" "$?" 0
+run_sourced "$WSS" eval 'wizard_restore_installer_preseeds() { :; }; clear_setup_candidate() { :; }; clear_legacy_restore_carry() { return 1; }; wizard_clear_restore_state() { :; }; wizard_cleanup_installer_credentials a b c 0 d e f'
+assert_rc "legacy credential cleanup failure stops installer cleanup" "$?" 1
+fb_restore_paths=$(sed -n '/^firstboot_wizard() {/,/^}$/p' "$STACK")
+assert_eq "every retry snapshot uses the secret-stripping publisher" "$(grep -c wizard_publish_retry_config <<<"$fb_restore_paths")" 3
+assert_eq "every accepted-restore exit clears its marker and carry" "$(grep -c wizard_clear_restore_state <<<"$fb_restore_paths")" 5
+assert_eq "both installer exits check the shared credential cleanup" "$(grep -c wizard_cleanup_installer_credentials <<<"$fb_restore_paths")" 2
+assert_contains "bare keep waits for the final ready marker" "$fb_restore_paths" 'wizard_submission_ready "$spool"'
+assert_contains "bare keep also waits for the volatile archive to be absent" "$fb_restore_paths" '$restore_spool/restore-archive'
+assert_contains "restart cleanup sweeps decrypted restore stages" "$fb_restore_paths" 'clear_restore_stages'
+assert_contains "restart cleanup clears restore submissions before early returns" "$fb_restore_paths" 'wizard_clear_restore_state 0'
+assert_contains "multipart uploads spool only in volatile storage" "$fb_restore_paths" 'TMPDIR=/wizard-restore'
+unset fb_restore_paths
 echo "== unit: wizard submission policy and reusable-media lifecycle =="
 # Invalid host syntax is rejected before any network command is constructed. The timeout stub
 # succeeding is a control: the old format-only predicate would accept this request.
@@ -103,30 +207,31 @@ WS_NEW_MACHINE='
     stage_wizard_spool() { :; }; prefill_from_previous_install() { return 1; }
     load_baked_images() { exit 7; }; firstboot_wizard
 '
-for ws_file in last-attempt.json install-attempt.json auth-mode config-changes.json setup-failed; do
+for ws_file in last-attempt.json install-attempt.json auth-mode config-changes.json setup-failed submission-staging; do
     printf old-machine >"$WSS/spool/$ws_file"
 done
+printf partial-config >"$WSS/spool/config.json"
 # firstboot's canonical spool is data/firstboot; retain the same inode for the fixture.
 mkdir "$WSS/data"
 mv "$WSS/spool" "$WSS/data/firstboot"
 PITHEAD_PRESEED_DIR="$WSS/preseed" run_sourced "$WSS" eval "$WS_NEW_MACHINE" >/dev/null 2>&1
 assert_rc "new machine reaches the image-loading boundary" "$?" 7
-WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed \) | wc -l)
+WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed -o -name submission-staging -o -name submission-active -o -name config.json \) | wc -l)
 assert_eq "new machine starts without old configuration or recovery metadata" "$WS_LEFT" 0
-for ws_file in last-attempt.json install-attempt.json auth-mode config-changes.json setup-failed; do
+for ws_file in last-attempt.json install-attempt.json auth-mode config-changes.json setup-failed submission-active; do
     printf this-machine >"$WSS/data/firstboot/$ws_file"
 done
 cp "$ROOT/config.reference.json" "$WSS/config.reference.json"
-run_sourced "$WSS" eval 'publish_rig_defaults() { :; }; publish_saved_role() { :; }; publish_data_wipe_note() { :; }; installer_mode_available() { return 1; }; wizard_mint_cert() { :; }; stage_wizard_spool "$WSS/data/firstboot"' >/dev/null
+run_sourced "$WSS" eval 'publish_rig_defaults() { :; }; publish_saved_role() { :; }; publish_data_wipe_note() { :; }; installer_mode_available() { return 1; }; wizard_mint_cert() { :; }; stage_wizard_spool "$WSS/data/firstboot" && wizard_clear_submission_transaction "$WSS/data/firstboot"' >/dev/null
 assert_rc "retry re-staging succeeds" "$?" 0
-WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed \) | wc -l)
-assert_eq "retry keeps all recovery files" "$WS_LEFT" 5
+WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed -o -name submission-active \) | wc -l)
+assert_eq "retry keeps all recovery files except the stale transaction" "$WS_LEFT" 5
 assert_eq "retry preserves this machine's auth choice" "$(cat "$WSS/data/firstboot/auth-mode")" this-machine
 run_sourced "$WSS" eval 'publish_rig_defaults() { return 1; }; stage_wizard_spool "$WSS/data/firstboot"' >/dev/null
 assert_rc "retry staging propagates a failed derived-file publication" "$?" 1
 PITHEAD_PRESEED_DIR="$WSS/preseed" run_sourced "$WSS" eval "$WS_NEW_MACHINE" >/dev/null 2>&1
 assert_rc "the next machine reaches the same loading boundary" "$?" 7
-WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed \) | wc -l)
+WS_LEFT=$(find "$WSS/data/firstboot" -maxdepth 1 \( -name last-attempt.json -o -name install-attempt.json -o -name auth-mode -o -name config-changes.json -o -name setup-failed -o -name submission-active \) | wc -l)
 assert_eq "the next machine cannot inherit the prior machine's recovery metadata" "$WS_LEFT" 0
 mv "$WSS/data/firstboot" "$WSS/spool"
 unset WS_NEW_MACHINE WS_LEFT ws_file

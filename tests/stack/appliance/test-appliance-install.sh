@@ -17,18 +17,6 @@
 # relying on an ambient definition, and removes the tree and unsets its names before it ends, so
 # nothing between its old position and its new one can observe that it ran.
 #
-# Left behind, deliberately, and this one is a coupling finding rather than a taste call: the
-# host-installer cluster (install.sh's host gate, its fails-closed download verification, and the
-# uninstall counterpart) is topically the strongest install content in the suite and is NOT
-# takeable today. Those sections read $V, $WALLET and seed_env, none of which lib.sh defines at
-# top level — they exist only as a side effect of build_val_sandbox() having been called, and the
-# calls that satisfy them live in sibling domain files that run.sh happens to source earlier.
-# The download-verification section additionally reads $REL, which leaks out of test-release.sh
-# the same way, and it spans four other domains' source stanzas, so moving it would relocate
-# where those domains load. Taking that cluster would either import a cross-file source-order
-# dependency or require re-deriving the shared validation sandbox, and re-deriving it resets a
-# tree that sections still in run.sh are using. It needs its own change, with that coupling
-# addressed on purpose, not a move cut that inherits it quietly.
 #
 # Also left behind: load_baked_images, whose own comment names pithead-boot and the first-boot
 # wizard as its owners; reinstall_prefill_verdict, which belongs with the boot-time verdict
@@ -258,12 +246,13 @@ case "$1" in
 --target)
     # record target + wipe mode (args: --target /dev/X [--wipe M] --yes)
     echo "$2 ${4:-}" >>"${FAKE_LOG:?}"
+    case " $* " in *" --no-preseeds "*) : >"${FAKE_SKIP:?}" ;; esac
     exit "${FAKE_RC:-0}"
     ;;
 esac
 FAKE
 chmod +x "$INSTSB/fake-install"
-export PITHEAD_INSTALL_BIN="$INSTSB/fake-install" FAKE_LOG="$INSTSB/calls" FAKE_RC=0
+export PITHEAD_INSTALL_BIN="$INSTSB/fake-install" FAKE_LOG="$INSTSB/calls" FAKE_SKIP="$INSTSB/skipped-preseeds" FAKE_RC=0
 
 mkdir -p "$INSTSB/spool"
 run_sourced "$SANDBOX" consume_install_request "$INSTSB/spool" >/dev/null 2>&1
@@ -275,6 +264,17 @@ assert_rc "offered target -> rc 0" "$?" "0"
 assert_eq "installer invoked with /dev/vda and the wipe mode" "$(cat "$INSTSB/calls")" "/dev/vda keep"
 [ -f "$INSTSB/spool/installed" ] && ok "installed marker written" || bad "installed marker written" "missing"
 [ -f "$INSTSB/spool/install-request" ] && bad "request consumed" "still present" || ok "request consumed"
+rm -f "$INSTSB/spool/installed"
+mkdir "$INSTSB/carry"
+touch "$INSTSB/carry/archive"
+printf cleanup-fixture-secret >"$INSTSB/carry/pass"
+printf 'vda\tkeep' >"$INSTSB/spool/install-request"
+run_sourced "$SANDBOX" eval 'install_restore_to_target() { printf "%s\n" "Could not clear temporary target restore files safely." >&2; return 1; }; consume_install_request "$INSTSB/spool" "" "$INSTSB/carry"' >/dev/null 2>&1
+assert_rc "target restore cleanup failure rejects the install" "$?" 1
+assert_eq "restore installs suppress unrelated pre-seed copies" "$([ -f "$FAKE_SKIP" ] && echo yes)" yes
+assert_contains "target restore cleanup failure reaches the page" "$(cat "$INSTSB/spool/error.txt")" 'Could not clear temporary target restore files safely'
+assert_not_contains "target restore cleanup failure never reveals the passphrase" "$(cat "$INSTSB/spool/error.txt")" cleanup-fixture-secret
+rm -rf "$INSTSB/carry"
 
 # The wipe mode is validated HERE too: a crafted mode falls back to keep, never reaches a shell.
 rm -f "$INSTSB/spool/installed" "$INSTSB/calls"
@@ -309,7 +309,7 @@ assert_rc "installer failure -> rc 1" "$?" "1"
 [ -f "$INSTSB/spool/error.txt" ] && ok "failure surfaced to the page" || bad "failure surfaced to the page" "no error.txt"
 [ -f "$INSTSB/spool/installed" ] && bad "no success marker on failure" "present" || ok "no success marker on failure"
 
-unset PITHEAD_INSTALL_BIN FAKE_LOG FAKE_RC INSTSB
+unset PITHEAD_INSTALL_BIN FAKE_LOG FAKE_SKIP FAKE_RC INSTSB
 
 echo "== unit: strip_config_secrets — no secret class survives the reinstall pre-fill =="
 # The strip runs before a previous install's config may be SHOWN on the setup page. Every

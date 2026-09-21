@@ -307,7 +307,6 @@ async def test_unauthed_install_writes_nothing(client, installer):
 
 
 async def test_valid_request_is_written_and_carries_the_wipe_mode(client, installer):
-    # sda is the fixture's disk with a previous install — the only kind where wipe means anything.
     await _auth(client)
     r = await _submit_install(client, disk="sda", wipe="data")
     assert r.status == 200
@@ -318,14 +317,20 @@ async def test_wipe_mode_defaults_to_keep_and_rejects_inventions(client, install
     await _auth(client)
     assert (await _submit_install(client, disk="sda")).status == 200
     assert (installer / "install-request").read_text() == "sda\tkeep"
+    for name in (
+        "config.json",
+        "install-attempt.json",
+        "install-request",
+        "submission-staging",
+        "submission-active",
+    ):
+        (installer / name).unlink(missing_ok=True)
     r = await _submit_install(client, disk="sda", wipe="everything")
     assert r.status == 400
 
 
 async def test_keep_everything_submits_no_config_and_gets_no_handoff_machinery(client, installer):
-    # The preserved config wins: a keep reinstall must write ONLY the install request. A config
-    # candidate here would regenerate the dashboard password and show a card the machine never
-    # serves — the exact bench-reported bug.
+    # The preserved config wins, so a keep reinstall writes only the install request.
     await _auth(client)
     r = await client.post("/submit", data={"disk": "sda", "confirm": "sda", "wipe": "keep"})
     assert r.status == 200
@@ -387,8 +392,6 @@ async def test_keep_with_a_crafted_config_still_takes_the_keep_branch(client, in
 
 
 async def test_fresh_disk_with_default_wipe_keep_is_a_normal_install(client, installer):
-    # The client sends wipe=keep (its default) on EVERY submit; a blank disk must still take
-    # the full config path — the gate caught this 400ing every fresh install.
     await _auth(client)
     r = await _submit_install(client, disk="nvme0n1", wipe="keep")
     assert r.status == 200

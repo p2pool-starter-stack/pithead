@@ -3,10 +3,6 @@ from tests.web._wizard_support import *  # noqa: F403
 
 
 async def test_keep_on_a_blank_disk_falls_through_to_a_normal_install(client, installer):
-    # The page never offers keep on a blank disk; a bare submit there is treated as a fresh
-    # install whose (empty) config the HOST rejects with a named reason — the server does not
-    # guess intent. The no-JS form path made an early 400 impossible to distinguish from a
-    # legitimate field submit; the gate caught exactly that as a broken fresh install.
     await _auth(client)
     r = await client.post("/submit", data={"disk": "nvme0n1", "confirm": "nvme0n1", "wipe": "keep"})
     assert r.status == 200
@@ -99,10 +95,6 @@ async def test_plain_port_keeps_the_address_the_request_arrived_on():
 
 
 async def test_plain_port_refuses_to_bounce_setup_to_a_forged_host():
-    # The Host header belongs to whoever made the request. Honouring it turns :80 into an open
-    # redirector on the one screen where the operator types the dashboard password — reachable
-    # through a name that resolves here (rebinding, or a LAN whose DNS is not trustworthy), with
-    # the address bar still showing what they typed. It must land back on this machine.
     req = _plain_request("evil.example")
     with pytest.raises(web.HTTPMovedPermanently) as exc:
         await wizard._redirect_to_tls(req)
@@ -269,7 +261,6 @@ async def test_rig_on_the_installer_takes_the_same_disk_gates(client, installer)
 
 
 async def test_run_from_this_stick_is_first_class_for_the_rig_role_only(client, installer):
-    # "usb" is not a disk: nothing is erased, so NO install request — the answers still travel.
     await _auth(client)
     r = await client.post(
         "/submit", data={"role": "rig", "rig_pool": "10.0.0.5:3333", "disk": "usb"}
@@ -277,13 +268,14 @@ async def test_run_from_this_stick_is_first_class_for_the_rig_role_only(client, 
     assert r.status == 200
     assert not (installer / "install-request").exists()
     assert (installer / "rig-request.json").exists()
-    # Any other role naming "usb" hits the inventory gate: the host never offered it.
+    (installer / "rig-request.json").unlink()
+    (installer / "submission-staging").unlink()
+    (installer / "submission-active").unlink()
     r = await client.post("/submit", data={"config": _CFG, "disk": "usb", "confirm": "usb"})
     assert r.status == 400
 
 
 async def test_rig_keep_on_a_preserved_disk_stays_a_keep(client, installer):
-    # keep means KEEP in every role: the survivor config wins, no role change crosses.
     await _auth(client)
     r = await client.post(
         "/submit",
@@ -359,15 +351,28 @@ async def test_an_unknown_auth_mode_is_ignored(client, seeded):
 
 
 async def test_restore_writes_the_archive_and_passphrase_and_clears_a_previous_error(
-    client, seeded
+    client, seeded, restore_spool
 ):
     seeded.joinpath("error.txt").write_text("old error")
     await _auth(client)
     r = await client.post("/submit-restore", data=_archive_form())
     assert r.status == 200
     assert (seeded / "restore-archive").read_bytes() == b"Salted__fixture-ciphertext"
-    assert (seeded / "restore-passphrase").read_text() == "hunter2"
+    assert not (seeded / "restore-passphrase").exists()
+    assert (restore_spool / "restore-passphrase").read_text() == "hunter2"
     assert not (seeded / "error.txt").exists()
+
+
+async def test_installer_handoff_reads_only_from_volatile_storage(
+    client, seeded, restore_spool, monkeypatch
+):
+    monkeypatch.setenv("WIZARD_HANDOFF", str(restore_spool))
+    restore_spool.joinpath("handoff.json").write_text('{"password":"temporary"}')
+    await _auth(client)
+    state = await (await client.get("/api/wizard-state")).json()
+    assert state["stage"] == "handoff"
+    assert state["handoff"]["password"] == "temporary"
+    assert not (seeded / "handoff.json").exists()
 
 
 async def test_restore_requires_an_uploaded_archive(client, seeded):

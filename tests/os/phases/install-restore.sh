@@ -1,18 +1,94 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+_restore_target_preboot_verdict() { # <powered-off target image>
+    local disk="$1" loop esp="" data="" mnt tries=0 rc=0
+    loop=$(losetup -Pf --show "$disk") || {
+        bad "restore leg: could not inspect the installed disk before its first boot"
+        return 1
+    }
+    udevadm settle 2>/dev/null || true
+    while [ "$tries" -lt 50 ]; do
+        esp=$(lsblk -lnpo NAME,PARTLABEL "$loop" | awk '$2 == "esp" {print $1; exit}')
+        data=$(lsblk -lnpo NAME,PARTLABEL "$loop" | awk '$2 == "data" {print $1; exit}')
+        [ -b "$esp" ] && [ -b "$data" ] && break
+        sleep 0.1
+        tries=$((tries + 1))
+    done
+    mnt=$(mktemp -d)
+    if [ -b "$esp" ] && mount -o ro "$esp" "$mnt"; then
+        if [ ! -e "$mnt/pithead-restore.enc" ] && [ ! -e "$mnt/pithead-restore-pass" ] &&
+            [ ! -e "$mnt/pithead-config.json" ] && [ ! -e "$mnt/pithead-token.txt" ] && [ ! -e "$mnt/pithead-rig.json" ]; then
+            ok "restore leg: no restore or unrelated pre-seed credential persisted on the target ESP before first boot"
+        else
+            bad "restore leg: restore carry persisted on the target ESP before first boot"
+            rc=1
+        fi
+        umount "$mnt"
+    else
+        bad "restore leg: could not inspect the target ESP before first boot"
+        rc=1
+    fi
+    if [ -b "$data" ] && mount -o ro "$data" "$mnt"; then
+        if [ -f "$mnt/pithead/config.json" ] && [ -f "$mnt/pithead/.restore-pending" ] &&
+            [ ! -e "$mnt/pithead/.restore-incomplete" ] &&
+            [ -z "$(find "$mnt" \( -name pithead-restore-pass -o -name pithead-restore.enc \) -print -quit)" ]; then
+            ok "restore leg: validated state and only a non-secret handoff marker reached target data"
+        else
+            bad "restore leg: validated state did not reach target data before first boot"
+            rc=1
+        fi
+        umount "$mnt"
+    else
+        bad "restore leg: could not inspect target data before first boot"
+        rc=1
+    fi
+    rmdir "$mnt"
+    losetup -d "$loop"
+    return "$rc"
+}
+
+_restore_installer_preboot_verdict() { # <powered-off installer image>
+    local disk="$1" loop esp="" data="" mnt tries=0 rc=0
+    loop=$(losetup -Pf --show "$disk") || return 1
+    udevadm settle 2>/dev/null || true
+    while [ "$tries" -lt 50 ]; do
+        esp=$(lsblk -lnpo NAME,PARTLABEL "$loop" | awk '$2 == "esp" {print $1; exit}')
+        data=$(lsblk -lnpo NAME,PARTLABEL "$loop" | awk '$2 == "data" {print $1; exit}')
+        [ -b "$esp" ] && [ -b "$data" ] && break
+        sleep 0.1
+        tries=$((tries + 1))
+    done
+    mnt=$(mktemp -d)
+    if [ -b "$data" ] && mount -o ro "$data" "$mnt"; then
+        if [ -z "$(find "$mnt/pithead" \( -name config.json -o -name handoff.json -o -name '*restore*pass*' -o -name '*restore*archive*' -o -name pithead-restore.enc -o -name restore-inflight \) -print -quit 2>/dev/null)" ]; then
+            ok "restore leg: the powered-off installer medium retained no restore credentials"
+        else
+            bad "restore leg: the powered-off installer medium retained restore credentials"
+            rc=1
+        fi
+        umount "$mnt"
+    else
+        bad "restore leg: could not inspect installer data after shutdown"
+        rc=1
+    fi
+    if [ -b "$esp" ] && mount -o ro "$esp" "$mnt"; then
+        if [ -f "$mnt/pithead-config.json" ] && [ -f "$mnt/pithead-token.txt" ] && [ -f "$mnt/pithead-rig.json" ]; then
+            ok "restore leg: unrelated fleet pre-seeds returned only to the installer medium"
+        else
+            bad "restore leg: installer fleet pre-seeds were not restored after the install"
+            rc=1
+        fi
+        umount "$mnt"
+    else
+        bad "restore leg: could not inspect installer pre-seeds after shutdown"
+        rc=1
+    fi
+    rmdir "$mnt"
+    losetup -d "$loop"
+    return "$rc"
+}
+
 _phase_install_restore() {
-    # ---- restore-at-setup leg (#909, #786 sub-issue B) -----------------------------------
-    # A genuine encrypted backup pulled off a live, fully-provisioned machine seeds a
-    # totally fresh disk through the wizard's upload path instead of the config form — the
-    # disaster-recovery loop #908 (export) opens and this closes. Real archive, real upload
-    # over curl -F, real decrypt+extract on the guest, and the identity (wallet, Tor onion)
-    # must survive — proof the "restored config drives provisioning as if pre-seeded" promise
-    # actually holds, which nothing below tier 4 can prove.
-    #
-    # The keep-reinstalled machine above sits at the WIZARD — a reinstall always returns
-    # there (keep preserves /data, not provisioned-ness), and `pithead backup` rightly
-    # refuses without a provisioned stack (.env, onion keys). Provision it first, through
-    # the same HTTP flow a human would drive.
     local rtoken rjar rtries
     rtoken=""
     rtries=0
@@ -37,8 +113,6 @@ _phase_install_restore() {
         rm -f "$rjar" "$target_disk"
         return 1
     fi
-    # A keep-machine keeps its old login, so the credentials card (and the hold it creates)
-    # may never appear — ack it if it does, move on if it does not.
     rtries=0
     while [ "$rtries" -lt 12 ]; do
         if curl -sSk -b "$rjar" -m 5 "https://$ip/api/handoff" 2>/dev/null | grep -q '"password"'; then
@@ -60,9 +134,6 @@ _phase_install_restore() {
     case "$rnames" in
     *dashboard*caddy* | *caddy*dashboard*)
         ok "restore leg: keep-reinstalled machine provisioned — a live stack to back up ($rnames)"
-        # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
-        # mutation lock through its tor-health wait for minutes after the stack looks live, and a
-        # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
         if ! provisioning_settled 900; then
             bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
             backup_failure_evidence
@@ -88,8 +159,6 @@ _phase_install_restore() {
         backup_watch_report # a vanish the backup happened to survive is still the #1059 event
     else
         bad "restore leg: could not take the source backup"
-        # The reason lives on the guest — capture ALL of it, log AND tree, or this failure is
-        # undiagnosable after the VM is recycled (it has been, twice: #1059).
         backup_failure_evidence
         # shellcheck disable=SC2154  # shared through the assembled runner scope
         rm -f "$target_disk"
@@ -175,8 +244,11 @@ _phase_install_restore() {
         rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
         return 1
     }
-    # The combined leg: ONE upload carries the archive, its passphrase, AND the disk choice —
-    # the same _gate_install_request every other installer submission takes.
+    _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
+        bad "restore leg: could not seed unrelated installer credentials"
+        rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
+        return 1
+    }
     scode=$(curl -sSk -b "$jar" \
         -F "archive=@$restore_archive" -F "passphrase=$restore_pass" \
         -F "disk=vda" -F "confirm=vda" -F "wipe=keep" \
@@ -201,8 +273,6 @@ _phase_install_restore() {
         return 1
     }
     ok "restore leg: the restored config drove provisioning to a credentials card"
-    # Captured for the live-state check below (#1091) — the restored machine's OWN generated
-    # login, not the source machine's, since a keep-reinstall would have kept the old one.
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     DASH_USER=$(printf '%s' "$rhandoff" | jq -r '.username // "admin"')
     # shellcheck disable=SC2034  # shared through the assembled runner scope
@@ -224,6 +294,14 @@ _phase_install_restore() {
         return 1
     fi
     vm_destroy_or_refuse || return
+    _restore_target_preboot_verdict "$restore_target" || {
+        rm -f "$target_disk" "$restore_archive" "$restore_target"
+        return 1
+    }
+    _restore_installer_preboot_verdict "$DISK" || {
+        rm -f "$target_disk" "$restore_archive" "$restore_target"
+        return 1
+    }
     : >"$SERIAL"
     kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
     virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
@@ -245,8 +323,6 @@ _phase_install_restore() {
         return 1
     }
     ok "restore leg: the restored machine boots from the fresh disk"
-    # The carried restore lands during firstboot and .env only exists once render has run —
-    # wait for provisioning, don't race it.
     if _ssh "for i in \$(seq 90); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
         ok "restore leg: the carried archive provisioned the machine — config.json is back"
     else
@@ -260,31 +336,15 @@ _phase_install_restore() {
     else
         bad "restore leg: restored machine's config does not carry the original wallet"
     fi
-    # #2051: the source machine asserts this (above), the RESTORED machine never did — so "the
-    # stack never came up" could not tell a provisioning that never finished from one that
-    # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
-    # #2043 dump below carries ConditionResult for that half.
     local rswait=900
     if provisioning_settled 900; then
         ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
     else
         bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
-        # Still activating after 900 s means containers are not coming, and a second 900 s here
-        # would spend half an hour re-measuring a symptom whose cause the row above just named.
         rswait=0
     fi
-    # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
-    # was UNPACKED — it is a grep of a file the restore itself just wrote, so it is true even if
-    # the stack never came back up on the restored config. So wait for the stack to actually come
-    # up, then require a value sourced from the restored config to appear in LIVE state: the
-    # --wallet argument the stack's own start path rendered into the p2pool container, read off
-    # the container as created (#1662: p2pool's stratum stats, the earlier source, exist only once
-    # a SYNCED monerod hands it a block template, which a restored guest never has in this window).
-    # The verdict (restore_live_state_verdict) is fixture-tested at tier 1 (tests/stack/run.sh).
     local rsnames="" live_wallet="" verdict
     local rsdeadline
-    # Read at least ONCE whatever the budget is: with rswait 0 a head-tested loop would never run
-    # and the verdict would report `podman ps: 'none'` for a machine nobody asked.
     rsdeadline=$(($(date +%s) + rswait))
     while :; do
         rsnames=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | tr '\n' ' ')
@@ -307,12 +367,7 @@ _phase_install_restore() {
         ok "restore leg: $verdict"
     else
         bad "restore leg: $verdict"
-        # The dump belongs HERE and not inside restore_live_state_verdict: that function's stdout
-        # is its message (`verdict=$(...)`), so an _ssh read inside it would be captured as the
-        # verdict text instead of printed.
         stack_never_up_evidence # #2043: the guest is recycled next, so ask it now
-        # A stack that never came up won't answer the identity check below either — stop here
-        # rather than burn its 600s timeout on a machine already known to be broken.
         case "$rsnames" in
         *dashboard*caddy* | *caddy*dashboard*) ;;
         *)

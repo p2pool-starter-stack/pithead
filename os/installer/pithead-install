@@ -140,7 +140,7 @@ wipe_data_partition() { # $1 disk, $2 mode (data|all)
 }
 
 main() {
-    local target="" assume_yes=0 action="install" wipe="keep"
+    local target="" assume_yes=0 action="install" wipe="keep" copy_preseeds=1
     while [ $# -gt 0 ]; do
         case "$1" in
         --list)
@@ -157,6 +157,10 @@ main() {
             ;;
         --yes)
             assume_yes=1
+            shift
+            ;;
+        --no-preseeds)
+            copy_preseeds=0
             shift
             ;;
         *) die "unknown argument: $1" ;;
@@ -255,8 +259,8 @@ main() {
     # the first reboot: the installer builds a fresh ESP, and the operator's config — the whole
     # point of pre-seeding — would stay behind on the stick.
     local seed
-    for seed in pithead-config.json pithead-token.txt pithead-rig.json \
-        pithead-restore.enc pithead-restore-pass pithead-setup-wizard; do
+    for seed in pithead-config.json pithead-token.txt pithead-rig.json pithead-setup-wizard; do
+        [ "$copy_preseeds" = 1 ] || [ "$seed" = pithead-setup-wizard ] || continue
         [ -f "/boot/efi/$seed" ] && install -m 600 "/boot/efi/$seed" "$mnt/boot/efi/$seed"
     done
 

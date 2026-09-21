@@ -282,8 +282,9 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # headless appliance was never asked, so the safe answer is the one it gets. The credential is
 # generated on the machine and printed to its console; it never crosses the setup page.
 ensure_appliance_dashboard_password() { # [spool-dir]
-    [ -f "$CONFIG_FILE" ] || return 0
-    [ -z "$(jq -r '.dashboard.auth.password // ""' "$CONFIG_FILE")" ] || return 0
+    local config="${2:-$CONFIG_FILE}"
+    [ -f "$config" ] || return 0
+    [ -z "$(jq -r '.dashboard.auth.password // ""' "$config")" ] || return 0
     # The operator's explicit "no login" is honoured — an empty password is also what "not
     # chosen" looks like, so the choice cannot live in the config and rides beside it.
     if [ -n "${1:-}" ] && [ "$(wizard_spool_read "$1" auth-mode 2>/dev/null)" = "none" ]; then
@@ -292,9 +293,9 @@ ensure_appliance_dashboard_password() { # [spool-dir]
     fi
     local gen tmp user
     gen=$(generate_node_password) # 32 alnum: clears the >=16 floor, no quotes, no weak pattern
-    user=$(jq -r '.dashboard.auth.username // "admin"' "$CONFIG_FILE")
+    user=$(jq -r '.dashboard.auth.username // "admin"' "$config")
     tmp=$(mktemp) || return 1
-    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"; then
+    if jq --arg p "$gen" '.dashboard.auth.password = $p' "$config" >"$tmp" && mv "$tmp" "$config"; then
         _console "" "Dashboard login for this machine:" "    user: $user" "    password: $gen" \
             "Write this down — it is also in config.json on the machine."
         return 0
