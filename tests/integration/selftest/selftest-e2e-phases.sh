@@ -29,7 +29,7 @@ assert_eq "the extraction is the whole function (opens and closes)" \
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
 assert_contains "the done-marker poll fails on a lost bench connection and is bounded" \
-    "$HARNESS_SRC" 'while [ "$waited" -lt 7200 ]; do'
+    "$HARNESS_SRC" 'while [ "$(date +%s)" -lt "$deadline" ]; do'
 assert_contains "the done-marker poll returns through cleanup on a bench error" \
     "$HARNESS_SRC" 'harness_fail "Failed to poll the detached harness."'
 
@@ -156,7 +156,7 @@ assert_contains "check drives the LIVE checkout, not the undeployed e2e one" "$(
 assert_eq "a failed readiness read refuses the destructive launch" "$(launch_of targeted 1 '' '' '' readiness)" ""
 assert_eq "a failed live check refuses the destructive launch" "$(launch_of targeted 1 '' '' '' check)" ""
 echo "== remote-node endpoints reach both the pregate and detached harness (#1446) =="
-out=$(bash "$E2E_SRC" candidate --remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example --help 2>&1)
+bash "$E2E_SRC" candidate --remote-monero-host node.example --remote-monero-rpc-port 28081 --remote-monero-zmq-port 28083 --remote-tari-host tari.example --help >/dev/null 2>&1
 assert_rc "e2e.sh accepts the complete remote endpoint set" "$?" "0"
 REMOTE_CHECK="$(STUB_REMOTE=1 compose_phases check 0)"
 assert_eq "check forwards the complete remote endpoint set" "$(phase_set "$REMOTE_CHECK")" \
