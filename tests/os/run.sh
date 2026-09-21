@@ -37,8 +37,9 @@
 #           dashboard login, appliance defaults and node credentials survive, old login still works.
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
-#   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
-#           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
+#   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
+#           a corrupt /data superblock drives wedged-/data recovery.
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
