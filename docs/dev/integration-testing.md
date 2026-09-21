@@ -794,15 +794,17 @@ Before this phase, the only harness that ever ran `pithead uninstall`
 ([#2343](https://github.com/p2pool-starter-stack/pithead/issues/2343)) was the tier-1 sandbox, with
 `docker`/`sudo` stubbed out — nothing had proven what the verb does to a real engine, kernel, or
 systemd. The phase first asserts the abort path: `uninstall` with the wrong confirm word exits 1,
-logs "Aborted", and leaves `.env` in place. It then snapshots `config.json` and a size + file-count
-fingerprint of every `*_DATA_DIR` named in `.env`, runs `uninstall -y` for real, and asserts the
+logs "Aborted", and leaves `.env` in place. It then stops the stack, snapshots `config.json` and a
+per-file size-and-inode listing of every `*_DATA_DIR` named in `.env`, runs `uninstall -y` for real, and asserts the
 compose project is gone, the `pithead-control` systemd units are gone, the `pithead-tor-egress`
 DOCKER-USER rules are gone from the kernel's iptables, `.env` is gone, `config.json` survives
-byte-for-byte, and every data dir's fingerprint is unchanged — and that the verb's own closing
+byte-for-byte, and every data dir's listing is unchanged — and that the verb's own closing
 message names config.json, `backups/`, and each data dir. Finally it runs `pithead setup` against
 the kept `config.json`, waits for the stack to report
-healthy, and runs the standard running-state battery: the round trip the verb's closing message
-promises — re-provisioned from what it kept, no resync. Requires `--safety-backup`: unlike the other
+healthy, verifies the newly generated wallet/proxy/dashboard/RPC/onion state is complete, and runs
+the standard running-state battery against the preserved configuration. `uninstall` deletes `.env`,
+so this phase does not require its newly generated secrets to equal the pre-uninstall values. The
+round trip proves re-provisioning from what it kept, with no resync. Requires `--safety-backup`: unlike the other
 destructive-then-restored phases, this one tears the checkout down before putting it back itself, so
 there is no ordinary `down`/`apply` restore to fall back on if the re-provisioning step fails.
 

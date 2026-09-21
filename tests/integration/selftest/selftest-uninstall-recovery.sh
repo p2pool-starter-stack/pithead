@@ -14,6 +14,12 @@ SRC="$(sed -n '/^_uninstall_phase_recover() {/,/^}$/p' "$HERE/../lib/run-uninsta
 assert_contains "the recovery trap is extractable" "$(printf '%s\n' "$SRC" | head -n1)" "_uninstall_phase_recover() {"
 assert_eq "the extraction is the whole function (closes)" "$(printf '%s\n' "$SRC" | tail -n1)" "}"
 
+PHASE="$(sed -n '/^run_uninstall_phase() {/,/^}$/p' "$HERE/../lib/run-uninstall.sh")"
+assert_contains "the rebuilt stack is checked against its kept config" "$PHASE" \
+    "assert_running_state \"uninstall\" \"\$config_before\" \"\$setup_secret_fp\""
+assert_contains "the rebuilt secret state is checked for every required category" "$PHASE" \
+    "setup_secret_fp=\"\$(upgrade_secret_fingerprints)\""
+
 PITHEAD_LOG="$(mktemp)"
 trap 'rm -f "$PITHEAD_LOG"' EXIT
 pithead() { printf '%s\n' "$*" >>"$PITHEAD_LOG"; }

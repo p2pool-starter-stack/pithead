@@ -60,7 +60,7 @@ run_uninstall_phase() {
     # The keep-list, read the same way the verb reads it: from .env BEFORE it is removed. Strips
     # the surrounding quotes dotenv_render_value adds for a path with spaces/$/"/\ (#19); a
     # data dir plain enough to need none round-trips through the strip unchanged.
-    local dirs dir fp_before fp_after config_before
+    local dirs dir fp_before fp_after config_before setup_secret_fp
     dirs="$(rx "grep -E '^(MONERO|TARI|P2POOL|DASHBOARD|TOR)_DATA_DIR=' .env 2>/dev/null | cut -d= -f2-" | sort -u)"
     dirs="$(printf '%s\n' "$dirs" | sed -e 's/^"//' -e 's/"$//')"
     # Quiesce BEFORE the "before" snapshot (see the file header): both snapshots below are of a
@@ -111,6 +111,11 @@ run_uninstall_phase() {
     fi
     wait_status_ok 240 || it_fail "stack healthy after re-provisioning" "pithead status did not become OK"
     assert_eq "re-provisioned config matches the kept one" "$(rx 'cat config.json' 2>/dev/null)" "$config_before"
-    assert_running_state "uninstall" "$BASELINE_CONFIG"
+    if setup_secret_fp="$(upgrade_secret_fingerprints)"; then
+        it_pass "re-provisioned secrets readable"
+    else
+        it_fail "re-provisioned secrets readable" "required wallet, proxy, dashboard, RPC, or onion secret state is missing"
+    fi
+    assert_running_state "uninstall" "$config_before" "$setup_secret_fp"
     _uninstall_phase_recover "$fails_before"
 }
