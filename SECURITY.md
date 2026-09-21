@@ -102,8 +102,9 @@ The stack's defaults:
   reach. Everything else is refused in
   every direction, as is anything the change preview flags destructive (including the heavy direction
   of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The rest of the
-  security perimeter — wallets and view keys, the control channel itself, the Tor egress firewall,
-  binds, and the Telegram bot token —
+  security perimeter — wallets and view keys, dashboard auth and onion exposure, the control
+  channel itself, the Tor egress firewall, binds, and every credential except the confirm-gated
+  remote-node RPC username and password —
   is never dashboard-committable, with or without the typed confirmation. A key added in the
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.
