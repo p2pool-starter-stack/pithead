@@ -33,23 +33,33 @@ python3 -c 'import sqlite3,sys
 db=sqlite3.connect(sys.argv[1]); db.execute("CREATE TABLE IF NOT EXISTS kv_store (key TEXT PRIMARY KEY, value TEXT)"); db.execute("INSERT OR REPLACE INTO kv_store VALUES (?,?)", ("payout_wallet",sys.argv[2])); db.commit()' \
     "$LIVE_DASHBOARD_DIR/mining_data.db" "$WALLET"
 
-# The payout destination. The suffix is CORRECT on purpose: a wrong one would prove only that the
-# typo check works, which was never the question. This is the case that used to APPLY.
+# A 1.x legacy descriptor can still be masked/restored for migration, but changing it must stop
+# before preview: otherwise the restored live bearer would be returned in preview_values.
+jq '.dashboard.workers=[{name:"legacy-rig",host:"10.0.0.8",token:"legacy-control-token"}]' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
+jq '.dashboard.workers[0].token="attacker-token"' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json"
+assert_eq "legacy worker token mutation is refused before preview" "$(jq -r '.status' "$RESULTS/$UUID5.json")" "rejected"
+assert_not_contains "legacy worker token never reaches the preview result" "$(cat "$RESULTS/$UUID5.json")" "legacy-control-token"
+jq 'del(.dashboard.workers)' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
+
+# A payout swap cannot share a commit with a pinned dashboard-data move: that move starts a new
+# database and would re-seed the wallet alarm baseline. The suffix is CORRECT on purpose.
 jq --arg w "$ATTACKER_WALLET" --arg d "$MOVED_DASHBOARD_DIR" \
     '.monero.wallet_address=$w | .dashboard.data_dir=$d' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "payout swap is refused without confirmation" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout_suffixes:{monero:$s}}')"
-assert_eq "confirmed payout swap applies" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$ATTACKER_WALLET"
-assert_contains ".env carries the confirmed payout address" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$ATTACKER_WALLET"
-# An operator-pinned dashboard.data_dir is never moved for the operator (#455): the run warns and
-# leaves both directories alone, so the live DB — and the payout-wallet alarm baseline in it —
-# stays at the old path. Carrying it across a confirmed move is issue #2360, not this gate.
+assert_eq "payout swap plus dashboard-data move is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "combined refusal preserves the wallet alarm baseline" "$(jq -r '.error' "$RESULTS/$UUID5.json")" "wallet-change alarm"
+assert_eq "combined refusal keeps the payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
 assert_eq "operator-pinned dashboard-data move leaves the baseline at the old path" \
     "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$LIVE_DASHBOARD_DIR/mining_data.db")" "$WALLET"
-if [ -e "$LIVE_DASHBOARD_DIR" ]; then ok "operator-pinned dashboard-data move keeps the old path"; else bad "operator-pinned dashboard-data move keeps the old path" "removed"; fi
-if [ -e "$MOVED_DASHBOARD_DIR/mining_data.db" ]; then bad "operator-pinned move does not carry the DB (#2360)" "carried anyway"; else ok "operator-pinned move does not carry the DB (#2360)"; fi
+if [ -e "$MOVED_DASHBOARD_DIR/mining_data.db" ]; then bad "combined refusal does not create a new dashboard database" "created anyway"; else ok "combined refusal does not create a new dashboard database"; fi
+
+jq --arg w "$ATTACKER_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout_suffixes:{monero:$s}}')"
+assert_eq "confirmed payout swap applies without a data move" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "config.json carries the confirmed payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$ATTACKER_WALLET"
 
 # Deanonymisation and egress: both applied before the 2026-09-13 perimeter audit, and both are asserted refused token-less
 # in the battery next door — which is exactly how that battery stayed green against this.

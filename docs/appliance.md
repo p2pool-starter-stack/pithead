@@ -279,7 +279,8 @@ A remote node's address is not a one-time answer. If the node you point at goes 
 you want to try another one, the dashboard's Configuration view changes it on a running machine:
 type `APPLY` to confirm, and the machine dials the new endpoint and refuses it if nothing answers
 there ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). The node's RPC
-username and password are the exception and stay fixed at setup.
+username and password can be replaced from Configuration, but confirmation is required and a
+changed endpoint requires explicit replacement credentials.
 
 **Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it

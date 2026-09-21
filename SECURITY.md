@@ -190,9 +190,9 @@ the signed-in actor but cannot prove that actor approved a request created after
 
 The host still validates the staged configuration, address checksums, worker targets, data-root
 destinations and node reachability. Payout changes also retain detection: the wallet-change event
-and clearnet-exposure event cannot be disabled from the dashboard, and moving
-`dashboard.data_dir` carries the existing database so a bundled payout swap cannot discard the
-wallet baseline and silently seed a new one through the supported commit path. This is not an
+and clearnet-exposure event cannot be disabled from the dashboard, and a payout-address change
+cannot share a commit with `dashboard.data_dir`, so a new database cannot silently seed a changed
+wallet as its baseline through the supported commit path. This is not an
 RCE-proof tripwire: a process that fully controls the dashboard can also rewrite its writable
 database or suppress a notifier that runs in that process. The physical-presence alarm toggles and
 preserved baseline protect normal configuration commits; they do not create an independent monitor.

@@ -1,13 +1,3 @@
-# The remedy half of a control-channel refusal (#1888, the #1821 class): "edit config.json and run
-# apply" is a real remedy on a DIY host and a DEAD END on a shell-less appliance (#786).
-_control_host_remedy() {
-    if is_appliance; then
-        printf 'That setting is not changeable from the dashboard on an appliance; it is fixed when the machine is set up, so use "Set up again" if you need to change it.'
-    else
-        printf 'Edit config.json on the host and run `%s apply`.' "$0"
-    fi
-}
-
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
     local approval_required=0 worker_sensitive=0 needs_confirm=0
@@ -251,6 +241,12 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
+    local policy_error
+    if policy_error=$(control_preview_policy_error "$staged"); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$policy_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
@@ -297,6 +293,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             def hidden($p):
               any($secret_paths[]; . == $p)
               or ($p[0:2] == ["workers","list"] and $p[-1] == "token")
+              or ($p[0:2] == ["dashboard","workers"] and $p[-1] == "token")
               or $p[0:2] == ["notifications","webhooks"];
             ($ref[0] * $live[0]) as $live_full
             | ($ref[0] * $staged[0]) as $staged_full

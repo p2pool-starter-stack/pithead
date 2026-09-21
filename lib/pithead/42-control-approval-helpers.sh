@@ -177,6 +177,27 @@ control_validate_data_dir_overlaps() { # <staged-file>
     done
 }
 
+control_preview_policy_error() { # <staged-file>
+    local paths
+    paths=$(control_changed_config_paths "$1")
+    if printf '%s\n' "$paths" | grep -q '^dashboard\.workers\.'; then
+        printf 'legacy dashboard.workers descriptors cannot be changed from the dashboard; migrate them on the host first'
+    elif printf '%s\n' "$paths" | grep -qx 'monero.wallet_address' &&
+        printf '%s\n' "$paths" | grep -qx 'dashboard.data_dir'; then
+        printf 'change the payout address and dashboard data directory separately so the wallet-change alarm keeps its baseline'
+    else
+        return 1
+    fi
+}
+
+_control_host_remedy() {
+    if is_appliance; then
+        printf 'That setting is not changeable from the dashboard on an appliance; it is fixed when the machine is set up, so use "Set up again" if you need to change it.'
+    else
+        printf 'Edit config.json on the host and run `%s apply`.' "$0"
+    fi
+}
+
 control_physical_presence_error() {
     printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
 }
