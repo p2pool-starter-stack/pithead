@@ -69,7 +69,16 @@ control_process_request() { # <claimed-file> <control-dir>
 # `control-run-pending`: drain the request spool, oldest first. Each request is CLAIMED (moved out
 # of requests/) before a byte of it is parsed, so the container can never mutate or replay a
 # request the runner is working on. Fired by the pithead-control systemd path unit.
-control_run_pending() {
+control_run_pending() (
+    # Join the same mutation window as apply/setup/upgrade BEFORE looking at requests. A service
+    # activation already queued when apply stops pithead-control.path can still start; blocking
+    # here keeps it from claiming a request until that apply has finished converging the units.
+    # Child pithead invocations inherit the held descriptor/marker, so a dashboard commit's
+    # `apply -y` does not deadlock against its own runner.
+    trap mutation_lock_release EXIT
+    mutation_lock_acquire control-run-pending
+    # Read enablement inside the window: an apply may have disabled the channel while this queued
+    # activation waited for the lock. Revocation wins, and its request remains unclaimed.
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
         error "The dashboard control channel is not enabled (dashboard.control.enabled)."
     local cdir
@@ -134,4 +143,4 @@ control_run_pending() {
         n=$((n + 1))
     done <<<"$names"
     log "Processed $n control request(s)."
-}
+)

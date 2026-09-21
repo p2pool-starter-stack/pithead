@@ -98,8 +98,10 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. Without it a `backup` — which stops the stack to take a consistent archive — could
-remove a container out from under a `setup` or an `apply` that was still using it.
+the first. Dashboard control requests join that same window before they claim a spool file, and
+`uninstall` joins it before its first destructive step. Without it a `backup` — which stops the
+stack to take a consistent archive — could remove a container out from under a `setup`, `apply`,
+or dashboard request that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -257,12 +259,12 @@ only when the installed units genuinely differ (a stale checkout path, a contain
 a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
 (`current` symlink or its versioned directory).
 
-When re-provisioning IS needed, `apply` stops `pithead-control.path` first — so no new request can
-be claimed — then waits up to 30s for a request `control-run-pending` already claimed to finish and
-write its result, and only then rewrites or removes the units. A request still sitting unclaimed in
-`requests/` is not lost either way: the spool file is untouched, and `pithead-control.path` re-fires
-against it as soon as it (or its replacement) is enabled again. If the wait times out, `apply` warns
-and proceeds anyway rather than hanging the operator's apply indefinitely.
+When re-provisioning is needed, `apply` already holds the shared mutation lock. A runner activation
+that systemd queued before `apply` stops `pithead-control.path` waits on that lock before claiming a
+request; a runner that claimed first holds the lock until its drain and result write finish, so
+`apply` waits for it. The bounded 30-second claim check remains as a backstop for a runner installed
+by an older version or a host without `flock`. A request still sitting in `requests/` is untouched,
+and `pithead-control.path` re-fires against it as soon as it (or its replacement) is enabled again.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a

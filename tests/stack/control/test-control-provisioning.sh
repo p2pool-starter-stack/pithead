@@ -61,8 +61,8 @@ pcr_run() { # <owner-dir|-> <run-dir> — seed units owned by owner-dir ('-' = n
         set +e
         log() { :; }
         sudo() { echo "sudo:$*"; } # record instead of executing; the disable call's output is redirected in-function
-        PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false \
-            CONTROL_DIR="$2/data/control" provision_control_runner
+        unset CONTROL_DIR
+        PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false provision_control_runner
     )
 }
 
@@ -297,13 +297,14 @@ echo "== unit: provision_control_runner drains an in-flight claim before touchin
 # by mv before parsing a byte). The runner must stop the TRIGGER first — so no new claim can
 # start — then wait for one already in flight, and only then touch the units.
 PCD="$SANDBOX/pcd"
-mkdir -p "$PCD/units" "$PCD/bin" "$PCD/mine/data/control"
+mkdir -p "$PCD/units" "$PCD/bin" "$PCD/mine/data/control/requests"
 printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$PCD/bin/uname"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$PCD/bin/systemctl"
 chmod +x "$PCD/bin/uname" "$PCD/bin/systemctl"
 
-pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units (+claim), run the removal branch
+pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> [enabled=false] [own-claim=false] — seed own units (+claim), converge them
     rm -f "$PCD/mine/data/control/.claim.1" "$PCD/calls"
+    printf '{}\n' >"$PCD/mine/data/control/requests/queued.json"
     printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$PCD/mine" >"$PCD/units/pithead-control.service"
     printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCD/mine" >"$PCD/units/pithead-control.path"
     [ "$1" = yes ] && : >"$PCD/mine/data/control/.claim.1"
@@ -326,9 +327,11 @@ pcd_run() { # <claim: yes|no> <clears-on-first-wait: yes|no> — seed own units 
         else
             sleep() { :; }
         fi
-        PITHEAD_UNIT_DIR="$PCD/units" DASHBOARD_CONTROL_ENABLED=false \
+        [ "${4:-false}" = true ] && export PITHEAD_LOCK_HELD=1 || unset PITHEAD_LOCK_HELD
+        PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCD/units" DASHBOARD_CONTROL_ENABLED="${3:-false}" \
             CONTROL_DIR="$PCD/mine/data/control" provision_control_runner 2>&1
         cat "$PCD/calls" 2>/dev/null
+        [ -f "$PCD/mine/data/control/requests/queued.json" ] && echo queued=present
     )
 }
 
@@ -346,5 +349,48 @@ out="$(pcd_run yes no)"
 assert_contains "a claim that never clears -> bounded wait times out with a clear message" "$out" "Timed out after 30s"
 [[ "$out" == *"Timed out after 30s"*"sudo:rm -f"* ]] && order=timeout-then-proceed || order=other
 assert_eq "a claim that never clears -> the apply still proceeds after the bound, not stuck forever" "$order" "timeout-then-proceed"
+
+out="$(pcd_run yes yes true)"
+[[ "$out" == *"systemctl stop pithead-control.path"*"tee $PCD/units/pithead-control.service"*"systemctl enable --now pithead-control.path"* ]] && order=drain-rewrite-enable || order=other
+assert_eq "enabled re-provision drains before rewriting and re-enabling the runner" "$order" "drain-rewrite-enable"
+assert_contains "a queued, unclaimed request survives re-provision for the path unit to re-trigger" "$out" "queued=present"
+
+out="$(pcd_run yes no true true)"
+assert_not_contains "a child apply does not spend 30 seconds waiting on its parent runner's claim" "$out" "Timed out"
+assert_contains "ignoring the parent claim still converges the enabled runner" "$out" "systemctl enable --now pithead-control.path"
 unset PCD out order
 unset -f pcd_run
+
+echo "== unit: control_run_pending joins the mutation window before claiming a request (#2363) =="
+# A queued systemd activation can start after apply stops the path unit, so lock before claim.
+PCL="$SANDBOX/pcl"
+mkdir -p "$PCL/requests"
+printf '{}\n' >"$PCL/requests/one.json"
+(
+    PCL_ENABLED=true PCL_REVOKE=false PCL_ORDER="$PCL/order"
+    env_get() { [ "$1" = DASHBOARD_CONTROL_ENABLED ] && printf '%s' "$PCL_ENABLED" || printf '%s' "$PCL"; }
+    render_masked_config() { :; }
+    control_redact_stale_kits() { :; }
+    mutation_lock_acquire() {
+        printf 'lock\n' >>"$PCL_ORDER"
+        [ "$PCL_REVOKE" = true ] && PCL_ENABLED=false
+    }
+    mutation_lock_release() { printf 'release\n' >>"$PCL_ORDER"; }
+    mv() {
+        printf 'claim\n' >>"$PCL_ORDER"
+        command mv "$@"
+    }
+    log() { :; }
+    warn() { :; }
+    control_run_pending >/dev/null 2>&1
+    PCL_REVOKE=true PCL_ORDER="$PCL/revoked-order"
+    printf '{}\n' >"$PCL/requests/revoked.json"
+    control_run_pending >/dev/null 2>&1 || true
+)
+assert_eq "a queued runner locks before claim and releases after the request" \
+    "$(paste -sd, "$PCL/order")" "lock,claim,release"
+assert_eq "a channel disabled while the activation waits is rechecked under the lock" \
+    "$(paste -sd, "$PCL/revoked-order")" "lock,release"
+assert_eq "revocation leaves the queued request unclaimed" \
+    "$([ -f "$PCL/requests/revoked.json" ] && echo present)" "present"
+unset PCL

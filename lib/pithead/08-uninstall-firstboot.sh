@@ -14,11 +14,13 @@ stack_uninstall() {
     [ -f .env ] || error "No .env here — nothing deployed to uninstall. A never-deployed checkout is just a directory: remove it."
     detect_os
     # The keep-list is read from .env BEFORE it is removed.
-    local data_dirs
+    local data_dirs control_dir
     data_dirs=$(for arg in MONERO TARI P2POOL DASHBOARD TOR; do
         env_get_file .env "${arg}_DATA_DIR"
         printf '\n'
     done | sort -u | tr '\n' ' ')
+    control_dir=$(env_get_file .env CONTROL_DIR 2>/dev/null || true)
+    [ -n "$control_dir" ] || control_dir="$(pwd -P)/data/control"
     warn "DESTRUCTIVE: stops the stack, removes its containers and images, and deletes the rendered .env and Caddyfile."
     log "Kept (yours): config.json, backups/, and the data dirs: ${data_dirs:-none recorded}"
     if [ "$yes" -ne 1 ]; then
@@ -29,6 +31,7 @@ stack_uninstall() {
             return 1
         }
     fi
+    mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
@@ -37,8 +40,9 @@ stack_uninstall() {
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
-    DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
     rm -f .env Caddyfile
+    mutation_lock_release
     log "Uninstalled. Still on disk: config.json, backups/, data dirs (${data_dirs:-none}) — remove them yourself for a full wipe."
     log "Kernel HugePages/GRUB tuning from setup persists; revert in GRUB config if you want it gone."
 }

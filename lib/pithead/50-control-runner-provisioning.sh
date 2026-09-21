@@ -42,8 +42,12 @@ control_units_owner_dir() {
 # kills a request whose requested change already landed — only the result file is lost, so the
 # dashboard caller polls to its own deadline and reports a failure that never happened.
 control_runner_wait_idle() {
-    local waited=0 max_wait=30
-    while compgen -G "$CONTROL_DIR/.claim.*" >/dev/null; do
+    local waited=0 max_wait=30 cdir="${CONTROL_DIR:-$PWD/data/control}" own_claim=""
+    # A control request that invokes a child `pithead apply` keeps its own parent claim until the
+    # handler returns. The child inherits this pid marker with the lock descriptor; waiting on that
+    # one claim would wait on itself. Claims from older/non-locking runners still need the fallback.
+    [ -n "${PITHEAD_LOCK_HELD:-}" ] && own_claim="$cdir/.claim.$PITHEAD_LOCK_HELD"
+    while compgen -G "$cdir/.claim.*" | grep -Fvxq "$own_claim"; do
         if [ "$waited" -ge "$max_wait" ]; then
             warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish before re-provisioning the runner — its result may be lost."
             return 0

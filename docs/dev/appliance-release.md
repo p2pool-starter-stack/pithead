@@ -420,8 +420,9 @@ the typed confirmation is refused, a confirmed commit applies and audits against
 actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
 each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
 waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
-never drains: an apply re-provisions the control runner, which kills a request in flight and loses
-its result (#2363). With the reserved-node environment
+never drains. That keeps the battery's phase boundary explicit; the product also serializes the
+runner with `apply` before a request is claimed, so re-provisioning cannot kill an in-flight request
+or lose its result (#2363). With the reserved-node environment
 inputs, it requires the real host preflight, rendered endpoints, the current p2pool container's
 narrowly extracted endpoints, an endpoint-bound current-startup `uses chain_id` round trip, and
 root-side restoration from a mode-600 raw snapshot. Reserved-node credentials must be disposable
