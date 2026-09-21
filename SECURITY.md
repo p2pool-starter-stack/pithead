@@ -236,9 +236,11 @@ host swaps it for the live value when it stages the intent, so the container nev
 the operator didn't just type into the form. A full backend compromise of the dashboard container
 can therefore read masked config, results, and the audit log, and *ask* to change an allowlisted
 key. It also sees the read-only mutation-lock inode and its non-secret holder record so its
-container start/stop requests can serialize with host CLI mutations; it cannot rewrite that record.
-Host-side staged copies, which do carry the merged secrets, live outside every mount and are written
-mode 600. Still treat the container as semi-trusted and keep the onion behind Tor client
-authorization: the request spool remains a mutation-request surface.
+container start/stop requests can serialize with host CLI mutations. Read-only prevents it from
+rewriting the record, not from holding the advisory lock: a compromised dashboard can make host
+mutations time out, an availability impact. Host-side staged copies, which do carry the merged
+secrets, live outside every mount and are written mode 600. Still treat the container as semi-trusted
+and keep the onion behind Tor client authorization: the request spool remains a mutation-request
+surface.
 
 Report any gap in these.

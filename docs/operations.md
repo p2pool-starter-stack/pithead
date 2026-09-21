@@ -129,8 +129,9 @@ it and never wait.
 
 The dashboard takes the same lock for each container start or stop it sends through its control
 proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
-from changing a container while a CLI mutation is recreating the stack. The lock remains owned by
-the host process; the dashboard receives only a read-only bind mount of the same inode.
+from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
+read-only bind mount of the same inode: it can hold the advisory lock, but it cannot alter the
+holder record.
 
 The lock covers one stack, not one directory. A bundle install keeps each release in its own
 `pithead-vX.Y.Z` directory beside the one before it (see [The deploy-box
@@ -147,6 +148,8 @@ outlive the command that wrote it, which is why the next command checks it befor
 to you. Where the file cannot be opened at all — a directory only root can write, a read-only
 mount — pithead says so and runs anyway rather than refusing every command that changes the stack.
 Dashboard container control instead fails closed if its read-only lock mount cannot be opened.
+A compromised dashboard can hold the lock and make a CLI mutation time out, so the lock protects
+operation ordering rather than availability.
 
 ### Tab completion
 

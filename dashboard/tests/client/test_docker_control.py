@@ -194,6 +194,38 @@ class TestStopStart:
             dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_EX | dc_mod.fcntl.LOCK_NB)
             dc_mod.fcntl.flock(contender, dc_mod.fcntl.LOCK_UN)
 
+    async def test_cancelled_lock_wait_closes_file(self, tmp_path):
+        c = _control(tmp_path)
+        lock = MagicMock()
+        attempted = asyncio.Event()
+
+        def unavailable(*_args):
+            attempted.set()
+            raise BlockingIOError
+
+        with (
+            patch.object(c, "_open_lock", return_value=lock),
+            patch.object(dc_mod.fcntl, "flock", side_effect=unavailable),
+        ):
+            task = asyncio.create_task(c.start("p2pool"))
+            await asyncio.wait_for(attempted.wait(), 1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        lock.close.assert_called_once()
+
+    async def test_flock_error_closes_file(self, tmp_path):
+        c = _control(tmp_path)
+        lock = MagicMock()
+        with (
+            patch.object(c, "_open_lock", return_value=lock),
+            patch.object(dc_mod.fcntl, "flock", side_effect=OSError("broken")),
+        ):
+            assert await c.start("p2pool") is False
+        lock.close.assert_called_once()
+
     async def test_missing_lock_refuses_engine_mutation(self, tmp_path):
         c = DockerControl(proxy_url="tcp://h:2375", lock_file=tmp_path / "missing")
         session = _session_returning(_FakeResp(204))

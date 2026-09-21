@@ -79,6 +79,17 @@ rc=$?
 assert_rc "a window that completed is available to the next verb" "$rc" "0"
 assert_eq "release clears the record, so nothing can name a holder that has gone" "$(cat "$LKFILE")" ""
 
+# The dashboard runs as a different uid and opens this inode read-only. A caller's restrictive
+# umask must not turn every dashboard start/stop into a fail-closed permissions error.
+LKMODE="$LKDIR/restrictive-umask.lock"
+rm -f "$LKMODE"
+mode=$(
+    umask 077
+    PITHEAD_LOCK_FILE="$LKMODE" run_sourced "$LKDIR" mutation_lock_acquire mode
+    file_mode "$LKMODE"
+)
+assert_eq "the shared lock stays dashboard-readable under umask 077 (#2218)" "$mode" "644"
+
 # Arm the STALE-RECORD fixture the three cases below need, and note why they need it: with the
 # lock file empty, `verb=backup` exists nowhere on disk and "never reported under the previous
 # holder's name" is true of an empty string — an assertion that cannot fail for any change to

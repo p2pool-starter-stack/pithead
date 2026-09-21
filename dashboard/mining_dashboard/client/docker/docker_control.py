@@ -36,10 +36,22 @@ class DockerControl:
         self.timeout = timeout
         self.lock_file = lock_file
 
-    def _acquire_lock(self):
+    def _open_lock(self):
         lock = open(self.lock_file, "rb")
-        fcntl.flock(lock, fcntl.LOCK_EX)
         return lock
+
+    async def _acquire_lock(self):
+        lock = self._open_lock()
+        try:
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return lock
+                except BlockingIOError:
+                    await asyncio.sleep(0.1)
+        except (OSError, asyncio.CancelledError):
+            lock.close()
+            raise
 
     async def stop(self, container, stop_timeout=10, quiet=False, request_timeout=None):
         """Stop a container. Returns True on success (incl. already-stopped).
@@ -78,7 +90,7 @@ class DockerControl:
         try:
             # Every dashboard start/stop routes here. The CLI takes the same inode before config
             # writes and compose; both sides therefore acquire lock→engine and never nest the lock.
-            lock = await asyncio.to_thread(self._acquire_lock)
+            lock = await self._acquire_lock()
         except OSError as e:
             logger.error(f"Container {container} {action} refused: pithead lock unavailable: {e}")
             return False
@@ -106,5 +118,4 @@ class DockerControl:
             logger.error(f"Container {container} {action} error via {self.base_url}: {e}")
             return False
         finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
             lock.close()
