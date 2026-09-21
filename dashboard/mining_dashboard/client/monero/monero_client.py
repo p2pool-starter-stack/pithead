@@ -43,9 +43,11 @@ class MoneroClient:
     def get_info(self) -> dict | None:
         """Return monerod's `get_info` payload as a dict, or None if unreachable/errored."""
         try:
-            resp = bounded_get(self.url, auth=self._auth, timeout=self.timeout)
+            resp = bounded_get(
+                self.url, auth=self._auth, timeout=self.timeout, allow_redirects=False
+            )
         except requests.RequestException as e:
-            logger.warning(f"monerod get_info unreachable at {self.url}: {e}")
+            logger.warning("monerod get_info unreachable (%s)", type(e).__name__)
             return None
 
         if resp.status_code != 200:
