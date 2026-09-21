@@ -947,10 +947,11 @@ view explains how to turn it on and nothing else.
 One editing surface: the form on top and, beneath it, a collapsed **Advanced** pane holding
 the full proposed configuration — both live views of a single candidate. Editing
 a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
-candidate, developer-only keys aside (named below), but Save sends only the leaves that actually
-changed since the page loaded — an untouched field, including one the pane shows filled in from
-`config.reference.json`'s defaults, is never posted, so a placeholder default can't be
-committed as if the operator had typed it
+candidate, developer-only keys aside (named below). Save sends the complete explicit
+configuration because the host stages and commits it as a replacement, but removes every
+`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
+values and masked secrets survive, while a placeholder default can't be committed as if the
+operator had typed it
 ([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
 wizard's pattern — the first page and the config tab now behave identically.) The pieces:
 ([#529](https://github.com/p2pool-starter-stack/pithead/issues/529)):

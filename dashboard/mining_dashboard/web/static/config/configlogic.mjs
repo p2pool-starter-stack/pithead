@@ -14,6 +14,8 @@
 // preview, and the gate are all untouched by this display-only regroup. A secret left blank keeps
 // its sentinel — the server swaps it for the live value ("unchanged").
 
+import { pathGet } from "./configsync.mjs";
+
 export const SECRET_HINT = "set — leave blank to keep";
 
 export function isSecretSentinel(v) {
@@ -358,22 +360,23 @@ export function parseConfigJson(text) {
   return { config: cfg };
 }
 
-// The payload a commit actually sends (#2365): the loaded config already carries
-// config.reference.json's placeholder defaults for every unset key (read_config's merge, so the
-// form can render and label them "(default)"). Posting the whole candidate back would turn every
-// one of those placeholders — "node.remote-monero-host.com" included — into an explicit,
-// committed config.json value the operator never typed. Diff against the config as it was loaded
-// and keep only the leaves that actually changed, nested the same way config.json itself is
-// sparse: an untouched default stays absent, exactly like an omitted config.json key.
-export function diffConfig(base, candidate) {
-  const out = {};
-  for (const [key, value] of Object.entries(candidate)) {
-    const prior = isPlainObject(base) ? base[key] : undefined;
-    if (isPlainObject(value) && isPlainObject(prior)) {
-      const nested = diffConfig(prior, value);
-      if (Object.keys(nested).length) out[key] = nested;
-    } else if (JSON.stringify(value) !== JSON.stringify(prior)) {
-      out[key] = value;
+function removePath(node, [key, ...rest]) {
+  if (!isPlainObject(node)) return;
+  if (rest.length) {
+    removePath(node[key], rest);
+    if (isPlainObject(node[key]) && Object.keys(node[key]).length === 0) delete node[key];
+  } else delete node[key];
+}
+
+// The full candidate the host stages and commits (#2365), minus reference defaults that were
+// absent from config.json and remain untouched. Existing explicit values and secret sentinels must
+// stay: the host replaces config.json with this object, then resolves sentinels from the live file.
+export function explicitCandidate(pristine, candidate, defaultKeys) {
+  const out = JSON.parse(JSON.stringify(candidate));
+  for (const dotted of defaultKeys) {
+    const path = dotted.split(".");
+    if (JSON.stringify(pathGet(pristine, dotted)) === JSON.stringify(pathGet(candidate, dotted))) {
+      removePath(out, path);
     }
   }
   return out;

@@ -24,8 +24,8 @@ import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import {
   buildSections,
-  diffConfig,
   editableCandidate,
+  explicitCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
@@ -239,11 +239,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // Only what changed since load (#2365, diffConfig), not the whole candidate's unset-key defaults.
+  // Keep explicit values; only read_config's untouched defaults were absent from config.json.
   buildProposed() {
-    const { candidate, jsonError, pristine } = this.state;
+    const { candidate, defaultKeys, jsonError, pristine } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: diffConfig(JSON.parse(pristine || "{}"), candidate) };
+    return { config: explicitCandidate(JSON.parse(pristine || "{}"), candidate, defaultKeys) };
   }
 
   async save() {
@@ -353,7 +353,7 @@ export class ConfigView extends Component {
 
   // The JSON pane (#785, the wizard's pattern): the whole candidate beneath the form, collapsed
   // by default, two-way live — never a separate mode. Load-from-file fills it (FileReader, no
-  // upload); Save sends only what changed since load (#2365, diffConfig), not this whole pane.
+  // upload); Save sends this candidate minus untouched reference defaults (#2365).
   renderJson(editText, jsonError, busy) {
     return html`<details class="card config-section">
         <summary><strong>Advanced</strong> — the configuration this page sends</summary>

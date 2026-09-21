@@ -5,8 +5,8 @@ import { ConfigView } from "../../../mining_dashboard/web/static/config/configvi
 
 const okResult = (body) => ({ status: 200, ok: true, json: async () => body });
 
-// #2365: one edit posts only that field, never untouched defaults from config.reference.json.
-test("save posts only the field the operator changed", async () => {
+// #2365: the host receives the full explicit config, never untouched defaults from the reference.
+test("save preserves explicit config and posts no untouched placeholder defaults", async () => {
   const view = new ConfigView({});
   view.setState = (patch) => Object.assign(view.state, patch);
   const realFetch = globalThis.fetch;
@@ -14,9 +14,14 @@ test("save posts only the field the operator changed", async () => {
   globalThis.fetch = async (url, opts) => {
     if (url === "/api/config") {
       return okResult({
-        dashboard: { energy: { price_per_kwh: 0.1 } },
+        dashboard: {
+          auth: { password: { __secret__: true } },
+          energy: { price_per_kwh: 0.1 },
+        },
         monero: { mode: "local", remote: { host: "node.remote-monero-host.com", rpc_port: 18081 } },
+        p2pool: { pool: "mini" },
         xvb: { enabled: false, url: "na.xmrvsbeast.com:4247" },
+        _default_keys: ["monero.remote.host", "monero.remote.rpc_port", "xvb.url"],
         _editable_keys: ["dashboard.energy.price_per_kwh"],
       });
     }
@@ -33,5 +38,13 @@ test("save posts only the field the operator changed", async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.deepEqual(previewBody.config, { dashboard: { energy: { price_per_kwh: 0.15 } } });
+  assert.deepEqual(previewBody.config, {
+    dashboard: {
+      auth: { password: { __secret__: true } },
+      energy: { price_per_kwh: 0.15 },
+    },
+    monero: { mode: "local" },
+    p2pool: { pool: "mini" },
+    xvb: { enabled: false },
+  });
 });

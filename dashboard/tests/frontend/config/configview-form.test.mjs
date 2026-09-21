@@ -32,6 +32,7 @@ function readyView(cfg = CFG, coreKeys = CORE_KEYS) {
     cfg,
     sections: buildSections(cfg),
     coreKeys,
+    defaultKeys: cfg._default_keys || [],
     candidate,
     pristine: text,
     editText: text,
@@ -186,8 +187,7 @@ test("a field edit lands in the candidate, typed, and rewrites the pane (#785)",
   inst.onFieldEdit(pool, "main");
   const staged = inst.buildProposed();
   assert.equal(staged.config.p2pool.pool, "main");
-  // #2365: an untouched field, even a set one, never leaves the form — only what changed does.
-  assert.equal(staged.config.monero, undefined);
+  assert.equal(staged.config.monero.mode, "local"); // explicit live values survive the full candidate
   assert.match(inst.state.editText, /"pool": "main"/); // the pane shows the same truth
 });
 
@@ -216,21 +216,19 @@ test("a pane mid-typo keeps the last good candidate and blocks Save with the rea
 
 // --- Masked-secret sentinel semantics survive the candidate model (#508/#440) -----------------
 
-// #2365: an untouched secret is indistinguishable from any other untouched field — it stays out
-// of the staged config entirely rather than riding along as its sentinel.
-test("an untouched masked secret never reaches the staged config", () => {
+test("an untouched masked secret reaches the host as its keep sentinel", () => {
   const inst = readyView();
   assert.match(inst.state.editText, /__secret__/); // still visible in the pane, as a marker
-  assert.equal(inst.buildProposed().config.dashboard, undefined);
+  assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
 });
 
-test("blanking a secret field means KEEP — a typed-then-reblanked secret drops back out of the staged config", () => {
+test("blanking a secret field means KEEP — a typed-then-reblanked secret restores its sentinel", () => {
   const inst = readyView();
   const pw = { key: "dashboard.auth.password", type: "secret", value: "" };
   inst.onFieldEdit(pw, "hunter2hunter2");
   assert.equal(inst.buildProposed().config.dashboard.auth.password, "hunter2hunter2");
   inst.onFieldEdit(pw, "");
-  assert.equal(inst.buildProposed().config.dashboard, undefined);
+  assert.deepEqual(inst.buildProposed().config.dashboard.auth.password, { __secret__: true });
 });
 
 // --- File-fill button (#529, mirrors #518's ~5 lines) ------------------------------------------
