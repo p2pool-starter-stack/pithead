@@ -244,9 +244,9 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
    call `firstboot_consume_spool` uses. A valid restored remote-node configuration is not redialed
    under a later release's new-configuration preflight policy.
-4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
-   validated generated secrets (including the dashboard credential hash when it matches the
-   restored login) and Tor identity from the archived environment.
+4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only opaque
+   generated secrets and Tor identity from the archived environment. The restored dashboard
+   password remains in `config.json`; its bcrypt hash and fingerprint are regenerated from it.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
    trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
    database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
@@ -438,7 +438,7 @@ migration floor — both halves are described in
 **Rule for changes:** anything generated from `config.json` or the program is derived and must
 be rebuilt by `render` — adding one anywhere else recreates the staleness bug. The container
 images are derived in the same sense: functions of the running slot, converged every boot by
-`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, generated secrets)
+`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, opaque generated secrets)
 is never regenerated; it gets validation and a safe fallback instead.
 
 The invariant, asserted by the provision phase: **corrupt any derived file, reboot, and the
