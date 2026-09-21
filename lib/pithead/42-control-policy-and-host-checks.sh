@@ -213,11 +213,11 @@ control_committable_re() {
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
 }
 
-# The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
-# trigger is not a fourth hand-kept copy of these key names. Every key here must also be in
-# CONTROL_DASHBOARD_CONFIRM_KEYS above — a key here but not there is unreachable; a node key there
-# but not here would be committable with NO reachability probe, which is the failure that matters.
-CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+# The node changes that require a staged reachability/authentication preflight, named once so the
+# approval gate cannot forget the login when only a credential changes. Every key here must also be
+# confirm-gated; the probe itself no-ops for a local chain.
+CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
 # SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space

@@ -175,12 +175,12 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # Reachability probe (#1888) — the compensating control the confirm tier rests on for these keys
     # (42-): the typed token is friction, but a chain cannot be parked on a node that is not there.
     # Host-side, on the STAGED config, through the same preflight the wizard uses; nothing is
-    # trusted from the container. Fires only when a node-endpoint key really changed (so an
+    # trusted from the container. Fires only when a node endpoint or login really changed (so an
     # unrelated commit is never blocked by a node that is down) and only after the typed
     # confirmation (so an unconfirmed attempt never pays the dial timeouts).
-    local probe_err endpoint_re
-    endpoint_re=$(printf '%s' "$CONTROL_NODE_ENDPOINT_KEYS" | tr -s ' \n' '|')
-    if printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$endpoint_re"; then
+    local probe_err preflight_re
+    preflight_re=$(printf '%s' "$CONTROL_NODE_PREFLIGHT_KEYS" | tr -s ' \n' '|')
+    if printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$preflight_re"; then
         if ! probe_err=$(preflight_remote_nodes "$staged" 2>/dev/null); then
             printf 'this change points the stack at a node the host cannot use: %s' "$probe_err"
             return 1

@@ -143,11 +143,58 @@ roundtrip_confirm "STRATUM_PORT" '.p2pool.stratum_port=3444' '.p2pool.stratum_po
 # the only direction that is confirm-gated at all (describe_change flags DISABLE a host-only DEST),
 # so a baseline that does not start pruned cannot exercise this key through the gate.
 roundtrip_confirm "MONERO_PRUNE" '.monero.prune=true' '.monero.prune' "true"
-# The reserved-node RPC login (#2333/#2367): unlike the four endpoint keys above, this needs no
-# live dial — preflight_remote_nodes only fires on a changed endpoint key, never on the login
-# alone — so it round-trips here at tier 1 rather than sitting in CONFIRM_TIER1_EXEMPT.
-roundtrip_confirm "MONERO_NODE_USERNAME" '.monero.node_username="os1924-user"' '.monero.node_username' "os1924-user"
-roundtrip_confirm "MONERO_NODE_PASSWORD" '.monero.node_password="os1924-pass"' '.monero.node_password' "os1924-pass"
+# A standalone local-login edit reaches preflight (which correctly has no remote node to dial),
+# restores the untouched masked partner, and re-applies one coupled pair to the running stack. The
+# dashboard login is independent and must remain usable: its stable hash and Caddyfile cannot move.
+cp "$C/Caddyfile" "$C/Caddyfile.before-node-login"
+dashboard_hash_before=$(env_now DASHBOARD_AUTH_HASH_B64)
+if [ -n "$dashboard_hash_before" ]; then ok "node-login baseline has dashboard access"; else bad "node-login baseline has dashboard access" "empty auth hash"; fi
+roundtrip_local_login() { # <env-key> <jq-set-with-partner-sentinel> <jq-read> <new> <user> <password>
+    COVERED="$COVERED $1"
+    jq "$2" "$C/config.json" >"$C/cand.json"
+    gate_try "$C/cand.json"
+    assert_eq "$1 is refused with no typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+    : >"$CTRL_LOG"
+    gate_try "$C/cand.json" APPLY
+    assert_eq "$1 commit applies behind the typed APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+    assert_eq "$1 landed in config.json" "$(jq -r "$3" "$C/config.json")" "$4"
+    assert_eq "$1 keeps the coupled username in the runtime env" "$(env_now MONERO_NODE_USERNAME)" "$5"
+    assert_eq "$1 keeps the coupled password in the runtime env" "$(env_now MONERO_NODE_PASSWORD)" "$6"
+    assert_contains "$1 re-applies the running services" "$(cat "$CTRL_LOG")" "compose up"
+    assert_eq "$1 preserves the dashboard login hash" "$(env_now DASHBOARD_AUTH_HASH_B64)" "$dashboard_hash_before"
+    if cmp -s "$C/Caddyfile" "$C/Caddyfile.before-node-login"; then ok "$1 preserves dashboard access"; else bad "$1 preserves dashboard access" "Caddyfile changed"; fi
+}
+roundtrip_local_login "MONERO_NODE_USERNAME" \
+    '.monero.node_username="os1924-user" | .monero.node_password={"__secret__":true}' \
+    '.monero.node_username' "os1924-user" "os1924-user" "p"
+roundtrip_local_login "MONERO_NODE_PASSWORD" \
+    '.monero.node_password="os1924-pass" | .monero.node_username={"__secret__":true}' \
+    '.monero.node_password' "os1924-pass" "os1924-user" "os1924-pass"
+rm -f "$C/Caddyfile.before-node-login"
+
+# On a remote chain, a password-only edit must authenticate with the STAGED login before config.json
+# moves. A deterministic 401 is enough to prove this shared trigger; without the login keys in the
+# preflight set, the same candidate commits and this row turns red.
+cp "$C/config.json" "$C/local.before-login-preflight.json"
+jq '.monero.mode="remote" | .monero.remote={host:"node.test",rpc_port:18081,zmq_port:18083}' \
+    "$C/config.json" >"$C/remote.json"
+cp "$C/remote.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+printf '#!/usr/bin/env bash\nprintf "192.168.50.8 STREAM node.test\\n"\n' >"$C/bin/getent"
+printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf "{\\"status\\":\\"OK\\",\\"nettype\\":\\"mainnet\\",\\"height\\":1,\\"target_height\\":1}\\n401"\n' >"$C/bin/curl"
+chmod +x "$C/bin/getent" "$C/bin/curl"
+jq '.monero.node_password="rejected-password" | .monero.node_username={"__secret__":true}' \
+    "$C/config.json" >"$C/cand.json"
+gate_try "$C/cand.json" APPLY
+assert_eq "standalone remote login runs authenticated preflight" \
+    "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "authenticated preflight attributes the refusal to the staged login" \
+    "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected the configured RPC login"
+assert_eq "failed login preflight leaves the live password unchanged" \
+    "$(jq -r '.monero.node_password' "$C/config.json")" "os1924-pass"
+rm -f "$C/bin/getent" "$C/bin/curl"
+cp "$C/local.before-login-preflight.json" "$C/config.json"
+(cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 
 echo "== black-box: every dashboard-committable key has a commit round-trip (#1929) =="
 # TOTALITY, derived from the SHIPPED artifact rather than a hand list — a hand list is blind to the

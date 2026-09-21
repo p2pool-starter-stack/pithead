@@ -90,7 +90,7 @@ The stack's defaults:
   and Tari **node endpoints** (#1888) — commit only behind a typed confirmation in the dashboard,
   and only in that direction. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. The remote node's RPC username and password commit the same way,
+  a node that is not there. The node RPC username and password commit the same way,
   behind the same typed confirmation, on the owner's #2367 ruling (2026-09-19): every config field
   is editable from the dashboard, and a security-sensitive one warns rather than refuses. The
   preview names the field changing and never echoes the credential's value; masked like every
@@ -104,7 +104,7 @@ The stack's defaults:
   of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The rest of the
   security perimeter — wallets and view keys, dashboard auth and onion exposure, the control
   channel itself, the Tor egress firewall, binds, and every credential except the confirm-gated
-  remote-node RPC username and password —
+  node RPC username and password —
   is never dashboard-committable, with or without the typed confirmation. A key added in the
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.

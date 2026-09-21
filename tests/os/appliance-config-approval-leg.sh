@@ -5,20 +5,10 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-approval-verdict.sh"
 
 APPROVAL_RESTORE_SNAPSHOT=""
-# #2076 deleted the guest-side fake Telegram provider this leg used to install (a fake `curl` on
-# the control unit's PATH, an owner lock, a bind/quiesce/disarm dance, and a prompt sidecar). A
-# sensitive commit no longer contacts Telegram at all, so the leg drives the ordinary authenticated
-# control route and needs no privileged loopback identity. What is kept is the restore discipline:
-# this phase repoints the appliance at reserved nodes and MUST put the original config back.
+# Sensitive commits use the authenticated dashboard route. This phase repoints the appliance at
+# reserved nodes and must restore the original config afterward.
 
-# The max-time is not arbitrary and must stay above the dashboard's own answer window (#2060):
-# handle_control_* holds the request open until the runner answers or CONTROL_WAIT_S (30s) elapses,
-# and only THEN returns 202 with the request id. That id is the only way into the polling loop in
-# dashboard_control_request, so a POST that gives up first loses the request entirely — the caller
-# gets nothing back and the row reports "no result" for an operation that was merely slow. At 8s
-# that was every control operation which does real work: a commit that runs an apply, and doctor on
-# an unhealthy box. Their fast siblings (preview, doctor on a healthy box) answered inside 8s and
-# passed, which is what made the failures read as the runner losing results.
+# Keep this above the dashboard's 30-second answer window so a 202 response still carries the id.
 dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
     printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
         -H 'X-Pithead-Control: 1' --data-binary @- -w '\n%{http_code}' \
@@ -27,17 +17,8 @@ dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's ar
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
 
 remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
-    # <user>/<password> are OFTEN blank (#2297): a reserved bench node commonly needs no RPC auth
-    # (config.example.toml's provision env lists only host/port for it), and $live's own
-    # monero.node_username/node_password already carry a {"__secret__":true} sentinel — /api/config
-    # masks every CONTROL_SECRET_PATHS leaf, and that pair is on it. A blank arg must leave those two
-    # fields ALONE so the sentinel survives to staging: control_preview's restore (43-control-
-    # approval-and-preview.sh) swaps a sentinel for the live value, but only recognizes the sentinel
-    # SHAPE — overwriting it with a literal "" here would read as a REAL (empty) credential change.
-    # A non-blank arg lands as a real value: MONERO_NODE_USERNAME/PASSWORD are confirm-gated, not
-    # refused (#2333/#2367, the owner's ruling superseding the earlier host-CLI-only stance) — the
-    # same typed-APPLY route the endpoint fields below already use, so the whole combined change
-    # (endpoint + login, when the reserved node needs one) previews and commits in one request.
+    # Blank credentials preserve their masked sentinels; nonblank ones join the atomic endpoint
+    # proposal behind the same typed confirmation (#2297/#2333).
     printf '%s\0' "$@" | jq -Rsc 'split("\u0000") as $v | ($v[0] | fromjson) |
         .monero.mode="remote" | .monero.remote={host:$v[1],rpc_port:($v[2]|tonumber),zmq_port:($v[3]|tonumber)} |
         (if $v[4] != "" then .monero.node_username=$v[4] else . end) |
@@ -145,6 +126,35 @@ sensitive_live_config() { # prints the live config, or nothing
     return 1
 }
 
+local_node_login_runtime_verdict() {
+    # shellcheck disable=SC2016 # this script is intentionally evaluated by the guest shell
+    _ssh 'set -eu
+podman inspect monerod dashboard p2pool |
+    jq -e --slurpfile cfg /data/pithead/config.json '\''
+        ($cfg[0].monero.node_username // "") as $u | ($cfg[0].monero.node_password // "") as $p |
+        def container($name): map(select(.Name == ("/" + $name)))[0];
+        def has_login($name): container($name).Config.Env |
+            index("MONERO_NODE_USERNAME=" + $u) != null and index("MONERO_NODE_PASSWORD=" + $p) != null;
+        (container("p2pool").Config.Cmd) as $cmd | ($cmd | index("--rpc-login")) as $i |
+        $u != "" and $p != "" and has_login("monerod") and has_login("dashboard") and
+        $i != null and $cmd[$i+1] == ($u + ":" + $p)
+    '\'' >/dev/null'
+}
+
+local_node_login_edit() { # <config-path> <env-key> <value> <label>
+    local live proposed preview result rid
+    live=$(sensitive_live_config) || return 1
+    proposed=$(printf '%s' "$live" | jq -c --arg value "$3" "$1 = \$value") || return 1
+    sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
+    preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
+    printf '%s' "$preview" | jq -e --arg key "$2" \
+        '.status == "previewed" and .destructive == true and any(.changes[]?; .key == $key and .flag == "CONFIRM")' >/dev/null || return 1
+    result=$(approval_commit "$rid")
+    printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || return 1
+    sensitive_live_config >/dev/null && local_node_login_runtime_verdict || return 1
+    ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
+}
+
 phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid before after audit
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
@@ -153,10 +163,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local status destructive approval_required mh_shown th_shown login_warned env_now cmd_now
     local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now
 
-    # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
-    # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
-    # "sensitive config failed" there hangs a Telegram-shaped label on a hostname-shaped defect —
-    # exactly what happened to the #1929 tari leg on 2026-09-11. Say what was actually observed.
+    # Attribute an unreadable dashboard to the earlier leg that left this precondition false.
     live=$(sensitive_live_config) || {
         bad "sensitive config NOT exercised: the dashboard never served /api/config (20 tries over ~60s) — an earlier leg left it unreadable; this is not a verdict on the sensitive-commit path"
         return
@@ -233,20 +240,17 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     }
 
-    # #2333/#2367: MONERO_NODE_USERNAME/PASSWORD are confirm-gated like the endpoint fields they
-    # travel with here, not refused — the owner's ruling on #2367 (2026-09-19 03:08Z) overruled the
-    # earlier host-CLI-only stance for exactly these two keys: every config field is editable from
-    # the dashboard, and a security-sensitive one warns and asks for the typed confirmation instead
-    # of being refused. So the combined change (mode, endpoint, login) previews and commits through
-    # the ordinary dashboard route in one request — no host-side detour needed.
-    #
-    # p2pool.clearnet (#165) rides in the same proposal: p2pool_outbound_flags
-    # (lib/pithead/19-small-utilities.sh) otherwise wraps p2pool's Tari merge-mining connection in
-    # Tor's SOCKS5 proxy, and Tor's exit policy refuses to relay to a private address — which the
-    # reserved test nodes always are, by the same convention tests/integration/scenarios.sh
-    # documents for its own remote-node scenarios ("the natural choice is the box's own ... LAN
-    # address"). Without it the endpoint lands but p2pool never completes the Tari handshake: it
-    # builds the client and waits on a chain_id gRPC call Tor will never carry to a LAN address.
+    local_node_login_edit '.monero.node_username' MONERO_NODE_USERNAME os2333-local-user "username edit" || {
+        bad "standalone local node username edit did not preserve runtime access"
+        return 1
+    }
+    local_node_login_edit '.monero.node_password' MONERO_NODE_PASSWORD os2333-local-pass "password edit" || {
+        bad "standalone local node password edit did not preserve runtime access"
+        return 1
+    }
+
+    # Endpoint and login land through one confirmed proposal (#2333/#2367). Clearnet keeps the
+    # reserved private Tari endpoint out of P2Pool's Tor SOCKS path (#165).
     proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" | jq -c '.p2pool.clearnet = true') || {
         bad "reserved-node proposal could not be constructed"
         return
@@ -294,11 +298,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
         node_ok=0
     }
-    # The preview the operator reads is the only place these endpoints and the login change are
-    # shown before they are committed, so it carries the disclosure duty the removed Telegram
-    # prompt used to: name both endpoints in full, warn about the login, and never echo its value
-    # (describe_change's warning text names the key, never $old/$new; CONTROL_SECRET_PATHS masks
-    # the raw value everywhere else in the JSON).
+    # The preview names both endpoints and warns about the login without exposing its value.
     if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
         any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
         any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
@@ -323,10 +323,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     if [ "$tries" -lt 60 ]; then
         ok "approved endpoints passed host preflight and p2pool consumed Tari chain_id from the current startup"
     else
-        # Name the failing sub-condition (#2314's pattern) as PASS/FAIL, not raw values: the log's
-        # own topology redaction replaces every host/port with the same placeholder, so two DIFFERENT
-        # values compare as identical text to a human reading the previous diagnostic. Only an
-        # explicit boolean survives that redaction.
+        # Boolean sub-verdicts survive topology redaction while raw endpoint values do not.
         env_ok=false cmd_ok=false direct_ok=false bridged_ok=false
         env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r')
         printf '%s\n' "$env_now" | grep -qxF "MONERO_NODE_HOST=$mh" &&
