@@ -35,7 +35,9 @@ class TestControlPowerRoute:
         req = json.loads((control_spool / "requests" / f"{body['id']}.json").read_text())
         assert req == {"id": body["id"], "action": "sys-poweroff", "actor": ""}
 
-    @pytest.mark.parametrize("action", ["", "os-reboot", "format-disk", "reboot; rm", 42, None])
+    @pytest.mark.parametrize(
+        "action", ["", "os-reboot", "format-disk", "reboot; rm", 42, None, [], {}]
+    )
     async def test_rejects_unknown_action_before_the_spool(
         self, control_client, control_spool, action
     ):

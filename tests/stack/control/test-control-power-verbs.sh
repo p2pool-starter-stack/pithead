@@ -23,12 +23,22 @@ CONTROL_DIR=$PWC/data/control
 EOF
 cat >"$PWC/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
-echo "[systemctl] $*" >>"${SYSCTL_LOG:?}"
+case "$*" in
+    reboot) power_status=rebooting power_action=sys-reboot ;;
+    poweroff) power_status=shutting-down power_action=sys-poweroff ;;
+esac
+if jq -e --arg status "$power_status" '.status == $status' "${POWER_RESULT:?}" >/dev/null 2>&1 &&
+    grep -Fq "\"action\":\"$power_action\",\"status\":\"$power_status\"" "${POWER_AUDIT:?}"; then
+    echo "[systemctl-after-record] $*" >>"${SYSCTL_LOG:?}"
+else
+    echo "[systemctl-before-record] $*" >>"${SYSCTL_LOG:?}"
+fi
 exit 0
 EOF
 chmod +x "$PWC/bin/systemctl"
 pwrun() { # [env pairs...] — drain the spool inside the appliance sandbox
     (cd "$PWC" && PATH="$PWC/bin:$PATH" SYSCTL_LOG="$PWC/sysctl.log" PITHEAD_APPLIANCE=1 \
+        POWER_RESULT="$PWRES/$PW1.json" POWER_AUDIT="$PWC/data/control/audit/control.log" \
         env "$@" ./pithead control-run-pending 2>&1)
 }
 pw_intent() { # <id> <action>
@@ -70,6 +80,8 @@ pw_intent "$PW1" sys-reboot
 pwrun >/dev/null
 assert_eq "sys-reboot reports rebooting" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "rebooting"
 assert_contains "systemctl reboot was ordered" "$(cat "$PWC/sysctl.log")" "reboot"
+assert_contains "the reboot order follows its result and audit" "$(cat "$PWC/sysctl.log")" "systemctl-after-record"
+assert_not_contains "the reboot order never precedes its record" "$(cat "$PWC/sysctl.log")" "systemctl-before-record"
 assert_not_contains "sys-reboot never orders poweroff" "$(cat "$PWC/sysctl.log")" "poweroff"
 # The audit line carries id/actor/action, written alongside the result.
 assert_contains "the audit line names sys-reboot" "$(tail -1 "$PWC/data/control/audit/control.log")" "\"action\":\"sys-reboot\""
@@ -104,6 +116,8 @@ pw_intent "$PW1" sys-poweroff
 pwrun >/dev/null
 assert_eq "sys-poweroff reports shutting-down" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "shutting-down"
 assert_contains "systemctl poweroff was ordered" "$(cat "$PWC/sysctl.log")" "poweroff"
+assert_contains "the poweroff order follows its result and audit" "$(cat "$PWC/sysctl.log")" "systemctl-after-record"
+assert_not_contains "the poweroff order never precedes its record" "$(cat "$PWC/sysctl.log")" "systemctl-before-record"
 assert_not_contains "sys-poweroff never orders reboot" "$(cat "$PWC/sysctl.log")" "systemctl] reboot"
 assert_contains "the audit line names sys-poweroff" "$(tail -1 "$PWC/data/control/audit/control.log")" "\"action\":\"sys-poweroff\""
 rm -f "$PWRES/$PW1.json"

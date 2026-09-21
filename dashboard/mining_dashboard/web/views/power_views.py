@@ -33,7 +33,7 @@ async def handle_control_power(request):
     if not isinstance(body, dict):
         raise web.HTTPBadRequest(text="Body must be a JSON object.")
     action = body.get("action")
-    if action not in POWER_ACTIONS:
+    if not isinstance(action, str) or action not in POWER_ACTIONS:
         raise web.HTTPBadRequest(
             text="'action' must be one of: " + ", ".join(sorted(POWER_ACTIONS))
         )
