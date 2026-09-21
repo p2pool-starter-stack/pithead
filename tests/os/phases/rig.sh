@@ -252,7 +252,50 @@ phase_rig() {
         ;;
     *) bad "the rig never self-committed — grubenv: ${genv:-unreadable}" ;;
     esac
+
+    # ---- power cut (M13, #2067b): the reboot leg above proves a CLEAN return; this proves the
+    # same "mining unaided" fact after a virsh destroy instead — the rig half of M13's Restore on
+    # AC power loss, which a KVM guest cannot show (that's a firmware setting) but a real power cut
+    # against a virtual disk still can.
+    info "power-cut leg — the rig must come back mining after a cut, not just a clean reboot"
+    local before
+    before=$(_boot_id) || {
+        bad "could not read the rig boot id before the power cut"
+        return
+    }
+    virsh destroy "$VM" >/dev/null 2>&1 || {
+        bad "could not cut power to the mining rig"
+        return
+    }
+    sleep 3
+    virsh start "$VM" >/dev/null 2>&1 || {
+        bad "could not restore power to the mining rig"
+        return
+    }
+    if _wait_new_boot "$before" 300; then
+        ok "the rig survived a power cut — booted"
+    else
+        bad "the rig is BRICKED — no boot after a power cut while mining (disqualifying)"
+        return
+    fi
+    _rig_mining_up 24 &&
+        ok "the rig returned mining with no hands on it after a power cut" ||
+        bad "the rig did not return mining after a power cut"
+    genv=""
+    tries3=0
+    while [ "$tries3" -lt 18 ]; do
+        genv=$(_ssh "grub-editenv /boot/efi/grub/grubenv list" 2>/dev/null | tr '\n' ' ')
+        case "$genv" in *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) break ;; esac
+        sleep 10
+        tries3=$((tries3 + 1))
+    done
+    case "$genv" in
+    *A_OK=1*A_TRY=0* | *A_TRY=0*A_OK=1*) ok "the rig is still committed after the power cut (A_OK=1 A_TRY=0)" ;;
+    *) bad "the rig is not committed after the power cut — grubenv: ${genv:-unreadable}" ;;
+    esac
+
     rig_setup_again_legs "$card_tok" "$token" # #1318: Keep it, then Set up again as the same rig (tests/os/setup-again-leg.sh)
+    rig_control_off_leg "$card_tok"           # #1867: a pool host with no IPv4 (tests/os/rig-control-off-leg.sh); restores the rig for the legs below
 
     # ---- A/B update: identical pipeline, identical outcome --------------------------------
     info "update leg — a rig takes a bundle exactly like a coordinator"
@@ -314,5 +357,19 @@ phase_rig() {
     marker=$(_ssh cat /etc/pithead-test-marker | tr -d '\r\n')
     [ "$marker" = "v2" ] && ok "COMMIT: the update persists on the rig across reboot" ||
         bad "expected v2 on the rig after commit, got '$marker'"
+
+    # #2063: no accepted share has ever been proven on the appliance channel — this rig's own pool
+    # is its own sshd (#796), by design. A coordinator this battery itself boots in remote-node mode
+    # (#2062's precondition) clears the sync gate, so the rig can mine into a real p2pool instead.
+    local rn_mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rn_rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" rn_zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
+    if [ -z "$rn_mh" ] || [ -z "$rn_rpc" ] || [ -z "$rn_zmq" ]; then
+        it_skip_leg "the rig mines an accepted share against a booted coordinator (#2063)" \
+            "no reserved remote Monero node for this bench — set PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT and PITHEAD_OS_MONERO_ZMQ_PORT to run it" missing
+    else
+        rig_share_leg "$img" "$rn_mh" "$rn_rpc" "$rn_zmq" \
+            "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" \
+            "${PITHEAD_OS_TARI_NODE_HOST:-}" "${PITHEAD_OS_TARI_GRPC_PORT:-}" "$ip"
+    fi
+
     rig_setup_again_coordinator_leg "$token" # #1318: Set up again as a coordinator, from the updated slot
 }

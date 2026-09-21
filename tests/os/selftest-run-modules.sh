@@ -2,8 +2,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
@@ -11,8 +11,8 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset phase_crossupdate'
-actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_' | tr '\n' ' ' | sed 's/ $//')"
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
+actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_height$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
     exit 1
@@ -23,7 +23,9 @@ if bash -c 'source "$1"' _ "$HERE/phases/boot.sh" >/dev/null 2>&1; then
     exit 1
 fi
 
+# shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
 OS_RUN_SUITE=1 SCRIPT_DIR="$HERE" SERIAL="$(mktemp)" PASS=0 FAIL=0 KEEP=1
+# shellcheck disable=SC2034 # sourced phase functions read these runner globals dynamically.
 VM=selftest DISK="$SERIAL.disk" SSH_ERR="$SERIAL.ssh-error"
 # shellcheck source=tests/os/lib/core.sh
 source "$HERE/lib/core.sh" || exit $?
@@ -62,9 +64,24 @@ source "$HERE/phases/fault.sh" || exit $?
 source "$HERE/phases/reset.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$HERE/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/stack.sh
+source "$HERE/phases/stack.sh" || exit $?
+# #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
+# directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
+# the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
+# repo and fail with exit 127 on every bench run instead of here. Assert both the resolved path
+# exists AND the source line itself, so neither a path drift nor a same-string coincidence hides.
+grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" || {
+    echo "stack phase's DIY gate invocation no longer resolves via \$SCRIPT_DIR/../integration/run.sh" >&2
+    exit 1
+}
+[ -x "$SCRIPT_DIR/../integration/run.sh" ] || {
+    echo "stack phase's DIY gate path does not resolve to an executable tests/integration/run.sh" >&2
+    exit 1
+}
 trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
-for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
+for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_power_cut _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
 preflight_cleanup="$(sed -n '/kvm_preflight || {/,/^    }/p' "$HERE/phases/rigmedia.sh")"
 grep -Fq '_rigmedia_fail_cleanup "$target_disk"' <<<"$preflight_cleanup" || exit 1
 target_create="$(sed -n '/qemu-img create -f raw/,/^    }/p' "$HERE/phases/rigmedia.sh")"
@@ -72,8 +89,11 @@ grep -Fq 'could not create the blank internal target disk' <<<"$target_create" |
 for evidence in 'could not hash the blank internal target disk' 'could not list containers after stick-run rig handoff' 'could not inspect journald after stick-run rig handoff' 'could not hash the internal target disk after the rig run'; do
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
-expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset'
-actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phase_[a-z]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
+expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset phase_stack'
+# #2356: every phase call in the `all` arm now runs through _run_phase (the wrapper that counts a
+# phase which recorded nothing as a missing skip instead of a silent pass), so the phase function
+# is the SECOND word on the line, not the whole line.
+actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_phase [a-z]* \(phase_[a-z]*\)$/\1/p' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_all" = "$expected_all" ] || exit 1
 (
     actions="" bads=0 destroy_ok=1 list_ok=1 vm_destroy_ok=1 hash_ok=1 ssh_ok=1 copy_ok=1
@@ -194,5 +214,34 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    \(phas
     [ "$create_called" -eq 1 ] || exit 1
     [ "$bads" -eq 1 ]
 ) || exit 1
-rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR"
+grep -qF "pgrep -f '[p]odman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
+! grep -qF "pgrep -f 'podman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
+grep -qF 'serial_before=$(wc -c <"$SERIAL")' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" || exit 1
+! grep -qF 'if wait_serial "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" 60; then' "$HERE/phases/fault.sh" || exit 1
+# Fault D's refusal arm must key on the product's own damage narration, never on any word a
+# failing boot happens to print: the generic alternation greens a brick (#2067c).
+grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
+! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
+# The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
+grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
+# And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
+# the call string anywhere in the file passes just as happily with it hoisted out of the loop,
+# where the invariants would be proven once instead of before every next cut (#2067a).
+m10_call_in_cut_loop() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | grep -qF 'm10_recovered "$i" || return 1'
+}
+m10_call_in_cut_loop "$HERE/phases/provision-power-cut.sh" || exit 1
+# Reality check: the same guard must go RED with the call moved past the loop's `done`. The mutant
+# still CONTAINS the call, so a guard that stays green here is asserting a string, not the property.
+m10_mutant="$SERIAL.m10"
+awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
+     { print }
+     $0 == "    done" && held != "" { print held; held = "" }' \
+    "$HERE/phases/provision-power-cut.sh" >"$m10_mutant"
+grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
+! m10_call_in_cut_loop "$m10_mutant" || exit 1
+rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
 echo "os-run-modules: PASS"
