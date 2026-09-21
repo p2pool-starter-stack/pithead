@@ -173,15 +173,22 @@ migrate_dashboard_data() {
 # then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
 # target, a failed or unverified copy) leaves the old data and the active path untouched.
 carry_dashboard_data_move() {
-    local old="$1" new="$2"
+    local old="$1" new="$2" old_path new_path
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
     [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
+    mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
+    old_path=$(cd "$old" && pwd -P) || error "Could not resolve the current dashboard.data_dir ($old)."
+    new_path=$(cd "$new" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($new)."
+    case "$new_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
     if [ -n "$(ls -A "$new" 2>/dev/null)" ]; then
         error "Dashboard data already exists at the new dashboard.data_dir ($new) — refusing to overwrite it with the data at $old. Empty $new (or pick a different path), then re-run."
     fi
     log "Carrying the dashboard database to the new dashboard.data_dir: $old -> $new..."
-    docker compose stop dashboard >/dev/null 2>&1 || true
-    mkdir -p "$new"
+    docker compose stop dashboard >/dev/null 2>&1 || error "Could not stop the dashboard before copying its database — the active data remains at $old."
+    if [ -n "$(ls -A "$new" 2>/dev/null)" ]; then
+        docker compose start dashboard >/dev/null 2>&1 || true
+        error "Dashboard data appeared at the new dashboard.data_dir ($new) while copying was prepared — refusing to overwrite it with the data at $old."
+    fi
     local f
     for f in mining_data.db mining_data.db-wal mining_data.db-shm; do
         [ -f "$old/$f" ] || continue
@@ -189,11 +196,11 @@ carry_dashboard_data_move() {
             docker compose start dashboard >/dev/null 2>&1 || true
             error "Could not copy $old/$f to $new — the live dashboard data is still at $old, untouched. Fix the problem, then re-run."
         fi
+        if ! cmp -s "$old/$f" "$new/$f"; then
+            docker compose start dashboard >/dev/null 2>&1 || true
+            error "The dashboard copy to $new did not verify ($f content mismatch) — the live data is still at $old, untouched. Fix the problem, then re-run."
+        fi
     done
-    if ! cmp -s "$old/mining_data.db" "$new/mining_data.db"; then
-        docker compose start dashboard >/dev/null 2>&1 || true
-        error "The dashboard DB copy to $new did not verify (content mismatch) — the live data is still at $old, untouched. Fix the problem, then re-run."
-    fi
     log "Dashboard database carried to $new (the copy at $old was left in place)."
 }
 

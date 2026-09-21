@@ -183,6 +183,25 @@ assert_rc "carry: non-empty target refuses" "$?" "1"
 assert_contains "carry: refusal names the target" "$out" "$C/occupied"
 assert_eq "carry: target DB untouched by refusal" "$(cat "$C/occupied/mining_data.db")" "existing"
 assert_eq "carry: source DB untouched by refusal" "$(cat "$C/old2/mining_data.db")" "srcdb"
+# target nested under the live directory: refuse before a copy can be mistaken for live state.
+mkdir -p "$C/old-nested/target"
+printf 'nesteddb' >"$C/old-nested/mining_data.db"
+out="$(carry2360 "$C" "$C/old-nested" "$C/old-nested/target" 2>&1)"
+assert_rc "carry: nested target refuses" "$?" "1"
+assert_eq "carry: nested refusal leaves source untouched" "$(cat "$C/old-nested/mining_data.db")" "nesteddb"
+# stop must succeed before copying an SQLite DB; do not snapshot a live WAL set.
+mkdir -p "$C/old-stop" "$C/new-stop"
+printf 'stopdb' >"$C/old-stop/mining_data.db"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { return 1; }
+    carry_dashboard_data_move "$C/old-stop" "$C/new-stop"
+} 2>&1)"
+assert_rc "carry: stop failure refuses" "$?" "1"
+if [ -e "$C/new-stop/mining_data.db" ]; then bad "carry: stop failure does not copy" "copied anyway"; else ok "carry: stop failure does not copy"; fi
 # corrupted/short copy: cmp catches it, refuses, source untouched (simulates a failed/partial cp).
 mkdir -p "$C/old3" "$C/new3"
 printf 'realdb' >"$C/old3/mining_data.db"
@@ -204,6 +223,21 @@ if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "rea
 else
     bad "carry: source untouched after a failed verify" "source was altered"
 fi
+# A successful main-DB copy is not enough: SQLite's WAL must verify too.
+mkdir -p "$C/old-wal" "$C/new-wal"
+printf 'waldb' >"$C/old-wal/mining_data.db"
+printf 'livewal' >"$C/old-wal/mining_data.db-wal"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { :; }
+    cp() { [ "$2" = "$C/old-wal/mining_data.db-wal" ] && : >"$3" || command cp "$@"; }
+    carry_dashboard_data_move "$C/old-wal" "$C/new-wal"
+} 2>&1)"
+assert_rc "carry: verifies the WAL companion" "$?" "1"
+assert_contains "carry: restarts dashboard after a WAL verify failure" "$out" "compose start dashboard"
 
 echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
 # A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before
