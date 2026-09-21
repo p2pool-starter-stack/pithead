@@ -251,5 +251,8 @@ grep -Fxq '        return' <<<"$healthgate_install" || exit 1
 healthgate_reboot=$(sed -n '/_reboot_wait reboot 300/,/marker=$(SSH_TIMEOUT/p' "$HERE/phases/update-healthgate-leg.sh")
 grep -Fq 'bad "leg 5: guest never returned after booting the fault slot"' <<<"$healthgate_reboot" || exit 1
 grep -Fxq '        return' <<<"$healthgate_reboot" || exit 1
+healthgate_marker=$(sed -n '/marker=$(SSH_TIMEOUT/,/# The gate loops/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: expected v3fault booted after install' <<<"$healthgate_marker" || exit 1
+grep -Fxq '        return' <<<"$healthgate_marker" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
 echo "os-run-modules: PASS"

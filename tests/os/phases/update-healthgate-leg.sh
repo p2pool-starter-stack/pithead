@@ -40,8 +40,10 @@ phase_update_healthgate_leg() {
         return
     }
     marker=$(SSH_TIMEOUT=20 _ssh cat /etc/pithead-test-marker 2>/dev/null)
-    [ "$marker" = "v3fault" ] && ok "leg 5: the fault slot booted (v3fault)" ||
+    [ "$marker" = "v3fault" ] && ok "leg 5: the fault slot booted (v3fault)" || {
         bad "leg 5: expected v3fault booted after install, got '${marker:-none}'"
+        return
+    }
     # The gate loops up to 90x10s before rebooting itself once (#1065) — bound generously for that
     # plus image loading and stack start on the fallback slot.
     fdeadline=$(($(date +%s) + 1800))
