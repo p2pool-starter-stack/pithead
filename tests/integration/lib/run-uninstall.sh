@@ -19,15 +19,18 @@
 # size+count check is replaced with per-file content hashes, so a real deletion or rewrite
 # shows up as a named path in the diff instead of a number that a shutdown checkpoint can also move.
 _uninstall_dir_listing() { # <dir> -> "<sha256> <path>" lines, sorted; a stable snapshot
-    rx "test -d $(quote_arg "$1") && test ! -L $(quote_arg "$1") && find $(quote_arg "$1") -type f -exec sha256sum {} + | sort"
+    local command
+    command="test -d $(quote_arg "$1") && test ! -L $(quote_arg "$1") && find $(quote_arg "$1") -type f -exec sha256sum {} + | sort"
+    rx "bash -o pipefail -c $(quote_arg "$command")"
 }
 
 _uninstall_snapshot_dirs() { # <newline-separated dirs> -> one labeled listing block per dir
-    local dir
-    for dir in $1; do
+    local dir listing
+    while IFS= read -r dir; do
         [ -n "$dir" ] || continue
-        printf '=== %s ===\n%s\n' "$dir" "$(_uninstall_dir_listing "$dir")"
-    done
+        listing="$(_uninstall_dir_listing "$dir")" || return
+        printf '=== %s ===\n%s\n' "$dir" "$listing"
+    done <<<"$1"
 }
 
 # Self-heal (#2343 job 635): a failure partway through the destructive step below must not strand
@@ -107,7 +110,7 @@ run_uninstall_phase() {
     else
         assert_eq "control-runner systemd units removed" "$(printf '%s\n' "$control_units" | grep -c pithead-control || true)" "0"
     fi
-    if ! firewall_rules="$(rx 'if command -v nft >/dev/null; then sudo nft list tables; fi; sudo iptables-save')"; then
+    if ! firewall_rules="$(rx 'if command -v nft >/dev/null; then sudo nft list tables && sudo iptables-save; else sudo iptables-save; fi')"; then
         it_fail "tor egress firewall rules removed from the kernel" "firewall inspection failed"
     else
         assert_eq "tor egress firewall rules removed from the kernel" "$(printf '%s\n' "$firewall_rules" | grep -Ec 'pithead-tor-egress|table inet pithead_egress' || true)" "0"
