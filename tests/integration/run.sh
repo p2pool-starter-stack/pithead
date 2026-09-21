@@ -205,8 +205,11 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    local lifecycle_ok=1
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        run_lifecycle || lifecycle_ok=0
+    fi
+    [ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke

@@ -559,7 +559,7 @@ and `--list` prints it).
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`).
+- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
