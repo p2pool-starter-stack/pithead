@@ -337,7 +337,10 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         case " $flags_now " in *" --socks5 "* | *" --socks5="*) socks5_now=true ;; esac
         tari_endpoint_roundtrip_verdict "$logs" "$th:$grpc" && direct_ok=true
         tari_endpoint_roundtrip_verdict "$logs" "127.0.0.1:$grpc" && bridged_ok=true
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
+        started_now=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
+        restarted=false
+        [ "$started_now" = "$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')" ] || restarted=true
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (provider=${CI_NODE_PROVIDER:-unknown} env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now p2pool_restarted=$restarted tari_rpc=chain_id_absent roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
 
