@@ -198,6 +198,15 @@ assert_rc "carry: nested symlink target refuses" "$?" "1"
 if [ -e "$C/outside/mining_data.db" ]; then bad "carry: symlink target untouched" "copied outside the old directory"; else ok "carry: symlink target untouched"; fi
 out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/./escape" 2>&1)"
 assert_rc "carry: nested symlink alias refuses" "$?" "1"
+# Resolve the active path before checking its child: a symlinked current data_dir must not make
+# its canonical spelling a way around the nested-target refusal.
+mkdir -p "$C/old-real" "$C/outside-real"
+printf 'realdb' >"$C/old-real/mining_data.db"
+ln -s "$C/old-real" "$C/old-link"
+ln -s "$C/outside-real" "$C/old-real/escape"
+out="$(carry2360 "$C" "$C/old-link" "$C/old-real/escape" 2>&1)"
+assert_rc "carry: symlinked current path refuses its canonical child" "$?" "1"
+if [ -e "$C/outside-real/mining_data.db" ]; then bad "carry: canonical symlink target untouched" "copied outside the old directory"; else ok "carry: canonical symlink target untouched"; fi
 # stop must succeed before copying an SQLite DB; do not snapshot a live WAL set.
 mkdir -p "$C/old-stop" "$C/new-stop"
 printf 'stopdb' >"$C/old-stop/mining_data.db"

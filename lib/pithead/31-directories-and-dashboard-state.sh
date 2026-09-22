@@ -173,13 +173,15 @@ migrate_dashboard_data() {
 # then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
 # target, a failed or unverified copy) leaves the old data and the active path untouched.
 carry_dashboard_data_move() {
-    local old="$1" new="$2" old_path new_path current_path stage f
+    local old="$1" new="$2" old_path new_path new_parent_path current_path stage f
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
     [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
     assert_safe_dir "$new"
-    case "${new%/}/" in "${old%/}/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
-    mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
     old_path=$(cd "$old" && pwd -P) || error "Could not resolve the current dashboard.data_dir ($old)."
+    mkdir -p "$(dirname "$new")" || error "Could not create the parent of the new dashboard.data_dir ($new)."
+    new_parent_path=$(cd "$(dirname "$new")" && pwd -P) || error "Could not resolve the parent of the new dashboard.data_dir ($new)."
+    case "$new_parent_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
+    mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
     new_path=$(cd "$new" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($new)."
     case "$new_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
     if [ -n "$(ls -A "$new" 2>/dev/null)" ]; then
