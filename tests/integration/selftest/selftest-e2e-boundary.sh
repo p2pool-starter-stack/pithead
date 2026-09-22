@@ -54,6 +54,8 @@ rejected_before_ssh_args "a --scenario name with metacharacters never reaches SS
     --harness-arg --scenario --harness-arg 'name;touch'
 rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
     --harness-arg '--lifecycle' --mode check
+rejected_before_ssh_args "--rotate-onion requires the bench runner's fixture attestation" \
+    --harness-arg '--rotate-onion'
 
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]

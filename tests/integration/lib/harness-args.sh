@@ -6,13 +6,21 @@
 # touches anything.
 validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
     HARNESS_PHASE_ARGS=""
+    ROTATE_FIXTURE_ATTESTATION=""
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
     [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"
         case "$arg" in
-        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --rotate-onion | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke)
+        --rotate-onion)
+            [[ "${CI_JOB_ID:-}" =~ ^[0-9]+$ ]] || die "--rotate-onion requires a bench-ci job's reserved-fixture attestation."
+            # shellcheck disable=SC2034 # consumed by e2e.sh:run_harness
+            ROTATE_FIXTURE_ATTESTATION="bench-ci-job:${CI_JOB_ID}"
+            HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
+            i=$((i + 1))
+            ;;
+        --lifecycle | --fault-injection | --auth-fail-closed | --hardening | --subnet | --safety-backup | --rigforge | --rigforge-control | --xvb-routing-smoke)
             HARNESS_PHASE_ARGS="$HARNESS_PHASE_ARGS $arg"
             i=$((i + 1))
             ;;

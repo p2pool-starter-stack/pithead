@@ -30,6 +30,8 @@ capture_launch() { # <rollback> <pools>
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
+        HARNESS_PHASE_ARGS=" --rotate-onion" ROTATE_FIXTURE_ATTESTATION=bench-ci-job:42
+        # shellcheck disable=SC2034 # read by the eval'd real run_harness
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         IT_RIG_TOKEN=tok IT_RIG_ROLLBACK_CHANGES="$1" IT_RIG_POOLS_PROBE="$2"
@@ -67,24 +69,25 @@ execute_launch() { # <stdin-file> <capture-file>
         rm() { :; }; cd() { :; }
         grep() { test -s "$CAPTURE_FILE"; }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nATTEST[%s]\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$IT_ROTATE_ONION_FIXTURE_ATTESTATION" "$*" >"$CAPTURE_FILE"
         }
         eval "$1"
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
-echo "== exact five-record transport, multiline decode, environment, and argv hygiene =="
+echo "== exact six-record transport, multiline decode, environment, and argv hygiene =="
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the producer emits exactly five records" "$(awk 'END {print NR}' "$STDIN_FILE")" 5
-EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s' \
+assert_eq "the producer emits exactly six records" "$(awk 'END {print NR}' "$STDIN_FILE")" 6
+EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\nbench-ci-job:42' \
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
 execute_launch "$STDIN_FILE" "$WORK/captured"
 CAPTURED="$(cat "$WORK/captured")" ARGV="$(sed -n 's/^ARGV\[\(.*\)\]$/\1/p' "$WORK/captured")"
 assert_contains "multiline rollback input reaches the runner environment intact" "$CAPTURED" "$(printf 'ROLLBACK_BEGIN\n%s\nROLLBACK_END' "$ROLLBACK")"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
+assert_contains "runner-provisioned fixture attestation reaches the harness" "$CAPTURED" "ATTEST[bench-ci-job:42]"
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
 
@@ -93,7 +96,7 @@ capture_launch "" ""
 execute_launch "$STDIN_FILE" "$WORK/empty"
 assert_contains "empty rollback survives as an environment entry" "$(cat "$WORK/empty")" $'ROLLBACK_BEGIN\n\nROLLBACK_END'
 assert_contains "empty pools survives as an environment entry" "$(cat "$WORK/empty")" $'POOLS_BEGIN\n\nPOOLS_END'
-printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n' >"$WORK/truncated"
+printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n\n\n' >"$WORK/truncated"
 execute_launch "$WORK/truncated" "$WORK/missing" 2>/dev/null
 assert_eq "a truncated stream refuses to launch" "$?" 1
 base64() { return 9; }

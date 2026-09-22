@@ -35,6 +35,7 @@ trial() {
             esac
         }
         rotate_onion_key_fingerprint() { printf "key\n" >>"$CALLS"; printf "keys\n"; }
+        rotate_onion_env_fingerprint() { printf "envs\n"; }
         pithead() { printf "render\n" >>"$CALLS"; }
         wait_status_ok() { printf "health\n" >>"$CALLS"; }
         _onion_reachable_external() { printf "external\n" >>"$CALLS"; }
@@ -46,6 +47,7 @@ trial() {
         ROTATE_ONION_ENV_BACKUP=/fixture/env
         ROTATE_ONION_OLD_ADDRESS=old.onion
         ROTATE_ONION_OLD_KEY_FP=keys
+        ROTATE_ONION_OLD_ENV_FP=envs
         ROTATE_ONION_RESTORE_ARMED=1
         case "$CAUSE" in failure) exit 9 ;; interruption) kill -TERM $$; sleep 1 ;; esac
     ' >/dev/null 2>&1; then
@@ -66,9 +68,10 @@ trial interruption && it_pass "an interrupted onion rotation restores its identi
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
-    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() { :; }
     wait_status_ok() { :; }
     _onion_reachable_external() { :; }
@@ -82,9 +85,10 @@ fi
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
-    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'wrong-keys\n'; }
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() { :; }
     wait_status_ok() { :; }
     _onion_reachable_external() { :; }
@@ -98,10 +102,11 @@ fi
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
-    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
     render_calls=0
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
     pithead() {
         render_calls=$((render_calls + 1))
         [ "$render_calls" -gt 1 ]
@@ -117,6 +122,31 @@ else
 fi
 
 if (
+    ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
+    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
+    rx() {
+        case "$1" in
+        "test -e /fixture/env"*) return 1 ;;
+        *"sudo cat"*) printf 'old.onion\n' ;;
+        esac
+    }
+    rotate_onion_key_fingerprint() { printf 'keys\n'; }
+    rotate_onion_env_fingerprint() {
+        [ "$1" = /fixture/env ] && return 1
+        printf 'envs\n'
+    }
+    pithead() { :; }
+    wait_status_ok() { :; }
+    _onion_reachable_external() { :; }
+    rotate_onion_restore && [ "$ROTATE_ONION_RESTORE_ARMED" = 0 ]
+); then
+    it_pass "an interruption after snapshot cleanup verifies restored state and disarms"
+else
+    it_fail "an interruption after snapshot cleanup verifies restored state and disarms"
+fi
+
+if (
     rx() { printf '/srv/fixture-tor\n'; }
     [ "$(rotate_onion_data_dir /srv/fixture-tor)" = /srv/fixture-tor ] &&
         ! rotate_onion_data_dir relative/path && ! rotate_onion_data_dir / &&
@@ -125,6 +155,30 @@ if (
     it_pass "TOR_DATA_DIR must be an existing canonical absolute non-root directory"
 else
     it_fail "TOR_DATA_DIR must be an existing canonical absolute non-root directory"
+fi
+
+mkdir -p "$WORK/env-box"
+printf '%s\n' \
+    'DASHBOARD_ONION_ADDRESS=fixture.onion' \
+    'DASHBOARD_ONION_CLIENT_PUBKEY=public-fixture' \
+    'DASHBOARD_ONION_CLIENT_PRIVKEY=private-fixture' >"$WORK/env-box/snapshot"
+chmod 600 "$WORK/env-box/snapshot"
+if (
+    # shellcheck disable=SC2034 # read by rx
+    IT_MODE=local IT_REMOTE_DIR="$WORK/env-box"
+    fp="$(rotate_onion_env_fingerprint snapshot 1)"
+    chmod 644 "$WORK/env-box/snapshot"
+    rotate_onion_env_fingerprint snapshot 1 >/dev/null 2>&1
+    mode_rc=$?
+    chmod 600 "$WORK/env-box/snapshot"
+    printf 'UNEXPECTED=value\n' >>"$WORK/env-box/snapshot"
+    rotate_onion_env_fingerprint snapshot 1 >/dev/null 2>&1
+    content_rc=$?
+    [ -n "$fp" ] && [ "$mode_rc" -ne 0 ] && [ "$content_rc" -ne 0 ]
+); then
+    it_pass "credential snapshots require exact fields, ownership and mode 0600"
+else
+    it_fail "credential snapshots require exact fields, ownership and mode 0600"
 fi
 
 ONION="$(printf 'a%.0s' {1..56}).onion"
@@ -160,6 +214,8 @@ fi
 
 if (
     calls=0
+    ROTATE_ONION_OLD_ENV_FP=envs
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
     _onion_reachable_external() {
         calls=$((calls + 1))
         [ "$calls" -eq 1 ] && return 0
@@ -174,6 +230,8 @@ else
 fi
 
 if (
+    ROTATE_ONION_OLD_ENV_FP=envs
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
     _onion_reachable_external() { return 2; }
     wait_onion_retired "$ONION" /fixture/env
     rc=$?
@@ -211,3 +269,25 @@ if ! grep -q 'env_on_box DASHBOARD_ONION_CLIENT_PRIVKEY\|ROTATE_ONION_OLD_PRIVKE
 else
     it_fail "client-auth private-key bytes stay on the box"
 fi
+
+if (
+    IT_MODE=local IT_ROTATE_ONION_FIXTURE_ATTESTATION="" failed=0
+    it_log() { :; }
+    it_fail() { failed=1; }
+    run_rotate_onion
+    rc=$?
+    [ "$rc" = 1 ] && [ "$failed" = 1 ]
+); then
+    it_pass "rotation refuses an unattested target before reading its onion identity"
+else
+    it_fail "rotation refuses an unattested target before reading its onion identity"
+fi
+
+if grep -q 'env_backup="backups/rotate-onion-env-preserve"' "$ROOT/lib/run-rotate-onion.sh" &&
+    grep -q 'umask 077' "$ROOT/lib/run-rotate-onion.sh"; then
+    it_pass "the client credential snapshot stays owner-only outside Tor data"
+else
+    it_fail "the client credential snapshot stays owner-only outside Tor data"
+fi
+
+[ "$IT_FAIL" -eq 0 ] || exit 1

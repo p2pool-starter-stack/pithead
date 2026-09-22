@@ -25,7 +25,7 @@ launch_of() { # <harness-phase-args> -> the raw launch command string
     (
         exec </dev/null
         MODE=targeted BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
-        SCENARIO="" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1"
+        SCENARIO="" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1" ROTATE_FIXTURE_ATTESTATION=""
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         LAUNCH_FILE="$lf" STDIN_FILE="$sf"
         log() { :; }
@@ -76,6 +76,19 @@ assert_eq "it lands strictly AFTER the mode's own flags, not before" \
     "--lifecycle --hardening "
 assert_eq "a --scenario NAME pair supplied by validate_harness_args reaches run.sh verbatim" \
     "$(has_phase "$(phase_list_of "$(launch_of " --scenario custom-name")")" custom-name)" "yes"
+
+if (
+    # shellcheck source=tests/integration/lib/harness-args.sh
+    source "$HERE/../lib/harness-args.sh"
+    MODE=targeted CI_JOB_ID=42 HARNESS_ARGS=(--rotate-onion)
+    die() { return 1; }
+    validate_harness_args && [ "$HARNESS_PHASE_ARGS" = " --rotate-onion" ] &&
+        [ "$ROTATE_FIXTURE_ATTESTATION" = bench-ci-job:42 ]
+); then
+    it_pass "the bench job attests the reserved rotate-onion fixture"
+else
+    it_fail "the bench job attests the reserved rotate-onion fixture"
+fi
 
 echo ""
 echo "selftest-e2e-harness-args: $IT_PASS passed, $IT_FAIL failed"
