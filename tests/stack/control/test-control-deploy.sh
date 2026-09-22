@@ -211,13 +211,13 @@ out="$({
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { printf '%s\n' "$*" >&2; }
+    docker() { printf '%s\n' "$*" >"$C/dashboard-restart"; }
     cp() { : >"${*: -1}"; } # a copy that silently truncates its DEST (cp -p, so $2 is -p's src) — must be CAUGHT, not trusted
     carry_dashboard_data_move "$C/old3" "$C/new3"
 } 2>&1)"
 rc=$? # error() exits the subshell directly — capture ITS status, not a $? that never runs
 assert_rc "carry: verifies the copy (doesn't trust cp alone)" "$rc" "1"
-assert_contains "carry: restarts dashboard after a failed verify" "$out" "compose start dashboard"
+assert_contains "carry: restarts dashboard after a failed verify" "$(cat "$C/dashboard-restart")" "compose start dashboard"
 if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "realdb" ]; then
     ok "carry: source untouched after a failed verify"
 else
@@ -232,12 +232,12 @@ out="$({
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { printf '%s\n' "$*" >&2; }
+    docker() { printf '%s\n' "$*" >"$C/dashboard-wal-restart"; }
     cp() { [ "$3" = "$C/old-wal/mining_data.db-wal" ] && : >"$4" || command cp "$@"; }
     carry_dashboard_data_move "$C/old-wal" "$C/new-wal"
 } 2>&1)"
 assert_rc "carry: verifies the WAL companion" "$?" "1"
-assert_contains "carry: restarts dashboard after a WAL verify failure" "$out" "compose start dashboard"
+assert_contains "carry: restarts dashboard after a WAL verify failure" "$(cat "$C/dashboard-wal-restart")" "compose start dashboard"
 
 echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
 # A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before

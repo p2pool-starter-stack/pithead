@@ -84,13 +84,6 @@ def snapshot(conn, epoch, require_current=False):
             "SELECT key,value FROM kv_store WHERE key LIKE 'xvb_%' OR key = 'snapshot_latest_data'"
         )
     )
-    if "worker_config_revision" in have:
-        lines.extend(
-            f"worker_config_revision {hashlib.sha256(row_bytes(row)).hexdigest()}"
-            for row in conn.execute(
-                "SELECT worker,revision,last_change_id,drift_from FROM worker_config_revision"
-            )
-        )
     return "\n".join(lines)
 
 
@@ -112,9 +105,12 @@ if sys.argv[1:] == ["--self-test"]:
         pass
     else:
         raise RuntimeError("candidate-only schema was accepted as current before migration")
-    db.execute(
-        "CREATE TABLE worker_config_revision (worker TEXT, revision TEXT, last_change_id TEXT, drift_from TEXT)"
-    )
+    db.execute("CREATE TABLE worker_config_revision (worker TEXT, revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)")
+    db.execute("INSERT INTO worker_config_revision VALUES ('rig', 'first', NULL, 100, NULL)")
+    current = snapshot(db, 100, require_current=True)
+    db.execute("UPDATE worker_config_revision SET revision='later', ts=101")
+    if current != snapshot(db, 100, require_current=True):
+        raise RuntimeError("live worker revision observations were treated as durable rows")
     db.execute("INSERT INTO blocks VALUES (101, 'added')")
     db.execute("INSERT INTO history VALUES (101, 'added')")
     db.execute("UPDATE kv_store SET value='101' WHERE key='xvb_last_update'")

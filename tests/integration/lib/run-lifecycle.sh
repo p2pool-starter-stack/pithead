@@ -107,8 +107,8 @@ run_lifecycle() {
         local carry_old carry_new carry_epoch rows_before rows_after
         carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
         if [ -n "$carry_old" ]; then
-            carry_new="${carry_old}-carried"
             carry_epoch="$(rx 'date +%s')"
+            carry_new="${carry_old}-carried-$carry_epoch"
             rows_before="$(dashboard_durable_rows "$carry_epoch")"
             it_step "confirmed dashboard.data_dir move: $carry_old -> $carry_new…"
             push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
@@ -121,6 +121,14 @@ run_lifecycle() {
             else
                 it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move"
             fi
+            # The product correctly refuses to overwrite the old, still-complete directory on a
+            # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
+            # can return to its original configuration without discarding the source database.
+            pithead down >/dev/null 2>&1
+            rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1
+            push_config "$BASELINE_CONFIG"
+            pithead apply -y >/dev/null 2>&1
+            wait_status_ok 180 || true
         else
             it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
         fi
