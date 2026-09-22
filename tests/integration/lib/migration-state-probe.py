@@ -105,7 +105,9 @@ if sys.argv[1:] == ["--self-test"]:
         pass
     else:
         raise RuntimeError("candidate-only schema was accepted as current before migration")
-    db.execute("CREATE TABLE worker_config_revision (worker TEXT, revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)")
+    db.execute(
+        "CREATE TABLE worker_config_revision (worker TEXT, revision TEXT, last_change_id TEXT, ts REAL, drift_from TEXT)"
+    )
     db.execute("INSERT INTO worker_config_revision VALUES ('rig', 'first', NULL, 100, NULL)")
     current = snapshot(db, 100, require_current=True)
     db.execute("UPDATE worker_config_revision SET revision='later', ts=101")
