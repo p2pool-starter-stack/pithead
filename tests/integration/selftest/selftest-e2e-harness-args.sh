@@ -111,9 +111,25 @@ printf 'production-secret-must-not-move\n' >"$SOURCE_TOR/p2pool/hs_ed25519_secre
 printf 'production-public-must-not-move\n' >"$SOURCE_TOR/p2pool/hs_ed25519_public_key"
 printf '%s\n' '#!/bin/sh' \
     'set -e' \
-    '[ "$1" = render ]' \
+    'printf "%s\n" "$*" >>.pithead-calls' \
     'dir=$(jq -r .tor.data_dir config.json)' \
-    'sed -e "s|^TOR_DATA_DIR=.*|TOR_DATA_DIR=$dir|" -e "s|^DASHBOARD_ONION_CLIENT_PUBKEY=.*|DASHBOARD_ONION_CLIENT_PUBKEY=fixture-public|" -e "s|^DASHBOARD_ONION_CLIENT_PRIVKEY=.*|DASHBOARD_ONION_CLIENT_PRIVKEY=fixture-private|" .env >.env.test' \
+    'case "$1" in' \
+    'render) sed "s|^TOR_DATA_DIR=.*|TOR_DATA_DIR=$dir|" .env >.env.test ;;' \
+    'rotate-dashboard-onion)' \
+    '    [ "$2" = -y ]' \
+    '    for svc in p2pool dashboard monero tari; do' \
+    '        mkdir -p "$dir/$svc"' \
+    '        char=a; case "$svc" in dashboard) char=b ;; monero) char=c ;; tari) char=d ;; esac' \
+    '        address=$(printf "%056d" 0 | tr 0 "$char").onion' \
+    '        case "$svc" in p2pool) p2pool=$address ;; dashboard) dashboard=$address ;; monero) monero=$address ;; tari) tari=$address ;; esac' \
+    '        printf "%s\n" "$address" >"$dir/$svc/hostname"' \
+    '        printf "fixture-%s-secret\n" "$svc" >"$dir/$svc/hs_ed25519_secret_key"' \
+    '        printf "fixture-%s-public\n" "$svc" >"$dir/$svc/hs_ed25519_public_key"' \
+    '    done' \
+    '    sed -e "s|^P2POOL_ONION_ADDRESS=.*|P2POOL_ONION_ADDRESS=$p2pool|" -e "s|^MONERO_ONION_ADDRESS=.*|MONERO_ONION_ADDRESS=$monero|" -e "s|^TARI_ONION_ADDRESS=.*|TARI_ONION_ADDRESS=$tari|" -e "s|^DASHBOARD_ONION_ADDRESS=.*|DASHBOARD_ONION_ADDRESS=$dashboard|" -e "s|^DASHBOARD_ONION_CLIENT_PUBKEY=.*|DASHBOARD_ONION_CLIENT_PUBKEY=fixture-public|" -e "s|^DASHBOARD_ONION_CLIENT_PRIVKEY=.*|DASHBOARD_ONION_CLIENT_PRIVKEY=fixture-private|" .env >.env.test' \
+    '    ;;' \
+    '*) exit 1 ;;' \
+    'esac' \
     'mv .env.test .env' >"$E2E_DIR/pithead"
 chmod +x "$E2E_DIR/pithead"
 chmod 600 "$E2E_DIR/config.json" "$E2E_DIR/.env"
@@ -128,27 +144,6 @@ on_bench() {
         }
         docker() {
             case "$1" in
-            compose)
-                tor_dir=$(jq -r .tor.data_dir config.json)
-                for svc in p2pool dashboard monero tari; do
-                    mkdir -p "$tor_dir/$svc"
-                    char=a
-                    case "$svc" in dashboard) char=b ;; monero) char=c ;; tari) char=d ;; esac
-                    value=
-                    i=0
-                    while [ "$i" -lt 56 ]; do value="$value$char"; i=$((i + 1)); done
-                    printf "%s.onion\n" "$value" >"$tor_dir/$svc/hostname"
-                    printf "fixture-%s-secret\n" "$svc" >"$tor_dir/$svc/hs_ed25519_secret_key"
-                    printf "fixture-%s-public\n" "$svc" >"$tor_dir/$svc/hs_ed25519_public_key"
-                done
-                ;;
-            exec)
-                path="$4"
-                if [ "$3" = test ]; then path="$5"; fi
-                svc=$(basename "$(dirname "$path")")
-                tor_dir=$(jq -r .tor.data_dir config.json)
-                case "$3" in test) test -f "$tor_dir/$svc/hostname" ;; cat) cat "$tor_dir/$svc/hostname" ;; esac
-                ;;
             ps)
                 [ "$DOCKER_PS_FAIL" != 1 ] || return 1
                 [ "$2" = -aq ] && [ "$#" = 2 ] || return 1
@@ -177,6 +172,7 @@ if prepare_rotate_onion_fixture && bootstrap_rotate_onion_fixture &&
     [ "$(cat "$SOURCE_TOR/p2pool/hs_ed25519_secret_key")" = production-secret-must-not-move ] &&
     [ -f "$ROTATE_FIXTURE_DIR/p2pool/hs_ed25519_secret_key" ] &&
     ! grep -R -q 'production-.*-must-not-move' "$ROTATE_FIXTURE_DIR" &&
+    [ "$(cat "$E2E_DIR/.pithead-calls")" = "$(printf 'render\nrotate-dashboard-onion -y')" ] &&
     [ "$(jq -r '.dashboard.onion.enabled, .dashboard.onion.client_auth, .tor.data_dir' "$E2E_DIR/config.json")" = "$(printf 'true\ntrue\n%s' "$ROTATE_FIXTURE_DIR")" ] &&
     [ "$(awk -F= '$1 == "TOR_DATA_DIR" { print $2 }' "$E2E_DIR/.env")" = "$ROTATE_FIXTURE_DIR" ] &&
     [ "$(grep -c '=placeholder$' "$E2E_DIR/.env")" = 0 ] &&

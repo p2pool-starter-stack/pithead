@@ -88,52 +88,7 @@ bootstrap_rotate_onion_fixture() {
         set -e
         cd $(quote_arg "$E2E_DIR")
         ./pithead render >/dev/null
-        docker compose up -d tor >/dev/null
-        docker compose restart tor >/dev/null
-        profiles=\$(awk -F= '\$1 == \"COMPOSE_PROFILES\" { print substr(\$0, index(\$0, \"=\") + 1); count++ } END { if (count != 1) exit 1 }' .env)
-        services='p2pool dashboard'
-        case \",\$profiles,\" in *,local_node,*) services=\"\$services monero\" ;; esac
-        case \",\$profiles,\" in *,local_tari,*) services=\"\$services tari\" ;; esac
-        p2pool= dashboard= monero=placeholder tari=placeholder
-        for svc in \$services; do
-            elapsed=0
-            until docker exec tor test -f \"/var/lib/tor/\$svc/hostname\"; do
-                test \"\$elapsed\" -lt 60
-                sleep 2
-                elapsed=\$((elapsed + 2))
-            done
-            address=\$(docker exec tor cat \"/var/lib/tor/\$svc/hostname\")
-            printf '%s\n' \"\$address\" | grep -Eq '^[a-z2-7]{56}\.onion\$'
-            case \"\$svc\" in
-                p2pool) p2pool=\"\$address\" ;;
-                dashboard) dashboard=\"\$address\" ;;
-                monero) monero=\"\$address\" ;;
-                tari) tari=\"\$address\" ;;
-            esac
-        done
-        export ROTATE_P2POOL=\"\$p2pool\" ROTATE_DASHBOARD=\"\$dashboard\" ROTATE_MONERO=\"\$monero\" ROTATE_TARI=\"\$tari\"
-        umask 077
-        trap 'rm -f .env.rotate-fixture' EXIT
-        awk -F= '
-            BEGIN {
-                replacement[\"P2POOL_ONION_ADDRESS\"] = ENVIRON[\"ROTATE_P2POOL\"]
-                replacement[\"MONERO_ONION_ADDRESS\"] = ENVIRON[\"ROTATE_MONERO\"]
-                replacement[\"TARI_ONION_ADDRESS\"] = ENVIRON[\"ROTATE_TARI\"]
-                replacement[\"DASHBOARD_ONION_ADDRESS\"] = ENVIRON[\"ROTATE_DASHBOARD\"]
-            }
-            \$1 in replacement { print \$1 \"=\" replacement[\$1]; seen[\$1]++; next }
-            { print }
-            END {
-                if (seen[\"P2POOL_ONION_ADDRESS\"] != 1 ||
-                    seen[\"MONERO_ONION_ADDRESS\"] != 1 ||
-                    seen[\"TARI_ONION_ADDRESS\"] != 1 ||
-                    seen[\"DASHBOARD_ONION_ADDRESS\"] != 1) exit 1
-            }
-        ' .env > .env.rotate-fixture
-        chmod 600 .env.rotate-fixture
-        mv .env.rotate-fixture .env
-        trap - EXIT
-        ./pithead render >/dev/null
+        ./pithead rotate-dashboard-onion -y >/dev/null
     "
 }
 
