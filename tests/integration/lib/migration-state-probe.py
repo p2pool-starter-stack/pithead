@@ -1,4 +1,4 @@
-"""Emit compact row-identity evidence for every durable dashboard table."""
+"""Emit compact row-identity evidence for durable dashboard history and settings."""
 
 # Table and column names below are closed constants, never input.
 # ruff: noqa: S608
@@ -47,6 +47,8 @@ def snapshot(conn, epoch, require_current=False):
     have = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     required = set(PERMANENT) | set(RETAINED) | {"kv_store"}
     if require_current:
+        # This table stores the latest live rig observation, so require its schema but do not
+        # compare its mutable rows across a dashboard restart.
         required.add("worker_config_revision")
     if not required <= have:
         raise RuntimeError(f"missing durable tables: {sorted(required - have)}")

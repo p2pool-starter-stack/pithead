@@ -173,7 +173,7 @@ migrate_dashboard_data() {
 # then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
 # target, a failed or unverified copy) leaves the old data and the active path untouched.
 carry_dashboard_data_move() {
-    local old="$1" new="$2" old_path new_path new_parent_path current_path stage f
+    local old="$1" new="$2" old_path new_path new_parent_path current_path stage f published=()
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
     [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
     assert_safe_dir "$new"
@@ -233,17 +233,24 @@ carry_dashboard_data_move() {
     for f in mining_data.db mining_data.db-wal mining_data.db-shm mining_data.db-journal; do
         [ -f "$stage/$f" ] || continue
         mv "$stage/$f" "$new_path/$f" || {
+            rm -f -- "$new_path/$f" "${published[@]}"
             rm -rf "$stage"
             docker compose start dashboard >/dev/null 2>&1 || error "Could not publish the verified dashboard copy to $new and the dashboard could not restart — the active data remains at $old."
             error "Could not publish the verified dashboard copy to $new — the active data remains at $old."
         }
+        published+=("$new_path/$f")
         cmp -s "$old_path/$f" "$new_path/$f" || {
+            rm -f -- "${published[@]}"
             rm -rf "$stage"
             docker compose start dashboard >/dev/null 2>&1 || error "The published dashboard copy at $new did not verify and the dashboard could not restart — the active data remains at $old."
             error "The published dashboard copy at $new did not verify ($f content mismatch) — the active data remains at $old."
         }
     done
-    rmdir "$stage" || true
+    rmdir "$stage" || {
+        rm -f -- "${published[@]}"
+        docker compose start dashboard >/dev/null 2>&1 || error "Could not remove the dashboard staging directory and the dashboard could not restart — the active data remains at $old."
+        error "Could not remove the dashboard staging directory — the active data remains at $old."
+    }
     log "Dashboard database carried to $new (the copy at $old was left in place)."
 }
 

@@ -273,6 +273,9 @@ out="$({
 assert_rc "carry: verifies the published destination" "$?" "1"
 assert_contains "carry: restarts dashboard after a published verify failure" "$(cat "$C/dashboard-publish-restart")" "compose start dashboard"
 assert_eq "carry: publication failure leaves source intact" "$(cat "$C/old-publish/mining_data.db")" "publishdb"
+if [ -n "$(ls -A "$C/new-publish")" ]; then bad "carry: publication failure cleans the partial target" "files remain"; else ok "carry: publication failure cleans the partial target"; fi
+out="$(carry2360 "$C" "$C/old-publish" "$C/new-publish" 2>&1)"
+assert_rc "carry: clean retry succeeds after publication failure" "$?" "0"
 
 echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
 # A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before
