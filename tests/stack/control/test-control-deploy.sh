@@ -277,15 +277,23 @@ if [ -n "$(ls -A "$C/new-publish")" ]; then bad "carry: publication failure clea
 out="$(carry2360 "$C" "$C/old-publish" "$C/new-publish" 2>&1)"
 assert_rc "carry: clean retry succeeds after publication failure" "$?" "0"
 
-echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
-# A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before
-# committing the new env or recreating compose. An unchanged data_dir must not call it.
-apply2360() { # <extra-stub-body>
+echo "== unit: apply recovery for carry_dashboard_data_move (#2360) =="
+APPLY2360="$SANDBOX/apply2360"
+APPLY2360_OLD="$APPLY2360/old"
+APPLY2360_NEW="$APPLY2360/new"
+APPLY2360_LOG="$APPLY2360/actions.log"
+reset_apply2360() {
+    rm -rf "$APPLY2360"
+    mkdir -p "$APPLY2360_OLD"
+    printf 'livedb' >"$APPLY2360_OLD/mining_data.db"
+    printf 'DASHBOARD_DATA_DIR=%s\n' "$APPLY2360_OLD" >"$APPLY2360/.env"
+    : >"$APPLY2360_LOG"
+}
+apply2360() {
     (
-        cd "$SANDBOX/apply2360" || exit 1
+        cd "$APPLY2360" || exit 1
         # shellcheck disable=SC1090
         source "$STACK"
-        set +e
         require_env() { :; }
         ensure_onion_password() { :; }
         load_preserved_state() { :; }
@@ -295,7 +303,10 @@ apply2360() { # <extra-stub-body>
         onion_missing() { return 1; }
         # shellcheck disable=SC2034  # read by the sourced apply()'s "not provisioned" guard
         P2POOL_ONION=p2pa.onion
-        inject_service_configs() { :; }
+        inject_service_configs() {
+            printf 'inject\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != inject ] || error "injected config failure"
+        }
         generate_caddyfile() { :; }
         provision_control_runner() { :; }
         provision_onion_client_auth() { :; }
@@ -305,94 +316,83 @@ apply2360() { # <extra-stub-body>
         migrate_compose_project() { :; }
         apply_tor_egress_firewall() { :; }
         reconcile_appliance_hostname() { :; }
-        migrate_dashboard_data() { echo migrate; }
+        migrate_dashboard_data() { printf 'migrate\n' >>"$APPLY2360_LOG"; }
         compose_up_checked() {
-            echo compose
+            printf 'compose\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != compose ] || return 1
             return 0
         }
+        docker() { printf 'docker:%s\n' "$*" >>"$APPLY2360_LOG"; }
         mutation_lock_acquire() { :; }
         mutation_lock_release() { :; }
-        env_changed_keys() { printf 'DASHBOARD_DATA_DIR\n'; }
-        env_get_file() { [ "$1" = "$ENV_FILE" ] && echo "/old/path" || echo "/new/path"; }
         describe_change() { printf 'CONFIRM\tdata dir changed\n'; }
-        render_env() { :; }
+        render_env() { printf 'DASHBOARD_DATA_DIR=%s\n' "$APPLY2360_NEW" >"$1"; }
         # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
-        parse_and_validate_config() { DASHBOARD_DIR="/new/path"; }
-        carry_dashboard_data_move() {
-            echo "carry:$1:$2"
-            [ "${CARRY2360_FAIL:-}" = 1 ] && exit 1
+        parse_and_validate_config() {
+            DASHBOARD_DIR="$APPLY2360_NEW"
+            DASHBOARD_DIR_IS_DEFAULT=0
         }
-        mv() { echo mv; }
+        carry_dashboard_data_move() {
+            printf 'carry:%s:%s\n' "$1" "$2" >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != carry ] || error "injected carry failure"
+            mkdir -p "$2"
+            cp "$1/mining_data.db" "$2/mining_data.db"
+        }
+        mv() {
+            printf 'publish-env\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != publish ] || error "injected environment publication failure"
+            command mv "$@"
+        }
         apply -y
     )
 }
-mkdir -p "$SANDBOX/apply2360"
-: >"$SANDBOX/apply2360/.env"
-out="$(apply2360 2>&1)"
-assert_contains "apply: carries with the pre-commit old path" "$out" "carry:/old/path:/new/path"
+reset_apply2360
+apply2360 >/dev/null 2>&1
+assert_rc "apply: successful carry and recreation are green" "$?" "0"
+assert_contains "apply: carries with the pre-commit old path" "$(cat "$APPLY2360_LOG")" "carry:$APPLY2360_OLD:$APPLY2360_NEW"
 assert_eq "apply: carry runs before committing the new env and compose" \
-    "$(printf '%s\n' "$out" | grep -xE 'carry:/old/path:/new/path|mv|migrate|compose' | tr '\n' ',')" \
-    "carry:/old/path:/new/path,mv,migrate,compose,"
-out="$(CARRY2360_FAIL=1 apply2360 2>&1)"
-assert_rc "apply: failed carry refuses the env switch" "$?" "1"
-assert_not_contains "apply: failed carry never commits the new env" "$out" "mv"
+    "$(grep -xE 'carry:.*|publish-env|migrate|compose' "$APPLY2360_LOG" | tr '\n' ',')" \
+    "carry:$APPLY2360_OLD:$APPLY2360_NEW,publish-env,migrate,compose,"
 
-echo "== black-box: deploy-box layout (#455) =="
-# A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
-# layout. Proves the default resolution, the apply-time migration, and the upgrade-time
-# symlink end to end through the real CLI (docker/sudo stubbed).
-L="$SANDBOX/boxroot/pithead-v9.9.9"
-mkdir -p "$L/build/tari" "$L/dashboard"
-: >"$L/dashboard/Dockerfile"
-cp "$STACK" "$L/pithead"
-make_stubs "$L/bin"
-cp "$ROOT/build/tari/config.toml.template" "$L/build/tari/"
-SHARED="$SANDBOX/boxroot/data"
-seed_L() {
-    cat >"$L/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
-P2POOL_ONION_ADDRESS=p2pa.onion
-PROXY_AUTH_TOKEN=ORIGINALTOKEN
-HOST_IP=box.lan
-DEPLOYMENT_COMPLETED=true
-COMPOSE_PROFILES=local_node
-EOF
-}
-cfg_L() { # <dashboard-extra-json>  e.g. ',"data_dir":"/pinned"'
-    # $VALID_PRIMARY, not $WALLET: same trap as modules 7/8 -- $WALLET is only assigned inside
-    # build_val_sandbox() (lib.sh), never called in this file, and $VALID_PRIMARY is the lib.sh
-    # top-level fixture WALLET equals in that function's local/checksum-valid case.
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"%s/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'","data_dir":"%s/tari"}, "p2pool":{"pool":"main","data_dir":"%s/p2pool"}, "tor":{"data_dir":"%s/tor"}, "dashboard":{"secure":true,"host":"box.lan"%s} }\n' \
-        "$VALID_PRIMARY" "$SHARED" "$SHARED" "$SHARED" "$SHARED" "$1" >"$L/config.json"
-}
-# Old layout on disk: the dashboard DB inside the version dir's ./data (the pre-#455 default).
-seed_L
-cfg_L ""
-mkdir -p "$L/data/dashboard"
-printf 'proddb' >"$L/data/dashboard/mining_data.db"
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "apply with a shared data root succeeds" "$?" "0"
-assert_eq "DASHBOARD_DATA_DIR joins the shared data root" \
-    "$(run_sourced "$L" env_get_file "$L/.env" DASHBOARD_DATA_DIR)" "$SHARED/dashboard"
-assert_eq "apply moved the dashboard DB to the shared root" \
-    "$(cat "$SHARED/dashboard/mining_data.db" 2>/dev/null)" "proddb"
-if [ -e "$L/data/dashboard" ]; then bad "apply: old in-version-dir data gone" "still exists"; else ok "apply: old in-version-dir data gone"; fi
-# Re-apply: no config change, nothing to migrate — clean no-op.
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "re-apply is a no-op" "$?" "0"
-assert_eq "re-apply leaves the migrated DB alone" "$(cat "$SHARED/dashboard/mining_data.db")" "proddb"
-# Upgrade from the versioned dir: maintains `current ->` beside it and stays idempotent.
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead upgrade 2>&1)"
-assert_rc "upgrade succeeds" "$?" "0"
-assert_eq "upgrade maintains current -> pithead-v9.9.9" "$(readlink "$SANDBOX/boxroot/current")" "pithead-v9.9.9"
-assert_eq "upgrade leaves the migrated DB alone" "$(cat "$SHARED/dashboard/mining_data.db")" "proddb"
-# Scattered custom dirs (no single parent): the classic in-install ./data default stands.
-seed_L
-# $VALID_PRIMARY, not $WALLET -- same trap as above.
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"%s/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' \
-    "$VALID_PRIMARY" "$SHARED" >"$L/config.json"
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "apply with scattered data dirs succeeds" "$?" "0"
-assert_eq "no shared root -> dashboard default stays ./data/dashboard" \
-    "$(run_sourced "$L" env_get_file "$L/.env" DASHBOARD_DATA_DIR)" "$L/data/dashboard"
+reset_apply2360
+out="$(FAIL_STEP=carry apply2360 2>&1)"
+assert_rc "apply: failed carry refuses the env switch" "$?" "1"
+assert_not_contains "apply: failed carry never commits the new env" "$(cat "$APPLY2360_LOG")" "publish-env"
+
+reset_apply2360
+out="$(FAIL_STEP=publish apply2360 2>&1)"
+assert_rc "apply: environment publication failure is red" "$?" "1"
+assert_contains "apply: publication failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: publication failure keeps the old active path" "$(run_sourced "$APPLY2360" env_get DASHBOARD_DATA_DIR)" "$APPLY2360_OLD"
+if [ -e "$APPLY2360_NEW/mining_data.db" ]; then bad "apply: publication failure removes its unpublished copy" "DB remains"; else ok "apply: publication failure removes its unpublished copy"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after publication failure is green" "$?" "0"
+assert_contains "apply: publication retry carries again" "$(cat "$APPLY2360_LOG")" "carry:$APPLY2360_OLD:$APPLY2360_NEW"
+
+reset_apply2360
+out="$(FAIL_STEP=inject apply2360 2>&1)"
+assert_rc "apply: post-publication injection failure is red" "$?" "1"
+assert_contains "apply: injection failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: injection failure keeps the published path" "$(run_sourced "$APPLY2360" env_get DASHBOARD_DATA_DIR)" "$APPLY2360_NEW"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: injection failure keeps the retry marker"; else bad "apply: injection failure keeps the retry marker" "marker missing"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after injection failure is green" "$?" "0"
+assert_not_contains "apply: injection retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
+assert_contains "apply: injection retry recreates the dashboard" "$(cat "$APPLY2360_LOG")" "compose"
+if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful retry clears its marker" "marker remains"; else ok "apply: successful retry clears its marker"; fi
+
+reset_apply2360
+out="$(FAIL_STEP=compose apply2360 2>&1)"
+assert_rc "apply: recreation failure is red" "$?" "1"
+assert_contains "apply: recreation failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: recreation failure keeps the retry marker"; else bad "apply: recreation failure keeps the retry marker" "marker missing"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after recreation failure is green" "$?" "0"
+assert_not_contains "apply: recreation retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
+if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful recreation retry clears its marker" "marker remains"; else ok "apply: successful recreation retry clears its marker"; fi
+
+# shellcheck source=tests/stack/control/test-control-deploy-layout.sh
+source "$HERE/control/test-control-deploy-layout.sh"
