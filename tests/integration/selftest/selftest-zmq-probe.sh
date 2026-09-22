@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Self-test for the ZMTP PUB probe (#1497) — the verdicts, driven from captured and hand-built
-# wire fixtures, with no socket and no stack.
+# Self-test for the ZMTP PUB probe (#1497) — verdict fixtures plus a loopback publisher, with no
+# stack.
 #
 # The probe exists because a bare TCP dial cannot tell a live ZMQ publisher from a
 # docker-published port with nothing behind it. Proven on the bench 2026-08-29, one host, three
@@ -208,6 +208,42 @@ else
 fi
 
 echo "== tier B: the peer must actually PUBLISH, not merely hold a socket open (#1497) =="
+
+# This is the bounded control for the I/O path the pure fixtures cannot reach. It proves only the
+# probe's subscription/sample boundary: no RPC, P2Pool, transaction, payout or live chain is in it.
+# The live tier-4 row still proves the configured node answers that same probe.
+start_fixture() { # [--silent] -> leaves FIXTURE_PID/FIXTURE_PORT_FILE set
+    FIXTURE_PORT_FILE="$(mktemp)"
+    python3 "$HERE/../fakes/fake_zmq_publisher.py" "$@" >"$FIXTURE_PORT_FILE" &
+    FIXTURE_PID=$!
+    for _ in $(seq 1 20); do
+        [ -s "$FIXTURE_PORT_FILE" ] && break
+        sleep 0.1
+    done
+    [ -s "$FIXTURE_PORT_FILE" ]
+}
+
+start_fixture
+port="$(cat "$FIXTURE_PORT_FILE")"
+v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port" 1 1)"
+rc=$?
+wait "$FIXTURE_PID"
+fixture_rc=$?
+rm -f "$FIXTURE_PORT_FILE"
+assert_rc "the deterministic publisher completed its protocol exchange" "$fixture_rc" "0"
+assert_rc "the deterministic publisher passes the real probe" "$rc" "0"
+assert_contains "the deterministic publisher is reported live" "$v" "published within the budget"
+
+start_fixture --silent
+port="$(cat "$FIXTURE_PORT_FILE")"
+v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port" 1 1)"
+rc=$?
+wait "$FIXTURE_PID"
+fixture_rc=$?
+rm -f "$FIXTURE_PORT_FILE"
+assert_rc "the deterministic silent publisher completed its protocol exchange" "$fixture_rc" "0"
+assert_rc "the deterministic silent publisher fails the real probe" "$rc" "1"
+assert_contains "the deterministic silent publisher is named silent" "$v" "published NOTHING"
 
 # The live half of this pair cannot run here (no node, no socket), so it is recorded rather than
 # re-run. MEASURED on the bench 2026-08-30, one host, the SAME probe against both targets:
