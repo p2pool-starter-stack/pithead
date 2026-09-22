@@ -5,6 +5,10 @@
 # #550 chown/mkdir order, #557 swallowed compose failure) lives entirely in real .env resolution,
 # real ownership and a real compose failure — none of which a stubbed docker/sudo can see. This
 # proves the verb against the live box, then restores it. DESTRUCTIVE-then-restored.
+_reset_dashboard_services_healthy() {
+    [ "$(service_state dashboard)" = "running healthy" ] && [ "$(service_state p2pool)" = "running healthy" ]
+}
+
 run_reset_dashboard() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="reset-dashboard"
@@ -100,12 +104,21 @@ run_reset_dashboard() {
     assert_eq "recreated p2pool/stats dir owned by APP_UID 1000 (#550)" \
         "$(rx "stat -c %u $(quote_arg "$p2pool_dir/stats") 2>/dev/null")" "1000"
 
-    # dashboard/p2pool actually come back healthy — not just that compose_up_checked returned 0.
-    wait_status_ok 240 || true
+    # Both reset services must pass their own healthchecks, not merely remain running while starting.
+    wait_for 240 5 "dashboard and p2pool healthy after reset-dashboard" _reset_dashboard_services_healthy || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after reset-dashboard" "$?" "0"
     assert_eq "dashboard container healthy after reset" "$(service_state dashboard)" "running healthy"
-    assert_eq "p2pool container running after reset" "$(svc_state_of "$(service_state p2pool)")" "running"
+    assert_eq "p2pool container healthy after reset" "$(service_state p2pool)" "running healthy"
+    # p2pool starts with an empty state dir. A worker plus fresh stratum hashes and share stats prove
+    # it rejoined the sidechain rather than only passing its container healthcheck.
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_miner_running 180 || true
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || wait_hashes_flowing 300 || true
+    local reset_state
+    reset_state="$(api_state)"
+    assert_mining_state "$SKIP_MINING_ASSERTS" "$(jq_get "$reset_state" '.proxy_workers')" \
+        "$(jq_get "$reset_state" '.stratum.total_hashes')" "$EXPECTED_WORKERS"
+    [ "$SKIP_MINING_ASSERTS" = "1" ] || assert_share_stats_live
 
     # Chains untouched: height never rewinds, and the pre-reset tip block is byte-for-byte
     # the same block after — proving the data dir survived rather than being wiped and resynced.
