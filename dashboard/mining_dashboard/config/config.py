@@ -260,8 +260,7 @@ WORKER_READ_TOKENS_PATH, DASHBOARD_WORKERS = "/control/masked/worker-read-tokens
 
 
 def current_worker_endpoints():
-    # WORKER_API_TOKENS (#2349): {name: token} JSON, riding .env like XMRIG_API_TOKEN — the masked
-    # mount can only hold a set token as the sentinel (#440).
+    # WORKER_API_TOKENS (#2349): {name: token} JSON restores masked tokens (#440) from .env.
     tokens_env = os.environ.get("WORKER_API_TOKENS", "")
     if DASHBOARD_WORKERS is not None:
         return DASHBOARD_WORKERS
