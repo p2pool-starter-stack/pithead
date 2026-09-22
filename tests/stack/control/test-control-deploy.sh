@@ -163,11 +163,13 @@ C="$SANDBOX/carry"
 mkdir -p "$C/old" "$C/new"
 printf 'livedb' >"$C/old/mining_data.db"
 printf 'wal-bytes' >"$C/old/mining_data.db-wal"
+printf 'journal-bytes' >"$C/old/mining_data.db-journal"
 rmdir "$C/new" # an unpopulated pre-created target (ensure_directories) is not a conflict
 out="$(carry2360 "$C" "$C/old" "$C/new" 2>&1)"
 assert_rc "carry: succeeds" "$?" "0"
 assert_eq "carry: DB copied intact" "$(cat "$C/new/mining_data.db" 2>/dev/null)" "livedb"
 assert_eq "carry: -wal companion copied" "$(cat "$C/new/mining_data.db-wal" 2>/dev/null)" "wal-bytes"
+assert_eq "carry: rollback journal copied" "$(cat "$C/new/mining_data.db-journal" 2>/dev/null)" "journal-bytes"
 assert_eq "carry: old copy left in place (never moved)" "$(cat "$C/old/mining_data.db" 2>/dev/null)" "livedb"
 # no DB at the old path: nothing live there, silent no-op.
 mkdir -p "$C/empty-old" "$C/empty-new"
@@ -256,6 +258,21 @@ out="$({
 } 2>&1)"
 assert_rc "carry: verifies the WAL companion" "$?" "1"
 assert_contains "carry: restarts dashboard after a WAL verify failure" "$(cat "$C/dashboard-wal-restart")" "compose start dashboard"
+# Publishing may cross filesystems, so verify the final destination rather than trusting mv.
+mkdir -p "$C/old-publish"
+printf 'publishdb' >"$C/old-publish/mining_data.db"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { printf '%s\n' "$*" >"$C/dashboard-publish-restart"; }
+    mv() { command mv "$@" && printf 'corrupt' >"${*: -1}"; }
+    carry_dashboard_data_move "$C/old-publish" "$C/new-publish"
+} 2>&1)"
+assert_rc "carry: verifies the published destination" "$?" "1"
+assert_contains "carry: restarts dashboard after a published verify failure" "$(cat "$C/dashboard-publish-restart")" "compose start dashboard"
+assert_eq "carry: publication failure leaves source intact" "$(cat "$C/old-publish/mining_data.db")" "publishdb"
 
 echo "== unit: apply wiring for carry_dashboard_data_move (#2360) =="
 # A changed DASHBOARD_DATA_DIR must reach the carry with the OLD (pre-commit) and NEW paths before

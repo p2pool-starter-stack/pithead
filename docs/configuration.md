@@ -282,8 +282,9 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 > first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
 > the one exception: it holds the payout-wallet tamper-tripwire baseline
 > ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
-> carries the live dashboard database to the new path itself — a non-empty target, or a failed or
-> unverified copy, refuses the move instead of guessing which copy is live
+> carries the live dashboard database and its SQLite companion files to the new path itself, then
+> verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
+> move instead of guessing which copy is live
 > ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---

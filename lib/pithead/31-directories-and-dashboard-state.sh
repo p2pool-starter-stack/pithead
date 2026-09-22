@@ -212,7 +212,7 @@ carry_dashboard_data_move() {
         docker compose start dashboard >/dev/null 2>&1 || error "The dashboard database changed and the dashboard could not restart — the active data remains at $old."
         error "The dashboard database changed while copying was prepared — refusing to copy it."
     }
-    for f in mining_data.db mining_data.db-wal mining_data.db-shm; do
+    for f in mining_data.db mining_data.db-wal mining_data.db-shm mining_data.db-journal; do
         [ -e "$old_path/$f" ] || [ -L "$old_path/$f" ] || continue
         [ -f "$old_path/$f" ] && [ ! -L "$old_path/$f" ] || {
             rm -rf "$stage"
@@ -230,12 +230,17 @@ carry_dashboard_data_move() {
             error "The dashboard copy to $new did not verify ($f content mismatch) — the live data is still at $old, untouched. Fix the problem, then re-run."
         fi
     done
-    for f in mining_data.db mining_data.db-wal mining_data.db-shm; do
+    for f in mining_data.db mining_data.db-wal mining_data.db-shm mining_data.db-journal; do
         [ -f "$stage/$f" ] || continue
         mv "$stage/$f" "$new_path/$f" || {
             rm -rf "$stage"
             docker compose start dashboard >/dev/null 2>&1 || error "Could not publish the verified dashboard copy to $new and the dashboard could not restart — the active data remains at $old."
             error "Could not publish the verified dashboard copy to $new — the active data remains at $old."
+        }
+        cmp -s "$old_path/$f" "$new_path/$f" || {
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "The published dashboard copy at $new did not verify and the dashboard could not restart — the active data remains at $old."
+            error "The published dashboard copy at $new did not verify ($f content mismatch) — the active data remains at $old."
         }
     done
     rmdir "$stage" || true
