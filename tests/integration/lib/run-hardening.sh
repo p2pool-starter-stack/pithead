@@ -50,22 +50,37 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
 # (hidden service published + reachable, client-auth key accepted, Caddy answering) from OUTSIDE the
 # trust boundary — using none of the stack's own SOCKS/plumbing. Returns 0 if Caddy answered (200 or
 # 401 — we deliberately don't hold the login, so its auth challenge counts as reachable). The client
-# key is piped pithead->container stdin entirely on the box: it never crosses to the harness, an ssh
+# key is piped source->container stdin entirely on the box: it never crosses to the harness, an ssh
 # argument, or `docker inspect`. Everything runs on the bench (it has docker + the Tor network).
-# <onion> defaults to the box's CURRENT address; the rotate-onion phase (#2345) passes a retired one
-# explicitly to prove it stopped answering — dialing it with the box's current client key on purpose,
-# since that is what an operator holding only the latest key would do.
+# <onion> defaults to the box's CURRENT address. <saved-env> optionally names an owner-only env
+# snapshot on the box, used by the rotate-onion phase to probe the retired address with its old key.
+# Returns the probe contract unchanged: 0 reachable, 1 bootstrapped but unreachable, 2 Tor did not
+# bootstrap, and 3 for build/transport/malformed-output errors.
 _onion_reachable_external() {
-    local onion="${1:-}"
+    local onion="${1:-}" saved_env="${2:-}" out rc snippet
     [ -n "$onion" ] || onion="$(env_on_box DASHBOARD_ONION_ADDRESS)"
     [ -n "$onion" ] && [ "$onion" != "placeholder" ] || return 2
+    printf '%s\n' "$onion" | grep -Eq '^[a-z2-7]{56}\.onion$' || return 3
     rx "docker build -q -t pithead-tor-client-test tests/integration/tor-client/ >/dev/null 2>&1" || return 3
-    # onion is [a-z2-7]{56}.onion (safe to embed); the client key stays on the box.
-    local snippet
-    snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1);"
-    snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$onion -e AUTH_STDIN=1 pithead-tor-client-test;"
-    snippet="$snippet else docker run --rm -e ONION_ADDR=$onion pithead-tor-client-test; fi"
-    rx "$snippet" | grep -q "PROBE-OK"
+    if [ -n "$saved_env" ]; then
+        snippet="priv=\$(sudo -n awk -F= '\$1 == \"DASHBOARD_ONION_CLIENT_PRIVKEY\" { print substr(\$0, index(\$0, \"=\") + 1) }' $(quote_arg "$saved_env"));"
+        snippet="$snippet [ -n \"\$priv\" ] || exit 4; line=$(quote_arg "${onion%.onion}:descriptor:x25519:")\$priv;"
+    else
+        snippet="line=\$(./pithead onion-client-key 2>/dev/null | grep -E 'descriptor:x25519:' | head -1 || true);"
+    fi
+    snippet="$snippet if [ -n \"\$line\" ]; then printf '%s\n' \"\$line\" | docker run -i --rm -e ONION_ADDR=$(quote_arg "$onion") -e AUTH_STDIN=1 pithead-tor-client-test;"
+    snippet="$snippet else docker run --rm -e ONION_ADDR=$(quote_arg "$onion") pithead-tor-client-test; fi"
+    if out="$(rx "$snippet" 2>&1)"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    case "$rc:$out" in
+    0:*PROBE-OK:*) return 0 ;;
+    1:*PROBE-FAIL:*"HTTP 000"*) return 1 ;;
+    2:*PROBE-FAIL:*) return 2 ;;
+    *) return 3 ;;
+    esac
 }
 
 # Reap the root pithead-control systemd units THIS checkout installed, idempotently (#477).

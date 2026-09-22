@@ -8,6 +8,8 @@ ROOT="$HERE/.."
 # shellcheck source=tests/integration/lib.sh
 source "$ROOT/lib.sh"
 INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-hardening.sh
+source "$ROOT/lib/run-hardening.sh"
 # shellcheck source=tests/integration/lib/run-rotate-onion.sh
 source "$ROOT/lib/run-rotate-onion.sh"
 WORK="$(mktemp -d)"
@@ -21,12 +23,29 @@ trial() {
         set -uo pipefail
         source "$ROOT/lib.sh"
         INTEGRATION_RUN_SUITE=1
+        source "$ROOT/lib/run-hardening.sh"
         source "$ROOT/lib/run-rotate-onion.sh"
         source "$ROOT/lib/run-safety.sh"
-        rotate_onion_restore() { printf "onion\n" >>"$CALLS"; ROTATE_ONION_RESTORE_ARMED=0; }
+        rx() {
+            case "$1" in
+                *"docker compose up -d tor"*) printf "swap\n" >>"$CALLS" ;;
+                *"/hostname"*) printf "hostname\n" >>"$CALLS"; printf "old.onion\n" ;;
+                *"restart caddy"*) printf "caddy\n" >>"$CALLS" ;;
+                *"rm -f"*) printf "cleanup\n" >>"$CALLS" ;;
+            esac
+        }
+        rotate_onion_key_fingerprint() { printf "key\n" >>"$CALLS"; printf "keys\n"; }
+        pithead() { printf "render\n" >>"$CALLS"; }
+        wait_status_ok() { printf "health\n" >>"$CALLS"; }
+        _onion_reachable_external() { printf "external\n" >>"$CALLS"; }
         SAFETY_BACKUP=0 RUN_ROTATE_ONION=1 SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0
         _SAFETY_RESTORE_ARMED=0 _SAFETY_FOREIGN_TRAP=""
         safety_backup
+        ROTATE_ONION_HS_DIR=/fixture/dashboard
+        ROTATE_ONION_BACKUP_DIR=/fixture/preserve
+        ROTATE_ONION_ENV_BACKUP=/fixture/env
+        ROTATE_ONION_OLD_ADDRESS=old.onion
+        ROTATE_ONION_OLD_KEY_FP=keys
         ROTATE_ONION_RESTORE_ARMED=1
         case "$CAUSE" in failure) exit 9 ;; interruption) kill -TERM $$; sleep 1 ;; esac
     ' >/dev/null 2>&1; then
@@ -34,7 +53,9 @@ trial() {
     else
         rc=$?
     fi
-    [ "$rc" -ne 0 ] && [ "$(cat "$calls")" = onion ]
+    local expected
+    expected="$(printf 'swap\nkey\nhostname\nrender\ncaddy\nhealth\nexternal\ncleanup')"
+    [ "$rc" -ne 0 ] && [ "$(cat "$calls")" = "$expected" ]
 }
 
 trial failure && it_pass "a failed onion rotation restores its identity before the safety archive" ||
@@ -44,8 +65,8 @@ trial interruption && it_pass "an interrupted onion rotation restores its identi
 
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
-    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_OLD_ADDRESS=old.onion
-    ROTATE_ONION_OLD_PUBKEY=pub ROTATE_ONION_OLD_PRIVKEY=priv ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
     pithead() { :; }
@@ -60,8 +81,8 @@ fi
 
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
-    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_OLD_ADDRESS=old.onion
-    ROTATE_ONION_OLD_PUBKEY=pub ROTATE_ONION_OLD_PRIVKEY=priv ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'wrong-keys\n'; }
     pithead() { :; }
@@ -76,8 +97,8 @@ fi
 
 if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
-    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_OLD_ADDRESS=old.onion
-    ROTATE_ONION_OLD_PUBKEY=pub ROTATE_ONION_OLD_PRIVKEY=priv ROTATE_ONION_OLD_KEY_FP=keys
+    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys
     render_calls=0
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
@@ -104,4 +125,89 @@ if (
     it_pass "TOR_DATA_DIR must be an existing canonical absolute non-root directory"
 else
     it_fail "TOR_DATA_DIR must be an existing canonical absolute non-root directory"
+fi
+
+ONION="$(printf 'a%.0s' {1..56}).onion"
+probe_result() {
+    local wanted_rc="$1" output="$2" saved_env="${3:-}"
+    (
+        PROBE_RC="$wanted_rc" PROBE_OUT="$output"
+        rx() {
+            case "$1" in
+            docker\ build*) return 0 ;;
+            *)
+                printf '%s\n' "$PROBE_OUT"
+                return "$PROBE_RC"
+                ;;
+            esac
+        }
+        _onion_reachable_external "$ONION" "$saved_env"
+    )
+}
+probe_result 0 "PROBE-OK: reachable" /fixture/env
+reachable_rc=$?
+probe_result 1 "PROBE-FAIL: fixture.onion -> HTTP 000"
+retired_rc=$?
+probe_result 2 "PROBE-FAIL: tor did not bootstrap"
+bootstrap_rc=$?
+probe_result 1 "PROBE-FAIL: fixture.onion -> HTTP 500"
+malformed_rc=$?
+if [ "$reachable_rc" = 0 ] && [ "$retired_rc" = 1 ] && [ "$bootstrap_rc" = 2 ] && [ "$malformed_rc" = 3 ]; then
+    it_pass "external onion probe distinguishes retirement from infrastructure errors"
+else
+    it_fail "external onion probe distinguishes retirement from infrastructure errors"
+fi
+
+if (
+    calls=0
+    _onion_reachable_external() {
+        calls=$((calls + 1))
+        [ "$calls" -eq 1 ] && return 0
+        return 1
+    }
+    sleep() { :; }
+    wait_onion_retired "$ONION" /fixture/env && [ "$calls" = 2 ]
+); then
+    it_pass "retirement waits through a reachable transition and accepts only proven unreachability"
+else
+    it_fail "retirement waits through a reachable transition and accepts only proven unreachability"
+fi
+
+if (
+    _onion_reachable_external() { return 2; }
+    wait_onion_retired "$ONION" /fixture/env
+    rc=$?
+    [ "$rc" = 2 ]
+); then
+    it_pass "retirement refuses a Tor bootstrap failure"
+else
+    it_fail "retirement refuses a Tor bootstrap failure"
+fi
+
+state_line="$(grep -n 'ROTATE_ONION_OLD_KEY_FP="\$old_key_fp"' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
+arm_line="$(grep -n '^[[:space:]]*ROTATE_ONION_RESTORE_ARMED=1$' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
+rotate_line="$(grep -n 'pithead rotate-dashboard-onion -y' "$ROOT/lib/run-rotate-onion.sh" | cut -d: -f1)"
+if [ "$state_line" -lt "$arm_line" ] && [ "$arm_line" -lt "$rotate_line" ]; then
+    it_pass "restore state is complete before the trap arms and rotation begins"
+else
+    it_fail "restore state is complete before the trap arms and rotation begins"
+fi
+
+if ! grep -q 'it_skip_' "$ROOT/lib/run-rotate-onion.sh"; then
+    it_pass "the explicitly selected rotate-onion phase fails instead of skipping missing fixture proof"
+else
+    it_fail "the explicitly selected rotate-onion phase fails instead of skipping missing fixture proof"
+fi
+
+backup_block="$(sed -n '/it_step "backing up the pre-rotation onion directory/,/ROTATE_ONION_HS_DIR=/p' "$ROOT/lib/run-rotate-onion.sh")"
+if printf '%s\n' "$backup_block" | grep -q 'test -e' && ! printf '%s\n' "$backup_block" | grep -q 'rm -rf'; then
+    it_pass "an existing recovery copy is refused instead of overwritten"
+else
+    it_fail "an existing recovery copy is refused instead of overwritten"
+fi
+
+if ! grep -q 'env_on_box DASHBOARD_ONION_CLIENT_PRIVKEY\|ROTATE_ONION_OLD_PRIVKEY' "$ROOT/lib/run-rotate-onion.sh"; then
+    it_pass "client-auth private-key bytes stay on the box"
+else
+    it_fail "client-auth private-key bytes stay on the box"
 fi
