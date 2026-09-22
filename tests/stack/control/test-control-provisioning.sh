@@ -367,6 +367,9 @@ PCL="$SANDBOX/pcl"
 mkdir -p "$PCL/requests"
 printf '{}\n' >"$PCL/requests/one.json"
 (
+    # shellcheck disable=SC1090  # Load the runner loop before replacing its collaborators.
+    source "$STACK"
+    set +e
     PCL_ENABLED=true PCL_REVOKE=false PCL_ORDER="$PCL/order"
     env_get() { [ "$1" = DASHBOARD_CONTROL_ENABLED ] && printf '%s' "$PCL_ENABLED" || printf '%s' "$PCL"; }
     render_masked_config() { :; }
