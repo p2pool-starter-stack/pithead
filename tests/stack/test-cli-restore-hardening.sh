@@ -163,7 +163,7 @@ awk -v fp="$dashboard_fingerprint" '
     { print }
 ' "$BK/.env" >"$ROOTS/${BK#/}/.env"
 cr_archive "$CR/dashboard-auth.tar.gz"
-out="$(cd "$BK" && CADDY_VERIFY_PASSWORD="$dashboard_password" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
+out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.invalid CADDY_VERIFY_PASSWORD="$dashboard_password" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
 assert_rc "restore accepts a matching dashboard login hash" "$?" 0
 assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
 
@@ -181,15 +181,23 @@ assert_rc "restore rejects a dashboard hash for another password" "$?" 1
 assert_eq "mismatched dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 assert_eq "mismatched dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
 
-awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ=="; next } { print }' \
+awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDA0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next } { print }' \
     "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
 cr_archive "$CR/invalid-dashboard-hash.tar.gz"
 out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/invalid-dashboard-hash.tar.gz" 2>&1)"
-assert_rc "restore rejects a non-bcrypt dashboard hash" "$?" 1
-assert_eq "invalid dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
-assert_eq "invalid dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+assert_rc "restore rejects a weak-cost dashboard hash" "$?" 1
+assert_eq "weak-cost dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "weak-cost dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+
+awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDMxJC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next } { print }' \
+    "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/expensive-dashboard-hash.tar.gz"
+out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.invalid PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/expensive-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects an excessive-cost dashboard hash despite proxy settings" "$?" 1
+assert_eq "excessive-cost dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "excessive-cost dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
 
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"

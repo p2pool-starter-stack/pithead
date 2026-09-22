@@ -201,6 +201,7 @@ EOF
 #!/usr/bin/env bash
 case "${1:-}" in
 --config)
+    grep -F 'noproxy = "*"' "$2" >/dev/null || exit 22
     [ -z "${CADDY_VERIFY_PASSWORD:-}" ] || grep -F "user = \"admin:${CADDY_VERIFY_PASSWORD}\"" "$2" >/dev/null || exit 22
     printf ok
     ;;

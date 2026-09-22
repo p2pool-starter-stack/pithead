@@ -53,7 +53,7 @@ caddy_hash_password_b64() {
 caddy_hash_password_matches() { # <base64 bcrypt> <username> <password>
     local encoded="$1" user="$2" password="$3" hash img dir cid="" port response="" escaped_password ok=1 i
     hash=$(printf '%s' "$encoded" | openssl base64 -d -A 2>/dev/null) || return 1
-    [[ "$hash" =~ ^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$ ]] || return 1
+    [[ "$hash" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
     img=$(grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1)
     [ -n "$img" ] && command -v curl >/dev/null 2>&1 || return 1
     dir=$(mktemp -d) || return 1
@@ -68,10 +68,10 @@ caddy_hash_password_matches() { # <base64 bcrypt> <username> <password>
     port=${port##*:}
     [[ "$port" =~ ^[0-9]+$ ]] || ok=0
     if [ "$ok" -ne 0 ]; then
-        printf 'url = "http://127.0.0.1:%s/"\nuser = "%s:%s"\nsilent\nshow-error\nfail\nmax-time = 1\n' \
+        printf 'url = "http://127.0.0.1:%s/"\nuser = "%s:%s"\nnoproxy = "*"\nsilent\nshow-error\nfail\nmax-time = 1\n' \
             "$port" "$user" "$escaped_password" >"$dir/curl.conf" || ok=0
     fi
-    for i in $(seq 1 20); do
+    for i in {1..20}; do
         [ "$ok" -ne 0 ] || break
         response=$(curl --config "$dir/curl.conf" 2>/dev/null) && [ "$response" = ok ] && break
         response=""
