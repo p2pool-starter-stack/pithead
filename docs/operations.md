@@ -127,6 +127,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+The dashboard takes the same lock for each container start or stop it sends through its control
+proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
+from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
+read-only bind mount of the same inode: it can hold the advisory lock, but it cannot alter the
+holder record.
+
 The lock covers one stack, not one directory. A bundle install keeps each release in its own
 `pithead-vX.Y.Z` directory beside the one before it (see [The deploy-box
 layout](#the-deploy-box-layout)), and every one of those directories drives the same containers
@@ -134,12 +140,16 @@ and the same data — including the fresh directory a one-click upgrade creates 
 share a single `.pithead.lock` in the directory that holds them all. A plain `pithead/` checkout
 has no siblings and keeps its lock in the checkout. `PITHEAD_LOCK_FILE` overrides the path.
 
-The lock belongs to the running process rather than to the file: if a command is killed, the lock
-is released with it. A leftover `.pithead.lock` after a crash is an ordinary file, not a stale
-lock, and there is nothing to clean up by hand. The line inside it can outlive the command that
-wrote it, which is why the next command checks it before quoting it back to you. Where the file cannot be opened at all — a
-directory only root can write, a read-only mount — pithead says so and runs anyway rather than
-refusing every command that changes the stack.
+The lock belongs to the running process rather than to the file: if a command or dashboard request
+ends, the lock is released with it. A leftover `.pithead.lock` after a crash is an ordinary file,
+not a stale lock, and there is nothing to clean up by hand. Do not delete or replace it while the
+stack is running: the CLI and dashboard must keep locking the same inode. The line inside it can
+outlive the command that wrote it, which is why the next command checks it before quoting it back
+to you. Where the file cannot be opened at all — a directory only root can write, a read-only
+mount — pithead says so and runs anyway rather than refusing every command that changes the stack.
+Dashboard container control instead fails closed if its read-only lock mount cannot be opened.
+A compromised dashboard can hold the lock and make a CLI mutation time out, so the lock protects
+operation ordering rather than availability.
 
 ### Tab completion
 
@@ -178,6 +188,9 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
+exception during normal operation. A pending appliance data migration also withholds its chain
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
