@@ -8,14 +8,35 @@ ROTATE_ONION_BACKUP_DIR=""
 ROTATE_ONION_OLD_ADDRESS=""
 ROTATE_ONION_OLD_PUBKEY=""
 ROTATE_ONION_OLD_PRIVKEY=""
+ROTATE_ONION_OLD_KEY_FP=""
+
+rotate_onion_data_dir() {
+    local raw="$1" canonical
+    case "$raw" in /*) ;; *) return 1 ;; esac
+    [ "$raw" != "/" ] || return 1
+    canonical="$(rx "sudo -n test -d $(quote_arg "$raw") && sudo -n test ! -L $(quote_arg "$raw") && sudo -n readlink -f -- $(quote_arg "$raw")")" || return 1
+    [ "$canonical" = "$raw" ] || return 1
+    printf '%s\n' "$canonical"
+}
+
+rotate_onion_key_fingerprint() {
+    local dir="$1"
+    rx "set -e -o pipefail
+        for key in $(quote_arg "$dir/hs_ed25519_secret_key") $(quote_arg "$dir/hs_ed25519_public_key"); do
+            sudo -n test -f \"\$key\" && sudo -n test ! -L \"\$key\"
+        done
+        sudo -n sha256sum $(quote_arg "$dir/hs_ed25519_secret_key") $(quote_arg "$dir/hs_ed25519_public_key") 2>/dev/null | sha256sum | cut -d' ' -f1"
+}
 
 rotate_onion_restore() {
     [ "$ROTATE_ONION_RESTORE_ARMED" = "1" ] || return 0
     rx "
         set -e
-        docker compose stop tor >/dev/null 2>&1 || true
-        sudo rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
-        sudo mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
+        if sudo test -d $(quote_arg "$ROTATE_ONION_BACKUP_DIR") && sudo test ! -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then
+            docker compose stop tor >/dev/null 2>&1 || true
+            sudo rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
+            sudo mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
+        elif sudo test -e $(quote_arg "$ROTATE_ONION_BACKUP_DIR") || sudo test -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then exit 1; fi
         awk -v a=$(quote_arg "$ROTATE_ONION_OLD_ADDRESS") -v pk=$(quote_arg "$ROTATE_ONION_OLD_PUBKEY") -v pv=$(quote_arg "$ROTATE_ONION_OLD_PRIVKEY") '
             /^DASHBOARD_ONION_ADDRESS=/        { print \"DASHBOARD_ONION_ADDRESS=\" a; next }
             /^DASHBOARD_ONION_CLIENT_PUBKEY=/  { print \"DASHBOARD_ONION_CLIENT_PUBKEY=\" pk; next }
@@ -25,12 +46,12 @@ rotate_onion_restore() {
         mv .env.itest .env
         docker compose up -d tor >/dev/null 2>&1
     " >/dev/null 2>&1 || return 1
-    # The old key files are back. Do not let a later render/restart failure retry the destructive
-    # swap at EXIT: the generic safety restore will recover that failure without risking them.
-    ROTATE_ONION_RESTORE_ARMED=0
-    [ "$(rx "sudo cat $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") 2>/dev/null")" = "$ROTATE_ONION_OLD_ADDRESS" ] || return 1
+    [ "$(rotate_onion_key_fingerprint "$ROTATE_ONION_HS_DIR")" = "$ROTATE_ONION_OLD_KEY_FP" ] || return 1
+    [ "$(rx "sudo test -f $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo test ! -L $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") && sudo cat $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") 2>/dev/null")" = "$ROTATE_ONION_OLD_ADDRESS" ] || return 1
     pithead render >/dev/null 2>&1 &&
         rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1 || return 1
+    wait_status_ok 120 && _onion_reachable_external "$ROTATE_ONION_OLD_ADDRESS" || return 1
+    ROTATE_ONION_RESTORE_ARMED=0
 }
 
 # Tier-4 leg for `rotate-dashboard-onion` (#2345): 0 invocations under tests/integration or
@@ -64,18 +85,20 @@ run_rotate_onion() {
         return 0
     fi
 
-    local client_auth old_pub old_priv tor_data_dir hs_dir backup_dir
+    local client_auth old_pub old_priv tor_data_dir hs_dir backup_dir old_key_fp
     client_auth="$(env_on_box DASHBOARD_ONION_CLIENT_AUTH)"
     old_pub="$(env_on_box DASHBOARD_ONION_CLIENT_PUBKEY)"
     old_priv="$(env_on_box DASHBOARD_ONION_CLIENT_PRIVKEY)"
-    tor_data_dir="$(env_on_box TOR_DATA_DIR)"
+    tor_data_dir="$(rotate_onion_data_dir "$(env_on_box TOR_DATA_DIR)")"
     hs_dir="$tor_data_dir/dashboard"
     backup_dir="$tor_data_dir/dashboard.itest-preserve"
-    # Same guard rotate_dashboard_onion itself takes (lib/pithead/32-onion-provisioning.sh) before
-    # wiping anything under this path — an empty/misconfigured TOR_DATA_DIR must never turn the
-    # sudo rm -rf below loose on an unintended path.
-    if [ -z "$tor_data_dir" ] || [ "${hs_dir##*/}" != "dashboard" ]; then
-        it_skip_phase "rotate-onion" "TOR_DATA_DIR looks wrong on this box (\"$tor_data_dir\") — refusing to touch it" "missing"
+    if [ -z "$tor_data_dir" ] || ! rx "sudo -n test -d $(quote_arg "$hs_dir") && sudo -n test ! -L $(quote_arg "$hs_dir")"; then
+        it_skip_phase "rotate-onion" "TOR_DATA_DIR or its dashboard service directory is not a canonical directory — refusing to touch it" "missing"
+        return 0
+    fi
+    old_key_fp="$(rotate_onion_key_fingerprint "$hs_dir")"
+    if [ -z "$old_key_fp" ]; then
+        it_skip_phase "rotate-onion" "dashboard hidden-service key files are unreadable — refusing to rotate what cannot be verified" "missing"
         return 0
     fi
 
@@ -90,6 +113,7 @@ run_rotate_onion() {
     ROTATE_ONION_OLD_ADDRESS="$old_onion"
     ROTATE_ONION_OLD_PUBKEY="$old_pub"
     ROTATE_ONION_OLD_PRIVKEY="$old_priv"
+    ROTATE_ONION_OLD_KEY_FP="$old_key_fp"
 
     it_step "rotating the dashboard onion…"
     pithead rotate-dashboard-onion -y >/dev/null 2>&1
@@ -145,19 +169,18 @@ run_rotate_onion() {
     else
         it_fail "pre-rotation onion directory restored" "the restore command failed on the box — check for a leftover $backup_dir holding the retired keys"
     fi
-    wait_status_ok 120 || true
-    assert_eq "Tor serves the restored hidden-service identity" \
-        "$(rx "sudo cat $(quote_arg "$hs_dir/hostname") 2>/dev/null")" "$old_onion"
+    if [ "$(rotate_onion_key_fingerprint "$hs_dir")" = "$old_key_fp" ]; then
+        it_pass "restored hidden-service key fingerprint matches the original"
+    else
+        it_fail "restored hidden-service key fingerprint matches the original" "the key fingerprint changed"
+    fi
+    assert_eq "Tor serves the restored hidden-service identity" "$(rx "sudo cat $(quote_arg "$hs_dir/hostname") 2>/dev/null")" "$old_onion"
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
     case "$(rx "cat Caddyfile 2>/dev/null")" in
     *"$old_onion"*) it_pass "Caddyfile names the restored onion's vhost again" ;;
     *) it_fail "Caddyfile names the restored onion's vhost again" "Caddyfile does not mention $old_onion after restore" ;;
     esac
-    if _onion_reachable_external "$old_onion"; then
-        it_pass "restored dashboard onion reachable from outside again"
-    else
-        it_fail "restored dashboard onion reachable from outside again" "external client could not reach the restored identity within the probe window"
-    fi
+    [ "$ROTATE_ONION_RESTORE_ARMED" = 0 ] && it_pass "restored dashboard onion reachable from outside again"
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
 }
