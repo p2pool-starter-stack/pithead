@@ -393,6 +393,3 @@ apply2360 >/dev/null 2>&1
 assert_rc "apply: retry after recreation failure is green" "$?" "0"
 assert_not_contains "apply: recreation retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
 if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful recreation retry clears its marker" "marker remains"; else ok "apply: successful recreation retry clears its marker"; fi
-
-# shellcheck source=tests/stack/control/test-control-deploy-layout.sh
-source "$HERE/control/test-control-deploy-layout.sh"
