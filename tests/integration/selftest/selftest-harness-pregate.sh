@@ -48,7 +48,7 @@ pregate_wait_of() {
     (
         E2E_DIR="$work"
         export RIG_LOCK_WAIT=1 PREGATE_RESULT="$work/waits"
-        on_bench() { bash -c "$1"; }
+        on_bench() { env -u RIG_LOCK_WAIT PREGATE_RESULT="$PREGATE_RESULT" bash -c "$1"; }
         harness_pregate 1 ""
     )
 }
