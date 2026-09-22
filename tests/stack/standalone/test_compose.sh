@@ -170,7 +170,7 @@ jq_assert "docker-control is start/stop only (no exec/image ops)" \
 jq_assert "docker socket mounted read-only in both proxies" \
     '[.services["docker-proxy"], .services["docker-control"]] | all((.volumes // []) | any((.source == "/var/run/docker.sock") and (.read_only == true)))'
 jq_assert "dashboard mounts the pithead mutation lock read-only without replacing it (#2218)" '[.services[] | (.volumes // [])[] | select(.target == "/pithead-lock")] | length == 1 and .[0].type == "bind" and .[0].read_only == true'
-expect_present "dashboard lock bind refuses host-path creation (#2218)" "create_host_path: false"
+expect_min "dashboard lock bind refuses host-path creation (#2218)" "create_host_path: false" 1 "$(<"$ROOT/docker-compose.yml")"
 # Socket-proxy isolation (#345): neither proxy is on the mining bridge, and each is published ONLY to
 # the host loopback — so no mining container (monerod/tari/p2pool/xmrig-proxy) can reach the Docker
 # API to read secrets (inspect) or start/stop containers.
