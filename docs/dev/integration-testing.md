@@ -799,6 +799,11 @@ On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
 `api-state.json`, and `logs.txt` (last 200 lines per service). The end-of-run summary lists
 each failed assertion and points at these.
 
+The safety-backup recovery gate runs before scenarios, so if its health wait fails it writes
+redacted `compose-ps.txt` and `health-check.txt` to `results/safety-backup-recovery/` before
+starting restoration. Diagnostic capture is best-effort: it never changes the failed verdict or
+the recovery sequence.
+
 `config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
 the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on
 its own terms rather than by a suffix or substring guess over field names.

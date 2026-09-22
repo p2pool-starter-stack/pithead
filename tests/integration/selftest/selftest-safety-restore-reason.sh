@@ -57,5 +57,40 @@ assert_eq "a config drift is named, distinctly from restore/secrets" \
 assert_eq "a secret drift is named, distinctly from restore/config" \
     "$(_restore_reason 0 match drift)" "restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
 
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0 OUT_DIR="$td/results" IT_PITHEAD=pithead
+    SAFETY_ARCHIVE="$td/archive" SAFETY_RESTORE_FAILED=0
+    mkdir -p "$OUT_DIR"
+    pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
+    rx() {
+        case "$1" in
+        'test -f'*) return 0 ;;
+        tar*) printf 'config.json\n.env\n' ;;
+        *'docker compose ps') printf 'tor unhealthy token=secret\n' ;;
+        *status) printf 'status unhealthy token=secret\n' ;;
+        *) return 1 ;;
+        esac
+    }
+    redact() { sed 's/secret/<redacted>/g'; }
+    assert_contains() { :; }
+    wait_status_ok() { return 1; }
+    it_log() { :; }
+    it_fail() { :; }
+    safety_restore_exact() {
+        test -f "$OUT_DIR/safety-backup-recovery/compose-ps.txt" &&
+            test -f "$OUT_DIR/safety-backup-recovery/health-check.txt" && : >"$td/captured-first"
+    }
+    safety_cleanup() { :; }
+    ! safety_backup &&
+        test -f "$td/captured-first" &&
+        grep -q '<redacted>' "$OUT_DIR/safety-backup-recovery/health-check.txt" &&
+        ! grep -q secret "$OUT_DIR/safety-backup-recovery/health-check.txt"
+); then
+    it_pass "safety-backup recovery diagnostics are redacted and captured before restore"
+else
+    it_fail "safety-backup recovery diagnostics are redacted and captured before restore"
+fi
+
 echo "selftest-safety-restore-reason: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
