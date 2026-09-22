@@ -176,6 +176,7 @@ carry_dashboard_data_move() {
     local old="$1" new="$2" old_path new_path current_path stage f
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
     [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
+    case "${new%/}/" in "${old%/}/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
     mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
     old_path=$(cd "$old" && pwd -P) || error "Could not resolve the current dashboard.data_dir ($old)."
     new_path=$(cd "$new" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($new)."

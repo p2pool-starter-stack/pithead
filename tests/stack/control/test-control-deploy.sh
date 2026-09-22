@@ -189,6 +189,13 @@ printf 'nesteddb' >"$C/old-nested/mining_data.db"
 out="$(carry2360 "$C" "$C/old-nested" "$C/old-nested/target" 2>&1)"
 assert_rc "carry: nested target refuses" "$?" "1"
 assert_eq "carry: nested refusal leaves source untouched" "$(cat "$C/old-nested/mining_data.db")" "nesteddb"
+# A dashboard-writable old dir must not smuggle an otherwise allowed destination through a symlink.
+mkdir -p "$C/old-escape" "$C/outside"
+printf 'escapedb' >"$C/old-escape/mining_data.db"
+ln -s "$C/outside" "$C/old-escape/escape"
+out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/escape" 2>&1)"
+assert_rc "carry: nested symlink target refuses" "$?" "1"
+if [ -e "$C/outside/mining_data.db" ]; then bad "carry: symlink target untouched" "copied outside the old directory"; else ok "carry: symlink target untouched"; fi
 # stop must succeed before copying an SQLite DB; do not snapshot a live WAL set.
 mkdir -p "$C/old-stop" "$C/new-stop"
 printf 'stopdb' >"$C/old-stop/mining_data.db"
