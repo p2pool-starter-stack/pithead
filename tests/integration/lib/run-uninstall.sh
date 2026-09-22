@@ -212,7 +212,7 @@ run_uninstall_phase() {
         it_fail "re-provisioned proxy and onion state populated" "required proxy or onion state is missing"
     fi
     assert_running_state "uninstall" "$config_before" "$setup_secret_fp"
-    if [ "$IT_FAIL" -eq "$fails_before" ]; then
+    if [ "$IT_FAIL" -eq "$fails_before" ] && [ "$KEEP_STATE" != "1" ]; then
         it_step "restoring the exact pre-uninstall baseline…"
         safety_restore_exact || it_fail "uninstall phase restored the exact pre-run baseline" "$SAFETY_RESTORE_FAIL_REASON"
     fi
