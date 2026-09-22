@@ -59,14 +59,9 @@ _ssh() {
     timeout "${SSH_TIMEOUT:-5400}" ssh -i "$KEY" -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
 }
-# Wait for the control spool to hold no in-flight request, before any host-side `pithead apply`
-# this harness drives. `apply` re-provisions the control runner (50-control-runner-provisioning.sh)
-# and nothing drains the spool first, so a request still queued in requests/, or already claimed
-# and running, dies with the runner and never gets a result file — and the row that asked for it
-# reports a product failure that did not happen (#2094; bench-ci job 25 killed the runner 3.4 s
-# into a compose up and still reported "the control request never returned" beside its own
-# `live cost_per_kwh=0.17, want 0.17`). That the apply does this at all is the product's own defect
-# (#2363) and is not fixed here: this only stops the BATTERY from driving it over its own requests.
+# Wait for the control spool to hold no in-flight request before a host-side `pithead apply` this
+# harness drives. This keeps the battery's phase boundary deterministic; the product serializes a
+# runner with apply (#2363), so an in-flight request completes and writes its result.
 # The runner claims a request by moving it out of requests/ to a .claim.* file and removes that
 # claim only AFTER writing results/<id>.json, so neither present is the proof that every request
 # reached a result. staged/ is deliberately not counted: it holds previewed intents waiting for
