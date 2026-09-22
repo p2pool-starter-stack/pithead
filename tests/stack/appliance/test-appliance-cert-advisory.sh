@@ -185,7 +185,7 @@ echo "== unit: the gate loop commits on the advisory and the verdict carries it 
 BOOTSCRIPT="$ROOT/os/overlay/pithead-boot"
 bl_line() { grep -n -F -- "$1" "$BOOTSCRIPT" | head -1 | cut -d: -f1; }
 l_remint=$(bl_line '        gate_remint_cert || true')
-l_adv=$(bl_line '        gate_cert_advisory && gate_pass=1')
+l_adv=$(bl_line '        gate_cert_advisory_ready && gate_pass=1')
 l_pass=$(bl_line '    if [ "$gate_pass" = 1 ]; then')
 l_say=$(bl_line "with that recorded as advisory; run './pithead apply' on the machine to re-mint")
 l_verdict=$(bl_line 'advisory:(if $a == "" then [] else [$a] end)')

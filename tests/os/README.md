@@ -13,15 +13,16 @@ It needs a Linux host with KVM, libvirt and qemu, and root (the bench, not CI):
 ```bash
 sudo cp /root/.ssh/pithead-os-test.pub /tmp/pithead-os-test.pub
 # Publish the five first-party images under the tag the appliance will ask for, then point the
-# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+# build at that registry. PITHEAD_REGISTRY_CA is needed only when the registry is TLS; it is baked
+# for both Podman pulls and the containerized Cosign verification.
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     os/build-image.sh --ssh /tmp/pithead-os-test.pub # battery runs as root and uses root's key
 os/rauc/mkimage.sh --dev                      # bootable image -> os/rauc/build/system.img
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img
 ```
 
-`sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases rebuild the image themselves via `_build_image`, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
+`sudo` resets the environment (`env_reset`), so the override has to be passed THROUGH it — the phases carry those inputs through both `_build_image` and its static image verification, so an exported variable that sudo drops produces exactly the zero-container appliance this avoids.
 
 `PITHEAD_REGISTRY` is not optional on a tree whose `VERSION` is unreleased, and that is the usual
 case here. Only the wizard's dashboard image is baked into the appliance, so at first boot every
@@ -40,7 +41,7 @@ printing it. The build runs on the host, so the evidence outlives the guest — 
 the omission was expensive (#2060). A missing log, an empty one and a failing build each get their
 own sentence, because "nothing to show" and "nothing went wrong" are different facts. It is also the
 first thing to put build-log lines on the battery's stdout, so `PITHEAD_REGISTRY` and
-`PITHEAD_REGISTRY_CA` are masked out of the tail from the environment, literally and without a
+`PITHEAD_REGISTRY_CA` and `PITHEAD_REGISTRY_COSIGN_PUB` are masked out of the tail from the environment, literally and without a
 regex — the failing image ref survives, because which ref failed is the diagnostic and the bench
 host is not. Under `sed` the value's own characters were part of the program: a `|` dropped the
 whole tail, and a `\` or `[` leaked the raw host while still looking masked.
@@ -173,13 +174,19 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   write a real USB stick produces, on a disk this harness can actually destroy mid-write. The bar
   is the same as #1029 itself: the next boot either repairs the image store or refuses with a
   legible console message, never silence, and the wizard must still serve afterwards.
-- **reset** — the shell-less box's last resort, never before run against a real disk: a
-  provisioned machine runs the real `pithead factory-reset -y`, which arms the `pithead-reset`
-  marker on the ESP and reboots; assert it comes back to the wizard with the provisioned config
-  and old container images gone, the seeded dirs back, and a FRESH host identity (SSH host-key
-  fingerprint, machine-id) — the reset tier keeps nothing of the old owner's. A second leg
-  corrupts the data partition's ext4 magic and asserts the wedged-`/data` recovery reformats it
-  rather than bricking.
+- **reset** — the shell-less box's last resort, never before run against a real disk. Leg 0 runs
+  the cheap tier first, on the same provisioned guest: `pithead config-reset -y` must clear
+  `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall, re-arm the first-boot wizard
+  while `pithead-boot` stands down (the two systemd conditions come out opposite), and keep every
+  data directory — asserted by resubmitting the same config through the wizard's real HTTP flow
+  and requiring the monero chain directory to survive, monerod's height to resume at or past its
+  pre-reset value (no resync), and the Tor onion address, read from the hidden-service hostname
+  file rather than `.env`, to come back byte-for-byte unchanged. Leg 1 is the deep tier: the real
+  `pithead factory-reset -y`, which arms the `pithead-reset` marker on the ESP and reboots; assert
+  it comes back to the wizard with the provisioned config and old container images gone, the
+  seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
+  tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
+  asserts the wedged-`/data` recovery reformats it rather than bricking.
 - **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
   provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
   already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
@@ -282,7 +289,8 @@ endpoint reachability by itself is not accepted as readiness.
 
 `tests/os/verify-image.sh` is the cheapest gate and runs without KVM — it mounts a built image
 read-only and checks that no test material shipped, that every baked fix is in the artifact, and
-that the boot path's files sit where the firmware and GRUB will look.
+that the boot path's files sit where the firmware and GRUB will look. It compares the shipped
+compose with its stamped source after removing only the five first-party digest pins.
 
 ```bash
 sudo tests/os/verify-image.sh os/rauc/build/system.img          # release: test artifacts REFUSED
