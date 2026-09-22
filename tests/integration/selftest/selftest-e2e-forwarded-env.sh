@@ -28,7 +28,7 @@ capture_launch() { # <rollback> <pools>
         # finished rather than one that failed. Same guard as selftest-e2e-phases.sh.
         exec </dev/null
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
-        MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
+        MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO="" RIG_LOCK_WAIT=1
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
@@ -67,8 +67,8 @@ execute_launch() { # <stdin-file> <capture-file>
         rm() { :; }; cd() { :; }
         grep() { test -s "$CAPTURE_FILE"; }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT\n%s\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$*" >"$CAPTURE_FILE"
         }
         eval "$1"
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
@@ -85,6 +85,7 @@ execute_launch "$STDIN_FILE" "$WORK/captured"
 CAPTURED="$(cat "$WORK/captured")" ARGV="$(sed -n 's/^ARGV\[\(.*\)\]$/\1/p' "$WORK/captured")"
 assert_contains "multiline rollback input reaches the runner environment intact" "$CAPTURED" "$(printf 'ROLLBACK_BEGIN\n%s\nROLLBACK_END' "$ROLLBACK")"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
+assert_contains "rig-lock wait reaches the detached runner environment" "$CAPTURED" $'RIG_LOCK_WAIT\n1\n'
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
 
