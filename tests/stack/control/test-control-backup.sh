@@ -236,9 +236,11 @@ fresh_id="a0a0a0a0-0000-4000-8000-000000000399"
 printf 'FRESH-ENCRYPTED-BYTES' >"$PRC/results/$fresh_id.tar.gz.enc"
 echo '{"status":"applied","archive":"b.enc","ts":0}' >"$PRC/results/$fresh_id.json"
 
-# Created last, at "now" — the newest file in results/, standing in for a verb still in flight.
+# An old result stays protected only while its request claim is live.
 inflight="a0a0a0a0-0000-4000-8000-0000000000ff"
 echo '{"status":"running","ts":0}' >"$PRC/results/$inflight.json"
+backdate "$PRC/results/$inflight.json" 2000
+printf '{"id":"%s"}\n' "$inflight" >"$PRC/.claim.1990"
 
 before_count=$(find "$PRC/results" -maxdepth 1 -type f | wc -l | tr -d ' ')
 [ "$before_count" -ge 12 ] &&
@@ -261,8 +263,8 @@ remaining_plain=$(find "$PRC/results" -maxdepth 1 -type f -name '*.json' \
     ! -name "a0a0a0a0-0000-4000-8000-000000000302.json" \
     ! -name "$fresh_id.json" | wc -l | tr -d ' ')
 [ "$remaining_plain" -eq 1 ] &&
-    ok "plain results are capped at CONTROL_RESULT_MAX_COUNT (2, minus the always-kept newest)" ||
-    bad "plain results are capped at CONTROL_RESULT_MAX_COUNT (2, minus the always-kept newest)" "got: $remaining_plain"
+    ok "plain results are capped at CONTROL_RESULT_MAX_COUNT (2, minus the active claim)" ||
+    bad "plain results are capped at CONTROL_RESULT_MAX_COUNT (2, minus the active claim)" "got: $remaining_plain"
 i=1
 while [ "$i" -le 5 ]; do
     [ -f "$PRC/results/a0a0a0a0-0000-4000-8000-00000000010$i.json" ] &&
@@ -274,6 +276,14 @@ done
 [ -f "$PRC/results/$fresh_id.tar.gz.enc" ] && [ -f "$PRC/results/$fresh_id.json" ] &&
     ok "a backup archive inside its download window survives, regardless of count" ||
     bad "a backup archive inside its download window survives, regardless of count" "missing"
+backdate "$PRC/results/$fresh_id.tar.gz.enc" 120
+backdate "$PRC/results/$fresh_id.json" 120
+export CONTROL_BACKUP_MAX_COUNT=0
+run_sourced "$SANDBOX" control_prune_results "$PRC" >/dev/null 2>&1
+[ ! -f "$PRC/results/$fresh_id.tar.gz.enc" ] && [ ! -f "$PRC/results/$fresh_id.json" ] &&
+    ok "a backup pair becomes eligible after its download window" ||
+    bad "a backup pair becomes eligible after its download window" "archive: $([ -f "$PRC/results/$fresh_id.tar.gz.enc" ] && echo present || echo missing), json: $([ -f "$PRC/results/$fresh_id.json" ] && echo present || echo missing)"
+unset CONTROL_BACKUP_MAX_COUNT
 remaining_archives=$(find "$PRC/results" -maxdepth 1 -type f -name '*.tar.gz.enc' \
     ! -name "$fresh_id.tar.gz.enc" | wc -l | tr -d ' ')
 [ "$remaining_archives" -le 1 ] &&

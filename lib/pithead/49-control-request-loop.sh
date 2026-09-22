@@ -79,10 +79,9 @@ control_process_request() { # <claimed-file> <control-dir>
 #   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
 #     oldest-first, unless the protected files alone exceed it.
 # os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
-# The single newest plain result also never falls to age/count/bytes: a verb that blocks the
-# drain on a background op (os-download's poll loop) keeps rewriting its own result as the newest
-# file in results/ for as long as it runs, so "newest" IS "whatever is in flight right now" —
-# protecting it needs no request id, just never touching rank 1.
+# The result named by a live claim also never falls to age/count/bytes. A verb that blocks on a
+# background operation keeps rewriting its own result; the claimed request identifies that result
+# without making the newest completed result immortal.
 # Run at the top of every drain, after every claimed request, and from render_derived, the
 # appliance's every-boot pass (#790).
 control_prune_results() { # <control-dir>
@@ -94,13 +93,21 @@ control_prune_results() { # <control-dir>
     local max_count="${CONTROL_RESULT_MAX_COUNT:-200}"
     local max_archives="${CONTROL_BACKUP_MAX_COUNT:-3}"
     local max_bytes="${CONTROL_RESULTS_MAX_BYTES:-536870912}"
+    local archive id kept=0 claim active_result=""
+    for claim in "$cdir"/.claim.*; do
+        [ -f "$claim" ] || continue
+        id=$(jq -r '.id // ""' "$claim" 2>/dev/null)
+        if printf '%s' "$id" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+            active_result="$id.json"
+            break
+        fi
+    done
 
     # Atomic result writes use only dot-prefixed *.tmp names. A killed writer can leave one with a
     # backup kit's plaintext passphrase; remove it only after the download window, never while a
     # normal atomic rename can still be in flight.
     find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
 
-    local archive id kept=0
     for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
         [ -f "$dir/$archive" ] || continue
         # Still inside its download window: untouchable, and does not count against the cap below.
@@ -112,20 +119,13 @@ control_prune_results() { # <control-dir>
         fi
     done
 
-    local newest result n=0
-    newest=""
-    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
-        [ "$result" == "os-update-state.json" ] && continue
-        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
-        newest="$result"
-        break
-    done
+    local result n=0
     # Age and count share one pass (and one skip list) so a backup's own result JSON is never
     # evicted here while its archive is still protected above — a separate age-only find/-delete
     # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
         [ "$result" == "os-update-state.json" ] && continue
-        [ "$result" == "$newest" ] && continue
+        [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
         n=$((n + 1))
         if [ "$n" -ge "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
@@ -140,7 +140,7 @@ control_prune_results() { # <control-dir>
         for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
             [ "$total" -le "$max_bytes" ] && break
             [ "$f" == "os-update-state.json" ] && continue
-            [ "$f" == "$newest" ] && continue
+            [ "$f" == "$active_result" ] && continue
             case "$f" in
             *.tar.gz.enc)
                 [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
