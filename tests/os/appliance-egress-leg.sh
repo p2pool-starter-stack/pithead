@@ -101,7 +101,9 @@ phase_provision_egress_backstop() { # <phase-rc>
         "$unexercised" "monerod container never came up — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
         return 0
     fi
-    if ! _ssh "podman exec monerod sh -c 'command -v curl' >/dev/null 2>&1"; then
+    # curl is deliberately installed at this fixed path in build/monero/Dockerfile. Invoke it
+    # directly: podman exec's non-login shell need not inherit the image's PATH.
+    if ! _ssh "podman exec monerod /usr/bin/curl --version >/dev/null 2>&1"; then
         "$unexercised" "curl missing from the monerod image — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
         return 0
     fi
@@ -109,7 +111,7 @@ phase_provision_egress_backstop() { # <phase-rc>
     # NEGATIVE — a direct clearnet dial by IP must be DROPPED (curl times out, non-zero). This is
     # the check whose absence let a leaking appliance ship green: it FAILS against the
     # orphaned-chain code and PASSES once the nft table is installed and effective.
-    if _ssh "podman exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null; then
+    if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null; then
         bad "clearnet egress is FAIL-OPEN — monerod reached 1.1.1.1 directly, bypassing Tor (the firewall is not enforced)"
         _egress_capture_diagnostics
     else
@@ -119,7 +121,7 @@ phase_provision_egress_backstop() { # <phase-rc>
     # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
     # failed because of the firewall rather than because the guest has no route to the internet at
     # all. Tor's default SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
-    if _ssh "podman exec monerod curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
+    if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
         ok "egress through Tor's SOCKS still works — the drop did not break real mining"
     else
         bad "the mining container can no longer reach clearnet even through Tor — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
@@ -130,7 +132,7 @@ phase_provision_egress_backstop() { # <phase-rc>
     # originate v6 clearnet — assert that dial is DROPPED too (the fail-open the v4-only rules left
     # behind). Guarded on the container actually holding a global v6 address.
     if _ssh "podman exec monerod sh -c 'ip -6 addr show scope global 2>/dev/null | grep -q inet6'" 2>/dev/null; then
-        if _ssh "podman exec monerod curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null; then
+        if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null; then
             bad "IPv6 clearnet egress is FAIL-OPEN — monerod reached a v6 address directly, bypassing Tor"
             _egress_capture_diagnostics
         else
@@ -174,6 +176,31 @@ _egress_self_test() {
     phase_provision_egress_backstop 1 >/dev/null
     [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 0 ] || {
         printf 'unexercised backstop on an ALREADY-RED phase double-counted (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
+        f=$((f + 1))
+    }
+    unset -f _ssh
+
+    # The executable check must not be a PATH-sensitive shell probe: the image owns curl at its
+    # fixed path, and its absence must remain a counted failure rather than a passing backstop.
+    local calls="" missing_message=""
+    bad() {
+        FAIL=$((FAIL + 1))
+        missing_message="$1"
+    }
+    PASS=0 FAIL=0
+    _ssh() {
+        calls+="$1\n"
+        case "$1" in
+        true) return 0 ;;
+        *"podman ps"*) printf 'monerod\n' ;;
+        *) return 1 ;;
+        esac
+    }
+    phase_provision_egress_backstop 0 >/dev/null
+    [[ "$calls" == *"podman exec monerod /usr/bin/curl --version"* ]] &&
+        [ "$FAIL" -eq 1 ] && [ "$PASS" -eq 0 ] &&
+        [[ "$missing_message" == "curl missing from the monerod image"* ]] || {
+        printf 'a missing fixed-path curl did not fail the egress backstop\n' >&2
         f=$((f + 1))
     }
     unset -f _ssh
