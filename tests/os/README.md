@@ -117,8 +117,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
   and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
-  no queued or claimed request and reds the row if it never drains, because an apply re-provisions
-  the control runner and kills a request in flight (#2363). Then the
+  no queued or claimed request and reds the row if it never drains, keeping the harness's phase
+  boundary deterministic. The product serializes an in-flight runner with apply (#2363). Then the
   stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
