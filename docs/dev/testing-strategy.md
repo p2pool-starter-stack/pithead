@@ -227,7 +227,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
-| `config-reset` | missing | #2347 |
+| `config-reset` | covered | KVM (appliance-only verb, `--phase reset` leg 0) |
 | `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
 | `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
 | `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
@@ -422,6 +422,7 @@ the failure means.
 | The persistent journal has ONE home (#1791): `/var` is an overlay with its upper dir on `/data`, and the #1030 bind of `/data/pithead/journal` onto `/var/log/journal` was unordered against it, so whichever mount finished last owned the path and a boot's journal landed in one of two persistent directories while `journalctl --list-boots` omitted the boots that went the other way. The fix orders the bind `After=var.mount`; the verdict rides the same #895 reboot and asks the guest what the VFS resolves at `/var/log/journal` (`stat -c %m` and the inode against the bind's directory, because `findmnt --target` names the bind by mountpoint even while the overlay covers it), whether journald flushed under the bind this boot, and how many boots the persistent journal lists (`journal_home_verdict`); the unit's ordering is asserted statically at tier 3 | `tests/os/journal-boot-verdict.sh`, `tests/stack/appliance/test-appliance-machine-id-journal.sh` (fixture shapes, the kept guest's own reading as the failing one) · `tests/os/verify-image.sh` · battery `--phase boot` (fired both ways: red on the unfixed image, green on the fixed one) | 1 ✅ · 3 ✅ · 4 ✅ |
 | Power cuts mid-write and mid-commit; corrupt bundle; Fault D cuts an active first-boot baked-image load and requires the wizard plus repaired image store afterwards — a brick is disqualifying | battery `--phase fault` (opt-in) | 4 ✅ |
 | Data-reset repair escalation against REAL damage (#1062): a genuine ext4 image, the same two-byte superblock-magic wipe the battery injects, and the system's own `fsck`/`e2fsck`/`mke2fs` — a repairable image is repaired with its payload intact and never reformatted; a destroyed one still reaches the reformat escape. Only `mount` is stubbed, and its verdict is `e2fsck -fn` on the image itself, never a counter. The stubbed decision-tree block in `tests/stack/appliance/test-appliance-reset.sh` proves marker precedence and escalation order (#1086); this suite proves the repair | `tests/stack/standalone/test_data_reset.sh` | 1 ✅ |
+| Config-reset (the cheap tier, #2347): `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall are cleared, `pithead-firstboot` re-arms while `pithead-boot` stands down (opposite `ConditionResult`s, the discrimination #2055 G3 needed), and reconfiguring through the wizard's real HTTP flow costs no resync — the monero chain directory survives, monerod's height resumes at or past its pre-reset value, and the Tor onion address (read from the hidden-service hostname file, not `.env` — #2379's onion-persistence claim, its appliance twin) comes back unchanged | battery `--phase reset` (leg 0, before the deep tier below) | 4 ✅ |
 | Factory reset returns a machine with a fresh identity (machine-id, SSH host key, container store) and records the wipe on the ESP; a wedged `/data` — the superblock corrupted on the real partition — is REPAIRED, not erased: the sentinel planted before the corruption survives and the wipe log does not grow (#1062/#1087) | battery `--phase reset` | 4 ✅ |
 
 ### K. Outbound alert delivery over Tor egress (#2266)
@@ -507,9 +508,9 @@ make test-integration ARGS="--host user@box --dir pithead --lifecycle --fault-in
 # unreleased: only the wizard image is baked, so every other service is pulled as
 # pithead-<service>:v$(cat VERSION) at first boot, and without it the appliance provisions and
 # then runs ZERO containers (#2043). build-image.sh refuses such a build; see tests/os/README.md.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> os/build-image.sh --ssh
 os/rauc/mkimage.sh --dev
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img  # sudo's env_reset drops exported vars
 ```
 
