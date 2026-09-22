@@ -16,12 +16,14 @@ eval "$CONTROL_SRC"
 TMP="$(mktemp -d)"
 trap 'rm -r "$TMP"' EXIT
 OUT_DIR="$TMP"
+IT_REMOTE_DIR="$TMP"
+mkdir -p "$TMP/control/results"
 BASELINE_CONFIG='{"dashboard":{"control":{"enabled":false}},"workers":{"api_port":8080,"list":[]}}'
 IT_MODE=local RIG_NAME=rig1 RIG_HOST=rig RIG_CONTROL_PORT=8082 RIGFORGE_BOOTSTRAP_VERSION=""
 IT_RIG_TOKEN=$(printf '%032d' 0)
 RUN_RIGFORGE=1
 api_state() { printf '%s' '{"workers":[{"name":"rig1","rigforge":{"version":"1.17.2"}}]}'; }
-env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; DASHBOARD_AUTH_HASH_B64) echo present ;; esac }
+env_on_box() { case "$1" in COMPOSE_PROFILES) echo local_node ;; DASHBOARD_AUTH_HASH_B64) echo present ;; CONTROL_DIR) printf '%s' "$TMP/control" ;; esac }
 has_compose_profile() { return 0; }
 PUSHES=0 READ_PORT="" GLOBAL_PORT=""
 push_config() {
