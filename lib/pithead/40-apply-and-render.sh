@@ -101,15 +101,24 @@ apply_refresh_appliance_tls() { # -> prints one line when it restarted Caddy
     docker compose restart caddy
 }
 
-recover_dashboard_data_carry() { # <old-dir> <new-dir> <apply-marker> <copy-published:0|1>
-    local old="$1" new="$2" marker="$3" copy_published="$4" active
+recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-dir> <apply-marker> <copy-published:0|1>
+    local old="$1" new="$2" target="$3" marker="$4" copy_published="$5" active current_target cleanup_ok=1
     active=$(env_get_file "$ENV_FILE" DASHBOARD_DATA_DIR 2>/dev/null || true)
     if [ "$active" = "$old" ]; then
         if [ "$copy_published" -eq 1 ]; then
-            rm -f -- "$new/mining_data.db" "$new/mining_data.db-wal" \
-                "$new/mining_data.db-shm" "$new/mining_data.db-journal"
+            current_target=$(cd "$new" 2>/dev/null && pwd -P) || true
+            if [ "$current_target" != "$target" ]; then
+                cleanup_ok=0
+                warn "The new dashboard.data_dir no longer resolves to the copied directory; the retry marker was kept. Restore $new before re-running '$0 apply'."
+            elif ! rm -f -- "$target/mining_data.db" "$target/mining_data.db-wal" \
+                "$target/mining_data.db-shm" "$target/mining_data.db-journal"; then
+                cleanup_ok=0
+                warn "Could not remove the unpublished dashboard copy at $new; the retry marker was kept. Fix its permissions before re-running '$0 apply'."
+            fi
         fi
-        rm -f "$marker"
+        if [ "$cleanup_ok" -eq 1 ]; then
+            rm -f "$marker" || warn "Could not clear $marker; a later apply may repeat recovery."
+        fi
     fi
     docker compose start dashboard >/dev/null 2>&1 ||
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
@@ -120,7 +129,7 @@ apply() {
     # after a previous apply committed the config but did not finish recreating containers), so it
     # tracks its own hold rather than acquiring twice — the depth counter would then never reach
     # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0
+    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -239,9 +248,10 @@ apply() {
                 # Arm recovery before carry_dashboard_data_move stops the dashboard. A later error
                 # either removes the unpublished copy and retries the change, or keeps the committed
                 # copy plus this marker so an unchanged re-apply still recreates the container.
+                dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$apply_marker" "$dashboard_carry_published"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1

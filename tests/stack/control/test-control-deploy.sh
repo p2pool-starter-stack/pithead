@@ -6,7 +6,6 @@
 # deploy-box layout (shared data root outside the version dir). All three sections are fully
 # self-contained (their own throwaway sandboxes under $SANDBOX) — no shared control/config
 # sandbox, no re-derivation needed. Sourced by tests/stack/run.sh after lib.sh.
-
 echo "== unit: update_current_symlink (#455) =="
 # A non-versioned install dir (source checkout, plain `pithead/` extract) gets NO symlink —
 # `current` only makes sense beside pithead-vX.Y.Z version dirs.
@@ -17,7 +16,6 @@ if [ -e "$SANDBOX/plainroot/current" ]; then
 else
     ok "no current symlink for a non-versioned dir"
 fi
-
 # A versioned dir gets `../current -> <dirname>` (relative target, so the tree can move).
 mkdir -p "$SANDBOX/deployroot/pithead-v9.9.9" "$SANDBOX/deployroot/pithead-v9.9.10"
 run_sourced "$SANDBOX/deployroot/pithead-v9.9.9" update_current_symlink >/dev/null 2>&1
@@ -28,7 +26,6 @@ assert_eq "current re-pointed to pithead-v9.9.10" "$(readlink "$SANDBOX/deployro
 # Idempotent re-run keeps it.
 run_sourced "$SANDBOX/deployroot/pithead-v9.9.10" update_current_symlink >/dev/null 2>&1
 assert_eq "current unchanged on re-run" "$(readlink "$SANDBOX/deployroot/current")" "pithead-v9.9.10"
-
 # `current` existing as a REAL directory is never clobbered (ln -sfn would nest a link inside it).
 mkdir -p "$SANDBOX/dirroot/pithead-v1.2.3" "$SANDBOX/dirroot/current"
 out="$(run_sourced "$SANDBOX/dirroot/pithead-v1.2.3" update_current_symlink 2>&1)"
@@ -40,7 +37,6 @@ if [ -d "$SANDBOX/dirroot/current" ] && [ ! -L "$SANDBOX/dirroot/current" ]; the
 else
     bad "real-dir current left untouched" "was replaced"
 fi
-
 echo "== unit: migrate_dashboard_data (#455) =="
 # Direct unit calls with the parse-time globals set by hand; docker stubbed (no daemon in tests).
 mig455() { # <workdir> <DASHBOARD_DIR> <is_default>
@@ -87,7 +83,6 @@ rm -f "$M/shared/dashboard/mining_data.db"
 out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "empty pre-created target: move succeeds" "$?" "0"
 assert_eq "empty pre-created target: DB moved" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb2"
-
 # Wiring: stack_upgrade migrates BEFORE the containers are recreated and points `current` at the
 # install only AFTER a successful 'compose up' — a failed upgrade must not move the pointer.
 upg455_order=$(
@@ -145,7 +140,6 @@ upg455_fail=$(
     stack_upgrade
 )
 assert_not_contains "failed upgrade does NOT move the current pointer (#455)" "$upg455_fail" "symlink"
-
 echo "== unit: carry_dashboard_data_move (#2360) =="
 # Direct unit calls, mirroring mig455 above: a confirmed A-to-B dashboard.data_dir move, distinct
 # from the #455 default migration — this one COPIES (never moves) and verifies by content.

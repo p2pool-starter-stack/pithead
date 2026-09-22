@@ -173,7 +173,7 @@ migrate_dashboard_data() {
 # then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
 # target, a failed or unverified copy) leaves the old data and the active path untouched.
 carry_dashboard_data_move() {
-    local old="$1" new="$2" old_path new_path new_parent_path current_path stage f published=()
+    local old="$1" new="$2" old_path new_path new_parent_path current_path new_entries stage f published=()
     [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
     [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
     assert_safe_dir "$new"
@@ -184,7 +184,8 @@ carry_dashboard_data_move() {
     mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
     new_path=$(cd "$new" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($new)."
     case "$new_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
-    if [ -n "$(ls -A "$new" 2>/dev/null)" ]; then
+    new_entries=$(ls -A "$new" 2>/dev/null) || error "Could not inspect the new dashboard.data_dir ($new) — refusing to treat it as empty. Fix its permissions, then re-run."
+    if [ -n "$new_entries" ]; then
         error "Dashboard data already exists at the new dashboard.data_dir ($new) — refusing to overwrite it with the data at $old. Empty $new (or pick a different path), then re-run."
     fi
     log "Carrying the dashboard database to the new dashboard.data_dir: $old -> $new..."
@@ -199,7 +200,11 @@ carry_dashboard_data_move() {
         docker compose start dashboard >/dev/null 2>&1 || error "The new dashboard.data_dir changed and the dashboard could not restart — the active data remains at $old."
         error "The new dashboard.data_dir changed while copying was prepared — refusing to copy it."
     }
-    if [ -n "$(ls -A "$new_path" 2>/dev/null)" ]; then
+    new_entries=$(ls -A "$new_path" 2>/dev/null) || {
+        docker compose start dashboard >/dev/null 2>&1 || error "Could not inspect $new after stopping the dashboard, and the dashboard could not restart — the active data remains at $old."
+        error "Could not inspect the new dashboard.data_dir ($new) after stopping the dashboard — refusing to treat it as empty."
+    }
+    if [ -n "$new_entries" ]; then
         docker compose start dashboard >/dev/null 2>&1 || error "Dashboard data appeared at $new and the dashboard could not restart — the active data remains at $old."
         error "Dashboard data appeared at the new dashboard.data_dir ($new) while copying was prepared — refusing to overwrite it with the data at $old."
     fi

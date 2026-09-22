@@ -1,7 +1,73 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
-# Black-box coverage for the pre-#455 dashboard layout migration. Kept separate from
-# test-control-deploy.sh so the carry and recovery tests stay below the 400-line target.
+# Deployment guard regressions kept separate from test-control-deploy.sh so the carry and
+# recovery tests stay below the 400-line target. The #455 migration remains a distinct guard.
+
+echo "== unit: dashboard carry recovery guards (#2360) =="
+G="$SANDBOX/carry-guards"
+mkdir -p "$G/old" "$G/unreadable"
+printf 'source' >"$G/old/mining_data.db"
+printf 'existing' >"$G/unreadable/mining_data.db"
+chmod 0311 "$G/unreadable"
+out="$({
+    cd "$G" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { :; }
+    carry_dashboard_data_move "$G/old" "$G/unreadable"
+} 2>&1)"
+rc=$?
+chmod 0755 "$G/unreadable"
+assert_rc "carry: unreadable target refuses" "$rc" "1"
+assert_eq "carry: unreadable target remains intact" "$(cat "$G/unreadable/mining_data.db")" "existing"
+
+mkdir -p "$G/after-stop"
+out="$({
+    cd "$G" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { [ "${2:-}" != stop ] || chmod 0311 "$G/after-stop"; }
+    carry_dashboard_data_move "$G/old" "$G/after-stop"
+} 2>&1)"
+rc=$?
+chmod 0755 "$G/after-stop"
+assert_rc "carry: target made unreadable after stop refuses" "$rc" "1"
+assert_contains "carry: post-stop inspection failure is reported" "$out" "after stopping the dashboard"
+if [ -e "$G/after-stop/mining_data.db" ]; then bad "carry: post-stop inspection failure does not copy" "DB exists"; else ok "carry: post-stop inspection failure does not copy"; fi
+
+mkdir -p "$G/recovery/old" "$G/recovery/new" "$G/recovery/victim"
+printf 'DASHBOARD_DATA_DIR=%s\n' "$G/recovery/old" >"$G/recovery/.env"
+printf 'copied' >"$G/recovery/new/mining_data.db"
+printf 'victim' >"$G/recovery/victim/mining_data.db"
+: >"$G/recovery/marker"
+mv "$G/recovery/new" "$G/recovery/original"
+ln -s "$G/recovery/victim" "$G/recovery/new"
+(
+    # shellcheck disable=SC2034  # consumed by recover_dashboard_data_carry
+    ENV_FILE="$G/recovery/.env"
+    docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
+    recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \
+        "$G/recovery/new" "$G/recovery/marker" 1
+)
+assert_eq "recovery: retargeted destination is untouched" "$(cat "$G/recovery/victim/mining_data.db")" "victim"
+if [ -f "$G/recovery/marker" ]; then ok "recovery: retarget keeps the retry marker"; else bad "recovery: retarget keeps the retry marker" "marker missing"; fi
+assert_contains "recovery: retarget still restarts dashboard" "$(cat "$G/recovery/restart")" "compose start dashboard"
+
+rm "$G/recovery/new"
+mv "$G/recovery/original" "$G/recovery/new"
+: >"$G/recovery/marker"
+(
+    # shellcheck disable=SC2034  # consumed by recover_dashboard_data_carry
+    ENV_FILE="$G/recovery/.env"
+    docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
+    rm() { return 1; }
+    recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \
+        "$G/recovery/new" "$G/recovery/marker" 1
+)
+if [ -f "$G/recovery/marker" ]; then ok "recovery: cleanup failure keeps the retry marker"; else bad "recovery: cleanup failure keeps the retry marker" "marker missing"; fi
+assert_contains "recovery: cleanup failure still restarts dashboard" "$(cat "$G/recovery/restart")" "compose start dashboard"
 
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
