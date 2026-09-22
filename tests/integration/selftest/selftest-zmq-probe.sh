@@ -214,7 +214,8 @@ echo "== tier B: the peer must actually PUBLISH, not merely hold a socket open (
 # The live tier-4 row still proves the configured node answers that same probe.
 start_fixture() { # [--silent] -> leaves FIXTURE_PID/FIXTURE_PORT_FILE set
     FIXTURE_PORT_FILE="$(mktemp)"
-    python3 "$HERE/../fakes/fake_zmq_publisher.py" "$@" >"$FIXTURE_PORT_FILE" &
+    FIXTURE_ERROR_FILE="$(mktemp)"
+    python3 "$HERE/../fakes/fake_zmq_publisher.py" "$@" >"$FIXTURE_PORT_FILE" 2>"$FIXTURE_ERROR_FILE" &
     FIXTURE_PID=$!
     for _ in $(seq 1 20); do
         [ -s "$FIXTURE_PORT_FILE" ] && break
@@ -223,13 +224,50 @@ start_fixture() { # [--silent] -> leaves FIXTURE_PID/FIXTURE_PORT_FILE set
     [ -s "$FIXTURE_PORT_FILE" ]
 }
 
+# The fixture's own protocol checks are deliberate: a raw TCP peer is not the probe path.
+# Send the real greeting and then a bad READY or subscription; the server must reject both.
+fixture_rejects() { # <READY hex> <subscription hex>
+    start_fixture
+    port="$(cat "$FIXTURE_PORT_FILE")"
+    python3 - "$port" "$1" "$2" <<'PY'
+import socket
+import sys
+
+greeting = b"\xff" + b"\0" * 8 + b"\x7f\x03\x01NULL" + b"\0" * 48
+port, ready, subscription = sys.argv[1:]
+with socket.create_connection(("127.0.0.1", int(port))):
+    pass
+with socket.create_connection(("127.0.0.1", int(port))) as client:
+    client.sendall(greeting)
+    reply = bytearray()
+    while len(reply) < 64:
+        reply.extend(client.recv(64 - len(reply)))
+    ready = bytes.fromhex(ready)
+    client.sendall(ready)
+    if ready == bytes.fromhex("04190552454144590b536f636b65742d5479706500000003535542"):
+        reply = bytearray()
+        while len(reply) < 28:
+            reply.extend(client.recv(28 - len(reply)))
+    client.sendall(bytes.fromhex(subscription))
+PY
+    wait "$FIXTURE_PID"
+    fixture_rc=$?
+    rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
+    return "$fixture_rc"
+}
+
+fixture_rejects "00$(printf '%s' "$READY_SUB" | cut -c3-)" "000101"
+assert_rc "the fixture rejects a non-READY peer" "$?" "1"
+fixture_rejects "$READY_SUB" "000100"
+assert_rc "the fixture rejects a non-SUBSCRIBE peer" "$?" "1"
+
 start_fixture
 port="$(cat "$FIXTURE_PORT_FILE")"
 v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port" 1 1)"
 rc=$?
 wait "$FIXTURE_PID"
 fixture_rc=$?
-rm -f "$FIXTURE_PORT_FILE"
+rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
 assert_rc "the deterministic publisher completed its protocol exchange" "$fixture_rc" "0"
 assert_rc "the deterministic publisher passes the real probe" "$rc" "0"
 assert_contains "the deterministic publisher is reported live" "$v" "published within the budget"
@@ -240,7 +278,7 @@ v="$(IT_MODE=local IT_REMOTE_DIR="$HERE/.." zmq_publishes_probe 127.0.0.1 "$port
 rc=$?
 wait "$FIXTURE_PID"
 fixture_rc=$?
-rm -f "$FIXTURE_PORT_FILE"
+rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
 assert_rc "the deterministic silent publisher completed its protocol exchange" "$fixture_rc" "0"
 assert_rc "the deterministic silent publisher fails the real probe" "$rc" "1"
 assert_contains "the deterministic silent publisher is named silent" "$v" "published NOTHING"
