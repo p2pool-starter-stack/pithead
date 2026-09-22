@@ -1078,7 +1078,7 @@ connect because the host CLI ships no gRPC client. The probe runs on the staged 
 and only when an endpoint or login key actually changed, so an unrelated commit is never held up by
 a node that happens to be down. It is what makes the pair committable at all: the typed token is
 friction, but the probe means a dashboard cannot park a chain on a node that is not there. Node
-credentials can also be changed through approval in local-node mode; the untouched masked partner
+credentials can also be changed through typed confirmation in local-node mode; the untouched masked partner
 is preserved and the pair is applied to monerod, P2Pool, and the dashboard together. Secret values
 stay masked in the browser, preview, result, and audit trail.
 
