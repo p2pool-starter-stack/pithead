@@ -123,6 +123,7 @@ control_prune_results() { # <control-dir>
     # Age and count share one pass (and one skip list) so a backup's own result JSON is never
     # evicted here while its archive is still protected above — a separate age-only find/-delete
     # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
+    [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
     for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
         [ "$result" == "os-update-state.json" ] && continue
         [ "$result" == "$active_result" ] && continue
