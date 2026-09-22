@@ -48,6 +48,41 @@ caddy_hash_password_b64() {
     printf '%s' "$hash" | openssl base64 -A
 }
 
+# Verify an archived dashboard bcrypt through the pinned Caddy image before restore reuses it.
+# The temporary Caddyfile and curl config are owner-only; credentials never enter a process argv.
+caddy_hash_password_matches() { # <base64 bcrypt> <username> <password>
+    local encoded="$1" user="$2" password="$3" hash img dir cid="" port response="" escaped_password ok=1 i
+    hash=$(printf '%s' "$encoded" | openssl base64 -d -A 2>/dev/null) || return 1
+    [[ "$hash" =~ ^\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}$ ]] || return 1
+    img=$(grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1)
+    [ -n "$img" ] && command -v curl >/dev/null 2>&1 || return 1
+    dir=$(mktemp -d) || return 1
+    chmod 700 "$dir" || {
+        rm -rf "$dir"
+        return 1
+    }
+    printf ':8080 {\n    basic_auth {\n        %s %s\n    }\n    respond "ok"\n}\n' "$user" "$hash" >"$dir/Caddyfile" || ok=0
+    escaped_password=${password//\\/\\\\}
+    [ "$ok" -eq 0 ] || cid=$(docker run -d --rm -p 127.0.0.1::8080 -v "$dir/Caddyfile:/etc/caddy/Caddyfile:ro" "docker.io/library/$img" 2>/dev/null) || ok=0
+    [ "$ok" -eq 0 ] || port=$(docker port "$cid" 8080/tcp 2>/dev/null | head -1) || ok=0
+    port=${port##*:}
+    [[ "$port" =~ ^[0-9]+$ ]] || ok=0
+    if [ "$ok" -ne 0 ]; then
+        printf 'url = "http://127.0.0.1:%s/"\nuser = "%s:%s"\nsilent\nshow-error\nfail\nmax-time = 1\n' \
+            "$port" "$user" "$escaped_password" >"$dir/curl.conf" || ok=0
+    fi
+    for i in $(seq 1 20); do
+        [ "$ok" -ne 0 ] || break
+        response=$(curl --config "$dir/curl.conf" 2>/dev/null) && [ "$response" = ok ] && break
+        response=""
+        sleep 0.1
+    done
+    [ "$response" = ok ] || ok=0
+    [ -z "$cid" ] || docker rm -f "$cid" >/dev/null 2>&1 || true
+    rm -rf "$dir"
+    [ "$ok" -ne 0 ] && [ "$response" = ok ]
+}
+
 generate_caddyfile() { # [output=Caddyfile] [mint-appliance-cert=true]
     local target="${1:-Caddyfile}" mint_appliance_cert="${2:-true}"
     # Every vhost forwards the authenticated basic_auth username as X-Auth-User (#33) — the audit

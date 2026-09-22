@@ -132,7 +132,7 @@ DASHBOARD_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 DASHBOARD_ONION_CLIENT_PUBKEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 DASHBOARD_ONION_CLIENT_PRIVKEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 ARCHIVE_ONLY_VALUE=stale-generated-setting
-DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==
+DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
 DASHBOARD_AUTH_PW_FP=stale-fingerprint
 DEPLOYMENT_COMPLETED=true
 EOF
@@ -158,14 +158,38 @@ dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' 
 jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
     "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
 awk -v fp="$dashboard_fingerprint" '
-    /^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ=="; next }
+    /^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next }
     /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next }
     { print }
 ' "$BK/.env" >"$ROOTS/${BK#/}/.env"
 cr_archive "$CR/dashboard-auth.tar.gz"
-out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
+out="$(cd "$BK" && CADDY_VERIFY_PASSWORD="$dashboard_password" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
 assert_rc "restore accepts a matching dashboard login hash" "$?" 0
-assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" c3RhbGUtZml4dHVyZQ==
+assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
+
+dashboard_password=other-dashboard-pass
+dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
+jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
+    "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+awk -v fp="$dashboard_fingerprint" '/^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next } { print }' \
+    "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+printf 'LIVE-ENV\n' >"$BK/.env"
+printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
+cr_archive "$CR/mismatched-dashboard-hash.tar.gz"
+out="$(cd "$BK" && CADDY_VERIFY_PASSWORD=dashboard-pass-123 PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/mismatched-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects a dashboard hash for another password" "$?" 1
+assert_eq "mismatched dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "mismatched dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+
+awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ=="; next } { print }' \
+    "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+printf 'LIVE-ENV\n' >"$BK/.env"
+printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
+cr_archive "$CR/invalid-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/invalid-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects a non-bcrypt dashboard hash" "$?" 1
+assert_eq "invalid dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "invalid dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
 
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
