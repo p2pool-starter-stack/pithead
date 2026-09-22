@@ -101,12 +101,26 @@ apply_refresh_appliance_tls() { # -> prints one line when it restarted Caddy
     docker compose restart caddy
 }
 
+recover_dashboard_data_carry() { # <old-dir> <new-dir> <apply-marker> <copy-published:0|1>
+    local old="$1" new="$2" marker="$3" copy_published="$4" active
+    active=$(env_get_file "$ENV_FILE" DASHBOARD_DATA_DIR 2>/dev/null || true)
+    if [ "$active" = "$old" ]; then
+        if [ "$copy_published" -eq 1 ]; then
+            rm -f -- "$new/mining_data.db" "$new/mining_data.db-wal" \
+                "$new/mining_data.db-shm" "$new/mining_data.db-journal"
+        fi
+        rm -f "$marker"
+    fi
+    docker compose start dashboard >/dev/null 2>&1 ||
+        warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
+}
+
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
     # tracks its own hold rather than acquiring twice — the depth counter would then never reach
     # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0
+    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -219,7 +233,19 @@ apply() {
         # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
-        { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; } && carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
+        if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
+            if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
+                [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
+                # Arm recovery before carry_dashboard_data_move stops the dashboard. A later error
+                # either removes the unpublished copy and retries the change, or keeps the committed
+                # copy plus this marker so an unchanged re-apply still recreates the container.
+                : >"$apply_marker"
+                dashboard_carry_recovery=1
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$apply_marker" "$dashboard_carry_published"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+            fi
+            carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
+            [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
+        fi
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -296,6 +322,10 @@ apply() {
         warn "Config files were updated but containers were NOT recreated ('docker compose up' failed)."
         warn "Fix the cause shown above, then re-run '$0 apply' (it will retry the recreate) — or '$0 up'."
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
+    fi
+    if [ "$dashboard_carry_recovery" -eq 1 ]; then
+        dashboard_carry_recovery=0
+        trap 'rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.
