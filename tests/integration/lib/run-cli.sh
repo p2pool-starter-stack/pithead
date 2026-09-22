@@ -85,8 +85,8 @@ MATRIX:
                          .onion address and client-auth key, assert the new address answers over
                          real Tor, the old one stops answering, the Caddyfile names only the new
                          vhost (#546), and HOST_IP survives (#356). Restores the pre-rotation onion
-                         identity afterward. DESTRUCTIVE-then-restored; restricted to a bench-ci-
-                         attested reserved fixture and fails if that fixture cannot execute.
+                         identity afterward. DESTRUCTIVE-then-restored; e2e.sh supplies a one-run,
+                         marked Tor-data fixture and fails if that fixture cannot execute.
   --rigforge             also run the RigForge integration phase (#185/#235/#260): assert the
                          dashboard consumed a REAL rigforge rig's enriched feed and Worker Inspect
                          reads it. Non-destructive; self-skips if no rigforge rig is connected.

@@ -30,7 +30,7 @@ capture_launch() { # <rollback> <pools>
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
-        HARNESS_PHASE_ARGS=" --rotate-onion" ROTATE_FIXTURE_ATTESTATION=bench-ci-job:42
+        HARNESS_PHASE_ARGS=" --rotate-onion" ROTATE_FIXTURE_ATTESTATION=/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
@@ -80,14 +80,14 @@ echo "== exact six-record transport, multiline decode, environment, and argv hyg
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
 assert_eq "the producer emits exactly six records" "$(awk 'END {print NR}' "$STDIN_FILE")" 6
-EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\nbench-ci-job:42' \
+EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3' \
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
 execute_launch "$STDIN_FILE" "$WORK/captured"
 CAPTURED="$(cat "$WORK/captured")" ARGV="$(sed -n 's/^ARGV\[\(.*\)\]$/\1/p' "$WORK/captured")"
 assert_contains "multiline rollback input reaches the runner environment intact" "$CAPTURED" "$(printf 'ROLLBACK_BEGIN\n%s\nROLLBACK_END' "$ROLLBACK")"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
-assert_contains "runner-provisioned fixture attestation reaches the harness" "$CAPTURED" "ATTEST[bench-ci-job:42]"
+assert_contains "launcher-provisioned fixture path reaches the harness" "$CAPTURED" "ATTEST[/srv/code/pithead-e2e/data/rotate-onion-fixture.A1b2C3]"
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # fixture globals are consumed by sourced functions and child shells
 # The phase's hidden-service backup lies outside config.json/.env, so prove the real EXIT path
 # calls it first on both an ordinary failure and a supervisor interruption.
 set -uo pipefail
@@ -181,6 +182,35 @@ else
     it_fail "credential snapshots require exact fields, ownership and mode 0600"
 fi
 
+mkdir -p "$WORK/fingerprint/dashboard" "$WORK/fingerprint/p2pool"
+printf 'secret\n' >"$WORK/fingerprint/dashboard/hs_ed25519_secret_key"
+printf 'public\n' >"$WORK/fingerprint/dashboard/hs_ed25519_public_key"
+cp "$WORK/fingerprint/dashboard/hs_ed25519_secret_key" "$WORK/fingerprint/p2pool/"
+cp "$WORK/fingerprint/dashboard/hs_ed25519_public_key" "$WORK/fingerprint/p2pool/"
+cp "$WORK/env-box/snapshot" "$WORK/fingerprint/.env"
+if (
+    rx() {
+        SNIPPET="$1" bash -c 'sudo() { [ "$1" = -n ] && shift; "$@"; }; eval "$SNIPPET"'
+    }
+    key_fp="$(rotate_onion_key_fingerprint "$WORK/fingerprint/dashboard")" &&
+        client_fp="$(rotate_onion_client_key_fingerprint "$WORK/fingerprint/.env")" &&
+        mining_fp="$(rotate_onion_mining_fingerprint "$WORK/fingerprint")" &&
+        rm "$WORK/fingerprint/dashboard/hs_ed25519_secret_key" &&
+        broken="$(rotate_onion_key_fingerprint "$WORK/fingerprint/dashboard" 2>/dev/null)"
+    broken_rc=$?
+    rm "$WORK/fingerprint/p2pool/hs_ed25519_secret_key"
+    ln -s hs_ed25519_public_key "$WORK/fingerprint/p2pool/hs_ed25519_secret_key"
+    mining_broken="$(rotate_onion_mining_fingerprint "$WORK/fingerprint" 2>/dev/null)"
+    mining_broken_rc=$?
+    [ -n "$key_fp" ] && [ -n "$client_fp" ] && [ -n "$mining_fp" ] &&
+        [ "$broken_rc" -ne 0 ] && [ -z "$broken" ] &&
+        [ "$mining_broken_rc" -ne 0 ] && [ -z "$mining_broken" ]
+); then
+    it_pass "fingerprints emit only after every protected input was read successfully"
+else
+    it_fail "fingerprints emit only after every protected input was read successfully"
+fi
+
 ONION="$(printf 'a%.0s' {1..56}).onion"
 probe_result() {
     local wanted_rc="$1" output="$2" saved_env="${3:-}"
@@ -258,10 +288,12 @@ else
 fi
 
 backup_block="$(sed -n '/it_step "backing up the pre-rotation onion directory/,/ROTATE_ONION_HS_DIR=/p' "$ROOT/lib/run-rotate-onion.sh")"
-if printf '%s\n' "$backup_block" | grep -q 'test -e' && ! printf '%s\n' "$backup_block" | grep -q 'rm -rf'; then
-    it_pass "an existing recovery copy is refused instead of overwritten"
+if printf '%s\n' "$backup_block" | grep -q 'test -e' &&
+    printf '%s\n' "$backup_block" | grep -q 'made_env=0 made_hs=0' &&
+    printf '%s\n' "$backup_block" | grep -q 'cp -aT'; then
+    it_pass "existing recovery copies are refused and a partial new backup is transactional"
 else
-    it_fail "an existing recovery copy is refused instead of overwritten"
+    it_fail "existing recovery copies are refused and a partial new backup is transactional"
 fi
 
 if ! grep -q 'env_on_box DASHBOARD_ONION_CLIENT_PRIVKEY\|ROTATE_ONION_OLD_PRIVKEY' "$ROOT/lib/run-rotate-onion.sh"; then
@@ -281,6 +313,34 @@ if (
     it_pass "rotation refuses an unattested target before reading its onion identity"
 else
     it_fail "rotation refuses an unattested target before reading its onion identity"
+fi
+
+if (
+    reads="$WORK/fixture-reads"
+    IT_MODE=local IT_ROTATE_ONION_FIXTURE_ATTESTATION=/fixture/tor failed=0
+    it_log() { :; }
+    it_fail() { failed=1; }
+    rotate_onion_data_dir() { printf '/fixture/tor\n'; }
+    env_on_box() {
+        printf '%s\n' "$1" >>"$reads"
+        printf '/fixture/tor\n'
+    }
+    rx() { return 1; }
+    run_rotate_onion
+    rc=$?
+    [ "$rc" = 1 ] && [ "$failed" = 1 ] && [ "$(cat "$reads")" = TOR_DATA_DIR ]
+); then
+    it_pass "rotation binds the actual Tor directory to a protected fixture marker before reading identity"
+else
+    it_fail "rotation binds the actual Tor directory to a protected fixture marker before reading identity"
+fi
+
+if grep -q 'docker compose ps --all -q' "$ROOT/lib/run-rotate-onion.sh" &&
+    grep -q 'test -n "\$cids"' "$ROOT/lib/run-rotate-onion.sh" &&
+    grep -q 'docker inspect.*|| exit 1' "$ROOT/lib/run-rotate-onion.sh"; then
+    it_pass "credential backup mount exclusion requires every compose container inspection"
+else
+    it_fail "credential backup mount exclusion requires every compose container inspection"
 fi
 
 if grep -q 'env_backup="backups/rotate-onion-env-preserve"' "$ROOT/lib/run-rotate-onion.sh" &&

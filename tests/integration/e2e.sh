@@ -49,7 +49,7 @@ KEEP=0
 SCENARIO=""
 REMOTE_NODE_ARGS=()
 REMOTE_NODE_HOSTS=()
-BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" ROTATE_FIXTURE_ATTESTATION="" # raw args -> validated output
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" ROTATE_FIXTURE_ATTESTATION="" ROTATE_FIXTURE_DIR="" ROTATE_FIXTURE_REQUIRED=0 # raw args -> validated output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -240,13 +240,14 @@ restore_all() {
             warn "FAILED to restore $MINER_HOST config — the backup should still be at $MINER_CFG_BACKUP, but check: if the connection dropped after the prune, it is already gone and the live config is the restored one."
         fi
     fi
-
-    # 2. Stack: stop the branch (e2e checkout) and bring the LIVE baseline back up healthy. Restore
-    #    from RESTORE_DIR — the dir the live stack actually ran from (#454), which on a release box is a
-    #    per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir hands the "pithead"
-    #    project locally-built :dev images.
+    # 2. Stop the branch and restore from the live stack's real directory (#454), not CANONICAL_DIR.
+    # A wrong restore directory can reuse the branch's locally-built :dev images.
     step "bringing the baseline stack ($RESTORE_DIR) back up"
     on_bench "cd '$E2E_DIR' && ./pithead down >/dev/null 2>&1 || true"
+    cleanup_rotate_onion_fixture || {
+        warn "FAILED to remove the isolated onion fixture after stopping the branch stack."
+        RESTORE_PROOF_FAILED=1
+    }
     # Look at the control units BEFORE the apply below converges them. Without this the run can
     # never report that it stranded the box — the post-restore proof runs downstream of its own
     # repair, so on the ordinary #1085 path it is green either way. Observation only: the strand is
@@ -444,8 +445,7 @@ provision() {
         fi
         git -C '$E2E_DIR' remote set-url origin '$GIT_REMOTE_URL'
         git -C '$E2E_DIR' fetch --quiet origin '$BRANCH'
-        # The e2e checkout is DEDICATED and disposable, so force a pristine tree instead of assuming
-        # one (#454): drop stray untracked files (e.g. a leftover bench script) that would otherwise
+        # The e2e checkout is DEDICATED and disposable: drop stray untracked files that would
         # abort 'checkout' with \"would be overwritten\". -x clears ignored build cruft too; the -e
         # excludes keep data/backups and results/, so chains and rollback anchors are never touched.
         # config.json/.env ARE wiped (gitignored, no -e) — the next step re-seeds them, so don't drop
@@ -492,7 +492,6 @@ provision() {
         ok "config seeded from the canonical checkout (data dirs point at the shared chains)"
     fi
 }
-
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
     log "Taking a safety backup of the live stack (the rollback anchor)"
@@ -572,6 +571,7 @@ borrow_miner() {
 # --- Phase 4: deploy the branch ---------------------------------------------
 deploy_branch() {
     parent_lock_checkpoint deploy || die "Parent-held bench lock was lost before deploy."
+    { prepare_rotate_onion_fixture && bootstrap_rotate_onion_fixture; } || die "Failed to provision the isolated dashboard-onion fixture."
     # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
     # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
     # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before

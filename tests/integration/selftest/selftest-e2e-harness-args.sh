@@ -80,14 +80,141 @@ assert_eq "a --scenario NAME pair supplied by validate_harness_args reaches run.
 if (
     # shellcheck source=tests/integration/lib/harness-args.sh
     source "$HERE/../lib/harness-args.sh"
-    MODE=targeted CI_JOB_ID=42 HARNESS_ARGS=(--rotate-onion)
+    MODE=targeted KEEP=0 HARNESS_ARGS=(--rotate-onion)
     die() { return 1; }
     validate_harness_args && [ "$HARNESS_PHASE_ARGS" = " --rotate-onion" ] &&
-        [ "$ROTATE_FIXTURE_ATTESTATION" = bench-ci-job:42 ]
+        [ "$ROTATE_FIXTURE_REQUIRED" = 1 ] && [ -z "$ROTATE_FIXTURE_ATTESTATION" ]
 ); then
-    it_pass "the bench job attests the reserved rotate-onion fixture"
+    it_pass "the launcher requires an isolated fixture before rotate-onion can run"
 else
-    it_fail "the bench job attests the reserved rotate-onion fixture"
+    it_fail "the launcher requires an isolated fixture before rotate-onion can run"
+fi
+
+echo "== rotate-onion gets a one-run Tor fixture, not the baseline dashboard identity =="
+WORK="$(cd "$(mktemp -d)" && pwd -P)"
+trap 'rm -rf "$WORK"' EXIT
+E2E_DIR="$WORK/e2e"
+SOURCE_TOR="$WORK/live-tor"
+mkdir -p "$E2E_DIR/data" "$SOURCE_TOR/p2pool"
+printf '{"dashboard":{"onion":{"enabled":false,"client_auth":false}},"tor":{"data_dir":"auto"}}\n' >"$E2E_DIR/config.json"
+printf '%s\n' \
+    "TOR_DATA_DIR=$SOURCE_TOR" \
+    'COMPOSE_PROFILES=local_node,local_tari' \
+    'P2POOL_ONION_ADDRESS=live-p2pool.onion' \
+    'MONERO_ONION_ADDRESS=live-monero.onion' \
+    'TARI_ONION_ADDRESS=live-tari.onion' \
+    'DASHBOARD_ONION_ADDRESS=live.onion' \
+    'DASHBOARD_ONION_CLIENT_PUBKEY=live-public' \
+    'DASHBOARD_ONION_CLIENT_PRIVKEY=live-private' >"$E2E_DIR/.env"
+printf 'production-identity-must-not-move\n' >"$SOURCE_TOR/p2pool/hostname"
+printf '%s\n' '#!/bin/sh' \
+    'set -e' \
+    '[ "$1" = render ]' \
+    'dir=$(jq -r .tor.data_dir config.json)' \
+    'sed -e "s|^TOR_DATA_DIR=.*|TOR_DATA_DIR=$dir|" -e "s|^DASHBOARD_ONION_CLIENT_PUBKEY=.*|DASHBOARD_ONION_CLIENT_PUBKEY=fixture-public|" -e "s|^DASHBOARD_ONION_CLIENT_PRIVKEY=.*|DASHBOARD_ONION_CLIENT_PRIVKEY=fixture-private|" .env >.env.test' \
+    'mv .env.test .env' >"$E2E_DIR/pithead"
+chmod +x "$E2E_DIR/pithead"
+chmod 600 "$E2E_DIR/config.json" "$E2E_DIR/.env"
+on_bench() {
+    SNIPPET="$1" bash -c '
+        readlink() { [ "$1" = -f ] && shift; [ "$1" = -- ] && shift; (cd "$1" && pwd -P); }
+        sudo() {
+            [ "$1" = -n ] && shift
+            [ "$1" = chown ] && return 0
+            if [ "$1" = rm ] && [ "$2" = -rf ] && [ "$3" = --one-file-system ]; then shift 3; command rm -rf "$@"; return; fi
+            "$@"
+        }
+        docker() {
+            case "$1" in
+            compose)
+                tor_dir=$(jq -r .tor.data_dir config.json)
+                for svc in p2pool dashboard monero tari; do
+                    mkdir -p "$tor_dir/$svc"
+                    char=a
+                    case "$svc" in dashboard) char=b ;; monero) char=c ;; tari) char=d ;; esac
+                    value=
+                    i=0
+                    while [ "$i" -lt 56 ]; do value="$value$char"; i=$((i + 1)); done
+                    printf "%s.onion\n" "$value" >"$tor_dir/$svc/hostname"
+                done
+                ;;
+            exec)
+                path="$4"
+                if [ "$3" = test ]; then path="$5"; fi
+                svc=$(basename "$(dirname "$path")")
+                tor_dir=$(jq -r .tor.data_dir config.json)
+                case "$3" in test) test -f "$tor_dir/$svc/hostname" ;; cat) cat "$tor_dir/$svc/hostname" ;; esac
+                ;;
+            ps)
+                [ "$DOCKER_PS_FAIL" != 1 ] || return 1
+                [ -z "$MOUNTED_FIXTURE" ] || printf "fixture-container\n"
+                ;;
+            inspect)
+                [ "$DOCKER_INSPECT_FAIL" != 1 ] || return 1
+                printf "%s\n" "$MOUNTED_FIXTURE"
+                ;;
+            esac
+        }
+        eval "$SNIPPET"
+    '
+}
+# shellcheck source=tests/integration/lib/harness-args.sh
+source "$HERE/../lib/harness-args.sh"
+ROTATE_FIXTURE_REQUIRED=1 ROTATE_FIXTURE_DIR="" ROTATE_FIXTURE_ATTESTATION=""
+if prepare_rotate_onion_fixture && bootstrap_rotate_onion_fixture &&
+    [ "$ROTATE_FIXTURE_ATTESTATION" = "$ROTATE_FIXTURE_DIR" ] &&
+    [ "$(cat "$SOURCE_TOR/p2pool/hostname")" = production-identity-must-not-move ] &&
+    [ -f "$ROTATE_FIXTURE_DIR/p2pool/hostname" ] && [ -f "$ROTATE_FIXTURE_DIR/dashboard/hostname" ] &&
+    [ "$(jq -r '.dashboard.onion.enabled, .dashboard.onion.client_auth, .tor.data_dir' "$E2E_DIR/config.json")" = "$(printf 'true\ntrue\n%s' "$ROTATE_FIXTURE_DIR")" ] &&
+    [ "$(awk -F= '$1 == "TOR_DATA_DIR" { print $2 }' "$E2E_DIR/.env")" = "$ROTATE_FIXTURE_DIR" ] &&
+    [ "$(grep -c '=placeholder$' "$E2E_DIR/.env")" = 0 ] &&
+    [ "$(cat "$ROTATE_FIXTURE_DIR.attestation")" = "$ROTATE_FIXTURE_DIR" ]; then
+    it_pass "fixture provisioning mints test-only dashboard and mining identities"
+else
+    it_fail "fixture provisioning mints test-only dashboard and mining identities"
+fi
+fixture="$ROTATE_FIXTURE_DIR"
+export MOUNTED_FIXTURE="$fixture"
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
+    it_pass "fixture cleanup refuses an exact active mount"
+else
+    it_fail "fixture cleanup refuses an exact active mount"
+fi
+export MOUNTED_FIXTURE="$fixture/child"
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
+    it_pass "fixture cleanup refuses a descendant active mount"
+else
+    it_fail "fixture cleanup refuses a descendant active mount"
+fi
+export MOUNTED_FIXTURE="$E2E_DIR/data"
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
+    it_pass "fixture cleanup refuses a containing active mount"
+else
+    it_fail "fixture cleanup refuses a containing active mount"
+fi
+export DOCKER_PS_FAIL=1
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
+    it_pass "fixture cleanup fails closed when the container census fails"
+else
+    it_fail "fixture cleanup fails closed when the container census fails"
+fi
+unset DOCKER_PS_FAIL
+export MOUNTED_FIXTURE="$fixture" DOCKER_INSPECT_FAIL=1
+if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
+    it_pass "fixture cleanup fails closed when a container inspection fails"
+else
+    it_fail "fixture cleanup fails closed when a container inspection fails"
+fi
+unset DOCKER_INSPECT_FAIL
+unset MOUNTED_FIXTURE
+mkdir -p "$E2E_DIR/backups"
+printf 'fixture-client-credential\n' >"$E2E_DIR/backups/rotate-onion-env-preserve"
+chmod 600 "$E2E_DIR/backups/rotate-onion-env-preserve"
+if cleanup_rotate_onion_fixture && [ -z "$ROTATE_FIXTURE_DIR" ] && [ ! -e "$fixture" ] &&
+    [ ! -e "$fixture.attestation" ] && [ ! -e "$E2E_DIR/backups/rotate-onion-env-preserve" ]; then
+    it_pass "fixture cleanup removes Tor data, marker, and credential snapshot"
+else
+    it_fail "fixture cleanup removes Tor data, marker, and credential snapshot"
 fi
 
 echo ""
