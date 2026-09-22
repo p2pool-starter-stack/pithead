@@ -104,7 +104,9 @@ phase_provision_egress_backstop() { # <phase-rc>
     # curl is deliberately installed at this fixed path in build/monero/Dockerfile. Invoke it
     # directly: podman exec's non-login shell need not inherit the image's PATH.
     if ! _ssh "podman exec monerod /usr/bin/curl --version >/dev/null 2>&1"; then
-        "$unexercised" "curl missing from the monerod image — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
+        # This is a broken image capability, not an optional backstop: it must remain a distinct
+        # failure even when an earlier provision assertion already made the phase red.
+        bad "curl missing from the monerod image — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
         return 0
     fi
 
@@ -201,6 +203,12 @@ _egress_self_test() {
         [ "$FAIL" -eq 1 ] && [ "$PASS" -eq 0 ] &&
         [[ "$missing_message" == "curl missing from the monerod image"* ]] || {
         printf 'a missing fixed-path curl did not fail the egress backstop\n' >&2
+        f=$((f + 1))
+    }
+    PASS=0 FAIL=0
+    phase_provision_egress_backstop 1 >/dev/null
+    [ "$FAIL" -eq 1 ] && [ "$PASS" -eq 0 ] || {
+        printf 'a missing fixed-path curl was suppressed by an earlier failure\n' >&2
         f=$((f + 1))
     }
     unset -f _ssh
