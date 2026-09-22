@@ -19,8 +19,8 @@
 
 echo "== domain: the CLI verb ledger accounts for every dispatched verb (#2348) =="
 
-CVL_COVERED="setup apply render up down restart upgrade status doctor backup restore load-images firstboot-wizard local-miner os-update factory-reset control-run-pending onion-client-key reset-dashboard"
-CVL_MISSING="uninstall rotate-secrets rotate-dashboard-onion config-reset support-bundle render-quadlet"
+CVL_COVERED="setup apply render up down restart upgrade status doctor backup restore load-images firstboot-wizard local-miner os-update factory-reset control-run-pending onion-client-key reset-dashboard config-reset"
+CVL_MISSING="uninstall rotate-secrets rotate-dashboard-onion support-bundle render-quadlet"
 CVL_BYDESIGN="test-alert logs version help"
 
 cvl_cmds="$(
