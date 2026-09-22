@@ -7,6 +7,16 @@ import time
 
 GREETING = b"\xff" + b"\0" * 8 + b"\x7f\x03\x01NULL" + b"\0" * 48
 READY = bytes.fromhex("041a0552454144590b536f636b65742d547970650000000458505542")
+SUB_READY = bytes.fromhex("04190552454144590b536f636b65742d5479706500000003535542")
+
+
+def read_exact(client, size):
+    data = bytearray()
+    while len(data) < size:
+        if not (chunk := client.recv(size - len(data))):
+            raise ConnectionError(f"short read: got {len(data)}, want {size}")
+        data.extend(chunk)
+    return bytes(data)
 
 
 def main():
@@ -24,14 +34,20 @@ def main():
             client, _ = listener.accept()
             with client:
                 client.settimeout(10)
-                if not client.recv(64):
+                greeting = client.recv(64)
+                if not greeting:
                     continue
+                greeting += read_exact(client, 64 - len(greeting))
+                if greeting != GREETING:
+                    raise ValueError("unexpected ZMTP greeting")
                 client.sendall(GREETING)
-                client.recv(27)
+                if read_exact(client, 27) != SUB_READY:
+                    raise ValueError("expected ZMTP SUB READY")
                 client.sendall(READY[:2])
                 time.sleep(0.05)  # The probe reads the ZMTP header before its body.
                 client.sendall(READY[2:])
-                client.recv(3)  # Empty-topic SUBSCRIBE.
+                if read_exact(client, 3) != b"\x00\x01\x01":
+                    raise ValueError("expected empty-topic SUBSCRIBE")
                 if args.silent:
                     time.sleep(2)
                 else:
