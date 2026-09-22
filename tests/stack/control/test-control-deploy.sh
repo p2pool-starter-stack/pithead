@@ -196,6 +196,8 @@ ln -s "$C/outside" "$C/old-escape/escape"
 out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/escape" 2>&1)"
 assert_rc "carry: nested symlink target refuses" "$?" "1"
 if [ -e "$C/outside/mining_data.db" ]; then bad "carry: symlink target untouched" "copied outside the old directory"; else ok "carry: symlink target untouched"; fi
+out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/./escape" 2>&1)"
+assert_rc "carry: nested symlink alias refuses" "$?" "1"
 # stop must succeed before copying an SQLite DB; do not snapshot a live WAL set.
 mkdir -p "$C/old-stop" "$C/new-stop"
 printf 'stopdb' >"$C/old-stop/mining_data.db"

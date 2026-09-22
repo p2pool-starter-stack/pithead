@@ -29,6 +29,10 @@ run_sourced "$SANDBOX" assert_safe_dir "relative/data" >/dev/null 2>&1
 assert_rc "rejects relative path" "$?" "1"
 run_sourced "$SANDBOX" assert_safe_dir "/srv/../etc/data" >/dev/null 2>&1
 assert_rc "rejects .. traversal" "$?" "1"
+run_sourced "$SANDBOX" assert_safe_dir "/srv/./pithead/data" >/dev/null 2>&1
+assert_rc "rejects . traversal" "$?" "1"
+run_sourced "$SANDBOX" assert_safe_dir "//srv/pithead/data" >/dev/null 2>&1
+assert_rc "rejects empty path components" "$?" "1"
 # A ':' would forge an extra field in the compose bind-mount short syntax (SOURCE:TARGET:MODE).
 run_sourced "$SANDBOX" assert_safe_dir "/srv/pithead/data:ro" >/dev/null 2>&1
 assert_rc "rejects ':' (compose volume-mount injection)" "$?" "1"
