@@ -45,8 +45,10 @@ printf 'victim' >"$G/recovery/victim/mining_data.db"
 mv "$G/recovery/new" "$G/recovery/original"
 ln -s "$G/recovery/victim" "$G/recovery/new"
 (
-    # shellcheck disable=SC2034  # consumed by recover_dashboard_data_carry
-    ENV_FILE="$G/recovery/.env"
+    # shellcheck disable=SC2034  # read while sourcing pithead
+    PITHEAD_ENV_FILE="$G/recovery/.env"
+    # shellcheck disable=SC1090
+    source "$STACK"
     docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
     recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \
         "$G/recovery/new" "$G/recovery/marker" 1
@@ -59,8 +61,10 @@ rm "$G/recovery/new"
 mv "$G/recovery/original" "$G/recovery/new"
 : >"$G/recovery/marker"
 (
-    # shellcheck disable=SC2034  # consumed by recover_dashboard_data_carry
-    ENV_FILE="$G/recovery/.env"
+    # shellcheck disable=SC2034  # read while sourcing pithead
+    PITHEAD_ENV_FILE="$G/recovery/.env"
+    # shellcheck disable=SC1090
+    source "$STACK"
     docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
     rm() { return 1; }
     recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \

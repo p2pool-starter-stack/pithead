@@ -291,7 +291,7 @@ apply2360() {
         require_env() { :; }
         ensure_onion_password() { :; }
         load_preserved_state() { :; }
-        ensure_directories() { :; }
+        ensure_directories() { mkdir -p "$APPLY2360_NEW"; }
         resolve_dashboard_host() { :; }
         is_deployed() { return 0; }
         onion_missing() { return 1; }
