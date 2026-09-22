@@ -280,10 +280,10 @@ endpoint (or its documented SOCKS loopback bridge). It then restores the origina
 configuration. Missing node inputs are a counted failure, never a skipped release gate.
 
 On a failed current-startup Tari round trip, the row first searches the full current P2Pool log
-(not a retained tail), then records the opaque runner-selected provider ID when available and
-whether P2Pool restarted during the bounded attempt window. Its `tari_rpc=chain_id_absent` result
-means P2Pool's own guest-path merge-mining client did not report a completed gRPC round trip;
-endpoint reachability by itself is not accepted as readiness.
+(not a retained tail), then records the opaque runner-selected provider ID, restart state, and
+bounded allowlisted Monero/Tari RPC and sync fields from the guest's existing authenticated
+dashboard clients. Those readiness fields are diagnostic only: the current-process `uses chain_id`
+handshake remains the pass assertion.
 
 ## Static verification
 

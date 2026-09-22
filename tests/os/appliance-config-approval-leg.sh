@@ -110,6 +110,19 @@ p2pool_current_startup_merge_lines() {
     _ssh "podman logs --since '$started' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
 }
 
+allowlisted_node_readiness() {
+    jq -c '{monero_rpc:(.monero_rpc == true),monero_synced:(.monero_synced == true),
+        monero_height:(.monero_height|numbers // 0),tari_rpc:(.tari_rpc == true),
+        tari_synced:(.tari_synced == true),tari_height:(.tari_height|numbers // 0)}'
+}
+
+guest_node_readiness() {
+    # Existing authenticated clients, from the guest network; never emit endpoints, credentials,
+    # exceptions, or raw responses.
+    _ssh "podman exec dashboard python -c 'import asyncio,json; from mining_dashboard.client.monero.monero_client import MoneroClient; from mining_dashboard.client.tari.tari_client import TariClient; m=MoneroClient().get_info(); t=asyncio.run(TariClient().get_sync_status()); print(json.dumps({\"monero_rpc\":m is not None,\"monero_synced\":bool(m and m.get(\"synchronized\")),\"monero_height\":int((m or {}).get(\"height\",0) or 0),\"tari_rpc\":bool(t.get(\"reachable\")),\"tari_synced\":bool(t.get(\"reachable\") and not t.get(\"is_syncing\")),\"tari_height\":int(t.get(\"current\",0) or 0)}))'" 2>/dev/null |
+        allowlisted_node_readiness
+}
+
 # The leg ahead of this one recreates the dashboard container, so a single curl the instant it
 # returns is a race, not a measurement (#2059's contract, applied here after the #1929 leg was bitten
 # by the same shape). Bounded retry, and the CALLER decides what an exhausted read means.
@@ -161,7 +174,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
     local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
     local status destructive approval_required mh_shown th_shown login_warned env_now cmd_now
-    local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now
+    local env_ok cmd_ok direct_ok bridged_ok flags_now socks5_now started_now restarted readiness
 
     # Attribute an unreadable dashboard to the earlier leg that left this precondition false.
     live=$(sensitive_live_config) || {
@@ -337,7 +350,8 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         started_now=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
         restarted=false
         [ "$started_now" = "$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')" ] || restarted=true
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (provider=${CI_NODE_PROVIDER:-unknown} env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now p2pool_restarted=$restarted tari_rpc=chain_id_absent roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
+        readiness=$(guest_node_readiness || printf '{"monero_rpc":false,"monero_synced":false,"monero_height":0,"tari_rpc":false,"tari_synced":false,"tari_height":0}')
+        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (provider=${CI_NODE_PROVIDER:-unknown} env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now p2pool_restarted=$restarted readiness=$readiness roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
 
@@ -433,6 +447,7 @@ _approval_self_test() {
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     _remote_node_proposal_self_test || f=$((f + 1))
+    [ "$(printf '%s' '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8,"host":"private","password":"secret"}' | allowlisted_node_readiness)" = '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8}' ] || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
