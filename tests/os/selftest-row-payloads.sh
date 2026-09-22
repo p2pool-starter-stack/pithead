@@ -2,9 +2,8 @@
 # Tier-1 driver for the #2060 row payloads. Matched by `make test-integration-selftest`'s
 # `tests/os/selftest*.sh` glob, so it runs in `make test` without a KVM guest.
 #
-# These helpers have no other tier-1 driver: the approval one because the leg that consumes it
-# (tests/os/appliance-config-approval-leg.sh) is at its recorded file budget, the bundle one because
-# it is a separate evidence helper, and the Tari-mode one because its live verdict needs KVM. The
+# These helpers have no other tier-1 driver: the approval one is a separate evidence helper, the
+# bundle one is likewise standalone, and the Tari-mode one's live verdict needs KVM. The
 # hostname, control-runner and doctor payloads are driven by their own legs' --self-test, already
 # wired in tests/stack/test-harness-tooling.sh.
 #

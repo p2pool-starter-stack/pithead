@@ -402,6 +402,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = "--self-test" ]; then
     . "$(cd "$(dirname "$0")" && pwd)/node-preflight-loopback-leg.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
-    _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test
+    _wsp_self_test && _recovery_self_test && _setup_failure_self_test && _approval_self_test && _remote_node_self_test
     exit $?
 fi

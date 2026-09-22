@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
-# Verdicts and pure self-tests for appliance-config-approval-leg.sh.
+# Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
 # used to carry: approval_fixture_arm/bind/quiesce/disarm, approval_fixture_post/preview, the
@@ -338,8 +338,8 @@ _control_post_timeout_self_test() (
 
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
-# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
-# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+# Driven by tests/stack/test-harness-tooling.sh. The payload controls stay beside the verdicts they
+# exercise rather than the live guest paths.
 #
 # What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
 # different defects, so a payload that printed one sentence for all four would leave it exactly
