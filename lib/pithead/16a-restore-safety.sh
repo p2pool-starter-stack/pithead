@@ -90,7 +90,7 @@ restore_staged_members_safe() {
 # .env and Caddyfile from the staged, validated config. This runs before any live path is touched.
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
     local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
-    local key value count kind
+    local key value count kind decoded dash_user dash_password
     : >"$seed" || return 1
     while read -r key kind; do
         if [ "$key" = PROXY_STRATUM_PASSWORD ] && [ "$(jq -r '.p2pool.stratum_password // ""' "$staged_cfg")" != auto ]; then continue; fi
@@ -102,9 +102,22 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         case "$kind" in
         hex24) [[ "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         hex32) [[ "$value" =~ ^[0-9a-f]{32}$ ]] || return 1 ;;
+        hex64)
+            dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
+            [ -n "$dash_password" ] || continue
+            [ "$value" = "$(printf '%s' "$dash_password" | sha256_hex)" ] || return 1
+            ;;
         optional_hex24) [[ -z "$value" || "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         onion) [[ "$value" =~ ^(placeholder|[a-z2-7]{56}\.onion)$ ]] || return 1 ;;
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
+        bcrypt)
+            dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
+            [ -n "$dash_password" ] || continue
+            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
+            [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
+            dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$staged_cfg") || return 1
+            caddy_hash_password_matches "$value" "$dash_user" "$dash_password" || return 1
+            ;;
         bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         esac
         printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
@@ -119,6 +132,8 @@ P2POOL_ONION_ADDRESS onion
 DASHBOARD_ONION_ADDRESS onion
 DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
+DASHBOARD_AUTH_HASH_B64 bcrypt
+DASHBOARD_AUTH_PW_FP hex64
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \

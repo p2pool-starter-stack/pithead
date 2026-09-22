@@ -119,7 +119,7 @@ assert_eq "restored database is owner-only" "$(file_mode "$BK/data/dashboard/das
 # Generated files in a backup are compatibility inputs, never runtime policy. A valid config plus
 # stale .env/Caddyfile must land the normal writers' output, while opaque generated identity and
 # secrets still round-trip.
-jq '.p2pool.stratum_password = "fixture.literal-pass"' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
+jq '.p2pool.stratum_password = "fixture.literal-pass" | .dashboard.auth = {"username":"admin","password":"fixture-dashboard-pass"}' "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
 cat >"$ROOTS/${BK#/}/.env" <<'EOF'
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
 WALLET_RPC_PASSWORD=111111111111111111111111
@@ -132,24 +132,44 @@ DASHBOARD_ONION_ADDRESS=dddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 DASHBOARD_ONION_CLIENT_PUBKEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 DASHBOARD_ONION_CLIENT_PRIVKEY=BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 ARCHIVE_ONLY_VALUE=stale-generated-setting
-DASHBOARD_AUTH_HASH_B64=c3RhbGUtZml4dHVyZQ==
-DASHBOARD_AUTH_PW_FP=stale-fingerprint
+DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JFVOSVRURVNUYmNyeXB0aGFzaHZhbHVlMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw
+DASHBOARD_AUTH_PW_FP=e728607257f6c0d6af8ccaba24a69590dbb0592b5e5de273fbe3d359574cb5c2
 DEPLOYMENT_COMPLETED=true
 EOF
 printf 'STALE-GENERATED-CADDY\n' >"$ROOTS/${BK#/}/Caddyfile"
 cr_archive "$CR/stale-derived.tar.gz"
-out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/stale-derived.tar.gz" 2>&1)"
+out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.invalid CADDY_VERIFY_PASSWORD=fixture-dashboard-pass PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/stale-derived.tar.gz" 2>&1)"
 assert_rc "restore accepts valid config while discarding archive-derived policy" "$?" 0
 assert_eq "restore derives literal stratum password from config" "$(sed -n 's/^PROXY_STRATUM_PASSWORD=//p' "$BK/.env")" fixture.literal-pass
 assert_eq "administrative restore retains deployment status" "$(sed -n 's/^DEPLOYMENT_COMPLETED=//p' "$BK/.env")" true
 assert_eq "restore preserves the generated proxy secret" "$(sed -n 's/^PROXY_AUTH_TOKEN=//p' "$BK/.env")" abcdef0123456789abcdef01
+assert_eq "restore preserves the wallet RPC secret" "$(sed -n 's/^WALLET_RPC_PASSWORD=//p' "$BK/.env")" 111111111111111111111111
 assert_eq "restore preserves the wallet database secret" "$(sed -n 's/^TARI_WALLET_PASSWORD=//p' "$BK/.env")" 22222222222222222222222222222222
+assert_eq "restore preserves the dashboard auth hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" JDJ5JDE0JFVOSVRURVNUYmNyeXB0aGFzaHZhbHVlMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw
+assert_eq "restore preserves the dashboard auth fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" e728607257f6c0d6af8ccaba24a69590dbb0592b5e5de273fbe3d359574cb5c2
 assert_eq "restore preserves the Tor onion identity" "$(sed -n 's/^MONERO_ONION_ADDRESS=//p' "$BK/.env")" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 assert_eq "restore preserves onion client-auth identity" "$(sed -n 's/^DASHBOARD_ONION_CLIENT_PRIVKEY=//p' "$BK/.env")" BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
 assert_not_contains "restore drops unrecognized archive env policy" "$(cat "$BK/.env")" ARCHIVE_ONLY_VALUE
-assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" ""
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
+
+jq '.dashboard.auth.password = "other-dashboard-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+printf 'LIVE-ENV\n' >"$BK/.env"
+printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
+cr_archive "$CR/mismatched-dashboard-hash.tar.gz"
+out="$(cd "$BK" && CADDY_VERIFY_PASSWORD=fixture-dashboard-pass PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/mismatched-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects a dashboard hash for another password" "$?" 1
+assert_eq "mismatched dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "mismatched dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+jq '.dashboard.auth.password = "fixture-dashboard-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+
+sed 's/^DASHBOARD_AUTH_PW_FP=.*/DASHBOARD_AUTH_PW_FP=0000000000000000000000000000000000000000000000000000000000000000/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/mismatched-dashboard-fingerprint.tar.gz"
+out="$(cd "$BK" && CADDY_VERIFY_PASSWORD=fixture-dashboard-pass PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/mismatched-dashboard-fingerprint.tar.gz" 2>&1)"
+assert_rc "restore rejects a dashboard fingerprint for another password" "$?" 1
+assert_eq "mismatched dashboard fingerprint leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+assert_eq "mismatched dashboard fingerprint leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+sed 's/^DASHBOARD_AUTH_PW_FP=.*/DASHBOARD_AUTH_PW_FP=e728607257f6c0d6af8ccaba24a69590dbb0592b5e5de273fbe3d359574cb5c2/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
