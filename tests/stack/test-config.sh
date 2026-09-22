@@ -296,11 +296,11 @@ wl_case '[{"name":"rig1","watts":"142"}]' "string workers.list watts (#260)" "wo
 # A valid workers.list[] applies cleanly, leaves the 1.x migration inert, and — like the 1.x shape
 # — rides its token through WORKER_API_TOKENS in .env (#2349), not the masked config.json mount.
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_xyz789"}]} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"}, "workers":{"list":[{"name":"rig1","host":"worker-lan.local","token":"tok_first"},{"name":"rig1","token":"tok_second"}]} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid workers.list applies" "$?" "0"
 assert_not_contains "a canonical workers.list[] config triggers no 1.x migration" "$out" "Migrated the 1.x config keys"
-if grep -q "WORKER_API_TOKENS=.*tok_xyz789" "$V/.env"; then ok "workers.list token rides WORKER_API_TOKENS in .env"; else bad "workers.list token rides WORKER_API_TOKENS in .env" "token missing from WORKER_API_TOKENS"; fi
+if grep -q "WORKER_API_TOKENS=.*tok_first" "$V/.env" && ! grep -q "WORKER_API_TOKENS=.*tok_second" "$V/.env"; then ok "duplicate workers keep the first token in WORKER_API_TOKENS"; else bad "duplicate workers keep the first token in WORKER_API_TOKENS" "token map did not match the first descriptor"; fi
 
 # Setting BOTH workers.list[] and the removed dashboard.workers[] to DIFFERENT values is a hard
 # error (#506/#1832) — migrating over the new key, or silently picking one, would leave the other a

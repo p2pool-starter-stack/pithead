@@ -196,7 +196,7 @@ render_env() {
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
     worker_api_auth=$(jq -r '.workers.api_auth // "none"' "$CONFIG_FILE")
     worker_api_token=$(jq -r '.workers.api_token // ""' "$CONFIG_FILE")
-    worker_api_tokens_json=$(jq -c '[(.workers.list // [])[] | select((.name // "") != "" and (.token // "") != "") | {(.name): .token}] | add // {}' "$CONFIG_FILE") # #2349: raw values for the masked (#440) workers.list[].token sentinel, {name: token} JSON
+    worker_api_tokens_json=$(jq -c 'reduce ((.workers.list // [])[] | select((.name // "") != "" and (.token // "") != "")) as $worker ({}; .[$worker.name] //= $worker.token)' "$CONFIG_FILE") # #2349: raw values for the masked (#440) workers.list[].token sentinel, {name: token} JSON; first duplicate wins
 
     # Telegram operator bot (#121 alerts, #45 commands). Disabled by default. bot_token is a
     # secret: it lives only in this owner-only .env (chmod 600 below) and the dashboard never logs
