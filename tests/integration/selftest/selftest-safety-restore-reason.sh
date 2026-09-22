@@ -57,5 +57,43 @@ assert_eq "a config drift is named, distinctly from restore/secrets" \
 assert_eq "a secret drift is named, distinctly from restore/config" \
     "$(_restore_reason 0 match drift)" "restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
 
+_safety_backup_recovery_capture() {
+    (
+        OUT_DIR="$(mktemp -d)" SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0
+        SAFETY_ARCHIVE="" SAFETY_RESTORE_FAILED=0 events=""
+        pithead() {
+            [ "$1" = backup ] && {
+                printf 'Backup written to: /tmp/safety.tar.gz\n'
+                return 0
+            }
+        }
+        rx() {
+            case "$1" in
+            test\ -f*) return 0 ;;
+            tar\ -tzf*) printf 'config.json\n.env\n' ;;
+            docker\ compose\ ps*) printf 'unhealthy PASSWORD=secret\n' ;;
+            esac
+        }
+        wait_status_ok() { return 1; }
+        capture_artifacts() {
+            mkdir -p "$2/$1"
+            events="${events}capture:$1 "
+        }
+        safety_restore_exact() { events="${events}restore "; }
+        safety_cleanup() { events="${events}cleanup "; }
+        it_log() { :; }
+        it_fail() { :; }
+        assert_contains() { :; }
+        safety_backup
+        rc=$?
+        healthcheck="$(cat "$OUT_DIR/safety-backup/healthcheck.txt")"
+        rm -rf "$OUT_DIR"
+        printf '%s|%s|%s' "$rc" "$events" "$healthcheck"
+    )
+}
+
+assert_eq "failed safety-backup recovery captures diagnostics before restore" \
+    "$(_safety_backup_recovery_capture)" "1|capture:safety-backup restore cleanup |unhealthy PASSWORD=<redacted>"
+
 echo "selftest-safety-restore-reason: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

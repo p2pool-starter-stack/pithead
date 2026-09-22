@@ -34,6 +34,9 @@ safety_backup() {
     fi
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
+        capture_artifacts "safety-backup" "$OUT_DIR"
+        rx "docker compose ps -q --all | xargs -r docker inspect --format '{{.Name}} {{range .State.Health.Log}}{{.ExitCode}} {{.Output}}{{end}}'" 2>&1 |
+            redact >"$OUT_DIR/safety-backup/healthcheck.txt" || true
         safety_restore_exact && safety_cleanup || true
         return 1
     }

@@ -794,9 +794,12 @@ hot-apply loop skips it (a subnet move isn't a hot apply) and this phase runs it
 Each run writes a manifest (`results/manifest.txt`) recording exactly what was under test: the
 stack `VERSION`, git revision, and `docker compose images`. A run is reproducible.
 
-On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
+On a scenario failure, or when the safety-backup recovery gate fails before its restore, the
+harness captures (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
-`api-state.json`, and `logs.txt` (last 200 lines per service). The end-of-run summary lists
+`api-state.json`, and `logs.txt` (last 200 lines per service). A failed safety-backup recovery
+also records its containers' redacted health-check output in `healthcheck.txt` before restoring.
+The end-of-run summary lists
 each failed assertion and points at these.
 
 `config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
