@@ -188,8 +188,8 @@ apply() {
             # confirmation below — one prompt per key, so a Monero+Tari double change can't
             # ride through on a single typed prefix.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
-            # #2360: remember the pre-commit dashboard.data_dir so the carry below (run after the
-            # commit, alongside migrate_dashboard_data) knows where the live DB still sits.
+            # #2360: remember the active dashboard.data_dir for the carry before .env publication.
+            # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
