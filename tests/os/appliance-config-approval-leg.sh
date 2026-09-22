@@ -188,8 +188,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
-    # A restart can lose the runner result after the hostname was already applied.  Probe the
-    # authoritative identity once, so the failure payload does not invent a failed commit.
+    # A restart can lose the result after the hostname already applied; probe identity once.
     local identity_landed=unknown identity_evidence=
     if [ -z "$result" ]; then
         if identity_evidence=$(assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"); then
@@ -323,7 +322,6 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     if [ "$tries" -lt 60 ]; then
         ok "approved endpoints passed host preflight and p2pool consumed Tari chain_id from the current startup"
     else
-        # Boolean sub-verdicts survive topology redaction while raw endpoint values do not.
         env_ok=false cmd_ok=false direct_ok=false bridged_ok=false
         env_now=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r')
         printf '%s\n' "$env_now" | grep -qxF "MONERO_NODE_HOST=$mh" &&
