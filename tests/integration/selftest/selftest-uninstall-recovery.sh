@@ -34,7 +34,7 @@ assert_contains "container cleanup requires a working Docker inventory" "$PHASE"
 assert_contains "unit cleanup uses successful unfiltered systemd inventories" "$PHASE" "systemctl list-unit-files --no-legend && systemctl list-units --all --no-legend"
 assert_contains "the snapshot stops services without preempting uninstall cleanup" "$PHASE" "docker compose stop >/dev/null"
 assert_contains "a successful phase restores the exact safety baseline" "$PHASE" "safety_restore_exact"
-assert_contains "the successful restore respects --keep" "$PHASE" '[ "$KEEP_STATE" != "1" ]'
+assert_contains "the successful restore respects --keep" "$PHASE" "[ \"\$KEEP_STATE\" != \"1\" ]"
 
 PITHEAD_LOG="$(mktemp)"
 DIRS_FIXTURE="$(mktemp -d)"
