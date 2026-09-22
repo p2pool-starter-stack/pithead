@@ -128,7 +128,7 @@ control_prune_results() { # <control-dir>
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
         n=$((n + 1))
-        if [ "$n" -ge "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
+        if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
             rm -f "$dir/$result"
         fi
     done
