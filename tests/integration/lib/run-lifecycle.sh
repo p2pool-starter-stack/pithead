@@ -76,12 +76,15 @@ run_lifecycle() {
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
-            local fp_b
-            fp_b="$(secret_fingerprint)"
-            local backed_pool
-            backed_pool="$(jq_get "$(api_state)" '.pool.type')"
+            local fp_b backed_pool fp_after
+            if ! fp_b="$(secret_fingerprint)" || [ -z "$fp_b" ]; then
+                it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
+                lifecycle_ok=0
+            elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
+                it_fail "backed-up pool state readable" "dashboard did not report pool.type before restore"
+                lifecycle_ok=0
             # Diverge from the backed-up state, then restore it back.
-            if push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
+            elif push_config "$(render_scenario_config "$BASELINE_CONFIG" "p2pool.pool=$other")" &&
                 pithead apply -y >/dev/null 2>&1 &&
                 pithead down >/dev/null 2>&1 &&
                 pithead restore -y "$arch" >/dev/null 2>&1 &&
@@ -96,7 +99,11 @@ run_lifecycle() {
                 # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
                 assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
-                assert_eq "restore preserves secrets" "$(secret_fingerprint)" "$fp_b"
+                if fp_after="$(secret_fingerprint)" && [ -n "$fp_after" ]; then
+                    assert_eq "restore preserves secrets" "$fp_after" "$fp_b"
+                else
+                    it_fail "restore preserves secrets" "could not fingerprint restored secrets"
+                fi
                 [ "$IT_FAIL" -le "$failures_before" ] || lifecycle_ok=0
             else
                 it_fail "backup restore round-trip succeeded" "apply, down, restore, or up returned non-zero"

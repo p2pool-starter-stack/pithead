@@ -15,7 +15,7 @@ assert_eq "the extraction is the whole lifecycle function" \
 drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
-        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 STATUS_COUNT=0
+        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no STATUS_COUNT=0
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
@@ -30,13 +30,19 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             case "$RESTORE_CASE:$1" in
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
             esac
+            [ "$1" != restore ] || RESTORED=yes
         }
         wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
         env_on_box() { :; }
         has_compose_profile() { return 1; }
-        jq_get() { printf main; }
-        api_state() { printf '{}'; }
-        secret_fingerprint() { printf fingerprint; }
+        jq_get() { [ -n "$1" ] && printf main; }
+        api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
+        secret_fingerprint() {
+            case "$RESTORE_CASE:$RESTORED" in
+            secret-before-fails:* | secret-after-fails:yes) return 1 ;;
+            esac
+            printf fingerprint
+        }
         render_scenario_config() { printf '{}'; }
         push_config() {
             PUSH_COUNT=$((PUSH_COUNT + 1))
@@ -68,6 +74,9 @@ assert_eq "a failed restore fails lifecycle" "$(drive_restore yes restore-fails)
 assert_eq "a failed up fails lifecycle" "$(drive_restore yes up-fails)" "1|1"
 assert_eq "a failed restore verification fails lifecycle" "$(drive_restore yes verify-fails)" "1|1"
 assert_eq "a failed restored-secret assertion fails lifecycle" "$(drive_restore yes secret-fails)" "1|1"
+assert_eq "an unreadable backup secret fingerprint fails lifecycle" "$(drive_restore yes secret-before-fails)" "1|1"
+assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_restore yes secret-after-fails)" "1|1"
+assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
 
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
