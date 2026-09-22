@@ -401,13 +401,11 @@ make_status_stub "$ST/bin"
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node,local_tari\nHOST_IP=box.lan\n' >"$ST/.env"
 ALL_UP="tor=running:healthy monerod=running:healthy p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 
-# All services up -> success, friendly summary.
 out="$(cd "$ST" && FAKE_STATES="$ALL_UP" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: all up exits 0" "$rc" "0"
 assert_contains "status: all-up summary" "$out" "All expected services are up"
 
-# A node down + proxy stopped -> node flagged, proxy treated as intentional failover.
 NODE_DOWN="${ALL_UP/monerod=running:healthy/monerod=exited:none}"
 NODE_DOWN="${NODE_DOWN/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$NODE_DOWN" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
@@ -415,9 +413,7 @@ rc=$?
 assert_rc "status: node down exits 1" "$rc" "1"
 assert_contains "status: proxy stop is intentional" "$out" "likely intentional"
 
-# A stopped p2pool/xmrig-proxy with healthy nodes is intentional — the nodes pass their
-# healthchecks while still syncing and the dashboard holds the miner until they're synced
-# (#35), so status reports it as likely-intentional (exit 0), not a fault.
+# A genuinely stopped miner is the intentional #35 sync hold, so status exits 0.
 PROXY_ONLY="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=exited:none}"
 out="$(cd "$ST" && FAKE_STATES="$PROXY_ONLY" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
@@ -430,15 +426,19 @@ rc=$?
 assert_rc "status: p2pool stop under sync hold exits 0" "$rc" "0"
 assert_contains "status: p2pool stop notes sync hold" "$out" "finish syncing"
 
-# Remote-node mode: the bundled monerod is not expected even if absent.
+RESTARTING_MINER="${ALL_UP/xmrig-proxy=running:none/xmrig-proxy=restarting:none}"
+out="$(cd "$ST" && FAKE_STATES="$RESTARTING_MINER" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
+rc=$?
+assert_rc "status: restarting sync-gated miner exits 1" "$rc" "1"
+assert_contains "status: restarting sync-gated miner is named" "$out" "xmrig-proxy   restarting"
+assert_not_contains "status: restarting sync-gated miner is never called intentional" "$out" "likely intentional"
+
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=\nHOST_IP=box.lan\n' >"$ST/.env"
 REMOTE="tor=running:healthy monerod=missing p2pool=running:none tari=running:healthy xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 out="$(cd "$ST" && FAKE_STATES="$REMOTE" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
 rc=$?
 assert_rc "status: remote mode ignores monerod" "$rc" "0"
 
-# Remote Tari mode (#103): the bundled tari container is not expected even if absent, mirroring
-# monerod above — COMPOSE_PROFILES carries local_node (Monero local) but no local_tari.
 printf 'DEPLOYMENT_COMPLETED=true\nCOMPOSE_PROFILES=local_node\nHOST_IP=box.lan\n' >"$ST/.env"
 REMOTE_TARI="tor=running:healthy monerod=running:healthy p2pool=running:none tari=missing xmrig-proxy=running:none dashboard=running:none docker-proxy=running:none docker-control=running:none caddy=running:none"
 out="$(cd "$ST" && FAKE_STATES="$REMOTE_TARI" PATH="$ST/bin:$PATH" ./pithead status 2>&1)"
