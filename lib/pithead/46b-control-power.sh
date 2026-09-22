@@ -50,8 +50,11 @@ control_power_gate() { # <cdir> <id> <actor> <action> — rc 0 = proceed (budget
         control_os_refuse "$1" "$2" "$3" "$4" rejected "the same power order ran less than five minutes ago — retry in a few minutes."
         return 1
     fi
+    if ! touch "$stamp" 2>/dev/null; then
+        control_os_refuse "$1" "$2" "$3" "$4" rejected "could not record the power-request cooldown — nothing was changed."
+        return 1
+    fi
     CONTROL_POWER_BUDGET=$((CONTROL_POWER_BUDGET - 1))
-    touch "$stamp" 2>/dev/null || true
     return 0
 }
 

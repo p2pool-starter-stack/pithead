@@ -35,7 +35,14 @@ else
 fi
 exit 0
 EOF
-chmod +x "$PWC/bin/systemctl"
+cat >"$PWC/bin/touch" <<'EOF'
+#!/usr/bin/env bash
+if [ "${PITHEAD_FAIL_POWER_STAMP:-}" = 1 ] && [[ "$*" == *".power-stamp."* ]]; then
+    exit 1
+fi
+exec /usr/bin/touch "$@"
+EOF
+chmod +x "$PWC/bin/systemctl" "$PWC/bin/touch"
 pwrun() { # [env pairs...] — drain the spool inside the appliance sandbox
     (cd "$PWC" && PATH="$PWC/bin:$PATH" SYSCTL_LOG="$PWC/sysctl.log" PITHEAD_APPLIANCE=1 \
         POWER_RESULT="$PWRES/$PW1.json" POWER_AUDIT="$PWC/data/control/audit/control.log" \
@@ -74,6 +81,15 @@ assert_eq "the power verb was never reached with the channel off" "$([ -f "$PWRE
 assert_eq "nothing was ordered with the control channel off" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
 mv "$PWC/.env.bak" "$PWC/.env"
 rm -f "$PWREQS/$PW1.json"
+
+# A rate limit that fails open when /data cannot create its stamp is no rate limit: reject before
+# issuing a machine order, even though the refusal's own result write may also be unavailable.
+pw_intent "$PW1" sys-reboot
+pwrun PITHEAD_FAIL_POWER_STAMP=1 >/dev/null
+assert_eq "a missing cooldown stamp rejects the order" "$(jq -r '.status' "$PWRES/$PW1.json" 2>/dev/null)" "rejected"
+assert_contains "the stamp refusal says nothing changed" "$(jq -r '.error' "$PWRES/$PW1.json" 2>/dev/null)" "nothing was changed"
+assert_eq "a missing cooldown stamp orders nothing" "$(wc -l <"$PWC/sysctl.log" | tr -d ' ')" "0"
+rm -f "$PWRES/$PW1.json"
 
 # On the appliance: the result lands BEFORE the order, and the order is the right one for the verb.
 pw_intent "$PW1" sys-reboot
