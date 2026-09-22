@@ -92,5 +92,34 @@ else
     it_fail "safety-backup recovery diagnostics are redacted and captured before restore"
 fi
 
+td="$(mktemp -d)"
+if (
+    OUT_DIR="$td/results"
+    mkdir -p "$OUT_DIR"
+    SAFETY_ARCHIVE="$td/safety.tar.gz"
+    SAFETY_BACKUP=1
+    RUN_IMAGE_UPGRADE=0
+    BASELINE_CONFIG=baseline BASELINE_EXACT_SECRET_FP=fp
+    pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
+    rx() {
+        case "$1" in
+        'test -f'*) return 0 ;;
+        tar*) printf 'config.json\n.env\n' ;;
+        *) return 1 ;;
+        esac
+    }
+    wait_status_ok() { return 1; }
+    it_log() { :; }
+    it_fail() { :; }
+    capture_safety_backup_recovery() { return 1; }
+    safety_restore_exact() { : >"$td/restored"; }
+    safety_cleanup() { :; }
+    ! safety_backup && test -f "$td/restored"
+); then
+    it_pass "safety-backup restore survives diagnostic capture failure"
+else
+    it_fail "safety-backup restore survives diagnostic capture failure"
+fi
+
 echo "selftest-safety-restore-reason: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
