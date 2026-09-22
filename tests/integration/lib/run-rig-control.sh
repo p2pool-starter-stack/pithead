@@ -188,7 +188,8 @@ run_rigforge_control() {
         assert_eq "control results/ total bytes stay within CONTROL_RESULTS_MAX_BYTES after repeated control actions (#1990)" \
             "$([ "$(((${results_bytes_kb:-0}) * 1024))" -le 536870912 ] && echo true || echo false)" "true"
     else
-        it_skip_leg "control result retention (#1990)" "CONTROL_DIR not set on the box"
+        assert_eq "control result retention requires CONTROL_DIR (#1990)" \
+            "$([ -n "$cdir" ] && echo true || echo false)" "true"
     fi
     # Direct rc, not `$(wait_status_ok && echo true || echo false)`: wait_for's own it_step
     # progress line ("→ waiting for…") goes to stdout, so that form's captured "got" was never
