@@ -25,9 +25,12 @@ rotate_onion_restore() {
         mv .env.itest .env
         docker compose up -d tor >/dev/null 2>&1
     " >/dev/null 2>&1 || return 1
+    # The old key files are back. Do not let a later render/restart failure retry the destructive
+    # swap at EXIT: the generic safety restore will recover that failure without risking them.
+    ROTATE_ONION_RESTORE_ARMED=0
+    [ "$(rx "sudo cat $(quote_arg "$ROTATE_ONION_HS_DIR/hostname") 2>/dev/null")" = "$ROTATE_ONION_OLD_ADDRESS" ] || return 1
     pithead render >/dev/null 2>&1 &&
         rx "docker compose restart caddy >/dev/null 2>&1" >/dev/null 2>&1 || return 1
-    ROTATE_ONION_RESTORE_ARMED=0
 }
 
 # Tier-4 leg for `rotate-dashboard-onion` (#2345): 0 invocations under tests/integration or
@@ -143,11 +146,18 @@ run_rotate_onion() {
         it_fail "pre-rotation onion directory restored" "the restore command failed on the box — check for a leftover $backup_dir holding the retired keys"
     fi
     wait_status_ok 120 || true
+    assert_eq "Tor serves the restored hidden-service identity" \
+        "$(rx "sudo cat $(quote_arg "$hs_dir/hostname") 2>/dev/null")" "$old_onion"
     assert_eq "the previous onion address is restored" "$(env_on_box DASHBOARD_ONION_ADDRESS)" "$old_onion"
     case "$(rx "cat Caddyfile 2>/dev/null")" in
     *"$old_onion"*) it_pass "Caddyfile names the restored onion's vhost again" ;;
     *) it_fail "Caddyfile names the restored onion's vhost again" "Caddyfile does not mention $old_onion after restore" ;;
     esac
+    if _onion_reachable_external "$old_onion"; then
+        it_pass "restored dashboard onion reachable from outside again"
+    else
+        it_fail "restored dashboard onion reachable from outside again" "external client could not reach the restored identity within the probe window"
+    fi
     pithead status >/dev/null 2>&1
     assert_rc "stack healthy after restoring the pre-rotation onion" "$?" "0"
 }

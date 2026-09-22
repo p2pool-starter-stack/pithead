@@ -1,7 +1,10 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 safety_backup() {
-    [ "$SAFETY_BACKUP" = "1" ] || return 0
+    if [ "$SAFETY_BACKUP" != "1" ]; then
+        [ "$RUN_ROTATE_ONION" != "1" ] || arm_safety_abort_restore
+        return 0
+    fi
     [ "$RUN_IMAGE_UPGRADE" != "1" ] || UPGRADE_TELEMETRY_EPOCH="$(rx 'date +%s')"
     it_log "Taking a safety backup before destructive scenarios (pithead backup -y)…"
     # Read the archive path the CLI itself reports, not `ls -t backups/*` — a concurrent bench
@@ -95,10 +98,10 @@ safety_abort_restore() {
     # Defaulted: this runs as an EXIT trap, where an unbound variable would abort the trap itself
     # and lose the restore entirely. The default is the SAFE direction — "no failure recorded yet",
     # so the restore is attempted.
-    if [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
+    if [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ] && [ "${SAFETY_RESTORE_FAILED:-0}" = 0 ]; then
         it_warn "interrupted destructive run — restoring the safety backup"
         safety_restore_exact || restore_failed=1
-    elif [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
+    elif [ -n "${SAFETY_ARCHIVE:-}" ] && [ "$_SAFETY_RESTORE_ARMED" = 1 ]; then
         # A restore already failed this run. Retrying it here would repeat its opening `pithead
         # down` and fail the same way, so the run would END with the stack stopped even after the
         # in-run restore had put it back. One attempt, then hand the box to a human with the
