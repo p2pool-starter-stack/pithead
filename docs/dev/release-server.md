@@ -388,8 +388,8 @@ exclude mutators. `tests/integration/run.sh` takes it on the target box (over SS
 `e2e.sh` also takes it on the loaner rig it borrows. A busy box makes the run exit 75
 (`EX_TEMPFAIL`) naming the holder; set `RIG_LOCK_WAIT=1` to queue instead. `/run/rig-e2e.holder`
 is a display-only sidecar naming the holder — the flock is authoritative, and a stale sidecar
-is harmless. The bench runner sets that wait during its reserved-lock handoff, and the detached
-harness forwards it; other callers keep the opt-in exit-75 default.
+is harmless. The bench runner sets that wait during its reserved-lock handoff, and the harness
+forwards it to both pre-gates and its detached run; other callers keep the opt-in exit-75 default.
 
 **CHECK** — and **FREE**, which is not a step for anyone. A harness frees the lock by dying:
 it holds it on an inherited descriptor, so the kernel drops it when the run ends, however it

@@ -37,6 +37,26 @@ assert_contains "the inline --check sub-phase forwards --workers" \
 assert_contains "a different worker count is forwarded too, not a hardcoded '1'" \
     "$(pregate_of 3 --no-mining-asserts | sed -n 1p)" "--workers '3'"
 
+echo "== the reserved-lock wait reaches both executed pre-gates (#504) =="
+pregate_wait_of() {
+    local work="$1"
+    mkdir -p "$work/tests/integration"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        '[ "${RIG_LOCK_WAIT:-}" = 1 ] || exit 75' \
+        'printf "%s\\n" "$RIG_LOCK_WAIT" >>"$PREGATE_RESULT"' >"$work/tests/integration/run.sh"
+    chmod +x "$work/tests/integration/run.sh"
+    (
+        E2E_DIR="$work"
+        export RIG_LOCK_WAIT=1 PREGATE_RESULT="$work/waits"
+        on_bench() { bash -c "$1"; }
+        harness_pregate 1 ""
+    )
+}
+PREGATE_WORK="$(mktemp -d)"
+trap 'rm -rf "$PREGATE_WORK"' EXIT
+pregate_wait_of "$PREGATE_WORK"
+assert_eq "both executed pre-gates inherit the reserved-lock wait" "$(cat "$PREGATE_WORK/waits")" $'1\n1'
+
 echo "== a sub-phase that returns without draining stdin is not reported as a failure (#2457) =="
 # The parent-lock pair used to be PIPED in. The sub-phase does read both lines, so the bytes always
 # arrived — but a pipeline whose reader returns before the write lands leaves the writer in a closed
