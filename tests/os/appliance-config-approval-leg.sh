@@ -116,12 +116,23 @@ allowlisted_node_readiness() {
         tari_synced:(.tari_synced == true),tari_height:(.tari_height|numbers // 0)}'
 }
 
-guest_node_readiness() {
+guest_node_readiness() { # <monero-host> <rpc-port>
     # Existing authenticated clients, from the guest network; never emit endpoints, credentials,
     # exceptions, or raw responses.
-    _ssh "podman exec dashboard python -c 'import asyncio,json; from mining_dashboard.client.monero.monero_client import MoneroClient; from mining_dashboard.client.tari.tari_client import TariClient; m=MoneroClient().get_info(); t=asyncio.run(TariClient().get_sync_status()); print(json.dumps({\"monero_rpc\":m is not None,\"monero_synced\":bool(m and m.get(\"synchronized\")),\"monero_height\":int((m or {}).get(\"height\",0) or 0),\"tari_rpc\":bool(t.get(\"reachable\")),\"tari_synced\":bool(t.get(\"reachable\") and not t.get(\"is_syncing\")),\"tari_height\":int(t.get(\"current\",0) or 0)}))'" 2>/dev/null |
+    local monero_url_q
+    printf -v monero_url_q %q "http://$1:$2"
+    SSH_TIMEOUT=15 _ssh "podman exec -e PROBE_MONERO_URL=$monero_url_q dashboard python -c 'import asyncio,json,os; from mining_dashboard.client.monero.monero_client import MoneroClient; from mining_dashboard.client.tari.tari_client import TariClient; m=MoneroClient(url=os.environ[\"PROBE_MONERO_URL\"]).get_info(); t=asyncio.run(TariClient().get_sync_status()); print(json.dumps({\"monero_rpc\":m is not None,\"monero_synced\":bool(m and m.get(\"synchronized\")),\"monero_height\":int((m or {}).get(\"height\",0) or 0),\"tari_rpc\":bool(t.get(\"reachable\")),\"tari_synced\":bool(t.get(\"reachable\") and not t.get(\"is_syncing\")),\"tari_height\":int(t.get(\"current\",0) or 0)}))'" 2>/dev/null |
         allowlisted_node_readiness
 }
+
+_node_readiness_self_test() (
+    _ssh() {
+        [ "$SSH_TIMEOUT" = 15 ] || return 1
+        case "$1" in *'PROBE_MONERO_URL=http://node.fixture:18081'*'MoneroClient(url=os.environ["PROBE_MONERO_URL"])'*) ;; *) return 1 ;; esac
+        printf '%s' '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8,"host":"private","password":"secret"}'
+    }
+    [ "$(guest_node_readiness node.fixture 18081)" = '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8}' ]
+)
 
 # The leg ahead of this one recreates the dashboard container, so a single curl the instant it
 # returns is a race, not a measurement (#2059's contract, applied here after the #1929 leg was bitten
@@ -350,7 +361,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         started_now=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
         restarted=false
         [ "$started_now" = "$(printf '%s\n' "$logs" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')" ] || restarted=true
-        readiness=$(guest_node_readiness || printf '{"monero_rpc":false,"monero_synced":false,"monero_height":0,"tari_rpc":false,"tari_synced":false,"tari_height":0}')
+        readiness=$(guest_node_readiness "$mh" "$rpc" || printf '{"monero_rpc":false,"monero_synced":false,"monero_height":0,"tari_rpc":false,"tari_synced":false,"tari_height":0}')
         bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (provider=${CI_NODE_PROVIDER:-unknown} env_ok=$env_ok cmd_ok=$cmd_ok p2pool_socks5=$socks5_now p2pool_restarted=$restarted readiness=$readiness roundtrip_direct=$direct_ok roundtrip_bridged=$bridged_ok; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
@@ -447,7 +458,8 @@ _approval_self_test() {
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     _remote_node_proposal_self_test || f=$((f + 1))
-    [ "$(printf '%s' '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8,"host":"private","password":"secret"}' | allowlisted_node_readiness)" = '{"monero_rpc":true,"monero_synced":true,"monero_height":7,"tari_rpc":false,"tari_synced":false,"tari_height":8}' ] || f=$((f + 1))
+    _node_readiness_self_test || f=$((f + 1))
+    grep -Fq 'if [ "$tries" -lt 60 ]; then' "$here/appliance-config-approval-leg.sh" || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
