@@ -124,11 +124,12 @@ run_lifecycle() {
             # The product correctly refuses to overwrite the old, still-complete directory on a
             # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
             # can return to its original configuration without discarding the source database.
-            pithead down >/dev/null 2>&1
-            rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1
-            push_config "$BASELINE_CONFIG"
-            pithead apply -y >/dev/null 2>&1
-            wait_status_ok 180 || true
+            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
+                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1; then
+                wait_status_ok 180 || true
+            else
+                it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline apply failed"
+            fi
         else
             it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
         fi
