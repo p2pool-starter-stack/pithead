@@ -67,8 +67,8 @@ execute_launch() { # <stdin-file> <capture-file>
         rm() { :; }; cd() { :; }
         grep() { test -s "$CAPTURE_FILE"; }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$*" >"$CAPTURE_FILE"
         }
         eval "$1"
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
@@ -87,6 +87,7 @@ assert_contains "multiline rollback input reaches the runner environment intact"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
+assert_contains "reserved-lock handoff waits inside the detached runner" "$CAPTURED" "RIG_LOCK_WAIT=1"
 
 echo "== empty values remain supplied, while missing records and encoder errors fail closed =="
 capture_launch "" ""
