@@ -6,10 +6,10 @@
 # "kept" message) survives on the REAL disk, the kernel firewall rules and the systemd control
 # units it installed are REALLY gone, then that `setup` re-provisions the checkout from what was
 # kept — no resync, the round trip the verb's own closing message promises. DESTRUCTIVE, ordered
-# last: it tears the checkout down and puts it back itself, so it does not depend on the box's
-# normal down/apply restore — and it owns its OWN recovery on a failure (see
-# _uninstall_phase_recover) rather than leaning on the harness's generic safety rollback, whose
-# 240s wait is sized for a hot apply, not a full re-provision (#2343 job 635).
+# last: it tears the checkout down and restores the exact pre-run safety archive itself, so it
+# does not depend on the box's normal down/apply restore. It also owns its OWN recovery on a
+# failure (see _uninstall_phase_recover) rather than leaning on the harness's generic safety
+# rollback, whose 240s wait is sized for a hot apply, not a full re-provision (#2343 job 635).
 #
 # Job 635's first real-box run measured both snapshots wrong: `fp_before` was taken while the
 # stack was still RUNNING, so a live LMDB/SQLite writer made monero/tari/dashboard look different
@@ -212,5 +212,9 @@ run_uninstall_phase() {
         it_fail "re-provisioned proxy and onion state populated" "required proxy or onion state is missing"
     fi
     assert_running_state "uninstall" "$config_before" "$setup_secret_fp"
+    if [ "$IT_FAIL" -eq "$fails_before" ]; then
+        it_step "restoring the exact pre-uninstall baseline…"
+        safety_restore_exact || it_fail "uninstall phase restored the exact pre-run baseline" "$SAFETY_RESTORE_FAIL_REASON"
+    fi
     _uninstall_phase_recover "$fails_before"
 }
