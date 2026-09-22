@@ -107,6 +107,8 @@ printf '%s\n' \
     'DASHBOARD_ONION_CLIENT_PUBKEY=live-public' \
     'DASHBOARD_ONION_CLIENT_PRIVKEY=live-private' >"$E2E_DIR/.env"
 printf 'production-identity-must-not-move\n' >"$SOURCE_TOR/p2pool/hostname"
+printf 'production-secret-must-not-move\n' >"$SOURCE_TOR/p2pool/hs_ed25519_secret_key"
+printf 'production-public-must-not-move\n' >"$SOURCE_TOR/p2pool/hs_ed25519_public_key"
 printf '%s\n' '#!/bin/sh' \
     'set -e' \
     '[ "$1" = render ]' \
@@ -136,6 +138,8 @@ on_bench() {
                     i=0
                     while [ "$i" -lt 56 ]; do value="$value$char"; i=$((i + 1)); done
                     printf "%s.onion\n" "$value" >"$tor_dir/$svc/hostname"
+                    printf "fixture-%s-secret\n" "$svc" >"$tor_dir/$svc/hs_ed25519_secret_key"
+                    printf "fixture-%s-public\n" "$svc" >"$tor_dir/$svc/hs_ed25519_public_key"
                 done
                 ;;
             exec)
@@ -147,10 +151,16 @@ on_bench() {
                 ;;
             ps)
                 [ "$DOCKER_PS_FAIL" != 1 ] || return 1
-                [ -z "$MOUNTED_FIXTURE" ] || printf "fixture-container\n"
+                [ "$2" = -aq ] && [ "$#" = 2 ] || return 1
+                if [ "$DOCKER_INSPECT_FIRST_FAIL" = 1 ]; then
+                    printf "first-container\nsecond-container\n"
+                elif [ -n "$MOUNTED_FIXTURE" ]; then
+                    printf "fixture-container\n"
+                fi
                 ;;
             inspect)
                 [ "$DOCKER_INSPECT_FAIL" != 1 ] || return 1
+                [ "$DOCKER_INSPECT_FIRST_FAIL" != 1 ] || [ "$4" != first-container ] || return 1
                 printf "%s\n" "$MOUNTED_FIXTURE"
                 ;;
             esac
@@ -164,7 +174,9 @@ ROTATE_FIXTURE_REQUIRED=1 ROTATE_FIXTURE_DIR="" ROTATE_FIXTURE_ATTESTATION=""
 if prepare_rotate_onion_fixture && bootstrap_rotate_onion_fixture &&
     [ "$ROTATE_FIXTURE_ATTESTATION" = "$ROTATE_FIXTURE_DIR" ] &&
     [ "$(cat "$SOURCE_TOR/p2pool/hostname")" = production-identity-must-not-move ] &&
-    [ -f "$ROTATE_FIXTURE_DIR/p2pool/hostname" ] && [ -f "$ROTATE_FIXTURE_DIR/dashboard/hostname" ] &&
+    [ "$(cat "$SOURCE_TOR/p2pool/hs_ed25519_secret_key")" = production-secret-must-not-move ] &&
+    [ -f "$ROTATE_FIXTURE_DIR/p2pool/hs_ed25519_secret_key" ] &&
+    ! grep -R -q 'production-.*-must-not-move' "$ROTATE_FIXTURE_DIR" &&
     [ "$(jq -r '.dashboard.onion.enabled, .dashboard.onion.client_auth, .tor.data_dir' "$E2E_DIR/config.json")" = "$(printf 'true\ntrue\n%s' "$ROTATE_FIXTURE_DIR")" ] &&
     [ "$(awk -F= '$1 == "TOR_DATA_DIR" { print $2 }' "$E2E_DIR/.env")" = "$ROTATE_FIXTURE_DIR" ] &&
     [ "$(grep -c '=placeholder$' "$E2E_DIR/.env")" = 0 ] &&
@@ -192,6 +204,7 @@ if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
 else
     it_fail "fixture cleanup refuses a containing active mount"
 fi
+unset MOUNTED_FIXTURE
 export DOCKER_PS_FAIL=1
 if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
     it_pass "fixture cleanup fails closed when the container census fails"
@@ -199,13 +212,13 @@ else
     it_fail "fixture cleanup fails closed when the container census fails"
 fi
 unset DOCKER_PS_FAIL
-export MOUNTED_FIXTURE="$fixture" DOCKER_INSPECT_FAIL=1
+export MOUNTED_FIXTURE="$fixture" DOCKER_INSPECT_FIRST_FAIL=1
 if ! cleanup_rotate_onion_fixture && [ -d "$fixture" ]; then
-    it_pass "fixture cleanup fails closed when a container inspection fails"
+    it_pass "fixture cleanup fails closed when an early inspection fails before a later success"
 else
-    it_fail "fixture cleanup fails closed when a container inspection fails"
+    it_fail "fixture cleanup fails closed when an early inspection fails before a later success"
 fi
-unset DOCKER_INSPECT_FAIL
+unset DOCKER_INSPECT_FIRST_FAIL
 unset MOUNTED_FIXTURE
 mkdir -p "$E2E_DIR/backups"
 printf 'fixture-client-credential\n' >"$E2E_DIR/backups/rotate-onion-env-preserve"

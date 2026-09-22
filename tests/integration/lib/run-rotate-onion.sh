@@ -123,7 +123,7 @@ rotate_onion_restore() {
     rx "
         set -e
         if sudo test -d $(quote_arg "$ROTATE_ONION_BACKUP_DIR") && sudo test ! -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then
-            docker compose stop tor >/dev/null 2>&1 || true
+            docker compose stop tor >/dev/null 2>&1
             sudo rm -rf $(quote_arg "$ROTATE_ONION_HS_DIR")
             sudo mv $(quote_arg "$ROTATE_ONION_BACKUP_DIR") $(quote_arg "$ROTATE_ONION_HS_DIR")
         elif sudo test -e $(quote_arg "$ROTATE_ONION_BACKUP_DIR") || sudo test -L $(quote_arg "$ROTATE_ONION_BACKUP_DIR"); then exit 1; fi
@@ -226,7 +226,7 @@ run_rotate_onion() {
         mkdir -p backups
         test -d backups && test ! -L backups && test -O backups
         snapshot_dir=$(readlink -f backups)
-        cids=$(docker compose ps --all -q)
+        cids=$(docker ps -aq)
         test -n "$cids"
         mount_sources=$(for cid in $cids; do
             docker inspect --format "{{range .Mounts}}{{println .Source}}{{end}}" "$cid" || exit 1

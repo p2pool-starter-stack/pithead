@@ -104,6 +104,19 @@ if (
     ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
     ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
     ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
+    rx() { case "$1" in *"docker compose stop tor"*) return 1 ;; esac }
+    rotate_onion_env_fingerprint() { printf 'envs\n'; }
+    ! rotate_onion_restore && [ "$ROTATE_ONION_RESTORE_ARMED" = 1 ]
+); then
+    it_pass "restore refuses to swap hidden-service keys while Tor cannot be stopped"
+else
+    it_fail "restore refuses to swap hidden-service keys while Tor cannot be stopped"
+fi
+
+if (
+    ROTATE_ONION_RESTORE_ARMED=1 ROTATE_ONION_HS_DIR=/fixture/dashboard
+    ROTATE_ONION_BACKUP_DIR=/fixture/preserve ROTATE_ONION_ENV_BACKUP=/fixture/env
+    ROTATE_ONION_OLD_ADDRESS=old.onion ROTATE_ONION_OLD_KEY_FP=keys ROTATE_ONION_OLD_ENV_FP=envs
     render_calls=0
     rx() { case "$1" in *"sudo cat"*) printf 'old.onion\n' ;; esac }
     rotate_onion_key_fingerprint() { printf 'keys\n'; }
@@ -335,12 +348,12 @@ else
     it_fail "rotation binds the actual Tor directory to a protected fixture marker before reading identity"
 fi
 
-if grep -q 'docker compose ps --all -q' "$ROOT/lib/run-rotate-onion.sh" &&
+if grep -q 'cids=\$(docker ps -aq)' "$ROOT/lib/run-rotate-onion.sh" &&
     grep -q 'test -n "\$cids"' "$ROOT/lib/run-rotate-onion.sh" &&
     grep -q 'docker inspect.*|| exit 1' "$ROOT/lib/run-rotate-onion.sh"; then
-    it_pass "credential backup mount exclusion requires every compose container inspection"
+    it_pass "credential backup mount exclusion requires every container inspection"
 else
-    it_fail "credential backup mount exclusion requires every compose container inspection"
+    it_fail "credential backup mount exclusion requires every container inspection"
 fi
 
 if grep -q 'env_backup="backups/rotate-onion-env-preserve"' "$ROOT/lib/run-rotate-onion.sh" &&
