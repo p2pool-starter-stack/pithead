@@ -234,20 +234,41 @@ import socket
 import sys
 
 greeting = b"\xff" + b"\0" * 8 + b"\x7f\x03\x01NULL" + b"\0" * 48
+
+
+def recv_exact(client, size):
+    reply = bytearray()
+    while len(reply) < size:
+        if not (chunk := client.recv(size - len(reply))):
+            raise ConnectionError(f"short read: got {len(reply)}, want {size}")
+        reply.extend(chunk)
+    return bytes(reply)
+
+
+class Closed:
+    def recv(self, _size):
+        return b""
+
+
+try:
+    recv_exact(Closed(), 1)
+except ConnectionError:
+    pass
+else:
+    raise AssertionError("EOF must fail instead of spinning")
+
+
 port, ready, subscription = sys.argv[1:]
 with socket.create_connection(("127.0.0.1", int(port))):
     pass
-with socket.create_connection(("127.0.0.1", int(port))) as client:
+with socket.create_connection(("127.0.0.1", int(port)), timeout=1) as client:
+    client.settimeout(1)
     client.sendall(greeting)
-    reply = bytearray()
-    while len(reply) < 64:
-        reply.extend(client.recv(64 - len(reply)))
+    recv_exact(client, 64)
     ready = bytes.fromhex(ready)
     client.sendall(ready)
     if ready == bytes.fromhex("04190552454144590b536f636b65742d5479706500000003535542"):
-        reply = bytearray()
-        while len(reply) < 28:
-            reply.extend(client.recv(28 - len(reply)))
+        recv_exact(client, 28)
     client.sendall(bytes.fromhex(subscription))
 PY
     wait "$FIXTURE_PID"
