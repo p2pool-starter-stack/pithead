@@ -18,7 +18,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare"
 
-capture_launch() { # <rollback> <pools>
+capture_launch() { # <rollback> <pools> [rig-lock-wait]
     : >"$LAUNCH_FILE"
     : >"$STDIN_FILE"
     rm -f "$PREPARE_FILE"
@@ -28,7 +28,7 @@ capture_launch() { # <rollback> <pools>
         # finished rather than one that failed. Same guard as selftest-e2e-phases.sh.
         exec </dev/null
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
-        MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO=""
+        MODE=matrix BORROW_MINER=0 WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e SCENARIO="" RIG_LOCK_WAIT="${3:-}"
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
@@ -87,7 +87,13 @@ assert_contains "multiline rollback input reaches the runner environment intact"
 assert_contains "pools input reaches the runner environment intact" "$CAPTURED" "$(printf 'POOLS_BEGIN\n%s\nPOOLS_END' "$POOLS")"
 assert_eq "rollback input stays out of runner argv" "$(contains "$ARGV" "$ROLLBACK")" no
 assert_eq "pools input stays out of runner argv" "$(contains "$ARGV" "$POOLS")" no
-assert_contains "reserved-lock handoff waits inside the detached runner" "$CAPTURED" "RIG_LOCK_WAIT=1"
+assert_contains "the default lock setting reaches the detached runner" "$CAPTURED" "RIG_LOCK_WAIT=0"
+capture_launch "$ROLLBACK" "$POOLS" 0
+execute_launch "$STDIN_FILE" "$WORK/no-wait"
+assert_contains "an explicit no-wait setting reaches the detached runner" "$(cat "$WORK/no-wait")" "RIG_LOCK_WAIT=0"
+capture_launch "$ROLLBACK" "$POOLS" 1
+execute_launch "$STDIN_FILE" "$WORK/wait"
+assert_contains "the bench lock-wait setting reaches the detached runner" "$(cat "$WORK/wait")" "RIG_LOCK_WAIT=1"
 
 echo "== empty values remain supplied, while missing records and encoder errors fail closed =="
 capture_launch "" ""
