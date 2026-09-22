@@ -63,6 +63,33 @@ reset_dashboard_cleanup
 [[ "$cleanup_command" == *"rm -rf -- '/tmp/reset-dashboard-decoy-a' '/tmp/reset-dashboard-decoy-b'"* ]] || exit 1
 [ -z "$RESET_DASHBOARD_DECOY_DASHBOARD" ] && [ -z "$RESET_DASHBOARD_DECOY_P2POOL" ] || exit 1
 
+# reset-dashboard writes a decoy config before it can run. Refuse its direct form before that
+# write unless the existing safety EXIT trap will restore the baseline and remove the decoys.
+if (
+    IT_MODE=local IT_SSH_DEST='' RIG_NAME='' RIGFORGE_BOOTSTRAP_VERSION=''
+    RUN_IMAGE_UPGRADE=0 RUN_RESET_DASHBOARD=0 RUN_XVB_ROUTING=0 SAFETY_BACKUP=0 SKIP_MINING_ASSERTS=0
+    validate_live_gate_args() { :; }
+    it_err() { :; }
+    parse_args --local --reset-dashboard
+); then
+    echo "reset-dashboard accepted without its abort rollback" >&2
+    exit 1
+elif [ "$?" -ne 2 ]; then
+    echo "reset-dashboard missing-backup refusal returned the wrong status" >&2
+    exit 1
+fi
+(
+    IT_MODE=local IT_SSH_DEST='' RIG_NAME='' RIGFORGE_BOOTSTRAP_VERSION=''
+    RUN_IMAGE_UPGRADE=0 RUN_RESET_DASHBOARD=0 RUN_XVB_ROUTING=0 SAFETY_BACKUP=0 SKIP_MINING_ASSERTS=0
+    validate_live_gate_args() { :; }
+    it_err() { :; }
+    parse_args --local --reset-dashboard --safety-backup
+    [ "$RUN_RESET_DASHBOARD" = 1 ] && [ "$SAFETY_BACKUP" = 1 ]
+) || {
+    echo "reset-dashboard with its abort rollback was rejected" >&2
+    exit 1
+}
+
 pithead() {
     printf '%s\n' \
         'OK   Tor-only egress firewall is installed — clearnet dials are fail-closed' \
