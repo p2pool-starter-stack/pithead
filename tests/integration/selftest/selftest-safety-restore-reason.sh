@@ -83,6 +83,7 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
             esac
         }
         redact() {
+            printf 'redact\n' >>"$td/redactor"
             [ "$mode" != redactor-fail ] && sed 's/secret/<redacted>/g'
         }
         assert_contains() { :; }
@@ -94,7 +95,8 @@ _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redac
         it_fail() { :; }
         safety_restore_exact() {
             restore_calls=$((restore_calls + 1))
-            [ "$capture_started" = 1 ] || return 1
+            [ "$capture_started" = 1 ] &&
+                { [ "$mode" = mkdir-fail ] || [ "$(wc -l <"$td/redactor")" -eq 2 ]; }
         }
         safety_cleanup() { cleanup_calls=$((cleanup_calls + 1)); }
         if [ "$mode" = healthy ]; then
