@@ -30,6 +30,7 @@ stack_uninstall() {
         }
     fi
     remove_tor_egress_firewall 2>/dev/null || true
+    remove_lan_guard
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.

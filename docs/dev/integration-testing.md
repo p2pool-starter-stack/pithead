@@ -529,6 +529,10 @@ and `--list` prints it).
   and total hashes are accumulating ([#28](https://github.com/p2pool-starter-stack/pithead/issues/28)).
 - Posture propagated. `MONERO_RPC_BIND`, `DASHBOARD_SECURE`, `XVB_ENABLED`, and `TARI_REQUIRED`
   in `.env` match the config; the Caddyfile uses the right scheme.
+- LAN ports take LAN sources only (`local-pruned-main-rpclan` row, which turns on all three
+  `*_lan_access` switches). Each published node port is dialled from a network namespace on a veth
+  to the host: from `198.51.100.2` the dial must fail, from `10.254.254.2` it must connect
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published

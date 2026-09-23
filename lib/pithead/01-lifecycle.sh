@@ -77,6 +77,9 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
+    # Every container (re)start passes here, so the LAN-published node ports get their source rule
+    # (or are held on loopback) before anything listens on them (#2616).
+    apply_lan_guard
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@"
@@ -202,6 +205,7 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     remove_tor_egress_firewall
+    remove_lan_guard
     if ! docker compose down; then
         error "Stack failed to stop — see the error above."
     fi
@@ -222,6 +226,7 @@ stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
     remove_tor_egress_firewall
+    remove_lan_guard
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
