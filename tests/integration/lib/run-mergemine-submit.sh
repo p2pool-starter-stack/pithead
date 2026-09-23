@@ -22,8 +22,8 @@
 
 MM_P2POOL_VERSION="${IT_MM_P2POOL_VERSION:-v4.18.1}"
 MM_P2POOL_HASH="${IT_MM_P2POOL_HASH:-eeab5aca0edf4756cb295c5fda5b2d5344208aecbbdcb2ffd8471dfe14e6c2c5}"
-MM_DIFFICULTY="${IT_MM_DIFFICULTY:-200}"
-MM_CAPTURE_TIMEOUT="${IT_MM_CAPTURE_TIMEOUT:-1200}"
+MM_DIFFICULTY=200
+MM_CAPTURE_TIMEOUT=1200
 MM_WANT_SUBMISSIONS=6 # two full cycles of the three templates
 MM_TARI_PORT=48142
 
@@ -100,7 +100,7 @@ run_mergemine_submit() {
 
     rc=0
     out="$(rx "docker run --rm -v $(quote_arg "$work"):/work itest-mm-fixture p2pool_mm_fixture validate /work $MM_DIFFICULTY" 2>&1)" || rc=$?
-    printf '%s\n' "$out" >"$OUT_DIR/mergemine-validate.log"
+    printf '%s\n' "$out" | redact >"$OUT_DIR/mergemine-validate.log"
     _mm_rows "$out"
     [ "$rc" -eq 0 ] || it_log "mergemine-submit validator exit $rc (see $OUT_DIR/mergemine-validate.log)"
     _mm_cleanup "$work"
