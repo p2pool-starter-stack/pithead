@@ -103,6 +103,13 @@ MATRIX:
   --rig-name <name>      exact borrowed rig NAME from its protected RigForge config.
   --rigforge-bootstrap-version <tag>  explicitly bootstrap that rig before feed-dependent checks.
   --rig-control-port <p> the rig's writable control API port (default: 8082, #185).
+  --rotate-secrets       also run the rotate-secrets phase (#2344): forces p2pool.stratum_password=
+                         auto, runs `pithead rotate-secrets -y`, and asserts monerod/proxy actually
+                         RECREATED with the new credentials (not restarted with the old ones) —
+                         host-side RPC/control-API dials, live container argv, and the .bak-<stamp>
+                         safety copies are owner-only and removed. Requires --safety-backup, whose
+                         archive is this phase's own restore anchor. DESTRUCTIVE-then-restored;
+                         works over SSH and locally.
   --subnet               also run the moved-subnet phase (#201/#180), local mode only: bring the
                          stack DOWN then UP on a non-default network.subnet (10.84.0.0/24) — the one
                          axis a hot apply can't move — and assert the moved prefix reached .env, the
@@ -296,6 +303,10 @@ parse_args() {
             RUN_SUBNET=1
             shift
             ;;
+        --rotate-secrets)
+            RUN_ROTATE_SECRETS=1
+            shift
+            ;;
         --safety-backup)
             SAFETY_BACKUP=1
             shift
@@ -352,6 +363,10 @@ parse_args() {
             it_err "--image-upgrade old and new commits must differ."
             exit 2
         }
+    fi
+    if [ "$RUN_ROTATE_SECRETS" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--rotate-secrets requires --safety-backup — its archive is this phase's own restore anchor."
+        exit 2
     fi
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave

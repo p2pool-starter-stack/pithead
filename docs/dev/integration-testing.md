@@ -234,6 +234,7 @@ Useful flags (full list in `run.sh --help`):
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
+| `--rotate-secrets` | Also run the rotate-secrets phase ([#2344](https://github.com/p2pool-starter-stack/pithead/issues/2344)): forces `p2pool.stratum_password=auto` so the rig-facing credential is actually exercised, runs `pithead rotate-secrets -y`, then proves the recreate — not a restart — actually landed: a host-side authed `get_info` accepts the new monerod RPC password and refuses the old one (local mode only), the xmrig-proxy control API accepts the new `PROXY_AUTH_TOKEN` and refuses the old one, and the running `/proc/1/cmdline` argv carries the new stratum access-password and not the old one. It also requires an active proxy upstream; with a reserved rig, the runner temporarily rotates its stratum credential, proves an accepted share, and restores the exact borrowed config. The pre-rotation `.bak-<stamp>` safety copies are asserted owner-only and removed (nothing else sweeps them). Restores from the harness's own `--safety-backup` archive — required — rather than taking a second one, then asserts mining resumes. DESTRUCTIVE-then-restored; works over SSH and locally. |
 | `--keep` | Don't restore the original config (leave the box on the last scenario). |
 | `--out <dir>` | Where to write the manifest and failure artifacts. |
 | `--list` | Print the matrix and axis coverage and exit. |
@@ -401,9 +402,11 @@ in the order given — how bench-ci's `phases` selection ([bench-ci#46](https://
 runs exactly one named phase against a commit without a dedicated `--mode`. Only an allowlisted
 `run.sh` phase flag is accepted — `--lifecycle`, `--fault-injection`, `--auth-fail-closed`,
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
-`--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
-and anything else is refused before any bench work, never built into a shell string from the raw
-value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+`--xvb-routing-smoke`, `--rotate-secrets`, or `--scenario <name>` as two `--harness-arg` (the flag,
+then the name) — and anything else is refused before any bench work, never built into a shell
+string from the raw value. Not supported with `--mode check`, which runs nothing but `--check` by
+design. `--rotate-secrets` requires `--safety-backup` alongside it (also selectable via
+`--harness-arg`).
 
 ---
 

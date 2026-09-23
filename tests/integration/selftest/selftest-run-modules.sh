@@ -3,7 +3,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$HERE/.."
-modules=(run-cli.sh run-matrix.sh run-state.sh run-scenario.sh run-lifecycle.sh run-faults.sh run-hardening.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh)
+modules=(run-cli.sh run-matrix.sh run-state.sh run-scenario.sh run-lifecycle.sh run-rotate-secrets.sh run-faults.sh run-hardening.sh run-safety.sh run-rigforge.sh run-rig-control.sh run-rig-reverse.sh run-alert-egress.sh)
 
 echo "== run.sh modules load completely in their preserved order =="
 expected_modules="$(printf 'lib/%s ' "${modules[@]}" | sed 's/ $//')"
@@ -13,7 +13,7 @@ actual_modules="$(sed -n 's|^source "$HERE/\(lib/run-[a-z-]*\.sh\)".*|\1|p' "$RO
     exit 1
 }
 
-expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario assert_running_state assert_scenario assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode assert_release_readiness run_lifecycle _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_tor_stopped _pred_tor_healthy fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback fault_tor_down fault_clock_drift fault_disk_enospc run_fault_injection _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback it_alert_refused _alert_egress_overlay _alert_egress_verdict run_alert_egress_smoke'
+expected_functions='usage parse_args print_list push_config env_on_box running_services service_state secret_fingerprint preflight record_manifest run_scenario assert_running_state assert_scenario assert_egress_posture assert_xvb_over_tor assert_metrics_via_caddy assert_doctor_ok assert_share_stats_live assert_telemetry_tables_present assert_current_state box_fstype box_avail_gb box_mode assert_release_readiness run_lifecycle _pred_status_down _monerod_is _pred_monerod_missing _pred_monerod_unhealthy _pred_monerod_healthy _pred_proxy_stopped _pred_failover_armed _pred_tor_stopped _pred_tor_healthy _rotate_proxy_live_args _rotate_monero_rpc_probe _rotate_proxy_token_accepted _rotate_proxy_summary _rotate_proxy_upstream_active _rotate_proxy_accepted_after _rotate_p2pool_monero_live run_rotate_secrets fault_node_down fault_unhealthy fault_missing fault_db_readonly fault_firewall_rollback fault_tor_down fault_clock_drift fault_disk_enospc run_fault_injection _set_env_token _spool_write _uuid4 _wait_control_status _onion_reachable_external _remove_control_units run_hardening run_auth_fail_closed safety_backup safety_restore_exact safety_rollback_if_failed safety_abort_restore arm_safety_abort_restore safety_cleanup restore_baseline summary run_rigforge_integration assert_subnet_live run_subnet_scenario _worker_apply _restore_rig_control_baseline run_rigforge_control _pred_rig_present run_rigforge_reverse _rig_control_apply _rig_control_await _pred_feed_maxt run_rigforge_rollback it_alert_refused _alert_egress_overlay _alert_egress_verdict run_alert_egress_smoke'
 actual_functions="$(for module in "${modules[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$ROOT/lib/$module"; done | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "integration function order or completeness mismatch" >&2
@@ -36,6 +36,8 @@ source "$ROOT/lib/run-state.sh" || exit $?
 source "$ROOT/lib/run-scenario.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
 source "$ROOT/lib/run-lifecycle.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-rotate-secrets.sh
+source "$ROOT/lib/run-rotate-secrets.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$ROOT/lib/run-faults.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
@@ -51,6 +53,37 @@ source "$ROOT/lib/run-rig-reverse.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-alert-egress.sh
 source "$ROOT/lib/run-alert-egress.sh" || exit $?
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
+
+quote_arg() { printf '%q' "$1"; }
+rx() { printf '%s\n%s' "$1" "$(cat)"; }
+[[ "$(_rotate_proxy_live_args)" == *'/proc/1/cmdline'* ]] || {
+    echo "rotate-secrets must inspect xmrig-proxy's running argv" >&2
+    exit 1
+}
+proxy_probe="$(_rotate_proxy_token_accepted 'token with space')"
+[[ "$proxy_probe" == *'docker exec -i dashboard'* &&
+    "$proxy_probe" == *'sys.stdin.read()'* && "$proxy_probe" == *'token with space'* ]] || {
+    echo "rotate-secrets proxy token is not passed over stdin" >&2
+    exit 1
+}
+if grep -Fq 'assert_ne "PROXY_AUTH_TOKEN rotated"' "$ROOT/lib/run-rotate-secrets.sh" ||
+    grep -Fq 'assert_ne "stratum access-password rotated"' "$ROOT/lib/run-rotate-secrets.sh"; then
+    echo "rotate-secrets must not format prior credentials in a generic assertion" >&2
+    exit 1
+fi
+rpc_probe="$(_rotate_monero_rpc_probe fixture-user fixture-pass)"
+rpc_command="${rpc_probe%%$'\n'*}"
+rpc_stdin="${rpc_probe#*$'\n'}"
+[[ "$rpc_command" == *'auth=$(cat)'* && "$rpc_command" != *fixture-* &&
+    "$rpc_stdin" == *fixture-user* && "$rpc_stdin" == *fixture-pass* ]] || {
+    echo "rotate-secrets Monero credentials are not passed over stdin" >&2
+    exit 1
+}
+summary_probe="$(_rotate_proxy_summary)"
+[[ "$summary_probe" == *'get_summary()'* ]] || {
+    echo "rotate-secrets must inspect the proxy's live summary" >&2
+    exit 1
+}
 
 pithead() {
     printf '%s\n' \
