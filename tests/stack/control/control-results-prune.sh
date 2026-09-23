@@ -3,8 +3,11 @@
 # Control-channel results/ retention domain (#1990): control_prune_results in
 # lib/pithead/49-control-request-loop.sh keeps the host-written results spool within its count, age
 # and byte caps without deleting the appliance's update ledger, the in-flight request's result, a
-# backup still inside its download window, or half of a backup result/archive pair. Sourced by
-# tests/stack/run.sh. Standalone-sourceable once tests/stack/lib.sh has been sourced: $SANDBOX is
+# backup still inside its download window, or half of a backup result/archive pair. Sourced from
+# the end of test-control-backup.sh with its own domain_ran call, not from tests/stack/run.sh: run.sh
+# sits at its file-budget ceiling, and tests/inventory.sh requires every test-*.sh it finds to be
+# sourced from run.sh directly, so this file carries no test- prefix (as control-physical-presence-
+# preview.sh). Standalone-sourceable once tests/stack/lib.sh has been sourced: $SANDBOX is
 # the only name it reads without assigning, it builds its own control directories under $SANDBOX,
 # and it unsets what it exports before it ends.
 

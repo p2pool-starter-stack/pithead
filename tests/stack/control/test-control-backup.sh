@@ -26,12 +26,14 @@
 # Re-derivations, audited over this WHOLE file, this header included. The audit script is
 # lane-local and is NOT in this repo, so nothing below rests on it: each claim is written to be
 # re-derived here with git and grep alone, and should be treated as a claim to check.
-# - $SANDBOX and $STACK are the ONLY names this file reads without assigning. Both are lib.sh
+# - $SANDBOX and $STACK are the ONLY names this file's tests read without assigning. Both are lib.sh
 #   top-level constants, assigned at column 1 rather than inside a function — the distinction that
 #   matters, because a name a provider assigns only inside a function reaches a domain file as an
 #   ordering dependency and not as a constant. The guard below states both requirements explicitly.
 #   ($STACK arrived with the #1882 rows, which source the CLI directly so they can shadow one of
 #   its functions; before them $SANDBOX really was the only one.)
+#   $HERE, run.sh's own directory, is read only by the closing line that sources the #1990
+#   results/ retention rows from control-results-prune.sh.
 # - $BKC is assigned here, in the moved text, not inherited.
 # - The lib.sh helpers this domain calls (assert_contains, assert_eq, bad, ok, run_sourced,
 #   run_sourced_e) are
@@ -353,3 +355,8 @@ assert_contains "dispatch: a near-miss action name is still unknown (control)" \
 rm -rf "$ock_ok" "$ock_off" "$ock_noauth" "$ock_unprov" "$ock_nokey"
 unset ock_ok ock_off ock_noauth ock_unprov ock_nokey ock_kit ock_ttl_kit ock_rej
 unset ock_id ock_ttl_id ock_rej_id ock_disp_id ock_bogus_id
+
+# #1990 results/ retention rows, split out along their behaviour boundary; see that file's header.
+# shellcheck source=tests/stack/control/control-results-prune.sh disable=SC2015
+_d1=$((PASS + FAIL)) && source "$HERE/control/control-results-prune.sh" && domain_ran control-results-prune.sh "$_d1" "$?" || domain_ran control-results-prune.sh "$_d1" "$?"
+unset _d1
