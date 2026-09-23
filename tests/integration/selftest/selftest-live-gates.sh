@@ -315,6 +315,8 @@ dashboard repo/dashboard@sha256:$(printf '%064d' 5)"
 pinned_refs_valid "$refs" && it_pass "all first-party refs are digest-pinned" || it_fail "all first-party refs are digest-pinned"
 telemetry_rows_continue $'blocks -\nblocks aaa\ndisk_growth -' $'blocks -\nblocks aaa\nblocks bbb\ndisk_growth -' && it_pass "permanent telemetry rows continue" || it_fail "permanent telemetry rows continue"
 telemetry_rows_continue $'blocks -\nblocks aaa' $'blocks -\nblocks bbb' && it_fail "telemetry row replacement fails" || it_pass "telemetry row replacement fails"
+assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"
+assert_eq "telemetry diff reports an empty probe" "$(telemetry_rows_diff "" "")" "before=0 after=0 missing: none"
 
 if (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT

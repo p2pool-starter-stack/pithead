@@ -367,6 +367,14 @@ telemetry_rows_continue() { # <before-lines> <after-lines>
     [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort))" ]
 }
 
+# Table names and counts only (never row values): which families lost rows, and whether either probe
+# came back empty — an empty snapshot is a probe failure, not a divergence.
+telemetry_rows_diff() { # <before-lines> <after-lines>
+    local missing
+    missing="$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
+    printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
+}
+
 proxy_active_route() {
     rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;c=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_config();p=next((p for p in c.get(\"pools\",[]) if p.get(\"enabled\")),{});print(json.dumps({\"url\":p.get(\"url\",\"\"),\"socks5\":p.get(\"socks5\",\"\")}))' 2>/dev/null"
 }

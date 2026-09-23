@@ -118,7 +118,7 @@ run_lifecycle() {
                 if telemetry_rows_continue "$rows_before" "$rows_after"; then
                     it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
                 else
-                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move"
+                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
                 fi
             else
                 it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy"
