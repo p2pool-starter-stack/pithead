@@ -151,7 +151,7 @@ assert_eq "...and carries the new card" "$(jq -r '.username' "$HCSB/spool/handof
 # The two wizard writers (rig card, coordinator card) go through the helper: no direct redirect
 # into handoff.json survives in the slices, and exactly two call sites do. A text guard, said so.
 assert_eq "no wizard slice redirects into handoff.json directly (text guard)" "$(grep -c '>"\$spool/handoff.json"' "$ROOT"/lib/pithead/*.sh | awk -F: '{n+=$2} END{print n+0}')" "0"
-assert_eq "...and both card writers call write_handoff_card (the guard's positive control)" "$(grep -c '| write_handoff_card "\$spool"' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "2"
+assert_eq "...and both card writers call write_handoff_card (the guard's positive control)" "$(grep -c '| write_handoff_card "\$card_spool"' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "2"
 rm -rf "$HCSB"
 unset HCSB
 
