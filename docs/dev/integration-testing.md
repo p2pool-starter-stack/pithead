@@ -278,6 +278,10 @@ a regression, and burns the borrowed-rig hour finding out
 ([#914](https://github.com/p2pool-starter-stack/pithead/issues/914)). `--skip-preflight`
 overrides.
 
+After a branch deploy recreates the nodes, the wrapper uses the same `done/done` panel predicate
+with a bounded 25-minute deadline before the binding readiness gate. A timeout refuses destructive
+phases and exits through the normal restore trap; it never asks the harness to grade a reconnecting Tari.
+
 For `targeted` and `matrix`, it does the following and reverses it on exit (even on failure / Ctrl-C,
 via an `EXIT` trap):
 

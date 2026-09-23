@@ -79,6 +79,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **An approved configuration apply is no longer failed by a container that is merely
+  mid-restart ([#2218](https://github.com/p2pool-starter-stack/pithead/issues/2218)).** The
+  dashboard stops and starts p2pool on its own for the sync gate and for node-down worker
+  failover, so a `docker compose up` could reach that container between states. Compose aborts
+  the whole `up` when one container is in an improper lifecycle state, which failed the apply
+  outright — the configuration was written, the containers were not recreated, and the box was
+  left needing a manual `pithead apply` nobody was there to run. Dashboard container start/stop
+  requests now take the same advisory lock as CLI mutations, so either operation waits for the
+  other to finish instead of sending overlapping lifecycle requests to the engine.
+
 - **The setup wizard's restore accepts a genuine backup from a prior supported release.** A
   backup made by the v1.20.0 Compose bundle stores its files under whatever directory the
   operator ran it from, not this appliance's own working directory. The wizard's restore used to

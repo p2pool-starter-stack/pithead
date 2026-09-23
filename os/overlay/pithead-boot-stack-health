@@ -1,0 +1,35 @@
+# shellcheck shell=bash
+# pithead-boot's stack-health signal (#2383), split from pithead-boot at its file-budget ceiling.
+# `status` prints credentials and the remote-access address, so its transient record is 0600.
+BOOT_STATUS_LOG=/run/pithead-boot-status.log
+boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 excluded)
+    [ -s "$BOOT_STATUS_LOG" ] || return 0
+    grep -E '(✗|⚠.*UNHEALTHY)' "$BOOT_STATUS_LOG" 2>/dev/null |
+        sed -E 's/^[[:space:]]*[✗⚠][[:space:]]+([^[:space:]]+)[[:space:]]+/container \1: /'
+}
+boot_status() {
+    install -m 600 /dev/null "$BOOT_STATUS_LOG" || return 1
+    ./pithead status >"$BOOT_STATUS_LOG" 2>&1
+}
+boot_status_ready() { boot_status && ! grep -q 'health check pending' "$BOOT_STATUS_LOG"; }
+
+# Did that answer come from the DASHBOARD, or from Caddy answering for a Host it has no site for?
+# The default vhost's reply is 200 with a zero-length body. Everything the dashboard vhost produces
+# is either the 401 its login sends or a real page, so require one of those — `!= 000` cannot tell
+# them apart, and that is what let the wrong Host read as success. Belt and braces with gate_url:
+# if the site list and this probe ever disagree again, the gate FAILS instead of lying.
+gate_answer_is_dashboard() { # <http_code> <size_download>
+    [ -n "${1:-}" ] && [ "${1}" != "000" ] || return 1
+    [ "$1" = "401" ] || [ "${2:-0}" -gt 0 ]
+}
+
+# ALL THREE signals, paired in one place (#852, #2383) so a grep-only assertion cannot go stale.
+gate_ready() { # <http_code> <size_download>
+    gate_answer_is_dashboard "$1" "$2" || return 1
+    # shellcheck disable=SC2034 # read by pithead-boot's sourced main loop
+    gate_doctor_ran=1
+    ./pithead doctor --json >"$BOOT_DOCTOR_JSON" 2>/dev/null || return 1
+    boot_status_ready
+}
+
+gate_cert_advisory_ready() { gate_cert_advisory && boot_status_ready; }
