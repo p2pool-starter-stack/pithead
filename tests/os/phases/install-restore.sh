@@ -71,11 +71,13 @@ _restore_installer_preboot_verdict() { # <powered-off installer image>
         bad "restore leg: could not inspect installer data after shutdown"
         rc=1
     fi
-    if [ -b "$esp" ] && mount -o ro "$esp" "$mnt"; then
-        if [ -f "$mnt/pithead-config.json" ] && [ -f "$mnt/pithead-token.txt" ] && [ -f "$mnt/pithead-rig.json" ]; then
+    if [ -b "$esp" ] && mount "$esp" "$mnt"; then
+        # The pre-seeds are this leg's fixture: cleared once seen, or they outrank the next leg's reinstall pre-fill.
+        if [ -f "$mnt/pithead-config.json" ] && [ -f "$mnt/pithead-token.txt" ] && [ -f "$mnt/pithead-rig.json" ] &&
+            rm -f "$mnt/pithead-config.json" "$mnt/pithead-token.txt" "$mnt/pithead-rig.json"; then
             ok "restore leg: unrelated fleet pre-seeds returned only to the installer medium"
         else
-            bad "restore leg: installer fleet pre-seeds were not restored after the install"
+            bad "restore leg: installer fleet pre-seeds were not restored after the install, or could not be cleared"
             rc=1
         fi
         umount "$mnt"
@@ -89,9 +91,7 @@ _restore_installer_preboot_verdict() { # <powered-off installer image>
 }
 
 _phase_install_restore() {
-    local rtoken rjar rtries
-    rtoken=""
-    rtries=0
+    local rtoken="" rjar rtries=0
     while [ -z "$rtoken" ] && [ "$rtries" -lt 40 ]; do
         rtoken=$(tr -d '\r' <"$SERIAL" | grep -oE 'pit-[A-Z0-9]{6}' | tail -1)
         [ -n "$rtoken" ] || sleep 3
