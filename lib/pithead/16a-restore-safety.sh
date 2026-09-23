@@ -86,8 +86,8 @@ restore_staged_members_safe() {
 
 # An archive may carry generated files for round-trip compatibility, but they are never policy
 # inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
-# trees, including the stable dashboard-login hash when its password fingerprint still matches the
-# restored config. Validate them as single-line generated values, then use the normal writers to
+# trees, including the stable dashboard-login hash when it still authenticates the restored config's
+# password. Validate them as single-line generated values, then use the normal writers to
 # rebuild .env and Caddyfile from the staged, validated config. This runs before any live path is
 # touched.
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
@@ -109,14 +109,16 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
         bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         bcrypt)
-            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
-            [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
+            # Auth disabled in the restored config: the archived hash is stale policy, dropped.
             dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
             [ -n "$dash_password" ] || continue
+            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
+            [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
             dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$staged_cfg") || return 1
             caddy_hash_password_matches "$value" "$dash_user" "$dash_password" || return 1
+            # The archived fingerprint is never trusted; derive it from the password just verified.
+            printf 'DASHBOARD_AUTH_PW_FP=%s\n' "$(printf '%s' "$dash_password" | sha256_hex)" >>"$seed" || return 1
             ;;
-        sha256) [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1 ;;
         esac
         printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
     done <<'EOF'
@@ -131,7 +133,6 @@ DASHBOARD_ONION_ADDRESS onion
 DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
 DASHBOARD_AUTH_HASH_B64 bcrypt
-DASHBOARD_AUTH_PW_FP sha256
 DEPLOYMENT_COMPLETED bool
 EOF
     if ! PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$seed" PITHEAD_CADDY_FILE="$staged_caddy" \

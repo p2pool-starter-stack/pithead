@@ -611,6 +611,9 @@ services are stopped. It stages the archive privately, accepts only the configur
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
 only validated generated secrets and Tor identity are retained from the archived environment.
+The archived dashboard login hash is kept only when the pinned Caddy image confirms that it
+matches `dashboard.auth.password`. With dashboard login off, restore drops the hash. A hash that
+fails the check stops the restore before anything is changed.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 

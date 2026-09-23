@@ -151,15 +151,19 @@ assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DA
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
 
-# Bcrypt is salted. When the archived password still matches config.json, retain the generated hash
-# so restore does not rotate a correct dashboard login.
+# Bcrypt is salted. When the archived hash still authenticates config.json's password, retain it so
+# restore does not rotate a correct dashboard login.
+# Validation and the probe resolve the pinned Caddy image from the stack's compose file, and hash
+# or verify through the shared docker/curl stubs this file replaced above.
+grep -E 'image: .*caddy:' "$ROOT/docker-compose.yml" >"$BK/docker-compose.yml"
+make_stubs "$CR/shared-bin" && cp "$CR/shared-bin/docker" "$CR/shared-bin/curl" "$BK/bin/"
 dashboard_password=dashboard-pass-123
-dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
 jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
     "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
-awk -v fp="$dashboard_fingerprint" '
+# The archived fingerprint is stale on purpose: restore derives it from the verified password.
+awk '
     /^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next }
-    /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next }
+    /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=stale-fingerprint"; next }
     { print }
 ' "$BK/.env" >"$ROOTS/${BK#/}/.env"
 cr_archive "$CR/dashboard-auth.tar.gz"
