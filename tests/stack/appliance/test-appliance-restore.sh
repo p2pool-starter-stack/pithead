@@ -76,6 +76,7 @@ assert_eq "valid restore installs config.json" "$([ -f "$RS/config.json" ] && ec
 assert_contains "valid restore carries the original wallet" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "valid restore regenerates the Caddyfile from config" "$(cat "$RS/Caddyfile" 2>/dev/null)" "reverse_proxy 127.0.0.1:8000"
 assert_eq "valid restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-ORIG"
+assert_eq "valid restore marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "applied marker set" "$([ -f "$RSPOOL/applied" ] && echo yes)" "yes"
 assert_eq "the archive is consumed" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
@@ -119,12 +120,14 @@ printf 'STICK-CADDY\n' >"$RS/Caddyfile"
 printf 'STICK-DB\n' >"$RS/data/dashboard/dashboard.db"
 cp "$rarchive" "$RSPOOL/restore-archive"
 printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
+rm -f "$RS/data/dashboard/sync-gate-reset"
 RCARRY="$RS/carry"
 out=$(cd "$RS" && PATH="$RS/bin:$PATH" PITHEAD_RESTORE_CARRY_DIR="$RCARRY" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 && echo rc0)
 assert_contains "installer restore accepted" "$out" "rc0"
 assert_contains "installer restore surfaces the config for the card" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_eq "installer restore does NOT restore onto the stick (Caddyfile untouched)" "$(cat "$RS/Caddyfile")" "STICK-CADDY"
 assert_eq "installer restore does NOT restore onto the stick (db untouched)" "$(cat "$RS/data/dashboard/dashboard.db")" "STICK-DB"
+assert_eq "installer restore leaves no sync-gate marker on the stick" "$([ -e "$RS/data/dashboard/sync-gate-reset" ] || echo none)" none
 assert_eq "accepted archive parked for the ESP carry" "$([ -f "$RCARRY/archive" ] && echo yes)" "yes"
 assert_eq "passphrase parked beside it" "$(cat "$RCARRY/pass" 2>/dev/null)" "hunter2"
 assert_eq "installer restore consumes the spool archive" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
@@ -250,9 +253,11 @@ RPSEED="$RS/preseed"
 mkdir "$RPSEED"
 cp "$rarchive" "$RPSEED/pithead-restore.enc"
 printf hunter2 >"$RPSEED/pithead-restore-pass"
+rm -f "$RS/data/dashboard/sync-gate-reset"
 out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore && echo rc0')
 assert_contains "carried normal backup passes the shared member policy" "$out" rc0
 assert_eq "carried backup restores the original database" "$(cat "$RS/data/dashboard/dashboard.db")" DBDATA-ORIG
+assert_eq "carried backup marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "carried backup consumes its passphrase" "$([ -e "$RPSEED/pithead-restore-pass" ] || echo gone)" gone
 # Restore publication replaces hostile live links and clamps archive-provided modes.
 chmod 644 "$RS/data/dashboard/dashboard.db"

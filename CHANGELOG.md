@@ -117,6 +117,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A restore no longer carries the source machine's released miner onto new hardware
+  ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
+  database records that the source machine's chains had synced and its miner was released. Restored
+  onto a machine whose chains had not synced, the dashboard never held `p2pool`, which ran without
+  its stratum port and stayed unhealthy, so the appliance boot never committed. Both
+  `./pithead restore` and a restore at setup now leave a marker that makes the dashboard hold the
+  miner until this machine's own chains are synced.
+
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
   just restarted and has no peers yet reports a target height of 0. The dashboard read that as

@@ -275,9 +275,7 @@ stack_backup() {
     fi
 
     log "Backup written to: $archive"
-    if [ -n "$pass" ]; then
-        log "The archive is useless without the passphrase — store it somewhere other than this host."
-    fi
+    [ -z "$pass" ] || log "The archive is useless without the passphrase — store it somewhere other than this host."
     if [ "$with_chains" -eq 0 ]; then
         log "Blockchains excluded (they re-sync). Use 'backup --with-chains' to include them."
     fi
@@ -391,6 +389,8 @@ stack_restore() {
     resolve_dashboard_host
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env
     generate_caddyfile
+    # The restored dashboard DB carries the source's #35 sync-gate release; re-derive it here (#2626).
+    [ ! -d "$DASHBOARD_DIR" ] || sudo touch "$DASHBOARD_DIR/sync-gate-reset"
     log "Fixing Tor data ownership (100:101)..."
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     # Return restored data to the uid used by its container.

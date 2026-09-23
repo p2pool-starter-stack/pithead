@@ -298,7 +298,10 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
             }
         fi
     done < <(restore_setup_relative_items)
-    if [ "$copy_failed" = 1 ]; then
+    # The dashboard database carries the source machine's #35 sync-gate release (#2626); this
+    # machine's chains may not be synced. The marker makes the dashboard re-derive the gate here.
+    if [ "$copy_failed" = 1 ] ||
+        { [ -d "$PWD/data/dashboard" ] && ! : >"$PWD/data/dashboard/sync-gate-reset"; }; then
         rm -rf "$tmp"
         printf 'could not apply the backup files' >"$errf"
         return 1

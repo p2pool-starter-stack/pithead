@@ -45,6 +45,17 @@ class TestSyncGate:
         svc.docker_control.stop.assert_not_called()
         svc.docker_control.start.assert_not_called()
 
+    async def test_release_survives_an_unremovable_restore_marker(self, tmp_path, caplog):
+        # #2626: failing to retire the marker is logged; the release on this machine stands.
+        svc = self._svc()
+        with (
+            patch.object(ds_mod, "SYNC_GATE_RESET_PATH", str(tmp_path)),  # a dir: remove fails
+            patch.object(ds_mod, "SYNC_GATE_CONTAINERS", ["p2pool"]),
+        ):
+            await svc._apply_sync_gate(gate_satisfied=True)
+        assert svc.miner_released is True
+        assert "Could not remove the restore's sync-gate marker" in caplog.text
+
     async def test_partial_start_failure_keeps_latch_closed(self):
         # If only one container starts, stay unreleased so the next cycle retries the rest.
         svc = self._svc()
@@ -173,6 +184,31 @@ class TestSyncGateDecision:
         stopped = {c.args[0] for c in restarted.docker_control.stop.await_args_list}
         assert "p2pool" not in stopped
         assert restarted.miner_released is True
+
+    async def test_restore_marker_re_derives_a_carried_release(self, tmp_path, monkeypatch):
+        # #2626: a released source machine's snapshot restored onto hardware whose monerod has not
+        # synced. The restore's marker overrides the carried latch until the gate releases here.
+        svc, sm, proxy = _make_service()
+        proxy.get_workers.return_value = {"workers": []}
+        await self._iterate(svc, _TARI_SYNCED, get_info=_SYNCED)
+        assert sm.save_snapshot.call_args.args[0]["miner_released"] is True
+
+        marker = tmp_path / "sync-gate-reset"
+        marker.touch()
+        monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
+        restored = _restored(sm)
+        assert restored.miner_released is False
+        await self._iterate(restored, _TARI_SYNCED, get_info=_PEERLESS_RESTART)
+        stopped = {c.args[0] for c in restored.docker_control.stop.await_args_list}
+        assert stopped == {"p2pool", "xmrig-proxy"}
+        restored.docker_control.start.assert_not_called()
+        assert marker.exists()
+
+        # Synced here: the gate releases on this machine's own chains and retires the marker.
+        await self._iterate(restored, _TARI_SYNCED, get_info=_SYNCED)
+        assert restored.miner_released is True
+        assert not marker.exists()
+        assert _restored(restored.state_manager).miner_released is True
 
     @pytest.mark.parametrize(
         ("monero_sync", "tari_sync"),

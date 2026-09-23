@@ -613,7 +613,10 @@ directories, rejects redirected destinations, and clamps restored secrets to own
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
 only validated generated secrets and Tor identity are retained from the archived environment.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
-onion address returns unchanged, and restores hashrate history and dashboard settings.
+onion address returns unchanged, and restores hashrate history and dashboard settings. The restored
+dashboard does not inherit the source machine's released miner: it holds `p2pool` and
+`xmrig-proxy` until this machine's own chains are synced (see
+[Sync Mode](dashboard.md#sync-mode)).
 
 #### Restore collision rules
 

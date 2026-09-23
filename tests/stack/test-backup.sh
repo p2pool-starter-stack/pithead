@@ -232,11 +232,11 @@ assert_eq "archive paths stay inside the sandbox" "$escaped" ""
 printf 'CORRUPTED\n' >"$BK/Caddyfile"
 printf 'CORRUPTED\n' >"$BK/data/dashboard/dashboard.db"
 rm -f "$BK/data/tor/hs_ed25519_secret_key"
-out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)"
-rc=$?
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$archive" 2>&1)" rc=$?
 assert_rc "restore exits 0" "$rc" "0"
 assert_contains "restore regenerates the Caddyfile from config" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_eq "restore brings back the dashboard db" "$(cat "$BK/data/dashboard/dashboard.db")" "DBDATA-ORIG"
+assert_eq "restore marks the sync gate for re-derivation (#2626)" "$([ -f "$BK/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "restore brings back the onion key" "$(cat "$BK/data/tor/hs_ed25519_secret_key" 2>/dev/null)" "ONIONKEY-ORIG"
 
 # 4) Low-space pre-check (#127): a df reporting almost no free space makes backup prompt; answering
