@@ -224,7 +224,7 @@ Useful flags (full list in `run.sh --help`):
 | `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
-| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
+| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation, then backup→restore). Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection; peer-timing pool warnings remain non-fatal. |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
 | `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, and successful private reflink snapshots of every enumerated persistent mount while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and externally anchored public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature and key continuity, requires every Compose image to be digest-pinned, and verifies the five unique Pithead-built images' signatures and exact OCI revisions. Candidate-provided trust roots are rejected. |
@@ -563,7 +563,7 @@ and `--list` prints it).
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`).
+- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
