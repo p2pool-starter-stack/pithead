@@ -123,6 +123,7 @@ out=$(cd "$RS" && PATH="$RS/bin:$PATH" RDATA="$RDATA" run_sourced "$RS" eval '
     ln -sf "$RDATA/outside/role" "$RDATA/pithead/machine-role"
     install_restore_to_target /dev/fake "$RCARRY" "$RCANDIDATE" || exit
     [ ! -e "$RDATA/outside/role" ] || echo leaf-written
+    [ ! -f "$RDATA/pithead/.restore-pending" ] || echo pending-marker-kept
     clear_restore_stage() { warn "Could not clear the private restore staging area."; return 1; }
     if install_restore_to_target /dev/fake "$RCARRY" "$RCANDIDATE"; then echo stage-cleanup-accepted; elif [ -f "$RDATA/pithead/.restore-incomplete" ]; then echo stage-cleanup-refused; fi
 ' 2>&1 && echo rc0)
@@ -137,7 +138,8 @@ assert_not_contains "stage cleanup failure never reports a safe commit" "$out" s
 assert_contains "target staging cleanup failure is generic" "$out" 'could not clear private restore staging safely'
 assert_contains "target restore carries the original wallet" "$(cat "$RDATA/pithead/config.json")" "$WALLET"
 assert_eq "target restore records the resolved machine role" "$(cat "$RDATA/pithead/machine-role")" pithead
-assert_eq "target restore leaves only a non-secret pending marker" "$([ -f "$RDATA/pithead/.restore-pending" ] && echo yes)" yes
+assert_contains "target restore leaves only a non-secret pending marker" "$out" pending-marker-kept
+assert_eq "a refused target restore disarms the pending marker" "$([ -e "$RDATA/pithead/.restore-pending" ] || echo gone)" gone
 assert_eq "target data holds no persisted passphrase file" "$(find "$RDATA" -name '*restore-pass*' -print -quit)" ""
 assert_eq "target data holds no second encrypted carry" "$(find "$RDATA" -name 'pithead-restore.enc' -print -quit)" ""
 assert_contains "restore decrypt staging uses the dedicated volatile root" "$(cat "$RS/stage-pattern")" "-d $RS/stage/.restore.XXXXXXXXXX"
