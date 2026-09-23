@@ -130,20 +130,44 @@ provision_dashboard_onion() {
     DASHBOARD_ONION=$(docker exec tor cat /var/lib/tor/dashboard/hostname)
 }
 
+# The dashboard onion's client-auth credential, or the reason there is not one (#1882). Echoes
+# "<address><TAB><private key>" on success; on failure echoes the operator-facing reason and
+# returns 1. STDOUT IS THE RETURN VALUE here, so nothing in this function may log or warn.
+#
+# It exists because there are now TWO readers of exactly these preconditions — the `onion-client-key`
+# CLI verb below, and the control verb of the same name that answers a shell-less appliance operator
+# through the dashboard (45-control-backup.sh). Two copies of "is there a key, and what is it" is
+# how one of them ends up handing out a placeholder, so the question is asked in one place and the
+# callers only choose how to report the answer.
+onion_client_credential() {
+    local onion privkey
+    if [ "$(env_get DASHBOARD_ONION_ENABLED)" != "true" ]; then
+        printf 'The dashboard onion is not enabled (dashboard.onion.enabled is false), so there is no client key.'
+        return 1
+    fi
+    if [ "$(env_get DASHBOARD_ONION_CLIENT_AUTH)" != "true" ]; then
+        printf 'Client authorization is off for the dashboard onion (dashboard.onion.client_auth: false) — it is password-only, so there is no client key.'
+        return 1
+    fi
+    onion=$(env_get DASHBOARD_ONION_ADDRESS)
+    privkey=$(env_get DASHBOARD_ONION_CLIENT_PRIVKEY)
+    if onion_missing "$onion" || onion_missing "$privkey"; then
+        printf "The dashboard onion is not provisioned yet — apply the configuration and try again."
+        return 1
+    fi
+    printf '%s\t%s' "$onion" "$privkey"
+}
+
 # `onion-client-key` (#343): print the operator's Tor client-auth line for the dashboard onion. Its
 # own command — deliberately NOT part of `status`, which is a shareable report — because it prints
 # the client PRIVATE key. The operator drops this line into their Tor client's ClientOnionAuthDir.
+# On an appliance there is no shell to run this in; the same credential reaches that operator
+# through the dashboard's one-time reveal instead (#1882), off the shared helper above.
 onion_client_key() {
     require_env
-    [ "$(env_get DASHBOARD_ONION_ENABLED)" == "true" ] ||
-        error "The dashboard onion is not enabled (set dashboard.onion.enabled: true, then '$0 apply')."
-    [ "$(env_get DASHBOARD_ONION_CLIENT_AUTH)" == "true" ] ||
-        error "Client authorization is off for the dashboard onion (dashboard.onion.client_auth: false) — it is password-only, so there is no client key."
-    local onion privkey
-    onion=$(env_get DASHBOARD_ONION_ADDRESS)
-    privkey=$(env_get DASHBOARD_ONION_CLIENT_PRIVKEY)
-    { [ -n "$onion" ] && [ "$onion" != "placeholder" ] && [ -n "$privkey" ] && [ "$privkey" != "placeholder" ]; } ||
-        error "The dashboard onion isn't fully provisioned yet — run '$0 apply' first."
+    local cred onion privkey
+    cred=$(onion_client_credential) || error "$cred"
+    IFS=$'\t' read -r onion privkey <<<"$cred"
     cat <<EOF
 Tor onion client-auth for the dashboard — KEEP THIS PRIVATE, it is a secret key.
 Dashboard onion address:  http://$onion

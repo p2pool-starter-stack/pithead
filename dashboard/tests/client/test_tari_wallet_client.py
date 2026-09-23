@@ -119,6 +119,15 @@ class TestGetConfirmedPayouts:
         out = await client.get_confirmed_payouts()
         assert [p["txid"] for p in out] == ["9"]
 
+    async def test_locked_confirmed_statuses_count_even_if_direction_unknown(self):
+        # Tari 6.0.0's *_CONFIRMED_LOCKED statuses (15-17) mark a mined output that has not matured.
+        # It is already a payout (#1129); status 14 (COINBASE_NOT_IN_BLOCK_CHAIN) still is not.
+        client, _ = _client_with_stub(
+            *(_tx(tx_id=s, direction=0, status=s) for s in (14, 15, 16, 17)),
+        )
+        out = await client.get_confirmed_payouts()
+        assert [p["txid"] for p in out] == ["15", "16", "17"]
+
     async def test_non_numeric_field_is_skipped_not_aborting_scan(self):
         # A field that can't be coerced to a number raises in the parse block; skip that row, keep
         # scanning (the good one still parses).
