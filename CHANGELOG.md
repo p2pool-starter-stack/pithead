@@ -119,6 +119,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **Mining no longer starts on a Monero chain that has not synced
+  ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
+  just restarted and has no peers yet reports a target height of 0. The dashboard read that as
+  "synced", released `p2pool` and `xmrig-proxy`, and saved the release, so every later dashboard
+  restart kept the miner running. The sync gate now also waits for monerod's own `synchronized`
+  flag, and it counts an empty or partial node reading as not synced.
+
 - **An approved configuration apply is no longer failed by a container that is merely
   mid-restart ([#2218](https://github.com/p2pool-starter-stack/pithead/issues/2218)).** The
   dashboard stops and starts p2pool on its own for the sync gate and for node-down worker
