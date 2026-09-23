@@ -297,6 +297,7 @@ egress_restore() { # <before> <unit now> [sticky]
         EGRESS_UNIT_BEFORE="$1" UNIT="$2" STICKY="${3:-0}" removals=0
         ok() { :; }
         warn() { :; }
+        step() { printf 'step:%s\n' "$1" >&2; }
         on_bench() {
             case "$1" in
             *"disable --now"*)
@@ -313,6 +314,8 @@ egress_restore() { # <before> <unit now> [sticky]
 }
 assert_eq "a unit this run added is removed, and the absence proven" "$(egress_restore absent present)" "0 absent 1"
 assert_eq "a unit the baseline already had is left alone" "$(egress_restore present present)" "0 present 0"
+assert_contains "and the restore says so, so a leftover from a cancelled run is visible" \
+    "$(egress_restore present present 2>&1 >/dev/null)" "already on the bench before this run"
 assert_eq "a unit that survives the removal fails the restore proof" "$(egress_restore absent present 1)" "1 present 1"
 assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_restore "" present)" "1 present 0"
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
