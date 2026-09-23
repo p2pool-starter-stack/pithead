@@ -114,6 +114,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
+  ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
+  HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
+  container ceiling OOM-killed it while it filled the dataset, on every start. That happened on a
+  host where `setup` skipped the persistent GRUB change and was then rebooted, and on a pool other
+  processes had used up. The ceiling is now 4 GB, both in Compose and in the appliance's units.
+  When the reservation holds the dataset, which is still the fast path, nothing changes.
+
 - **An approved configuration apply is no longer failed by a container that is merely
   mid-restart ([#2218](https://github.com/p2pool-starter-stack/pithead/issues/2218)).** The
   dashboard stops and starts p2pool on its own for the sync gate and for node-down worker
