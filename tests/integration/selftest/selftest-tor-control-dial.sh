@@ -52,6 +52,12 @@ dial podman 2
 assert_eq "second attempt connected -> zero" "$?" "0"
 assert_eq "no attempt after the success" "$(wc -l <"$CURL_LOG" | tr -d ' ')" "2"
 
+echo "== the e2e runner loads the helper before run-state.sh, which calls it =="
+# selftest-run-modules.sh pins only lib/run-*.sh, so it cannot see this file go missing.
+assert_eq "run.sh sources tor-control-dial.sh, then run-state.sh" \
+    "$(grep -oE '^source "\$HERE/lib/(tor-control-dial|run-state)\.sh"' "$HERE/../run.sh" | tr '\n' ' ')" \
+    'source "$HERE/lib/tor-control-dial.sh" source "$HERE/lib/run-state.sh" '
+
 echo "== the appliance battery dials through the same helper =="
 assert_contains "podman command targets monerod" "$(tor_control_dial_cmd podman 172.28.0.25:9050)" "podman exec monerod sh -c"
 (
