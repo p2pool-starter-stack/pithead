@@ -42,14 +42,30 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
 # topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
 #
-# The allowlist also governs which LINES are read (#2414). A hand-edited .env keeps the previous
-# value commented out above the live one, so an assignment behind `#`, indentation, `export` or
-# spaces around `=` is classified like a live one: the prefix and key stay, the value goes. A
-# comment that is not an assignment is prose and passes; any other line that is not an
-# assignment is redacted whole, since it cannot be classified. Plain `[ \t]` rather than
-# `[[:space:]]`: older mawk has no POSIX classes.
+# The allowlist also governs which LINES are read (#2414), and every ambiguity fails closed. A
+# hand-edited .env keeps the previous value commented out above the live one, so an assignment
+# behind `#`, indentation, `export` or spaces around `=` is classified like a live one: the prefix
+# and key stay, the value goes. A survivor keeps its value up to the first unquoted `#`, which
+# becomes `# [redacted]`; a survivor value that opens a quote it never closes, or carries a second
+# `KEY=`, is redacted. A comment that is not an assignment keeps its prose, but every non-survivor
+# `KEY=` inside it loses the rest of the line. Any other line is redacted whole, since it cannot
+# be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
 bundle_redact_env() {
     awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
+        # The value up to its first unquoted `#`, honouring dotenv_render_value backslash escapes
+        # inside double quotes. Sets CUT when a comment was dropped and OPEN on an unclosed quote.
+        function cut_comment(v,   i, c, q) {
+            q = ""; CUT = 0
+            for (i = 1; i <= length(v); i++) {
+                c = substr(v, i, 1)
+                if (q == "\"" && c == "\\") { i++; continue }
+                if (q != "") { if (c == q) q = ""; continue }
+                if (c == "\"" || c == "\047") q = c
+                else if (c == "#") { CUT = 1; break }
+            }
+            OPEN = (q != "")
+            return substr(v, 1, i - 1)
+        }
         BEGIN { n = split(survivors, list, " "); for (i = 1; i <= n; i++) ok[list[i]] = 1 }
         /^[ \t\r]*$/ { print; next }
         match($0, /^[ \t]*(#[# \t]*)?(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) {
@@ -57,10 +73,26 @@ bundle_redact_env() {
             key = lhs
             sub(/^[ \t]*(#[# \t]*)?(export[ \t]+)?/, "", key)
             sub(/[ \t]*=$/, "", key)
-            if (key in ok) print; else print lhs "[redacted]"
+            if (!(key in ok)) { print lhs "[redacted]"; next }
+            val = cut_comment(substr($0, RLENGTH + 1))
+            if (OPEN || val ~ /(^|[ \t;])[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) { print lhs "[redacted]"; next }
+            if (CUT) { sub(/[ \t]+$/, "", val); print lhs val " # [redacted]" } else print lhs val
             next
         }
-        /^[ \t]*#/ { print; next }
+        /^[ \t]*#/ {
+            line = $0; out = ""
+            while (match(line, /[A-Za-z_][A-Za-z0-9_]*[ \t]*=/)) {
+                s = RSTART + RLENGTH
+                key = substr(line, RSTART, RLENGTH)
+                sub(/[ \t]*=$/, "", key)
+                if (!(key in ok)) { out = out substr(line, 1, s - 1) "[redacted]"; line = ""; break }
+                match(substr(line, s), /^[^ \t]*/)
+                out = out substr(line, 1, s - 1 + RLENGTH)
+                line = substr(line, s + RLENGTH)
+            }
+            print out line
+            next
+        }
         { print "[redacted]" }
     '
 }
