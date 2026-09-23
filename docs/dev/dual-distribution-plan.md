@@ -47,7 +47,7 @@ All channels consume the same release manifest: five digest-pinned GHCR images +
 `pithead` + rendered Quadlet units + config schema. The appliance embeds the same
 digests the installer pulls. Image ownership is per-service, not structural: the
 manifest already pins the Tari node from a registry we do not own
-(`quay.io/tarilabs`) — a service image moving to another repo or registry changes a
+(`ghcr.io/tari-project`) — a service image moving to another repo or registry changes a
 digest line, nothing else.
 
 curl-pipe trust mitigations: the script lives in the repo (reviewable), is served over

@@ -60,6 +60,7 @@ IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
+RUN_MERGEMINE_SUBMIT=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -113,6 +114,8 @@ source "$HERE/lib/run-rig-reverse.sh" || exit $?
 source "$HERE/lib/live-gates.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-alert-egress.sh
 source "$HERE/lib/run-alert-egress.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-submit.sh
+source "$HERE/lib/run-mergemine-submit.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -205,12 +208,16 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    local lifecycle_ok=1
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        run_lifecycle || lifecycle_ok=0
+    fi
+    [ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario

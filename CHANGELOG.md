@@ -30,7 +30,42 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `apply` drops `telegram.control` from an existing `config.json` on the next run, so no manual
   edit is needed. If you had the control commands enabled, it says so once as it removes the key.
 
+### Added
+
+- **The dashboard onion's client key without a shell.** With Tor client authorization on — the
+  default, and mandatory whenever the config editor is on — a published `.onion` does not answer a
+  browser that has no client key, and the key was printed by exactly one thing: `pithead
+  onion-client-key`, on a host shell. An appliance has none, so turning the onion on there produced
+  an address that was published, shown in the dashboard header, and impossible to open, under a
+  note naming a command the reader could not run
+  ([#1882](https://github.com/p2pool-starter-stack/pithead/issues/1882)). The header's
+  client-authorization note now carries a **Show client key** button wherever the config editor is
+  on. The host answers once — both Tor client forms — and wipes its own copy on the same timer the
+  backup kit uses; every reveal is recorded in the config-change audit log. The key is still not in
+  the dashboard container's environment
+  ([#1880](https://github.com/p2pool-starter-stack/pithead/issues/1880) stands): the container
+  asks, the host decides, and the answer crosses once through the read-only results spool.
+
 ### Changed
+
+- **Tari 6.0.0 and P2Pool 4.18.1, upgraded together
+  ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** Tari 6.0.0 is a hard
+  fork that activates at mainnet block **350,000**; a node on an older version forks off the
+  network at that height. P2Pool 4.18.1 changes how it sends Tari merge-mined work and requires a
+  Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
+  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.0-mainnet` indexes.
+  - **The first start migrates the Tari database, and there is no way back.** The node runs a
+    one-time JMT migration that upstream describes as taking several minutes to much longer on a
+    large database; the node is unavailable while it runs. Have free disk space for it, and do not
+    stop, restart or `apply` the stack until the node reports progress again: the container is
+    killed one minute after a stop, and upstream says not to interrupt the migration. The payout
+    wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
+    either database afterwards, so returning to an older Pithead release does not return Tari to
+    a working state. Take a backup first (`./pithead backup --with-chains`).
+  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
+    cannot merge-mine against an older node.
+  - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
+    (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
   still asks you to type `APPLY`. (A payout change asked for the last characters of the new address
