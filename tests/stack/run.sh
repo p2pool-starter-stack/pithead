@@ -13,7 +13,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
 
@@ -92,7 +91,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-
 
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/test-tari-fork-rewind.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 

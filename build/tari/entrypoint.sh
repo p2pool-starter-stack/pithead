@@ -4,8 +4,8 @@ set -e
 # Pithead Tari entrypoint wrapper (#183/#234).
 #
 # pithead renders the canonical *Tor* config (build/tari/config.toml, bind-mounted read-only-ish at
-# $TARI_CONFIG_SRC). This wrapper produces the RUNTIME config the node actually uses, then chains to
-# the upstream start_tari_app.sh (which honours WAIT_FOR_TOR and the base-path exactly as before).
+# $TARI_CONFIG_SRC). This wrapper produces the RUNTIME config the node actually uses, then runs the
+# node the way upstream's start_tari_app.sh does (WAIT_FOR_TOR, base path) under the fork check below.
 #
 # It NEVER mutates the canonical config — it copies it to a runtime path and, ONLY when an optional
 # clearnet initial sync is active, transforms the copy. "Active" = the flag is on AND the dashboard's
@@ -16,6 +16,15 @@ set -e
 # Clearnet transform: flip the transport tor → tcp, re-enable the seeds.tari.com DNS seed (the
 # bundled onion peer_seeds are unreachable without Tor), and stop advertising the onion. The host's
 # IP is briefly visible to the Tari P2P network during the sync window.
+#
+# Dead-fork rewind (#2618). A 5.3.1 node that kept its peers followed the dead branch past the
+# 350,000 hard fork. After the 6.0.0 migration it still holds those blocks, bans every canonical
+# peer for `Invalid Proof of work` and never converges. So the wrapper no longer execs the node: it
+# starts it as a child, waits for gRPC (closed until the migration finishes, #2464), and reads the
+# header at FORK_HEIGHT. A tip below it or the canonical hash: the node keeps running under this
+# wrapper, which forwards TERM/INT and exits with its status. A different hash: stop it, run
+# `rewind-blockchain REWIND_HEIGHT` once, stop it, clear the peer state (the bans), start normally.
+# No marker: a canonical node never matches, so the check is safe on every start.
 
 TARI_CONFIG_SRC="${TARI_CONFIG_SRC:-/var/tari/config/config.toml}"
 TARI_CONFIG_RUNTIME="${TARI_CONFIG_RUNTIME:-/tmp/tari-runtime-config.toml}"
@@ -46,6 +55,225 @@ render_tari_runtime_config() {
     fi
 }
 
+FORK_HEIGHT=350000
+REWIND_HEIGHT=349900
+# Canonical mainnet block 350,000 (text explorer JSON and a canonical bench node's ListHeaders, #2618).
+CANONICAL_HASH_AT_FORK=663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47
+TARI_GRPC_URL="${TARI_GRPC_URL:-http://127.0.0.1:18142}"
+TARI_PROBE_INTERVAL="${TARI_PROBE_INTERVAL:-10}"
+TARI_REWIND_TIMEOUT="${TARI_REWIND_TIMEOUT:-1800}"
+NODE_PID=""
+STOP_SIGNAL=""
+
+fork_log() { echo "[pithead fork-check] $*"; }
+
+# Protobuf varint at hex offset $2 of $1: sets PB_V (value) and PB_I (offset after it).
+pb_varint() {
+    local hex="$1" i="$2" shift=0 b v=0
+    while :; do
+        [ "$i" -lt "${#hex}" ] || return 1
+        b=$((16#${hex:i:2}))
+        i=$((i + 2))
+        v=$((v | ((b & 127) << shift)))
+        shift=$((shift + 7))
+        [ $((b & 128)) -eq 0 ] && break
+    done
+    PB_V=$v PB_I=$i
+}
+
+# Varint encoding of $1 as hex (request bodies).
+pb_encode_varint() {
+    local v="$1" out=""
+    while [ "$v" -ge 128 ]; do
+        out+=$(printf '%02x' $(((v & 127) | 128)))
+        v=$((v >> 7))
+    done
+    printf '%s%02x' "$out" "$v"
+}
+
+# First top-level field number $2 of the protobuf message in hex $1: a varint prints as decimal,
+# a length-delimited field as hex. Returns 1 when absent (proto3 omits zero values).
+pb_field() {
+    local hex="$1" want="$2" i=0 key val
+    while [ "$i" -lt "${#hex}" ]; do
+        pb_varint "$hex" "$i" || return 1
+        key=$PB_V i=$PB_I
+        case $((key & 7)) in
+        0)
+            pb_varint "$hex" "$i" || return 1
+            val=$PB_V i=$PB_I
+            ;;
+        1) val=${hex:i:16} i=$((i + 16)) ;;
+        2)
+            pb_varint "$hex" "$i" || return 1
+            val=${hex:PB_I:PB_V*2} i=$((PB_I + PB_V * 2))
+            ;;
+        5) val=${hex:i:8} i=$((i + 8)) ;;
+        *) return 1 ;;
+        esac
+        [ $((key >> 3)) -eq "$want" ] && {
+            echo "$val"
+            return 0
+        }
+    done
+    return 1
+}
+
+# Unary or server-streaming call on the node's loopback gRPC. Sets GRPC_MSG to the first message
+# as hex (empty on a gRPC error status). Returns 1 while gRPC does not answer.
+tari_grpc() {
+    local method="$1" req="$2" out="/tmp/tari-grpc.$$" code frame len
+    code=$(printf '%b' "$(printf '00%08x%s' $((${#req} / 2)) "$req" | sed 's/../\\x&/g')" |
+        curl -s --http2-prior-knowledge --max-time 30 -o "$out" -w '%{http_code}' \
+            -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
+            "$TARI_GRPC_URL/tari.rpc.BaseNode/$method") || code=000
+    frame=$(od -An -v -tx1 "$out" 2>/dev/null | tr -d ' \n')
+    rm -f "$out"
+    [ "$code" = 200 ] || return 1
+    GRPC_MSG=""
+    [ "${#frame}" -ge 10 ] || return 0
+    len=$((16#${frame:2:8}))
+    GRPC_MSG=${frame:10:len*2}
+}
+
+# The node's header at FORK_HEIGHT: prints its hash, or "below" when the tip is under FORK_HEIGHT
+# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent, 2 on no answer.
+header_at_fork() {
+    local header height
+    tari_grpc ListHeaders "08$(pb_encode_varint "$FORK_HEIGHT")10011801" || return 1
+    header=$(pb_field "$GRPC_MSG" 1) || return 2
+    height=$(pb_field "$header" 3) || height=0
+    if [ "$height" -ne "$FORK_HEIGHT" ]; then echo below; else pb_field "$header" 1 || return 2; fi
+}
+
+tip_height() {
+    local meta
+    tari_grpc GetTipInfo "" || return 1
+    meta=$(pb_field "$GRPC_MSG" 1) || return 1
+    pb_field "$meta" 1 || echo 0
+}
+
+start_node() {
+    "${APP_EXEC:-minotari_node}" --config "$TARI_CONFIG" --base-path "$TARI_BASE" "$@" &
+    NODE_PID=$!
+}
+
+node_alive() { kill -0 "$NODE_PID" 2>/dev/null; }
+
+# Forward a container stop to the node as TERM (bash starts background children with SIGINT
+# ignored), and remember it so no later phase starts another node.
+on_stop_signal() {
+    STOP_SIGNAL=$1
+    [ -n "$NODE_PID" ] && kill -TERM "$NODE_PID" 2>/dev/null
+    return 0
+}
+
+# Wait for the node to exit and return its status. A trapped signal interrupts `wait` early, so
+# wait again until the child is really gone.
+wait_node() {
+    local rc
+    while :; do
+        wait "$NODE_PID"
+        rc=$?
+        node_alive || return "$rc"
+    done
+}
+
+stop_node() {
+    kill -TERM "$NODE_PID" 2>/dev/null
+    wait_node
+}
+
+pause() {
+    sleep "$TARI_PROBE_INTERVAL" &
+    wait $! 2>/dev/null
+}
+
+clear_peer_state() {
+    fork_log "clearing peer state (bans) under $TARI_BASE"
+    find "$TARI_BASE" -maxdepth 4 \( \( -type d -name peer_db \) -o \
+        \( -type f \( -name dht.sqlite -o -name dht.sqlite-shm -o -name dht.sqlite-wal \) \) \) \
+        -prune -print -exec rm -rf {} +
+}
+
+# Wait for gRPC, then check the header at FORK_HEIGHT. Returns 0 when the running node may keep
+# running, 3 when it is on the dead branch, and the node's exit status when it stops first.
+check_fork() {
+    local hash rc
+    fork_log "waiting for gRPC (the 6.0.0 database migration runs first and can take hours)"
+    while :; do
+        [ -n "$STOP_SIGNAL" ] && return 0
+        node_alive || return 0
+        hash=$(header_at_fork)
+        rc=$?
+        [ "$rc" -ne 1 ] && break
+        pause
+    done
+    if [ "$rc" -ne 0 ]; then
+        fork_log "gRPC answered without a header at $FORK_HEIGHT; leaving the node as it is"
+    elif [ "$hash" = below ]; then
+        fork_log "tip is below $FORK_HEIGHT; nothing to rewind"
+    elif [ "$hash" = "$CANONICAL_HASH_AT_FORK" ]; then
+        fork_log "header $FORK_HEIGHT is canonical ($hash); nothing to rewind"
+    else
+        fork_log "header $FORK_HEIGHT is $hash, canonical is $CANONICAL_HASH_AT_FORK: dead 5.3.1 branch"
+        return 3
+    fi
+    return 0
+}
+
+# Rewind to REWIND_HEIGHT with a one-shot --watch, stopped as soon as the tip is there (upstream's
+# --watch repeats its command until shutdown).
+rewind_dead_branch() {
+    local deadline=$((SECONDS + TARI_REWIND_TIMEOUT)) tip rc
+    fork_log "stopping the node to rewind to $REWIND_HEIGHT"
+    stop_node
+    [ -n "$STOP_SIGNAL" ] && return 0
+    start_node "$@" --watch "rewind-blockchain $REWIND_HEIGHT"
+    while :; do
+        [ -n "$STOP_SIGNAL" ] && {
+            wait_node
+            return 0
+        }
+        if ! node_alive; then
+            wait_node
+            rc=$?
+            fork_log "ERROR: the node exited ($rc) during the rewind"
+            return $((rc ? rc : 1))
+        fi
+        tip=$(tip_height) && [ "$tip" -le "$REWIND_HEIGHT" ] && break
+        if [ "$SECONDS" -ge "$deadline" ]; then
+            fork_log "ERROR: the tip did not reach $REWIND_HEIGHT within ${TARI_REWIND_TIMEOUT}s"
+            stop_node
+            return 1
+        fi
+        pause
+    done
+    fork_log "rewound to $tip; stopping the node before the normal start"
+    stop_node
+    [ -n "$STOP_SIGNAL" ] && return 0
+    clear_peer_state
+}
+
+# Start the node, rewind it off the dead branch if needed, then supervise it until it exits.
+run_node() {
+    local rc
+    trap 'on_stop_signal TERM' TERM
+    trap 'on_stop_signal INT' INT
+    [ "${WAIT_FOR_TOR:-0}" != 0 ] && sleep "$WAIT_FOR_TOR"
+    mkdir -p "$TARI_BASE" && cd "$TARI_BASE" || return 1
+    start_node "$@"
+    check_fork
+    rc=$?
+    if [ "$rc" -eq 3 ]; then
+        rewind_dead_branch "$@" || return
+        [ -n "$STOP_SIGNAL" ] && return 0
+        fork_log "starting the node normally"
+        start_node "$@"
+    fi
+    wait_node
+}
+
 # Sourced by the test harness (PITHEAD_TEST_SOURCE=1): expose the functions, render nothing, exec
 # nothing. `return` works when sourced; the `|| exit` guards a direct run.
 if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
@@ -66,7 +294,10 @@ elif [ "${TARI_CLEARNET_SYNC:-false}" = "true" ]; then
     echo "Tari clearnet initial sync already completed (#234) — starting Tor-only."
 fi
 
-# Hand off to the upstream entrypoint, pointing it at our runtime config. Everything else
-# (WAIT_FOR_TOR, base-path, user handling) is unchanged.
-export TARI_CONFIG="$TARI_CONFIG_RUNTIME"
-exec start_tari_app.sh "$@"
+# Run the node the way upstream's start_tari_app.sh does (WAIT_FOR_TOR, base path), but with a
+# quoted "$@": its unquoted ${@} would split the --watch argument of the rewind.
+# The probe expects non-zero returns, so leave `set -e` behind here.
+set +e
+TARI_CONFIG="$TARI_CONFIG_RUNTIME"
+TARI_BASE="${TARI_BASE:-/var/tari/${APP_NAME:-node}}"
+run_node "$@"

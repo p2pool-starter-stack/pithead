@@ -499,7 +499,7 @@ assert_contains "tari entrypoint marker→Tor: transport tor (#234)" "$(cat "$SA
 assert_contains "tari entrypoint marker→Tor: DNS seeds empty (#234)" "$(cat "$SANDBOX/tari-rt2.toml")" "dns_seeds = []"
 assert_contains "tari entrypoint never mutates the canonical config (#234)" "$(cat "$TARISRC")" 'type = "tor"'
 # Compose wires the shared marker dir into all three: dashboard rw, monerod + tari ro, + the tari
-# wrapper entrypoint that chains to the upstream start_tari_app.sh.
+# wrapper entrypoint that runs minotari_node.
 assert_contains "compose mounts clearnet-state into monerod (#234)" "$(cat "$ROOT/docker-compose.yml")" ':/clearnet-state:ro'
 assert_contains "compose wires the tari wrapper entrypoint (#234)" "$(cat "$ROOT/docker-compose.yml")" '/var/tari/config/entrypoint.sh'
 
