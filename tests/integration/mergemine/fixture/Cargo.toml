@@ -1,0 +1,17 @@
+[package]
+name = "p2pool_mm_fixture"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Built as a member of Tari's workspace at the pinned tag (../Dockerfile), so every Tari crate and
+# its [patch] set resolve exactly as they do for minotari_node.
+[dependencies]
+borsh = { workspace = true }
+minotari_app_grpc = { workspace = true }
+prost = "0.13.3"
+tari_common = { workspace = true }
+tari_core = { workspace = true }
+tari_node_components = { workspace = true }
+tari_transaction_components = { workspace = true }
+tiny-keccak = { package = "tari-tiny-keccak", version = "2.0.2", features = ["keccak"] }
