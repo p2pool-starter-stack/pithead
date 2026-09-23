@@ -127,7 +127,7 @@ After=tor.service
 Requires=tor.service
 [Container]
 ContainerName=tari
-Image=ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:5e87b15b401dd485710b3efc8f8107ecde26f92c2dfad4c0ad1fab69705b393a
+Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
 Network=mining.network
 IP=$prefix.27
 User=1000:1000
@@ -203,7 +203,7 @@ After=tari.service
 Requires=tari.service
 [Container]
 ContainerName=tari-wallet
-Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.0-mainnet@sha256:b59eab5f5e8da76a26991d2371bee84df12f8610cc73320a39ce136a73921a21
+Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
 Network=mining.network
 IP=$prefix.31
 User=1000:1000
