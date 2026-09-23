@@ -216,8 +216,8 @@ REVENUE_MINER_CONTAINERS="p2pool xmrig-proxy"
 # the rest of doctor covers those, and this must not judge containers outside its remit.
 #
 # chain_hold=1 is the migration hold (#851): pithead-boot deliberately withholds the chain
-# containers until the slot commits, so — exactly like the miners' sync hold — a DOWN chain node
-# is then the expected state, not a crash, and only a running-but-unhealthy one is a fault.
+# containers until the slot commits, so — exactly like the miners' sync hold — a genuinely stopped
+# chain node is expected. Restarting, unhealthy and every other active fault still hold the slot.
 # Without this arm the commit gate would fail on the very hold it is gating, a deadlock.
 revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     local name="$1" state="$2" status="$3" chain_hold="${4:-0}" running=0
@@ -227,21 +227,14 @@ revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     # wrongly block the commit.
     if [ "$state" = running ]; then
         running=1
-    else
+    elif [ -z "$state" ]; then
         case "$status" in Up*) running=1 ;; esac
     fi
     case " $REVENUE_CHAIN_CONTAINERS " in
     *" $name "*)
-        # Under the migration hold, judge a chain node by the miners' rule: down is deliberate.
-        if [ "$chain_hold" = 1 ]; then
-            case "$status" in
-            *'(unhealthy)'*)
-                if [ "$running" = 1 ]; then
-                    printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
-                else printf 'ok\n'; fi
-                ;;
-            *) printf 'ok\n' ;;
-            esac
+        # Under the migration hold, only the states its explicit stop can produce are deliberate.
+        if [ "$chain_hold" = 1 ] && container_state_is_stopped "$state" "$status"; then
+            printf 'ok\n'
             return
         fi
         # Chain node: it must be running and PAST its healthcheck. "starting"/"unhealthy" and any
@@ -261,16 +254,17 @@ revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     *)
         case " $REVENUE_MINER_CONTAINERS " in
         *" $name "*)
-            # Sync-gated miner: down is the normal sync hold, so only a RUNNING-but-unhealthy miner
-            # is a fault. This is the rule that keeps a days-long initial sync from blocking commit.
-            case "$status" in
-            *'(unhealthy)'*)
-                if [ "$running" = 1 ]; then
-                    printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
-                else printf 'ok\n'; fi
-                ;;
-            *) printf 'ok\n' ;;
-            esac
+            # The sync gate explicitly stops miners. Only those stopped states are the exception;
+            # restarting and other non-running states are faults, as is a failed healthcheck.
+            if container_state_is_stopped "$state" "$status"; then
+                printf 'ok\n'
+            elif [[ "$status" == *'(unhealthy)'* ]]; then
+                printf 'fail:%s is running but unhealthy (%s)\n' "$name" "$status"
+            elif [ "$running" = 1 ]; then
+                printf 'ok\n'
+            else
+                printf 'fail:%s is not stopped for sync and is not running (%s)\n' "$name" "${status:-$state}"
+            fi
             ;;
         *) printf 'ok\n' ;;
         esac

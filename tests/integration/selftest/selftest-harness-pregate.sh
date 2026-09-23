@@ -37,6 +37,49 @@ assert_contains "the inline --check sub-phase forwards --workers" \
 assert_contains "a different worker count is forwarded too, not a hardcoded '1'" \
     "$(pregate_of 3 --no-mining-asserts | sed -n 1p)" "--workers '3'"
 
+echo "== the reserved-lock wait reaches both executed pre-gates (#504) =="
+pregate_wait_of() {
+    local work="$1"
+    mkdir -p "$work/tests/integration"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        '[ "${RIG_LOCK_WAIT:-}" = 1 ] || exit 75' \
+        'printf "%s\\n" "$RIG_LOCK_WAIT" >>"$PREGATE_RESULT"' >"$work/tests/integration/run.sh"
+    chmod +x "$work/tests/integration/run.sh"
+    (
+        E2E_DIR="$work"
+        export RIG_LOCK_WAIT=1 PREGATE_RESULT="$work/waits"
+        on_bench() { env -u RIG_LOCK_WAIT PREGATE_RESULT="$PREGATE_RESULT" bash -c "$1"; }
+        harness_pregate 1 ""
+    )
+}
+PREGATE_WORK="$(mktemp -d)"
+trap 'rm -rf "$PREGATE_WORK"' EXIT
+pregate_wait_of "$PREGATE_WORK"
+assert_eq "both executed pre-gates inherit the reserved-lock wait" "$(cat "$PREGATE_WORK/waits")" $'1\n1'
+
+echo "== a sub-phase that returns without draining stdin is not reported as a failure (#2457) =="
+# The parent-lock pair used to be PIPED in. The sub-phase does read both lines, so the bytes always
+# arrived — but a pipeline whose reader returns before the write lands leaves the writer in a closed
+# pipe, and `set -o pipefail` promotes that SIGPIPE to the pipeline's status. harness_pregate then
+# refuses the destructive launch over a readiness that actually PASSED. It surfaced as a rare CI red
+# because two short lines almost always win the race; a payload past the pipe buffer makes the loser
+# certain, which is what turns a heisenbug into a gate. A here-string has no pipeline to poison.
+pregate_rc() { # <stdin payload> -> harness_pregate's rc against a sub-phase that ignores its stdin
+    (
+        E2E_DIR=/srv/code/pithead-e2e
+        RIG_LOCK_PARENT_ACTOR="$1" RIG_LOCK_PARENT_NONCE=nonce
+        on_bench() { return 0; }
+        warn() { :; }
+        harness_pregate 1 --no-mining-asserts
+    ) </dev/null
+}
+pregate_rc short >/dev/null 2>&1
+assert_rc "an ordinary parent-lock payload passes the pregate" "$?" "0"
+# Calibration: without the fix THIS is the arm that reds, and the one above still passes — so a
+# green here is the here-string working, not the payload being too small to prove anything.
+pregate_rc "$(printf 'x%.0s' $(seq 1 100000))" >/dev/null 2>&1
+assert_rc "a parent-lock payload past the pipe buffer passes it too" "$?" "0"
+
 echo ""
 echo "selftest-harness-pregate: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
