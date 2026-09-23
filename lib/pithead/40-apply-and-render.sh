@@ -101,8 +101,8 @@ apply_refresh_appliance_tls() { # -> prints one line when it restarted Caddy
     docker compose restart caddy
 }
 
-recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-dir> <apply-marker> <copy-published:0|1>
-    local old="$1" new="$2" target="$3" marker="$4" copy_published="$5" active current_target cleanup_ok=1
+recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-dir> <apply-marker> <copy-published:0|1> <marker-preexisted:0|1>
+    local old="$1" new="$2" target="$3" marker="$4" copy_published="$5" marker_preexisted="$6" active current_target cleanup_ok=1
     active=$(env_get_file "$ENV_FILE" DASHBOARD_DATA_DIR 2>/dev/null || true)
     if [ "$active" = "$old" ]; then
         if [ "$copy_published" -eq 1 ]; then
@@ -116,7 +116,8 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
                 warn "Could not remove the unpublished dashboard copy at $new; the retry marker was kept. Fix its permissions before re-running '$0 apply'."
             fi
         fi
-        if [ "$cleanup_ok" -eq 1 ]; then
+        # A marker an earlier failed apply left still owes that apply's recreate; only ours is cleared.
+        if [ "$cleanup_ok" -eq 1 ] && [ "$marker_preexisted" -eq 0 ]; then
             rm -f "$marker" || warn "Could not clear $marker; a later apply may repeat recovery."
         fi
     fi
@@ -251,7 +252,7 @@ apply() {
                 dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
                 : >"$apply_marker"
                 dashboard_carry_recovery=1
-                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1

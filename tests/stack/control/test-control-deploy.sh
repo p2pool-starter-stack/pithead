@@ -320,10 +320,10 @@ apply2360() {
         mutation_lock_acquire() { :; }
         mutation_lock_release() { :; }
         describe_change() { printf 'CONFIRM\tdata dir changed\n'; }
-        render_env() { printf 'DASHBOARD_DATA_DIR=%s\n' "$APPLY2360_NEW" >"$1"; }
+        render_env() { printf 'DASHBOARD_DATA_DIR=%s\n' "${RENDER_DIR:-$APPLY2360_NEW}" >"$1"; }
         # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
         parse_and_validate_config() {
-            DASHBOARD_DIR="$APPLY2360_NEW"
+            DASHBOARD_DIR="${RENDER_DIR:-$APPLY2360_NEW}"
             DASHBOARD_DIR_IS_DEFAULT=0
         }
         carry_dashboard_data_move() {
@@ -352,6 +352,17 @@ reset_apply2360
 out="$(FAIL_STEP=carry apply2360 2>&1)"
 assert_rc "apply: failed carry refuses the env switch" "$?" "1"
 assert_not_contains "apply: failed carry never commits the new env" "$(cat "$APPLY2360_LOG")" "publish-env"
+
+# An earlier apply's marker survives a refused carry, so the reverted re-apply still recreates.
+reset_apply2360
+: >"$APPLY2360/.env.apply-incomplete"
+out="$(FAIL_STEP=carry apply2360 2>&1)"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: failed carry keeps an earlier apply's retry marker"; else bad "apply: failed carry keeps an earlier apply's retry marker" "marker deleted"; fi
+: >"$APPLY2360_LOG"
+out="$(RENDER_DIR="$APPLY2360_OLD" apply2360 2>&1)"
+assert_rc "apply: unchanged apply after the refused carry is green" "$?" "0"
+assert_not_contains "apply: unchanged apply after the refused carry is not a no-op" "$out" "No configuration changes detected"
+assert_contains "apply: unchanged apply after the refused carry recreates" "$(cat "$APPLY2360_LOG")" "compose"
 
 reset_apply2360
 out="$(FAIL_STEP=publish apply2360 2>&1)"
