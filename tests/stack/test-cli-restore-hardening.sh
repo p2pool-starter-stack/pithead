@@ -171,6 +171,18 @@ out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.inva
 assert_rc "restore accepts a matching dashboard login hash" "$?" 0
 assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
 
+# The config-wide control-character guard runs before the probe, so a multi-line password never
+# reaches the probe's quoted curl config value.
+jq --arg password $'dashboard-pass-123\nurl = http://127.0.0.2/' '.dashboard.auth.password = $password' \
+    "$ROOTS/${BK#/}/config.json" >"$CR/multiline.json"
+cp "$ROOTS/${BK#/}/config.json" "$CR/config.keep" && mv "$CR/multiline.json" "$ROOTS/${BK#/}/config.json"
+cr_archive "$CR/multiline-dashboard-password.tar.gz"
+mv "$CR/config.keep" "$ROOTS/${BK#/}/config.json"
+printf 'LIVE-ENV\n' >"$BK/.env"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/multiline-dashboard-password.tar.gz" 2>&1)"
+assert_rc "restore rejects a multi-line dashboard password" "$?" 1
+assert_eq "multi-line dashboard password leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+
 dashboard_password=other-dashboard-pass
 dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
 jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
