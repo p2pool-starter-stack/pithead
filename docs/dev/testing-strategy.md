@@ -368,7 +368,7 @@ The probe now rewrites the start time to RFC 3339, and the row is binding on bot
 failure, the row also prints up to 80 diagnostic lines from the current run's p2pool startup log.
 The target keeps only lines that match an allowlist: errors, the entrypoint's own lines, and Tari
 lines. The probe then redacts them and masks every IPv4 and IPv6 address, credential-shaped
-`name:value` tokens, and alphanumeric runs of 40 or more characters. From those lines, a log-read error,
+`name:value` and `name=value` tokens, and alphanumeric runs of 40 or more characters. From those lines, a log-read error,
 bad launch arguments and an unreachable Tari node each look different.
 
 Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
