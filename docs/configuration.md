@@ -258,8 +258,11 @@ under one parent directory, the dashboard database defaults to `<that parent>/da
 of `./data/dashboard`, so it lives beside the chain data rather than inside the install directory
 (see [Operations › The deploy-box layout](operations.md#the-deploy-box-layout)).
 
-Set any `data_dir` to a clean absolute path to move that service's storage; `.` components and
-repeated slashes are refused. For example, to put the Monero blockchain on a dedicated SSD:
+Set any `data_dir` to a clean absolute path to move that service's storage. Since
+[#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360), `apply` refuses a path that
+contains `//`, a `/./` component or a trailing `/.` for all five `data_dir`s, so a config that
+already uses such a path fails `apply` until the path is written cleanly. For example, to put the
+Monero blockchain on a dedicated SSD:
 
 ```json
 {

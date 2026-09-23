@@ -51,7 +51,7 @@ ln -s "$G/recovery/victim" "$G/recovery/new"
     source "$STACK"
     docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
     recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \
-        "$G/recovery/new" "$G/recovery/marker" 1
+        "$G/recovery/new" "$G/recovery/marker" 1 0
 )
 assert_eq "recovery: retargeted destination is untouched" "$(cat "$G/recovery/victim/mining_data.db")" "victim"
 if [ -f "$G/recovery/marker" ]; then ok "recovery: retarget keeps the retry marker"; else bad "recovery: retarget keeps the retry marker" "marker missing"; fi
@@ -68,10 +68,16 @@ mv "$G/recovery/original" "$G/recovery/new"
     docker() { printf '%s\n' "$*" >"$G/recovery/restart"; }
     rm() { return 1; }
     recover_dashboard_data_carry "$G/recovery/old" "$G/recovery/new" \
-        "$G/recovery/new" "$G/recovery/marker" 1
+        "$G/recovery/new" "$G/recovery/marker" 1 0
 )
 if [ -f "$G/recovery/marker" ]; then ok "recovery: cleanup failure keeps the retry marker"; else bad "recovery: cleanup failure keeps the retry marker" "marker missing"; fi
 assert_contains "recovery: cleanup failure still restarts dashboard" "$(cat "$G/recovery/restart")" "compose start dashboard"
+
+echo "== unit: assert_safe_dir refuses empty and '.' components (#2360) =="
+for unsafe_path in "/srv/./pithead/data" "//srv/pithead/data" "/srv/pithead/data/."; do
+    run_sourced "$SANDBOX" assert_safe_dir "$unsafe_path" >/dev/null 2>&1
+    assert_rc "rejects ambiguous path $unsafe_path" "$?" "1"
+done
 
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box

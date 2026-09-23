@@ -1104,6 +1104,9 @@ would silently re-seed it, swallowing a payout change bundled with the move. A n
 a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
 ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
 still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
+If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+container, which is still mounted on the old path: rows written until the retried `apply` recreates
+it land in the old database, not the carried copy.
 
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.
