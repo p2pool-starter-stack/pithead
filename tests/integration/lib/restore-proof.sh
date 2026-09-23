@@ -17,6 +17,36 @@
 # that MOVED, so the tag cannot be the instrument. Empty means "not captured" — a skip, never a pass.
 BASELINE_IMAGES=""
 BRANCH_IMAGES=""
+# Was pithead-egress.service (#2460) on the bench before this run? `up`/`upgrade` install it on any
+# DIY host, the bench included, so a run that found none must leave none: the bench is shared, and
+# an unrecorded unit is drift. present | absent; empty = never read, which the restore refuses.
+EGRESS_UNIT_BEFORE=""
+
+egress_boot_unit_state() { # -> present | absent | "" (the bench could not be asked)
+    on_bench "if systemctl cat pithead-egress.service >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+}
+
+# Put the boot unit back the way the run found it and prove it. A unit that predates the run is the
+# baseline's own and stays. The live DOCKER-USER rules are left alone either way: they are the
+# baseline stack's own firewall, which the restore's apply has just reinstalled.
+restore_egress_boot_unit() {
+    case "$EGRESS_UNIT_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-egress.service predates this run was never recorded, so the restore cannot say it left the bench as found (#2460)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-egress.service >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state)" = absent ] &&
+        on_bench "! systemctl show -p Wants --value docker.service | grep -q pithead-egress" >/dev/null 2>&1; then
+        ok "restore proof: pithead-egress.service removed — no trace of this run's boot unit on the bench (#2460)"
+        return 0
+    fi
+    warn "restore proof: pithead-egress.service is still on the bench after the restore, and it was not there before this run (#2460)."
+    return 1
+}
 
 # The image OBJECT each running service is on. `docker ps` scopes it to the one pinned Compose
 # project, so this reads the live stack whichever checkout last drove it. A re-tag does not move an
@@ -242,5 +272,6 @@ PROBE
             ok "restore proof: all $kept service(s) are back on the exact images they ran before this run"
         fi
     fi
+    restore_egress_boot_unit || prc=1
     return "$prc"
 }
