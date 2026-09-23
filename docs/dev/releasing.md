@@ -11,7 +11,7 @@ Pithead is versioned and released as a single product, not as individual compone
 
 The components are upstream projects pinned and integrated, not authored here: `p2pool`
 (`ARG P2POOL_VERSION`), `xmrig-proxy` (`ARG XMRIG_PROXY_VERSION`), `monerod`
-(`ARG MONERO_VERSION`), and `tari` (`quay.io/tarilabs/minotari_node:v5.3.1-mainnet`,
+(`ARG MONERO_VERSION`), and `tari` (`ghcr.io/tari-project/minotari_node:v6.0.0-mainnet`,
 pinned by digest in `docker-compose.yml`). The first-party code is the dashboard plus the
 orchestration (`pithead`, `docker-compose.yml`, configs). The integration matrix validates the
 composed set. A release is one artifact with one version, one changelog, one upgrade path, and
