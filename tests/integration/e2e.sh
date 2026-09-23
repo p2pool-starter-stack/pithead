@@ -331,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the readiness check right after this will judge tari on what it just saw"
+            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
             return 1
         }
         sleep 8
@@ -588,7 +588,7 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 1500 || true # 1500s (25min) covers tari's real reconnect; #2455 measured >18min, and the readiness check right after this never retries
+    wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }
 
