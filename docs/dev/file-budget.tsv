@@ -46,7 +46,7 @@ lib/pithead/28-parse-and-validate-config.sh	465
 lib/pithead/33-render-env.sh	484
 lib/pithead/36-quadlet-units.sh	406
 lib/pithead/43-control-approval-and-preview.sh	413
-os/overlay/pithead-boot	418
+os/overlay/pithead-boot	407
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
 scripts/watch/trivyignore-watch.sh	599
@@ -62,6 +62,7 @@ tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
+tests/stack/appliance/test-appliance-boot-remint.sh	445
 tests/stack/appliance/test-appliance-boot.sh	640
 tests/stack/appliance/test-appliance-identity-boot.sh	465
 tests/stack/appliance/test-appliance-identity.sh	483

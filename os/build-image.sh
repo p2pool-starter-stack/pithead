@@ -276,6 +276,14 @@ if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
     printf 'FROM %s\nUSER root\nRUN printf %%s "%s" >/app/mining_dashboard/web/static/os-test-marker.txt\nUSER pithead\n' \
         "$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
 fi
+# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail —
+# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
+# stays failed. FROM $WIZARD_IMAGE (not $WIZARD_SOURCE) so this stacks on top of a marker stamp
+# when both are set. Release builds set neither and get no extra layer.
+if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
+    printf 'FROM %s\nUSER root\nRUN printf "#!/bin/sh\\nexit 1\\n" >/app/healthcheck.sh\nUSER pithead\n' \
+        "$WIZARD_IMAGE" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
+fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
 # Stamp the commit into the image. A release build once shipped a dashboard two commits stale

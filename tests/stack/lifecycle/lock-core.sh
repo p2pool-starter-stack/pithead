@@ -79,6 +79,17 @@ rc=$?
 assert_rc "a window that completed is available to the next verb" "$rc" "0"
 assert_eq "release clears the record, so nothing can name a holder that has gone" "$(cat "$LKFILE")" ""
 
+# The dashboard runs as a different uid and opens this inode read-only. A caller's restrictive
+# umask must not turn every dashboard start/stop into a fail-closed permissions error.
+LKMODE="$LKDIR/restrictive-umask.lock"
+rm -f "$LKMODE"
+mode=$(
+    umask 077
+    PITHEAD_LOCK_FILE="$LKMODE" run_sourced "$LKDIR" mutation_lock_acquire mode
+    file_mode "$LKMODE"
+)
+assert_eq "the shared lock stays dashboard-readable under umask 077 (#2218)" "$mode" "644"
+
 # Arm the STALE-RECORD fixture the three cases below need, and note why they need it: with the
 # lock file empty, `verb=backup` exists nowhere on disk and "never reported under the previous
 # holder's name" is true of an empty string — an assertion that cannot fail for any change to
@@ -337,3 +348,20 @@ assert_eq "a versioned install keys its lock on the deploy root its siblings sha
     "$([ -f "$LKROOT/.pithead.lock" ] && echo present || echo absent)" "present"
 assert_eq "and leaves no second, uncontendable lock inside the version dir" \
     "$([ -f "$LKROOT/pithead-v1.0.0/.pithead.lock" ] && echo present || echo absent)" "absent"
+
+# compose_up passes the already-resolved host path into Compose interpolation. That is the source
+# bind-mounted into the dashboard, so an override and a versioned deploy cannot silently coordinate
+# on a different inode from the CLI hold.
+lock_compose_path_probe() {
+    (
+        cd "$LKROOT/pithead-v1.0.0" || exit 9
+        export PITHEAD_LOCK_FILE="$LKFILE"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        docker() { printf '%s' "$PITHEAD_LOCK_FILE"; }
+        compose_up -d
+    )
+}
+assert_eq "compose gives the dashboard the same resolved lock path the CLI holds (#2218)" \
+    "$(lock_compose_path_probe)" "$LKFILE"
+unset -f lock_compose_path_probe

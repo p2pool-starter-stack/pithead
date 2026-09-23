@@ -349,7 +349,7 @@ Four properties, each earned:
    is missing from its SANs, or if it is within 30 days of expiry. With property 3 in place a
    coverage gap should not occur on a healthy render, so this is belt-and-braces there; expiry
    is the check nothing else derives. An unreadable certificate file WARNs instead — `doctor`
-   is the second half of `pithead-boot`'s health gate, and a FAIL there reboots the box, so a
+   is one of `pithead-boot`'s three health-gate signals, and a FAIL there reboots the box, so a
    read failure that doesn't prove the certificate is actually broken must not cause one.
 5. **The remedy is real, and the gate does not punish the update for it (#1265).** `apply`
    reaches the mint even when `config.json` is unchanged: on an appliance the no-change branch
@@ -434,20 +434,31 @@ Five steps, each answering a hardware-validated failure:
    an image behind a constant tag changed identity. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
-4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes two gates.
+4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
    First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
    `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
    derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing
-   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. "The
-   dashboard answers" is a subset of "the stack is alive", and the second gate closes that gap.
+   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
+   `pithead status` must exit 0 — every expected container running and healthy, none restarting;
+   only a miner deliberately created/exited/stopped by the sync gate, or a chain service explicitly
+   withheld by a pending data migration, is exempt. Restarting or unhealthy services still fail.
+   doctor judges only the revenue containers, so before #2383 a *non-revenue* container left
+   `unhealthy` (the dashboard's own healthcheck failing, caddy in a restart loop) passed both
+   earlier gates while the box's own status command already called it broken: manual battery M9
+   committed exactly that slot. Each gate is a subset of the next, and the third closes the last
+   gap. The refusal names the container, carried into the in-flight flag so the fallback boot's
+   rollback verdict says which one held the gate.
    The gate is deliberately sync-tolerant: a node's healthcheck is a liveness probe that passes
    from early in a days-long initial sync, and the sync-held miners (p2pool/xmrig-proxy, stopped
-   by the dashboard until the node catches up) never count as crashed — so a still-syncing box
-   commits while a genuinely broken one does not. A slot that boots but is not healthy stays
-   uncommitted on purpose: that is the state A/B fallback exists for. Unprovisioned machines never
-   commit — GRUB's clear-and-retry keeps them booting, and a bad update before provisioning
-   reverts.
+   by the dashboard until the node catches up) never count as crashed by doctor, nor against
+   `status`'s own exit code — so a still-syncing box commits while a genuinely broken one does
+   not. Certificate coverage the boot-time re-mint could not clear still commits only after
+   `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
+   that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
+   for.
+   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
+   update before provisioning reverts.
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
