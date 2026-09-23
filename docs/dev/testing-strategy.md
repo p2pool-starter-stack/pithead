@@ -678,6 +678,12 @@ tier 3/4:
   restart tor and re-assert both the egress proof and `pithead status`.
   (`check_egress_firewall_installed` and `check_tor_clearnet_egress` still info-skip without a
   running tor container, by design: the dedicated verdict already fails the outage.)
+- **P2Pool seed-node DNS from a cold peer cache.** ✅ A tier-4 `--fault-injection` case (#2496):
+  both saved peer lists are set aside and p2pool restarts under a host-network `tcpdump` on port 53
+  (the `tests/netwatch` image). It asserts the Tor default runs with `--no-dns` (a clearnet config
+  runs without it), p2pool reaches peers and mining resumes, and no `seeds*.p2pool.io` or
+  `*.p2poolpeers.net` query appears in the capture. A unique host lookup is the capture's positive
+  control, so a blind capture fails instead of reading as clean.
 - **Insecure + main matrix row.** ✅ Now a dedicated `local-pruned-main-insecure` row: the two axes
   decouple, so a regression specific to insecure+main (vs. the pre-existing insecure+nano row) has
   somewhere to fail.
