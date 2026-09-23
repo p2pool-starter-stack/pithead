@@ -139,6 +139,26 @@ phase_provision_egress_backstop() { # <phase-rc>
     else
         ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
     fi
+    # The dashboard's view of the same backstop (#2599): the box renders pithead-egress.timer into
+    # /run on every boot, and its read-only check must have written an enforced verdict for the
+    # dashboard. OnBootSec=2min, so allow one interval and slack before calling it missing.
+    if [ "$(_ssh 'systemctl is-active pithead-egress.timer' 2>/dev/null)" = active ]; then
+        ok "pithead-egress.timer is active on the appliance — the dashboard gets the live firewall verdict (#2599)"
+    else
+        bad "pithead-egress.timer is not active on the appliance — the dashboard shows the egress firewall as unverified (#2599)"
+    fi
+    local status="" deadline=$(($(date +%s) + ${EGRESS_STATUS_TIMEOUT:-240}))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        status=$(_ssh "jq -c '[.rc, .verdict]' /data/pithead/data/control/results/egress-status.json" 2>/dev/null) || status=""
+        [ "$status" = '[0,"enforced"]' ] && break
+        sleep 10
+    done
+    if [ "$status" = '[0,"enforced"]' ]; then
+        ok "the host check wrote rc 0 (enforced) for the dashboard (#2599)"
+    else
+        bad "the host check did not write an enforced verdict for the dashboard (got: ${status:-no file}) (#2599)"
+        _egress_capture_diagnostics
+    fi
     return 0
 }
 

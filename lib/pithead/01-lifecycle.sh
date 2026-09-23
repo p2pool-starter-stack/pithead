@@ -149,6 +149,7 @@ stack_up() {
     # first closes the startup window in which a clearnet app (e.g. Tari) could open a connection that
     # the ESTABLISHED rule would then grandfather past the DROP.
     apply_tor_egress_firewall
+    provision_egress_check_units # #2599: the dashboard reads the firewall's live state
     # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
     # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
     # the one unverified pull. Same guard: source checkouts skip, a missing cosign.pub warns and

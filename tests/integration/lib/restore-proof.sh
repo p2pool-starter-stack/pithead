@@ -21,9 +21,31 @@ BRANCH_IMAGES=""
 # DIY host, the bench included, so a run that found none must leave none: the bench is shared, and
 # an unrecorded unit is drift. present | absent; empty = never read, which the restore refuses.
 EGRESS_UNIT_BEFORE=""
+# The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
+EGRESS_CHECK_BEFORE=""
 
-egress_boot_unit_state() { # -> present | absent | "" (the bench could not be asked)
-    on_bench "if systemctl cat pithead-egress.service >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+egress_boot_unit_state() { # [unit] -> present | absent | "" (the bench could not be asked)
+    on_bench "if systemctl cat ${1:-pithead-egress.service} >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+}
+
+# The egress check pair (#2599), restored on the same rule as the boot unit below.
+restore_egress_check_units() {
+    case "$EGRESS_CHECK_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-egress.timer predates this run was never recorded, so the restore cannot say it left the bench as found (#2599)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-egress.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.timer /etc/systemd/system/pithead-egress-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state pithead-egress.timer)" = absent ] &&
+        [ "$(egress_boot_unit_state pithead-egress-check.service)" = absent ]; then
+        ok "restore proof: pithead-egress.timer and its check removed — no trace of this run's egress check on the bench (#2599)"
+        return 0
+    fi
+    warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
 }
 
 # Put the boot unit back the way the run found it and prove it. A unit that predates the run is the
@@ -273,5 +295,6 @@ PROBE
         fi
     fi
     restore_egress_boot_unit || prc=1
+    restore_egress_check_units || prc=1
     return "$prc"
 }

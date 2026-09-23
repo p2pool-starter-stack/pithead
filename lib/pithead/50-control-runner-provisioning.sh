@@ -22,11 +22,12 @@ control_unit_dir() {
 # path; comparing the literal string would call our own unit foreign. A stranded unit usually names
 # a directory that no longer exists, so resolve the deepest existing ancestor and keep the rest
 # verbatim: the caller still gets a comparable, printable path instead of an empty answer.
-control_units_owner_dir() {
+# The egress check pair (#2599) passes its own service and verb.
+control_units_owner_dir() { # [service] [verb]
     local unit_dir owner_dir dir tail
     unit_dir=$(control_unit_dir)
-    owner_dir=$(sed -n 's|^ExecStart=\(/.*\)/pithead control-run-pending$|\1|p' \
-        "$unit_dir/pithead-control.service" 2>/dev/null | head -n 1)
+    owner_dir=$(sed -n "s|^ExecStart=\\(/.*\\)/pithead ${2:-control-run-pending}\$|\\1|p" \
+        "$unit_dir/${1:-pithead-control.service}" 2>/dev/null | head -n 1)
     [ -n "$owner_dir" ] || return 0
     dir="$owner_dir" tail=""
     while [ -n "$dir" ] && [ "$dir" != "/" ] && [ ! -d "$dir" ]; do

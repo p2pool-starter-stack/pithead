@@ -105,6 +105,7 @@ class TestRunIteration:
             "xvb_enabled",
             "shares_in_window",
             "clearnet_active",
+            "egress_firewall",
             "xvb_registration_state",
             "update_available",
             "low_hr_warning",

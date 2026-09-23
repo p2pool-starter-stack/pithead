@@ -25,10 +25,11 @@ separately, [below](#appliance-only-commands).
 | `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
+| `./pithead egress-status` | Check the Tor-only egress firewall the way `doctor` does and write the verdict to `data/control/results/egress-status.json` for the dashboard. Read-only. Fired every two minutes by `pithead-egress.timer`; `up`, `apply` and `upgrade` install the timer, and `network.tor_egress_firewall: false` or `uninstall` removes it. |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit and `pithead-egress.timer` check. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -245,7 +246,9 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
 `up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
 waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
-when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. The
+dashboard learns the same state from `pithead-egress.timer`, which runs `pithead egress-status`
+every two minutes, and alerts when the rules go missing while the stack runs. See
 [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
 
 ---

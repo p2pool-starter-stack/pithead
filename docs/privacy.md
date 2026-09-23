@@ -54,6 +54,23 @@ whose engine has no firewall backend installed at all cannot enforce anything, s
 there rather than skipping the check — on the appliance that is what stops a slot with no firewall
 from committing itself as healthy.
 
+The dashboard runs in a container and cannot read host firewall rules, so it does not take the
+firewall's state from `network.tor_egress_firewall` alone. `up`, `apply` and `upgrade` install
+`pithead-egress.timer`, which runs `pithead egress-status` two minutes after boot and every two
+minutes after that. The check is the one `doctor` uses, it is read-only, and it writes its verdict
+to `data/control/results/egress-status.json`. The dashboard reads that file:
+
+- **Enforced:** clearnet routes on the mining subnet show as blocked by the firewall, as before.
+- **Missing** (rules absent, no firewall tool, no jump into the chain, or a foreign rule above the
+  `DROP`): the **Stack Topology & Egress** panel and the header badge warn that the firewall is
+  missing, nothing is shown as blocked, and one `clearnet_exposed` alert goes out. A second alert
+  goes out when the check reads enforced again. Run `./pithead up` to reinstall the rules. The
+  check never reinstalls them itself, so a flush stays visible until you act on it.
+- **Unverified** (no status file yet, an unreadable ruleset, or no check for six minutes): the panel
+  and badge warn that the state is unverified, and no alert goes out.
+
+Opting out with `network.tor_egress_firewall: false` removes the timer.
+
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
 address match has nothing to key on (there is no assigned v6 range), so the drop is scoped to the

@@ -157,7 +157,7 @@ kill "$ROVHOLDER" 2>/dev/null
 # ROV_UNCLAIMED is a floor, not a finding: it is what this domain makes NO claim about, not a set
 # shown to mutate. Some of it is very likely read-only too; nothing here says so either way.
 ROV_PROVEN="logs status doctor"
-ROV_UNCLAIMED="setup apply render up down restart upgrade test-alert support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
+ROV_UNCLAIMED="setup apply render up down restart upgrade test-alert support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending egress-status onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
 
 rov_cmds="$(
     cd "$SANDBOX" || exit

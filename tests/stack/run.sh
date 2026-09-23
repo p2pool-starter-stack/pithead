@@ -98,6 +98,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-to
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_ran test-tor-egress-enforcement.sh "$_d0" "$?" || domain_ran test-tor-egress-enforcement.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-check.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-check.sh" && domain_ran test-tor-egress-check.sh "$_d0" "$?" || domain_ran test-tor-egress-check.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
@@ -125,10 +127,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh
 _d0=$((PASS + FAIL)) && source "$HERE/test-worker-config.sh" && domain_ran test-worker-config.sh "$_d0" "$?" || domain_ran test-worker-config.sh "$_d0" "$?"
 
 echo "== black-box: notification secrets masked in the prefill copy (#848) =="
-# The ntfy topic URL + token are bearer credentials, and each notifications.webhooks[] entry IS a
-# bearer URL (query strings carry tokens). All must be sentineled in the world-readable masked copy
-# — one LEAK- marker across every set secret proves the whole set at once; a blank webhook entry and
-# the non-secret notifications.tor flag must survive so the editor can still render the form.
+# ntfy URL/token and each webhook URL are bearer credentials: one LEAK- marker proves every set one is
+# sentineled in the masked copy; a blank webhook and notifications.tor survive for the editor.
 jq '.notifications = {
     webhooks: ["https://hooks.example/LEAK-hookA", "", "https://hooks.example/LEAK-hookB"],
     ntfy: {url: "https://ntfy.example/LEAK-ntfyurl", token: "LEAK-ntfytoken"},
