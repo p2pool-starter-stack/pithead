@@ -92,6 +92,8 @@ INTEGRATION_RUN_SUITE=1
 source "$HERE/lib/run-cli.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-matrix.sh
 source "$HERE/lib/run-matrix.sh" || exit $?
+# shellcheck source=tests/integration/lib/tor-control-dial.sh
+source "$HERE/lib/tor-control-dial.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh

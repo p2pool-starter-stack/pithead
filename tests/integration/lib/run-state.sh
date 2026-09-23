@@ -354,11 +354,12 @@ assert_running_state() {
                 else
                     it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
                 fi
-                if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
+                # Retried on fresh circuits: one live-Tor stream fails now and then (#2619).
+                if rx "$(tor_control_dial_cmd docker "$tor_socks")" >/dev/null 2>&1; then
                     it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
                 else
                     it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
-                        "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
+                        "no egress even via Tor SOCKS at $tor_socks ($(tor_control_dial_attempts_text)) — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
                 fi
             fi
         fi
