@@ -77,7 +77,9 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    docker compose up "${build_args[@]}" "$@"
+    # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
+    # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@"
 }
 
 # #795: `compose up --remove-orphans` never removes the container of a service whose profile just

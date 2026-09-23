@@ -44,7 +44,9 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 0
 fi
 
-compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+LOCK_FILE="$(mktemp)"
+chmod 644 "$LOCK_FILE"
+compose() { PITHEAD_LOCK_FILE="$LOCK_FILE" docker compose -f "$COMPOSE_FILE" "$@"; }
 cstate() { docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || echo "missing"; }
 ctl() { curl -fsS --max-time 5 "$1" -d "$2" >/dev/null; } # POST JSON to a fake /control
 
@@ -157,6 +159,7 @@ wait_dashboard_api() { # wait_dashboard_api [tries]
 teardown() {
     log "tearing down"
     compose down -v --remove-orphans >/dev/null 2>&1 || true
+    rm -f "$LOCK_FILE"
 }
 trap teardown EXIT
 
