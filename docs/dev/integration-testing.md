@@ -224,7 +224,7 @@ Useful flags (full list in `run.sh --help`):
 | `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
-| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
+| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation, then backup→restore). Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection; peer-timing pool warnings remain non-fatal. |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
 | `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, and successful private reflink snapshots of every enumerated persistent mount while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and externally anchored public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature and key continuity, requires every Compose image to be digest-pinned, and verifies the five unique Pithead-built images' signatures and exact OCI revisions. Candidate-provided trust roots are rejected. |
@@ -277,6 +277,10 @@ bench that starts hours behind tip fails the required-sync assertions as environ
 a regression, and burns the borrowed-rig hour finding out
 ([#914](https://github.com/p2pool-starter-stack/pithead/issues/914)). `--skip-preflight`
 overrides.
+
+After a branch deploy recreates the nodes, the wrapper uses the same `done/done` panel predicate
+with a bounded 25-minute deadline before the binding readiness gate. A timeout refuses destructive
+phases and exits through the normal restore trap; it never asks the harness to grade a reconnecting Tari.
 
 For `targeted` and `matrix`, it does the following and reverses it on exit (even on failure / Ctrl-C,
 via an `EXIT` trap):
@@ -559,7 +563,7 @@ and `--list` prints it).
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`).
+- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
@@ -825,7 +829,13 @@ capture writes no config rather than falling back to the raw file, and says so i
 `env.redacted.txt` is classified by an explicit ALLOWLIST of survivor key NAMES
 ([#1631](https://github.com/p2pool-starter-stack/pithead/issues/1631), ruled on #1630): a key
 absent from `PITHEAD_ENV_SURVIVOR_KEYS` (`lib/pithead/07-support-bundle.sh`) is redacted, never
-printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. A
+printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. The
+rule covers every line that assigns a key, not only the live ones
+([#2414](https://github.com/p2pool-starter-stack/pithead/issues/2414)): a commented-out,
+indented or `export`-prefixed assignment keeps its prefix and key and loses its value. Every
+ambiguity fails closed: a survivor keeps its value up to the first unquoted `#` and is redacted
+if the value holds any `=` (a second `KEY=`, whatever joins it) or an unclosed quote, a `KEY=`
+inside comment prose loses the rest of the line unless it is a survivor with an `=`-free value, and any other line is redacted whole. A
 suffix/substring denylist over the same population had failed four times, each time in the unsafe
 direction, and the harness's own vocabulary disagreed with `support-bundle`'s on 17 of 127 keys —
 `NTFY_URL` among them, a capability URL the bundle left in the clear. The capture sources
