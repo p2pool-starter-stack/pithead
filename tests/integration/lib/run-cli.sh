@@ -47,6 +47,13 @@ MATRIX:
   --lifecycle            also run the lifecycle phase (restart, apply secret-preservation,
                          and the #255 ensure_owner migration: a root-owned file under a data
                          dir must be chowned to the container uid by apply)
+  --reset-dashboard      also run the reset-dashboard phase (#2346): `pithead reset-dashboard`
+                         wipes the .env-named dirs, not an unapplied config.json path (#139),
+                         recreates them owned by APP_UID (#550), leaves the chains untouched
+                         (height never rewinds), brings dashboard/p2pool back healthy, and a
+                         forced real compose failure reaches the friendly retry message instead
+                         of a bare errexit abort (#557). DESTRUCTIVE-then-restored; requires
+                         --safety-backup so interruption restores the baseline and removes decoys.
   --safety-backup        take a `pithead backup` BEFORE the destructive scenarios; if anything
                          fails, automatically roll the box back to it (down → restore → up).
                          The archive is removed on success. Recommended for the destructive
@@ -228,6 +235,10 @@ parse_args() {
             RUN_LIFECYCLE=1
             shift
             ;;
+        --reset-dashboard)
+            RUN_RESET_DASHBOARD=1
+            shift
+            ;;
         --fault-injection)
             RUN_FAULTS=1
             shift
@@ -352,6 +363,10 @@ parse_args() {
             it_err "--image-upgrade old and new commits must differ."
             exit 2
         }
+    fi
+    if [ "$RUN_RESET_DASHBOARD" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--reset-dashboard requires --safety-backup."
+        exit 2
     fi
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave
