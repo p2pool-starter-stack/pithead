@@ -146,12 +146,14 @@ mm_startup_excerpt() {
 # The excerpt's own masks, over redact(), which is keyed on flag and JSON shapes and cannot see a
 # secret written in prose. In order: every IPv4; anything IPv6-shaped (log timestamps match too
 # and are masked with them — the cost of not guessing); a `name:value` or `name=value` token, which is how a
-# credential reads in prose (a `scheme://` URL and a `label: text` pair are left alone); and any
+# credential reads in prose (a `scheme://` URL and a `label: text` pair are left alone), with `=`-padded
+# base64 masked first so its padding is not read as an assignment; and any
 # 40+ character alphanumeric run, since a Tari address's length is not pinned anywhere here. PURE.
 mm_mask_excerpt() {
     sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g
         s/[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}/<ip>/g
         s/[A-Za-z0-9_.-]*[A-Za-z][A-Za-z0-9_.-]*:[^[:space:]\/][^[:space:]]*/<redacted>/g
+        s/[A-Za-z0-9+\/]{16,}={1,2}/<redacted>/g
         s/([A-Za-z0-9_.-]+)=[^[:space:]]+/\1=<redacted>/g
         s/[A-Za-z0-9]{40,}/<redacted-address>/g
         s/^/          /'

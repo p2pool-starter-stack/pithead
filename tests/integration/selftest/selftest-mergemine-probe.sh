@@ -200,6 +200,7 @@ MM_RX_LOGS=$(printf '%s\n' \
     '2026-09-20 05:54:05.2 RPC login rpcuser:hunter2 at 192.168.7.9' \
     'RPC login rpcuser:hunter2 invalid, tari gRPC connection refused from 1234:5678::9' \
     'auth failed user=admin rpc_password=Sup3rSecret!' \
+    'unknown token aGVsbG9Xb3JsZFNlY3JldFZhbHVlMTIzNA==' \
     'Tari wallet 12AbCdEfGhJkMnPqRsTuVwXyZ23456789abcdefghijkmnopq set' \
     '2026-09-20 05:54:06.0 MergeMiningClientTari tari://192.168.7.9:18142 connect failed' \
     'Error response from daemon: no such container')
@@ -212,7 +213,7 @@ assert_contains "the excerpt carries the read's own error text" "$ex" "no such c
 assert_contains "the excerpt carries p2pool's Tari failure line" "$ex" "tari://<ip>:18142 connect failed"
 assert_contains "the excerpt keeps the entrypoint's bridge line, with the remote node masked" "$ex" "bridging <ip> -> <redacted-endpoint>"
 case "$ex" in
-*node.fixture* | *"$MM_WALLET"* | *hunter2* | *192.168.* | *5678::9* | *12AbCdEf* | *Sup3rSecret* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet, credential, address or escape" "$ex" ;;
+*node.fixture* | *"$MM_WALLET"* | *hunter2* | *192.168.* | *5678::9* | *12AbCdEf* | *Sup3rSecret* | *aGVsbG9X* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet, credential, address or escape" "$ex" ;;
 *) it_pass "the excerpt leaks no endpoint, wallet, credential, address or escape" ;;
 esac
 MM_RX_LOGS=$(for i in $(seq 1 200); do printf 'error line %s\n' "$i"; done)
