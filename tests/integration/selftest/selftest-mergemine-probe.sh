@@ -164,6 +164,39 @@ case "$MM_RX_LOG" in
 *"compose logs"*) it_fail "no log is read when the start time is unknown" "it read the log anyway" ;;
 *) it_pass "no log is read when the start time is unknown" ;;
 esac
+
+# podman's StartedAt (#2326). The appliance answers `docker inspect` through the podman-docker shim,
+# which prints Go's time.String(); docker-compose refuses that as `--since` before sending any
+# request, so the capture was empty on every appliance run. Captured shape, from the guest journal
+# of job 69@90f47ed631 (podman's own event lines carry the same rendering).
+MM_RX_STARTED="2026-09-20 05:54:04.957178532 +0000 UTC"
+: >"$MM_RX_LOG_FILE"
+mm_capture_startup >/dev/null
+assert_contains "podman's StartedAt is rewritten to RFC 3339 before it bounds the read" \
+    "$(cat "$MM_RX_LOG_FILE")" "--since 2026-09-20T05:54:04.957178532+00:00 p2pool"
+MM_RX_STARTED="2026-09-20 01:54:04 -0400 EDT"
+assert_eq "a non-UTC podman offset, with no fraction, keeps its offset" "$(mm_started)" "2026-09-20T01:54:04-04:00"
+MM_RX_STARTED="2026-08-28T23:52:05.827654553Z"
+assert_eq "docker's RFC 3339 StartedAt passes through untouched" "$(mm_started)" "$MM_RX_STARTED"
+
+echo "== a FAIL carries the redacted startup window that explains it (#2326) =="
+
+# The excerpt is the one read here that lets non-merge-mining lines cross the wire, so its
+# redaction is asserted on the shapes this log really carries: the entrypoint's bridge line names
+# the remote node, and a wallet-length token must never survive.
+MM_WALLET=4$(printf 'A%.0s' {1..94})
+MM_RX_LOGS=$(printf '[p2pool-entrypoint] Tor on (#278): bridging 127.0.0.1 -> node.fixture for monerod RPC(18081)\n\033[0;36m2026-09-20 05:54:05.1\033[0m P2Pool wallet %s\nno such container\n' "$MM_WALLET")
+REMOTE_MONERO_HOST=node.fixture
+: >"$MM_RX_LOG_FILE"
+ex="$(mm_startup_excerpt)"
+REMOTE_MONERO_HOST=""
+assert_contains "the excerpt reads the same run-bounded window" "$(cat "$MM_RX_LOG_FILE")" "--since 2026-08-28T23:52:05.827654553Z p2pool 2>&1 | head -n $MM_EXCERPT_LINES"
+assert_contains "the excerpt carries the read's own error text" "$ex" "no such container"
+assert_contains "the excerpt masks the run's remote node" "$ex" "<redacted-endpoint>"
+case "$ex" in
+*node.fixture* | *"$MM_WALLET"* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet or escape" "$ex" ;;
+*) it_pass "the excerpt leaks no endpoint, wallet or escape" ;;
+esac
 unset -f rx
 
 echo "== the leg reports PASS, FAIL or a COUNTED skip — never a silent green =="
@@ -236,17 +269,18 @@ out="$(mm_leg_outcome 0 "")"
 assert_eq "no merge-mining client at all FAILS, and is never a skip — 0 pass, 1 fail, 0 skips" \
     "$(printf '%s' "$out" | cut -d' ' -f1-3)" "0 1 0"
 
-# The appliance channel's OWN reproduced gap (#2062, #2326): the same "absent" verdict, but with
-# IT_APPLIANCE_CHANNEL=1 set (tests/os/phases/stack.sh's --appliance-channel), it must read as a
-# named, counted, by-design skip instead of a failure — every other verdict above stays a FAIL
-# unconditionally; only this one branch is appliance-aware.
-IT_APPLIANCE_CHANNEL=1
-out="$(mm_leg_outcome 0 "")"
-IT_APPLIANCE_CHANNEL=0
-assert_eq "on the appliance channel, the same absent verdict skips instead — 0 pass, 0 fail, 1 counted skip" \
-    "$(printf '%s' "$out" | cut -d' ' -f1-3)" "0 0 1"
-assert_eq "and the skip is classed by-design, not missing" "$(printf '%s' "$out" | cut -d' ' -f4)" "1"
-assert_contains "and the skip names #2326" "$out" "#2326"
+# Both failing verdicts print the startup excerpt under the row (#2326): an "absent" that is a
+# collection defect and one that is a p2pool that built no client read identically without it.
+for mm_case in "" "$MM_LOCAL_ONLY"; do
+    out="$(
+        mm_capture_startup() { printf '%s' "$mm_case"; }
+        mm_startup_excerpt() { printf 'EXCERPT-SENTINEL\n'; }
+        monero_caught_up() { return 0; }
+        IT_FAIL=0
+        assert_mergemine_roundtrip
+    )"
+    assert_contains "a $(mm_roundtrip_verdict "$mm_case") FAIL prints the startup excerpt under its row" "$out" "EXCERPT-SENTINEL"
+done
 
 # Its sibling, and the reason the two must not share a case: an unreadable container start time
 # is a different failure with a different cause, and it must not be able to stand in for the one

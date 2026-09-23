@@ -253,7 +253,7 @@ phase_stack() {
     # guest can only run by starting a local monerod from scratch each time. That cost over two
     # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
     # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
-    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq" --appliance-channel)
+    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
     # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty
