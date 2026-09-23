@@ -16,7 +16,7 @@ situation honestly.
 | **1 — Unit** | `dashboard/tests/` (pytest, mocked clients) and `tests/stack/` (shell, `docker`/`sudo` stubbed) | Decision logic & field mapping: sync-gate, failover, node-health debounce, XvB engine, `/api/state` shapes, `pithead` config/status logic | Every PR (`make test`) |
 | **2 — Contract** | `tests/integration/fakes/test_contract.py` | The real Monero/Tari clients parsing real daemon wire formats, and `requests` completing a capped HTTP request through a fake SOCKS5 CONNECT proxy | Every PR (docker-free) |
 | **3 — Mini-stack** | `tests/integration/mini-stack/` (real dashboard + docker-control vs fake daemons) | The control plane **end-to-end with real containers**: hold/release and reject/readmit actually stopping/starting `p2pool`/`xmrig-proxy`, driven deterministically | CI with Docker (`make test-mini-stack`) |
-| **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate (`make test-integration`; the battery on the KVM bench) |
+| **4 — Live matrix** | `tests/integration/run.sh` against a real, synced box — and, for the appliance channel, `tests/os/run.sh`, the KVM battery for the flashed image | What only reality proves: real merge-mining, prune/full DB size, Caddy TLS, Tor onions, HugePages, fault injection for real container health verdicts — and, for the image, built-artifact invariants before EFI boot, A/B commit/rollback, install-to-disk | Every PR that changes what runs on a box, as a bench-ci job on the PR's head (see [What a PR must prove](#what-a-pr-must-prove)); and the release gate — a bench-ci `tier4-e2e` / `tier4-kvm` `all`-phase run against the exact release commit, required by `release.sh`'s `bench-ci/tier4` preflight |
 
 Stubs do most of the work. The dashboard unit tests drive the hard runtime states with mocked
 clients; more mocks for the same logic would duplicate them. What stubs can't prove is wiring:
@@ -133,6 +133,14 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Stop/start fails → retry next cycle (idempotent) | docker error | 1 ✅ |
 | `dashboard.fail_closed` (#490): default off never holds on an unrecoverable failure (alert-only); `true` holds (reusing #35's stop/start), releases once it clears (not a one-way latch), no-op before the sync gate releases | `is_db_unrecoverable() ∨ containers.is_confirmed_bad("dashboard")` | 1 ✅ · 3 ▶ |
 
+### C1. Outbound third-party integrations
+
+| Situation | Trigger | Tier |
+|---|---|---|
+| Healthchecks.io liveness ping reaches the configured receiver | dashboard loop | 3 ▶ (`fake_hc`) |
+| Telegram, webhook, and ntfy receive a configured node-down alert; disabled sinks make no request | monerod down / disabled configuration | 3 ▶ (`fake_sink`) |
+| Telegram *command* polling (`getUpdates`) rides the same `TELEGRAM_API_BASE` seam the alert path does, but is off by default (`TELEGRAM_COMMANDS_ENABLED`) and the mini-stack never enables it — the seam is proven outbound-only here | dashboard loop | 1 ✅ (mocked transport) |
+
 ### D. Container health verdicts (`pithead status`)
 
 | Situation | Trigger | Tier |
@@ -140,7 +148,9 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | All healthy → exit 0 | steady state | 1 ✅ · 4 ▶ |
 | Required node **down** / **missing** → exit 1 | stop / `rm` monerod | 1 ✅ (node-down) · 4 ▶ (`--fault-injection`) |
 | Running but **unhealthy** → exit 1 | healthcheck fails (SIGSTOP) | 4 ▶ (`--fault-injection`) |
-| Miner stopped under sync-hold / failover → exit **0** (intentional) | held / rejected | 1 ✅ · 4 ▶ |
+| Miner created/exited under sync-hold / failover → exit **0** (intentional) | held / rejected | 1 ✅ · 4 ▶ |
+| Miner **restarting** → exit 1, never treated as a sync hold | crash loop | 1 ✅ · 4 ▶ |
+| Chain service missing/stopped under an active data-migration hold → exit **0**; restarting/unhealthy still exits 1 | migration marker matches running version | 1 ✅ · 4 ▶ |
 | Remote mode ignores monerod | profile off | 1 ✅ · 4 ▶ |
 
 ### E. XvB switching engine
@@ -182,7 +192,50 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Appliance certificate (#1132/#1141): one shared name-list builder feeds both Caddy's site list and the certificate's SAN list, the mint re-mints only on a real list change (not a `hostname -I` re-order) and reuses otherwise, `doctor` FAILs on a name the certificate doesn't cover or a certificate within 30 days of expiry, WARNs (never FAILs) on an unreadable certificate file. `render` (which mints the certificate) always runs BEFORE `up` creates either compose bridge (`mining_net`, `proxy_net`) this boot, while `doctor`'s re-check runs from the boot health gate's retry loop, always AFTER `up` — an address that only exists post-`up` reads as "served but uncovered" unless something accounts for it (#1051/#reboot-leg-fix: this is what stranded both the reboot leg's commit gate and, independently, the OS-update 'updated' verdict behind a boot gate that never passed). `mining_net`'s gateway is excludable by a config-known literal and stays inside the shared, engine-free builder; `proxy_net`'s subnet is Docker/podman auto-assigned (#345) with no literal to exclude it by, so ONLY `doctor`'s certificate check asks the engine, live, for it — and if the engine can't answer (daemon restart, socket permission slip, anything at all), that check WARNs and skips the coverage FAIL for every auto-expanded address this run rather than risk FAILing a healthy box on a tooling hiccup (bridge interfaces outlive an engine blip, so the ambiguity is real); an uncovered PINNED/base name still FAILs regardless, since deriving it needs no engine at all | sourced fns / fixture certs (real `openssl`) / stubbed `docker` `network inspect` (per-network calls, both the resolved and the unreachable-engine shapes) | 1 ✅ (`tests/stack`) · 4 (deferred — a real Caddy TLS handshake surviving a moved DHCP lease needs the KVM battery / bench) |
 | Control channel (#33): `apply --dry-run` preview, runner claim/validate/commit, fail-closed flag, rw/ro spool mounts | spool files / sourced fns | 1 ✅ (shell + pytest + compose) · 4 (systemd path unit on a real box — not yet a matrix row) |
 | Audit + access logs (#349): key-names-not-values audit entries, bounded log growth, Caddyfile log block, hostile log content served inert | spool/log fixtures | 1 ✅ (shell + pytest + node) · 4 (real Caddy writes over Tor — covered by the same onion matrix row) |
-| Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
+| Out-of-band audit detection + persistence (#530, #1551): a `config.json` change with no matching commit (`host-edit`), a rig reporting a change_id the dashboard never spooled (`rig-edit`), or a rig whose config revision moved with no new change_id beside it (`rig-drift`) all append to the durable `audit_events` table (mirrored `control.log` rows + these three kinds); the existing dashboard-spooled rows reconcile from both the newest `control` slot and the first 20 raw entries in rigforge#519's terminal `control_history` ring, so two outcomes inside one poll do not leave the older one `accepted` while malformed or duplicate entries cannot expand the producer's budget; the two rig-fed kinds share one #724 per-worker flood cap, keyed on a name the device chooses and so bounded in turn by a ceiling on how many names may hold a live window at once (#1695), and the rig feed is validated before the store sees it — an unvalidated revision would otherwise choose the row's own permanent id, which is the one field the audit sanitizer does not cover; Security panel hour/day/month grouping | poll-loop diff / real StateManager | 1 ✅ (`dashboard/tests/service/test_data_service_watch_host_config.py::TestWatchHostConfig`, `dashboard/tests/service/test_data_service_rig_edit_detection.py::TestRigEditDetection`, `dashboard/tests/service/test_data_service_mirror_control_audit.py::TestMirrorControlAudit`, `dashboard/tests/service/test_data_service_reconcile_worker_config.py::TestReconcileWorkerConfig`, `dashboard/tests/service/workers/test_worker_change_audit.py`, `dashboard/tests/service/workers/test_worker_name_space_cap.py`, `dashboard/tests/service/test_storage_service.py::TestAuditEvents`, `dashboard/tests/frontend/system/securityview.test.mjs` grouping) · 4 (deferred — the underlying rig-side-edit-visible-in-the-enriched-feed mechanism is already proven live by the #516 row below; a real box producing a `host-edit`/`rig-edit`/`rig-drift` audit row end-to-end is not yet its own matrix leg) |
+
+#### CLI verb ledger (#2348)
+
+The row-per-situation table above answers "how is this behaviour tested"; it does not answer "does
+every verb `pithead` dispatches have a tier-4 answer at all" — that gap is what let five destructive
+verbs go unexercised unnoticed. This ledger is the totality check: one row per name in
+`PITHEAD_COMMANDS` (`lib/pithead/41-subcommand-chaining.sh:6`), locked by
+`tests/stack/test-cli-verb-ledger-lock.sh` so a verb added to the dispatcher without a row here fails
+tier 1. `covered` means a real tier-4 run (DIY bench, KVM battery, or both) exercises the verb, per
+the situations above; `missing` means nothing does yet, with the issue that owns closing the gap;
+`by-design` means the gap is a decision, not an oversight, with the reason inline.
+
+| verb | tier-4 | note |
+|---|---|---|
+| `setup` | covered | DIY bench; KVM firstboot wizard |
+| `apply` | covered | DIY bench; KVM |
+| `render` | covered | DIY bench; KVM boot overlay |
+| `up` | covered | DIY bench; KVM boot overlay |
+| `down` | covered | DIY bench (appliance parity is #2062) |
+| `restart` | covered | DIY bench (appliance parity is #2062) |
+| `upgrade` | covered | DIY bench (`--image-upgrade`, opt-in); KVM OS-update leg (combined hardware run still pending, see Known gaps) |
+| `status` | covered | DIY bench (appliance parity is #2062) |
+| `doctor` | covered | DIY bench; KVM boot overlay |
+| `backup` | covered | DIY bench; KVM |
+| `restore` | covered | DIY bench; KVM (wizard's restore-at-setup flow, not the CLI verb) |
+| `load-images` | covered | KVM boot overlay |
+| `firstboot-wizard` | covered | KVM (`pithead-firstboot.service`) |
+| `local-miner` | covered | KVM rig phase, via `pithead-boot` |
+| `os-update` | covered | KVM (appliance-only verb) |
+| `factory-reset` | covered | KVM (appliance-only verb) |
+| `control-run-pending` | covered | DIY bench |
+| `onion-client-key` | covered | DIY bench (partly, via the control legs) |
+| `uninstall` | missing | #2343, blocked on bench-ci#347 |
+| `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
+| `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
+| `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
+| `config-reset` | covered | KVM (appliance-only verb, `--phase reset` leg 0) |
+| `support-bundle` | missing | #2342 — the verb itself never runs live (`diag-logs`/`diag-doctor` exercise the log redactor, not `support-bundle`); its `.env` redactor was a denylist with real gaps until #1631's survivor-allowlist inversion |
+| `render-quadlet` | missing | #1217 — the podman/quadlet render has no live run anywhere |
+| `test-alert` | by-design | deliberately deferred — real notification sinks; wire-level coverage is #2263 |
+| `logs` | by-design | a passthrough verb; tier 1 is the honest ceiling |
+| `version` | by-design | pure-output verb; tier 1 is the honest ceiling |
+| `help` | by-design | pure-output verb; tier 1 is the honest ceiling |
 
 ### H. Host / infrastructure (real-only)
 
@@ -190,6 +243,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 |---|---|---|
 | Real merge-mining share lands; real hashrate on dashboard | live mining | 4 ▶ |
 | p2pool actually reached the Tari node over gRPC (#1397): the merge-mining client's `uses chain_id` line, which p2pool cannot log without a successful call to the node. Its two sibling lines land ~175 ms earlier and are local, so a check keyed on them would pass with Tari unreachable — that case is a distinct `local-only` verdict and fails. Startup-only (three lines inside ~17.5 s of container start), and the log is ANSI-coloured mid-line, so the escapes are stripped before matching | live p2pool startup log, bounded by the container's own start time | 1 ✅ (verdicts, capture bounds and the ANSI control, `selftest-mergemine-probe.sh`) · 4 ✅ (the leg — run against the live stack read-only, not yet inside a full gate run) |
+| P2Pool's Tari merge-mining payload against Tari's own validator across the mainnet 350,000 fork (#2586, V6 of #1129). A throwaway, peerless P2Pool built from `build/p2pool` with the archive under test mines against the box's monerod and a recording Tari node serving mainnet templates at 349,999, 350,000 and 350,001. The fixture in `tests/integration/mergemine/`, compiled inside Tari's workspace at the pinned tag, runs Tari's `monero_randomx_difficulty` under MainNet constants on each submission and on two controls built from the same Monero block: the legacy Keccak-state payload and a one-bit-mutated prefix. Tari picks the format by height, so the prefix payload must be rejected at 349,999 and the legacy one accepted there; from 350,000 the prefix payload is accepted and both controls are rejected, each with Tari's reason printed. The one test-only deviation: achieved work is compared with the test difficulty, not mainnet's target (both printed). Nothing reaches Tari mainnet | local Monero on the box, both wallets in `config.json` | 1 ✅ (row mapping, skip and cleanup, `selftest-mergemine-submit.sh`) · 4 ▶ (`run.sh --mergemine-submit`; bench-ci phase `mergemine-submit`) |
 | Caddy TLS scheme; Tor onion provisioning; HugePages/AVX2; real disk pressure; prune DB size | real host | 4 ▶ |
 
 ### I. RigForge worker ↔ Pithead contract (#209)
@@ -235,13 +289,90 @@ accept/reject — which only a real xmrig-proxy binary can prove.
 
 The flashed image is the second distribution channel, and it follows the same rule as
 everything else: logic at tier 1, reality at tier 4 — there is no separate model for it.
-Tier 4 has one meaning (what only reality proves) and two harnesses, one per channel: the
-live matrix for a DIY install, the KVM battery (`tests/os/run.sh`, see
-[`tests/os/README.md`](../../tests/os/README.md)) for the flashed image. The battery needs
-KVM + libvirt + root — the bench, not CI — and is the release gate for the image
-([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below it:
-static assertions against the built rootfs (variant stamp, baked units, watchdog config),
+Tier 4 has one meaning (what only reality proves) and one stack suite, two channel harnesses:
+`tests/integration/run.sh` (the live matrix, what the release gate runs against a DIY install)
+IS the stack-behaviour suite — containers, config hot-apply, fault injection, XvB routing,
+secret preservation, backup/restore — it just only ever pointed at one of the two channels the
+product ships. The KVM battery (`tests/os/run.sh`, see
+[`tests/os/README.md`](../../tests/os/README.md)) drives the flashed image through the same
+kind of behaviour from the other side: podman through the docker shim, read-only root, the
+stack in `/data/pithead`, the control runner as a systemd unit. Neither harness is a subset of
+the other — the battery's `provision` phase provisions in LOCAL node mode, so a scratch KVM disk
+can never hold a synced chain and everything behind the sync gate (`tests/os/phases/provision-initial.sh`)
+never runs there; the `stack` phase (#2062) closes part of that gap by provisioning a guest in
+REMOTE node mode against an already-synced bench node and running the live matrix against it.
+The battery needs KVM + libvirt + root — the bench, not CI — and is the release gate for the
+image ([`appliance-release.md`](appliance-release.md)). `tests/os/verify-image.sh` sits below
+it: static assertions against the built rootfs (variant stamp, baked units, watchdog config),
 no VM needed, run on every image build.
+
+Measured at develop tip `5e98594f` (#2062): the live matrix has ~90 assertion sites across its
+15-scenario config matrix plus `--lifecycle`, `--fault-injection`, `--hardening`,
+`--auth-fail-closed`, `--subnet`, `--rigforge-control`, `--xvb-routing-smoke` and
+`--image-upgrade`, and it had never once run against the appliance runtime before the `stack`
+phase. The battery carries 433 assertions, ~72 of them about the running stack, and by design is
+blind to everything behind the sync gate — a scratch guest on a local node never syncs, so
+nothing downstream of "released" ran there. The parity table below classifies every gap a `✗`
+names: `by-design` means structurally inapplicable to that channel — a scratch KVM guest cannot
+hold a chain, so a local-node battery row cannot exercise prune/full-DB switching or a real
+clearnet-egress surface, and a borrowed physical RigForge rig never targets the `stack` phase's
+remote-node coordinator — and `missing` means nothing about the channel rules it out, only that
+no harness runs it there yet. Both classes and the `by-design`/`covered`/`missing` three-way
+split come from the live matrix's own skip accounting
+(`tests/integration/lib/skip-accounting.sh`, #1365/#1083); the `stack` phase surfaces that same
+three-bucket summary from each of its live-matrix invocations in the battery's own output rather
+than inventing an appliance-side vocabulary next to it.
+
+| Behaviour | DIY gate (`tests/integration`) | Appliance gate (`tests/os`) |
+|---|---|---|
+| Containers up, `pithead status` verdicts | ✓ | ✓ |
+| Dashboard through Caddy, basic_auth | ✓ (`/metrics` leg still missing, #2058) | ✓ |
+| Tor-only egress enforced (steady-state observation) | ✓ | one row, red on first execution (#2059) |
+| Egress-firewall opt-out actually opens clearnet | ✓ (matrix scenario) | ✗ by-design (a scratch guest has no clearnet exposure surface to observe safely) |
+| XvB over Tor, XvB routing | ✓ | ✗ — the `stack` phase drove `--xvb-routing-smoke` once (job 510): the baseline rows and the P2Pool route passed, then the Tor-isolation probe failed and reported only its own static guess, because the probe discards every byte of its output. Not run from the phase until that is readable: #2444 |
+| Shares / hashes flowing end to end | ✓ | ✓ workers online and stratum hashes advancing on the `stack` phase's remote-node guest (#2062); ✓ an ACCEPTED share, from both the coordinator's own built-in miner and a second, rig-role guest pointed at it, on the `rig` phase's own share leg (#2063 — the two-guest proof this table used to carry as a `✗`). Still `missing` on a local-node guest, which never clears the sync gate |
+| Config hot-apply matrix (mode, prune, pool, secure, tari, subnet, stratum TLS, payout confirm) | ✓ 15 scenarios | partial — the `stack` phase (#2062) applies the remote-safe subset live (`pithead apply -y` per scenario, pool main→mini, re-apply no-op, secrets preserved). Prune, full-DB and local-node scenarios stay `by-design`: a scratch guest holds no chain |
+| Secret preservation across re-apply | ✓ | partial (hostname approval leaves config byte-identical) |
+| Backup → restore round trip | ✓ | ✓ (provision backup + install-phase restore leg) |
+| Node down → reject workers → readmit | ✓ (fault injection) | ✗ by-design — measured, not predicted: the DIY gate skips fault injection and the node-down failover leg in remote mode ("no local monerod to break/stop"), so the `stack` phase's remote-node topology cannot reach them. Closing this needs a local-node guest with a chain, not a flag |
+| Tor / dashboard fault recovery | ✓ | partial (backup restart). The DIY gate's `--hardening` phase is `by-design` on the `stack` phase's guest too ("remote mode: no local containers/systemd to exercise") |
+| RigForge worker apply / upgrade | ✓ (borrowed physical rig) | ✗ by-design — the `rig` phase's share leg (#2063) proves the rig mines and its shares are accepted, not that the dashboard's Worker Inspect can push a config change to it; that still needs a borrowed physical rig |
+| OS update through the dashboard, A/B commit, migration hold | n/a | ✓ |
+| Boot, install, media channel, power-cut faults, factory reset | n/a | ✓ |
+| Remote-node mode, live | ✗ (zero routine coverage, #1446) | ✓ — the `stack` phase (#2062) provisions `monero.mode=remote` at a reserved node from the first wizard submit, clears the sync gate and mines. The first live remote-node coverage on either channel |
+
+What the `stack` phase's first real runs established, and what they cost. A remote-node guest
+provisions, releases and mines: containers up, `/api/state` answering, workers online and stratum
+hashes advancing, within about fifteen minutes of boot. The DIY gate then runs against it in two
+invocations — `--check`, then the destructive phases — in about ten minutes. The scenario invocation
+names `--scenario` on purpose (`--check` returns before the matrix is reached): without one the
+harness iterates its whole 15-scenario matrix first, nearly all of it `monero.mode=local`, which a
+remote-node guest can only serve by building a local chain from nothing. Left unscoped that cost over
+two hours per invocation and exhausted a 240-minute job.
+
+Three rows that read red on the phase's first real runs were pre-existing DIY gate gaps, all closed
+by the time this branch merged `develop`: the canonical-node-set assertion predated the wizard's own
+`local_miner` default (#2303), the egress verifier assumed a git checkout on the target (#2302), and
+doctor's egress-firewall row checked wording doctor no longer emits (#2301). Two more were this
+phase's own: `--check` ran before the `p2pool` container had started (dashboard and caddy come up
+faster, and the readiness wait only watched those two), which failed every p2pool-dependent row for a
+reason unrelated to any of them; and the `monerod caught up` and sync-panel rows were single-sample
+reads that a Tor-relayed block fetch outlasts. Both fixed here — wait for `p2pool` explicitly, and
+bound both waits at 150s/5s.
+
+`p2pool merge-mining gRPC round-trip (#1397)` is real, open and appliance-specific: Monero and Tari
+are both independently confirmed synced and reachable, and p2pool still builds no merge-mining
+client. It is a named `by-design` counted skip on `--appliance-channel` rather than a failure,
+tracked as #2326.
+
+Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
+cannot satisfy their inputs, and each carries job 510's row-scoped evidence on its own issue:
+`remote-tari-main-secure` switches the guest to `monero.mode=local`, so it starts a local `monerod`
+with an empty database on a scratch virtual disk and everything behind the sync gate fails
+deterministically — #2443, which needs a guest with a seeded chain. And `--xvb-routing-smoke`'s
+Tor-isolation probe fails on this channel while discarding its own diagnostics, so its red is
+unreadable from here — #2444, which needs the probe to report what it saw before anyone decides what
+the failure means.
 
 | Situation | Trigger | Tier |
 |---|---|---|
@@ -258,7 +389,8 @@ no VM needed, run on every image build.
 | Secure Boot (#2055 G2): a second guest with `firmware.feature0.enabled=yes` measures whether the image reaches userspace under Secure Boot, instead of leaving the flag (every OTHER guest in the battery pins `enabled=no`) an unread claim. `shim-signed` is the only signed link in the image's boot chain — `grub-efi-amd64` and the kernel ship unsigned, with no sbsign/mokutil/enrolled-key tooling in the repo — so 2.0.0's non-boot is recorded as the documented deferred state, not a boot-phase failure. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; later versions require the boot, so a non-boot fails as a regression | `tests/os/secure-boot-boot-verdict.sh` · battery `--phase boot` | 1 ✅ (fixture, `tests/stack/appliance/test-appliance-boot-verdicts.sh`) · 4 (added — unverified until the next battery run) |
 | A/B contract (#2055 G1: legs 1-3 keep the guest unprovisioned throughout, so `pithead-boot.service` never runs there — they drive the RAUC/GRUB slot mechanism directly over SSH, not pithead-boot's own health-gated commit): uncommitted auto-rollback, committed update persists, rollback off a committed slot, containers refreshed, `/data` grew, host identity (machine-id + SSH host-key fingerprint) survives the swap — all provable against unconditional units or the bootloader alone | battery `--phase update` legs 1-3 | 4 ✅ |
 | pithead-boot's own render/up/health-gate/commit path, dashboard-driven | battery `--phase update` leg 4 (`phase_update_dashboard`) | 4 (see the OS-update rows below) |
-| Cross-version update (#2056): `--phase update` builds both A/B slots from the SAME tree with different markers, so it proves the updater mechanism but nothing that only differs between two real releases. `--phase crossupdate` instead provisions a guest booted from a REAL prior build — bench-ci's tier4-kvm `options.old_image` resolves the newest appliance image cached for a commit strictly older than the one under test (a nightly `develop` run leaves one behind daily; once 2.0.0 exists this becomes the published release image) — and upgrades it to the candidate built from HEAD, waiting out pithead-boot's OWN commit gate (serving + doctor) rather than committing by hand, then asserting host identity survival, that the config the old version wrote is still honoured in LIVE runtime state (not just on disk), the complete stack via `pithead doctor`, no unit left failed, and the new dashboard image actually serves | battery `--phase crossupdate` (needs `$PITHEAD_OLD_IMAGE`; not in `--phase all`) | 4 ✅ (job 402 at `936a86c2`) |
+| Unhealthy-container commit refusal (#2383): the gate takes a THIRD signal, `pithead status` exit 0, because `doctor --json` judges only the revenue containers (monerod/p2pool/tari) — so a non-revenue container left `unhealthy` or restarting (the dashboard's own healthcheck failing, caddy in a restart loop) passed both earlier gates while the box's own status command already called it broken, and manual battery M9 committed exactly that slot. The sync-hold exception admits only the miner states produced by a deliberate stop (`created`, `exited`, or `stopped`); a restarting miner fails both the real status and revenue verdicts. Its transient record is created 0600 because it carries credentials and remote-access details. The rows `status` printed for the offending container are folded into the in-flight flag's `blocking` list, so the fallback boot's rollback verdict names it. The #1265 coverage FAIL still commits, unchanged. Tier 1 drives `gate_ready` with a stubbed `pithead` answering `doctor` and `status` INDEPENDENTLY (they must be able to disagree, or the row cannot tell a consulted status apart from one riding doctor's exit code), the real status/revenue verdict functions with restarting and stopped miners, plus `boot_status_blocking`'s glyph filter (the legitimate #31/#35 stopped rows must not count) and fail_boot's merge. Tier 4 is the composition tier 1 cannot reach: a real bundle whose dashboard healthcheck is forced to `exit 1`, a real boot, a real A/B fallback | `tests/stack/appliance/test-appliance-boot-remint.sh` (sourced `pithead-boot`, stubbed CLI) + `test-appliance-boot-stack-health.sh` (0600 record and image install) + `test-appliance-boot.sh` / `doctor/test-doctor.sh` (real verdict/status) + battery `--phase update` leg 5 (`phase_update_healthgate_leg`) | 1 ✅ · 4 |
+| Cross-version update (#2056): `--phase update` builds both A/B slots from the SAME tree with different markers, so it proves the updater mechanism but nothing that only differs between two real releases. `--phase crossupdate` instead provisions a guest booted from a REAL prior build — bench-ci's tier4-kvm `options.old_image` resolves the newest appliance image cached for a commit strictly older than the one under test (a nightly `develop` run leaves one behind daily; once 2.0.0 exists this becomes the published release image) — and upgrades it to the candidate built from HEAD, waiting out pithead-boot's OWN commit gate (serving + doctor + status) rather than committing by hand, then asserting host identity survival, that the config the old version wrote is still honoured in LIVE runtime state (not just on disk), the complete stack via `pithead doctor`, no unit left failed, and the new dashboard image actually serves | battery `--phase crossupdate` (needs `$PITHEAD_OLD_IMAGE`; not in `--phase all`) | 4 ✅ (job 402 at `936a86c2`) |
 | Dashboard OS-update verbs: appliance-only refusals, host-derived target, resumable download (partial kept, `-C -` resume, headroom refusal), verify refusals (signature, compatible, variant, floor/downgrade, tag mismatch — bundle deleted), install writes the in-flight flag via the shared `os_update` path, an install that arrives while another pithead operation holds the machine comes back `rejected` rather than as a failed install — with the staged bundle kept for the retry and `rauc install` never reached (#1482) — reboot gated on an installed update, one verb per drain | `tests/stack/appliance/test-appliance-os-update-verbs.sh` (stubbed rauc/curl/systemctl/df) + `test_server.py`/`test_views.py`/`test_update_checker.py` + `osupdate.test.mjs` (resume chain, verdict banner, render gates) | 1 ✅ |
 | `os_bundle_meta`'s `[meta.pithead]` parse (#1093), pinned against a REAL `rauc info` capture, not a hand-written stand-in: `tests/stack/fixtures/rauc-info/` holds genuine `--output-format=shell` and `--output-format=json` output off one bundle built from the production `render_bundle_manifest` (recipe + refresh instructions in `capture.sh`, refresh when the RAUC package pin moves). The fake `rauc` in `tests/stack/appliance/test-appliance-os-update.sh` now answers format-honestly instead of returning the same fixture regardless of `--output-format`, so a caller that regressed to `json` — the shape RAUC 1.11 ships, which omits `[meta.*]` entirely — degrades to fail-closed "unstamped" for real in the suite, and `os_raise_data_floor` records the real bundle's own declared floor end to end through `os_update` | `tests/stack/appliance/test-appliance-os-update.sh` (real fixtures) | 1 ✅ |
 | Dashboard OS-update end-to-end: provision, check against a bench-local release server (root-owned test seam), download RESUMES from an interrupted transfer — proven by an independent witness (#1051: the server's own request log, not just the `resumed_from` field the test staged itself and which would hold even if curl silently restarted from zero), a floor above the running version refused with the #1393 premise (the plain below-floor door needs a downgrade bundle the leg does not build and is tier 1's, #1694) and a bad-signature refusal, both with honest errors, install + explicit reboot intent + boot-gated commit lands the new slot, persisted verdict reaches `/api/state` | battery `--phase update` leg 4 (+ the `provision` os_update presence check) | 4 (added — unverified until the next battery run) |
@@ -276,13 +408,14 @@ no VM needed, run on every image build.
 | RC2 sensitive-commit/node rows (#1959/#1898/#1943/#1946, retargeted by #2076): a sensitive day-two commit is refused without the typed confirmation envelope and leaves live identity unchanged; a confirmed one applies, audits against the signed-in actor with **no** `approver` field, and converges hostname/mDNS/certificate identity; a physical-presence-only dashboard password stays refused. Reserved reachable Monero/Tari endpoints must pass the host preflight, land in rendered runtime state and the current p2pool container's narrowly extracted arguments, and make an endpoint-bound current-startup `uses chain_id` consumer probe pass before the original local-node config is restored. The guest-side fake Telegram transport is gone with the approval round-trip, so this leg now drives the ordinary authenticated control route | `tests/os/appliance-config-approval-leg.sh` plus the existing `tests/integration/lib/mergemine-probe.sh` verdict | 1 ✅ (host policy suite in `tests/stack/test-confirm-approval.sh`; pure round-trip controls) · 4 (written — requires reserved node inputs and remains unverified until the combined battery) |
 | Failing appliance rows carry their evidence, not just a verdict (#2060): the hostname rows print all six identity fields want-beside-got plus what Avahi published and on which interface (the address moved between runs, the interface is the discriminator); the control-runner rows print the runner result and value read back, reporting runner completion as unknown when the requested value has already landed but no result was written; the doctor row stays total over a FLATTENED `checks`, the shape it is named after; the bundle rows print the tail of the build log, with a missing log, an empty log and a failed build each getting their own sentence | `tests/os/appliance-hostname-leg.sh`, `appliance-diagnostics-leg.sh`, `provision-browser-submit.sh` and `appliance-approval-verdict.sh` `--self-test`, plus `tests/os/selftest-row-payloads.sh` and `tests/os/bundle-build-evidence.sh --self-test` | 1 ✅ (each payload driven against the shapes the verdict refuses, and a mutation of each field reddens its own control) · 4 (the rows themselves stay red until the defects behind them are fixed — this is the evidence step the issue asks for first) |
 | The appliance's mDNS name resolves to a LAN address, never a container bridge (#2060): `appliance_mdns_interfaces` names every interface holding a global v4 address that is NOT a kernel bridge, and `appliance_reconcile_mdns_interfaces` writes that list as Avahi's `allow-interfaces` through the same `/etc` overlay the console login uses, reporting a change ONLY when the file actually moved so the caller restarts Avahi exactly when there is something new to announce. A positive list rather than a deny-list because the boot render reconciles identity BEFORE `up` creates either bridge, where a deny-list would come out empty. The rewrite also runs independently of the hostname label: an appliance left on the default `auto` name had no label to reconcile and returned before Avahi was ever touched | `tests/stack/appliance/test-appliance-hostname.sh` (canned `ip` output from the measured guest; a config carrying no `allow-interfaces` line must report no change, the control that catches a silent no-op rewrite), `tests/os/verify-image.sh` (the shipped config carries the line the rewrite keys on) · battery `--phase provision` | 1 ✅ · 4 (unverified until the next battery run; the mechanism itself is measured — an `avahi-daemon` + `libnss-mdns` container with one NIC and one kernel bridge resolves its own name to the bridge without the line and to the NIC with it) |
-| The control POST outlasts the dashboard's own answer window (#2060/#2223): `handle_control_*` holds the request open until the runner answers or `CONTROL_WAIT_S` elapses and only THEN returns 202 with the id `dashboard_control_request`'s polling loop needs. A dashboard restart can also leave curl with an empty or malformed successful 2xx POST response, a synthetic `000`, or a proxy 5xx after accepting the request; the helper polls the caller-supplied id for those ambiguous cases, but refuses received 1xx–4xx responses. Thus an 8s `-m` on the POST or a dropped response discarded every control operation that did real work — a commit that runs an apply, doctor on an unhealthy box — while their fast siblings answered inside it and passed, which is what made the reds read as the runner losing results. The check reads both numbers from their own sources, so neither side can move alone | `tests/os/appliance-config-approval-leg.sh --self-test` | 1 ✅ (the cap mutated back under the server's window reddens the check) · 4 (unverified until the combined battery runs) |
+| The control POST outlasts the dashboard's own answer window (#2060/#2223): `handle_control_*` holds the request open until the runner answers or `CONTROL_WAIT_S` elapses and only THEN returns 202 with the id `dashboard_control_request`'s polling loop needs. The two clients recover on deliberately different terms. The KVM harness helper polls the caller-supplied id whenever a 2xx POST response is empty OR malformed, and also on a synthetic `000` or a proxy 5xx after the request was accepted, refusing only received 1xx–4xx. The browser client is narrower: `controlCommitResult`, shared by Configuration and Worker adoption, polls the preview id it already holds ONLY when a successful body is exactly empty, and treats a truncated body — one that parses but carries no result status — as terminal, because a half-read answer is a different failure from a lost one and must not be retried into a false success. Thus an 8s `-m` on the POST or a dropped response would otherwise discard every control operation that did real work — a commit that runs an apply, doctor on an unhealthy box — while their fast siblings answered inside it and passed, which is what made the reds read as the runner losing results. The check reads both numbers from their own sources, so neither side can move alone | `dashboard/tests/frontend/config/configview.test.mjs`, `workers/workeradopt.test.mjs`; `tests/os/appliance-config-approval-leg.sh --self-test` | 1 ✅ (the cap mutated back under the server's window reddens the check) · 4 (unverified until the combined battery runs) |
 | RC2 boot-menu version labels (#1956): serial sees distinct current/previous slot versions after the update commits, with the final boot bounded to bytes emitted after the commit reboot. Run 2026-09-10: the assertion fired and named the defect above — the labels are the instrument that found an unwritten B_VERSION, not a cosmetic row | battery `--phase update` serial assertion from #1956 | 1 ✅ (menu fixtures) · 4 ✅ (fired red at pithead#2002's head, green at #2054's) |
+| The config-panel commit races its own restart (#2366/#622): a commit that touches the dashboard's own settings recreates that container, so the browser's `fetch("/api/control/commit")` can be dropped mid-flight (a thrown `TypeError`) or answer through the proxy at 502/503/504 while the app is down — a case the #2060/#2223 row above does not cover, because there the request already landed a response body. `ConfigView.commit` now treats either as the expected restart and falls back to polling the preview id it already holds, same as a lost response; a real 4xx/5xx or a poll timeout still surfaces its message, never the raw browser error | `dashboard/tests/frontend/config/configview.test.mjs` | 1 ✅ (fetch throws then the poll succeeds; a 502 then success; a real HTTP error still surfaces) · 4 (`tier4-kvm` provision job's config-apply leg) |
 | Restore leg: a real encrypted backup off a live machine, uploaded instead of the form on a fresh install, wallet + Tor identity restored not regenerated. The closing verdict (#1091) requires the stack to actually come back up (`podman ps`) AND a value sourced from the restored config — the `--wallet` argument the stack's own start path rendered into the p2pool container, read with `podman inspect` — to match: `config.json` landing on disk alone proves only that the archive was unpacked, not that anything is RUNNING it. The source is the container's command line rather than p2pool's stratum stats (`/api/state`'s `.stratum.wallet`) because p2pool writes those only once a synced monerod hands it a block template, which a restored guest has no way to reach inside the verdict's window; the first live run failed on that by construction (#1662). The verdict (`restore_live_state_verdict`) lives in a sourceable file, the same pattern as `hugepages_boot_verdict` (#1212), so the discrimination is provable with fixtures without a KVM boot. Run 2026-09-10: it fired (#2051) — config and the ORIGINAL wallet restored, `podman ps` empty after 900 s — with nothing to say why, so the leg now also asserts that provisioning SETTLED on the restored machine (a provisioning that never finished and one that finished and started nothing are opposite causes behind one red), and the #2043 dump reads `DEPLOYMENT_COMPLETED` and the units' `ConditionResult` (a condition-skipped unit reads `inactive` exactly like one that ran, and never appears in `systemctl --failed`) | `tests/os/restore-live-state-verdict.sh`, `tests/stack/appliance/test-appliance-identity-boot.sh` (fixture `podman ps` / wallet strings) · battery `--phase install` | 1 ✅ · 4 ✅ (fired red; the probes named the cause — `restore_apply` had no parent directory to `mv -T` into on a fresh disk, so the apply aborted part-applied and the carried `DEPLOYMENT_COMPLETED` was never cleared. Fixed; the leg now passes end to end including the live-state and Tor-identity rows) |
 | Reinstall pre-fill (#794/#1038): the previous install's non-secret answers reach the wizard page ONLY when the branch that reads them off the target disk (`prefill_from_previous_install`) actually ran this boot — a wallet-address match on the page's own state alone cannot tell that from some other path producing the same value, the gap that left this leg green for four consecutive batteries with the branch itself unproven. Pairing the outcome with the branch's own console record (its log line, `journal+console` per `pithead-firstboot.service`) makes the two tell apart (`reinstall_prefill_verdict`), the same discrimination #1212 needed for hugepages | `tests/os/reinstall-prefill-verdict.sh`, `tests/stack/appliance/test-appliance-identity-boot.sh` (`reinstall_prefill_verdict`, fixture branch/wallet/password strings) + `tests/stack/appliance/test-appliance-install.sh` (`prefill_from_previous_install` itself) · battery `--phase install` | 1 ✅ · 4 (changed — unverified until the next battery run) |
 | Restore leg: a real encrypted backup off a live machine, uploaded instead of the form on a fresh install, wallet + Tor identity restored not regenerated | battery `--phase install` | 4 (added — unverified until the next battery run) |
-| Wizard's real HTTP flow provisions the STACK (images verified, Tor-only egress enforced, miner up); unaided reboot return; commit-gate honesty both ways; the migration hold starts the chain only post-commit | battery `--phase provision` | 4 ✅ |
-| Rig role: no containers, mines from the baked binary, takes an A/B update like a coordinator; after reboot its `pithead-boot` transaction settles active before the rig result is read | battery `--phase rig` | 1 ✅ (settled-unit wait fixture) · 4 (changed — unverified until the next rig phase) |
+| Wizard's real HTTP flow provisions the STACK (images verified, Tor-only egress enforced, miner up); unaided reboot return; after each of M10's three live-stack power cuts every pre-cut container, stored image digest, non-regressing monerod height, miner, Caddy, and committed slot return; commit-gate honesty both ways; the migration hold starts the chain only post-commit | battery `--phase provision` | 4 ✅ |
+| Rig role: no containers, mines from the baked binary, takes an A/B update like a coordinator; after reboot its `pithead-boot` transaction settles active before the rig result is read; M13's power cut reaches a new boot and returns unattended mining with the slot committed | battery `--phase rig` | 1 ✅ (settled-unit wait fixture) · 4 ✅ |
 | Physical-presence config channel (#786 sub-issue D): identical-config short-circuit, diff building + secret masking, consumed-marker, the abort/apply state machine (media removed, keypress, countdown timeout, absence of input is not abort), the abort path announces the cancellation on the console/journal (#1061), merge semantics (#965: unnamed settings keep their running values, `null` clears, an unmergeable file passes through to validation, a minimal stick preserves the dashboard login / appliance defaults / node credentials end to end) | `tests/stack/appliance/test-appliance-media.sh` (sourced, stubbed lsblk/mount) | 1 ✅ |
 | Physical-presence config channel: exact diff on the console, countdown applies, the changed setting takes effect, the stick is consumed, pulling the stick mid-countdown cancels and the console confirms the cancellation by the exact expected wording (#1061); a MINIMAL stick (#965) keeps the pre-apply dashboard login working against the served dashboard and preserves appliance defaults + node credentials | battery `--phase media` (opt-in) | 4 (added — not yet run at the release gate) |
 | Hugepages sizing (#977): tier thresholds over meminfo shapes, the degraded boot shrinks the pool + leaves the plain-words marker + announces the degrade on the console/journal by its exact wording (#1221), doctor WARNs (never FAILs) on it | `tests/stack/appliance/test-appliance-identity-boot.sh` (sourced, fixture meminfo) | 1 ✅ |
@@ -291,9 +424,38 @@ no VM needed, run on every image build.
 | The hugepage pool's second writer is fenced (#1724): the miner unit runs as root and xmrig raises `nr_hugepages` through sysfs before a large-page allocation, so the ceiling the render declares bounds the sizer alone. The image ships a drop-in making both hugepage subtrees read-only to that unit. `verify-image.sh` pins the drop-in that SHIPPED; the battery reads what systemd LOADED (`systemctl show xmrig -p ReadOnlyPaths`), the pool against the ceiling in pages, and the 1 GiB pool the sizer never writes. `hugepages_miner_verdict` is fixture-driven at tier 1, including the #1724 state itself (4608 pages with nothing fencing the unit) and the parity between the verdict's page ceiling and the render's MB ceiling. ARMING: behind the #35 sync hold xmrig may never allocate on a guest boot, so a clean battery verdict is the fence unexercised, not the fence proven | `tests/os/hugepages-boot-verdict.sh`, `tests/stack/standalone/test_appliance_hugepages.sh` (fixture strings) · `tests/os/verify-image.sh` · battery `--phase provision` | 1 ✅ · 4 (added — unverified until the next battery run) |
 | The journal follows the RESTORED machine-id on the second boot (#1659): journald reads the id once, at its own start — the transient one on an empty-baked image — so without a re-read every boot after the first opened a new persistent journal directory and `journalctl -b` read a stale one. The first boot cannot show it (the adopted id IS the transient one), so the verdict rides the #895 reboot and pairs the journal-directory count across it with the unit's own `-b` record (`journal_boot_verdict`), the same sourceable-verdict pattern as #1212; the restart DECISION (exactly when a transient id was bound and the restored one differs) is proven with a stubbed `systemctl` | `tests/os/journal-boot-verdict.sh`, `tests/stack/appliance/test-appliance-machine-id-journal.sh` (fixture counts; stubbed `mountpoint`/`systemctl`) · battery `--phase boot` | 1 ✅ · 4 ✅ |
 | The persistent journal has ONE home (#1791): `/var` is an overlay with its upper dir on `/data`, and the #1030 bind of `/data/pithead/journal` onto `/var/log/journal` was unordered against it, so whichever mount finished last owned the path and a boot's journal landed in one of two persistent directories while `journalctl --list-boots` omitted the boots that went the other way. The fix orders the bind `After=var.mount`; the verdict rides the same #895 reboot and asks the guest what the VFS resolves at `/var/log/journal` (`stat -c %m` and the inode against the bind's directory, because `findmnt --target` names the bind by mountpoint even while the overlay covers it), whether journald flushed under the bind this boot, and how many boots the persistent journal lists (`journal_home_verdict`); the unit's ordering is asserted statically at tier 3 | `tests/os/journal-boot-verdict.sh`, `tests/stack/appliance/test-appliance-machine-id-journal.sh` (fixture shapes, the kept guest's own reading as the failing one) · `tests/os/verify-image.sh` · battery `--phase boot` (fired both ways: red on the unfixed image, green on the fixed one) | 1 ✅ · 3 ✅ · 4 ✅ |
-| Power cuts mid-write and mid-commit; corrupt bundle — a brick is disqualifying | battery `--phase fault` (opt-in) | 4 ✅ |
+| Power cuts mid-write and mid-commit; corrupt bundle; Fault D cuts an active first-boot baked-image load and requires the wizard plus repaired image store afterwards — a brick is disqualifying | battery `--phase fault` (opt-in) | 4 ✅ |
 | Data-reset repair escalation against REAL damage (#1062): a genuine ext4 image, the same two-byte superblock-magic wipe the battery injects, and the system's own `fsck`/`e2fsck`/`mke2fs` — a repairable image is repaired with its payload intact and never reformatted; a destroyed one still reaches the reformat escape. Only `mount` is stubbed, and its verdict is `e2fsck -fn` on the image itself, never a counter. The stubbed decision-tree block in `tests/stack/appliance/test-appliance-reset.sh` proves marker precedence and escalation order (#1086); this suite proves the repair | `tests/stack/standalone/test_data_reset.sh` | 1 ✅ |
+| Config-reset (the cheap tier, #2347): `config.json`/`.env`/`Caddyfile` and the Tor-only egress firewall are cleared, `pithead-firstboot` re-arms while `pithead-boot` stands down (opposite `ConditionResult`s, the discrimination #2055 G3 needed), and reconfiguring through the wizard's real HTTP flow costs no resync — the monero chain directory survives, monerod's height resumes at or past its pre-reset value, and the Tor onion address (read from the hidden-service hostname file, not `.env` — #2379's onion-persistence claim, its appliance twin) comes back unchanged | battery `--phase reset` (leg 0, before the deep tier below) | 4 ✅ |
 | Factory reset returns a machine with a fresh identity (machine-id, SSH host key, container store) and records the wipe on the ESP; a wedged `/data` — the superblock corrupted on the real partition — is REPAIRED, not erased: the sentinel planted before the corruption survives and the wipe log does not grow (#1062/#1087) | battery `--phase reset` | 4 ✅ |
+
+### K. Outbound alert delivery over Tor egress (#2266)
+
+Tiers 1-3 prove the alert path and the SOCKS transport against controllable fakes
+(`tests/integration/fakes/fake_hc.py`, `fake_socks.py` — `make test-fakes`) and a local
+listener. What none of them can prove is the part that is not ours: that the third-party
+endpoint still accepts our traffic **from a Tor exit**. Telegram, ntfy.sh, a webhook and
+Healthchecks.io can block, rate-limit or challenge exit nodes at any time, and a fake will
+never refuse us — #424 is the recorded real-world instance of this class, a stuck Tor guard
+silently taking out Healthchecks, Telegram and XvB together.
+
+This buys **one bit per sink** — "the third party still answers us over Tor" — at the cost
+of live credentials on the reserved bench and an outward message per run, so it is a
+classified reachability leg, never a gate blocker.
+
+| Situation | Trigger | Tier |
+|---|---|---|
+| Telegram, ntfy and webhook sinks each answer a real `pithead test-alert` (#2265) dial over the live stack's Tor SOCKS | live stack + operator-supplied `IT_TELEGRAM_BOT_TOKEN`/`IT_TELEGRAM_CHAT_ID`, `IT_NTFY_URL`(+`IT_NTFY_TOKEN`), `IT_WEBHOOK_URLS` | 4 ▶ (`run.sh --alert-egress`) |
+| Healthchecks answers a real ping over Tor — driven directly through the production `HealthchecksClient`, since `test-alert` deliberately excludes this sink ("a ping moves the dead-man switch") | live stack + operator-supplied `IT_HEALTHCHECKS_PING_URL` | 4 ▶ (`run.sh --alert-egress`) |
+| Leg classification: an absent credential self-skips its sink in the `missing` class, named (#1083); a third party refusing the dial is its own counted verdict (a `THIRD-PARTY REFUSAL`, summarized separately from `IT_FAIL`), never a stack failure; a sink `test-alert` still reports unconfigured after this leg configured it IS a stack bug | pure logic, stubbed `rx`/`push_config`/`pithead` | 1 ✅ (`selftest-alert-egress.sh`) |
+
+No credential, URL or chat id reaches the run log: `IT_TELEGRAM_BOT_TOKEN`, `IT_NTFY_URL`,
+`IT_WEBHOOK_URLS` and `IT_HEALTHCHECKS_PING_URL` all match `redact()`'s existing `TOKEN`/
+`NTFY_URL`/`WEBHOOK_URLS`/`PING_URL` vocabulary (`tests/integration/lib.sh`); the operator's
+Telegram chat id is a routing id, not a secret, and is deliberately exempt from redaction
+already (`selftest-redact-vocab.sh`'s `MUST_SURVIVE`) — this leg never echoes it regardless.
+Every credential travels to the box only through `push_config`'s stdin-over-ssh JSON, never a
+shell argument or a log line.
 
 ## What each tier needs from its host
 
@@ -350,9 +512,9 @@ make test-integration ARGS="--host user@box --dir pithead --lifecycle --fault-in
 # unreleased: only the wizard image is baked, so every other service is pulled as
 # pithead-<service>:v$(cat VERSION) at first boot, and without it the appliance provisions and
 # then runs ZERO containers (#2043). build-image.sh refuses such a build; see tests/os/README.md.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> os/build-image.sh --ssh
 os/rauc/mkimage.sh --dev
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --image os/rauc/build/system.img  # sudo's env_reset drops exported vars
 ```
 
@@ -384,7 +546,7 @@ handful of suites are invoked as their own CI step instead and are listed as exe
 | Fake-daemon **docker mini-stack** | 3 | PRs touching the harness/dashboard | ✅ (own workflow) |
 | **Live config matrix** on real nodes | 4 | manual / pre-release | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
 | **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e`, `targeted` or `matrix`) | ✅ required: the adversarial review returns a PR without it |
-| **KVM appliance battery** (`tests/os/run.sh`) | 4 | manual / pre-release | ✅ **release gate for the image** ([appliance-release.md](appliance-release.md)) |
+| **KVM appliance battery** (`tests/os/run.sh`) | 4 | every PR touching `os/`, RAUC, the wizard, first boot, the installer or updates, on its head (bench-ci `tier4-kvm`, one phase at a time); `all` phases against the exact commit, pre-cut | ✅ **release gate for the image**, enforced by `release.sh`'s `bench-ci/tier4` preflight ([appliance-release.md](appliance-release.md)) |
 
 The first three tiers run on every PR with no special infrastructure. Tier 4 is the blocking
 pre-release gate (see [Releasing](releasing.md)) because it needs the real synced nodes, and,
@@ -447,7 +609,9 @@ Not yet covered. The road to full production confidence.
   revisions and checks authenticated digest manifests, Pithead-image signatures, exact mounts, both
   captured chain anchors, stable durable row payloads plus volatile-state identity/schema, secrets,
   workers, mining, and exact old-baseline restoration; its first recorded
-  combined hardware run remains pending. `reset-dashboard` remains unit-covered.
+  combined hardware run remains pending. The per-verb breadth of the gap — which verbs have no
+  tier-4 run at all, and why — is now the [CLI verb ledger](#cli-verb-ledger-2348) (#2348) rather
+  than one bullet here.
 - Soak / longevity. The bounded `--xvb-routing-smoke` observes one real controller/proxy transition
   and restore. Multi-hour leak, log/DB growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.

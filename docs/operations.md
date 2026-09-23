@@ -18,7 +18,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead status` | Show container status and health-check every expected service. Warns about anything down/unhealthy and exits non-zero if so (handy for cron/monitoring). Profile-aware, and treats a stopped `p2pool`/`xmrig-proxy` as intentional during a node-down failover or while the miner is held until the chains sync. |
 | `./pithead test-alert` | Send one marked test message through every configured Telegram, webhook, and ntfy sink. Prints one result per sink without exposing URLs or tokens and exits non-zero if any configured sink fails. Healthchecks is reported as excluded because a ping would move the dead-man switch. |
 | `./pithead doctor` | Read-only diagnostics: deps, Docker, AVX2, HugePages, RAM/disk, `.env`/onion state, and container status — plus runtime checks: the Tor container is actually running while the mining stack runs (a loud FAIL when it's down — the privacy backbone is dead), the Tor-egress firewall rules are actually installed (a reboot silently drops them while the containers auto-restart), something is listening on the stratum port (`p2pool.stratum_port`, default `3333`, and whether that port sits on a public IP), the dashboard app answers behind its container, a clearnet request through Tor's SOCKS succeeds (a failing Tor guard breaks Healthchecks/Telegram/XvB while mining still works — fix with `./pithead restart tor`, or set `tor.auto_heal: true` to automate it), a local monerod reports `synchronized` from its own RPC (a node stranded at 0 peers by a Tor restart keeps a green healthcheck while mining sits on a stale tip — fix with `./pithead restart monerod`, #972), and, on the appliance, Caddy has no wildcard or public-address dashboard listener and the served certificate covers every name Caddy answers on without expiring within 30 days (fix either with `./pithead apply`; an unreadable certificate file warns instead of failing, so a read hiccup can't reboot-loop the box). A paste-able health report. |
-| `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack for a clean copy, then restarts it). `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
+| `./pithead backup` | Save `config.json`, `.env`, `Caddyfile`, the Tor onion keys, and the dashboard's database (your hashrate history & settings) to a timestamped, passphrase-encrypted archive under `backups/` (checks free space first; stops a running stack, except caddy, for a clean copy, then restarts everything). `--with-chains` also includes the blockchain data; `--no-encrypt` writes a plaintext `tar.gz`; `-y` / `--yes` skips the prompts (low free space and stopping the stack). |
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
@@ -52,7 +52,7 @@ boot path drives most of them for you:
 
 | Command | Description |
 |---|---|
-| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. |
+| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
 | `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
@@ -127,6 +127,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+The dashboard takes the same lock for each container start or stop it sends through its control
+proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
+from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
+read-only bind mount of the same inode: it can hold the advisory lock, but it cannot alter the
+holder record.
+
 The lock covers one stack, not one directory. A bundle install keeps each release in its own
 `pithead-vX.Y.Z` directory beside the one before it (see [The deploy-box
 layout](#the-deploy-box-layout)), and every one of those directories drives the same containers
@@ -134,12 +140,16 @@ and the same data — including the fresh directory a one-click upgrade creates 
 share a single `.pithead.lock` in the directory that holds them all. A plain `pithead/` checkout
 has no siblings and keeps its lock in the checkout. `PITHEAD_LOCK_FILE` overrides the path.
 
-The lock belongs to the running process rather than to the file: if a command is killed, the lock
-is released with it. A leftover `.pithead.lock` after a crash is an ordinary file, not a stale
-lock, and there is nothing to clean up by hand. The line inside it can outlive the command that
-wrote it, which is why the next command checks it before quoting it back to you. Where the file cannot be opened at all — a
-directory only root can write, a read-only mount — pithead says so and runs anyway rather than
-refusing every command that changes the stack.
+The lock belongs to the running process rather than to the file: if a command or dashboard request
+ends, the lock is released with it. A leftover `.pithead.lock` after a crash is an ordinary file,
+not a stale lock, and there is nothing to clean up by hand. Do not delete or replace it while the
+stack is running: the CLI and dashboard must keep locking the same inode. The line inside it can
+outlive the command that wrote it, which is why the next command checks it before quoting it back
+to you. Where the file cannot be opened at all — a directory only root can write, a read-only
+mount — pithead says so and runs anyway rather than refusing every command that changes the stack.
+Dashboard container control instead fails closed if its read-only lock mount cannot be opened.
+A compromised dashboard can hold the lock and make a CLI mutation time out, so the lock protects
+operation ordering rather than availability.
 
 ### Tab completion
 
@@ -178,6 +188,9 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
+exception during normal operation. A pending appliance data migration also withholds its chain
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -571,7 +584,8 @@ is typo'd away must fail loudly, not archive your onion keys in plaintext while 
 To write a plaintext archive on purpose, pass `--no-encrypt` (an empty passphrase at the interactive
 prompt does the same, with a warning).
 
-If the stack is running, `backup` stops it for a consistent copy and restarts it when done. A
+If the stack is running, `backup` stops it (except caddy, the reverse proxy, which stays up — none
+of its own state is in the archive) for a consistent copy and restarts everything when done. A
 failed backup (disk full mid-archive, for example) removes the partial archive and still restarts
 the stack before reporting the error. Pass `-y` / `--yes` to skip both prompts (low-space warning,
 stop-the-stack question).

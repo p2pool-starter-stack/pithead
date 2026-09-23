@@ -48,6 +48,25 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Changed
 
+- **Tari 6.0.0 and P2Pool 4.18.1, upgraded together
+  ([#1129](https://github.com/p2pool-starter-stack/pithead/issues/1129)).** Tari 6.0.0 is a hard
+  fork that activates at mainnet block **350,000**; a node on an older version forks off the
+  network at that height. P2Pool 4.18.1 changes how it sends Tari merge-mined work and requires a
+  Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
+  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.0-mainnet` indexes.
+  - **The first start migrates the Tari database, and there is no way back.** The node runs a
+    one-time JMT migration that upstream describes as taking several minutes to much longer on a
+    large database; the node is unavailable while it runs. Have free disk space for it, and do not
+    stop, restart or `apply` the stack until the node reports progress again: the container is
+    killed one minute after a stop, and upstream says not to interrupt the migration. The payout
+    wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
+    either database afterwards, so returning to an older Pithead release does not return Tari to
+    a working state. Take a backup first (`./pithead backup --with-chains`).
+  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
+    cannot merge-mine against an older node.
+  - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
+    (a mined output that has not matured yet), so a payout is still recorded when it is mined.
+
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
   still asks you to type `APPLY`. (A payout change asked for the last characters of the new address
   as well; the perimeter fix below made payout addresses host-only again, so that prompt no longer
@@ -94,6 +113,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **An approved configuration apply is no longer failed by a container that is merely
+  mid-restart ([#2218](https://github.com/p2pool-starter-stack/pithead/issues/2218)).** The
+  dashboard stops and starts p2pool on its own for the sync gate and for node-down worker
+  failover, so a `docker compose up` could reach that container between states. Compose aborts
+  the whole `up` when one container is in an improper lifecycle state, which failed the apply
+  outright — the configuration was written, the containers were not recreated, and the box was
+  left needing a manual `pithead apply` nobody was there to run. Dashboard container start/stop
+  requests now take the same advisory lock as CLI mutations, so either operation waits for the
+  other to finish instead of sending overlapping lifecycle requests to the engine.
 
 - **The setup wizard's restore accepts a genuine backup from a prior supported release.** A
   backup made by the v1.20.0 Compose bundle stores its files under whatever directory the

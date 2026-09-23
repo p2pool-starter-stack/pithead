@@ -163,11 +163,12 @@ os_update_needs_confirmation() { # $1: running variant, $2: bundle variant — r
 }
 
 os_update() {
-    local bundle="" assume_yes=0 allow_downgrade=0 arg
+    local bundle="" assume_yes=0 allow_downgrade=0 do_reboot=0 arg
     for arg in "$@"; do
         case "$arg" in
         -y | --yes) assume_yes=1 ;;
         --allow-downgrade) allow_downgrade=1 ;;
+        --reboot) do_reboot=1 ;;
         -*) error "Unknown option for os-update: $arg. Run '$0 help'." ;;
         *)
             [ -z "$bundle" ] || error "os-update takes exactly one bundle path. Run '$0 help'."
@@ -287,4 +288,22 @@ os_update() {
         rm -f "$marker"
     fi
     mutation_lock_release
+
+    # #2382: 'succeeded' alone left a first-time operator guessing what to do next. The install
+    # only wrote the spare slot — mining keeps running the version it always was — so the state
+    # and the one command that finishes the job need to be said, not implied.
+    log "Installed ${bundle_version:-the bundle} to the spare slot; this machine keeps running ${running_version:-the current version} until it reboots."
+    log "Reboot to boot ${bundle_version:-the new version} and commit it — it stays only if the stack comes up healthy, otherwise the next boot falls back. Run '${PITHEAD_REBOOT_CMD:-systemctl reboot}', or '$0 os-update --reboot'."
+    if [ "$do_reboot" -eq 1 ]; then
+        if [ "$assume_yes" -eq 0 ]; then
+            read -r -p "Reboot now? (y/N): " CONFIRM || true
+            if [[ ! "$CONFIRM" =~ ^[Yy] ]]; then
+                log "Not rebooting. Run '$0 os-update --reboot' or '${PITHEAD_REBOOT_CMD:-systemctl reboot}' when you're ready."
+                return 0
+            fi
+        fi
+        log "Rebooting..."
+        ${PITHEAD_REBOOT_CMD:-systemctl reboot} ||
+            warn "Reboot command failed — reboot the machine by hand to finish the update."
+    fi
 }

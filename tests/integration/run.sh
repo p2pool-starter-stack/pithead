@@ -59,6 +59,8 @@ RUN_IMAGE_UPGRADE=0
 IMAGE_UPGRADE_FROM_SHA=""
 IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
+RUN_ALERT_EGRESS=0
+RUN_MERGEMINE_SUBMIT=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -66,6 +68,7 @@ RIG_CONTROL_PORT="8082"
 SAFETY_BACKUP=0
 SAFETY_ARCHIVE=""
 SAFETY_RESTORE_FAILED=0
+SAFETY_RESTORE_FAIL_REASON=""
 _SAFETY_RESTORE_ARMED=0
 _SAFETY_FOREIGN_TRAP=""
 KEEP_STATE=0
@@ -75,6 +78,7 @@ REMOTE_MONERO_HOST=""
 REMOTE_MONERO_RPC_PORT=""
 REMOTE_MONERO_ZMQ_PORT=""
 REMOTE_TARI_HOST=""
+IT_APPLIANCE_CHANNEL=0
 PRUNED_DATA_DIR=""
 FULL_DATA_DIR=""
 OUT_DIR="$HERE/results"
@@ -108,6 +112,10 @@ source "$HERE/lib/run-rig-control.sh" || exit $?
 source "$HERE/lib/run-rig-reverse.sh" || exit $?
 # shellcheck source=tests/integration/lib/live-gates.sh
 source "$HERE/lib/live-gates.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-alert-egress.sh
+source "$HERE/lib/run-alert-egress.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-submit.sh
+source "$HERE/lib/run-mergemine-submit.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -200,11 +208,16 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ] && run_lifecycle
-    [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    local lifecycle_ok=1
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
+        run_lifecycle || lifecycle_ok=0
+    fi
+    [ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario

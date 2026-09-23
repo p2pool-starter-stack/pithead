@@ -160,7 +160,8 @@ because the token guards every API on the rig — the miner's own included, so n
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
 IPv4 address (an onion address, say) keeps the token and the read-only feed but runs with
-control off, since RigForge refuses a writable path it cannot pin to one source.
+control off, since RigForge refuses a writable path it cannot pin to one source — the card
+says so and why, instead of pointing you at an adopt form the rig will not answer.
 Where the machine cannot fill a line in, the card leaves that line out rather than
 showing a blank beside its label: with no IPv4 address yet it tells you to read the
 address off the console once the machine is up, and on the rare failure to mint a token
