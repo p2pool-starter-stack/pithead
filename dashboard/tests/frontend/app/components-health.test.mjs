@@ -18,6 +18,25 @@ test('Tari status gates the ✔ on a live gRPC channel, never on active-but-dead
     assert.doesNotMatch(dHtml, /check-inline/); // active-but-dead -> NO ✔ (the invariant)
 });
 
+test('A READY channel on a node off the chain reads amber/red with the reason, never ✔ (#2464)', () => {
+    for (const [level, cls] of [['amber', 'status-warn'], ['red', 'status-bad']]) {
+        const s = clone();
+        Object.assign(s.tari, {
+            connected: true, active: true, status: 'Merge mining',
+            health: { level, reasons: ['tip 342574 unchanged for 31 min'], advice: 'restart the Tari node' },
+        });
+        const out = renderApp({ state: s });
+        assert.match(out, new RegExp(`${cls}">\\s*Not following the chain: tip 342574 unchanged for 31 min\\. restart the Tari node`));
+        assert.doesNotMatch(out, /check-inline/);
+    }
+    const green = clone();
+    Object.assign(green.tari, {
+        connected: true, active: true, status: 'Merge mining',
+        health: { level: 'green', reasons: [], advice: '' },
+    });
+    assert.match(renderApp({ state: green }), /status-ok">Merge mining/);
+});
+
 test('Sync gauge shows a ✔ for a done chain and a live percent while syncing', () => {
     const s = clone();
     s.syncing = true;

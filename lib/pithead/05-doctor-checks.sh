@@ -154,3 +154,42 @@ check_release_verification() {
         dr_warn_surface "The pinned release verifier image is not on this host yet — the next 'up' or 'upgrade' fetches it. If that fetch fails, the operation reports a signature failure even though nothing was tampered with. Pre-fetch it with: docker pull $COSIGN_IMAGE" "The pinned release verifier image is not on this machine yet — the next update fetches it. If that fetch fails, the update reports a signature failure even though nothing was tampered with."
     fi
 }
+
+# Tari chain verdict (#2464), read from the dashboard: the node's gRPC has no host-side client, and
+# the dashboard already weighs the signals (tip unchanged 30 min, 0 peers 10 min, behind the public
+# explorer fetched over Tor). The container healthcheck stays process liveness on purpose, and a READY
+# P2Pool merge-mine channel is no proof either. Prints "level<TAB>reasons — next: advice", or nothing
+# when the dashboard has no verdict (not running, Tari off, or the loop has not run yet).
+tari_chain_verdict() {
+    command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
+        jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null
+}
+
+# doctor: amber WARN, red FAIL (non-zero exit). Advice follows the verdict, never a restart's outcome.
+check_tari_chain() {
+    local v level detail
+    v=$(tari_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    detail=${v#*$'\t'}
+    case "$level" in
+    green) dr_ok "Tari node follows the chain (tip advancing, peers connected, not behind the explorer)." ;;
+    amber) dr_warn "Tari node may be stalling: $detail" ;;
+    *) dr_fail "Tari node is NOT following the chain; merge-mined Tari work is wasted: $detail" ;;
+    esac
+    return 0
+}
+
+# `pithead status` prints the same verdict as one line; it never changes status's exit code.
+tari_chain_status_line() {
+    local v level
+    v=$(tari_chain_verdict)
+    [ -n "$v" ] || return 0
+    level=${v%%$'\t'*}
+    case "$level" in
+    green) printf '  %b✓%b %-13s following the chain\n' "$C_GREEN" "$C_RESET" "tari chain" ;;
+    amber) printf '  %b⚠%b %-13s %s\n' "$C_YELLOW" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
+    *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
+    esac
+}

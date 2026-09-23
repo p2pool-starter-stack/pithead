@@ -116,6 +116,18 @@ class TariClient:
         percent = int((local_height / target) * 100)
         return {"is_syncing": True, "current": local_height, "target": target, "percent": percent}
 
+    async def get_connections(self) -> int | None:
+        """The node's live peer-connection count (``GetNetworkStatus``), or None when it did not
+        answer — no reading, never a zero: a zero feeds the 0-peers signal (#2464)."""
+        try:
+            stub = self._ensure_channel()
+            status = await stub.GetNetworkStatus(empty_pb2.Empty(), timeout=5)
+        except Exception as e:
+            logger.error(f"Tari gRPC GetNetworkStatus error: {e}")
+            await self._reset_channel()
+            return None
+        return status.num_node_connections
+
     async def close(self):
         # ponytail: intentionally NOT wired into DataService.run()'s shutdown. Doing so means a
         # try/finally around the whole poll loop, which drags the (partly untested) loop body into

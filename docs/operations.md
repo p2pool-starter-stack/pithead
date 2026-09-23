@@ -765,6 +765,37 @@ restart does the same. (#972)
 Local node only. With `monero.mode: remote` there is no `monerod` here to restart and doctor's
 Monero sync check skips, so a stranded node is the remote host's problem to detect and fix.
 
+**Tari node stuck or forked.**
+A running Tari node can stop following the chain while every healthcheck stays green: the process
+lives, its gRPC answers and P2Pool's merge-mine channel reads READY, so every merge-mined Tari
+block is built on a stale tip (#2464). The dashboard judges the node on three signals: its tip
+unchanged for 30 minutes, 0 peer connections for 10 minutes, and its height more than 50 blocks
+behind a public explorer fetched through Tor once an hour (`tari.explorer_url`). One signal turns
+the Tari status amber with the reason; two, or explorer lag on its own, turn it red, fail
+`./pithead doctor`, add a line to `./pithead status` and send an alert. Monero mining is not
+affected either way. Recover in this order:
+
+1. **Restart the node.** With `tari.auto_restart` on (the default, local node only) the dashboard
+   does this itself after 5 minutes of red, at most 3 times per outage and an hour apart, and never
+   while the node's gRPC is not answering (a database migration may be running). By hand:
+
+   ```bash
+   ./pithead restart tari
+   ```
+
+   A restart clears the node's list of rejected blocks. That list is what locked out the canonical
+   chain in #2465: the node banned every peer that served it. Catch-up then takes minutes, and the
+   status returns to green once the tip moves again with peers connected and the explorer lag is gone.
+2. **Three restarts without green** switch the advice to "likely a chain fork or an upgrade
+   required". A node on the wrong side of a hard fork rejoins the same dead branch after every
+   restart. Check the Tari release notes for a required upgrade first. A node that followed a dead
+   branch past a fork height has to be rewound below it before it can sync. The procedure is tracked
+   in #2593.
+3. **Resync from scratch** as the last resort: stop the node, move its chain data away (`tari.data_dir`,
+   `./data/tari` by default) and start it again. Over Tor this takes days. `tari.clearnet_initial_sync:
+   true` cuts it to hours at the cost of exposing the host's IP to Tari peers while it runs (see
+   [Privacy](privacy.md#optional-clearnet-initial-sync-off-by-default)).
+
 **The dashboard data looks broken and you want a clean slate.**
 `./pithead reset-dashboard` wipes and recreates the dashboard and P2Pool data. This is
 **destructive**: it drops P2Pool sidechain state and dashboard history (blockchains and wallets are

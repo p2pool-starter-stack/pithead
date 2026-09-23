@@ -362,6 +362,9 @@ def build_tari(data):
         "diff": f"{int(tari_stats.get('difficulty', 0)):,}",
         "wallet": t_addr,
         "wallet_short": _shorten(t_addr),
+        # The node's chain verdict (#2464) — {level, reasons, advice, ...} | None. `connected` above
+        # only says P2Pool's gRPC channel answers; this says whether the node follows the chain.
+        "health": (data.get("tari_sync") or {}).get("health"),
     }
 
 

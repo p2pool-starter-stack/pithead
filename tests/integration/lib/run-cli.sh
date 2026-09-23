@@ -90,6 +90,10 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
+  --tari-stranded        also run the stranded-Tari leg (#2464): a DOCKER-USER rule (comment
+                         pithead-e2e-fault-tari-stranded) cuts tari off from tor; asserts amber,
+                         red + doctor non-zero, no restart while gRPC is frozen, then the automatic
+                         restart and green. About an hour; opt-in only. DESTRUCTIVE-then-restored.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -268,6 +272,10 @@ parse_args() {
             ;;
         --mergemine-submit)
             RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --tari-stranded)
+            RUN_TARI_STRANDED=1
             shift
             ;;
         --auth-fail-closed)

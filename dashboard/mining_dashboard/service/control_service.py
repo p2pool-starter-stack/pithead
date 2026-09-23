@@ -113,9 +113,7 @@ def _deep_merge(base, override):
 # ``p2pool.clearnet``), so this mirrors render_env's real derivation, not the prose in pithead's own
 # allowlist comment. The gate works on RENDERED ENV VARS, not config paths: a path feeding an
 # allowlisted var IS committable however host-only it sounds. (CONFIRM_ENV_KEY_PATHS documents the
-# one deliberate exception, where a NARROWER map is the safe direction.)
-#
-# Drift-guarded (mirrors #515's WORKER_WRITABLE_KEYS check, see
+# one deliberate exception, where a NARROWER map is the safe direction.) Drift-guarded (mirrors #515's WORKER_WRITABLE_KEYS check, see
 # test_editable_keys_have_no_intra_repo_drift below): a test regexes CONTROL_DASHBOARD_EDITABLE_KEYS
 # out of the pithead script and asserts its env-var names equal this map's keys, so an allowlist edit
 # without a matching map edit fails CI loudly instead of silently drifting the greyed set.
@@ -130,6 +128,7 @@ EDITABLE_ENV_KEY_PATHS = {
     "DASHBOARD_TZ": ("dashboard.timezone",),
     "MONERO_MEM_LIMIT": ("monero.mem_limit",),
     "TARI_MEM_LIMIT": ("tari.mem_limit",),
+    "TARI_AUTO_RESTART": ("tari.auto_restart",),
     "MONERO_PREP_THREADS": ("monero.prep_blocks_threads",),
     "HASHRATE_DROP_THRESHOLD_PCT": ("dashboard.hashrate_drop_threshold",),
     "HASHRATE_DROP_MINUTES": ("dashboard.hashrate_drop_minutes",),

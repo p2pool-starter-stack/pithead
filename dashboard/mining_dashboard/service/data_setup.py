@@ -13,6 +13,7 @@ from mining_dashboard.config.config import (
     HASHRATE_DROP_MINUTES,
     HASHRATE_DROP_THRESHOLD_PCT,
     NODE_STALE_AFTER_SEC,
+    TARI_MODE,
     TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
@@ -22,6 +23,7 @@ from mining_dashboard.service.data_helpers import (
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
+from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient, UpdateChecker
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
@@ -191,6 +193,12 @@ class DataSetupMixin:
         self.tor_healer = TorEgressHealer(
             self.docker_control, notify=self.alert_service.tor_heal_alert
         )
+        # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
+        # tip, no peers, behind the explorer). Restarts it under the same docker-control proxy; the
+        # alert rides the same always-on sender as the tor-heal note.
+        self.tari_chain = TariChainHealth(
+            self.docker_control, notify=self.alert_service.tor_heal_alert
+        )
         # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
         # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
         # even with Telegram off; a loss also drives a hashrate_loss alert.
@@ -235,3 +243,13 @@ class DataSetupMixin:
             self.latest_data.update(loaded_snapshot)
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
+
+    async def _observe_tari(self, tari_client, tari_sync):
+        """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain
+        verdict (#2464) attached as ``tari_sync["health"]`` for the panel, /api/state and doctor.
+        Off mode has no node to judge; the peer count is asked only of a node that answered."""
+        if TARI_MODE != "off":
+            reachable = tari_sync.get("reachable", False)
+            connections = await tari_client.get_connections() if reachable else None
+            tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+        return self.tari_health.update(tari_sync.get("reachable", True))
