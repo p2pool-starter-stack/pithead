@@ -77,6 +77,10 @@ back **by itself** after the plug is pulled still needs hands on real hardware:
 - **M10 — power cut during normal mining.** *Covered by: `provision` phase's power-cut leg
   (M10, #2067, `tests/os/phases/provision-power-cut.sh`), which checks the complete recovery after
   every one of its three cuts — same caveat.*
+- **M17 — dashboard power off, then the physical power button (#2384).** *Covered by: `provision`
+  phase's power leg (`tests/os/appliance-power-leg.sh`), which orders the poweroff through the
+  dashboard control channel and confirms the guest reaches `shut off` on its own — a real button
+  press on real hardware is the one half of the round trip a VM cannot exercise.*
 
 ### Install-path cases worth walking deliberately
 

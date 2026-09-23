@@ -1,6 +1,7 @@
 import { UpgradeControl } from "../config/configview.mjs";
 import { OnionUrl } from "../network/onionurl.mjs";
 import { OsUpdateControl } from "../system/osupdate.mjs";
+import { PowerControl } from "../system/power.mjs";
 import { html } from "./preact.mjs";
 import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } from "./ui.mjs";
 
@@ -32,7 +33,8 @@ function Header({ state, theme, onTheme }) {
                           // button stays disabled and yields to this OS control.
                           appliance
                             ? html`<${OsUpdateControl} os=${state.os_update} update=${state.update}
-                                  version=${state.version} enabled=${state.control_enabled} />`
+                                  version=${state.version} enabled=${state.control_enabled} />
+                                <${PowerControl} enabled=${state.control_enabled} />`
                             : null
                         }
                     </div>

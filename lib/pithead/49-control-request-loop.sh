@@ -55,6 +55,10 @@ control_process_request() { # <claimed-file> <control-dir>
     os-verify) control_os_verify "$file" "$id" "$actor" "$cdir" ;;
     os-install) control_os_install "$file" "$id" "$actor" "$cdir" ;;
     os-reboot) control_os_reboot "$file" "$id" "$actor" "$cdir" ;;
+    # Plain power control (#2384), separate from the OS-update reboot above: no update need be
+    # pending. sys-poweroff does not come back on its own — a person at the machine finishes it.
+    sys-reboot) control_sys_reboot "$file" "$id" "$actor" "$cdir" ;;
+    sys-poweroff) control_sys_poweroff "$file" "$id" "$actor" "$cdir" ;;
     # Read-only diagnostics for a shell-less appliance operator: report, never mutate. Both are
     # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
@@ -108,6 +112,9 @@ control_run_pending() {
     # OS-update budget: a bundle download attempt or a slot install holds the runner for minutes
     # too, so exactly one os-* verb runs per drain; the rest reject with a retry hint.
     CONTROL_OS_BUDGET=1
+    # Power budget (#2384): a reboot or poweroff ends the drain by definition, so exactly one
+    # runs per drain — the rest reject with a retry hint, same shape as CONTROL_OS_BUDGET.
+    CONTROL_POWER_BUDGET=1
     names=$(cd "$cdir/requests" 2>/dev/null && ls -1tr -- *.json 2>/dev/null) || true
     if [ -z "$names" ]; then
         log "No pending control requests."

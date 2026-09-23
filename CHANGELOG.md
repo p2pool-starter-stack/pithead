@@ -132,6 +132,12 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
   ([#976](https://github.com/p2pool-starter-stack/pithead/issues/976)), or applied from a downloaded bundle with `pithead os-update`; the chain services start only
   after the new slot has committed, so a forward-only database migration never runs on a slot that
   might be rolled back.
+- **Reboot and power off from the dashboard.** A headless appliance has no host shell, so the
+  header's Power control is the plain lever for both — a reboot to pick up a media-config change,
+  or a clean shutdown before moving or unplugging the machine, instead of pulling power on a
+  running box ([#2384](https://github.com/p2pool-starter-stack/pithead/issues/2384)). Power off
+  does not come back on its own; the machine restarts when someone presses its physical power
+  button.
 - **Backups and restores.** `pithead backup` exports an encrypted archive ([#908](https://github.com/p2pool-starter-stack/pithead/issues/908)), and the setup
   wizard can restore one on a fresh machine ([#909](https://github.com/p2pool-starter-stack/pithead/issues/909)). A restored machine keeps its own identity:
   the machine-id and SSH host keys live on the data partition ([#894](https://github.com/p2pool-starter-stack/pithead/issues/894), [#895](https://github.com/p2pool-starter-stack/pithead/issues/895)), and the

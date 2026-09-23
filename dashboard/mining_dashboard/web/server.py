@@ -15,7 +15,7 @@ from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
 from mining_dashboard.service.workers import worker_adopt, worker_refresh
 from mining_dashboard.web.config_commit import approval_envelope
-from mining_dashboard.web.views import diagnostics_views, download_views
+from mining_dashboard.web.views import diagnostics_views, download_views, power_views
 from mining_dashboard.web.views.charts import canonical_window, parse_window
 from mining_dashboard.web.views.prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE
 from mining_dashboard.web.views.prometheus import render_prometheus
@@ -615,10 +615,10 @@ def create_app(state_manager, latest_data_ref):
                 # archive the host produced for the id it names in its result.
                 web.post("/api/control/backup", handle_control_backup),
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
-                # Appliance OS update: one route, a closed action set, every judgment host-side.
+                # Appliance OS update, and plain power control (#2384: reboot or clean poweroff, no update pending): one route each, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
-                # Service Diagnostics (#913/#943): read-only asks answered by a host report. Both
-                # poll /api/control/result above — they add no polling route of their own.
+                web.post("/api/control/power", power_views.handle_control_power),
+                # Service Diagnostics (#913/#943): read-only asks answered by a host report; both poll /api/control/result above and add no polling route of their own.
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
             ]

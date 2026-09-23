@@ -369,6 +369,16 @@ not proven.
 
 ## Open
 
+- **Dashboard poweroff proves the guest reaches `shut off`, not that a real machine's physical
+  power button brings it back (#2384).** The dashboard's `sys-reboot`/`sys-poweroff` control
+  verbs (46b-control-power.sh) close the two dead ends #786 left open — a plain reboot for the
+  media-config channel, and a clean shutdown before an operator moves or unplugs the box, instead
+  of pulling power on a running one. `tier4-kvm`'s power leg orders both through the dashboard,
+  waits for `virsh domstate` to report `shut off` on its own after the poweroff, then `virsh
+  start`s the guest and confirms an orderly restart with mining resumed. Pressing a REAL
+  machine's power button after a REAL clean shutdown is firmware behavior a VM cannot exercise —
+  M17 in the manual release checklist covers it, same shape as #2044's existing gap for the rest
+  of the physical battery.
 - **Installing to a disk still needs a human (#979).** Pre-seeding (`pithead-token.txt` /
   `pithead-config.json` on the ESP) covers configuration headlessly and the installer carries
   both onto the target, so a fleet can be flashed and provisioned from one file. Choosing
