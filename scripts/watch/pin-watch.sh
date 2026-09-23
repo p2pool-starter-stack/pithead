@@ -113,7 +113,6 @@ tari_proto_ref() { # <node image pin> -> upstream tag
     local ref="${1%%@*}"
     ref="${ref##*:}"
     ref="${ref%-mainnet}"
-    # An upstream pre-release tag (`v6.0.1-pre.0`, #2604) names a git tag like any other.
     printf '%s' "$ref" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-pre\.[0-9]+)?$' || return 1
     printf '%s' "$ref"
 }
@@ -243,10 +242,8 @@ if [ "${1:-}" = "--self-test" ]; then
     # Both sides of that comparison go through norm(), so norm must leave a commit sha untouched.
     st "normalisation leaves a commit sha alone" \
         "$(norm 60aa883901fc74ea39ed2f21962b8ba7f96d73ba)" "60aa883901fc74ea39ed2f21962b8ba7f96d73ba"
-    st "the Tari node pin selects the matching upstream proto tag" \
-        "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:aaaa')" "v6.0.0"
-    st "a Tari pre-release pin selects its own upstream proto tag (#2604)" \
-        "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:aaaa')" "v6.0.1-pre.0"
+    st "a Tari node pin, release or pre-release (#2604), selects the matching upstream proto tag" \
+        "$(tari_proto_ref 'x:v6.0.0-mainnet@sha256:aaaa') $(tari_proto_ref 'x:v6.0.1-pre.0-mainnet@sha256:aaaa')" "v6.0.0 v6.0.1-pre.0"
     st "a malformed Tari pin is refused" \
         "$(tari_proto_ref 'ghcr.io/tari-project/minotari_node:latest' >/dev/null 2>&1 && echo accepted || echo refused)" "refused"
     run_buf() {
