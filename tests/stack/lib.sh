@@ -186,6 +186,11 @@ case "$*" in
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;
   "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;  # #273: tests set the running p2pool argv
+  "compose config --images")
+    # One pithead-built ref and one pulled third-party ref (Tari's shape) — #2343's uninstall
+    # `docker rmi` filter must remove only the former.
+    printf '%s\n' "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-tor:${STACK_VERSION:-dev}" \
+        "quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:deadbeef00000000000000000000000000000000000000000000000000000000" ;;
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.

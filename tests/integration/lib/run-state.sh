@@ -2,7 +2,7 @@
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
-    local name="$1" config="$2"
+    local name="$1" config="$2" secret_fp="${3:-$BASELINE_SECRET_FP}"
     local st mode tmode pool secure tari_req xvb rpc_lan monero_clearnet tari_clearnet
     mode="$(jq_get "$config" '.monero.mode')"
     mode="${mode:-local}"
@@ -393,8 +393,8 @@ assert_running_state() {
     assert_eq "Caddyfile's dashboard site block uses the correct scheme (#1123)" \
         "$(rx "grep -qE '$want_scheme' Caddyfile && echo yes || echo no")" "yes"
 
-    # 10. Secrets intact (proxy token + onions unchanged vs the baseline we captured).
-    assert_eq "secrets intact (token + onions)" "$(secret_fingerprint)" "$BASELINE_SECRET_FP"
+    # 10. Secrets intact (proxy token + onions unchanged since this state was established).
+    assert_eq "secrets intact (token + onions)" "$(secret_fingerprint)" "$secret_fp"
 }
 
 # Full per-scenario battery: the read-only state assertions, plus the apply-only idempotency

@@ -109,6 +109,14 @@ MATRIX:
                          docker bridge, tor's render-at-start IP, monerod's envsubst'd proxy IP, the
                          dashboard SSRF CIDR, and the #344 onion vhost, then run the standard
                          running-state battery. DESTRUCTIVE-then-restored (down/up back to baseline).
+  --uninstall            also run the uninstall phase (#2343), local or ssh: asserts the abort
+                         path changes nothing, then a real `pithead uninstall -y` removes the
+                         compose project, the control-runner systemd units and the tor egress
+                         firewall rules while config.json and the *_DATA_DIR paths it names
+                         survive byte-for-byte, then `pithead setup` re-provisions the checkout
+                         from what was kept and the standard running-state battery confirms no
+                         resync was needed. DESTRUCTIVE-then-restored; requires --safety-backup.
+                         Ordered last — it tears the checkout down.
   --keep                 do NOT restore the original config.json at the end (leaves the box
                          on the last scenario — useful for debugging)
 
@@ -296,6 +304,10 @@ parse_args() {
             RUN_SUBNET=1
             shift
             ;;
+        --uninstall)
+            RUN_UNINSTALL=1
+            shift
+            ;;
         --safety-backup)
             SAFETY_BACKUP=1
             shift
@@ -352,6 +364,10 @@ parse_args() {
             it_err "--image-upgrade old and new commits must differ."
             exit 2
         }
+    fi
+    if [ "$RUN_UNINSTALL" = "1" ] && [ "$SAFETY_BACKUP" != "1" ]; then
+        it_err "--uninstall requires --safety-backup — it tears the checkout down before re-provisioning it."
+        exit 2
     fi
     validate_live_gate_args
     # Both gates read mining as their success signal, so silencing those assertions would leave
