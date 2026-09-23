@@ -84,10 +84,14 @@ monero_prune_flag() {
 # p2pool outbound SOCKS flags (#165). p2pool's --onion-address only advertises an onion for INBOUND;
 # without --socks5 it dials outbound sidechain peers over clearnet, exposing the home IP. Returns the
 # Tor SOCKS flags by default; empty when the operator opts into clearnet (p2pool.clearnet=true) for
-# max yield. Pure (args only: <clearnet-bool> <network-prefix>) so it unit-tests in isolation.
+# max yield. --no-dns (#2496): the proxy type does not stop p2pool's clearnet seed-node DNS lookups
+# (TXT + getaddrinfo for seeds-mini.p2pool.io), which leave via the host resolver past the FORWARD
+# firewall; with it the peer list comes from the cache, the onion seeds and --addpeers. Safe for the
+# node and Tari legs: with --socks5 set p2pool never resolves --host, and the entrypoint rewrites both
+# to 127.0.0.1. Pure (args only: <clearnet-bool> <network-prefix>) so it unit-tests in isolation.
 p2pool_outbound_flags() {
     [ "$(normalize_bool "${1:-}")" = "true" ] && return 0
-    printf -- '--socks5 %s.25:9050 --socks5-proxy-type tor' "${2:-172.28.0}"
+    printf -- '--socks5 %s.25:9050 --socks5-proxy-type tor --no-dns' "${2:-172.28.0}"
 }
 
 # Keys whose value differs between two env files (added, removed, or changed), one per line.
