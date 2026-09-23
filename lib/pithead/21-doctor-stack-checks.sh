@@ -67,8 +67,15 @@ check_egress_firewall_installed() {
     fi
     tor_egress_enforced || rc=$?
     case "$rc" in
-    0) dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how." ;;
-    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
+    0)
+        dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how."
+        # Live now is not live after the next reboot (#2460): without the boot unit the containers
+        # come back on their own and the rules do not.
+        if tor_egress_boot_unit_applies && ! systemctl is-enabled "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
+            dr_warn_surface "The Tor-egress firewall is live but will NOT survive a reboot — $TOR_EGRESS_BOOT_UNIT is not enabled, so the containers would restart without it. Run './pithead up' to install it." "The Tor-egress firewall is live but will NOT survive a reboot on this machine."
+        fi
+        ;;
+    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. On a DIY host $TOR_EGRESS_BOOT_UNIT restores it at boot, ahead of the containers; see 'systemctl status $TOR_EGRESS_BOOT_UNIT'. Run './pithead up' to reinstall the rules and the unit." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
     2) dr_fail_surface "Tor-only egress CANNOT be enforced — the $how backend's command is not installed on this host, so nothing is dropping clearnet dials from the stack. Install it and run './pithead up', or set network.tor_egress_firewall=false to acknowledge running without it." "Tor-only egress CANNOT be enforced on this machine — the firewall command it needs is missing, so clearnet dials from the stack are not being dropped." ;;
     # #855's own failure mode, and the one a presence-only check cannot see: the rules are there and
     # nothing traverses them. The stack is up by the time this runs, so the engine has had its chance
