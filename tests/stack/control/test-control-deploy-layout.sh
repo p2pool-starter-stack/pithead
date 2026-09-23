@@ -74,10 +74,12 @@ if [ -f "$G/recovery/marker" ]; then ok "recovery: cleanup failure keeps the ret
 assert_contains "recovery: cleanup failure still restarts dashboard" "$(cat "$G/recovery/restart")" "compose start dashboard"
 
 echo "== unit: assert_safe_dir refuses empty and '.' components (#2360) =="
-for unsafe_path in "/srv/./pithead/data" "//srv/pithead/data" "/srv/pithead/data/."; do
-    run_sourced "$SANDBOX" assert_safe_dir "$unsafe_path" >/dev/null 2>&1
-    assert_rc "rejects ambiguous path $unsafe_path" "$?" "1"
-done
+run_sourced "$SANDBOX" assert_safe_dir "/srv/./pithead/data" >/dev/null 2>&1
+assert_rc "rejects a /./ component" "$?" "1"
+run_sourced "$SANDBOX" assert_safe_dir "//srv/pithead/data" >/dev/null 2>&1
+assert_rc "rejects repeated slashes" "$?" "1"
+run_sourced "$SANDBOX" assert_safe_dir "/srv/pithead/data/." >/dev/null 2>&1
+assert_rc "rejects a trailing /." "$?" "1"
 
 echo "== black-box: deploy-box layout (#455) =="
 # A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
