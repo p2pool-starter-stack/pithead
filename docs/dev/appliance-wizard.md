@@ -400,7 +400,8 @@ Five steps, each answering a hardware-validated failure:
    First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
    `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
    derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
-   FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing
+   FAILs on a crashed revenue container (monerod/p2pool/tari, including one an interrupted compose
+   recreate left under its temporary `<id>_<service>` name), a dead Tor backbone, or a missing
    egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
    `pithead status` must exit 0 — every expected container running and healthy, none restarting;
    only a miner deliberately created/exited/stopped by the sync gate, or a chain service explicitly
