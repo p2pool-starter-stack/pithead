@@ -829,8 +829,8 @@ rule covers every line that assigns a key, not only the live ones
 ([#2414](https://github.com/p2pool-starter-stack/pithead/issues/2414)): a commented-out,
 indented or `export`-prefixed assignment keeps its prefix and key and loses its value. Every
 ambiguity fails closed: a survivor keeps its value up to the first unquoted `#` and is redacted
-if the value carries a second `KEY=` or an unclosed quote, a non-survivor `KEY=` inside comment
-prose loses the rest of the line, and any other line is redacted whole. A
+if the value holds any `=` (a second `KEY=`, whatever joins it) or an unclosed quote, a `KEY=`
+inside comment prose loses the rest of the line unless it is a survivor with an `=`-free value, and any other line is redacted whole. A
 suffix/substring denylist over the same population had failed four times, each time in the unsafe
 direction, and the harness's own vocabulary disagreed with `support-bundle`'s on 17 of 127 keys —
 `NTFY_URL` among them, a capability URL the bundle left in the clear. The capture sources

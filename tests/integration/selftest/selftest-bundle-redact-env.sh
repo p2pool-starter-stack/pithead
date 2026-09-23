@@ -111,6 +111,10 @@ trailing prose on a survivor|MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_r
 second KEY= on a survivor|STRATUM_PORT=3333 MONERO_NODE_PASSWORD=OLDSECRET18
 second KEY= on a commented survivor|# STRATUM_PORT=3334 MONERO_NODE_PASSWORD=OLDSECRET19
 unclosed quote on a survivor|STRATUM_BIND="0.0.0.0 OLDSECRET20
+second KEY= after a comma|HOST_PORT=80,WALLET_RPC_PASSWORD=OLDSECRET21
+second KEY= glued on|HOST_PORT=80WALLET_RPC_PASSWORD=OLDSECRET22
+second KEY= glued on, in prose|# was HOST_PORT=3333WALLET_RPC_PASSWORD=OLDSECRET23
+second KEY= after a comma, in prose|# was HOST_PORT=3333,WALLET_RPC_PASSWORD=OLDSECRET24
 ROWS
 
 # Fail closed must not become fail useless: the operational keys the bundle exists to carry stay
@@ -132,6 +136,7 @@ indented export survivor with a note|	export TARI_MODE=full # note|	export TARI_
 quoted survivor with spaces|P2POOL_FLAGS="--mini --socks5 172.28.0.2:9050"|P2POOL_FLAGS="--mini --socks5 172.28.0.2:9050"
 quoted survivor with an escaped quote and a hash|P2POOL_FLAGS="a \" # b" # note|P2POOL_FLAGS="a \" # b" # [redacted]
 survivor in comment prose|# was STRATUM_PORT=3334 until May|# was STRATUM_PORT=3334 until May
+survivor URL in comment prose|# was MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc ok|# was MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc ok
 ROWS
 
 echo "== unit: comment structure and non-secret configuration survive (#2414) =="

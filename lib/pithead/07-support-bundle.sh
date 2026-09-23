@@ -46,9 +46,10 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # hand-edited .env keeps the previous value commented out above the live one, so an assignment
 # behind `#`, indentation, `export` or spaces around `=` is classified like a live one: the prefix
 # and key stay, the value goes. A survivor keeps its value up to the first unquoted `#`, which
-# becomes `# [redacted]`; a survivor value that opens a quote it never closes, or carries a second
-# `KEY=`, is redacted. A comment that is not an assignment keeps its prose, but every non-survivor
-# `KEY=` inside it loses the rest of the line. Any other line is redacted whole, since it cannot
+# becomes `# [redacted]`; a survivor value that opens a quote it never closes, or holds any `=`
+# (a second `KEY=` joined by any separator, or none), is redacted. A comment that is not an
+# assignment keeps its prose, but every `KEY=` inside it that is not a survivor with an `=`-free
+# value loses the rest of the line. Any other line is redacted whole, since it cannot
 # be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
 bundle_redact_env() {
     awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
@@ -75,7 +76,7 @@ bundle_redact_env() {
             sub(/[ \t]*=$/, "", key)
             if (!(key in ok)) { print lhs "[redacted]"; next }
             val = cut_comment(substr($0, RLENGTH + 1))
-            if (OPEN || val ~ /(^|[ \t;])[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) { print lhs "[redacted]"; next }
+            if (OPEN || val ~ /=/) { print lhs "[redacted]"; next }
             if (CUT) { sub(/[ \t]+$/, "", val); print lhs val " # [redacted]" } else print lhs val
             next
         }
@@ -85,8 +86,10 @@ bundle_redact_env() {
                 s = RSTART + RLENGTH
                 key = substr(line, RSTART, RLENGTH)
                 sub(/[ \t]*=$/, "", key)
-                if (!(key in ok)) { out = out substr(line, 1, s - 1) "[redacted]"; line = ""; break }
                 match(substr(line, s), /^[^ \t]*/)
+                if (!(key in ok) || substr(line, s, RLENGTH) ~ /=/) {
+                    out = out substr(line, 1, s - 1) "[redacted]"; line = ""; break
+                }
                 out = out substr(line, 1, s - 1 + RLENGTH)
                 line = substr(line, s + RLENGTH)
             }
