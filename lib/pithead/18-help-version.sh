@@ -64,8 +64,9 @@ Maintenance:
   config-reset [-y|--yes]   DESTRUCTIVE: clear the configuration and reopen the setup wizard,
                             keeping every data directory — chains, wallets, Tor onion keys, and
                             dashboard history all stay, so reconfiguring costs no resync. Removes
-                            config.json and the files rendered from it, then (on the appliance)
-                            reboots into first-boot setup. Type-to-confirm unless -y.
+                            config.json, the files rendered from it, and the machine-role marker
+                            that holds the wizard shut, then (on the appliance) reboots into
+                            first-boot setup. Type-to-confirm unless -y.
                               -y, --yes        skip the confirmation prompt.
   factory-reset [-y|--yes]  DESTRUCTIVE (appliance only): erase the whole data partition back to
                             a blank machine — chains, wallets, Tor keys, and settings all go — then
