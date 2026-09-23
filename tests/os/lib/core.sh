@@ -59,6 +59,32 @@ _ssh() {
     timeout "${SSH_TIMEOUT:-5400}" ssh -i "$KEY" -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
 }
+# Wait for the control spool to hold no in-flight request, before any host-side `pithead apply`
+# this harness drives. `apply` re-provisions the control runner (50-control-runner-provisioning.sh)
+# and nothing drains the spool first, so a request still queued in requests/, or already claimed
+# and running, dies with the runner and never gets a result file — and the row that asked for it
+# reports a product failure that did not happen (#2094; bench-ci job 25 killed the runner 3.4 s
+# into a compose up and still reported "the control request never returned" beside its own
+# `live cost_per_kwh=0.17, want 0.17`). That the apply does this at all is the product's own defect
+# (#2363) and is not fixed here: this only stops the BATTERY from driving it over its own requests.
+# The runner claims a request by moving it out of requests/ to a .claim.* file and removes that
+# claim only AFTER writing results/<id>.json, so neither present is the proof that every request
+# reached a result. staged/ is deliberately not counted: it holds previewed intents waiting for
+# their own commit, which is not work in flight, and waiting on it would hang every preview.
+# Bounded, and an unreadable spool never reads as a drained one — the caller reds its row instead
+# of applying blind.
+_control_requests_drained() { # [seconds]
+    local deadline=$(($(date +%s) + ${1:-120})) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" pending
+    while :; do
+        pending=$(_ssh 'ls -1 /data/pithead/data/control/requests/*.json /data/pithead/data/control/.claim.* 2>/dev/null | wc -l')
+        pending=$(printf '%s' "$pending" | tr -cd '0-9')
+        [ "$pending" = 0 ] && return 0
+        [ "$(date +%s)" -lt "$deadline" ] || break
+        sleep 3
+    done
+    info "control spool still holds ${pending:-an unreadable count of} in-flight request(s) after the drain deadline — refusing to apply over the runner"
+    return 1
+}
 _wait_ssh() { # $1 seconds — the definition of "not bricked"
     local deadline=$(($(date +%s) + $1)) SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}"
     while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -177,13 +203,13 @@ _build_image() {
     # never matched, and wiring the guard on with it would have failed every build the harness made.
     local expect
     expect="$(git rev-parse HEAD 2>/dev/null || true)"
-    # PITHEAD_REGISTRY/_CA are forwarded rather than inherited-by-luck: the battery runs under
+    # PITHEAD_REGISTRY/_CA/_COSIGN_PUB are forwarded rather than inherited-by-luck: the battery runs under
     # sudo, whose `env_reset` drops them, so the documented recipe has to be
     # `sudo env PITHEAD_REGISTRY=... tests/os/run.sh`. Without them build-image.sh refuses (#2043)
     # — and that refusal used to land ONLY in the log below, so the phase reported the useless
     # "image build failed" and the reason went unread. Surface it where the operator is looking.
     PITHEAD_UPDATER=rauc PITHEAD_TEST_SSH_PUBKEY="$(cat "$KEY.pub")" PITHEAD_TEST_MARKER="$1" \
-    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" \
+    PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}" \
         os/build-image.sh >/tmp/os-fault-build.log 2>&1 || {
         tail -12 /tmp/os-fault-build.log >&2
         return 1
@@ -193,7 +219,8 @@ _build_image() {
     # that matters most is the archive-vs-tree comparison: stale wizard images reached three
     # benches through caching bugs, and this layer catches the next one before a 25-minute
     # phase runs against it.
-    PITHEAD_EXPECT_COMMIT="$expect" tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
+    PITHEAD_EXPECT_COMMIT="$expect" PITHEAD_REGISTRY="${PITHEAD_REGISTRY:-}" PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" PITHEAD_REGISTRY_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}" \
+        tests/os/verify-image.sh os/rauc/build/system.img --test >>/tmp/os-fault-build.log 2>&1 || {
         echo "verify-image failed on the freshly built image (see /tmp/os-fault-build.log)" >&2
         return 1
     }

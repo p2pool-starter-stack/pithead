@@ -19,11 +19,13 @@
 // closed-schema gate on the host remains the only validation authority. Secrets arrive masked as
 // sentinels, render blank with a keep-hint, and an untouched or re-blanked secret keeps its
 // sentinel — "blank means keep" survives the model change.
-import { Component, html } from "../app/preact.mjs";
+import { Modal } from "../app/modal.mjs";
+import { Component, createRef, html } from "../app/preact.mjs";
 import { applyFailure, previewFailure, upgradeFailure } from "./applyfailure.mjs";
 import {
   buildSections,
   editableCandidate,
+  explicitCandidate,
   isSecretSentinel,
   jsonSyntaxError,
   markEditable,
@@ -34,15 +36,15 @@ import {
 } from "./configlogic.mjs";
 import { PreviewModal } from "./configpreview.mjs";
 import { coerceForType, pathGet, pathSet } from "./configsync.mjs";
+import { controlCommitResult } from "./controlclient.mjs";
 
 export { editableCandidate, PreviewModal };
 
 const CONTROL_HEADERS = { "Content-Type": "application/json", "X-Pithead-Control": "1" };
 const POLL_MS = 2000;
 const POLL_MAX = 90; // 3 minutes — a commit recreates containers, which can take a while
-// #1071: 45 minutes. The old 900s ceiling sat BELOW image-pull bounds: 60s on the release API, 900s on the bundle over Tor, 120s on the
-// signature — so a healthy upgrade on a slow circuit hit the ceiling with the slowest step still ahead of it and was reported as a failure. No constant can be provably enough (the pull is
-// unbounded), which is why the message below no longer claims the upgrade failed.
+// #1071: 45 minutes. The old 900s ceiling sat below image-pull bounds (60s release API, 900s bundle over Tor, 120s signature) and failed a healthy slow-circuit upgrade mid-pull.
+// The pull itself is unbounded, so no constant is provably enough — the message below no longer claims the upgrade failed.
 const UPGRADE_POLL_MAX = 1350;
 // Poll /api/control/result until a terminal result lands; shared by the Configuration view, the
 // Upgrade button (#59), and the Backup card (#908). `skip` ignores an intermediate status under
@@ -153,8 +155,8 @@ export class ConfigView extends Component {
       result: null,
       error: null,
     };
+    this.modalRef = createRef();
   }
-
   componentDidMount() {
     this.load();
   }
@@ -237,11 +239,11 @@ export class ConfigView extends Component {
     return pollResult(id, skip);
   }
 
-  // The candidate is the proposed config. A pane mid-typo blocks Save via jsonError instead.
+  // Keep explicit values; only read_config's untouched defaults were absent from config.json.
   buildProposed() {
-    const { candidate, jsonError } = this.state;
+    const { candidate, defaultKeys, jsonError, pristine } = this.state;
     if (jsonError) return { error: jsonError };
-    return { config: candidate };
+    return { config: explicitCandidate(JSON.parse(pristine || "{}"), candidate, defaultKeys) };
   }
 
   async save() {
@@ -278,23 +280,23 @@ export class ConfigView extends Component {
     const id = this.state.preview.id;
     this.setState({ phase: "committing" });
     try {
-      // #719: an in-scope disruptive change (preview.destructive) rides its typed confirmation to
-      // the host gate, which requires it before a CONFIRM row proceeds. Friction, not a secret.
+      // #719: an in-scope disruptive change (preview.destructive) rides its typed confirmation to the host gate, which requires it before a CONFIRM row proceeds. Friction, not a secret.
       const body = { id };
       if (this.state.preview.destructive) body.confirm = this.state.confirmText;
       if (this.state.preview.approval_required) {
         body.approve = true;
         body.payout_suffixes = this.state.payoutSuffixes;
       }
-      const res = await fetch("/api/control/commit", {
-        method: "POST",
-        headers: CONTROL_HEADERS,
-        body: JSON.stringify(body),
-      });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      let out = await res.json();
-      if (out.status === "pending" || out.status === "previewed")
-        out = await this.poll(id, "previewed");
+      const opts = { method: "POST", headers: CONTROL_HEADERS, body: JSON.stringify(body) };
+      let res = null; // #2366: a restart (#622) can drop this request or answer 502/503/504 — poll the id below
+      try {
+        res = await fetch("/api/control/commit", opts);
+      } catch {}
+      const restarting = !res || [502, 503, 504].includes(res.status);
+      if (!restarting && !res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      const out = restarting
+        ? await this.poll(id, "previewed")
+        : await controlCommitResult(res, id, this.poll.bind(this));
       this.setState({ phase: "done", result: out });
     } catch (e) {
       this.setState({ phase: "error", error: String(e) });
@@ -323,7 +325,7 @@ export class ConfigView extends Component {
         ${
           core.length
             ? html`<div class="card config-section config-section-core">
-                <h3>Core</h3>
+                <h2>Core</h2>
                 ${core.map((f) => field(f, true))}
             </div>`
             : null
@@ -351,7 +353,7 @@ export class ConfigView extends Component {
 
   // The JSON pane (#785, the wizard's pattern): the whole candidate beneath the form, collapsed
   // by default, two-way live — never a separate mode. Load-from-file fills it (FileReader, no
-  // upload); it shows byte-for-byte what Save previews, minus the hidden paths (#1850).
+  // upload); Save sends this candidate minus untouched reference defaults (#2365).
   renderJson(editText, jsonError, busy) {
     return html`<details class="card config-section">
         <summary><strong>Advanced</strong> — the configuration this page sends</summary>
@@ -389,17 +391,17 @@ export class ConfigView extends Component {
     } = this.state;
     if (phase === "loading")
       return html`<div class="card"><p class="text-muted">Loading configuration…</p></div>`;
-    if (phase === "disabled") {
+    if (phase === "disabled")
       return html`<div class="card">
-          <h3>Configuration</h3>
-          <p>Configuration editing is off (the default). To enable it, set <code>dashboard.control.enabled: true</code>
-          in <code>config.json</code> on the host and
-          run <code>./pithead apply</code>. It requires a dashboard login.</p>
+          <h2>Configuration</h2>
+          <p>The control channel is off (the default). Turning it on lets you edit the
+          configuration, create backups, and run diagnostics, and requires a dashboard login —
+          see the${" "}<a href="https://github.com/p2pool-starter-stack/pithead/blob/main/docs/dashboard.md#configuration-view" target="_blank" rel="noopener noreferrer">Configuration view guide</a>.</p>
+          <p class="text-muted text-xs">Setting:${" "}<code>dashboard.control.enabled</code></p>
       </div>`;
-    }
     if (phase === "error") {
       return html`<div class="card">
-          <h3>Configuration</h3>
+          <h2>Configuration</h2>
           <p class="status-bad">${error}</p>
           <button class="btn-toggle" onClick=${() => this.load()}>Reload</button>
       </div>`;
@@ -407,12 +409,12 @@ export class ConfigView extends Component {
     if (phase === "done") {
       const ok = result.status === "applied";
       return html`<div class="card">
-          <h3>Configuration</h3>
-          ${
+          <h2>Configuration</h2>
+          <div role="status" aria-live="polite">${
             ok
               ? html`<p class="status-ok">Changes applied — only the affected containers were recreated.</p>`
               : applyFailure(result, this.props.appliance)
-          }
+          }</div>
           <button class="btn-toggle" onClick=${() => this.load()}>Back to the form</button>
       </div>`;
     }
@@ -439,14 +441,13 @@ export class ConfigView extends Component {
         ${this.renderForm(core, groups)}
         ${this.renderJson(editText, jsonError, busy)}
         <div class="config-actions">
-            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>
-                ${phase === "previewing" ? "Previewing…" : "Save & preview changes"}
-            </button>
+            <button class="btn-toggle active" disabled=${!canSave || busy} onClick=${() => this.save()}>${phase === "previewing" ? "Previewing…" : "Save & preview changes"}</button>
             ${dirty ? html`<button class="btn-toggle" disabled=${busy} onClick=${() => this.load()}>Discard edits</button>` : null}
         </div>
+        <p class="sr-only" role="status" aria-live="polite">${phase === "previewing" ? "Previewing changes…" : ""}</p>
         ${
           phase === "confirm" || phase === "committing"
-            ? html`<${PreviewModal} preview=${preview} confirmText=${confirmText}
+            ? html`<${PreviewModal} modalRef=${this.modalRef} preview=${preview} confirmText=${confirmText}
                   onConfirmText=${(t) => this.setState({ confirmText: t })}
                   payoutSuffixes=${payoutSuffixes}
                   onPayoutSuffix=${(chain, value) =>
@@ -454,7 +455,8 @@ export class ConfigView extends Component {
                       payoutSuffixes: { ...this.state.payoutSuffixes, [chain]: value },
                     })}
                   onConfirm=${() => this.commit()}
-                  onCancel=${() => this.setState({ phase: "form", preview: null })}
+                  onCancel=${() => this.modalRef.current?.close()}
+                  onClose=${() => this.setState({ phase: "form", preview: null })}
                   busy=${phase === "committing"} />`
             : null
         }
@@ -487,8 +489,13 @@ export class UpgradeControl extends Component {
     super(props);
     // idle | confirm | upgrading | done | failed
     this.state = { phase: "idle", confirmText: "", result: null };
+    this.modalRef = createRef();
   }
-
+  // Upgrading is the one phase with no way back — a no-op; its body says so.
+  cancel() {
+    if (this.state.phase === "upgrading") return;
+    this.modalRef.current?.close();
+  }
   async run() {
     this.setState({ phase: "upgrading" });
     try {
@@ -505,11 +512,11 @@ export class UpgradeControl extends Component {
     const available = enabled && update && update.available;
     if (!available && phase !== "failed") return null;
     const version = update?.latest;
+    const onClose = () => this.setState({ phase: "idle", confirmText: "" });
     let modal = null;
     if (phase === "confirm") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrade to ${version}</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgrade to " + version}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               <p>The host pulls the ${version} release and recreates every container — including
               this dashboard, which goes away for a moment, and the miners' stratum connection,
               which reconnects. Your config, wallet, and chain data are kept.</p>
@@ -517,25 +524,21 @@ export class UpgradeControl extends Component {
                   <input type="text" value=${confirmText}
                       onInput=${(e) => this.setState({ confirmText: e.target.value })} /></label>
               <div class="config-modal-actions">
-                  <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Cancel</button>
+                  <button class="btn-toggle" onClick=${() => this.cancel()}>Cancel</button>
                   <button class="btn-toggle active" disabled=${confirmText !== "UPGRADE"}
                       onClick=${() => this.run()}>Upgrade</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     } else if (phase === "upgrading") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrading to ${version}…</h3>
-              <p class="text-muted">The host is pulling images and recreating containers. This page
-              will briefly disconnect while the dashboard restarts — leave it open; it reports the
-              outcome when the new version is up.</p>
-          </div>
-      </div>`;
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgrading to " + version + "…"}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
+              <p class="text-muted">The host is pulling images and recreating containers — this can't
+              be interrupted. This page will briefly disconnect while the dashboard restarts — leave
+              it open; it reports the outcome when the new version is up.</p>
+      </${Modal}>`;
     } else if (phase === "done") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgraded to ${result.version || version}</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title=${"Upgraded to " + (result.version || version)}
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               <p class="status-ok">The stack is running the new release.</p>
               ${
                 result.rollback
@@ -546,18 +549,15 @@ export class UpgradeControl extends Component {
               <div class="config-modal-actions">
                   <button class="btn-toggle active" onClick=${() => window.location.reload()}>Reload the dashboard</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     } else if (phase === "failed") {
-      modal = html`<div class="config-modal-backdrop">
-          <div class="card config-modal">
-              <h3>Upgrade did not complete</h3>
+      modal = html`<${Modal} ref=${this.modalRef} title="Upgrade did not complete"
+          onCancel=${() => this.cancel()} onClose=${onClose}>
               ${upgradeFailure(result, this.props.appliance)}
               <div class="config-modal-actions">
-                  <button class="btn-toggle" onClick=${() => this.setState({ phase: "idle", confirmText: "" })}>Close</button>
+                  <button class="btn-toggle" onClick=${() => this.cancel()}>Close</button>
               </div>
-          </div>
-      </div>`;
+      </${Modal}>`;
     }
     return [
       available

@@ -311,8 +311,10 @@ XvB's published estimate into the expected side keeps the percent comparing like
 wins row tracks only that wins keep landing.
 
 Rows degrade honestly rather than guess: a stream with [payout confirmation](#payout-confirmation)
-off shows the config key to set instead of a zero that would read as "earned nothing"; the XvB row
-disappears when XvB is off; a `*` marks a window that reaches back past the oldest recorded payout.
+off shows a link into Configuration instead of a zero that would read as "earned nothing" — except
+Tari under a remote node, where the view key that link points at is one `tari.mode: remote` rejects,
+so the Tari row instead says confirmation isn't available there; the XvB row disappears when XvB is
+off; a `*` marks a window that reaches back past the oldest recorded payout.
 
 Payouts swing with mining luck — P2Pool pays when the pool finds blocks, and solo Tari blocks are
 rarer still. A sustained gap between expected and actual is the signal worth checking (workers
@@ -370,7 +372,10 @@ crosses 5%.
 With the control channel on (`dashboard.control.enabled`), a worker's name in the Workers Alive table
 is a link. Click it to open **Worker Inspect** — a dialog with that rig's live telemetry, a hashrate
 chart, an editor for the writable slice of its config, and the change history. Close it with the ✕
-button, a click outside it, or Escape.
+button, a click outside it, or Escape. A click outside it or Escape is refused while the editor holds
+an unsaved change (a table edit, or JSON text that no longer matches what was loaded): the panel stays
+open and shows an "Unsaved" line under Apply instead of discarding it silently; the ✕ button still
+closes unconditionally (#1877).
 
 A **hashrate** chart sits above the editor: the rig's own `worker_history` samples (~5-minute
 cadence) as a line, with **24 Hr / 1 Wk / All** range buttons — no "1 Mo" button, since at the
@@ -623,10 +628,12 @@ detail: **My P2Pool Node Stats**, **Global P2Pool Stats**, **XvB Donation Stats*
 **P2Pool Earnings (estimated)** calculator below. The
 expected-vs-actual table stays in both views. The choice is remembered across reloads.
 
-**XMR Network** and **Tari Merge-Mining** each carry a **Node** row saying whether that node runs
-here or somewhere else, and the **Stack Topology & Egress** diagram captions `monerod` and `tari`
-the same way. The difference is operational: a node you run is yours to restart and resync, and a
-node you point at (`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
+**XMR Network** and **Tari Merge-Mining** say whether each node runs here or somewhere else; the
+sync screen gives that location for Tari too. The **Stack Topology & Egress** diagram moves a
+remote `monerod` or `tari` outside the host zone and captions its route as LAN, Clearnet, or
+Unverified. The difference is
+operational: a node you run is yours to restart and resync, and a node you point at
+(`monero.mode: remote`, `tari.mode: remote`) is somebody else's to fix, so it is
 the first thing worth knowing when one stalls. It also makes the remote-node setting visible
 without opening `config.json`. A row reads `—` when the dashboard cannot tell — a payload from
 before this shipped, rather than a node it has decided is local.
@@ -938,11 +945,15 @@ button sits next to the Simple/Advanced toggle whether or not the channel is on;
 view explains how to turn it on and nothing else.
 
 One editing surface: the form on top and, beneath it, a collapsed **Advanced** pane holding
-the configuration this page sends — both live views of a single candidate. Editing
-a field rewrites the pane; editing the pane refills the fields; what the pane shows is
-byte-for-byte what Save previews, apart from the developer-only keys named below, which the
-machine keeps and this page never touches. (This is the setup wizard's pattern — the first page and
-the config tab now behave identically.) The pieces:
+the full proposed configuration — both live views of a single candidate. Editing
+a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
+candidate, developer-only keys aside (named below). Save sends the complete explicit
+configuration because the host stages and commits it as a replacement, but removes every
+`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
+values and masked secrets survive, while a placeholder default can't be committed as if the
+operator had typed it
+([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
+wizard's pattern — the first page and the config tab now behave identically.) The pieces:
 ([#529](https://github.com/p2pool-starter-stack/pithead/issues/529)):
 
 - **The form** pins a **Core** group at the top — the same wallet-address /
@@ -1004,7 +1015,12 @@ The flow mirrors the CLI's `apply`:
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
    commit runs `pithead apply -y` on the host and recreates only the containers whose config
-   changed. Your typed confirmation rides to the host gate, which requires it before a
+   changed — including this dashboard, for a change that touches its own settings. That request
+   can then drop mid-flight or hit the proxy while the dashboard container is down
+   ([#622](https://github.com/p2pool-starter-stack/pithead/issues/622)); the page treats it as
+   the expected restart, keeps waiting, and settles on the result once the dashboard answers
+   again — never a raw network error, with no manual refresh needed
+   ([#2366](https://github.com/p2pool-starter-stack/pithead/issues/2366)). Your typed confirmation rides to the host gate, which requires it before a
    confirm-gated change proceeds — a change confirmed this way is recorded in the audit log as a
    `commit-confirmed` action, distinct from an ordinary commit. A sensitive commit additionally
    carries a confirmation envelope, which the host validates: it may contain payout suffixes and
@@ -1173,8 +1189,8 @@ a bounded number of rows per hour between them before the rest are dropped behin
 two would double what a single LAN device can make permanent. A real occasional rig change
 still records; only a flood is capped. The cap bounds how many rows arrive rather than how big they
 are, so each row's identifier is separately length-capped and whitelisted where it is written
-([#1561](https://github.com/p2pool-starter-stack/pithead/issues/1561)): a `rig-edit` id is built from a change id the rig chooses, and `audit_events` is
-never pruned.
+([#1561](https://github.com/p2pool-starter-stack/pithead/issues/1561)): a `rig-edit` id is built from a change id the rig chooses, and a row stays in
+`audit_events` for 30 days.
 
 Any of the three is worth treating like a rotate-now signal in the same spirit as
 [Operations › Watching for intruders](operations.md#watching-for-intruders): if you didn't make
@@ -1182,8 +1198,11 @@ the change, someone or something with host or rig access did.
 
 The audit trail is no longer only a log tail: entries — both mirrored from `control.log` and the
 three out-of-band kinds above — persist to the dashboard's own database, so the range presets, date
-fields and search reach further back than the log's own trimmed tail. Walk the result with the
-page-size control (5, 10, 20, 50 or 100 rows a page), newest first.
+fields and search reach further back than the log's own trimmed tail. They are retained for 30 days
+like the hashrate history, so the panel reaches back a month and no further: an entry older than
+that is gone from the dashboard, and the host's own `control.log` — which the dashboard only reads
+— is where a longer record has to come from. Walk the result with the page-size control (5, 10, 20,
+50 or 100 rows a page), newest first.
 
 ### Service diagnostics
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test for safety_restore_exact naming WHICH check failed (#2362).
+# Self-test for safety_restore_exact naming WHICH check failed (#2062, #2362).
 #
 # The function used to fold five independent failure points (restore, up, health, config,
 # secrets) into one boolean via a chained `||`, so every rollback failure reported the same
@@ -54,7 +54,7 @@ _restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <se
     )
 }
 
-echo "== safety_restore_exact names which check failed, not a generic verdict (#2362) =="
+echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
 assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
 assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"

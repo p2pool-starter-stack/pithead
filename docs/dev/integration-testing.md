@@ -167,8 +167,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    share still inside the PPLNS window. The smoke uses the real donor-tier controller decision;
    it does not inject a raffle result.
 
-> NOTE: Keep the box least-privilege and network-isolated; it holds real keys. This is a
-> self-hosted/manual gate, not something to run on public CI.
+> NOTE: Keep the box least-privilege and network-isolated; it holds real keys. This is a bench-ci
+> tier-4 gate, not something to run on GitHub-hosted CI.
 
 ---
 
@@ -224,7 +224,7 @@ Useful flags (full list in `run.sh --help`):
 | `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
-| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation). |
+| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation, then backup→restore). Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection; peer-timing pool warnings remain non-fatal. |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
 | `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, and successful private reflink snapshots of every enumerated persistent mount while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and externally anchored public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature and key continuity, requires every Compose image to be digest-pinned, and verifies the five unique Pithead-built images' signatures and exact OCI revisions. Candidate-provided trust roots are rejected. |
@@ -277,6 +277,10 @@ bench that starts hours behind tip fails the required-sync assertions as environ
 a regression, and burns the borrowed-rig hour finding out
 ([#914](https://github.com/p2pool-starter-stack/pithead/issues/914)). `--skip-preflight`
 overrides.
+
+After a branch deploy recreates the nodes, the wrapper uses the same `done/done` panel predicate
+with a bounded 25-minute deadline before the binding readiness gate. A timeout refuses destructive
+phases and exits through the normal restore trap; it never asks the harness to grade a reconnecting Tari.
 
 For `targeted` and `matrix`, it does the following and reverses it on exit (even on failure / Ctrl-C,
 via an `EXIT` trap):
@@ -383,8 +387,11 @@ via an `EXIT` trap):
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
 node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-control` when a rig is
-borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain and
-re-confirm the tip in seconds. `check` is pure reads only. `matrix` is the opt-in full destructive
+borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain;
+monerod re-confirms the tip in seconds, but a recreated tari also has to rebuild its Tor circuits
+first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-starter-stack/pithead/issues/2455)) —
+`deploy_branch` waits on that before running the harness, since its own readiness check does not
+retry. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates
@@ -556,7 +563,7 @@ and `--list` prints it).
 
 For one representative config:
 
-- `restart` brings the stack back healthy (`status` → `0`).
+- `restart` brings the stack back healthy (`status` → `0`), and backup → restore must do the same before a later fault-injection phase can run.
 - An `apply` that changes the sidechain recreates only the affected containers and preserves
   secrets; the dashboard reflects the new pool; then it's reverted.
 - Node-down failover ([#31](https://github.com/p2pool-starter-stack/pithead/issues/31)):
@@ -611,9 +618,15 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   reading cannot be written back, the restore target is the dashboard's record of what *it* last
   pushed (`GET /api/worker`'s `.last_applied.pools`), which is un-stripped, and the probe is
   operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
-  guessed value risks a real `rejected` instead of proving the round trip). Self-skips if the
-  dashboard has never applied a `pools` value to this rig before (nothing to safely restore).
-  An absent probe or restorable original is a `[missing]` row, never a pass or an unexplained gate
+  guessed value risks a real `rejected` instead of proving the round trip). If the dashboard has
+  never applied a `pools` value to this rig before, there is nothing on record to restore — so the
+  leg seeds the record with the probe itself
+  ([#2325](https://github.com/p2pool-starter-stack/pithead/issues/2325)): the probe is by contract
+  a value already known safe to apply and carrying a `pass`, so it doubles as "the original" too,
+  and it leaves `.last_applied.pools` seeded for every run after this one. Either way, the value the
+  leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
+  ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
@@ -790,11 +803,13 @@ On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
 `api-state.json`, and `logs.txt` (last 200 lines per service). The end-of-run summary lists
 each failed assertion and points at these.
 
-`config.json` is the one artifact that is not streamed straight through the redactor. A config is a
-document with an enumerable shape, and the stack already classifies it by PATH:
-`render_masked_config` walks `CONTROL_SECRET_PATHS` plus the two variable-length array cases a
-fixed-path walk cannot reach (`workers.list[].token` and `notifications.webhooks[]`, where the
-whole URL is the bearer secret). The capture SOURCES the
+`config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
+the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on
+its own terms rather than by a suffix or substring guess over field names.
+
+`config.json` is classified by PATH: `render_masked_config` walks `CONTROL_SECRET_PATHS` plus the
+two variable-length array cases a fixed-path walk cannot reach (`workers.list[].token` and
+`notifications.webhooks[]`, where the whole URL is the bearer secret). The capture SOURCES the
 box's own `./pithead` and calls that function rather than restating the list or the jq program
 here: sourcing is the shipped contract, since the prelude sets `_STACK_SOURCED` and skips the `cd`,
 the traps and `main`. One classification, one place to change it. The masked document then passes
@@ -805,6 +820,25 @@ renders from the LIVE config at capture time rather than copying the box's pre-r
 as degrading to a stale copy on a render hiccup: an artifact presenting stale state as the state
 under test is the failure this harness exists to catch. If the program cannot be sourced the
 capture writes no config rather than falling back to the raw file, and says so in the artifact.
+
+`env.redacted.txt` is classified by an explicit ALLOWLIST of survivor key NAMES
+([#1631](https://github.com/p2pool-starter-stack/pithead/issues/1631), ruled on #1630): a key
+absent from `PITHEAD_ENV_SURVIVOR_KEYS` (`lib/pithead/07-support-bundle.sh`) is redacted, never
+printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. The
+rule covers every line that assigns a key, not only the live ones
+([#2414](https://github.com/p2pool-starter-stack/pithead/issues/2414)): a commented-out,
+indented or `export`-prefixed assignment keeps its prefix and key and loses its value. Every
+ambiguity fails closed: a survivor keeps its value up to the first unquoted `#` and is redacted
+if the value holds any `=` (a second `KEY=`, whatever joins it) or an unclosed quote, a `KEY=`
+inside comment prose loses the rest of the line unless it is a survivor with an `=`-free value, and any other line is redacted whole. A
+suffix/substring denylist over the same population had failed four times, each time in the unsafe
+direction, and the harness's own vocabulary disagreed with `support-bundle`'s on 17 of 127 keys —
+`NTFY_URL` among them, a capability URL the bundle left in the clear. The capture sources
+`./pithead` and calls the shipped `bundle_redact_env`, the same function `support-bundle` runs on
+the box, so the two consumers cannot drift back apart: there is one classification, not two lists
+kept in step by hand. `redact()`'s generic stream rules do not run over `.env` at all any more —
+this document gets the allowlist instead, on its own terms, the same way `config.json` gets the
+path walk instead.
 
 ### Reading the verdict — what did not run
 
@@ -910,11 +944,21 @@ inside the screen, so the drift #1611 found cannot reopen quietly. `selftest-red
 including the sentinel cases: a `\x01` in the input must not reconstitute a quad, must not become a
 dot, and must not disturb the protect/restore round trip that keeps the reserved ranges readable.
 `selftest-redact-env.sh` carries
-the `KEY=value` shape separately, including the three Tari address forms as `.env` renders them and
-the survivors that make a bundle worth keeping — a public endpoint, an auth mode string, a routing
-id. Its widening was measured before it shipped: across two archived bundles and the deployed
-`.env` it newly reaches ten keys, the same ten in all three populations, and changes nothing at all
-in the other six captured artifacts.
+the `KEY=value` shape separately for `redact()`'s own generic stream rules — the ones that still
+run over `status.txt`, `doctor.txt`, `compose-ps.txt`, `api-state.json` and `logs.txt` — including
+the three Tari address forms as `.env` renders them and the survivors that make a bundle worth
+keeping. It no longer governs the `.env` capture itself: that document now runs the allowlist
+described above. `selftest-bundle-redact-env.sh` covers that allowlist directly, against the
+shipped `bundle_redact_env`: it re-derives the full 127-key rendered population from `render_env`,
+same as `selftest-redact-vocab.sh` does for the credential-shaped screen below, and fails BY NAME
+on any key its own hand classification and `selftest-redact-vocab.sh`'s do not both account for.
+It pins the four keys the pre-inversion audit found leaking in the bundle by name — `NTFY_URL`,
+`NOTIFY_WEBHOOK_URLS`, `MONERO_NODE_USERNAME` and `XVB_DONOR_ID` — as their own regression rows.
+`selftest-capture-env.sh` is the route test, proving `capture_artifacts` actually calls
+`bundle_redact_env` rather than a paraphrase of it: it runs the real `capture_artifacts` against a
+fake box in `IT_MODE=local`, with an attribution row showing `redact()` alone would have left
+`TELEGRAM_CHAT_ID` and `HOST_IP` in the clear (neither carries a suffix its stream vocabulary
+reaches), then asserts the actual captured artifact redacts both.
 `selftest-redact-vocab.sh` asks the question one level out: not whether a given shape is covered,
 but whether the vocabulary reaches every key that needs it. A suffix list is a denylist over a key
 set that keeps growing, so it fails quietly and in the unsafe direction. The population is read out

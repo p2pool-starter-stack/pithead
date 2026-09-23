@@ -163,7 +163,7 @@ What the boot path reads, written by the host at the moment a role is accepted:
 | File (under `/data/pithead`) | Meaning |
 |---|---|
 | `machine-role` | `pithead`, `both` or `rig`. Absent means `pithead` — every machine provisioned before this contract. The coordinator values are derivable from `config.json` (both IS `local_miner.enabled`); the rig value is load-bearing, because a rig has no `config.json` at all. |
-| `rig.json` | rig role only: `pool`, `worker`, and `stratum_password` when one was set. |
+| `rig.json` | rig role only: `pool`, `worker`, `access_token` and `stratum_password` when one was set. |
 
 A rig install to a disk stages the accepted answers as `pithead-rig.json` on the ESP —
 carried to the target by `pithead-install` beside the config and token pre-seeds — and the
@@ -172,6 +172,23 @@ way the config pre-seed is scrubbed. The stick keeps neither copy after a disk i
 stick whose own `/data` carries the rig marker IS a rig (run-from-USB), and that marker
 outranks installer mode on every later boot — except one chosen from the boot menu's **Set up
 again** entry, which opens the wizard beside the role (below).
+
+The stick mints the control token BEFORE the card (`rig_access_token` in `firstboot_consume_rig`,
+above `write_handoff_card`), so the card the operator confirms on the stick already carries the
+token the installed machine will enforce — the only place that token is ever shown. The landing
+leg therefore requires a well-formed `access_token` in the staged file, alongside the pool it
+already required, and treats a file without one as unusable. A refused file is then **scrubbed
+off the ESP exactly as a consumed one is** (`scrub_staged_rig`, shared by both branches): it is
+unusable by definition, it may still carry a `stratum_password`, and a VFAT ESP keeps no mode 600
+to protect one. As with the consumed path and the config pre-seed, the scrub is skipped on
+removable media — that stick is the operator's own fleet tool, theirs to keep.
+
+What changes on a machine: a disk install staged by a stick older than #1836 carries no token,
+so its first boot now stops on the setup page instead of coming up as a rig mining under a token
+nobody was ever shown — which is to say, one no coordinator could adopt. Re-run that install from
+a current stick and the answers land as before. A file any stick since #1836 staged carries the
+token off its own card and is unaffected; hand-writing `pithead-rig.json` onto an ESP was never a
+documented path and now needs the token the card would have carried.
 
 **Getting a machine back out of the rig role** is the boot menu's **Set up again** entry
 (#1318) or the installer, never a setting: a rig serves no dashboard and answers on no port, so
@@ -294,7 +311,7 @@ Four properties, each earned:
    is missing from its SANs, or if it is within 30 days of expiry. With property 3 in place a
    coverage gap should not occur on a healthy render, so this is belt-and-braces there; expiry
    is the check nothing else derives. An unreadable certificate file WARNs instead — `doctor`
-   is the second half of `pithead-boot`'s health gate, and a FAIL there reboots the box, so a
+   is one of `pithead-boot`'s three health-gate signals, and a FAIL there reboots the box, so a
    read failure that doesn't prove the certificate is actually broken must not cause one.
 5. **The remedy is real, and the gate does not punish the update for it (#1265).** `apply`
    reaches the mint even when `config.json` is unchanged: on an appliance the no-change branch
@@ -379,20 +396,31 @@ Five steps, each answering a hardware-validated failure:
    an image behind a constant tag changed identity. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
-4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes two gates.
+4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
    First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
    `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
    derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
    FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing
-   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. "The
-   dashboard answers" is a subset of "the stack is alive", and the second gate closes that gap.
+   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
+   `pithead status` must exit 0 — every expected container running and healthy, none restarting;
+   only a miner deliberately created/exited/stopped by the sync gate, or a chain service explicitly
+   withheld by a pending data migration, is exempt. Restarting or unhealthy services still fail.
+   doctor judges only the revenue containers, so before #2383 a *non-revenue* container left
+   `unhealthy` (the dashboard's own healthcheck failing, caddy in a restart loop) passed both
+   earlier gates while the box's own status command already called it broken: manual battery M9
+   committed exactly that slot. Each gate is a subset of the next, and the third closes the last
+   gap. The refusal names the container, carried into the in-flight flag so the fallback boot's
+   rollback verdict says which one held the gate.
    The gate is deliberately sync-tolerant: a node's healthcheck is a liveness probe that passes
    from early in a days-long initial sync, and the sync-held miners (p2pool/xmrig-proxy, stopped
-   by the dashboard until the node catches up) never count as crashed — so a still-syncing box
-   commits while a genuinely broken one does not. A slot that boots but is not healthy stays
-   uncommitted on purpose: that is the state A/B fallback exists for. Unprovisioned machines never
-   commit — GRUB's clear-and-retry keeps them booting, and a bad update before provisioning
-   reverts.
+   by the dashboard until the node catches up) never count as crashed by doctor, nor against
+   `status`'s own exit code — so a still-syncing box commits while a genuinely broken one does
+   not. Certificate coverage the boot-time re-mint could not clear still commits only after
+   `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
+   that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
+   for.
+   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
+   update before provisioning reverts.
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
@@ -434,7 +462,7 @@ had a gap between it and the next one.
 | pure logic | `tests/frontend/config/configsync.test.mjs` | path access, typed coercion, address/pair guidance |
 | view rendering | `tests/frontend/wizard/wizard.test.mjs` (probes) | each view given its props |
 | **app orchestration** | `tests/frontend/wizard/wizard-{state,install,submit}.test.mjs` (stubbed server) | **stage mapping, the handoff arriving through the poll, refresh-mid-provision, rejection round-trip, request bodies** |
-| host logic | `tests/stack/run.sh` | cert minting + idempotence, remote-node preflight, pre-seed, install requests, the digest-keyed image loader, reinstall pre-fill (secret strip + fail-open), the local-miner legs (derived config, sync seeding, boot-leg wiring), the rig-role legs (pool discovery publisher, rig request consumption, the role marker, the rig boot leg's derived config + prebuilt-first + volatile journal + refusals, and both unit conditions), restore-at-setup (`firstboot_consume_restore`: accept against a genuine backup archive, wrong passphrase, missing passphrase, oversize, malformed archive, empty spool), the data-wipe note (`data_wipe_note` reads the ESP's dated log, `publish_data_wipe_note` carries it to the spool fresh every boot, `check_data_wipe_note` is the `doctor` line) |
+| host logic | `tests/stack/run.sh` | cert minting + idempotence, remote-node preflight, pre-seed, install requests, the digest-keyed image loader, reinstall pre-fill (secret strip + fail-open), the local-miner legs (derived config, sync seeding, boot-leg wiring), the rig-role legs (pool discovery publisher, rig request consumption, the role marker, the rig boot leg's derived config + prebuilt-first + volatile journal + refusals, and both unit conditions), restore-at-setup (`firstboot_consume_restore`: accept against a genuine backup archive, wrong passphrase, missing passphrase, oversize, malformed archive, empty spool), the data-wipe note (`data_wipe_note` reads the ESP's dated log and its one-shot `.pending` marker, consumed on read, and caches the result in a tmpfs file for the rest of the boot — a shell variable would not survive the `$(...)` subshell every caller reads it through — so a wipe surfaces once per boot, never forever after; `publish_data_wipe_note` carries it to the spool, `check_data_wipe_note` is the `doctor` line) |
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |

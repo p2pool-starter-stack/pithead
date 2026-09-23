@@ -23,6 +23,11 @@ _COINBASE_STATUSES = frozenset(
         6,  # TRANSACTION_STATUS_MINED_CONFIRMED
         9,  # TRANSACTION_STATUS_ONE_SIDED_CONFIRMED
         13,  # TRANSACTION_STATUS_COINBASE_CONFIRMED
+        # Tari 6.0.0 reports a mined output that has not matured as *_CONFIRMED_LOCKED (#1129).
+        # It is mined, so it is a payout now, not ~maturity blocks later.
+        15,  # TRANSACTION_STATUS_MINED_CONFIRMED_LOCKED
+        16,  # TRANSACTION_STATUS_ONE_SIDED_CONFIRMED_LOCKED
+        17,  # TRANSACTION_STATUS_COINBASE_CONFIRMED_LOCKED
     }
 )
 
