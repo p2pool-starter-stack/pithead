@@ -40,19 +40,19 @@ reset() {
 T_PASS=0 T_FAIL=0
 check() { if [ "$2" = "$3" ]; then T_PASS=$((T_PASS + 1)); else T_FAIL=$((T_FAIL + 1)) && echo "FAIL: $1 (got [$2], want [$3])"; fi; }
 
-# 1. ROW lines map one for one; INFO lines are not verdicts.
+echo "== ROW lines map one for one; INFO lines are not verdicts =="
 reset
 _mm_rows $'INFO height=350000\nROW PASS 350000: accepted\nROW FAIL 350000: legacy ACCEPTED\nROW PASS 350001: rejected' >/dev/null 2>&1
 p=$IT_PASS f=$IT_FAIL
 check "two ROW PASS lines pass" "$p" 2
 check "one ROW FAIL line fails" "$f" 1
 
-# 2. No ROW line at all is a failure.
+echo "== no ROW line at all is a failure, never a silent pass =="
 reset
 _mm_rows $'error: something\nINFO only' >/dev/null 2>&1
 check "output without ROW lines fails once" "$IT_FAIL" 1
 
-# 3. No Tari wallet in the box's config: phase skipped as missing, no docker work.
+echo "== no Tari wallet in config.json: phase skipped as missing, nothing built =="
 reset
 BASELINE_CONFIG='{"monero":{"wallet_address":"4xyz"},"tari":{}}'
 run_mergemine_submit >/dev/null 2>&1
@@ -60,7 +60,7 @@ check "missing wallet skips the phase" "$IT_SKIPPED_PHASES" 1
 check "missing wallet is not a failure" "$IT_FAIL" 0
 check "missing wallet builds nothing" "$(grep -c 'docker build' "$RX_LOG")" 0
 
-# 4. Full path with a capture that never arrives and a validator that passes its rows.
+echo "== capture never arrives: fails, validator still runs, live stack untouched =="
 reset
 BASELINE_CONFIG='{"monero":{"wallet_address":"4xyz"},"tari":{"wallet_address":"12abc"}}'
 MM_CAPTURE_TIMEOUT=0
