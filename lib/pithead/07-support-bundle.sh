@@ -41,11 +41,27 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
 # topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
+#
+# The allowlist also governs which LINES are read (#2414). A hand-edited .env keeps the previous
+# value commented out above the live one, so an assignment behind `#`, indentation, `export` or
+# spaces around `=` is classified like a live one: the prefix and key stay, the value goes. A
+# comment that is not an assignment is prose and passes; any other line that is not an
+# assignment is redacted whole, since it cannot be classified. Plain `[ \t]` rather than
+# `[[:space:]]`: older mawk has no POSIX classes.
 bundle_redact_env() {
-    awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" -F= '
+    awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
         BEGIN { n = split(survivors, list, " "); for (i = 1; i <= n; i++) ok[list[i]] = 1 }
-        /^[A-Z][A-Z0-9_]*=/ { if ($1 in ok) print; else print $1 "=[redacted]"; next }
-        { print }
+        /^[ \t\r]*$/ { print; next }
+        match($0, /^[ \t]*(#[# \t]*)?(export[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t]*=/) {
+            lhs = substr($0, 1, RLENGTH)
+            key = lhs
+            sub(/^[ \t]*(#[# \t]*)?(export[ \t]+)?/, "", key)
+            sub(/[ \t]*=$/, "", key)
+            if (key in ok) print; else print lhs "[redacted]"
+            next
+        }
+        /^[ \t]*#/ { print; next }
+        { print "[redacted]" }
     '
 }
 

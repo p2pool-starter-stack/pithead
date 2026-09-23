@@ -77,6 +77,56 @@ for _key in NTFY_URL NOTIFY_WEBHOOK_URLS MONERO_NODE_USERNAME XVB_DONOR_ID; do
     esac
 done
 
+# --- WHICH LINES ARE READ (#2414) --------------------------------------------------------------
+# The filter used to look only at lines matching `^[A-Z][A-Z0-9_]*=` and print everything else
+# verbatim, so the previous password a hand-edited .env keeps commented out above the live one
+# shipped in the clear. Each variant below carries a distinct value, so a failure names the shape
+# that leaked. A survivor key behind the same prefixes must still survive, and prose comments and
+# blank lines must still pass, or the fix has simply blanked the file.
+echo "== unit: commented, indented and malformed secret lines are redacted (#2414) =="
+while IFS='|' read -r _label _line; do
+    OUT="$(printf '%s\n' "$_line" | bre)"
+    case "$OUT" in
+    *OLDSECRET*) it_fail "$_label is redacted" "raw value survived: $OUT" ;;
+    *) it_pass "$_label is redacted" ;;
+    esac
+done <<'ROWS'
+active assignment|MONERO_NODE_PASSWORD=OLDSECRET1
+commented assignment|# MONERO_NODE_PASSWORD=OLDSECRET2
+commented, no space|#MONERO_NODE_PASSWORD=OLDSECRET3
+double-hash comment|## TELEGRAM_BOT_TOKEN=OLDSECRET4
+indented assignment|    WALLET_RPC_PASSWORD=OLDSECRET5
+tab-indented comment|	#	PROXY_AUTH_TOKEN=OLDSECRET6
+export prefix|export NTFY_TOKEN=OLDSECRET7
+commented export|# export XMRIG_API_TOKEN=OLDSECRET8
+spaces around =|TARI_WALLET_PASSWORD = OLDSECRET9
+lowercase key|monero_node_password=OLDSECRET10
+malformed, no =|MONERO_NODE_PASSWORD OLDSECRET11
+malformed, empty key|=OLDSECRET12
+malformed, bare value|OLDSECRET13
+ROWS
+
+echo "== unit: comment structure and non-secret configuration survive (#2414) =="
+FIXTURE='# Monero node
+# MONERO_NODE_PASSWORD=OLDSECRETA
+
+MONERO_NODE_PASSWORD=LIVESECRETB
+# STRATUM_PORT=3334
+    STRATUM_PORT=3333'
+WANT='# Monero node
+# MONERO_NODE_PASSWORD=[redacted]
+
+MONERO_NODE_PASSWORD=[redacted]
+# STRATUM_PORT=3334
+    STRATUM_PORT=3333'
+OUT="$(printf '%s\n' "$FIXTURE" | bre)"
+if [ "$OUT" = "$WANT" ]; then
+    it_pass "a hand-edited .env keeps its markers, prose, blanks and survivors line for line"
+else
+    it_fail "a hand-edited .env keeps its markers, prose, blanks and survivors line for line" \
+        "got: $OUT"
+fi
+
 # --- FULL POPULATION SWEEP ----------------------------------------------------------------------
 # Hand-classified against the rendered population, measured 127 keys at the time of this change.
 # A key in neither list fails below BY NAME.
