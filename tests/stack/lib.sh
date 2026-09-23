@@ -186,8 +186,6 @@ case "$*" in
   "exec tor cat /var/lib/tor/tari/hostname")   echo "taria.onion" ;;
   "exec tor cat /var/lib/tor/p2pool/hostname") echo "p2pa.onion" ;;
   "exec p2pool cat /proc/1/cmdline") printf '%s' "${P2POOL_PROC1:-}" ;;  # #273: tests set the running p2pool argv
-  "run -d "*) echo caddy-verify-fixture ;;
-  "port caddy-verify-fixture 8080/tcp") echo 127.0.0.1:18080 ;;
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.
@@ -197,18 +195,8 @@ case "$*" in
 esac
 exit 0
 EOF
-    cat >"$bin/curl" <<'EOF'
-#!/usr/bin/env bash
-case "${1:-}" in
---config)
-    grep -F 'noproxy = "*"' "$2" >/dev/null || exit 22
-    [ -z "${CADDY_VERIFY_PASSWORD:-}" ] || grep -F "user = \"admin:${CADDY_VERIFY_PASSWORD}\"" "$2" >/dev/null || exit 22
-    printf ok
-    ;;
-esac
-EOF
     printf '#!/usr/bin/env bash\nexit 0\n' >"$bin/sudo"
-    chmod +x "$bin/docker" "$bin/curl" "$bin/sudo"
+    chmod +x "$bin/docker" "$bin/sudo"
 }
 
 # --- shared test fixtures hoisted from run.sh (#1105 Phase 1, module 1b), verbatim ---------
