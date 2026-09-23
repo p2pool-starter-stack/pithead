@@ -227,6 +227,9 @@ grep -qF "legible='The container image store is damaged|Could not load the baked
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
 grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
+# Only a flushed height is owed back after a cut: monerod never fsyncs a fresh block (#2557).
+grep -qF '_ssh sync || {' "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
 # The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
 # And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
