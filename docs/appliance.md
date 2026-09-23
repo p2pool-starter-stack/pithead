@@ -320,6 +320,36 @@ retired SSH settings.
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
 
+### Reaching it from outside your network, over Tor
+
+Turn it on during setup. Open **Advanced** at the bottom of the setup page and set
+`dashboard.onion.enabled` to `true` in the configuration shown there. Leave
+`dashboard.onion.client_auth` at `true`: setup refuses the config editor and the onion together
+without it. The machine publishes the dashboard as a Tor hidden service — no port forwarding, no
+VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
+dashboard, with a **Copy** button.
+
+After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
+onion settings until
+[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
+[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
+or off on a running machine, use
+[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes its own copy moments later, and pressing the button
+again gives you a fresh reveal rather than the old one. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
+on this machine rotating means setting it up again.
+
 ## What the machine does on its own
 
 Two things the appliance sets for itself, that a machine you installed the stack on yourself
