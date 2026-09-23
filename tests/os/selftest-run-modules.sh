@@ -2,8 +2,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
@@ -11,7 +11,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset phase_crossupdate stack_browser_config _stack_run_integration phase_stack'
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_height$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -48,6 +48,8 @@ source "$HERE/phases/boot.sh" || exit $?
 source "$HERE/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$HERE/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$HERE/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$HERE/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
@@ -243,6 +245,15 @@ awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
     "$HERE/phases/provision-power-cut.sh" >"$m10_mutant"
 grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
 ! m10_call_in_cut_loop "$m10_mutant" || exit 1
+healthgate_install=$(sed -n '/_stage_bundle "$fbundle"/,/# No mark-good here/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: could not stage or install the fault bundle"' <<<"$healthgate_install" || exit 1
+grep -Fxq '        return' <<<"$healthgate_install" || exit 1
+healthgate_reboot=$(sed -n '/_reboot_wait reboot 300/,/marker=$(SSH_TIMEOUT/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: guest never returned after booting the fault slot"' <<<"$healthgate_reboot" || exit 1
+grep -Fxq '        return' <<<"$healthgate_reboot" || exit 1
+healthgate_marker=$(sed -n '/marker=$(SSH_TIMEOUT/,/# The gate loops/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: expected v3fault booted after install' <<<"$healthgate_marker" || exit 1
+grep -Fxq '        return' <<<"$healthgate_marker" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
 
 # #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather

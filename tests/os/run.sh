@@ -26,7 +26,11 @@
 #           mines from the baked binary with no compile and no stack at all, and takes an A/B
 #           update — install, uncommitted rollback, self-commit — exactly like a coordinator.
 #           A power-cut leg (M13's rig half, #2067) proves the same "returns mining unaided" fact
-#           off a real virsh destroy, not just the reboot leg's clean return.
+#           off a real virsh destroy, not just the reboot leg's clean return. Closes with a share
+#           leg (#2063): a second, concurrent guest provisioned in remote-node mode (the coordinator
+#           #2062's `stack` phase boots), the rig re-pointed at its stratum, and BOTH the rig's own
+#           worker and the coordinator's built-in miner showing an accepted share on
+#           /api/state — a bench with no reserved node counts it a `missing` leg skip.
 #   rigmedia (M14, #1829/#2069) boot the image as removable media, same as install's first leg,
 #           beside a blank internal disk that must stay untouched; answer "RigForge" and never
 #           install. Mines from the stick, no containers, volatile journald, an unaided reboot
@@ -37,8 +41,9 @@
 #           dashboard login, appliance defaults and node credentials survive, old login still works.
 #   fault   power cuts mid-write and mid-commit, plus a corrupt bundle. A brick is disqualifying.
 #           Closes with a cut mid first-boot image load on a fresh guest (the #1029 class, #2067).
-#   reset   factory-reset's ESP marker (the real `pithead factory-reset`) wipes /data and returns a
-#           FRESH machine to the wizard; a corrupt /data superblock drives wedged-/data recovery.
+#   reset   config-reset clears config but preserves the chain and onion through reconfiguration;
+#           factory-reset's ESP marker then wipes /data and returns a FRESH machine to the wizard;
+#           a corrupt /data superblock drives wedged-/data recovery.
 #   crossupdate  a provisioned guest booted from a REAL prior build ($PITHEAD_OLD_IMAGE, bench-ci's
 #           tier4-kvm options.old_image) upgraded to the candidate built from this commit, so old
 #           on-disk state meets new code for real (#2056). Not run by --phase all: it needs
@@ -116,6 +121,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/setup-again-leg.sh"
 # shellcheck source=tests/os/rig-control-off-leg.sh
 . "$SCRIPT_DIR/rig-control-off-leg.sh"
+# shellcheck source=tests/os/rig-share-leg.sh
+. "$SCRIPT_DIR/rig-share-leg.sh"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
@@ -162,6 +169,8 @@ source "$SCRIPT_DIR/phases/boot.sh" || exit $?
 source "$SCRIPT_DIR/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$SCRIPT_DIR/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$SCRIPT_DIR/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$SCRIPT_DIR/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
