@@ -55,13 +55,21 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
   come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.0-mainnet` indexes.
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
-    one-time JMT migration that upstream describes as taking several minutes to much longer on a
-    large database; the node is unavailable while it runs. Have free disk space for it, and do not
-    stop, restart or `apply` the stack until the node reports progress again: the container is
-    killed one minute after a stop, and upstream says not to interrupt the migration. The payout
-    wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
-    either database afterwards, so returning to an older Pithead release does not return Tari to
-    a working state. Take a backup first (`./pithead backup --with-chains`).
+    one-time migration in two phases: a JMT v1 → v2 rebuild
+    (`[MIGRATIONS] Blockchain database is at v6`, then `v6: Starting JMT v1 → v2 rebuild`, ending at
+    `JMT rebuild complete`), then a compaction that copies the live data into a new `data.mdb`
+    (`Compacting LMDB env`, `[MIGRATIONS] Pre-compaction data.mdb size`). On a mainnet-sized
+    database the rebuild took about 40 minutes and the compaction about 30 to 60 minutes more,
+    shrinking the database from 161 GB to about 55 GB. The node opens gRPC only after both phases,
+    so the dashboard shows Tari as loading with no progress for the whole time; follow the phases
+    with `docker logs tari`. The node config keeps 2 GiB of LMDB map headroom so that dropping the
+    old tables at the end of the rebuild does not fail with `MDB_MAP_FULL`
+    ([#2593](https://github.com/p2pool-starter-stack/pithead/issues/2593)). Have free disk space
+    for the compacted copy, and do not stop, restart or `apply` the stack until the node reports
+    progress again: the container is killed one minute after a stop, and upstream says not to
+    interrupt the migration. The payout wallet (`tari.view_key`) migrates its database on its first
+    start too. Tari 5.3.1 cannot open either database afterwards, so returning to an older Pithead
+    release does not return Tari to a working state. Take a backup first (`./pithead backup --with-chains`).
   - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
     cannot merge-mine against an older node.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
