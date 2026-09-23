@@ -287,6 +287,11 @@ mutation_lock_acquire() { # <verb label>
             exit "$PITHEAD_EX_LOCK_TIMEOUT"
         fi
     fi
+    # The dashboard opens this same non-secret inode through a read-only bind mount. Normalise its
+    # mode only after taking the lock; chmod changes neither the inode nor the held flock.
+    if ! chmod 644 "$_PITHEAD_LOCK_PATH" 2>/dev/null; then
+        warn "Cannot make the pithead lock file ($_PITHEAD_LOCK_PATH) readable to the dashboard — dashboard container control will fail closed."
+    fi
     _PITHEAD_LOCK_OWNED=1
     _PITHEAD_LOCK_DEPTH=1
     # Exported, not merely set: the marker has to survive into a re-invoked child.
