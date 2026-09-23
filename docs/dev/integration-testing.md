@@ -824,7 +824,13 @@ capture writes no config rather than falling back to the raw file, and says so i
 `env.redacted.txt` is classified by an explicit ALLOWLIST of survivor key NAMES
 ([#1631](https://github.com/p2pool-starter-stack/pithead/issues/1631), ruled on #1630): a key
 absent from `PITHEAD_ENV_SURVIVOR_KEYS` (`lib/pithead/07-support-bundle.sh`) is redacted, never
-printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. A
+printed, so a `render_env` key nobody has classified yet fails closed instead of leaking. The
+rule covers every line that assigns a key, not only the live ones
+([#2414](https://github.com/p2pool-starter-stack/pithead/issues/2414)): a commented-out,
+indented or `export`-prefixed assignment keeps its prefix and key and loses its value. Every
+ambiguity fails closed: a survivor keeps its value up to the first unquoted `#` and is redacted
+if the value holds any `=` (a second `KEY=`, whatever joins it) or an unclosed quote, a `KEY=`
+inside comment prose loses the rest of the line unless it is a survivor with an `=`-free value, and any other line is redacted whole. A
 suffix/substring denylist over the same population had failed four times, each time in the unsafe
 direction, and the harness's own vocabulary disagreed with `support-bundle`'s on 17 of 127 keys —
 `NTFY_URL` among them, a capability URL the bundle left in the clear. The capture sources

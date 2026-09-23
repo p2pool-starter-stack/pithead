@@ -31,11 +31,11 @@ mkdir -p "$CB"
 build_val_sandbox
 DOCKER_LOG="$V/docker.log"
 
-echo "== unit: p2pool_outbound_flags — Tor-by-default for outbound P2P (#165) =="
-assert_eq "default → Tor SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor"
-assert_eq "empty arg → Tor (default off)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags '' 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor"
-# clearnet opt-out → no SOCKS flags (p2pool dials peers directly, IP exposed).
-assert_eq "clearnet=true → no SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags true 172.28.0)" ""
+echo "== unit: p2pool_outbound_flags — Tor-by-default for outbound P2P (#165), no seed DNS (#2496) =="
+assert_eq "default → Tor SOCKS flags + no DNS" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"
+assert_eq "empty arg → Tor (default off)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags '' 172.28.0)" "--socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"
+# clearnet opt-out → no SOCKS flags and seed DNS stays on (p2pool dials peers directly, IP exposed).
+assert_eq "clearnet=true → no SOCKS flags, no --no-dns" "$(run_sourced "$SANDBOX" p2pool_outbound_flags true 172.28.0)" ""
 assert_eq "clearnet=yes (any truthy) → no SOCKS flags" "$(run_sourced "$SANDBOX" p2pool_outbound_flags yes 172.28.0)" ""
 # Honours a custom bridge subnet (#180) — the Tor container is always .25 of the configured /24.
 assert_contains "custom NETWORK_PREFIX points at its Tor (.25)" "$(run_sourced "$SANDBOX" p2pool_outbound_flags false 172.30.5)" "172.30.5.25:9050"
