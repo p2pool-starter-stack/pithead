@@ -181,22 +181,39 @@ assert_eq "docker's RFC 3339 StartedAt passes through untouched" "$(mm_started)"
 
 echo "== a FAIL carries the redacted startup window that explains it (#2326) =="
 
-# The excerpt is the one read here that lets non-merge-mining lines cross the wire, so its
-# redaction is asserted on the shapes this log really carries: the entrypoint's bridge line names
-# the remote node, and a wallet-length token must never survive.
+# The excerpt is the one read here that lets non-merge-mining lines cross the wire, so what it
+# keeps is an allowlist run ON THE TARGET, then redaction here. This stub runs the target half of
+# the composed pipeline — everything after the log read — over the fixture, so the allowlist is
+# exercised as behaviour rather than matched as text. The fixture carries the shapes that must not
+# leave: a bare user:pass credential in prose, a wallet in prose, a private bench address.
+rx() {
+    printf '%s\n' "$*" >>"$MM_RX_LOG_FILE"
+    case "$*" in
+    *"docker inspect"*) printf '%s\n' "$MM_RX_STARTED" ;;
+    *) printf '%s\n' "$MM_RX_LOGS" | bash -c "${1#*p2pool 2>&1 | }" ;;
+    esac
+}
 MM_WALLET=4$(printf 'A%.0s' {1..94})
-MM_RX_LOGS=$(printf '[p2pool-entrypoint] Tor on (#278): bridging 127.0.0.1 -> node.fixture for monerod RPC(18081)\n\033[0;36m2026-09-20 05:54:05.1\033[0m P2Pool wallet %s\nno such container\n' "$MM_WALLET")
+MM_RX_LOGS=$(printf '%s\n' \
+    '[p2pool-entrypoint] Tor on (#278): bridging 127.0.0.1 -> node.fixture for monerod RPC(18081)' \
+    $'\033[0;36m2026-09-20 05:54:05.1\033[0m P2Pool wallet '"$MM_WALLET" \
+    '2026-09-20 05:54:05.2 RPC login rpcuser:hunter2 at 192.168.7.9' \
+    '2026-09-20 05:54:06.0 MergeMiningClientTari tari://192.168.7.9:18142 connect failed' \
+    'Error response from daemon: no such container')
 REMOTE_MONERO_HOST=node.fixture
 : >"$MM_RX_LOG_FILE"
 ex="$(mm_startup_excerpt)"
 REMOTE_MONERO_HOST=""
-assert_contains "the excerpt reads the same run-bounded window" "$(cat "$MM_RX_LOG_FILE")" "--since 2026-08-28T23:52:05.827654553Z p2pool 2>&1 | head -n $MM_EXCERPT_LINES"
+assert_contains "the excerpt reads the same run-bounded window" "$(cat "$MM_RX_LOG_FILE")" "--since 2026-08-28T23:52:05.827654553Z p2pool 2>&1 | head -n $MM_WINDOW_LINES | grep -aiE"
 assert_contains "the excerpt carries the read's own error text" "$ex" "no such container"
-assert_contains "the excerpt masks the run's remote node" "$ex" "<redacted-endpoint>"
+assert_contains "the excerpt carries p2pool's Tari failure line" "$ex" "tari://<ip>:18142 connect failed"
+assert_contains "the excerpt keeps the entrypoint's bridge line, with the remote node masked" "$ex" "bridging <ip> -> <redacted-endpoint>"
 case "$ex" in
-*node.fixture* | *"$MM_WALLET"* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet or escape" "$ex" ;;
-*) it_pass "the excerpt leaks no endpoint, wallet or escape" ;;
+*node.fixture* | *"$MM_WALLET"* | *hunter2* | *192.168.* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet, credential, address or escape" "$ex" ;;
+*) it_pass "the excerpt leaks no endpoint, wallet, credential, address or escape" ;;
 esac
+MM_RX_LOGS=$(for i in $(seq 1 200); do printf 'error line %s\n' "$i"; done)
+assert_eq "the excerpt is capped at $MM_EXCERPT_LINES lines" "$(mm_startup_excerpt | wc -l | tr -d ' ')" "$MM_EXCERPT_LINES"
 unset -f rx
 
 echo "== the leg reports PASS, FAIL or a COUNTED skip — never a silent green =="

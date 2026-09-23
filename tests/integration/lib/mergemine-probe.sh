@@ -125,19 +125,22 @@ mm_capture_startup() {
     rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
 }
 
-# The first lines of the same window, for a FAIL only (#2326). An empty capture cannot say whether
-# p2pool built no client, the client could not reach Tari, or the log was never read; these lines
-# can: a `compose logs` error, p2pool's own startup, the entrypoint's launch line. They pass through
-# redact() with this run's remote endpoints masked, because this is the one read in this file that
-# lets more than MergeMiningClientTari lines cross the wire.
+# Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
+# whether p2pool built no client, the client could not reach Tari, or the log was never read; these
+# lines can: a `compose logs` error, the entrypoint's launch and bridge lines, p2pool's Tari and error
+# lines. The log itself carries both wallets, the RPC credential and the onion, and p2pool's own
+# startup format is not captured anywhere in this repo, so the filter is an ALLOWLIST applied on the
+# target: only matching lines cross the wire. What crosses is then passed through redact(), with this
+# run's remote endpoints and every IPv4 address masked, private ranges included.
 MM_EXCERPT_LINES=80
+MM_EXCERPT_KEEP='error|fail|refus|invalid|unknown|cannot|denied|timed out|timeout|no such|tari|p2pool-entrypoint'
 mm_startup_excerpt() {
     local started
     # shellcheck disable=SC2034  # read by redact_remote_output through dynamic scope
     local REMOTE_NODE_HOSTS=("${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}")
     started="$(mm_started)" || return 0
-    rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_EXCERPT_LINES}" 2>/dev/null |
-        mm_strip_ansi | redact_remote_output | sed 's/^/          /'
+    rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -aiE '${MM_EXCERPT_KEEP}' | head -n ${MM_EXCERPT_LINES} || true" 2>/dev/null |
+        mm_strip_ansi | redact_remote_output | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g; s/^/          /'
 }
 
 # The release-gate leg: PASS, FAIL, or an honest counted SKIP — never a silent green.
@@ -183,7 +186,7 @@ assert_mergemine_roundtrip() {
         return 0
     fi
     verdict="$(mm_roundtrip_verdict "$lines")" || excerpt="
-        startup log (first ${MM_EXCERPT_LINES} lines of this run, redacted):
+        diagnostic lines from this run's startup log (allowlisted, at most ${MM_EXCERPT_LINES}, redacted):
 $(mm_startup_excerpt)"
     case "$verdict" in
     roundtrip*) it_pass "p2pool reached the Tari node over gRPC — ${verdict} (#1397)" ;;

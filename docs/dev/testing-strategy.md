@@ -364,9 +364,11 @@ bound both waits at 150s/5s.
 read p2pool's log (#2326). podman renders `.State.StartedAt` as Go's `time.String()`, and
 `docker compose logs --since` refuses that value before it sends a request. The error went into the
 probe's `grep` with the rest of the output, so the capture came back empty and was reported as "p2pool built no client".
-The probe now rewrites the start time to RFC 3339, and the row is binding on both channels. A failure
-prints the first 80 lines of the current run's p2pool log under the row, redacted. From those lines,
-a log-read error, bad launch arguments and an unreachable Tari node each look different.
+The probe now rewrites the start time to RFC 3339, and the row is binding on both channels. On a
+failure, the row also prints up to 80 diagnostic lines from the current run's p2pool startup log.
+The target keeps only lines that match an allowlist: errors, the entrypoint's own lines, and Tari
+lines. The probe then redacts them and masks every IPv4 address. From those lines, a log-read error,
+bad launch arguments and an unreachable Tari node each look different.
 
 Two parity rows from the matrix above are deliberately not driven from this phase, because this guest
 cannot satisfy their inputs, and each carries job 510's row-scoped evidence on its own issue:
