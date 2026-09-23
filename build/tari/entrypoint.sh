@@ -119,31 +119,46 @@ pb_field() {
     return 1
 }
 
-# Unary or server-streaming call on the node's loopback gRPC. Sets GRPC_MSG to the first message
-# as hex (empty on a gRPC error status). Returns 1 while gRPC does not answer.
+# Unary or server-streaming call on the node's loopback gRPC. Sets GRPC_CODE to the HTTP status
+# and GRPC_MSG to the first message as hex (empty on any error). Returns 1 only while nothing
+# answers (curl's 000); any HTTP status is an answer.
 tari_grpc() {
-    local method="$1" req="$2" out="/tmp/tari-grpc.$$" code frame len
+    local method="$1" req="$2" out code frame len
+    out=$(mktemp /tmp/tari-grpc.XXXXXX) || return 1
     code=$(printf '%b' "$(printf '00%08x%s' $((${#req} / 2)) "$req" | sed 's/../\\x&/g')" |
         curl -s --http2-prior-knowledge --max-time 30 -o "$out" -w '%{http_code}' \
             -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
-            "$TARI_GRPC_URL/tari.rpc.BaseNode/$method") || code=000
+            -- "$TARI_GRPC_URL/tari.rpc.BaseNode/$method")
     frame=$(od -An -v -tx1 "$out" 2>/dev/null | tr -d ' \n')
     rm -f "$out"
-    [ "$code" = 200 ] || return 1
+    GRPC_CODE=${code:-000}
     GRPC_MSG=""
+    [ "$GRPC_CODE" != 000 ] || return 1
+    [ "$GRPC_CODE" = 200 ] || return 0
     [ "${#frame}" -ge 10 ] || return 0
     len=$((16#${frame:2:8}))
     GRPC_MSG=${frame:10:len*2}
 }
 
 # The node's header at FORK_HEIGHT: prints its hash, or "below" when the tip is under FORK_HEIGHT
-# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent, 2 on no answer.
+# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent; 2, printing the
+# HTTP status, when it answers without a header.
 header_at_fork() {
     local header height
     tari_grpc ListHeaders "08$(pb_encode_varint "$FORK_HEIGHT")10011801" || return 1
-    header=$(pb_field "$GRPC_MSG" 1) || return 2
+    header=$(pb_field "$GRPC_MSG" 1) || {
+        echo "HTTP $GRPC_CODE"
+        return 2
+    }
     height=$(pb_field "$header" 3) || height=0
-    if [ "$height" -ne "$FORK_HEIGHT" ]; then echo below; else pb_field "$header" 1 || return 2; fi
+    if [ "$height" -ne "$FORK_HEIGHT" ]; then
+        echo below
+    else
+        pb_field "$header" 1 || {
+            echo "HTTP $GRPC_CODE"
+            return 2
+        }
+    fi
 }
 
 tip_height() {
@@ -210,7 +225,7 @@ check_fork() {
         pause
     done
     if [ "$rc" -ne 0 ]; then
-        fork_log "gRPC answered without a header at $FORK_HEIGHT; leaving the node as it is"
+        fork_log "gRPC answered ($hash) without a header at $FORK_HEIGHT; leaving the node as it is"
     elif [ "$hash" = below ]; then
         fork_log "tip is below $FORK_HEIGHT; nothing to rewind"
     elif [ "$hash" = "$CANONICAL_HASH_AT_FORK" ]; then
@@ -298,6 +313,13 @@ fi
 # quoted "$@": its unquoted ${@} would split the --watch argument of the rewind.
 # The probe expects non-zero returns, so leave `set -e` behind here.
 set +e
+case $TARI_GRPC_URL in
+http://*) ;;
+*)
+    fork_log "ERROR: TARI_GRPC_URL must start with http:// (got '$TARI_GRPC_URL')"
+    exit 1
+    ;;
+esac
 TARI_CONFIG="$TARI_CONFIG_RUNTIME"
 TARI_BASE="${TARI_BASE:-/var/tari/${APP_NAME:-node}}"
 run_node "$@"

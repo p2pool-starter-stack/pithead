@@ -30,17 +30,24 @@ while :; do
     wait $!
 done
 EOF
-# Stub curl: refuses while gRPC is closed; otherwise frames a ListHeaders or GetTipInfo answer from
-# the state dir's tip and hash, and keeps the request body it was sent.
+# Stub curl: refuses while gRPC is closed; answers TFR_HTTP_CODE with no body when set; otherwise
+# frames a ListHeaders or GetTipInfo answer from the state dir's tip and hash. It keeps the request
+# body it was sent and whether the URL came after `--`.
 cat >"$TFR_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
-S="$TFR_STATE" out="" url=""
+S="$TFR_STATE" out="" url="" prev=""
 while [ $# -gt 0 ]; do
-    case $1 in -o) out=$2; shift ;; -w | -H | --max-time | --data-binary) shift ;; http*) url=$1 ;; esac
+    case $1 in
+        -o) out=$2; shift ;;
+        -w | -H | --max-time | --data-binary) shift ;;
+        http*) url=$1; echo "$prev" >"$S/url.prev" ;;
+    esac
+    prev=$1
     shift
 done
 req=$(od -An -v -tx1 | tr -d ' \n')
 [ -f "$S/grpc_up" ] || { printf 000; exit 7; }
+[ -n "${TFR_HTTP_CODE:-}" ] && { printf '%s' "$TFR_HTTP_CODE"; exit 0; }
 # shellcheck disable=SC1090
 PITHEAD_TEST_SOURCE=1 source "$TFR_ENTRY"
 tip=$(cat "$S/tip")
@@ -113,6 +120,8 @@ assert_eq "fork-check: canonical node started once, without --watch (#2618)" \
     "$(cat "$TFR_STATE/starts")" "--config|$TFR_STATE/rt.toml|--base-path|$TFR_STATE/base|--disable-splash-screen|--non-interactive|"
 assert_eq "fork-check: container TERM reaches the supervised node (#2618)" "$(cat "$TFR_STATE/signals" 2>/dev/null)" "TERM"
 assert_rc "fork-check: the wrapper exits with the node's status after a stop (#2618)" "$TFR_RC" "143"
+assert_eq "fork-check: curl gets -- before the gRPC URL (#2618)" "$(cat "$TFR_STATE/url.prev" 2>/dev/null)" "--"
+assert_eq "fork-check: the gRPC response file is removed (#2618)" "$(find /tmp -maxdepth 1 -name 'tari-grpc.*' -newer "$TFR_STATE/tip" | wc -l | tr -d ' ')" "0"
 assert_eq "fork-check: canonical node keeps its peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"
 
 # Tip below the fork (production stalled at 349,880): nothing touched.
@@ -167,3 +176,19 @@ assert_rc "fork-check: a rewind that times out exits non-zero (#2618)" "$TFR_RC"
 assert_contains "fork-check: a rewind timeout is logged (#2618)" "$(cat "$TFR_STATE/out")" "ERROR: the tip did not reach 349900 within 1s"
 assert_eq "fork-check: the stuck rewind node is stopped, no normal start follows (#2618)" \
     "$(grep -c . "$TFR_STATE/starts"),$(grep -c TERM "$TFR_STATE/signals")" "2,2"
+
+# gRPC that answers with an HTTP error is an answer: the check ends, logs it and leaves the node alone.
+tfr_start 350239 "$TFR_DEAD" TFR_HTTP_CODE=500
+tfr_wait "$TFR_STATE/out" "without a header"
+assert_contains "fork-check: an HTTP 500 answer is logged, not polled forever (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered (HTTP 500) without a header at 350000; leaving the node as it is"
+tfr_stop
+assert_eq "fork-check: an HTTP 500 answer starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
+assert_eq "fork-check: an HTTP 500 answer keeps the peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"
+
+# TARI_GRPC_URL must be an http:// URL: anything else, such as a curl option, is refused before the node starts.
+tfr_start 350239 "$TFR_DEAD" TARI_GRPC_URL=-K/etc/passwd
+wait "$TFR_PID"
+assert_rc "fork-check: a TARI_GRPC_URL without http:// exits 1 (#2618)" "$?" "1"
+assert_contains "fork-check: a bad TARI_GRPC_URL is logged (#2618)" "$(cat "$TFR_STATE/out")" "ERROR: TARI_GRPC_URL must start with http://"
+assert_eq "fork-check: a bad TARI_GRPC_URL starts no node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "0"
