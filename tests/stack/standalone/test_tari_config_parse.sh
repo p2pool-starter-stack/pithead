@@ -12,7 +12,7 @@ if ! docker info >/dev/null 2>&1; then
     exit 0
 fi
 
-TARI_IMAGE=$(grep -oE 'quay\.io/tarilabs/minotari_node:[^[:space:]"]+' "$ROOT/docker-compose.yml" | head -1)
+TARI_IMAGE=$(grep -oE 'ghcr\.io/tari-project/minotari_node:[^[:space:]"]+' "$ROOT/docker-compose.yml" | head -1)
 if [ -z "$TARI_IMAGE" ]; then
     echo "FAIL: could not find the pinned minotari_node image in docker-compose.yml" >&2
     exit 1

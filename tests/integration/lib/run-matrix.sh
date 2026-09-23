@@ -41,7 +41,7 @@ service_state() {
 # A stable fingerprint of the secrets we must preserve across applies (proxy token + onion
 # addresses). Hashed ON THE BOX so the plaintext never crosses the wire or hits a log.
 secret_fingerprint() {
-    rx "grep -E '^(PROXY_AUTH_TOKEN|[A-Z]+_ONION_ADDRESS)=' .env 2>/dev/null | sort | sha256sum | cut -d' ' -f1"
+    rx "grep -Eq '^(PROXY_AUTH_TOKEN|[A-Z]+_ONION_ADDRESS)=' .env 2>/dev/null && grep -E '^(PROXY_AUTH_TOKEN|[A-Z]+_ONION_ADDRESS)=' .env | sort | sha256sum | cut -d' ' -f1"
 }
 
 # --- Preflight --------------------------------------------------------------
