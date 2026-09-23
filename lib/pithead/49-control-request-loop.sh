@@ -75,8 +75,12 @@ control_run_pending() (
     # here keeps it from claiming a request until that apply has finished converging the units.
     # Child pithead invocations inherit the held descriptor/marker, so a dashboard commit's
     # `apply -y` does not deadlock against its own runner.
+    # Still held after PITHEAD_LOCK_TIMEOUT (a wedged or very long holder): carry on unlocked, as
+    # the runner did before it took the window. Each mutating handler then takes the lock itself
+    # and writes its own terminal "never started" rejection, so the request still gets a result.
     trap mutation_lock_release EXIT
-    mutation_lock_acquire control-run-pending
+    mutation_lock_acquire control-run-pending --try ||
+        warn "Still waiting on another pithead operation after ${PITHEAD_LOCK_TIMEOUT}s — each request below reports its own contention."
     # Read enablement inside the window: an apply may have disabled the channel while this queued
     # activation waited for the lock. Revocation wins, and its request remains unclaimed.
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||

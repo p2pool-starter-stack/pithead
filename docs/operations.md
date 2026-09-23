@@ -275,7 +275,9 @@ a missing hardening field) — never on a routine, unchanged apply, however the 
 When re-provisioning is needed, `apply` already holds the shared mutation lock. A runner activation
 that systemd queued before `apply` stops `pithead-control.path` waits on that lock before claiming a
 request; a runner that claimed first holds the lock until its drain and result write finish, so
-`apply` waits for it. The bounded 30-second claim check remains as a backstop for a runner installed
+`apply` waits for it. If the lock is still held after `PITHEAD_LOCK_TIMEOUT` (300 seconds by
+default), the runner proceeds anyway: each request it claims gets a result file with a rejection
+that says the change was never started. The bounded 30-second claim check remains as a backstop for a runner installed
 by an older version or a host without `flock`. A request still sitting in `requests/` is untouched,
 and `pithead-control.path` re-fires against it as soon as it (or its replacement) is enabled again.
 
