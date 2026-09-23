@@ -22,6 +22,7 @@ source "$HERE/lib.sh"
 # from 198.51.100.43 accepted on it, and optionally a dial from an ephemeral port to
 # 198.51.100.42:853. Tor shares the table, so its relay control holds. Either way the tor arm still
 # FAILs: the label says which kind, it waives nothing.
+echo "== the egress verifier names each persistent public socket's direction and still fails it (#2549) =="
 direction_fixture() { # <socket table> -> rc, output on stdout
     td="$(mktemp -d)"
     printf '%s\n' "$1" >"$td/tcp"
