@@ -7,8 +7,11 @@ import hashlib
 import json
 import sqlite3
 import sys
+import time
 
-PERMANENT = ("blocks", "payouts", "disk_growth", "audit_events", "worker_config", "raffle_wins")
+PERMANENT = ("blocks", "payouts", "disk_growth", "worker_config", "raffle_wins")
+# audit_events is pruned at 30 days on an ISO-text ts (#2393); rows it cannot date are never pruned.
+AUDIT_TS_SHAPE = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z"
 RETAINED = {
     "history": ("timestamp", 30 * 86400),
     "shares": ("ts", 30 * 86400),
@@ -45,7 +48,7 @@ def value_shape(raw):
 
 def snapshot(conn, epoch, require_current=False):
     have = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    required = set(PERMANENT) | set(RETAINED) | {"kv_store"}
+    required = set(PERMANENT) | set(RETAINED) | {"audit_events", "kv_store"}
     if require_current:
         # This table stores the latest live rig observation, so require its schema but do not
         # compare its mutable rows across a dashboard restart.
@@ -59,6 +62,15 @@ def snapshot(conn, epoch, require_current=False):
             f"{table} {hashlib.sha256(row_bytes(row)).hexdigest()}"
             for row in conn.execute(f"SELECT * FROM {table}")
         )
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))  # noqa: E731
+    lines.append("audit_events -")
+    lines.extend(
+        f"audit_events {hashlib.sha256(row_bytes(row)).hexdigest()}"
+        for row in conn.execute(
+            "SELECT * FROM audit_events WHERE ts NOT GLOB ? OR (ts >= ? AND ts <= ?)",
+            (AUDIT_TS_SHAPE, iso(epoch - 30 * 86400 + 7200), iso(epoch)),
+        )
+    )
     for table, (time_col, retention) in RETAINED.items():
         rows = sorted(
             row_bytes(row)
@@ -96,10 +108,25 @@ if sys.argv[1:] == ["--self-test"]:
     for table, (time_col, _) in RETAINED.items():
         db.execute(f"CREATE TABLE {table} ({time_col} REAL, value TEXT)")  # noqa: S608
     db.execute("CREATE TABLE kv_store (key TEXT, value TEXT)")
+    db.execute("CREATE TABLE audit_events (id TEXT, ts TEXT)")
+    db.execute("INSERT INTO audit_events VALUES ('aged', '1970-01-01T00:00:00Z')")
+    db.execute("INSERT INTO audit_events VALUES ('recent', '1970-01-31T00:00:00Z')")
+    db.execute("INSERT INTO audit_events VALUES ('undatable', '')")
     db.execute("INSERT INTO blocks VALUES (100, 'kept')")
     db.execute("INSERT INTO history VALUES (100, 'kept')")
     db.execute("INSERT INTO kv_store VALUES ('payout_wallet', 'stable')")
     db.execute("INSERT INTO kv_store VALUES ('xvb_last_update', '100')")
+    before = snapshot(db, 31 * 86400)
+    db.execute("DELETE FROM audit_events WHERE id='aged'")
+    if not set(before.splitlines()) <= set(snapshot(db, 31 * 86400).splitlines()):
+        raise RuntimeError("an audit row pruned past its 30-day retention was reported as lost")
+    for lost in ("recent", "undatable"):
+        db.execute("SAVEPOINT audit")
+        db.execute("DELETE FROM audit_events WHERE id=?", (lost,))
+        if set(before.splitlines()) <= set(snapshot(db, 31 * 86400).splitlines()):
+            raise RuntimeError(f"a lost {lost} audit row was accepted")
+        db.execute("ROLLBACK TO audit")
+        db.execute("RELEASE audit")
     before = snapshot(db, 100)
     try:
         snapshot(db, 100, require_current=True)
