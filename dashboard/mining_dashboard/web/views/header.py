@@ -12,9 +12,15 @@ establishes the injectable-``env`` reader for a presentation value, which lets a
 instead of mutating process state. (``config/config.py`` is also at its recorded file-budget
 ceiling, and that ratchet only moves down — see ``docs/dev/file-budget.tsv``.)
 
-Nothing here ever emits client-authorisation key material. The dashboard container is not given
-it: ``docker-compose.yml`` passes the enabled flag, the address and the client-auth *boolean*,
-and the keys stay host-side behind ``pithead onion-client-key``.
+Nothing here ever emits client-authorisation key material, and no environment this module reads
+carries any: ``docker-compose.yml`` and the appliance's quadlet both pass the enabled flag, the
+address and the client-auth *boolean*, and nothing else.
+
+The key itself reaches an operator with no host shell by a different route entirely — they ask the
+host runner for it over the control channel and it answers once, through the read-only results
+spool (#1882, ``lib/pithead/45-control-backup.sh``). That is a request the host decides on, not a
+value this container holds, so ``client_auth`` here stays a boolean and this module stays unable to
+leak the credential even if it tried to.
 """
 
 import os
