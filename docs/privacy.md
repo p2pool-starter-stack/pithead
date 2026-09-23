@@ -68,7 +68,7 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   over the Tor SOCKS (`socks5h`, [#163](#runtime-egress)/#224) — with one exception. With
   `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
   plaintext leg p2pool uses.
-- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections.
+- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections, and names each one it finds as an outbound dial (a leak) or an inbound client on a published port.
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
