@@ -18,7 +18,7 @@
 # hooked at forward priority -5, like pithead_egress; netavark never jumps to DOCKER-USER.
 #
 # IPv4 only, because the publishes are: every bind is an explicit IPv4 address, and
-# tests/stack/test-lan-guard.sh fails if one of those publishes stops being an explicit IPv4 bind.
+# tests/stack/firewall/lan-guard.sh fails if one of those publishes stops being one.
 LAN_GUARD_TAG="pithead-lan-guard"
 LAN_GUARD_CHAIN="PITHEAD-LAN"
 LAN_GUARD_NFT_TABLE="pithead_lan"

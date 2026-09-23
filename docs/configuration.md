@@ -247,7 +247,9 @@ The dashboard surfaces the result as a header badge:
 before the container starts limits who can open a connection: loopback, `10.0.0.0/8`,
 `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10`. A connection from any other address is
 dropped, including a public address that reaches the host through a public interface or a
-forwarded port. This holds whether or not `network.tor_egress_firewall` is on.
+forwarded port. This holds whether or not `network.tor_egress_firewall` is on. The rule trusts the
+source address: it keeps the internet out, but it does not stop a device on your own network
+segment that sends packets with a private address it does not own.
 
 To reach one of these ports from outside your LAN, for example a phone wallet on mobile data or a
 stack on a VPS, use [WireGuard](https://www.wireguard.com/) (a private address) or

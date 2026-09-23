@@ -4,5 +4,5 @@
 # the published node ports (#2616). Two fragments, one run.sh entry.
 # shellcheck source=tests/stack/firewall/tor-egress-enforcement.sh
 source "$HERE/firewall/tor-egress-enforcement.sh" || return $?
-# shellcheck source=tests/stack/test-lan-guard.sh
-source "$HERE/test-lan-guard.sh" || return $?
+# shellcheck source=tests/stack/firewall/lan-guard.sh
+source "$HERE/firewall/lan-guard.sh" || return $?
