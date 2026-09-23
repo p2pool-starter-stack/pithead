@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
 # tests/os/run.sh; --self-test exercises the pure probe list without a guest.
+
+# shellcheck source=tests/integration/lib/tor-control-dial.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../integration/lib" && pwd)/tor-control-dial.sh"
 #
 # Why this lives in its own file rather than inline at the tail of the provision phase (#2059):
 # it is the only tier-4 assertion in the repo that proves the KERNEL enforces Tor-only egress, and
@@ -119,10 +122,11 @@ phase_provision_egress_backstop() { # <phase-rc>
     # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
     # failed because of the firewall rather than because the guest has no route to the internet at
     # all. Tor's default SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
-    if _ssh "podman exec monerod curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
+    # Retried on fresh circuits, because one live-Tor stream fails now and then (#2619).
+    if _ssh "$(tor_control_dial_cmd podman 172.28.0.25:9050)" 2>/dev/null; then
         ok "egress through Tor's SOCKS still works — the drop did not break real mining"
     else
-        bad "the mining container can no longer reach clearnet even through Tor — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
+        bad "the mining container can no longer reach clearnet even through Tor ($(tor_control_dial_attempts_text)) — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
         _egress_capture_diagnostics
     fi
     # IPv6 backstop (#858): mining_net is IPv4-only by design, so monerod has no global v6 and this
