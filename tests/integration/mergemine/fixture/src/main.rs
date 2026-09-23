@@ -21,12 +21,12 @@ use tari_core::{
     consensus::BaseNodeConsensusManager,
     proof_of_work::{
         monero_randomx_difficulty,
-        monero_rx::{CoinbasePrefix, CoinbasePrefixMode, CoinbaseTxPrefix, MoneroPowData},
+        monero_rx::{CoinbasePrefix, CoinbasePrefixMode, CoinbaseTxPrefix, MergeMineError, MoneroPowData},
         randomx_factory::RandomXFactory,
     },
 };
 use tari_node_components::blocks::BlockHeader;
-use tari_transaction_components::tari_proof_of_work::{PowAlgorithm, PowData};
+use tari_transaction_components::tari_proof_of_work::{Difficulty, PowAlgorithm, PowData};
 use tiny_keccak::{Hasher, Keccak};
 
 const HEIGHTS: [u64; 3] = [349_999, 350_000, 350_001];
@@ -166,7 +166,7 @@ fn validate(dir: &Path, difficulty: u64) -> bool {
             ..derived.clone()
         };
 
-        let accepted = |result: Result<_, tari_core::proof_of_work::monero_rx::MergeMineError>, what: &str| {
+        let accepted = |result: Result<Difficulty, MergeMineError>, what: &str| {
             match result {
                 Ok(d) => {
                     let d = d.as_u64();
@@ -175,7 +175,7 @@ fn validate(dir: &Path, difficulty: u64) -> bool {
                 Err(e) => (false, format!("{what} REJECTED: {e}")),
             }
         };
-        let rejected = |result: Result<_, tari_core::proof_of_work::monero_rx::MergeMineError>, what: &str| match result {
+        let rejected = |result: Result<Difficulty, MergeMineError>, what: &str| match result {
             Ok(_) => (false, format!("{what} ACCEPTED, expected a rejection")),
             Err(e) => (true, format!("{what} REJECTED: {e}")),
         };
