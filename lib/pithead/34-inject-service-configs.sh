@@ -7,7 +7,7 @@ inject_service_configs() {
     # default 172.28.0, rewrites the .25 Tor IP when network.subnet has been moved.
     safe_sed "s/172\.28\.0/$NETWORK_PREFIX/g" build/tari/config.toml
 
-    # config.toml is always rendered for Tor (onion, transport=tor) — the CANONICAL config. The
+    # config.toml is always rendered for Tor (onion, transport=tor_tcp) — the CANONICAL config. The
     # optional clearnet initial sync (#183) is applied per-start inside the container by
     # build/tari/entrypoint.sh (which copies this file and transforms the copy), gated on the
     # TARI_CLEARNET_SYNC flag AND the dashboard's auto-transition marker (#234) — so once synced the

@@ -66,6 +66,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     cannot merge-mine against an older node.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
+  - **The Tari transport is now `tor_tcp`
+    ([#2508](https://github.com/p2pool-starter-stack/pithead/issues/2508)).** Tari 6.0.0 narrowed
+    `type = "tor"` to onion peers only; `tor_tcp` keeps what `tor` meant on 5.3.1, so the node also
+    dials peers that advertise an IP address. Those dials still go through Tor's SOCKS proxy and
+    leave through a Tor exit, never directly from this host.
 
 - **The Configuration view works the same, minus the Telegram round-trip.** A disruptive change
   still asks you to type `APPLY`. (A payout change asked for the last characters of the new address
