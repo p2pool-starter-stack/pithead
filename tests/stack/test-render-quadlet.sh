@@ -124,4 +124,4 @@ for svc in tari tari-wallet; do
     assert_contains "compose parse finds the $svc image (control)" "$compose_img" "ghcr.io/tari-project/minotari_"
     assert_eq "quadlet $svc image matches compose (#2624)" "$(sed -n 's/^Image=//p' "$QPAY/$svc.container")" "$compose_img"
 done
-assert_eq "local render emits no wallet units""$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"
+assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"
