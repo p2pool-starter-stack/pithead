@@ -143,9 +143,11 @@ run_lifecycle() {
                     it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
                 else
                     it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                    lifecycle_ok=0
                 fi
             else
                 it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy"
+                lifecycle_ok=0
             fi
             # The product correctly refuses to overwrite the old, still-complete directory on a
             # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
