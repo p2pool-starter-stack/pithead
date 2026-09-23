@@ -1,10 +1,12 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/os/phases/reset-config.sh
+source "$SCRIPT_DIR/phases/reset-config.sh" || return $?
 phase_reset() {
     info "phase: reset (factory-reset ESP marker + wedged-/data recovery — opt-in, destructive)"
     local img token tries jar scode names deadline
 
-    info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"
+    info "provisioning the guest that legs 0 and 1 both run against"
     img=$(_build_image v1) || {
         bad "image build failed (/tmp/os-fault-build.log)"
         return
@@ -84,6 +86,12 @@ phase_reset() {
         ;;
     esac
 
+    # leg 0 (#2347): config-reset must keep chains and the onion address, clear the config, and
+    # re-arm the wizard — on the SAME provisioned guest, before leg 1 wipes it.
+    _phase_reset_config || return
+
+    # ---- leg 1: factory-reset must wipe /data and return a FRESH machine to the wizard ----
+    info "leg 1 — factory-reset must wipe /data and return a FRESH machine to the wizard"
     # Baseline, captured on the machine ABOUT to be wiped.
     local id_before fp_before images_before
     id_before=$(_ssh cat /etc/machine-id)
@@ -162,7 +170,8 @@ phase_reset() {
 
     # ---- one-shot wipe marker (#1208): the note just recorded surfaces once, then stays silent ---
     info "leg 1 continued — the factory-reset just recorded must surface exactly once"
-    # The wizard that just served the setup page above (line 108) is the FIRST surfacing:
+    # The wizard that just served the setup page above (the factory-reset leg's own
+    # _wait_setup_page, not leg 0's) is the FIRST surfacing:
     # stage_wizard_spool ran as part of that very boot and called publish_data_wipe_note, which
     # reads and consumes the one-shot marker record_wipe armed during the reset. This is a
     # deliberate factory-reset (the operator asked for it via `pithead factory-reset -y`), so

@@ -87,10 +87,13 @@ reset_reboot_or_hint() {
     fi
 }
 
-# config-reset: back to unprovisioned, chains kept. Removing config.json is the whole mechanism —
-# pithead-firstboot's ConditionPathExists=!config.json re-arms the wizard, and pithead-boot's
-# opposite condition stands down. Every data directory (chains, Tor onion keys, wallets, dashboard
-# history) stays: only config.json and the files rendered from it go, so reconfiguring costs no
+# config-reset: back to unprovisioned, chains kept. Removing config.json is most of the mechanism
+# — pithead-firstboot's ConditionPathExists is `!config.json` AND `!machine-role`, and pithead-boot's
+# is the same two paths OR'd instead — but machine-role (lib/pithead/08-uninstall-firstboot.sh)
+# is written for every provisioned machine, coordinator or rig, not just rigs, so leaving it behind
+# holds pithead-boot's OR condition true and never lets the AND go false: the wizard would not
+# re-arm. Every data directory (chains, Tor onion keys, wallets, dashboard history) stays: only
+# config.json, machine-role and the files rendered from config.json go, so reconfiguring costs no
 # resync and the onion address survives.
 config_reset() {
     local assume_yes=0 arg
@@ -105,7 +108,7 @@ config_reset() {
 
     echo -e "${C_RED}[WARNING] This is a DESTRUCTIVE action.${C_RESET}"
     echo "It clears your configuration and reopens the setup wizard."
-    log "Kept: chains, wallets, Tor onion keys, dashboard history — every data directory stays. Only config.json and the files rendered from it go."
+    log "Kept: chains, wallets, Tor onion keys, dashboard history — every data directory stays. Only config.json, the files rendered from it, and the machine-role marker that holds the wizard shut go."
     if [ "$assume_yes" -eq 0 ]; then
         printf "Type 'config-reset' to continue: "
         read -r arg || true
@@ -124,7 +127,9 @@ config_reset() {
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with the config wipe."
     remove_tor_egress_firewall 2>/dev/null || true
-    rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile
+    # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
+    # so leaving the role marker behind would keep it armed and the wizard would never re-open.
+    rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role
     log "Configuration cleared — the first-boot wizard owns the next boot."
     # The reboot stays INSIDE the window on purpose. Releasing after the wipe but before the reboot
     # would leave a gap in which another verb could start against a box that has no config.json yet
