@@ -172,7 +172,7 @@ mm_startup_excerpt() {
 # that previously passed or failed can become a skip. That direction is the safety argument, and
 # the self-test asserts all three moved cases rather than resting on it.
 assert_mergemine_roundtrip() {
-    local lines verdict
+    local lines verdict excerpt=""
     if ! lines="$(mm_capture_startup)"; then
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" "could not read p2pool's container start time"
         return 0
@@ -182,20 +182,18 @@ assert_mergemine_roundtrip() {
             "p2pool built no merge-mining client and monerod could not be confirmed caught up — p2pool constructs the client only after the block-header download succeeds, so the signal cannot exist on this run" by-design
         return 0
     fi
-    verdict="$(mm_roundtrip_verdict "$lines")"
+    verdict="$(mm_roundtrip_verdict "$lines")" || excerpt="
+        startup log (first ${MM_EXCERPT_LINES} lines of this run, redacted):
+$(mm_startup_excerpt)"
     case "$verdict" in
     roundtrip*) it_pass "p2pool reached the Tari node over gRPC — ${verdict} (#1397)" ;;
     local-only)
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
-            "p2pool built its merge-mining client but never read a chain_id — the client is up and Tari is NOT answering
-        startup log (first ${MM_EXCERPT_LINES} lines of this run, redacted):
-$(mm_startup_excerpt)"
+            "p2pool built its merge-mining client but never read a chain_id — the client is up and Tari is NOT answering${excerpt}"
         ;;
     *)
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
-            "no MergeMiningClientTari line in the first ${MM_WINDOW_LINES} lines after the container started — p2pool built no merge-mining client, or the log could not be read
-        startup log (first ${MM_EXCERPT_LINES} lines of this run, redacted):
-$(mm_startup_excerpt)"
+            "no MergeMiningClientTari line in the first ${MM_WINDOW_LINES} lines after the container started — p2pool built no merge-mining client, or the log could not be read${excerpt}"
         ;;
     esac
 }
