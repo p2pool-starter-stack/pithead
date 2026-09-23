@@ -559,8 +559,9 @@ To merge-mine against a Tari base node running elsewhere instead of the bundled 
   (payout confirmation is unsupported in remote mode — see below).
 - `tari.remote.host` is required; `grpc_port` defaults to `18142`, the base node's standard gRPC
   port.
-- The remote node must run Tari 6.0.0 or newer. The bundled P2Pool (4.18.1) cannot merge-mine
-  against an older node, and older nodes fork off mainnet at block 350,000.
+- The remote node must run Tari 6.0.1-pre.0 or newer. The bundled P2Pool (4.18.1) cannot
+  merge-mine against a node older than 6.0.0, older nodes fork off mainnet at block 350,000, and a
+  6.0.0 node rejects canonical block 350,008 and stays on a dead fork.
 - The remote node must rebind its gRPC listener off the stock `grpc_address` (`127.0.0.1`), so it
   accepts connections from off-box, and enable the mining allowlist preset upstream ships for
   exactly this
