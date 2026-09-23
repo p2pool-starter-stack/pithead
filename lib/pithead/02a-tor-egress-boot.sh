@@ -32,7 +32,7 @@ render_tor_egress_boot_unit() { # <iptables> <subnet> <tor_ip>
     mapfile -t rules < <(tor_egress_rules "$2" "$3")
     cat <<EOF
 [Unit]
-Description=pithead Tor-only egress firewall, restored before Docker starts containers (#2460)
+Description=pithead Tor-only egress firewall, restored before Docker starts containers
 Before=docker.service
 # A firewall manager that loads after us could flush what we insert.
 After=ufw.service firewalld.service netfilter-persistent.service nftables.service
