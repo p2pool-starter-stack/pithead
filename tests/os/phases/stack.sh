@@ -90,7 +90,9 @@ _stack_run_integration() { # <label> <extra args...>
             sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
         done
     fi
-    grep -a 'of which:' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
+    # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
+    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
