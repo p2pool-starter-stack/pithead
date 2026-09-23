@@ -322,6 +322,26 @@ _phase_install_restore() {
             ;;
         esac
     fi
+    # #2626: the archive's dashboard DB carries the source's sync-gate latch. The restore's marker
+    # must land in the dashboard's OWN /data mount, and the dashboard must hold the miner on this
+    # guest's unsynced chains instead of inheriting a release.
+    local dash_data gtries=0 gate_seen=0
+    dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
+    if [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; then
+        ok "restore leg: the restore's sync-gate marker is in the dashboard's data mount (#2626)"
+    else
+        bad "restore leg: no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+    fi
+    while [ "$gtries" -lt 30 ]; do
+        _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1 && break
+        sleep 10
+        gtries=$((gtries + 1))
+    done
+    if [ "$gate_seen" -eq 1 ]; then
+        ok "restore leg: the restored dashboard holds the miner on this machine's unsynced chains (#2626)"
+    else
+        bad "restore leg: the restored dashboard never held the miner — a carried sync-gate release (#2626)"
+    fi
     local new_onion="" tor_hostname=""
     local odeadline
     odeadline=$(($(date +%s) + 600))
