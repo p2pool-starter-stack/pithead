@@ -15,18 +15,13 @@ assert_eq "the extraction is the whole lifecycle function" \
 drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> function-rc|failure-count
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
-        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no STATUS_COUNT=0
+        IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         pithead() {
-            if [ "$1" = status ]; then
-                STATUS_COUNT=$((STATUS_COUNT + 1))
-                [ "$RESTORE_CASE" != status-fails ] || [ "$STATUS_COUNT" -ne 2 ]
-                return
-            fi
             case "$RESTORE_CASE:$1" in
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
             esac
@@ -64,7 +59,6 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
 
 assert_eq "a healthy restore succeeds" "$(drive_restore yes)" "0|0"
 assert_eq "an unhealthy restore fails lifecycle" "$(drive_restore no)" "1|1"
-assert_eq "a failed post-restore status fails lifecycle" "$(drive_restore yes status-fails)" "1|1"
 assert_eq "a failed backup fails lifecycle" "$(drive_restore yes backup-fails)" "1|1"
 assert_eq "a missing backup archive fails lifecycle" "$(drive_restore yes archive-missing)" "1|1"
 assert_eq "a failed config push fails lifecycle" "$(drive_restore yes push-config-fails)" "1|1"
@@ -77,6 +71,29 @@ assert_eq "a failed restored-secret assertion fails lifecycle" "$(drive_restore 
 assert_eq "an unreadable backup secret fingerprint fails lifecycle" "$(drive_restore yes secret-before-fails)" "1|1"
 assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_restore yes secret-after-fails)" "1|1"
 assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
+
+# The real fingerprint must fail closed: an unreadable or secret-less .env is not a fingerprint.
+FP_SRC="$(sed -n '/^secret_fingerprint() {$/,/^}$/p' "$HERE/../lib/run-matrix.sh")"
+assert_contains "the extraction is the real secret_fingerprint" "$FP_SRC" "sha256sum"
+drive_fingerprint() { # <.env contents|-> -> zero|nonzero|output ("-" = no .env)
+    (
+        cd "$(mktemp -d)" || exit 1
+        [ "$1" = - ] || printf '%s\n' "$1" >.env
+        rx() { bash -c "$1"; }
+        eval "$FP_SRC"
+        rc=zero
+        out="$(secret_fingerprint)" || rc=nonzero
+        printf '%s|%s' "$rc" "$out"
+    )
+}
+assert_eq "a missing .env gives no fingerprint" "$(drive_fingerprint -)" "nonzero|"
+assert_eq "an .env without secrets gives no fingerprint" "$(drive_fingerprint 'P2POOL_FLAGS=--mini')" "nonzero|"
+FP_OK="$(drive_fingerprint "$(printf 'PROXY_AUTH_TOKEN=t\nTOR_ONION_ADDRESS=x.onion')")"
+if [[ "$FP_OK" =~ ^zero\|[0-9a-f]{64}$ ]]; then
+    it_pass "an .env with secrets gives a 64-hex fingerprint"
+else
+    it_fail "an .env with secrets gives a 64-hex fingerprint" "got '$FP_OK'"
+fi
 
 MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"

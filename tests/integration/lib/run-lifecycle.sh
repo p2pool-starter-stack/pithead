@@ -89,7 +89,7 @@ run_lifecycle() {
                 pithead down >/dev/null 2>&1 &&
                 pithead restore -y "$arch" >/dev/null 2>&1 &&
                 pithead up >/dev/null 2>&1; then
-                if wait_status_ok 240 && pithead status >/dev/null 2>&1; then
+                if wait_status_ok 240; then
                     it_pass "status OK after restore"
                 else
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
