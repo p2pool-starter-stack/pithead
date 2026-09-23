@@ -140,7 +140,20 @@ mm_startup_excerpt() {
     local REMOTE_NODE_HOSTS=("${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}")
     started="$(mm_started)" || return 0
     rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -aiE '${MM_EXCERPT_KEEP}' | head -n ${MM_EXCERPT_LINES} || true" 2>/dev/null |
-        mm_strip_ansi | redact_remote_output | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g; s/^/          /'
+        mm_strip_ansi | redact_remote_output | mm_mask_excerpt
+}
+
+# The excerpt's own masks, over redact(), which is keyed on flag and JSON shapes and cannot see a
+# secret written in prose. In order: every IPv4; anything IPv6-shaped (log timestamps match too
+# and are masked with them — the cost of not guessing); a `name:value` token, which is how a
+# credential reads in prose (a `scheme://` URL and a `label: text` pair are left alone); and any
+# 40+ character alphanumeric run, since a Tari address's length is not pinned anywhere here. PURE.
+mm_mask_excerpt() {
+    sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g
+        s/[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}/<ip>/g
+        s/[A-Za-z0-9_.-]*[A-Za-z][A-Za-z0-9_.-]*:[^[:space:]\/][^[:space:]]*/<redacted>/g
+        s/[A-Za-z0-9]{40,}/<redacted-address>/g
+        s/^/          /'
 }
 
 # The release-gate leg: PASS, FAIL, or an honest counted SKIP — never a silent green.
