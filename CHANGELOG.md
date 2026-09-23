@@ -59,8 +59,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     (`[MIGRATIONS] Blockchain database is at v6`, then `v6: Starting JMT v1 → v2 rebuild`, ending at
     `JMT rebuild complete`), then a compaction that copies the live data into a new `data.mdb`
     (`Compacting LMDB env`, `[MIGRATIONS] Pre-compaction data.mdb size`). On a mainnet-sized
-    database the rebuild took about 40 minutes and the compaction about 30 to 60 minutes more,
-    shrinking the database from 161 GB to about 55 GB. The node opens gRPC only after both phases,
+    database the rebuild took about an hour and the compaction about 80 minutes more, shrinking
+    the database from 161 GB to about 55 GB. The node opens gRPC only after both phases,
     so the dashboard shows Tari as loading with no progress for the whole time; follow the phases
     with `docker logs tari`. The node config keeps 2 GiB of LMDB map headroom so that dropping the
     old tables at the end of the rebuild does not fail with `MDB_MAP_FULL`
