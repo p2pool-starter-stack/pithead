@@ -360,6 +360,7 @@ test-release.sh|comp
 test-release.sh|pin_rel
 test-release.sh|svc
 test-render-quadlet.sh|f
+test-render-quadlet.sh|svc
 test-rig-worker.sh|3
 test-secrets-masking.sh|1
 test-secrets.sh|ev
