@@ -12,7 +12,7 @@
 #
 # The math this exists to stop. RigForge's grow-only write is target = current + required - avail,
 # and avail excludes pages the stack already holds. On the REDUCED tier (2560 pages, sized for the
-# stack's own two RandomX datasets with no co-resident miner in the budget) any nonzero extra_mb the
+# stack's own RandomX pages with no co-resident miner in the budget) any nonzero extra_mb the
 # render declares is added to required while the same pages are subtracted from avail — counted
 # twice. No declared value bounds it, so the fix refuses co-location on exactly that tier: the
 # RELEASED tier (0 pages) already declares zero headroom and has nothing to double-count, and the
