@@ -142,6 +142,28 @@ assert_eq "a pools original is restored intact, credential and all (#1002b/#1379
 assert_eq "the pools credential is not printed in the abort log" \
     "$(grep -c 'pass.*secret' "$SCEN_OUT")" "0"
 
+echo "== the restored value never reaches a command line (#2663) =="
+# A jq argv is readable by every local user from the process table while jq runs, and the pools
+# original carries the stratum `pass`. The shim records every argv the unwind hands jq and then runs
+# the real one, so the restore itself is the control: a shim that saw nothing would pass for the
+# wrong reason, which the non-zero call count rules out.
+: >"$WORK/jq-argv.log"
+scenario 'jq() { printf "%s\n" "$*" >>"$WORK/jq-argv.log"; command jq "$@"; }' \
+    'rig_key_mark dash rig1 pools '"'"'[{"url":"real:1","pass":"argvsecret"}]'"'"'' 'exit 1' >/dev/null
+assert_eq "the pools original is still restored intact through the shim (#2663)" \
+    "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"argvsecret"}]}'
+assert_eq "the shim really saw the unwind call jq (the control for the next assertion)" \
+    "$(grep -c . "$WORK/jq-argv.log")" "1"
+assert_eq "and the credential was on no jq argv (#2663)" \
+    "$(grep -c argvsecret "$WORK/jq-argv.log")" "0"
+
+echo "== an original that is not exactly one JSON value restores nothing =="
+# `--argjson` refused these, and the stdin form must refuse them too: POSTing half of `5 6`, or a
+# bare word as a string, would write a value the rig never had.
+scenario 'rig_key_mark dash rig1 DONATION "5 6"' 'rig_key_mark dash rig1 max_temp_c not-json' \
+    'rig_key_mark dash rig1 autotune ""' 'rig_key_mark dash rig1 watchdog true' 'exit 1' >/dev/null
+assert_eq "only the well-formed original is POSTed (#2663)" "$(restores)" 'dash|{"watchdog":true}'
+
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
 # hazard the whole design is shaped around: `trap … EXIT` replaces rather than stacks, so arming
