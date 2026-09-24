@@ -41,19 +41,24 @@ out="$(_hp 0)"
 assert_contains "3072 pages: OK" "$out" "✓ OK   HugePages reserved: 3072 total, 1800 free"
 assert_not_contains "3072 pages: no WARN" "$out" "WARN"
 
-# P2Pool's dataset boundary: below its 1040 pages P2Pool crash-loops under its 1 GiB limit. From
-# 1040 up the dataset fits and the wording makes no crash-loop claim, but below the budget it WARNs.
+# P2Pool's dataset boundary: below its 1040 pages P2Pool crash-loops under its 1 GiB limit whatever
+# else holds pages. From 1040 up the dataset would fit an empty pool, so the wording makes no
+# crash-loop claim, but below the budget it still WARNs.
 _meminfo 1039 1039
 out="$(_hp 0)"
+assert_contains "1039 pages: WARN" "$out" "⚠ WARN"
+assert_not_contains "1039 pages: never a FAIL" "$out" "FAIL"
 assert_contains "1039 pages: P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset"
 _meminfo 1040 1040
 out="$(_hp 0)"
-assert_contains "1040 pages: WARN, short of the budget" "$out" "only 1040 of the 3072 pages"
-assert_not_contains "1040 pages: the dataset fits, no crash-loop claim" "$out" "restarts in a loop"
+assert_contains "1040 pages: WARN, short of the budget" "$out" "⚠ WARN HugePages reserved: only 1040 of the 3072 pages"
+assert_not_contains "1040 pages: never a FAIL" "$out" "FAIL"
+assert_not_contains "1040 pages: no crash-loop claim (the dataset would fit an empty pool)" "$out" "restarts in a loop"
 assert_contains "1040 pages: says what does not fit falls back" "$out" "RandomX data that does not fit falls back to ordinary RAM."
 _meminfo 3071 3071
 out="$(_hp 0)"
-assert_contains "3071 pages: one page short of the budget is a WARN" "$out" "only 3071 of the 3072 pages"
+assert_contains "3071 pages: one page short of the budget is a WARN" "$out" "⚠ WARN HugePages reserved: only 3071 of the 3072 pages"
+assert_not_contains "3071 pages: never a FAIL" "$out" "FAIL"
 
 # The appliance's reduced tier: its recorded pool IS the budget, so the full pool is not demanded.
 printf 'reduced\npages=2560\n' >"$MEMD/marker"
@@ -62,7 +67,8 @@ out="$(_hp 1)"
 assert_contains "reduced tier at its recorded 2560 pages: OK" "$out" "✓ OK"
 _meminfo 1000 1000
 out="$(_hp 1)"
-assert_contains "reduced tier short of its recorded pool: WARN against 2560" "$out" "only 1000 of the 2560 pages"
+assert_contains "reduced tier short of its recorded pool: WARN against 2560" "$out" "⚠ WARN HugePages reserved: only 1000 of the 2560 pages"
+assert_not_contains "reduced tier short of its recorded pool: never a FAIL (the commit gate)" "$out" "FAIL"
 assert_contains "appliance wording says no dashboard control reserves them" "$out" "There is no dashboard control that reserves them."
 if declare -F _dr_leaks >/dev/null; then
     assert_eq "appliance wording names no CLI verb (_dr_leaks)" \
@@ -79,16 +85,19 @@ fi
 printf 'released\npages=0\n' >"$MEMD/marker"
 _meminfo 186 186
 out="$(_hp 1)"
-assert_contains "released tier at 186 pages: WARN against P2Pool's 1296" "$out" "only 186 of the 1296 pages"
+assert_contains "released tier at 186 pages: WARN against P2Pool's 1296" "$out" "⚠ WARN HugePages reserved: only 186 of the 1296 pages"
+assert_not_contains "released tier at 186 pages: never a FAIL (the commit gate)" "$out" "FAIL"
 _meminfo 1295 1295
 out="$(_hp 1)"
-assert_contains "released tier at 1295 pages: one short of P2Pool's 1296 is a WARN" "$out" "only 1295 of the 1296 pages"
+assert_contains "released tier at 1295 pages: one short of P2Pool's 1296 is a WARN" "$out" "⚠ WARN HugePages reserved: only 1295 of the 1296 pages"
+assert_not_contains "released tier at 1295 pages: never a FAIL (the commit gate)" "$out" "FAIL"
 _meminfo 1296 1296
 out="$(_hp 1)"
-assert_contains "released tier at 1296 pages: P2Pool's dataset and caches fit: OK" "$out" "✓ OK   HugePages reserved: 1296 total"
+assert_contains "released tier at 1296 pages: holds P2Pool's 1296, the whole target: OK" "$out" "✓ OK   HugePages reserved: 1296 total"
 _meminfo 0 0
 out="$(_hp 1)"
-assert_contains "released tier at 0 pages: the existing zero WARN" "$out" "HugePages_Total is 0"
+assert_contains "released tier at 0 pages: the zero WARN" "$out" "⚠ WARN HugePages_Total is 0"
+assert_not_contains "released tier at 0 pages: never a FAIL (the commit gate)" "$out" "FAIL"
 rm -f "$MEMD/marker"
 
 # The unchanged edges: no pool, and no HugePages line at all.
@@ -97,9 +106,17 @@ out="$(_hp 0)"
 assert_contains "0 pages: WARN names the crash loop, not a slowdown" "$out" "⚠ WARN HugePages_Total is 0: P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
 assert_not_contains "0 pages: no 'slower' wording" "$out" "slower"
 assert_contains "0 pages: names setup as the fix" "$out" "Run './pithead setup'"
+assert_not_contains "0 pages: never a FAIL" "$out" "FAIL"
 printf 'MemTotal:       16318412 kB\n' >"$MEMD/meminfo"
 out="$(_hp 0)"
 assert_contains "no HugePages line: could-not-read WARN" "$out" "Could not read HugePages"
+
+# The crash-loop wording names P2Pool's memory limit as 1 GiB. Read the limit off both places it
+# is set, so the change that moves it (#2609) reds here and rewrites the wording with it.
+assert_eq "the wording's 1 GiB is P2Pool's compose mem_limit" \
+    "$(awk '/^  p2pool:$/{f=1;next} f&&/^  [a-z]/{exit} f&&/^    mem_limit:/{print $2}' "$ROOT/docker-compose.yml")" "1g"
+assert_eq "the wording's 1 GiB is P2Pool's quadlet --memory" \
+    "$(awk '/^Image=\$reg\/pithead-p2pool:/{f=1} f&&/^PodmanArgs=--memory /{print $2; exit}' "$ROOT/lib/pithead/36-quadlet-units.sh")" "1g"
 
 echo "== black-box: doctor's Memory section carries the HugePages verdict (#2610) =="
 # The unit rows prove the check; this proves doctor runs it. Same fake daemon as test-doctor.sh's

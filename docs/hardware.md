@@ -161,8 +161,8 @@ A node running elsewhere is left out of this budget entirely — see
 > memory is under 2 GB right now. A pool too small for P2Pool's RandomX dataset (about 2 GiB)
 > matters most: P2Pool then builds the dataset in ordinary RAM, exceeds its 1 GiB memory limit and
 > restarts in a loop. doctor still reports a short pool as a warning rather than a failure, because
-> the appliance's update check takes doctor's exit code. Setup asks whether the host has enough RAM
-> at all; doctor asks whether enough is free today.
+> the appliance's boot-time commit gate for an update takes doctor's exit code. Setup asks whether
+> the host has enough RAM at all; doctor asks whether enough is free today.
 
 You can put any service's data on a dedicated disk by pointing its `*.data_dir` at an absolute path,
 e.g. to keep the Monero blockchain on a separate SSD. See
