@@ -413,8 +413,10 @@ proxy observed, `control_port` defaulted to `8082`, and a blank token field. The
 is a suggestion, not a fact — confirm or correct it before submitting; the rig's own name is not
 enough proof of who is actually listening there. Submitting writes the descriptor through the same
 control channel [the Configuration view uses](#configuration-view) (preview, then commit) — no
-separate write path, and it can only ADD a new descriptor: it can never change the host or token of
-a rig that already has one, so adopting rig #4 can't be used to repoint rig #1. The address also
+separate write path. The preview names the rig and the address the dashboard will send its control
+token to; type `APPLY` to confirm, or **Cancel**. It can only ADD a new descriptor: it can never
+change the host or token of a rig that already has one, so adopting rig #4 can't be used to repoint
+rig #1. The address also
 can't resolve inside the stack's own network — loopback, link-local, or its own docker-bridge
 subnet are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
 host yet, or the control channel off, still gets a plain explanation instead of the form.

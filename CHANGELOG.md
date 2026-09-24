@@ -105,9 +105,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
   Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
   Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
-  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
-  API token is a credential change, closed in the same round-2 pass after an initial review found
-  it still routed through the self-written approval envelope.
+  repointing or removing a per-rig worker descriptor (`workers.list[]`). Adopting a new rig was
+  closed in the same round-2 pass and reopened, behind the typed confirmation, by
+  [#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641) (see Fixed).
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
@@ -116,6 +116,17 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **Worker Inspect can adopt a rig again
+  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
+  pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
+  form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
+  no way to be adopted short of a configuration stick. The host now lets an append through: every
+  existing descriptor must come back unchanged, a new rig's host must not resolve inside this
+  machine's own network, and the commit needs the typed `APPLY`. The preview names the rig and the
+  address the dashboard will send its control token to, and the audit log records the commit as
+  confirmed with `workers.list` as its key. Repointing or removing a rig the dashboard already
+  controls is still refused.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has

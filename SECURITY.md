@@ -105,13 +105,15 @@ The stack's defaults:
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.
   **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
-  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
-  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
-  confirmation rather than a second identity — the same self-approval shape this perimeter exists
-  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
-  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
-  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
-  second identity that a future approval tier could rejoin once one exists.
+  in this perimeter, with one route through it: adopting a new rig (#2641). The dashboard may
+  append a descriptor when every existing one comes back unchanged, the new host does not resolve
+  inside this machine's own network, and the operator types `APPLY`; the audit log records the
+  commit as confirmed and names `workers.list`. Repointing or removing a rig the dashboard already
+  controls is refused, host-CLI-only (a configuration stick on an appliance). The typed `APPLY` is
+  friction, not a second identity: the dashboard container writes its own request, so a
+  compromised dashboard can adopt a rig at a LAN address of its choosing and send that address a
+  token it chose. The owner accepted that exposure on #1959 (dashboard login is the access control,
+  and no second approval identity is coming); what it cannot do is take over a rig already adopted.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the

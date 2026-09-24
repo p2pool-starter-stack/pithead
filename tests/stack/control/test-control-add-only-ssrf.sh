@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # The approval gate (#33): the control channel's default-deny on security-sensitive changes,
-# reunited into one file (#1105 R13), with workers.list[] approval and its #122 SSRF floor
+# reunited into one file (#1105 R13), with the workers.list[] adopt append and its #122 SSRF floor
 # (_control_host_is_internal). The gate's own contract is stated at its section header below.
 #
 # WHY ONE FILE. The add-only/SSRF battery was split out of the approval-gate section for the
@@ -26,8 +26,9 @@
 # outlive the source as they outlived the old in-run.sh position: the editable-allowlist domain file
 # run.sh sources next reads both, as test-spool-audit.sh reuses $UUID5. Hence the stanza stays put.
 #
-# MUTATION PROOF: bypassing worker approval turns the safe unapproved-append assertions red;
-# weakening _control_host_is_internal changes unsafe refusals from the host boundary to approval.
+# MUTATION PROOF: dropping the adopt append's typed APPLY turns the unconfirmed-append rows red;
+# dropping the prefix match turns the repoint/removal rows red; weakening _control_host_is_internal
+# lets a confirmed unsafe append apply.
 # Round 5's resolve-and-check battery (below) names its own mutation kills.
 
 build_control_sandbox
@@ -160,26 +161,25 @@ assert_contains "the refusal names dashboard.workers as a schema-unknown key" "$
 assert_contains "the refusal is the closed-schema door, not the descriptor door" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "not in the schema"
 assert_eq "config.json keeps no worker descriptors" "$(jq -r '.dashboard.workers // "unset"' "$C/config.json")" "unset"
 
-# workers.list[] (#506): descriptor mutations change remote trust and require host approval.
-# Host validation still rejects unsafe targets before that approval can be requested.
+# workers.list[] (#506): adopting a rig is an append behind the typed APPLY (#2641); a repoint or a
+# removal edits a rig the dashboard already controls and is refused even WITH the APPLY.
 # Seed one from the host CLI (never the gate) as the baseline to protect.
 jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig1"}]' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "workers.list seed applies from the host CLI" "$(jq -r '.workers.list[0].token' "$C/config.json")" "tok_rig1"
-
-# REPOINT, REMOVAL and safe APPEND refuse without approval; test-confirm-approval covers approval.
 jq '.workers.list=[{name:"rig1",host:"attacker.example",token:"stolen"}]' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "workers.list REPOINT of an existing entry is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+gate_try "$C/cand.json" APPLY
+assert_eq "workers.list REPOINT of an existing entry is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "the repoint refusal names the adopted-rig boundary" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "already controls"
 assert_eq "config.json keeps the seeded rig1 host after the repoint attempt" "$(jq -r '.workers.list[0].host' "$C/config.json")" "10.0.0.9"
 jq '.workers.list=[]' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "workers.list REMOVAL of an existing entry is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+gate_try "$C/cand.json" APPLY
+assert_eq "workers.list REMOVAL of an existing entry is refused even with APPLY" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
-assert_eq "workers.list append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "safe worker append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
-assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
+assert_eq "a safe workers.list append without the typed APPLY is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
+assert_contains "the unconfirmed append asks for APPLY and names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY in the dashboard to confirm"
+assert_eq "config.json keeps only rig1 after the unconfirmed append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a
 # compromised dashboard could otherwise append a phantom descriptor at this host's own loopback or
@@ -191,7 +191,7 @@ assert_eq "config.json keeps only rig1 after the unapproved append" "$(jq -c '[.
 # numeric encoding curl's own address parser accepts identically to dotted-decimal.
 assert_new_worker_host_refused() { # <host> <label>
     jq --arg h "$1" '.workers.list += [{name:"evil",host:$h,control_port:8000,token:"attacker"}]' "$C/config.json" >"$C/cand.json"
-    gate_try "$C/cand.json"
+    gate_try "$C/cand.json" APPLY
     assert_eq "new-rig append pointed at $2 is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
     assert_contains "new-rig append pointed at $2 names the host boundary" \
         "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "resolves inside this host"
@@ -208,12 +208,12 @@ assert_eq "config.json still has exactly rig1 after every SSRF refusal above" \
     "$(jq -r '.workers.list | length' "$C/config.json")" "1"
 unset -f assert_new_worker_host_refused
 
-# A safe LAN address is STILL refused outright: every descriptor change is a credential change.
+# A safe LAN address clears the floor and, confirmed, is adopted: the #2641 route, audited by name.
 jq '.workers.list += [{name:"rig3",host:"10.0.0.50",control_port:8082,token:"tok_rig3"}]' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "ordinary LAN append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "ordinary LAN append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
-assert_eq "config.json does not gain the unapproved ordinary-LAN rig" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
+gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed ordinary LAN append is adopted" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "config.json gains rig3 after rig1, rig1 untouched" "$(jq -c '[.workers.list[] | [.host, .token]]' "$C/config.json")" '[["10.0.0.9","tok_rig1"],["10.0.0.50","tok_rig3"]]'
+assert_contains "the adopt commit is audited as confirmed and names workers.list" "$(tail -n 1 "$AUDIT")" '"action":"commit-confirmed","status":"applied","keys":"workers.list"'
 
 # #893 round 5: an independent review found the battery above was still a STRING classifier under
 # the hood — it can refuse "127.0.0.1" and "localhost" by literal shape, but it can never answer
@@ -275,16 +275,16 @@ assert_resolved_worker_host_refused "mixed-answer-name" "203.0.113.5,127.0.0.1" 
 # `|| return 1` (fail open — "must not resolve, so it can't be internal") turns this one red.
 assert_resolved_worker_host_refused "name-that-fails-to-resolve" "" "a name resolution fails on (fail-closed)"
 unset -f assert_resolved_worker_host_refused
-assert_eq "config.json still has exactly rig1 after every round-5 SSRF refusal above" \
-    "$(jq -r '.workers.list | length' "$C/config.json")" "1"
+assert_eq "config.json still has exactly rig1 and rig3 after every round-5 SSRF refusal above" \
+    "$(jq -r '.workers.list | length' "$C/config.json")" "2"
 
-# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — it still hits the same descriptor refusal.
+# A genuine LAN hostname resolves and clears the SSRF floor, proving resolve-and-check does not refuse every name on shape alone — confirmed, it is adopted.
 printf 'real-lan-rig-by-name 192.168.1.77\n' >>"$GETENT_MAP"
 jq '.workers.list += [{name:"rig4",host:"real-lan-rig-by-name",control_port:8082,token:"tok_rig4"}]' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "LAN hostname append without host approval is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "LAN hostname append names the descriptor refusal" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
-assert_eq "config.json does not gain the unapproved LAN hostname" "$(jq -r '.workers.list[1].host // "unset"' "$C/config.json")" "unset"
+gate_try "$C/cand.json" APPLY
+assert_eq "a confirmed LAN hostname append is adopted" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "config.json gains the LAN hostname as the third rig" "$(jq -r '.workers.list[2].host // "unset"' "$C/config.json")" "real-lan-rig-by-name"
+jq '.workers.list |= .[0:1]' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json" # later sections' rig1 baseline
 
 # Tidy up the test-only stub so later sections in this same $C sandbox see the real system
 # resolver again — nothing else in this suite calls getent today, but there's no reason to leave a
