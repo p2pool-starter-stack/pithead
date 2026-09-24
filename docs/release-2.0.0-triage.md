@@ -2,7 +2,6 @@
 
 Companion to [release-2.0.0-plan.md](release-2.0.0-plan.md). 173 open issues across pithead, rigforge and bench-ci were briefed by an investigator, adversarially verified by a second agent, and the 166 briefs that held were posted on their issues. This is the synthesis. **Applied by the operator on 2026-09-24 (owner-authorized milestone triage):** the CLOSE verdicts with merged-PR or on-develop evidence were closed (pithead #2457 #2321 #1897 #1866 #1886 #911 #2330; bench-ci #584 #540); moved INTO `v2 - appliance`: pithead #2593 #2575 #2470 #2407 #2379, bench-ci #556; moved OUT: #2633 → v2.x, #2632 #2631 → maintenance & gates, #2466 #2384 #2499 → v2.x (from Sovereign), #2476 → Sovereign. Left for the owner: the roadmap trackers #940 #1875 #797 #786 (verdict done/duplicate) and #1998 (closes with PR #2174), #2474 (confirm with #2057).
 
-
 Input: 173 verified briefs (pithead 145, rigforge 14, bench-ci 14). Two briefs were void (pithead#2605, pithead#2532: the verifier aborted on a conflicting task) — re-run before acting on either.
 Milestones that exist: `v2 - appliance` (GA), `v2.x - post-GA`, `maintenance & gates`, `Sovereign UI — post-2.0`. No `2.0.x`/`2.1` milestone exists; below, "2.0.x" = first weeks post-GA inside `v2.x - post-GA` or `maintenance & gates`, "2.1" = designed features needing a home (ruling R1).
 Claims: (read) = file:line / PR / job cited by the brief; (inf) = inferred.
@@ -10,6 +9,7 @@ Claims: (read) = file:line / PR / job cited by the brief; (inf) = inferred.
 ## 1. CLOSE candidates
 
 ### pithead
+
 | issue | verdict | reason | evidence |
 |---|---|---|---|
 | #2457 | done | pipefail/on_bench stub fix merged, regression guard cites the issue | PR #2434 merged 09-20; detached-harness.sh:56-73 on develop 296c860e (read) |
@@ -27,9 +27,11 @@ Claims: (read) = file:line / PR / job cited by the brief; (inf) = inferred.
 | #2474 | not needed (conf 0.85, verifier overrode brief) | no code change left to schedule; consumer #2057/#2180 still open | (inf) — confirm with #2057 before closing |
 
 ### rigforge
+
 None.
 
 ### bench-ci
+
 | issue | verdict | reason | evidence |
 |---|---|---|---|
 | #588 | already closed | PR #595 merged to main 7fac920 09-24T00:02Z | (read) — process note: merged without a tier4-e2e run on the head |
@@ -54,6 +56,7 @@ Flagged but NOT recommended for 2.0.0: #2453 (verifier said v2-appliance pending
 ## 3. MOVE recommendations
 
 ### Actual milestone changes
+
 - **2.0.x** pithead#2633 dashboard pytest sleeps: v2-appliance → v2.x post-GA (pure CI speed; R23)
 - **2.0.x** pithead#2632 lint-sh xargs -P: v2-appliance → m&g (R23)
 - **2.0.x** pithead#2631 shard run.sh: v2-appliance → m&g (9 min/PR, #2048 deferred it once; R23)
@@ -66,6 +69,7 @@ Flagged but NOT recommended for 2.0.0: #2453 (verifier said v2-appliance pending
 - **2.1** (needs a home, R1): pithead#2494 full-validation (behind #2437), #2490 multi-chain merge-mine (no second mainnet chain), #2483 backup Monero nodes, #2482 extra_flags, #2487 peer controls (half blocked on #2491), #912 fleet descriptor editing (mechanism dead since #2076), #1837 rig OS-update path (split the version-visibility half to 2.0.x); rigforge#528 solo mining, #533 stress/bench-verify (split), #531 thread placement (blocked #526); bench-ci#558 reboot-capable DIY KVM guest
 
 ### Confirm in place (no-op; verifier corrected "MOVE" labels to "stay")
+
 - **2.0.x / v2.x post-GA**: pithead#2498 #2497 #2495 #2493 #2489 #2488 #2486 #2485(split, R7) #2484 #2481 #2465 #2463 #2462 #2461 #2459 #2458 #2439 #2438 #2437 #2436 #2349 #2225 #2089 #2045 #1805 #1800 #1360 #1319 #1219 #1217 #979 #978(docs-and-close is the cheapest exit); rigforge#534 #532 #530 #529 #527 #526 #520 #452 #445 #440; bench-ci#227
 - **maintenance & gates**: pithead#2619(PR #2622) #2608 #2603 #2590 #2560 #2511 #2510 #2502 #2480 #2469 #2447 #2444 #2443 #2402 #2374 #2346(PR #2380) #2345(PR #2377) #2344(PR #2376) #2343(PR #2378) #2253(PR #2174) #2173 #2169(PR #2307) #2000(PR #2442) #1999(PR #2175) #1802(PR #2160) #1353(PR #2136) #1812 #1420; rigforge#499; bench-ci#585 #578 #562 #560(PR #565) #553 #548 #534 #505(needs re-diagnosis)
 - **Sovereign UI**: pithead#2547–#2512 (36 children; #2532 brief void), #2492 #2491 #2479 #2478 #2477 #2475 #2353(PR #2422, hold on #2333) #1899 #1863

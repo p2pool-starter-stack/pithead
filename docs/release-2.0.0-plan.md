@@ -29,7 +29,7 @@ Contradictions between the drafts, resolved against the source: milestone count 
 
 Owners: **runner** = the queue's agents; **operator** = the Mac-side runner's operator seat; **owner** = milestones, prod, GitHub settings, credentials, hardware.
 
-**The frozen SHA contains**
+#### The frozen SHA contains
 
 | # | Item | Issue / PR | State today | Evidence required | Owner |
 |---|---|---|---|---|---|
@@ -52,7 +52,7 @@ Owners: **runner** = the queue's agents; **operator** = the Mac-side runner's op
 
 Closed, drop from #2602's list: #2472, #2496, #2414, #1414, #2604, #2360, #1990 [r `gh`]. Add #2618 (R9) and #2636 (R8) [r report §6].
 
-**Must be true before the SHA is frozen**
+#### Must be true before the SHA is frozen
 
 | # | Condition | Evidence | State today | Owner |
 |---|---|---|---|---|
@@ -207,7 +207,7 @@ KEEP — the checklist rows C3–C16 above (#2593, #2618, #2636, #2624, #2626, #
 | #2464 *(drop-first)* | the prod incident class | a forked node stayed healthy nine days; **if dropped**, 2.0.0 ships that blind spot; #2465 postmortem is post-GA regardless | branch, no PR (C12) | [r 2464-brief; memory prod-review] |
 | #2630 *(drop-first)* | reproducibility | **if dropped**, an appliance installed after GA can pull a Caddy the soak never ran | no PR (C16) | [r #2630; appliance.md:411-414] |
 
-#2508 is **split**: the transport fix ships (C14); the acceptance (OFFLINE rate beaten tenfold, tiers.md:98) moves to 2.0.x because `tari-observe` is unprovisioned (bench-ci#584). Without the fix, 2.0.0's Tari peering is strictly worse than 1.20.0's [i].
+\#2508 is **split**: the transport fix ships (C14); the acceptance (OFFLINE rate beaten tenfold, tiers.md:98) moves to 2.0.x because `tari-observe` is unprovisioned (bench-ci#584). Without the fix, 2.0.0's Tari peering is strictly worse than 1.20.0's [i].
 
 MOVE — target `v2.x - post-GA` unless marked *maint* (`maintenance & gates`). The owner decides both the move and the target.
 
