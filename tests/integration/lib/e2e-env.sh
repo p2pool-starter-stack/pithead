@@ -16,13 +16,12 @@
 #                      panel still loading or syncing. bench-ci retries this one once.
 #   tari-sync-timeout  lib.sh assert_tari_synced_required failed on a Tari still loading or syncing
 #                      after wait_tari_synced timed out, in local-pruned-main-secure-tari only.
-#
-# A dashboard that does not answer is never the bench's here: the branch may have broken it.
 #   readiness          detached-harness.sh harness_pregate: the readiness phase refused the
 #                      destructive phases for any reason but Tari. Never its check phase, which
 #                      runs against the deployed branch.
 #   chains-behind      e2e.sh preflight: the bench chains are not at tip (#914).
 #
+# A dashboard that does not answer is never the bench's here: the branch may have broken it.
 # A line of any other shape, or another key, excuses nothing on bench-ci. So no other output of the
 # harness may carry the line's prefix; e2e.sh strips it from the heartbeat tail so the full-log
 # replay is its only copy. The guard below holds within one process; harness_pregate, the one place

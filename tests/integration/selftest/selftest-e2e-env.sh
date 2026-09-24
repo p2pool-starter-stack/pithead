@@ -52,6 +52,7 @@ assert_eq "an unknown key prints nothing" "$( (e2e_env disk-full) | said)" ""
 
 echo "== workers-offline: a --check run with no worker online (assert_mining_state) =="
 mining_of() { # <check_only> <skip> <workers> <expected> [calls] -> the lines assert_mining_state printed
+    # shellcheck disable=SC2034  # CHECK_ONLY is read by assert_mining_state
     (
         CHECK_ONLY="$1"
         for _ in $(seq 1 "${5:-1}"); do assert_mining_state "$2" "$3" 0 "$4"; done
@@ -120,6 +121,8 @@ tari_timeout_of() { # <scenario> <wait: timeout|ok> <state> [seen_done] -> the l
 }
 assert_eq "the wait timed out and Tari is not done, in local-pruned-main-secure-tari" \
     "$(tari_timeout_of local-pruned-main-secure-tari timeout syncing)" "e2e-env: tari-sync-timeout"
+assert_eq "still loading on the first look after the timed-out wait, too" \
+    "$(tari_timeout_of local-pruned-main-secure-tari timeout loading)" "e2e-env: tari-sync-timeout"
 assert_eq "the same failure in any other scenario says nothing" \
     "$(tari_timeout_of remote-main-secure-tari timeout syncing)" ""
 assert_eq "a failure without a timed-out wait says nothing" \
