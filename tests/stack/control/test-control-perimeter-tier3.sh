@@ -24,8 +24,7 @@ jq -n --arg w "$WALLET" \
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_contains "perimeter baseline applied from the host CLI" "$(cat "$C/.env")" "MONERO_WALLET_ADDRESS=$WALLET"
 # The wallet-change alarm baseline lives in the dashboard DB. Bundle its data-dir move with the
-# payout change below and pin what actually happens to that row: an operator-pinned path is left
-# alone (#455), so the baseline stays put rather than being carried (#2360).
+# payout change below and pin that the refused commit leaves that row where it was.
 LIVE_DASHBOARD_DIR="$(run_sourced "$C" env_get_file "$C/.env" DASHBOARD_DATA_DIR)"
 MOVED_DASHBOARD_DIR="$C/data/dashboard-moved"
 mkdir -p "$LIVE_DASHBOARD_DIR"
@@ -42,8 +41,8 @@ assert_eq "legacy worker token mutation is refused before preview" "$(jq -r '.st
 assert_not_contains "legacy worker token never reaches the preview result" "$(cat "$RESULTS/$UUID5.json")" "legacy-control-token"
 jq 'del(.dashboard.workers)' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 
-# A payout swap cannot share a commit with a pinned dashboard-data move: that move starts a new
-# database and would re-seed the wallet alarm baseline. The suffix is CORRECT on purpose.
+# A payout swap cannot share a commit with a dashboard-data move, so the alarm never judges a new
+# payout address against a database that moved in the same commit. The suffix is CORRECT on purpose.
 jq --arg w "$ATTACKER_WALLET" --arg d "$MOVED_DASHBOARD_DIR" \
     '.monero.wallet_address=$w | .dashboard.data_dir=$d' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
@@ -55,6 +54,9 @@ assert_eq "combined refusal keeps the payout address" "$(jq -r '.monero.wallet_a
 assert_eq "operator-pinned dashboard-data move leaves the baseline at the old path" \
     "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$LIVE_DASHBOARD_DIR/mining_data.db")" "$WALLET"
 if [ -e "$MOVED_DASHBOARD_DIR/mining_data.db" ]; then bad "combined refusal does not create a new dashboard database" "created anyway"; else ok "combined refusal does not create a new dashboard database"; fi
+# Drop the seeded database: a later confirmed dashboard.data_dir round-trip copies it (#2360), and
+# the copy left behind here would make the move back refuse a non-empty target.
+rm -f "$LIVE_DASHBOARD_DIR/mining_data.db"
 
 jq --arg w "$ATTACKER_WALLET" '.monero.wallet_address=$w' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout_suffixes:{monero:$s}}')"
