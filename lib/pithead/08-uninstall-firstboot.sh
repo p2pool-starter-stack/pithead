@@ -12,19 +12,22 @@
 # is plain log lines, one per line, because log() prefixes every call with "[pithead]".
 uninstall_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-# uninstall_removable <path> <kept>... succeeds only for an absolute path with no . or ..
-# component that is neither "/" nor one of the kept paths nor an ancestor of one. A derived *_DIR key is read from .env, which an
-# operator can edit; pointing one at a data dir or its parent must never turn uninstall into the
-# `rm -rf` of their data.
+# uninstall_removable <path> <name> <checkout> <kept>... succeeds only for the derived directory a
+# setup would have made: an absolute path with no . or .. component, named <name>, not the
+# checkout or above it, and neither a kept path nor above or inside one. A derived *_DIR key is read from .env, which an operator can
+# edit; pointing one at a data dir, its parent or /etc must never become an `rm -rf`.
 uninstall_removable() {
-    local p="${1%/}" k
-    shift
+    local p k
+    p=$(printf '%s' "$1" | sed 's#//*#/#g; s#/$##')
     case "$p" in /?*) ;; *) return 1 ;; esac
     case "$p/" in */../* | */./*) return 1 ;; esac
+    [ "${p##*/}" = "$2" ] || return 1
+    case "$3/" in "$p/"*) return 1 ;; esac
+    shift 3
     for k in "$@"; do
-        k="${k%/}"
-        [ "$k" = "$p" ] && return 1
+        k=$(printf '%s' "$k" | sed 's#//*#/#g; s#/$##')
         case "$k/" in "$p/"*) return 1 ;; esac
+        case "$p/" in "$k/"*) return 1 ;; esac
     done
 }
 
@@ -49,13 +52,16 @@ stack_uninstall() {
     # data root for PROXY_TLS_DIR) that the old keep-list never named or removed. None is operator
     # data — the control spool + audit trail, the clearnet-sync marker, Caddy's access log, and the
     # stratum TLS keypair — so they are removed individually, by exact path, never `rm -rf data/`.
-    for dkey in CONTROL_DIR CLEARNET_STATE_DIR CADDY_LOG_DIR PROXY_TLS_DIR; do
+    local dname
+    for dkey in CONTROL_DIR:control CLEARNET_STATE_DIR:clearnet-state CADDY_LOG_DIR:caddy-logs PROXY_TLS_DIR:proxy-tls; do
+        dname=${dkey#*:}
+        dkey=${dkey%%:*}
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] || continue
-        if uninstall_removable "$d" "${kept_dirs[@]}" "$checkout_dir" "$checkout_dir/config.json" "$checkout_dir/backups"; then
+        if uninstall_removable "$d" "$dname" "$checkout_dir" "${kept_dirs[@]}" "$checkout_dir/config.json" "$checkout_dir/backups"; then
             derived_dirs+=("$d")
         else
-            warn "Not removing $dkey=$d: it is, or contains, data uninstall keeps. Remove it by hand if it is pithead's."
+            warn "Not removing $dkey=$d: it is not the $dname directory setup makes, or it overlaps data uninstall keeps. Remove it by hand if it is pithead's."
         fi
     done
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
@@ -67,8 +73,8 @@ stack_uninstall() {
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules; .env, Caddyfile, build/tari/config.toml, .pithead-first-run-done, and: ${derived_list}"
-    log "Kept (yours): config.json, backups/, and the data dirs: ${kept_list:-none recorded}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
         printf "Type 'uninstall' to continue: "
@@ -80,20 +86,25 @@ stack_uninstall() {
     fi
     remove_tor_egress_firewall 2>/dev/null || true
     docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup."
+        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
     DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    # The view-key secret goes first: nothing after it may leave a 0600 key behind.
+    rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
+    local failed=0
     for d in "${derived_dirs[@]}"; do
         # CADDY_LOG_DIR is root:root-owned (31-directories-and-dashboard-state.sh) so the
         # capability-stripped caddy container can write it; a non-root operator's plain rm fails.
-        rm -rf "$d" 2>/dev/null || sudo rm -rf "$d"
+        rm -rf "$d" 2>/dev/null || sudo rm -rf "$d" || {
+            warn "Could not remove $d — remove it with: sudo rm -rf $(uninstall_quote "$d")"
+            failed=1
+        }
     done
-    rm -f "$secret_file"
     # The version symlink (#455) is removed only when it is THIS checkout's: a versioned deploy
     # dir (pithead-vX.Y.Z) whose sibling `current` still points here. Anything else — a plain
     # checkout, or a `current` some other version now owns — is left alone.
@@ -112,11 +123,17 @@ stack_uninstall() {
             q=$(uninstall_quote "$d")
             quoted_kept="$quoted_kept $q"
         done
-        log "  sudo rm -rf${quoted_kept}"
+        printf '  sudo rm -rf%s\n' "$quoted_kept"
     fi
-    log "  rm -rf $(uninstall_quote "$checkout_dir/backups") $(uninstall_quote "$checkout_dir/config.json")"
-    log "Then, to remove the program itself:"
-    log "  rm -rf $(uninstall_quote "$checkout_dir")"
+    # printf, not log: log's echo -e would turn a backslash in a path into a control character.
+    printf '  rm -rf %s %s\n' "$(uninstall_quote "$checkout_dir/backups")" "$(uninstall_quote "$checkout_dir/config.json")"
+    local inside=""
+    for d in "${kept_dirs[@]}"; do
+        case "$d/" in "$checkout_dir/"*) inside=" It holds data kept above, so run this only once that is gone or moved." ;; esac
+    done
+    log "Then, to remove the program itself:${inside}"
+    printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
+    [ "$failed" -eq 0 ]
 }
 
 # --- First-boot wizard (#77 phase 3) -------------------------------------------------------------

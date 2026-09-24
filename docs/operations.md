@@ -507,10 +507,13 @@ want it gone.
 **Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
 `config.json`; `backups/`.
 
-A derived directory that `.env` places at, or above, a kept path is left in place with a
-warning rather than removed. After `uninstall`, `./pithead setup` re-provisions from the kept
-`config.json` and data dirs: the chains are reused rather than re-synced, and the kept Tor data
-gives back the same onion addresses.
+A derived directory is removed only at the path setup gives it. If `.env` names it anywhere else,
+or at, above or inside a kept path, `uninstall` leaves it in place with a warning. After
+`uninstall`, `./pithead setup` re-provisions from the kept `config.json` and data dirs. The chains
+are reused rather than re-synced, and the kept Tor data gives back the same onion addresses.
+Secrets that lived only in `.env` or in a removed directory are generated anew: the proxy token,
+an `auto` stratum password and the stratum TLS keypair. Rigs that use the generated password or
+pin the TLS fingerprint need the new values.
 
 **Left behind — installed by setup, shared with the machine, not removed:**
 
