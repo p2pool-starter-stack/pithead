@@ -267,4 +267,14 @@ healthgate_marker=$(sed -n '/marker=$(SSH_TIMEOUT/,/# The gate loops/p' "$HERE/p
 grep -Fq 'bad "leg 5: expected v3fault booted after install' <<<"$healthgate_marker" || exit 1
 grep -Fxq '        return' <<<"$healthgate_marker" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
+
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
+# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
+# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
+# not let this add to; this runner is already the os lane's own self-test entry point and is
+# reached from the same tier-1 row.
+bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null 2>&1 || {
+    echo "#1998 appliance XvB routing leg self-test failed" >&2
+    exit 1
+}
 echo "os-run-modules: PASS"

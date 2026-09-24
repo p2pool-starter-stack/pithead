@@ -1,8 +1,7 @@
 # Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
 # second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
 # architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in:
-# Notify=healthy services carry
+# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
 # TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
 # start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
 # tmpfs options use mode= (podman rejects uid=/gid=).
@@ -142,6 +141,7 @@ Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=$(_qenv TARI_GRPC_BIND):18142:18142
 ReadOnly=true
 NoNewPrivileges=true
+RunInit=true
 StopTimeout=60
 PodmanArgs=--memory $(_qenv TARI_MEM_LIMIT) --memory-swap $(_qenv TARI_MEM_LIMIT)
 HealthCmd=ps | grep '[m]inotari_node' || exit 1
