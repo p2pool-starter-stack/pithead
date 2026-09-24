@@ -614,19 +614,20 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   from "a password is stored here", but RigForge restores a stored password only for an entry whose
   `url` and `user` still match what the rig holds, and a probe moves the URL. Writing the rig's own
   reading back under a probe would silently strand a borrowed miner on password `x`.
-- `pools`, the operator-supplied route (the repoint-your-hashrate key): because the rig's own
-  reading cannot be written back, the restore target is the dashboard's record of what *it* last
-  pushed (`GET /api/worker`'s `.last_applied.pools`), which is un-stripped, and the probe is
-  operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
-  guessed value risks a real `rejected` instead of proving the round trip). If the dashboard has
-  never applied a `pools` value to this rig before, there is nothing on record to restore — so the
-  leg seeds the record with the probe itself
-  ([#2325](https://github.com/p2pool-starter-stack/pithead/issues/2325)): the probe is by contract
-  a value already known safe to apply and carrying a `pass`, so it doubles as "the original" too,
-  and it leaves `.last_applied.pools` seeded for every run after this one. Either way, the value the
-  leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
+- `pools`, the operator-supplied route (the repoint-your-hashrate key): the harness has no
+  credential-bearing reading of a rig's pools to restore. The rig's own reading is lossy (above),
+  and the dashboard's record of what it last pushed (`GET /api/worker`'s `.last_applied.pools`)
+  goes through the same credential strip, so it carries no `pass` either
+  ([#113](https://github.com/p2pool-starter-stack/pithead/issues/113)). The leg therefore never
+  reads either one: it applies `IT_RIG_POOLS_PROBE` and treats that probe as the value to restore
+  ([#2470](https://github.com/p2pool-starter-stack/pithead/issues/2470)). By contract the probe
+  is a pools value the operator has already attested is safe to apply to this rig and carrying a
+  `pass`. pithead treats `pools` as opaque passthrough, so a guessed value risks a real `rejected`
+  instead of proving the round trip. The rig is left on the probe: one confirmed apply is the round
+  trip, and the restore ledger re-applies the probe if the run dies before the rig confirms it. The
+  probe is checked for a non-empty `pass` on every entry before it is applied
   ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
-  probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
+  probe with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a

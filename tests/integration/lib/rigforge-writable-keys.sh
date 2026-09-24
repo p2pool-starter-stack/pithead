@@ -164,21 +164,21 @@ run_rigforge_writable_keys() { # <rig>
 # could safely write back. pithead treats `pools` as opaque passthrough (WORKER_WRITABLE_KEYS checks
 # the key NAME, never the value shape), so a guessed value risks a real rejected/failed instead of
 # proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
-# The restore target is `.last_applied.pools`: the dashboard's record of what IT pushed, and the
-# same source the real editor prefills from when the rig sends no config. It is the best available
-# restore value, but being on record is NOT a guarantee that it carries a credential — so the leg
-# checks, rather than assuming (#1546).
 #
-# #2325: that record can only ever be created by this leg applying a pools value, so requiring one
-# on record before the leg runs was circular — a rig this leg had never touched could never pass its
-# own precondition. When nothing is on record yet, IT_RIG_POOLS_PROBE is the seed: it is by
-# definition a pools value the operator has already attested is safe to apply to this rig and
-# carries a `pass` (its contract, same as always), so it doubles as "the original" too — there was
-# no real prior value to restore, and restoring to the probe leaves `.last_applied.pools` seeded for
-# every run after this one. The #1546 credential check below still runs against whatever ends up in
-# `orig_pools`, seeded or not, so a probe missing its own `pass` is refused rather than applied.
+# #2470: the restore target is IT_RIG_POOLS_PROBE, and only that. The leg used to restore from
+# `.last_applied.pools`, which is the dashboard's record of what it pushed but is served through the
+# same credential strip as `.rig_config` — `pass` and `tls-fingerprint` are gone from it by design
+# (#113, test_worker_detail_credentials.py::test_last_applied_is_clean). So once any pools row was on
+# record, the #1546 check below refused the stripped value and the leg skipped on that rig for good;
+# only a rig with an empty record (#2325's seed) ever ran it. A credential that DID arrive through
+# that payload would be a #113 regression to report, never a value to write at a real miner, so the
+# record is not read here at all. The probe is by contract a value the operator has attested is
+# safe to apply to this rig and carries a `pass`, so it doubles as "the original": the harness has
+# no credential-bearing reading of the rig's real prior value to restore instead. With the restore
+# value equal to the probe, a second "revert" apply would only restart the miner to the same config,
+# so one confirmed apply is the round trip, and the #1379 ledger mark covers a run that dies first.
 run_rigforge_pools() { # <rig>
-    local rig="$1" orig_pools res status ckeys
+    local rig="$1" res status ckeys
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
         it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (a JSON pools value safe to apply to rig '$rig')"
         return 0
@@ -187,37 +187,26 @@ run_rigforge_pools() { # <rig>
         it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "the operator-supplied pools probe is malformed"
         return 0
     fi
-    orig_pools="$(_worker_detail "$rig" | jq -c '.last_applied.pools // empty' 2>/dev/null)"
-    # #2325: nothing on record yet is not a dead end — the probe is the only value this leg has ever
-    # been allowed to trust, so it seeds the record with itself rather than refusing forever.
-    [ -z "$orig_pools" ] && orig_pools="$IT_RIG_POOLS_PROBE"
-    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. Being ON RECORD (or being the
-    # seed above) does not mean a value can be written back — a pools array whose entries carry no
-    # usable `pass` restores the rig to a credential-less config, which is the outcome the
-    # self-derived-pools refusal exists to prevent. Refusing is the honest answer for the same reason
-    # #1236 refuses `.rig_config.pools`: the harness cannot tell "this rig has no pass" from "it was
-    # stripped", and must not guess against a real miner. The shapes that reach this branch are
-    # enumerated as executable cases in the self-test, which is where they cannot drift out of step
-    # with the code.
-    if ! printf '%s' "$orig_pools" |
+    # #1546: test the CREDENTIAL, never emptiness as a proxy for it. A pools array whose entries
+    # carry no usable `pass` restores the rig to a credential-less config, which is the outcome the
+    # self-derived-pools refusal exists to prevent. The shapes that reach this branch are enumerated
+    # as executable cases in the self-test, which is where they cannot drift out of step with the
+    # code.
+    if ! printf '%s' "$IT_RIG_POOLS_PROBE" |
         jq -e 'type == "array" and length > 0 and all(.[]; (.pass? // "") != "")' >/dev/null 2>&1; then
-        it_skip_leg "pools write (#1002b)" "rig '$rig' has no usable credential to restore pools with — neither .last_applied.pools nor IT_RIG_POOLS_PROBE carries a non-empty \`pass\` on every entry, and the rig's own .rig_config.pools is credential-stripped and must not be written back (#1546)"
+        it_skip_leg "pools write (#1002b)" "IT_RIG_POOLS_PROBE is not a usable pools value to apply and restore on rig '$rig' — it must be a non-empty array with a non-empty \`pass\` on every entry; the dashboard's .last_applied.pools and the rig's own .rig_config.pools are credential-stripped and are never written back (#1546/#2470)"
         return 0
     fi
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
-    # The restore target is last_applied, and the guard above has PROVEN this value carries `pass`
-    # rather than assuming it — the same un-stripped value the revert below uses, and the only one
-    # safe to write back (#113). (#1379, #1546)
-    rig_key_mark dash "$rig" pools "$orig_pools"
+    # On the books before the write goes out (#1379), with the value the guard above has PROVEN
+    # carries `pass`, so an EXIT-trap restore cannot strand the rig on a credential-less config.
+    # Retired only once the rig confirms it holds that value — which is also the restore value.
+    rig_key_mark dash "$rig" pools "$IT_RIG_POOLS_PROBE"
     res="$(_worker_apply "$rig" "{\"pools\":$IT_RIG_POOLS_PROBE}")"
     status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
     ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
     assert_contains "the rig's /status confirms pools changed (#1002b)" "$ckeys" "pools"
-    it_step "reverting pools to the dashboard's last-applied value…"
-    res="$(_worker_apply "$rig" "{\"pools\":$orig_pools}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
-    assert_eq "pools edit reverted on the rig (#1002b)" "$status" "applied"
     [ "$status" = "applied" ] && rig_key_clear dash "$rig" pools
     return 0
 }

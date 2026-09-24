@@ -308,8 +308,8 @@ assert_contains "the up-front 'could not read' guard is what refused it, in its 
 assert_eq "the per-key skips did not fire (they would misreport a silent rig as one that answered)" \
     "$(printf '%s' "$err" | grep -c 'skipping that leg')" "0"
 
-echo "== run_rigforge_pools: still operator-gated, and it restores from last_applied =="
-STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
+echo "== run_rigforge_pools: still operator-gated =="
+STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1"}]}}'
 reset_applies
 unset IT_RIG_POOLS_PROBE
 counts="$(quietly run_rigforge_pools rig1)"
@@ -325,63 +325,50 @@ assert_contains "an absent pools probe is one missing row, never green" "$pools_
 assert_contains "the pools missing row names the required input" "$pools_rows" \
     "[missing] leg      pools write (#1002b) — no IT_RIG_POOLS_PROBE"
 
-export IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]'
+echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the leg for good =="
+# The shape the real dashboard serves: once any pools apply is on record, .last_applied.pools is
+# there with `pass` stripped (#113, test_last_applied_is_clean). Before #2470 the leg took that as
+# its restore value, the #1546 check refused it, and the leg POSTed nothing on that rig ever again.
+# The empty record is #2325's case, which must keep running too.
+export IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"probesecret"}]'
+MARK_LOG="$(mktemp)"
+trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
+rig_key_mark() { printf '%s\n' "$4" >>"$MARK_LOG"; }
+for _detail in "$STUB_DETAIL" '{"last_applied":{}}'; do
+    STUB_DETAIL="$_detail"
+    reset_applies
+    : >"$MARK_LOG"
+    quietly run_rigforge_pools rig1 >/dev/null
+    assert_eq "the leg applies the probe once, whatever is on record [$_detail]" \
+        "$(applies)" '{"pools":[{"url":"probe:1","pass":"probesecret"}]}'
+    assert_eq "the #1379 ledger restores to the credential-bearing probe [$_detail]" \
+        "$(cat "$MARK_LOG")" '[{"url":"probe:1","pass":"probesecret"}]'
+done
+rig_key_mark() { :; }
+# A `pass` arriving through the Inspect payload would be a #113 regression, not a restore source.
+STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'
 reset_applies
 quietly run_rigforge_pools rig1 >/dev/null
-# The load-bearing half: the restore target is last_applied (which still carries `pass`), NEVER the
-# rig's own .rig_config.pools, which arrives with `pass` and `tls-fingerprint` deleted twice over.
-assert_eq "the restore uses last_applied, credential intact" \
-    "$(applies | sed -n 2p)" '{"pools":[{"url":"real:1","pass":"secret"}]}'
-assert_eq "the restore is NOT the rig's credential-stripped self-read" \
+assert_eq "no apply carries the dashboard's record, even one that kept its pass" \
+    "$(applies | grep -c 'real:1')" "0"
+assert_eq "no apply carries the rig's credential-stripped self-read" \
     "$(applies | grep -c 'stripped:1')" "0"
 
-# #1546: the guard tests the CREDENTIAL, never emptiness as a proxy for it. These cases are the
-# reason this section could not be trusted before: the STUB_DETAIL above hardcodes `"pass":"secret"`,
-# so every assertion in this file stays green whether the guard tests `pass` or not — the coverage
-# was structurally blind, not merely thin. Measured against the pre-#1546 function, both shapes below
-# POSTed twice (the probe AND a credential-less restore, at a real miner); after it, zero. The
-# pass-present rows above are the positive control that the leg still runs and still POSTs.
-for _shape in '[{"url":"real:1"}]' '[{"url":"real:1","pass":""}]'; do
-    STUB_DETAIL="$(jq -cn --argjson p "$_shape" '{last_applied: {pools: $p}}')"
+# #1546: the guard tests the probe's CREDENTIAL, never emptiness as a proxy for it. Each shape here
+# would restore a borrowed miner to a credential-less config; the pass-bearing runs above are the
+# positive control that the leg still POSTs.
+for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"url":"probe:1","pass":"x"}'; do
+    IT_RIG_POOLS_PROBE="$_shape"
     reset_applies
     counts="$(quietly run_rigforge_pools rig1)"
-    assert_eq "a last_applied.pools with no usable pass POSTs nothing at the rig [$_shape]" \
+    assert_eq "a probe with no usable pass POSTs nothing at the rig [$_shape]" \
         "$(applies | grep -c .)" "0"
     assert_eq "and self-skips rather than passing or failing [$_shape]" "$counts" "0,0"
 done
 # A skip that announces the wrong reason is its own small lie.
-STUB_DETAIL='{"last_applied":{"pools":[{"url":"real:1"}]}}'
-reset_applies
 err="$(drive_err run_rigforge_pools rig1)"
-assert_contains "the passless skip says the CREDENTIAL is what is missing" "$err" "no usable credential"
-
-echo "== run_rigforge_pools: #2325 — an absent record is SEEDED from IT_RIG_POOLS_PROBE, not skipped =="
-# The precondition this issue is about: a rig this leg has never touched has no .last_applied.pools
-# to restore, and used to skip forever because of it. The probe (by contract, a value the operator
-# has already attested carries `pass`) breaks that circle — it seeds the record with itself, so
-# there is no "original" other than the probe to restore back to.
-STUB_DETAIL='{"last_applied":{}}'
-IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"seedsecret"}]'
-reset_applies
-quietly run_rigforge_pools rig1 >/dev/null
-assert_eq "seeding an absent record still POSTs — it is not skipped (#2325)" "$(applies | grep -c .)" "2"
-assert_eq "the first apply carries the probe — nothing else to seed with" \
-    "$(applies | sed -n 1p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
-assert_eq "the restore is the same probe — there is no other original yet" \
-    "$(applies | sed -n 2p)" '{"pools":[{"url":"probe:1","pass":"seedsecret"}]}'
-IT_RIG_POOLS_PROBE='[{"url":"probe:1"}]' # restored: the credential-less probe the rest of this file uses
-
-# The #1546 guard survives the seed path: a probe with no `pass` of its own must not seed a
-# credential-less config onto the rig either, and must say so — never a stale "nothing on record".
-STUB_DETAIL='{"last_applied":{}}'
-reset_applies
-err="$(drive_err run_rigforge_pools rig1)"
-assert_contains "a credential-less probe can't seed an absent record either (#1546/#2325)" \
-    "$err" "no usable credential"
-assert_eq "and nothing is POSTed — the credential is checked before any seed/apply" \
-    "$(applies | grep -c .)" "0"
-
-STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"secret"}]}}'
+assert_contains "the passless skip names the probe's credential as what is missing" "$err" \
+    "non-empty \`pass\` on every entry"
 
 export IT_RIG_POOLS_PROBE='not-json-fixturesecret42'
 reset_applies
