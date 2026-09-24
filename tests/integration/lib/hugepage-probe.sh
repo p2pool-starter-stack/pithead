@@ -4,9 +4,11 @@
 #
 # The appliance's reduced tier reserves a fixed pool (os/overlay/pithead-hugepages), sized from
 # the pinned sources rather than from a measurement. This samples what each process actually
-# holds, so the value can be set from a peak instead of a derivation, and so a daemon that fell
-# back to ordinary memory (the #78 crash loop: p2pool's dataset outside the pool, killed at its
-# mem_limit) turns the run red instead of passing unnoticed.
+# holds, so the value can be set from a peak instead of a derivation, and so a daemon whose
+# RandomX memory fell out of the pool altogether (the #78 crash loop: p2pool in ordinary memory,
+# killed at its mem_limit and restarted) turns the run red instead of passing unnoticed. A daemon
+# that keeps some pages in the pool (p2pool's caches) while the rest falls back is not zero, and
+# this row does not claim it; the peak against the reserved pool is the bound for that.
 #
 # Measured per process from /proc/<pid>/smaps_rollup (Private_Hugetlb + Shared_Hugetlb), never
 # from a HugePages_Free delta in /proc/meminfo: the pool is shared with anything else on the box
@@ -19,10 +21,14 @@
 
 HUGEPAGE_PROCS="monerod p2pool"
 HUGEPAGE_INTERVAL_S=10
-# A daemon allocates its RandomX memory at start (p2pool's dataset, monerod's main-seed cache),
-# so an instance still at zero after this long has fallen back rather than not got there yet.
-# Shorter-lived instances (a restart mid-phase) are judged only by the run's peak.
+# Both daemons allocate their RandomX memory at start: p2pool its dataset and both caches in the
+# RandomX_Hasher constructor (src/pow_hash.cpp), monerod its main-seed cache once the chain is
+# open. An instance still at zero after this long has fallen back rather than not got there yet.
 HUGEPAGE_SETTLE_S=300
+# A restart can be read once or twice before its allocation lands; a crash loop is instance
+# after instance that never holds a page, each too short-lived for the settle window. This many
+# zero-only instances of one daemon in a run is the loop, not a restart.
+HUGEPAGE_ZERO_LOOP=3
 HUGEPAGE_SAMPLES=""
 HUGEPAGE_SAMPLER_PID=""
 HUGEPAGE_HOST_THREADS=""
@@ -30,17 +36,18 @@ HUGEPAGE_HOST_THREADS=""
 # One reading per daemon, one TSV line each: epoch, name, pid, starttime, hugetlb kB, threads.
 # A daemon not running (or its entrypoint not yet exec'd into it) reads as "-" in every field
 # after the name. The pid is the container's init, which both entrypoints exec into; comm
-# confirms it before the rollup is read. Another user's rollup needs root, hence sudo -n.
+# confirms it before the rollup is read. Another user's rollup needs root, hence sudo -n; a
+# running daemon whose rollup cannot be read is "?" in the kB field, never absent.
 read -r -d '' HUGEPAGE_SAMPLE_SNIPPET <<'SNIPPET'
 now=$(date +%s)
 for c in monerod p2pool; do
     pid=$(docker inspect -f '{{.State.Pid}}' "$c" 2>/dev/null) || pid=0
-    if [ "${pid:-0}" -gt 0 ] 2>/dev/null && [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "$c" ] &&
-        body=$(cat "/proc/$pid/smaps_rollup" 2>/dev/null || sudo -n cat "/proc/$pid/smaps_rollup" 2>/dev/null) &&
-        [ -n "$body" ]; then
+    if [ "${pid:-0}" -gt 0 ] 2>/dev/null && [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "$c" ]; then
         start=$(awk '{print $22}' "/proc/$pid/stat" 2>/dev/null)
         threads=$(awk '/^Threads:/ {print $2}' "/proc/$pid/status" 2>/dev/null)
-        kb=$(printf '%s\n' "$body" | awk '/^(Private|Shared)_Hugetlb:/ {kb += $2} END {print kb + 0}')
+        body=$(cat "/proc/$pid/smaps_rollup" 2>/dev/null || sudo -n cat "/proc/$pid/smaps_rollup" 2>/dev/null)
+        kb='?'
+        [ -z "$body" ] || kb=$(printf '%s\n' "$body" | awk '/^(Private|Shared)_Hugetlb:/ {kb += $2} END {print kb + 0}')
         printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$now" "$c" "$pid" "${start:--}" "$kb" "${threads:--}"
     else
         printf '%s\t%s\t-\t-\t-\t-\n' "$now" "$c"
@@ -50,19 +57,19 @@ SNIPPET
 
 hugepage_sample() { rx "$HUGEPAGE_SAMPLE_SNIPPET" 2>/dev/null; }
 
-# Background loop for the life of the run. It polls its parent each second so a harness killed
-# mid-run (a cancelled job, a drain) never leaves it behind, and closes the rig-lock descriptors
-# it inherited so it can never extend the lock past the harness.
+# Background loop for the life of the run. It stops at its stop file, and polls its parent each
+# second so a harness killed mid-run (a cancelled job, a drain) never leaves it behind. It closes
+# the rig-lock descriptors it inherited so it can never hold the lock past the harness.
 hugepages_sampler_start() { # <samples-file>
     HUGEPAGE_SAMPLES="$1"
-    : >"$HUGEPAGE_SAMPLES" || return 1
+    rm -f "$HUGEPAGE_SAMPLES.stop" && : >"$HUGEPAGE_SAMPLES" || return 1
     local parent=$$
     (
         exec 8>&- 9<&-
-        while kill -0 "$parent" 2>/dev/null; do
+        while kill -0 "$parent" 2>/dev/null && [ ! -e "$HUGEPAGE_SAMPLES.stop" ]; do
             hugepage_sample >>"$HUGEPAGE_SAMPLES" </dev/null
             for _ in $(seq "$HUGEPAGE_INTERVAL_S"); do
-                kill -0 "$parent" 2>/dev/null || exit 0
+                kill -0 "$parent" 2>/dev/null && [ ! -e "$HUGEPAGE_SAMPLES.stop" ] || exit 0
                 sleep 1
             done
         done
@@ -70,21 +77,32 @@ hugepages_sampler_start() { # <samples-file>
     HUGEPAGE_SAMPLER_PID=$!
 }
 
+# Ask the loop to stop and let a round in flight finish, so nothing lands after the final
+# reading; a round stuck past a minute is killed.
 hugepages_sampler_stop() {
     [ -n "$HUGEPAGE_SAMPLER_PID" ] || return 0
+    : >"$HUGEPAGE_SAMPLES.stop"
+    local i=0
+    while kill -0 "$HUGEPAGE_SAMPLER_PID" 2>/dev/null && [ "$i" -lt 60 ]; do
+        sleep 1
+        i=$((i + 1))
+    done
     kill "$HUGEPAGE_SAMPLER_PID" 2>/dev/null
     wait "$HUGEPAGE_SAMPLER_PID" 2>/dev/null
     HUGEPAGE_SAMPLER_PID=""
+    rm -f "$HUGEPAGE_SAMPLES.stop"
     hugepage_sample >>"$HUGEPAGE_SAMPLES" </dev/null
 }
 
 # Pure: per daemon over the sample file, one TSV line each:
-#   name  readings  peak_kb  peak_threads  settled_zero_instances
-# readings counts samples that found the daemon running. An instance (pid + starttime, so a
-# reused pid is a new instance) is settled-zero when it was seen for at least <settle_s> and
-# never held a hugetlb page.
+#   name  readings  unreadable  peak_kb  peak_threads  settled_zero  zero_only
+# readings counts samples that read the daemon's rollup; unreadable, those that found it running
+# and could not. An instance is pid + starttime, so a reused pid is a new instance. zero_only
+# counts instances that never held a hugetlb page; settled_zero, those of them seen across at
+# least <settle_s>.
 hugepage_tally() { # <samples-file> <settle_s>
     awk -F'\t' -v settle="$2" -v procs="$HUGEPAGE_PROCS" '
+        $3 != "-" && $5 == "?" { bad[$2]++ }
         $3 != "-" && $5 ~ /^[0-9]+$/ {
             n[$2]++
             if ($5 > peak[$2]) peak[$2] = $5
@@ -96,13 +114,15 @@ hugepage_tally() { # <samples-file> <settle_s>
         }
         END {
             for (k in first) {
+                if (imax[k] + 0 > 0) continue
                 split(k, p, SUBSEP)
-                if (last[k] - first[k] >= settle && imax[k] + 0 == 0) zero[p[1]]++
+                zero[p[1]]++
+                if (last[k] - first[k] >= settle) settled[p[1]]++
             }
             split(procs, names, " ")
             for (i = 1; names[i] != ""; i++) {
                 c = names[i]
-                printf "%s\t%d\t%d\t%d\t%d\n", c, n[c], peak[c], thr[c], zero[c]
+                printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\n", c, n[c], bad[c], peak[c], thr[c], settled[c], zero[c]
             }
         }' "$1"
 }
@@ -114,53 +134,73 @@ hugepage_report_json() { # <tally> <interval_s> <settle_s> <samples> <host_threa
         --argjson interval "$2" --argjson settle "$3" --argjson samples "$4" --arg host_threads "$5" '
         {interval_s: $interval, settle_s: $settle, sample_rounds: $samples,
          host_threads: ($host_threads | tonumber? // null),
-         processes: (split("\n") | map(select(length > 0) | split("\t")) | map({key: .[0], value: {
-             readings: (.[1] | tonumber), peak_kb: (.[2] | tonumber),
-             peak_pages: (((.[2] | tonumber) + 2047) / 2048 | floor),
-             peak_threads: (.[3] | tonumber), settled_zero_instances: (.[4] | tonumber)}}) | from_entries)}'
+         processes: (split("\n") | map(select(length > 0) | split("\t") | map(tonumber? // .)) | map({key: .[0], value: {
+             readings: .[1], unreadable: .[2], peak_kb: .[3], peak_pages: ((.[3] + 2047) / 2048 | floor),
+             peak_threads: .[4], settled_zero_instances: .[5], zero_only_instances: .[6]}}) | from_entries)}'
 }
 
-# The gate. Red when a daemon held no hugetlb page at any reading, or when any instance of it
-# ran past the settle window without one. A daemon this run never saw is a skipped leg, not a
-# pass: the other phases own "it is running", and this row cannot say anything about it.
+# The gate, per daemon. Red when its rollup could never be read while it ran, when it held no
+# hugetlb page at any reading, when an instance ran past the settle window without one, or when
+# instance after instance never held one (the loop). A daemon this run never saw running is a
+# skipped leg, not a pass: the other phases own "it is running", and this row cannot judge it.
 hugepage_assert() { # <tally>
-    local name readings peak threads zeros
-    while IFS=$'\t' read -r name readings peak threads zeros; do
+    local name readings unreadable peak threads settled zeros
+    while IFS=$'\t' read -r name readings unreadable peak threads settled zeros; do
         [ -n "$name" ] || continue
-        if [ "$readings" -eq 0 ]; then
+        if [ "$readings" -eq 0 ] && [ "$unreadable" -eq 0 ]; then
             it_skip_leg "$name hugetlb pages (#2685)" "$name was never running while the sampler read the box" by-design
             continue
         fi
-        it_step "$name: peak $peak kB hugetlb over $readings readings, up to $threads threads"
+        if [ "$readings" -eq 0 ]; then
+            it_fail "$name's smaps_rollup is readable" "$unreadable readings found $name running and could not read it (needs root or sudo -n)"
+            continue
+        fi
+        it_step "$name: peak $peak kB hugetlb over $readings readings ($unreadable unreadable), up to $threads threads"
         assert_num_gt "$name holds hugetlb pages (peak kB over the run)" "$peak" 0
-        assert_eq "$name: no instance ran ${HUGEPAGE_SETTLE_S}s without hugetlb pages" "$zeros" 0
+        assert_eq "$name: no instance ran ${HUGEPAGE_SETTLE_S}s without hugetlb pages" "$settled" 0
+        if [ "$zeros" -lt "$HUGEPAGE_ZERO_LOOP" ]; then
+            it_pass "$name: no restart loop without hugetlb pages"
+        else
+            it_fail "$name: no restart loop without hugetlb pages" "$zeros instances never held a hugetlb page"
+        fi
     done <<<"$1"
 }
 
-# Start at the head of the destructive run. A box with no pool reserved cannot be judged: the
-# daemons fall back by design there, so the row records the absence instead of failing it.
+# Start after the safety backup. A box with no pool reserved cannot be judged: the daemons fall
+# back by design there, so the phase records the absence instead of failing it.
 hugepages_begin() {
     local total
     total="$(rx "awk '/^HugePages_Total:/ {print \$2}' /proc/meminfo" 2>/dev/null)"
-    if ! [ "${total:-0}" -gt 0 ] 2>/dev/null; then
+    if ! [[ "$total" =~ ^[0-9]+$ ]]; then
+        # shellcheck disable=SC2034  # shared through the assembled runner scope
+        IT_CURRENT_SCENARIO="hugepages"
+        it_fail "hugepages: HugePages_Total is readable" "got [$total] from /proc/meminfo"
+        return 0
+    fi
+    if [ "$total" -eq 0 ]; then
         it_skip_phase "hugepages (#2685)" "the box reserves no HugePages (HugePages_Total is 0); reserve the pool to measure it"
         return 0
     fi
     HUGEPAGE_HOST_THREADS="$(rx nproc 2>/dev/null)"
-    hugepages_sampler_start "$OUT_DIR/hugepages-samples.tsv"
+    hugepages_sampler_start "$OUT_DIR/hugepages-samples.tsv" ||
+        it_fail "hugepages: sampler started" "could not create $OUT_DIR/hugepages-samples.tsv"
 }
 
-# Stop, gate, and write hugepages-peak.json beside the samples. Safe to call when begin skipped.
+# Stop, gate, and write hugepages-peak.json beside the samples. Safe to call when begin did not
+# start a sampler.
 hugepages_finish() {
     [ -n "$HUGEPAGE_SAMPLER_PID" ] || return 0
     hugepages_sampler_stop
     local tally rounds
     tally="$(hugepage_tally "$HUGEPAGE_SAMPLES" "$HUGEPAGE_SETTLE_S")"
     rounds="$(awk -F'\t' '$2 == "p2pool"' "$HUGEPAGE_SAMPLES" | wc -l | tr -d ' ')"
-    hugepage_report_json "$tally" "$HUGEPAGE_INTERVAL_S" "$HUGEPAGE_SETTLE_S" "$rounds" "${HUGEPAGE_HOST_THREADS:-}" \
-        >"$OUT_DIR/hugepages-peak.json"
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="hugepages"
-    it_log "hugepages: per-process hugetlb peaks (#2685) -> $OUT_DIR/hugepages-peak.json"
+    if hugepage_report_json "$tally" "$HUGEPAGE_INTERVAL_S" "$HUGEPAGE_SETTLE_S" "$rounds" "${HUGEPAGE_HOST_THREADS:-}" \
+        >"$OUT_DIR/hugepages-peak.json"; then
+        it_log "hugepages: per-process hugetlb peaks (#2685) -> $OUT_DIR/hugepages-peak.json"
+    else
+        it_fail "hugepages: hugepages-peak.json written" "jq could not render the tally"
+    fi
     hugepage_assert "$tally"
 }
