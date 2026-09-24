@@ -106,11 +106,12 @@ rm -rf "$FBV"
 echo "== structure: the provision phase settles provisioning before its day-two legs (#2648) =="
 # dashboard and caddy run while the wizard's `up` still waits on tor's healthcheck, so the podman ps
 # row alone let job 944's control legs race an unfinished provisioning. Mutation runs: move or drop
-# the provisioning_settled call, negate it, or drop the `return 1` in its else branch -> red.
+# the provisioning_settled call, negate it, or move the `return 1` out of its else branch -> red.
 PI_ORDER=$(awk '
     /ok "stack containers are running/ { up = NR }
     up && !settled && /^ *if provisioning_settled [0-9]+; then/ { settled = NR }
-    settled && !aborts && !closed && /^ *return 1$/ { aborts = NR }
+    settled && !closed && /^ *else$/ { otherwise = NR }
+    otherwise && !aborts && !closed && /^ *return 1$/ { aborts = NR }
     settled && !closed && /^ *fi$/ { closed = NR }
     /^ *phase_provision_control_regressions / { control = NR }
     END { print (up && aborts && control && settled < control ? "settled-first" : "control-first or missing") }
