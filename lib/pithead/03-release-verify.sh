@@ -154,6 +154,9 @@ stack_upgrade() {
     provision_ssh_access
     provision_console_login
     log "Re-rendered generated config for the current release."
+    # #2636: a Tari major that migrates chain data needs room for the old database again — refuse
+    # before any container is recreated, so the migrating node never starts on a volume too small.
+    tari_upgrade_space_precheck
     migrate_compose_project
     # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
     # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting

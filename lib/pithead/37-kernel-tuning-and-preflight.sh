@@ -250,6 +250,54 @@ check_disk_grouped() {
     return 0
 }
 
+# The major version in a Tari image reference's tag: ...minotari_node:v6.0.1-pre.0-mainnet@sha256:…
+# prints 6. Returns 1 for a tag without a leading version (latest-mainnet) or no tag at all.
+tari_image_major() {
+    local ref="${1%%@*}" tag
+    tag=${ref##*/}
+    case "$tag" in *:*) tag=${tag##*:} ;; *) return 1 ;; esac
+    [[ "$tag" =~ ^v?([0-9]+)\. ]] || return 1
+    printf '%s' "${BASH_REMATCH[1]}"
+}
+
+# The Tari node's LMDB file under its data dir: Tari keeps it at <base>/<network>/data/base_node/db.
+tari_node_db_file() {
+    local f
+    for f in "$1"/data/base_node/db/data.mdb "$1"/*/data/base_node/db/data.mdb; do
+        [ -f "$f" ] && { printf '%s' "$f"; return 0; }
+    done
+    return 1
+}
+
+# Free-space precheck before a Tari major migrates the node's database (#2636). The 6.0.0
+# migration compacts data.mdb by writing a new copy beside the old one (161 GB grew to 216 GB at
+# peak on both benches), so a volume without the old file's size free fails part-way through.
+# The need is data.mdb's size plus a 5 GiB margin for LMDB's 2 GiB map growth steps and what the
+# rest of the stack writes to the same volume while the migration runs. It fires only when the
+# existing tari container runs an older major than the one compose is about to start. With no
+# container to read (after a `down`) it cannot tell, so a shortfall is a warning, not a refusal.
+tari_upgrade_space_precheck() {
+    local dir db to_img from_img to from mount avail_kb need_kb
+    dir=$(env_get TARI_DATA_DIR)
+    [ -n "$dir" ] || dir="$PWD/data/tari"
+    db=$(tari_node_db_file "$dir") || return 0
+    to_img=$(docker compose config --format json 2>/dev/null | jq -r '.services.tari.image // empty' 2>/dev/null) || to_img=""
+    to=$(tari_image_major "$to_img") || return 0
+    from_img=$(docker inspect --format '{{.Config.Image}}' tari 2>/dev/null) || from_img=""
+    from=$(tari_image_major "$from_img") || from=""
+    [ -n "$from" ] && [ "$from" -ge "$to" ] && return 0
+    mount=$(disk_fs_mount "$db") || return 0
+    avail_kb=$(df -Pk "$mount" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
+    need_kb=$(($(wc -c <"$db" | tr -d ' ') / 1024 + 5 * 1048576))
+    [ -n "$avail_kb" ] && [ "$avail_kb" -ge "$need_kb" ] 2>/dev/null && return 0
+    local sizes="about $(((need_kb + 1048575) / 1048576)) GiB free on $mount (Tari's data.mdb plus a 5 GiB margin), and $mount has $((${avail_kb:-0} / 1048576)) GiB free"
+    if [ -z "$from" ]; then
+        warn "Could not tell which Tari version last ran on this database (no tari container to read). If this upgrade crosses a Tari major, its database migration needs $sizes."
+        return 0
+    fi
+    error "Refusing the upgrade: Tari $from → $to migrates the node database by writing a compacted copy beside the old one, which needs $sizes. Free space on $mount or move tari.data_dir to a larger volume, then re-run '$0 upgrade'. No container was changed."
+}
+
 # Pre-flight resource check (#87). Best-effort, WARN-only: catch the most demoralizing first-run
 # failure — an undersized host that fills its disk mid-sync — before we commit to a sync. Never
 # blocks or exits: a missing path or unreadable file just skips that check. Call after
