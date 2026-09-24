@@ -57,7 +57,7 @@ from mining_dashboard.service.data_audit import (
     _RIG_EDIT_WINDOW_SEC,
     DataAuditMixin,
 )
-from mining_dashboard.service.data_gates import DataGateMixin
+from mining_dashboard.service.data_gates import DataGateMixin, chain_synced
 from mining_dashboard.service.data_helpers import (
     _SHARE_STAT_KEYS,
     _aggregate_hashrate,
@@ -239,18 +239,14 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     tari_sync = await tari_client.get_sync_status()
 
                     # Raw per-node "fully synced" signals for the sync gate (Issue #35),
-                    # captured BEFORE the network-height UI override below. A node counts as
-                    # synced only when it's reachable AND not syncing — an unreachable node
-                    # reports is_syncing=False too, and we must not mistake that for synced
-                    # (that's what #31's node-down handling is for). Reading the raw signal
-                    # also avoids a deadlock: the height override is fed by p2pool's stats
-                    # file, which reads 0 while p2pool is held — falsely "syncing" forever.
-                    monero_synced = monero_sync.get("reachable", True) and not monero_sync.get(
-                        "is_syncing", False
-                    )
-                    tari_synced = tari_sync.get("reachable", True) and not tari_sync.get(
-                        "is_syncing", False
-                    )
+                    # captured BEFORE the network-height UI override below. `chain_synced`
+                    # counts only an explicit reachable, not-syncing reading, so an unreachable
+                    # node or an empty result is never mistaken for synced (#31, #2472). Reading
+                    # the raw signal also avoids a deadlock: the height override is fed by
+                    # p2pool's stats file, which reads 0 while p2pool is held — falsely
+                    # "syncing" forever.
+                    monero_synced = chain_synced(monero_sync)
+                    tari_synced = chain_synced(tari_sync)
 
                     # Auto-transition a clearnet initial-sync node back to Tor once it's synced
                     # (#234). Reuses the synced signals above; the supervisor writes a persistent

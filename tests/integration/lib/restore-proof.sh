@@ -53,7 +53,12 @@ restore_egress_check_units() {
 # baseline stack's own firewall, which the restore's apply has just reinstalled.
 restore_egress_boot_unit() {
     case "$EGRESS_UNIT_BEFORE" in
-    present) return 0 ;;
+    present)
+        # Said out loud: a unit a cancelled run left behind also reads as "present", and a silent
+        # pass here would bury that drift.
+        step "restore proof: pithead-egress.service was already on the bench before this run — left in place, not removed (#2460)"
+        return 0
+        ;;
     absent) ;;
     *)
         warn "restore proof: whether pithead-egress.service predates this run was never recorded, so the restore cannot say it left the bench as found (#2460)."

@@ -9,6 +9,26 @@ def _runtime():
     return data_service
 
 
+def chain_synced(sync):
+    """
+    A node's raw "fully synced" verdict for the #35 sync gate and the #234 clearnet transition,
+    both one-way. Only an explicit reading counts: the node answered this cycle
+    (``reachable is True``) and said it isn't syncing (``is_syncing is False``). An empty,
+    partial or unreachable result is not synced (#2472).
+
+    When the reading carries monerod's own ``synchronized`` flag (the local RPC path), that flag
+    must be True too. A monerod that has just restarted and has no peers yet reports
+    ``target_height: 0`` with ``synchronized: false``, which the client maps to "not syncing".
+    Before this check the gate took that as synced and released the miner on a chain that had
+    never synced. A reading without the key (a remote node, Tari) has no such verdict to wait on.
+    """
+    return (
+        sync.get("reachable") is True
+        and sync.get("is_syncing") is False
+        and sync.get("synchronized", True) is True
+    )
+
+
 class DataGateMixin:
     async def _apply_worker_rejection(self, monero_down):
         """
