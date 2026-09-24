@@ -37,6 +37,8 @@ source "$HERE/lib/borrow-rearm.sh" || exit $?
 source "$HERE/lib/zmq-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
+# shellcheck source=tests/integration/lib/hugepage-probe.sh
+source "$HERE/lib/hugepage-probe.sh" || exit $?
 
 # --- Defaults / globals -----------------------------------------------------
 IT_MODE="ssh"
@@ -164,6 +166,8 @@ main() {
         return
     fi
     [ -z "$SAFETY_ARCHIVE" ] || arm_safety_abort_restore
+    # Sampled for the whole destructive run, restore included; gated before each summary (#2685).
+    hugepages_begin
 
     # Upgrade first: old images are still running when the harness starts, and every later phase
     # then exercises the declared candidate image set. Do not mutate further after a failed
@@ -180,6 +184,7 @@ main() {
             fi
             [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
             safety_cleanup
+            hugepages_finish
             summary
             return
         fi
@@ -233,6 +238,7 @@ main() {
     fi
     [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
     safety_cleanup
+    hugepages_finish
     summary
 }
 
