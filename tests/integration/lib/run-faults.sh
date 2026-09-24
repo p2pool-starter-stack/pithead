@@ -117,6 +117,35 @@ fault_firewall_rollback() {
         "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" 0
 }
 
+# DIY reboot restore (#2460), without rebooting the bench: a reboot empties DOCKER-USER while the
+# containers restart, and pithead-egress.service is what refills it. Check docker.service pulls the
+# unit in and waits for it, strip the rules exactly as a reboot does, run the installed unit
+# itself against the real kernel, and prove the result is LIVE (the direct dial dropped, the Tor
+# one through), not merely present. DESTRUCTIVE-then-restored, like the rollback fault above.
+fault_firewall_boot_restore() {
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
+        it_skip_leg "firewall boot-restore fault" "network.tor_egress_firewall=false"
+        return 0
+    fi
+    it_step "fault: strip the Tor-egress rules as a reboot does, then run the boot unit…"
+    assert_eq "up installed and enabled the boot unit (#2460)" \
+        "$(rx 'systemctl is-enabled pithead-egress.service 2>/dev/null')" "enabled"
+    assert_contains "docker.service pulls the boot unit in (#2460)" \
+        "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-egress.service"
+    assert_contains "docker.service starts only after it (#2460)" \
+        "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
+    rx 'bash -c "source ./pithead && remove_tor_egress_firewall" >/dev/null 2>&1' || true
+    assert_eq "the rules are gone, as after a reboot" \
+        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
+    local rc=0
+    rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+    assert_rc "the boot unit starts cleanly on the real kernel (#2460)" "$rc" "0"
+    rc=0
+    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+    assert_rc "the rules it restored read as enforced: DROP reachable, nothing foreign above it (#2460)" "$rc" "0"
+    assert_egress_dial_pair
+}
+
 # TOP PRIVACY PRIORITY (#563): stop the tor container — the SOCKS proxy every app dials through
 # (#270) — and prove two things a healthy-box run never exercises: (a) nothing falls back to a
 # direct clearnet dial while SOCKS is unreachable (reuses assert_egress_posture, the same
@@ -300,6 +329,7 @@ run_fault_injection() {
     fault_missing
     fault_db_readonly
     fault_firewall_rollback
+    fault_firewall_boot_restore
     fault_tor_down
     fault_clock_drift
     fault_disk_enospc

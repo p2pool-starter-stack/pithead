@@ -1,15 +1,13 @@
 # --- Tor-only egress enforcement (#270) ---------------------------------------------------------
 # Fail-closed host firewall so a misconfigured/buggy bridge daemon (monerod/p2pool/tari/xmrig-proxy)
 # CAN'T leak the home IP: each may reach the LAN, the other containers and the Tor SOCKS, but any
-# DIRECT clearnet dial is DROPPED — only the `tor` container reaches the internet. Rules live in
-# Docker's DOCKER-USER chain (preserved across Docker restarts), installed BEFORE containers start on
-# every path that brings a clearnet-capable app up — `up`, `upgrade`, `apply`, `reset-dashboard` (so
-# there is no startup window to grandfather a leak past) — and removed at `down`. Needs
-# root (sudo), like the GRUB/HugePages steps. The allow-set is IPv4 (mining_net is IPv4-only by
-# design); the nft backend also fences IPv6 off the mining bridge if mining_net ever gains a v6
-# subnet, so the backstop can't silently fail open. Opt out with
-# network.tor_egress_firewall=false. Proven by tests/integration/benchmarks/bench-verify-egress.sh.
-# See docs/privacy.md.
+# DIRECT clearnet dial is DROPPED — only the `tor` container reaches the internet. Installed BEFORE
+# containers start on every path that brings a clearnet-capable app up — `up`, `upgrade`, `apply`,
+# `reset-dashboard`, and on a DIY host every boot (02a-tor-egress-boot.sh) — so there is no startup
+# window to grandfather a leak past; removed at `down`. Needs root (sudo). The allow-set is IPv4
+# (mining_net is IPv4-only by design); the nft backend also fences IPv6 off the mining bridge if
+# mining_net gains a v6 subnet. Opt out with network.tor_egress_firewall=false. Proven by
+# tests/integration/benchmarks/bench-verify-egress.sh. See docs/privacy.md.
 #
 # Two enforcement backends, one allow-set. Docker adds a `FORWARD -> DOCKER-USER` jump when it
 # creates a network, so on the DIY/Docker channel the rules live in DOCKER-USER (iptables). The
@@ -464,6 +462,7 @@ apply_tor_egress_firewall() {
     remove_tor_egress_firewall # clear stale rules so a re-apply is idempotent
     if [ "$(normalize_bool "$enabled")" != "true" ]; then
         warn "Tor-only egress firewall is OFF (network.tor_egress_firewall=false) — a misconfigured app could reach clearnet."
+        remove_tor_egress_boot_unit
         return 0
     fi
     subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
@@ -475,6 +474,7 @@ apply_tor_egress_firewall() {
         apply_tor_egress_nft "$subnet" "$tor_ip"
     else
         apply_tor_egress_iptables "$subnet" "$tor_ip"
+        provision_tor_egress_boot_unit "$subnet" "$tor_ip"
     fi
 }
 

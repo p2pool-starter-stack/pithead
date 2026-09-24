@@ -23,7 +23,8 @@ _RIG_LOCK_PARENT_VERIFIED=0
 # no writable key was touched" requirement structurally true rather than a guarded special case:
 # when nothing was written, no mark ever happened, so no trap was ever installed. It also keeps a
 # leg whose revert came back non-applied on the books, so the trap retries it at exit instead of
-# trusting an assertion that already red.
+# trusting an assertion that already red. The pools leg is the one exception: its restore value is
+# its probe, so it retires on the rig's own answer instead (see run_rigforge_pools, #2470).
 #
 # THE TRAP IS COMPOSED, NOT STACKED, AND THAT IS THE WHOLE HAZARD IN THIS FILE. `trap … EXIT`
 # REPLACES; it does not stack. run.sh calls `rig_lock` (lib.sh), which installs an EXIT trap of its
@@ -151,7 +152,7 @@ rig_key_mark() { # <route: dash|rig> <rig> <key> <original-value-as-json>
 }
 
 # Retire an outstanding write. Call this only once the revert is CONFIRMED applied; a revert that
-# came back anything else stays on the books so the trap retries it.
+# came back anything else stays on the books so the trap retries it. (Pools: see run_rigforge_pools.)
 rig_key_clear() { # <route> <rig> <key>
     local out="" r w k v
     # `<<<` and not a pipe: a pipeline runs its right-hand side in a SUBSHELL, and the assignment
