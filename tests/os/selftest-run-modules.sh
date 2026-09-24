@@ -226,7 +226,19 @@ grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" |
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
+# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
+# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
+# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
+# height that never reached the disk.
+m10_flush_before_cut() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
+        index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
+        index($0, "_ssh sync || {") && !flush { flush = NR }
+        index($0, "virsh destroy \"$VM\"") && !cut { cut = NR }
+        END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
+}
+m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
 # The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
 # And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
@@ -255,4 +267,14 @@ healthgate_marker=$(sed -n '/marker=$(SSH_TIMEOUT/,/# The gate loops/p' "$HERE/p
 grep -Fq 'bad "leg 5: expected v3fault booted after install' <<<"$healthgate_marker" || exit 1
 grep -Fxq '        return' <<<"$healthgate_marker" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
+
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
+# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
+# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
+# not let this add to; this runner is already the os lane's own self-test entry point and is
+# reached from the same tier-1 row.
+bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null 2>&1 || {
+    echo "#1998 appliance XvB routing leg self-test failed" >&2
+    exit 1
+}
 echo "os-run-modules: PASS"
