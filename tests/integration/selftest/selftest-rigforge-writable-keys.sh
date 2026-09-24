@@ -329,30 +329,31 @@ echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the
 # The shape the real dashboard serves: once any pools apply is on record, .last_applied.pools is
 # there with `pass` stripped (#113, test_last_applied_is_clean). Before #2470 the leg took that as
 # its restore value, the #1546 check refused it, and the leg POSTed nothing on that rig ever again.
-# The empty record is #2325's case, which must keep running too.
-export IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"probesecret"}]'
+# The empty record is #2325's case; a record that kept its `pass` would be a #113 regression, never a
+# restore source. The probe is pretty-printed on purpose: the #1379 ledger is one entry per line.
+export IT_RIG_POOLS_PROBE=$'[\n  {"url": "probe:1", "pass": "probesecret"}\n]'
 MARK_LOG="$(mktemp)"
 trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
 rig_key_mark() { printf '%s\n' "$4" >>"$MARK_LOG"; }
-for _detail in "$STUB_DETAIL" '{"last_applied":{}}'; do
+rig_key_clear() { printf 'clear %s\n' "$3" >>"$MARK_LOG"; }
+for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'; do
     STUB_DETAIL="$_detail"
     reset_applies
     : >"$MARK_LOG"
     quietly run_rigforge_pools rig1 >/dev/null
-    assert_eq "the leg applies the probe once, whatever is on record [$_detail]" \
+    assert_eq "the leg applies the compacted probe once, never the record or the rig's read [$_detail]" \
         "$(applies)" '{"pools":[{"url":"probe:1","pass":"probesecret"}]}'
-    assert_eq "the #1379 ledger restores to the credential-bearing probe [$_detail]" \
+    assert_eq "the ledger holds the probe on one line, uncleared while the rig says accepted [$_detail]" \
         "$(cat "$MARK_LOG")" '[{"url":"probe:1","pass":"probesecret"}]'
 done
-rig_key_mark() { :; }
-# A `pass` arriving through the Inspect payload would be a #113 regression, not a restore source.
-STUB_DETAIL='{"rig_config":{"pools":[{"url":"stripped:1"}]},"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'
-reset_applies
-quietly run_rigforge_pools rig1 >/dev/null
-assert_eq "no apply carries the dashboard's record, even one that kept its pass" \
-    "$(applies | grep -c 'real:1')" "0"
-assert_eq "no apply carries the rig's credential-stripped self-read" \
-    "$(applies | grep -c 'stripped:1')" "0"
+_worker_apply() {
+    printf '%s\n' "$2" >>"$APPLY_LOG"
+    printf '{"status":"applied","changed_keys":["pools"]}'
+}
+: >"$MARK_LOG"
+counts="$(quietly run_rigforge_pools rig1)"
+assert_eq "a confirmed apply passes both rows and retires the ledger entry" \
+    "$counts|$(sed -n 2p "$MARK_LOG")" "2,0|clear pools"
 
 # #1546: the guard tests the probe's CREDENTIAL, never emptiness as a proxy for it. Each shape here
 # would restore a borrowed miner to a credential-less config; the pass-bearing runs above are the

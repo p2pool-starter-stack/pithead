@@ -159,8 +159,7 @@ run_rigforge_writable_keys() { # <rig>
     fi
 }
 
-# #1002b: pools, the repoint-your-hashrate key. Unchanged in substance from the leg that lived in
-# run.sh, and still operator-gated for the reason above: the harness cannot read a pools value it
+# #1002b: pools, the repoint-your-hashrate key. Still operator-gated for the reason above: the harness cannot read a pools value it
 # could safely write back. pithead treats `pools` as opaque passthrough (WORKER_WRITABLE_KEYS checks
 # the key NAME, never the value shape), so a guessed value risks a real rejected/failed instead of
 # proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
@@ -174,16 +173,19 @@ run_rigforge_writable_keys() { # <rig>
 # that payload would be a #113 regression to report, never a value to write at a real miner, so the
 # record is not read here at all. The probe is by contract a value the operator has attested is
 # safe to apply to this rig and carries a `pass`, so it doubles as "the original": the harness has
-# no credential-bearing reading of the rig's real prior value to restore instead. With the restore
-# value equal to the probe, a second "revert" apply would only restart the miner to the same config,
-# so one confirmed apply is the round trip, and the #1379 ledger mark covers a run that dies first.
+# no credential-bearing reading of the rig's real prior value to restore instead, so the rig is left
+# on the probe. With the restore value equal to the probe, a second "revert" apply would only
+# restart the miner to the same config, so one confirmed apply is the round trip.
 run_rigforge_pools() { # <rig>
-    local rig="$1" res status ckeys
+    local rig="$1" probe res status ckeys
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
-        it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (a JSON pools value safe to apply to rig '$rig')"
+        it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (the pass-bearing JSON pools value rig '$rig' is to keep running)"
         return 0
     fi
-    if ! printf '%s' "${IT_RIG_POOLS_PROBE:-}" | jq -e . >/dev/null 2>&1; then
+    # Compacted once, and every use below takes this form: the #1379 ledger holds one entry per
+    # line, so a pretty-printed probe would split into fragments that never clear and that the EXIT
+    # unwind echoes to stderr, `pass` included.
+    if ! probe="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | jq -ce . 2>/dev/null)"; then
         it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "the operator-supplied pools probe is malformed"
         return 0
     fi
@@ -192,17 +194,17 @@ run_rigforge_pools() { # <rig>
     # self-derived-pools refusal exists to prevent. The shapes that reach this branch are enumerated
     # as executable cases in the self-test, which is where they cannot drift out of step with the
     # code.
-    if ! printf '%s' "$IT_RIG_POOLS_PROBE" |
+    if ! printf '%s' "$probe" |
         jq -e 'type == "array" and length > 0 and all(.[]; (.pass? // "") != "")' >/dev/null 2>&1; then
         it_skip_leg "pools write (#1002b)" "IT_RIG_POOLS_PROBE is not a usable pools value to apply and restore on rig '$rig' — it must be a non-empty array with a non-empty \`pass\` on every entry; the dashboard's .last_applied.pools and the rig's own .rig_config.pools are credential-stripped and are never written back (#1546/#2470)"
         return 0
     fi
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
-    # On the books before the write goes out (#1379), with the value the guard above has PROVEN
-    # carries `pass`, so an EXIT-trap restore cannot strand the rig on a credential-less config.
-    # Retired only once the rig confirms it holds that value — which is also the restore value.
-    rig_key_mark dash "$rig" pools "$IT_RIG_POOLS_PROBE"
-    res="$(_worker_apply "$rig" "{\"pools\":$IT_RIG_POOLS_PROBE}")"
+    # On the books before the write goes out (#1379), so a run that dies before the rig confirms the
+    # probe still ends with the rig on it, and with the value the guard above has PROVEN carries
+    # `pass`. Retired once the apply is confirmed: the probe is also the restore value.
+    rig_key_mark dash "$rig" pools "$probe"
+    res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
     status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
     ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
