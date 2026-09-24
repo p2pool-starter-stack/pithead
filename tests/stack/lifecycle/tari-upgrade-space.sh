@@ -28,7 +28,7 @@ case "$*" in
   "compose config --format json")
     if [ -n "${TUS_TO_IMG:-}" ]; then printf '{"services":{"tari":{"image":"%s"}}}\n' "$TUS_TO_IMG"
     else printf '{"services":{"p2pool":{"image":"x"}}}\n'; fi ;;
-  "inspect --format {{.Config.Image}} tari")
+  "inspect --type container --format {{.Config.Image}} tari")
     [ -n "${TUS_FROM_IMG:-}" ] || { echo "Error: No such object: tari" >&2; exit 1; }
     printf '%s\n' "$TUS_FROM_IMG" ;;
 esac
@@ -36,6 +36,7 @@ exit 0
 EOF
 cat >"$TUS/bin/df" <<'EOF'
 #!/usr/bin/env bash
+[ "${TUS_DF_FAIL:-0}" = 1 ] && exit 1
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
 printf '/dev/sdz1 999999999 1 %s 1%% /srv/chain\n' "$TUS_AVAIL_KB"
 EOF
@@ -53,7 +54,7 @@ out="$(tus_run "$TUS_V5" "$TUS_V6" 50)"
 assert_rc "5 → 6 with 50 GiB free for a 100 GiB database refuses" "$?" "1"
 assert_contains "the refusal names the volume" "$out" "on /srv/chain"
 assert_contains "the refusal names the size needed (data.mdb + 5 GiB margin)" "$out" "about 105 GiB free"
-assert_contains "the refusal names the size free" "$out" "/srv/chain has 50 GiB free"
+assert_contains "the refusal names the size free" "$out" "and it has 50 GiB free"
 assert_contains "the refusal names the Tari majors" "$out" "Tari 5 → 6"
 out="$(tus_run "$TUS_V5" "$TUS_V6" 105)"
 assert_rc "5 → 6 with room for the copy plus the margin proceeds" "$?" "0"
@@ -70,6 +71,21 @@ out="$(tus_run "" "$TUS_V6" 50)"
 assert_rc "no tari container to read: a shortfall does not refuse" "$?" "0"
 assert_contains "…but warns with the sizes" "$out" "Could not tell which Tari version last ran"
 assert_contains "…naming the volume and the need" "$out" "about 105 GiB free on /srv/chain"
+out="$(TUS_DF_FAIL=1 tus_run "$TUS_V5" "$TUS_V6" 1)"
+assert_rc "free space unreadable: no refusal on a guess" "$?" "0"
+assert_contains "…but says the check did not run" "$out" "was not checked"
+# data.mdb belongs to uid 1000; an operator who can list the dir but not open the file still gets
+# the check under pithead's real shell options (errexit, ERR trap), not an arithmetic abort.
+if [ "$(id -u)" = "0" ]; then
+    echo "SKIP: unreadable data.mdb — root reads a mode-000 file, so this case proves nothing as root"
+else
+    chmod 000 "$TUS_DB"
+    out="$(TUS_FROM_IMG="$TUS_V5" TUS_TO_IMG="$TUS_V6" TUS_AVAIL_KB=$((50 * 1048576)) \
+        PATH="$TUS/bin:$PATH" run_sourced_e "$TUS" tari_upgrade_space_precheck 2>&1)"
+    assert_rc "an unreadable data.mdb is still measured, and refuses" "$?" "1"
+    assert_contains "…with the check's own message" "$out" "about 105 GiB free on /srv/chain"
+    chmod 644 "$TUS_DB"
+fi
 mv "$TUS_DB" "$TUS/data.mdb.aside"
 : >"$TUS/docker.log"
 out="$(tus_run "$TUS_V5" "$TUS_V6" 1)"
@@ -88,7 +104,7 @@ mkdir -p "$U2/bin"
 cat >"$U2/bin/docker" <<EOF
 #!/usr/bin/env bash
 case "\$*" in
-  "compose config --format json"|"inspect --format {{.Config.Image}} tari") exec "$TUS/bin/docker" "\$@" ;;
+  "compose config --format json"|"inspect --type container --format {{.Config.Image}} tari") exec "$TUS/bin/docker" "\$@" ;;
 esac
 exec "$U2/stub/docker" "\$@"
 EOF

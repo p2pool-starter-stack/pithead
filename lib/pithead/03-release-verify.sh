@@ -148,15 +148,16 @@ stack_upgrade() {
     DEPLOYMENT_COMPLETED=true
     render_env "${ENV_FILE}.new"
     mv "${ENV_FILE}.new" "$ENV_FILE"
+    # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
+    # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
+    # nothing is started or recreated first, so the migrating node never starts on a full volume.
+    tari_upgrade_space_precheck
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
     generate_caddyfile
     provision_ssh_access
     provision_console_login
     log "Re-rendered generated config for the current release."
-    # #2636: a Tari major that migrates chain data needs room for the old database again — refuse
-    # before any container is recreated, so the migrating node never starts on a volume too small.
-    tari_upgrade_space_precheck
     migrate_compose_project
     # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
     # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting

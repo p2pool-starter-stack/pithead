@@ -60,10 +60,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
     one-time JMT migration that upstream describes as taking several minutes to much longer on a
     large database; the node is unavailable while it runs. It writes a compacted copy of the
-    database beside the old one, so the data volume needs the current `data.mdb`'s size free again.
-    `./pithead upgrade` checks this before it recreates any container and refuses with the volume,
-    the size needed (plus a 5 GiB margin) and the size free
-    ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). Do not
+    database beside the old one, so both are on the data volume at once. Before it starts or
+    recreates any container, `./pithead upgrade` requires free space there of the current
+    `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). The bound is
+    conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
