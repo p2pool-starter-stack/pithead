@@ -102,8 +102,8 @@ wizard_keep_requested() { return 1; }; wizard_spool_has() { return 1; }; firstbo
 firstboot_consume_restore() { return 2; }; firstboot_consume_spool() { printf "{}" >config.json; return 0; }
 preflight_remote_nodes() { :; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }
 wizard_spool_publish() { :; }; warn() { :; }; log() { :; }; bash() { cp config.json config.json.bak-1x; return 1; }
-sleep() { exit 7; }; firstboot_wizard'
-PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS" >/dev/null 2>&1
+sleep() { exit 7; }'
+PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBK_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "post-validation refusal reaches candidate cleanup" "$?" 7
 assert_eq "post-validation refusal leaves no migration backup" "$([ -e "$WBK/config.json.bak-1x" ] || echo gone)" gone
 mkdir -p "$WBK/installed/preseed" "$WBK/installed/data/firstboot"
@@ -112,7 +112,7 @@ touch "$WBK/installed/data/firstboot/submission-active"
 WBR_STUBS="$WBK_STUBS
 setup_again_mode() { return 0; }
 firstboot_consume_restore() { touch data/firstboot/submission-active; return 1; }"
-PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBR_STUBS" >/dev/null 2>&1
+PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBR_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "installed-machine rejected restore returns to the form" "$?" 7
 assert_eq "installed-machine rejected restore preserves the live config" "$(cat "$WBK/installed/config.json")" live-config-sentinel
 assert_eq "rejected restore releases its submission transaction" "$([ -e "$WBK/installed/data/firstboot/submission-active" ] || echo gone)" gone
@@ -120,12 +120,12 @@ WBF_STUBS="$WBK_STUBS
 setup_again_mode() { return 0; }
 firstboot_consume_restore() { return 3; }
 error() { exit 11; }"
-PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBF_STUBS" >/dev/null 2>&1
+PITHEAD_PRESEED_DIR="$WBK/installed/preseed" run_sourced "$WBK/installed" eval "$WBF_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "accepted restore cleanup failure stops the wizard" "$?" 11
 WBP_STUBS="$WBK_STUBS
 consume_preseed_restore() { return 3; }
 error() { exit 12; }"
-PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBP_STUBS" >/dev/null 2>&1
+PITHEAD_PRESEED_DIR="$WBK/preseed" run_sourced "$WBK" eval "$WBP_STUBS; firstboot_wizard" >/dev/null 2>&1
 assert_rc "legacy applied-stage cleanup failure stops first boot" "$?" 12
 rm -rf "$WBK"
 unset WBK WBK_STUBS WBR_STUBS WBF_STUBS WBP_STUBS
