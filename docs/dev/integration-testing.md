@@ -353,13 +353,21 @@ via an `EXIT` trap):
      re-dial after a tor restart ([#972](https://github.com/p2pool-starter-stack/pithead/issues/972)),
      and tari holds tor's control and SOCKS sessions.
 
-   A node that fails any of these is recreated from the branch by a second `pithead up`. On a
-   release-bundle baseline, monerod's `:vX.Y.Z` image and the branch's `:dev` build are different
-   objects, so monerod is recreated there. The same goes for a branch that moves tari's pin.
-   Harness phases that run `pithead` from the e2e checkout themselves recreate or restart the nodes
-   on purpose. That covers `--lifecycle`'s restart, pool-flip `apply` and backup round trip,
-   `--subnet`, and a scenario's `apply`. `targeted` runs `--lifecycle`, so a job running any of
-   these still needs bench-ci's node guard.
+   A node that fails any of these is recreated from the branch by a second `pithead up`. What that
+   means in practice:
+   - On a release-bundle baseline nothing is kept. The baseline runs `:vX.Y.Z` images and the branch
+     builds `:dev`, so tor is always recreated, and the tor condition then recreates both nodes.
+   - A source-checkout baseline keeps a node only when the branch leaves it, and tor, identical:
+     the same pins and build files, and chain and tor data dirs that `config.json` sets to shared
+     absolute paths rather than defaults under each checkout.
+   - A clearnet-sync marker in the baseline's `data/clearnet-state` that the e2e checkout lacks
+     also counts as a difference.
+   - Harness phases that run `pithead` from the e2e checkout recreate or restart the nodes on
+     purpose. That covers `--lifecycle`'s restart, pool-flip `apply` and backup round trip,
+     `--subnet`, and a scenario's `apply`. Both deploying modes, `targeted` and `matrix`, run
+     `--lifecycle`. So until that phase leaves unchanged nodes alone, every deploying job still
+     needs bench-ci's node guard
+     ([#2676](https://github.com/p2pool-starter-stack/pithead/issues/2676)).
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
@@ -368,11 +376,12 @@ via an `EXIT` trap):
    with `CANONICAL_DIR=<dir>`. The synced chains are never touched (asserted post-restore).
    The restore runs no `pithead down`. It removes the containers of any service the baseline does not
    define, then converges the baseline over the branch, so Compose recreates only what differs. A
-   node the deploy kept is the baseline's own container and is left running. The one exception is a
+   node the deploy kept is the baseline's own container and is left running. Networks the baseline
+   does not define are removed too. The one exception is a
    `mining_net` left on another subnet by an interrupted `--subnet` phase. Compose cannot move an
    attached bridge, so the restore then runs the baseline's own `pithead down` first. Preflight
-   reads the live install's directory from the first container label that does not name the e2e
-   checkout, because a container the restore left alone can still carry that label.
+   reads the live install's directory from the dashboard's label, never from the e2e checkout's,
+   because containers the restore left alone can still carry an older directory.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an

@@ -374,13 +374,13 @@ preflight() {
         ok "canonical stack is currently healthy" ||
         warn "canonical stack is NOT healthy right now — continuing, but check the box."
     # Resolve where the LIVE stack actually runs from (#454). The "pithead" Compose project name is
-    # fixed, so exactly one project runs on the box; read its working_dir off a running container's
-    # label. On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
+    # fixed, so exactly one project runs on the box; read its working_dir off the dashboard's label,
+    # which every up recreates (#2639: others a restore left alone can name E2E_DIR or an old dir).
+    # On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
     # CANONICAL_DIR — the restore must target it or it hands the project locally-built :dev images.
-    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR. A container a restore left
-    # alone (no `pithead down` since #2639) can still carry E2E_DIR, so that label never counts.
+    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR, which never counts.
     local live_dir=""
-    live_dir="$(on_bench "docker ps --filter label=com.docker.compose.project=pithead --format '{{.Label \"com.docker.compose.project.working_dir\"}}' 2>/dev/null | grep -vxF '$E2E_DIR' | head -n1" || true)"
+    live_dir="$(on_bench "docker ps --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=dashboard --format '{{.Label \"com.docker.compose.project.working_dir\"}}' 2>/dev/null | grep -vxF '$E2E_DIR' | head -n1" || true)"
     if [ -n "$live_dir" ] && [ "$live_dir" != "$E2E_DIR" ] && on_bench "test -x '$live_dir/pithead'"; then
         RESTORE_DIR="$live_dir"
         [ "$RESTORE_DIR" = "$CANONICAL_DIR" ] &&

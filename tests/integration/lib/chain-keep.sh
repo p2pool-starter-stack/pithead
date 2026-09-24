@@ -160,8 +160,8 @@ deploy_keeping_chain() {
 }
 
 # Restore side, in place of the old `pithead down`, which did two things a converge does not:
-#   - it removed the containers of services the baseline does not define (a branch that adds a
-#     service); those are removed here by name.
+#   - it removed the containers and networks the baseline does not define (a branch that adds a
+#     service or a network); those are removed here by name.
 #   - it removed mining_net. A --subnet phase that dies mid-move leaves the bridge on the other
 #     subnet, and Compose cannot move an attached bridge (scenarios.sh), so the baseline's up would
 #     ask for its static addresses on the wrong one. Only then is the baseline's own `down` run.
@@ -173,6 +173,9 @@ chain_restore_prepare() {
 known=$(docker compose config --services 2>/dev/null)
 [ -z "$known" ] || docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.ID}} {{.Label "com.docker.compose.service"}}' |
     while read -r id svc; do printf '%s\n' "$known" | grep -qxF "$svc" || { docker rm -f "$id" >/dev/null && echo "removed $svc"; }; done
+nets=$(docker compose config --format json 2>/dev/null | jq -r '.networks[]?.name // empty')
+[ -z "$nets" ] || docker network ls --filter label=com.docker.compose.project=pithead --format '{{.Name}}' |
+    while read -r n; do [ -z "$n" ] || printf '%s\n' "$nets" | grep -qxF "$n" || { docker network rm "$n" >/dev/null 2>&1 && echo "removed network $n"; }; done
 want=$(docker compose config --format json 2>/dev/null | jq -r '.networks.mining_net.ipam.config[0].subnet // empty')
 have=$(docker network inspect mining_net --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{ print $1 }')
 if [ -n "$want" ] && [ -n "$have" ] && [ "$want" != "$have" ]; then
@@ -182,6 +185,7 @@ PREP
     )"
     while IFS= read -r line; do
         case "$line" in
+        removed\ network\ *) step "removed a network the baseline does not define: ${line#removed network }" ;;
         removed\ *) step "removed a service the baseline does not define: ${line#removed }" ;;
         down\ *) step "mining_net is on ${line#down } — took the stack down so the baseline can recreate its network" ;;
         down-failed\ *) warn "mining_net is on ${line#down-failed }, and the baseline's 'pithead down' failed" ;;
@@ -227,6 +231,8 @@ chain_restore_proof() {
         recreated\ *) step "restore proof: ${line#* } was recreated during this run (the branch changed it, or a phase did)" ;;
         broken\ *)
             warn "restore proof: ${line#* } was kept through the deploy and the harness, and the RESTORE recreated or restarted it."
+            warn "  Not a credential mismatch: the chain-node keep failed (#2639). A restart policy, tor auto-heal or the"
+            warn "  clearnet supervisor restarting the node in the restore window reads the same; check its logs first."
             rc=1
             ;;
         gone\ *) warn "restore proof: ${line#* } ran before the deploy and is not running now." ;;

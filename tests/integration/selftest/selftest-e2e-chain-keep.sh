@@ -57,6 +57,8 @@ case "$1 $2" in
 "ps --filter") printf '%s\n' "${STUB_LABELS:-}" | sed '/^$/d' ;;
 "inspect --format") echo "${STUB_LABEL_HASH:-}" ;;
 "network inspect") [ -z "${STUB_NET:-}" ] || echo "$STUB_NET " ;;
+"network ls") printf '%s\n' ${STUB_NETS:-} ;;
+"network rm") echo "network rm $3" >>"$STUB_RM_LOG" ;;
 "rm -f") echo "$3" >>"$STUB_RM_LOG" ;;
 *) exit 1 ;;
 esac
@@ -81,7 +83,7 @@ compose_json() { # <checkout> -> the rendered config Compose would print for it
         volumes: [{type: "bind", source: "/chains/tari", target: "/var/tari/node"},
           {type: "bind", source: ($d + "/build/tari"), target: "/var/tari/config"},
           {type: "bind", source: ($d + "/data/clearnet-state"), target: "/clearnet-state", read_only: true}]}},
-      networks: {mining_net: {ipam: {config: [{subnet: "172.28.0.0/24"}]}}, proxy_net: {ipam: {}}}}'
+      networks: {mining_net: {name: "mining_net", ipam: {config: [{subnet: "172.28.0.0/24"}]}}, proxy_net: {name: "proxy_net", ipam: {}}}}'
 }
 checkout() { # <dir>: a checkout with the mounted files and its own rendered config
     rm -rf "$1"
@@ -278,6 +280,9 @@ c3 newsvc"
     : >"$STUB_RM_LOG"
     STUB_SERVICES="" chain_restore_prepare
     assert_eq "an unreadable baseline service list removes nothing" "$(cat "$STUB_RM_LOG")" ""
+    : >"$STUB_RM_LOG"
+    STUB_PS="" STUB_NETS="mining_net proxy_net branch_net" chain_restore_prepare
+    assert_eq "only a network the baseline does not define is removed" "$(cat "$STUB_RM_LOG")" "network rm branch_net"
     # mining_net left on another subnet by an interrupted --subnet phase: the baseline's own down.
     printf '#!/bin/sh\necho "pithead $*" >>"$STUB_RM_LOG"\n' >"$A/pithead" && chmod +x "$A/pithead"
     STUB_PS="" STUB_NET="10.84.0.0/24"
