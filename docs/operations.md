@@ -28,7 +28,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -242,6 +242,12 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
 
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
+
 ---
 
 ## Editing config from the dashboard
@@ -436,6 +442,17 @@ the new release *before* pulling/rebuilding, so a release that changes a config 
 `.env` var takes effect, not just the new image. Data directories and `config.json` are untouched, so
 blockchain sync and settings survive an upgrade.
 
+An upgrade to a new Tari major version, such as 5.x to 6.x, migrates the node database on its first
+start by writing a compacted copy beside the old one. Before it starts or recreates any container,
+`upgrade` compares the major version of the existing `tari` container with the one the new release
+starts. When the major goes up, `upgrade` checks free space on the volume that holds Tari's
+`data.mdb` against the file's current size plus 5 GiB. That is a conservative bound, since the
+compacted copy is smaller than the original. If there is less, `upgrade` stops, names the volume,
+the size needed and the size free, and leaves the running containers as they were. Free space on
+that volume, or move `tari.data_dir` to a larger one, and run `upgrade` again. If no `tari`
+container exists (for example after `./pithead down`), `upgrade` cannot tell which version wrote
+the database, so a shortfall is a warning instead.
+
 On a release install with the release public key on disk (`cosign.pub`, shipped in every signed
 bundle), `upgrade` verifies each image's cosign signature before pulling and aborts on any failure.
 There is nothing to install for this: the verifier runs as a digest-pinned container, so Docker —
@@ -612,11 +629,10 @@ services are stopped. It stages the archive privately, accepts only the configur
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
-exactly from the archived environment. The dashboard login hash is retained with them while its
-fingerprint matches `dashboard.auth.password`; otherwise restore hashes the configured password again.
-A matching fingerprint beside a hash that is not bcrypt refuses the archive. An archive is trusted
-as far as its own `config.json`: whoever can edit it can change the login, so keep backups private
-and encrypted.
+exactly from the archived environment. The dashboard login hash and fingerprint are retained with
+them while the fingerprint matches `dashboard.auth.password` and the hash is well-formed bcrypt;
+otherwise restore hashes the configured password again. An archive is trusted as far as its own
+`config.json`: whoever can edit it can change the login, so keep backups private and encrypted.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
