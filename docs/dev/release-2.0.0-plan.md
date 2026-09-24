@@ -173,7 +173,7 @@ OS update, first restore and first Tari stall without a shell and without losing
 | Belongs | Why here |
 |---|---|
 | Whatever P2 moves out of the cut | user-visible on day one, none data-destroying |
-| #2057, #1997, #2473, if P2 moves them | the image-upgrade gate; 2.0.0 is the first appliance image, so its first customer is 2.0.1 [r CHANGELOG.md:176-178] |
+| #2057, #1997, #2473, if P2 moves them | the image-upgrade gate, which upgrades a v1.20.0 install to the submitted commit [r PR #2180]; no machine can run it yet [r #2057] |
 | #2001, if R6 moves C16 | the N-1 restore proof |
 | #2508's measurement | the fix ships in 2.0.0 (C14); the number needs a bench observation run [i] |
 | #2436 (silent boot gate), #2462 (serial-getty loop), #2463 (certificate never covers a later IPv6 address), #2461 | hit by a fresh box [r titles] |
@@ -226,7 +226,7 @@ The numbers are this page's own.
 |---|---|---|
 | R1 | No `2.1` milestone exists for the designed features in §5 | Keep them in `v2.x - post-GA`; the owner creates `v2.1` at GA if wanted |
 | R2 | Existing PR or a fresh implementation, for every conflicting row in §2.1 | Resume the open PR; rebase, then one tier4 job on the rebased head |
-| R3 | #2057, #1997, #2473 (the image-upgrade gate): in 2.0.0 or 2.0.x | 2.0.x, since nothing upgrades to the first appliance image; provide the KVM bench (P4) now either way |
+| R3 | #2057, #1997, #2473 (the image-upgrade gate): in 2.0.0 or 2.0.x | 2.0.x, because no machine can run the gate yet. The trade: before publish nothing proves the 1.20.0 → 2.0.0 upgrade with chains and secrets intact, and the first proof is §2.4 step 7's post-publish smoke. Provide the KVM bench (P4) now either way |
 | R4 | #2593's targeted tier4-e2e without a mainnet-database bench mode | Sufficient, per ruling 4 on #2593 |
 | R5 | #2508: transport fix (#2611) vs #2653's stack-SOCKS design (#2673) | Pick one design; ship the fix in 2.0.0 and move the measurement post-GA |
 | R6 | C10 (#2599), C16 (#2001): ship or move | C10 ships if #2620 lands cleanly; C16 ships if its tier4-kvm job is green by the freeze |
