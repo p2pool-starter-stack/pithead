@@ -52,7 +52,7 @@ remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <
 }
 
 p2pool_current_startup_merge_lines() {
-    local started
+    local started since
     started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
     [ -n "$started" ] || return 1
     printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
@@ -62,7 +62,9 @@ p2pool_current_startup_merge_lines() {
     # identically misses a line that eventually lands past the cap: "never connected" and
     # "connected too late for the window" become indistinguishable. Uncapped here, unlike that
     # shared helper's own callers, since this leg's own reserved node is exactly that slow case.
-    _ssh "podman logs --since '$started' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
+    # podman's --since refuses StartedAt's own Go form; the refusal went to grep and read "absent".
+    since=$(printf '%s\n' "$started" | mm_rfc3339)
+    _ssh "podman logs --since '$since' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
 }
 
 allowlisted_node_readiness() {
@@ -329,9 +331,21 @@ _local_node_login_self_test() (
     ! local_node_login_runtime_verdict
 )
 
-# The dashboard proposal may change only monero.* and tari.* against the config live when it is
-# previewed: any other key (p2pool.clearnet, job 1044) is refused by the default-deny gate. And an
-# early failure still restores the snapshot for the legs after this one.
+# podman's `logs --since` gets StartedAt as RFC 3339; the raw form stays the restart epoch.
+_startup_since_self_test() (
+    local out
+    _ssh() {
+        case "$1" in
+        *'podman inspect'*) printf '2026-09-24 22:06:05.123456789 +0000 UTC\n' ;;
+        *"podman logs --since '2026-09-24T22:06:05.123456789+00:00' p2pool"*) printf 'MergeMiningClientTari ok\n' ;;
+        esac
+    }
+    out=$(p2pool_current_startup_merge_lines)
+    [ "$out" = $'PITHEAD_P2POOL_STARTED=2026-09-24 22:06:05.123456789 +0000 UTC\nMergeMiningClientTari ok' ]
+)
+
+# The proposal changes only monero.* and tari.* against the config live at preview (default-deny
+# refused p2pool.clearnet, job 1044); an early failure still restores the snapshot.
 _reserved_node_proposal_scope_self_test() (
     local out clearnet=false restored=0
     PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2
@@ -367,6 +381,7 @@ _remote_node_self_test() {
     _remote_node_runtime_reason_self_test || f=$((f + 1))
     _local_node_login_self_test || f=$((f + 1))
     _reserved_node_proposal_scope_self_test || f=$((f + 1))
+    _startup_since_self_test || f=$((f + 1))
     grep -Fq 'if [ "$tries" -lt 60 ]; then' "$here/appliance-node-runtime-leg.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-node-runtime-leg self-test FAILED: %s checks\n' "$f"
