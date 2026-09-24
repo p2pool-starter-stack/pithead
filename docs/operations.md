@@ -242,6 +242,12 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
 
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
+
 ---
 
 ## Editing config from the dashboard
@@ -436,6 +442,17 @@ the new release *before* pulling/rebuilding, so a release that changes a config 
 `.env` var takes effect, not just the new image. Data directories and `config.json` are untouched, so
 blockchain sync and settings survive an upgrade.
 
+An upgrade to a new Tari major version, such as 5.x to 6.x, migrates the node database on its first
+start by writing a compacted copy beside the old one. Before it starts or recreates any container,
+`upgrade` compares the major version of the existing `tari` container with the one the new release
+starts. When the major goes up, `upgrade` checks free space on the volume that holds Tari's
+`data.mdb` against the file's current size plus 5 GiB. That is a conservative bound, since the
+compacted copy is smaller than the original. If there is less, `upgrade` stops, names the volume,
+the size needed and the size free, and leaves the running containers as they were. Free space on
+that volume, or move `tari.data_dir` to a larger one, and run `upgrade` again. If no `tari`
+container exists (for example after `./pithead down`), `upgrade` cannot tell which version wrote
+the database, so a shortfall is a warning instead.
+
 On a release install with the release public key on disk (`cosign.pub`, shipped in every signed
 bundle), `upgrade` verifies each image's cosign signature before pulling and aborts on any failure.
 There is nothing to install for this: the verifier runs as a digest-pinned container, so Docker —
@@ -499,7 +516,7 @@ want it gone.
 | images | every ref from `docker compose config --images` |
 | named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
-| firewall | the Tor-egress rules this checkout installed |
+| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
 | rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
 | derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
 | version symlink | `<parent>/current`, only when it points at this checkout |
@@ -649,7 +666,8 @@ fails before anything on disk is touched. `restore` also refuses unless Compose 
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
-only validated generated secrets and Tor identity are retained from the archived environment.
+only opaque generated secrets and Tor identity are retained from the archived environment. The
+dashboard bcrypt hash and fingerprint are regenerated from the restored plaintext password.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
