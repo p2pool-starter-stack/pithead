@@ -495,8 +495,10 @@ and `--list` prints it).
   named for what the handshake proves, which is narrower than "publishes block notifications": a
   node whose publisher is bound but permanently silent answers it exactly as a live one does. A
   second row closes that case: it subscribes and waits for the peer to actually send something,
-  which a silent publisher never does. Measured on one host against both targets, the live node
-  passed in about 2 seconds and a permanently silent publisher red at its budget. The budget is
+  which a silent publisher never does. Its loopback fixture sends a bounded data frame or stays
+  silent, proving the real probe accepts the former and rejects the latter without a transaction,
+  payout, chain event, or bench configuration change. That fixture proves protocol sampling only;
+  the tier-4 row separately proves the configured node answers the same probe. The budget is
   90 seconds, and the sample behind that figure is part of it — time-to-first-message against the
   live node over eight samples ran 0.3, 1.5, 1.8, 3.3, 4.5, 5.6, 16.0 and 26.5 seconds, and the
   first three would have justified a 30-second budget that the tail turns into a flaky red. It is
@@ -1016,7 +1018,11 @@ it ([#1500](https://github.com/p2pool-starter-stack/pithead/issues/1500)): every
 read with `16#`, which is fatal on an empty string, so a peer that stalled part-way through a
 header left an interpreter error on stderr and an empty verdict. Those cases assert the empty
 stderr alongside the reason, because the return code was already 1 while the bug was live and a
-case checking only the code would have passed against it.
+case checking only the code would have passed against it. The same file runs the shipped probe
+over loopback against `tests/integration/fakes/fake_zmq_publisher.py`, a one-shot XPUB that
+publishes one frame or, with `--silent`, none; the probe must pass the first and fail the second.
+The fixture's own checks are asserted by the message it exits with, not only its code, because a
+peer that hangs up early also makes it exit 1.
 `selftest-stack-sandbox.sh` reaches the other way, into the tier-1 suite's own plumbing.
 `tests/stack/lib.sh` built its throwaway sandbox as `SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"`, and
 `mktemp -d` prints nothing on stdout when it fails, so the inner substitution collapsed to `cd ""`
