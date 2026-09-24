@@ -60,11 +60,11 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-render-quadlet.sh" && domain_ran test
 
 # shellcheck source=tests/stack/doctor/test-doctor-appliance.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain_ran test-doctor-appliance.sh "$_d0" "$?" || domain_ran test-doctor-appliance.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-commit.sh" && domain_ran test-appliance-restore-commit.sh "$_d0" "$?" || domain_ran test-appliance-restore-commit.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"

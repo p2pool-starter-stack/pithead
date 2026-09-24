@@ -568,6 +568,9 @@ This works on the installation medium's combined page too.
 
 A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
 form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+A restore that fails while writing its files puts back the machine's previous configuration, Tor
+keys, and dashboard database, and removes any chain files it added. If one of them cannot be put
+back, the error says so, and the previous copy stays beside it under a `.restore-old` name.
 Restore is available at first setup and from the saved-setup screen. In both cases it runs through
 setup again; the day-two `restore` command is the separate path for restoring a running stack in
 place.
