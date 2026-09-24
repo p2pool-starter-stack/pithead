@@ -31,10 +31,10 @@ while :; do
 done
 EOF
 # Stub curl: refuses while gRPC is closed; answers TFR_HTTP_CODE with no body when set; answers the
-# first TFR_GRPC_ERRORS calls with a trailers-only gRPC error (HTTP 200, grpc-status 14 unless
-# TFR_GRPC_ERR_STATUS is set empty, no body),
-# the way the node answers before it is ready; otherwise frames a ListHeaders or GetTipInfo answer
-# from the state dir's tip and hash. It keeps the request body and whether the URL came after `--`.
+# first TFR_GRPC_ERRORS calls with a trailers-only gRPC error (HTTP 200, no body, grpc-status
+# TFR_GRPC_ERR_STATUS, default 14 as upstream's readiness server answers; set empty for none);
+# otherwise frames a ListHeaders or GetTipInfo answer from the state dir's tip and hash. It keeps
+# the request body and whether the URL came after `--`.
 cat >"$TFR_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
 S="$TFR_STATE" out="" hdrs=/dev/null url="" prev=""
@@ -206,23 +206,38 @@ assert_rc "fork-check: a TARI_GRPC_URL without http:// exits 1 (#2618)" "$?" "1"
 assert_contains "fork-check: a bad TARI_GRPC_URL is logged (#2618)" "$(cat "$TFR_STATE/out")" "ERROR: TARI_GRPC_URL must start with http://"
 assert_eq "fork-check: a bad TARI_GRPC_URL starts no node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "0"
 
-# A gRPC error status (HTTP 200, no body) means the node is not ready yet: retry, then check.
+# grpc-status 14 UNAVAILABLE is upstream's readiness server while the node (and its migration)
+# initializes: wait without a deadline, then check.
 tfr_start 350500 "$TFR_CANONICAL" TFR_GRPC_ERRORS=2
 tfr_wait "$TFR_STATE/out" "is canonical"
-assert_contains "fork-check: a gRPC error status is logged and retried (#2618)" "$(cat "$TFR_STATE/out")" \
-    "gRPC answered grpc-status 14: not ready; retrying for up to 1800s while the node starts"
-assert_contains "fork-check: after the retries the canonical hash is checked (#2618)" "$(cat "$TFR_STATE/out")" "header 350000 is canonical ($TFR_CANONICAL)"
+assert_contains "fork-check: grpc-status 14 is logged as the node initializing (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered grpc-status 14: not ready; waiting while the node initializes"
+assert_contains "fork-check: after initializing the canonical hash is checked (#2618)" "$(cat "$TFR_STATE/out")" "header 350000 is canonical ($TFR_CANONICAL)"
 tfr_stop
-assert_eq "fork-check: retrying a gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
+assert_eq "fork-check: waiting on initialization starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
 
-# A gRPC error status that outlasts TARI_GRPC_ERROR_TIMEOUT ends the check and leaves the node alone.
-tfr_start 350239 "$TFR_DEAD" TFR_GRPC_ERRORS=100000 TARI_GRPC_ERROR_TIMEOUT=1
-tfr_wait "$TFR_STATE/out" "without a header"
-assert_contains "fork-check: a persistent gRPC error status gives up with its status logged (#2618)" "$(cat "$TFR_STATE/out")" \
-    "gRPC answered (grpc-status 14: not ready) without a header at 350000; leaving the node as it is"
+# The upgrade start: a dead-branch database answers grpc-status 14 for longer than
+# TARI_GRPC_ERROR_TIMEOUT (the migration), then serves its dead header; the rewind must still run.
+tfr_start 350239 "$TFR_DEAD" TFR_GRPC_ERRORS=25 TARI_GRPC_ERROR_TIMEOUT=1
+tfr_wait "$TFR_STATE/out" "starting the node normally"
+TFR_OUT=$(cat "$TFR_STATE/out")
 tfr_stop
-assert_eq "fork-check: a persistent gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
-assert_eq "fork-check: a persistent gRPC error keeps the peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"
+assert_eq "fork-check: grpc-status 14 outlasted the error timeout in this row (#2618)" \
+    "$([ "$(cat "$TFR_STATE/grpc_errors")" -gt 25 ] && echo yes)" "yes"
+assert_not_contains "fork-check: grpc-status 14 past the error timeout does not give up (#2618)" "$TFR_OUT" "leaving the node as it is"
+assert_contains "fork-check: a dead hash read after a long initialization is detected (#2618)" "$TFR_OUT" \
+    "header 350000 is $TFR_DEAD, canonical is $TFR_CANONICAL: dead 5.3.1 branch"
+assert_eq "fork-check: after a long initialization the dead branch is rewound (#2618)" \
+    "$(grep -c -- '--watch|rewind-blockchain 349900|' "$TFR_STATE/starts"),$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "1,no"
+
+# Any other gRPC error status that outlasts TARI_GRPC_ERROR_TIMEOUT ends the check and leaves the node alone.
+tfr_start 350239 "$TFR_DEAD" TFR_GRPC_ERRORS=100000 TFR_GRPC_ERR_STATUS=13 TARI_GRPC_ERROR_TIMEOUT=1
+tfr_wait "$TFR_STATE/out" "without a header"
+assert_contains "fork-check: a persistent non-14 gRPC error gives up with its status logged (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered (grpc-status 13: not ready) without a header at 350000; leaving the node as it is"
+tfr_stop
+assert_eq "fork-check: a persistent non-14 gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
+assert_eq "fork-check: a persistent non-14 gRPC error keeps the peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"
 
 # An empty HTTP 200 answer is retried even when curl captured no grpc-status (it arrived as a trailer).
 tfr_start 350500 "$TFR_CANONICAL" TFR_GRPC_ERRORS=2 TFR_GRPC_ERR_STATUS=

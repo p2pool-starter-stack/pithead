@@ -20,9 +20,10 @@ set -e
 # Dead-fork rewind (#2618). A 5.3.1 node that kept its peers followed the dead branch past the
 # 350,000 hard fork. After the 6.0.0 migration it still holds those blocks, bans every canonical
 # peer for `Invalid Proof of work` and never converges. So the wrapper no longer execs the node: it
-# starts it as a child, waits for gRPC (closed until the migration finishes, #2464), and reads the
-# header at FORK_HEIGHT. A tip below it or the canonical hash: the node keeps running under this
-# wrapper, which forwards TERM/INT and exits with its status. A different hash: stop it, run
+# starts it as a child, waits while gRPC is closed or answers UNAVAILABLE (upstream's readiness
+# server does that for the whole database migration, #2464), and reads the header at FORK_HEIGHT.
+# A tip below it or the canonical hash: the node keeps running under this wrapper, which forwards
+# TERM/INT and exits with its status. A different hash: stop it, run
 # `rewind-blockchain REWIND_HEIGHT` once, stop it, clear the peer state (the bans), start normally.
 # No marker: a canonical node never matches, so the check is safe on every start.
 
@@ -150,14 +151,16 @@ tari_grpc() {
 
 # The node's header at FORK_HEIGHT: prints its hash, or "below" when the tip is under FORK_HEIGHT
 # (ListHeaders clamps from_height to the tip, so a node with any chain returns a header). Returns
-# 1 while gRPC is silent; 4, printing the grpc-status, on HTTP 200 with no message: a gRPC error,
-# as the server listens before the node is ready; 2, printing the HTTP status, on any other answer
-# without a header.
+# 1 while gRPC is silent; 5, printing the status, on grpc-status 14 UNAVAILABLE, which upstream's
+# readiness server answers until the node (and its database migration) is initialized; 4, printing
+# the grpc-status, on any other HTTP 200 with no message; 2, printing the HTTP status, on any other
+# answer without a header.
 header_at_fork() {
     local header height
     tari_grpc ListHeaders "08$(pb_encode_varint "$FORK_HEIGHT")10011801" || return 1
     if [ "$GRPC_CODE" = 200 ] && [ -z "$GRPC_MSG" ]; then
         echo "grpc-status ${GRPC_STATUS:-unknown}${GRPC_ERR:+: $GRPC_ERR}"
+        [ "$GRPC_STATUS" = 14 ] && return 5
         return 4
     fi
     header=$(pb_field "$GRPC_MSG" 1) || {
@@ -228,14 +231,18 @@ clear_peer_state() {
 # Wait for gRPC, then check the header at FORK_HEIGHT. Returns 0 when the running node may keep
 # running, 3 when it is on the dead branch, and the node's exit status when it stops first.
 check_fork() {
-    local hash rc err_deadline=""
+    local hash rc err_deadline="" initializing=""
     fork_log "waiting for gRPC (the 6.0.0 database migration runs first and can take hours)"
     while :; do
         [ -n "$STOP_SIGNAL" ] && return 0
         node_alive || return 0
         hash=$(header_at_fork)
         rc=$?
-        if [ "$rc" -eq 4 ]; then
+        if [ "$rc" -eq 5 ]; then
+            # Initializing (the migration runs here): wait as for a closed port, with no deadline.
+            [ -n "$initializing" ] || fork_log "gRPC answered $hash; waiting while the node initializes"
+            initializing=1
+        elif [ "$rc" -eq 4 ]; then
             if [ -z "$err_deadline" ]; then
                 err_deadline=$((SECONDS + TARI_GRPC_ERROR_TIMEOUT))
                 fork_log "gRPC answered $hash; retrying for up to ${TARI_GRPC_ERROR_TIMEOUT}s while the node starts"
