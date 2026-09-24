@@ -49,8 +49,8 @@ p2pool_merge_mine_argv() {
 
 tari_data_preserved() { [ "$1" != missing ] && [ "$1" = "$2" ]; }
 
-# #2627: without RunInit=true minotari_node is PID 1, reaps nothing, and a zombie PID 1 cannot be
-# stopped. Podman's init (catatonit, as /run/podman-init) must be PID 1; polled through a restart.
+# #2627: without compose's init: true minotari_node is PID 1, reaps nothing, and a zombie PID 1
+# cannot be stopped. Via the compat API podman's own init (/run/podman-init) is PID 1 instead.
 tari_pid1_comm() {
     local comm tries=0
     while [ "$tries" -lt 15 ]; do
