@@ -150,6 +150,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Running but **unhealthy** → exit 1 | healthcheck fails (SIGSTOP) | 4 ▶ (`--fault-injection`) |
 | Miner created/exited under sync-hold / failover → exit **0** (intentional) | held / rejected | 1 ✅ · 4 ▶ |
 | Miner **restarting** → exit 1, never treated as a sync hold | crash loop | 1 ✅ · 4 ▶ |
+| A stop reaches the payout wallet (#2657): `tari-wallet` runs under an init (compose `init: true`; the quadlet renderer's `RunInit=true`) because its wrapper `exec`s `minotari_console_wallet`, which would otherwise be PID 1; a PID 1 that reaps nothing can turn zombie and then cannot be signalled | `docker stop` / `podman stop` | 1 ✅ (`standalone/test_compose.sh`; `test-render-quadlet.sh`) · 4 ▶ (`local-pruned-main-payout-confirm`, when the bench supplies a Tari view key; the quadlet units are not deployed yet) |
 | Chain service missing/stopped under an active data-migration hold → exit **0**; restarting/unhealthy still exits 1 | migration marker matches running version | 1 ✅ · 4 ▶ |
 | Remote mode ignores monerod | profile off | 1 ✅ · 4 ▶ |
 

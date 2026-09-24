@@ -316,6 +316,10 @@ services:
     mem_limit: 512m
     memswap_limit: 512m
     restart: unless-stopped
+    # An init as PID 1 (#2657): the wrapper execs minotari_console_wallet, so without it the wallet
+    # is PID 1, reaps no children, and a zombie PID 1 cannot be signalled, so `docker stop` fails.
+    # The init forwards the stop signal and reaps. The quadlet renderer carries it as RunInit=true.
+    init: true
     logging: *default-logging
     # Wrapper entrypoint (mounted from the build dir, since this is a pulled image — same pattern as
     # the Tari node): reads the three secrets from the tmpfs `secrets:` mount and exports them into

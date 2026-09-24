@@ -18,6 +18,7 @@ PublishPort=127.0.0.1:18143:18143
 ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
+RunInit=true
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=ps | grep '[m]inotari_consol' || exit 1
 HealthInterval=30s
