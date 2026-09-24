@@ -139,7 +139,7 @@ the desired value is not presented as proof of what the still-running services u
 | `p2pool.stratum_port` | `3333` | TCP port the stratum endpoint your rigs connect to is published on. Default `3333` is the standard path — leave it unless another service already holds the port on the host. Change it and **every rig must repoint** at the new port (RigForge: `pool.port`); `apply` flags the change as destructive because rigs on the old port can't connect until updated. Only the operator-facing published port moves; p2pool's container-internal stratum stays fixed at `3333` (nothing outside the stack touches it). See [Connecting Miners › Non-standard port](workers.md#non-standard-stratum-port). |
 | `p2pool.stratum_password` | `""` _(off; new installs get `"auto"`)_ | Password every rig must send to mine through the proxy. Turns the otherwise-open `3333` port into authenticated stratum. `""` (the fallback for an absent key, which is what pre-#208 installs have) = no password, any rig may connect. `"auto"` = generate a random secret once and keep it stable (shown after `setup`/`apply` and stored in `.env`); set it as each rig's stratum `pass` — the wizard and `config.minimal.json` write this for every new install. Any literal string of 1–128 characters drawn from `A-Z a-z 0-9 . _ : @ -` = use exactly that password; anything else (spaces, quotes, `$`) is rejected at `apply`, since the value travels through `.env` onto the proxy's command line. Only devices that know the secret can mine, which also shrinks the worker-name [SSRF](workers.md#authentication) surface. The password is sent in cleartext over stratum, so this is access control ("who may mine"), not encryption. Pair it with `stratum_bind`/a firewall. See [Connecting Miners › Authentication](workers.md#authentication). |
 | `p2pool.stratum_tls` | `false` | Serve TLS on the stratum port (#261). Same port, per-connection detection: cleartext rigs keep mining while rigs opt in one at a time (`pools[].tls: true` + pinning the certificate's SHA-256 fingerprint, printed after `apply` and by `status`). The self-signed cert lives under the data root and keeps its fingerprint across upgrades; regenerating it (delete + `apply`) is the rotation. Confidentiality only — pair with `stratum_password` for access control. See [Connecting Miners › Stratum over TLS](workers.md#stratum-over-tls). |
-| `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`). Set `true` to dial peers directly over clearnet for maximum yield: Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
+| `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`) and turns off P2Pool's clearnet seed-node DNS lookups (`--no-dns`). Set `true` to dial peers directly over clearnet for maximum yield: Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
 | `proxy.donate_level` | `0` | xmrig-proxy's built-in dev-fee donation to the xmrig developers, as a percentage of submitted hashrate. Defaults to `0`, no donation (xmrig-proxy's own compiled-in default, which the stack now renders explicitly so it's visible rather than invisible). Set an integer `1`–`99` to donate that share to the xmrig devs if you want to support them. This is not the XvB donation; that's the separate `xvb.*` mechanism the optimizer steers, never this dev fee. |
 | `local_miner.enabled` | `false` | Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`apply` then print the pool URL and stratum password a RigForge install needs. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
 | `xvb.enabled` | `true` | Enable XMRvsBeast bonus-round hashrate switching. |
@@ -221,7 +221,7 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.data_dir` | `auto` | Where the dashboard's database lives. `auto` = `./data/dashboard`, unless the four other `*.data_dir` all point under one parent directory — then the dashboard joins them at `<that parent>/dashboard`, and the first `upgrade`/`apply` moves data from the old default there automatically (see [Data directories](#data-directories)). |
 | `dashboard.check_for_updates` | `true` _(on)_ | The dashboard periodically asks GitHub whether a newer Pithead release exists and, if so, shows a header badge linking to it (e.g. "New release v1.4.0 available"). Notify-only: it never updates anything; you upgrade with `./pithead upgrade` on your own terms. On by default because the check is routed over Tor (the same bridge SOCKS as the XvB fetch, `socks5h` so the DNS lookup goes through Tor too), so GitHub sees a Tor exit, not your IP. It's cached (hourly) and fails silently offline. The same flag also covers the per-worker [RigForge new-release badge](workers.md#rigforge-new-release-badge) — one more hourly, Tor-routed fetch of the latest RigForge release, compared against every rig's reported version. Set to `false` to opt out of both. See [Privacy › Runtime egress](privacy.md#runtime-egress). |
 | `network.subnet` | `172.28.0.0/24` | The private Docker bridge the stack's containers run on. Change it only if install fails with `Pool overlaps with other one on this address space`, i.e. your host already uses `172.28.0.0/24` for another Docker network or interface. Must be a free `X.Y.Z.0/24` block (e.g. `"172.30.0.0/24"`); the services keep their fixed host octets (`.25`–`.31`) within it, so the structured addressing the dashboard and the worker SSRF guard rely on is preserved. |
-| `network.tor_egress_firewall` | `true` _(on)_ | Privacy-relevant, default on. Enforces "behind Tor" fail-closed: at `up`/`apply`, `pithead` installs host firewall rules (Docker's `DOCKER-USER` chain) that drop any direct clearnet dial from the mining containers (monerod/p2pool/tari/xmrig-proxy). Only the Tor container reaches the internet, so a misconfigured or buggy daemon can't leak your IP. Needs root (like the GRUB/HugePages steps); removed at `down`. Set `false` to skip it and rely on per-app Tor config only (e.g. a host where you manage egress yourself, or where `iptables` isn't available). Full detail: [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270). |
+| `network.tor_egress_firewall` | `true` _(on)_ | Privacy-relevant, default on. Enforces "behind Tor" fail-closed: at `up`/`apply`, `pithead` installs host firewall rules (Docker's `DOCKER-USER` chain) that drop any direct clearnet dial from the mining containers (monerod/p2pool/tari/xmrig-proxy). Only the Tor container reaches the internet, so a misconfigured or buggy daemon can't leak your IP. On a DIY host `pithead-egress.service` restores the rules at boot, before Docker starts the containers. Needs root (like the GRUB/HugePages steps); removed at `down`. Set `false` (which also removes the boot unit) to skip it and rely on per-app Tor config only (e.g. a host where you manage egress yourself, or where `iptables` isn't available). Full detail: [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270). |
 
 ---
 
@@ -258,7 +258,10 @@ under one parent directory, the dashboard database defaults to `<that parent>/da
 of `./data/dashboard`, so it lives beside the chain data rather than inside the install directory
 (see [Operations › The deploy-box layout](operations.md#the-deploy-box-layout)).
 
-Set any `data_dir` to an absolute path to move that service's storage. For example, to put the
+Set any `data_dir` to a clean absolute path to move that service's storage. Since
+[#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360), `apply` refuses a path that
+contains `//`, a `/./` component or a trailing `/.` for all five `data_dir`s, so a config that
+already uses such a path fails `apply` until the path is written cleanly. For example, to put the
 Monero blockchain on a dedicated SSD:
 
 ```json
@@ -279,7 +282,13 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 
 > NOTE: `apply` does not copy your existing data into a new location; it only points the
 > container at the new path. If you're relocating data you already have, move the files yourself
-> first (with the stack stopped), then update `data_dir` and run `apply`.
+> first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
+> the one exception: it holds the payout-wallet tamper-tripwire baseline
+> ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
+> carries the live dashboard database and its SQLite companion files to the new path itself, then
+> verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
+> move instead of guessing which copy is live
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---
 
@@ -559,8 +568,9 @@ To merge-mine against a Tari base node running elsewhere instead of the bundled 
   (payout confirmation is unsupported in remote mode — see below).
 - `tari.remote.host` is required; `grpc_port` defaults to `18142`, the base node's standard gRPC
   port.
-- The remote node must run Tari 6.0.0 or newer. The bundled P2Pool (4.18.1) cannot merge-mine
-  against an older node, and older nodes fork off mainnet at block 350,000.
+- The remote node must run Tari 6.0.1-pre.0 or newer. The bundled P2Pool (4.18.1) cannot
+  merge-mine against a node older than 6.0.0, older nodes fork off mainnet at block 350,000, and a
+  6.0.0 node rejects canonical block 350,008 and stays on a dead fork.
 - The remote node must rebind its gRPC listener off the stock `grpc_address` (`127.0.0.1`), so it
   accepts connections from off-box, and enable the mining allowlist preset upstream ships for
   exactly this
