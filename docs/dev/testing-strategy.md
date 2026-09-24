@@ -621,8 +621,10 @@ Not yet covered. The road to full production confidence.
   combined hardware run remains pending. The per-verb breadth of the gap — which verbs have no
   tier-4 run at all, and why — is now the [CLI verb ledger](#cli-verb-ledger-2348) (#2348) rather
   than one bullet here.
-- Soak / longevity. The bounded `--xvb-routing-smoke` observes one real controller/proxy transition
-  and restore. Multi-hour leak, log/DB growth, and long-term convergence coverage remains absent.
+- Soak / longevity. The nightly KVM provision battery proves the appliance Tor stats fetch and a
+  bounded injected controller/proxy route transition; the bounded `--xvb-routing-smoke` additionally
+  observes one real controller/proxy transition and restore on a synced stack. Multi-hour leak,
+  log/DB growth, and long-term convergence coverage remains absent.
 - Load / capacity. No test drives many workers or high share rates to find limits.
 - Security review. The compose hardening invariants are regression-guarded (the #90 section of
   `tests/stack/standalone/test_compose.sh`: RPC creds never in a healthcheck command,
