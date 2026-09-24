@@ -12,6 +12,22 @@
 # is plain log lines, one per line, because log() prefixes every call with "[pithead]".
 uninstall_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
+# uninstall_removable <path> <kept>... succeeds only for an absolute path with no . or ..
+# component that is neither "/" nor one of the kept paths nor an ancestor of one. A derived *_DIR key is read from .env, which an
+# operator can edit; pointing one at a data dir or its parent must never turn uninstall into the
+# `rm -rf` of their data.
+uninstall_removable() {
+    local p="${1%/}" k
+    shift
+    case "$p" in /?*) ;; *) return 1 ;; esac
+    case "$p/" in */../* | */./*) return 1 ;; esac
+    for k in "$@"; do
+        k="${k%/}"
+        [ "$k" = "$p" ] && return 1
+        case "$k/" in "$p/"*) return 1 ;; esac
+    done
+}
+
 stack_uninstall() {
     local yes=0 arg
     for arg in "$@"; do
@@ -35,7 +51,12 @@ stack_uninstall() {
     # stratum TLS keypair — so they are removed individually, by exact path, never `rm -rf data/`.
     for dkey in CONTROL_DIR CLEARNET_STATE_DIR CADDY_LOG_DIR PROXY_TLS_DIR; do
         d=$(env_get_file .env "$dkey")
-        [ -n "$d" ] && derived_dirs+=("$d")
+        [ -n "$d" ] || continue
+        if uninstall_removable "$d" "${kept_dirs[@]}" "$checkout_dir" "$checkout_dir/config.json" "$checkout_dir/backups"; then
+            derived_dirs+=("$d")
+        else
+            warn "Not removing $dkey=$d: it is, or contains, data uninstall keeps. Remove it by hand if it is pithead's."
+        fi
     done
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.

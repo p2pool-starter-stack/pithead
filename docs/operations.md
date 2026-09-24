@@ -507,6 +507,11 @@ want it gone.
 **Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
 `config.json`; `backups/`.
 
+A derived directory that `.env` places at, or above, a kept path is left in place with a
+warning rather than removed. After `uninstall`, `./pithead setup` re-provisions from the kept
+`config.json` and data dirs: the chains are reused rather than re-synced, and the kept Tor data
+gives back the same onion addresses.
+
 **Left behind — installed by setup, shared with the machine, not removed:**
 
 | item | why it stays | to remove it by hand |
