@@ -33,8 +33,7 @@ _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh"
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
-# Regression (#1330): test-dashboard-onion.sh must not depend on running after test-dashboard.sh. A
-# A subshell inherits this process's variables, so only a separate `bash` proves isolation.
+# Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
 # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
 bash -c '
     set -uo pipefail
@@ -66,6 +65,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore-reject.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-reject.sh" && domain_ran test-appliance-restore-reject.sh "$_d0" "$?" || domain_ran test-appliance-restore-reject.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"
@@ -95,9 +96,10 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_
 
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-tor-egress-enforcement.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_ran test-tor-egress-enforcement.sh "$_d0" "$?" || domain_ran test-tor-egress-enforcement.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
@@ -174,10 +176,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity.sh" && d
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-hostname.sh" && domain_ran test-appliance-hostname.sh "$_d0" "$?" || domain_ran test-appliance-hostname.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-defaults.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
 

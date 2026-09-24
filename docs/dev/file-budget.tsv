@@ -56,10 +56,9 @@ tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
-tests/integration/selftest/selftest-rigforge-writable-keys.sh	411
 tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
-tests/os/phases/install-restore.sh	449
+tests/os/phases/install-restore.sh	416
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
 tests/stack/appliance/test-appliance-boot-remint.sh	445
@@ -70,7 +69,7 @@ tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
-tests/stack/appliance/test-appliance-restore.sh	522
+tests/stack/appliance/test-appliance-restore.sh	492
 tests/stack/appliance/test-appliance-rig-miner.sh	466
 tests/stack/control/test-control-add-only-ssrf.sh	447
 tests/stack/control/test-control-upgrade.sh	795

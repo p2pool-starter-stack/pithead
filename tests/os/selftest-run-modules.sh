@@ -3,7 +3,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore-preboot.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {

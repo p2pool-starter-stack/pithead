@@ -249,19 +249,22 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    ran from wherever the operator placed it). Backups with custom data paths, or whose members do
    not share one consistent root, need the administrative restore workflow.
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
-   call `firstboot_consume_spool` uses.
-4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
-   validated generated secrets and Tor identity from the archived environment.
+   call `firstboot_consume_spool` uses. A valid restored remote-node configuration is not redialed
+   under a later release's new-configuration preflight policy.
+4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only opaque
+   generated secrets and Tor identity from the archived environment. The restored dashboard
+   password remains in `config.json`; its bcrypt hash and fingerprint are regenerated from it.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
    trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
    database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
    within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
    on this box instead, an existing file winning on a name collision. The [shared restore
    collision rule](../operations.md#restore-collision-rules) explains why this differs from
-   `pithead restore`. The firstboot loop reaches this door unconditionally, before it ever checks
-   whether `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
-   gating on that presence used to skip the carried restore outright; `prepare_directories` (run
-   by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
+   `pithead restore`. On a `wipe=keep` reinstall, the installer's restore replaces the target's
+   prior `config.json` and `machine-role` on its data partition, and chain data stays intact for
+   the merge. The firstboot loop reaches this door unconditionally before checking for a config;
+   `prepare_directories` (run by the `setup` it feeds) unconditionally re-chowns every data dir,
+   so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
 `error.txt` and returns 1 — nothing already on disk is touched, and the page falls back to the
@@ -484,7 +487,7 @@ migration floor — both halves are described in
 **Rule for changes:** anything generated from `config.json` or the program is derived and must
 be rebuilt by `render` — adding one anywhere else recreates the staleness bug. The container
 images are derived in the same sense: functions of the running slot, converged every boot by
-`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, generated secrets)
+`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, opaque generated secrets)
 is never regenerated; it gets validation and a safe fallback instead.
 
 The invariant, asserted by the provision phase: **corrupt any derived file, reboot, and the
@@ -505,7 +508,7 @@ had a gap between it and the next one.
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), pulled to the harness and uploaded through `/submit-restore` on a FRESH installer boot instead of the form; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker, then the wallet address and Tor onion identity prove restored, not regenerated |
+| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The running wallet, Tor identity and opaque RPC/onion secrets must match each archive, the dashboard hash and fingerprint must be regenerated from the preserved password and authenticate with it, and both the fixture's chain sentinel and the target's pre-restore sentinel must survive |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.

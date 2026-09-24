@@ -335,10 +335,10 @@ firstboot_wizard() {
                 continue
             fi
             if [ "$rec" -eq 0 ] || firstboot_consume_spool "$spool" "$candidate"; then
-                # Reachability before commitment: a remote node that cannot be dialed fails HERE,
-                # on the page, with the attempt kept for editing — not minutes into provisioning.
+                # Every candidate keeps the address safety floor; a restored archive skips only
+                # the later release's live reachability probe (#2230).
                 local pf_err
-                if ! pf_err=$(preflight_remote_nodes "$candidate"); then
+                if ! pf_err=$(remote_node_addresses_allowed "$candidate") || { [ "$rec" -ne 0 ] && ! pf_err=$(preflight_remote_nodes "$candidate"); }; then
                     printf '%s' "$pf_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_publish_retry_config "$spool" "$candidate" "$installer" 2>/dev/null
                     # Same bare-keep hazard as a rejected restore: the config candidate is gone,

@@ -6,6 +6,8 @@ source "$SCRIPT_DIR/phases/install-initial.sh" || return $?
 source "$SCRIPT_DIR/phases/install-commit.sh" || return $?
 # shellcheck source=tests/os/phases/install-reinstall.sh
 source "$SCRIPT_DIR/phases/install-reinstall.sh" || return $?
+# shellcheck source=tests/os/phases/install-restore-preboot.sh
+source "$SCRIPT_DIR/phases/install-restore-preboot.sh" || return $?
 # shellcheck source=tests/os/phases/install-restore.sh
 source "$SCRIPT_DIR/phases/install-restore.sh" || return $?
 phase_install() {

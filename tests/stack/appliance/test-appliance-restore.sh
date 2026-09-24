@@ -29,11 +29,21 @@ echo "== unit: firstboot_consume_restore — restore-at-setup (#909, #786 sub-is
 RS="$(cd "$SANDBOX" && pwd -P)/restore-consume"
 mkdir -p "$RS/build/tari" "$RS/data/tor" "$RS/data/dashboard" "$RS/bin" "$RS/volatile" "$RS/stage"
 export PITHEAD_RESTORE_STAGE_ROOT="$RS/stage"
-cp "$STACK" "$RS/pithead" && cp "$ROOT/build/tari/config.toml.template" "$RS/build/tari/"
+cp "$STACK" "$RS/pithead"
+cp "$ROOT/build/tari/config.toml.template" "$RS/build/tari/"
+cp "$ROOT/docker-compose.yml" "$RS/docker-compose.yml" # caddy_hash_password_b64 reads the pinned image from here
 cat >"$RS/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   "compose ps --status running -q") exit 0 ;; # empty output -> stack treated as not running
+  *hash-password*)
+    # Fake `caddy hash-password` (matches lib.sh's make_stubs): the restore fixtures below carry a
+    # real dashboard.auth.password, and a restore whose live .env lost its matching fingerprint
+    # (an earlier case in this file re-derived it without one) falls through to actually hashing.
+    _pw="${*##*--plaintext }"
+    _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
+    printf '$2y$14$%s\n' "$_d"
+    ;;
 esac
 exit 0
 EOF
@@ -43,17 +53,38 @@ cat >"$RS/bin/sudo" <<'EOF'
 exec "$@"
 EOF
 chmod +x "$RS/bin/docker" "$RS/bin/sudo"
+RS_AUTH_PASSWORD="restore auth password"
+RS_ARCHIVE_AUTH_HASH=$(printf '%s' '$2a$14$abcdefghijklmnopqrstuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu' | openssl base64 -A)
+RS_AUTH_FP=$(printf '%s' "$RS_AUTH_PASSWORD" | sha256sum | cut -d' ' -f1)
+RS_EXPECTED_AUTH_HASH=$(PATH="$RS/bin:$PATH" run_sourced "$RS" caddy_hash_password_b64 "$RS_AUTH_PASSWORD")
 cat >"$RS/.env" <<EOF
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 TARI_ONION_ADDRESS=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion
 P2POOL_ONION_ADDRESS=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion
 PROXY_AUTH_TOKEN=0123456789abcdef01234567
+DASHBOARD_AUTH_HASH_B64=$RS_ARCHIVE_AUTH_HASH
+DASHBOARD_AUTH_PW_FP=$RS_AUTH_FP
 HOST_IP=box.lan
 DEPLOYMENT_COMPLETED=true
 COMPOSE_PROFILES=local_node
 EOF
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$RS/config.json"
-printf 'CADDY-ORIG\n' >"$RS/Caddyfile" && printf 'ONIONKEY-ORIG\n' >"$RS/data/tor/hs_ed25519_secret_key" && printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"%s"}} }\n' "$WALLET" "$RS_AUTH_PASSWORD" >"$RS/config.json"
+
+# An archive-controlled fingerprint must not bless an unrelated archive-controlled bcrypt. The
+# plaintext config is authoritative; canonicalization regenerates both derived values from it.
+RSAUTH="$RS/auth-canonical"
+mkdir -p "$RSAUTH"
+cp "$RS/config.json" "$RSAUTH/config.json"
+printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$RS_AUTH_FP" >"$RSAUTH/.env"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
+assert_rc "restore auth canonicalization accepts disposable credentials" "$?" 0
+assert_eq "restore auth canonicalization preserves the plaintext password" "$(jq -r '.dashboard.auth.password' "$RSAUTH/config.json")" "$RS_AUTH_PASSWORD"
+assert_eq "restore auth canonicalization regenerates the bcrypt from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_EXPECTED_AUTH_HASH"
+assert_eq "restore auth canonicalization regenerates its matching fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
+rm -rf "$RSAUTH"
+printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
+printf 'ONIONKEY-ORIG\n' >"$RS/data/tor/hs_ed25519_secret_key"
+printf 'DBDATA-ORIG\n' >"$RS/data/dashboard/dashboard.db"
 out="$(cd "$RS" && PATH="$RS/bin:$PATH" PITHEAD_BACKUP_PASSPHRASE=hunter2 ./pithead backup -y 2>&1)"
 rc=$?
 assert_rc "restore fixture: backup exits 0" "$rc" "0"
@@ -73,6 +104,9 @@ assert_eq "valid restore installs config.json" "$([ -f "$RS/config.json" ] && ec
 assert_contains "valid restore carries the original wallet" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "valid restore regenerates the Caddyfile from config" "$(cat "$RS/Caddyfile" 2>/dev/null)" "reverse_proxy 127.0.0.1:8000"
 assert_eq "valid restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-ORIG"
+assert_eq "valid restore preserves the dashboard password" "$(jq -r '.dashboard.auth.password' "$RS/config.json")" "$RS_AUTH_PASSWORD"
+assert_eq "valid restore regenerates the dashboard credential hash from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_EXPECTED_AUTH_HASH"
+assert_eq "valid restore regenerates the dashboard password fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RS/.env")" "$RS_AUTH_FP"
 assert_eq "applied marker set" "$([ -f "$RSPOOL/applied" ] && echo yes)" "yes"
 assert_eq "the archive is consumed" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
@@ -81,7 +115,8 @@ assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase
 # generated runtime policy through either archive .env or Caddyfile, while its generated identity
 # still survives the canonical re-render.
 RH="$RS/stale-derived"
-mkdir -p "$RH/${RS#/}" && cp "$RS/config.json" "$RH/${RS#/}/config.json"
+mkdir -p "$RH/${RS#/}"
+jq 'del(.dashboard.auth)' "$RS/config.json" >"$RH/${RS#/}/config.json"
 cat >"$RH/${RS#/}/.env" <<'EOF'
 PROXY_AUTH_TOKEN=abcdef0123456789abcdef01
 MONERO_ONION_ADDRESS=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
@@ -166,9 +201,13 @@ rm -rf "$RINST"
 # The installer applies the parked restore to the target's data partition (faked here as a
 # directory): a failed finalization leaves first boot fail-closed on .restore-incomplete, a
 # symlinked target root or leaf is refused rather than followed, and only a non-secret pending
-# marker reaches target data.
+# marker reaches target data. The target is a kept one (#2230): its prior config and role marker
+# are replaced by the restore's, while its chain data stays for the merge.
 RDATA="$RS/target-data"
-mkdir -p "$RDATA"
+mkdir -p "$RDATA/pithead/data/monero"
+printf '{"monero":{"wallet_address":"4kept"}}' >"$RDATA/pithead/config.json"
+printf 'rig\n' >"$RDATA/pithead/machine-role"
+printf 'KEEP-monero\n' >"$RDATA/pithead/data/monero/chain-sentinel"
 out=$(cd "$RS" && PATH="$RS/bin:$PATH" RDATA="$RDATA" run_sourced "$RS" eval '
     systemd-repart() { :; }
     udevadm() { :; }
@@ -205,6 +244,7 @@ assert_not_contains "stage cleanup failure never reports a safe commit" "$out" s
 assert_contains "target staging cleanup failure is generic" "$out" 'could not clear private restore staging safely'
 assert_contains "target restore carries the original wallet" "$(cat "$RDATA/pithead/config.json")" "$WALLET"
 assert_eq "target restore records the resolved machine role" "$(cat "$RDATA/pithead/machine-role")" pithead
+assert_eq "target restore keeps the kept target's chain data" "$(cat "$RDATA/pithead/data/monero/chain-sentinel" 2>/dev/null)" KEEP-monero
 assert_contains "target restore leaves only a non-secret pending marker" "$out" pending-marker-kept
 assert_eq "a refused target restore disarms the pending marker" "$([ -e "$RDATA/pithead/.restore-pending" ] || echo gone)" gone
 assert_eq "target data holds no persisted passphrase file" "$(find "$RDATA" -name '*restore-pass*' -print -quit)" ""
@@ -450,73 +490,3 @@ assert_contains "accepted restore cleanup failure reaches the page" "$(cat "$RSP
 assert_not_contains "accepted cleanup warning never reveals the passphrase" "$out" hunter2
 assert_eq "accepted cleanup failure publishes no success state" "$(find "$RSPOOL" -maxdepth 1 \( -name applied -o -name restore-inflight \) -print)" ""
 rm -rf "$RSPOOL"/.host.* && rm -f "$RSPOOL/error.txt" "$RS/config.json"
-
-# 2) Bad passphrase: rejected before anything is touched.
-printf 'CORRUPTED\n' >"$RS/Caddyfile"
-cp "$rarchive" "$RSPOOL/restore-archive" && printf 'not-the-passphrase' >"$RSPOOL/restore-passphrase" # test fixture
-out=$(run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
-assert_contains "wrong passphrase rejected" "$out" "rc1"
-assert_contains "private snapshot cleanup failure is visible" "$out" 'Could not clear every private restore snapshot'
-assert_not_contains "private cleanup warning never reveals submitted content" "$out" not-the-passphrase
-assert_contains "wrong passphrase names the cause" "$(cat "$RSPOOL/error.txt" 2>/dev/null)" "assphrase"
-assert_eq "wrong passphrase leaves live files untouched" "$(cat "$RS/Caddyfile")" "CORRUPTED"
-assert_eq "the archive is consumed even on rejection" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
-assert_eq "the passphrase is never retained even on rejection" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
-printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
-rm -f "$RSPOOL/error.txt"
-printf 'snapshot-failure-secret' >"$RSPOOL/failed-pass"
-out=$(run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; head() { return 1; }; wizard_spool_snapshot "$RSPOOL" failed-pass || true' 2>&1)
-assert_contains "failed private snapshot cleanup is visible" "$out" 'Could not clear a failed private wizard snapshot'
-assert_not_contains "failed private snapshot cleanup never reveals content" "$out" snapshot-failure-secret
-
-# 3) Encrypted archive, no passphrase supplied at all.
-cp "$rarchive" "$RSPOOL/restore-archive"
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "missing passphrase rejected" "$out" "rc1"
-assert_contains "missing passphrase names the cause" "$(cat "$RSPOOL/error.txt" 2>/dev/null)" "passphrase"
-rm -f "$RSPOOL/error.txt"
-
-# 4) Oversize: refused on SIZE alone, before any decrypt/extract — content is irrelevant.
-truncate -s 67108865 "$RSPOOL/restore-archive"
-printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "oversize archive rejected" "$out" "rc1"
-assert_contains "oversize archive names the cap" "$(cat "$RSPOOL/error.txt" 2>/dev/null)" "too large"
-rm -f "$RSPOOL/error.txt"
-
-# 5) Malformed: neither the encrypted magic nor gzip's — falls back exactly like a rejected
-# config, never blocking setup.
-printf 'garbage-not-an-archive' >"$RSPOOL/restore-archive"
-printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "malformed archive rejected" "$out" "rc1"
-assert_contains "malformed archive names the problem" "$(cat "$RSPOOL/error.txt" 2>/dev/null)" "not a Pithead backup archive"
-assert_eq "malformed archive leaves config.json untouched" "$([ -f "$RS/config.json" ] || echo gone)" "gone"
-rm -f "$RSPOOL/error.txt"
-
-# 6) Path-traversal / symlink defense: a well-formed gzip archive (passes the magic + integrity
-# checks) whose members escape the restore set must be refused BEFORE anything is staged to "/".
-# A Pithead backup is only regular files under known prefixes, so a symlink or a ".." member is an
-# attack. Built with real tar so the guard faces the exact bytes it would on a box.
-MAL="$RS/mal"
-mkdir -p "$MAL/pithead"
-printf 'CADDY-ORIG\n' >"$RS/Caddyfile"     # live file the escape would try to clobber via symlink
-ln -s /etc/shadow "$MAL/pithead/Caddyfile" # symlink escape
-(cd "$MAL" && tar -czf "$RSPOOL/restore-archive" pithead) 2>/dev/null
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "a symlink member is refused" "$out" "rc1"
-assert_contains "the symlink refusal names the cause" "$(cat "$RSPOOL/error.txt" 2>/dev/null)" "unsafe paths or links"
-assert_eq "a symlink archive touches nothing" "$(cat "$RS/Caddyfile")" "CADDY-ORIG"
-rm -f "$RSPOOL/error.txt" "$RSPOOL/restore-passphrase"
-
-# Absolute-path member (stored with a leading slash via -P): would land at /… on cp -a.
-printf 'EVIL\n' >"$MAL/evil"
-(cd "$MAL" && tar -Pczf "$RSPOOL/restore-archive" "$MAL/evil") 2>/dev/null
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "an absolute-path member is refused" "$out" "rc1"
-rm -f "$RSPOOL/error.txt"
-
-# 7) Nothing to consume.
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" || echo "rc$?")
-assert_contains "empty spool is rc2" "$out" "rc2"
-rm -rf "$RS"
