@@ -28,8 +28,8 @@ assert_not_contains "186 pages: never a FAIL" "$out" "FAIL"
 assert_not_contains "186 pages: not OK" "$out" "✓ OK"
 assert_contains "186 pages: names the shortfall against the budget" "$out" "only 186 of the 3072 pages"
 assert_contains "186 pages: names the shortfall in MiB" "$out" "(5772 MiB short)"
-assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset: P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM"
-assert_contains "186 pages: says what that does to P2Pool today" "$out" "exceeds its 1 GiB memory limit and restarts in a loop"
+assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset: P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead"
+assert_contains "186 pages: says what that costs the machine" "$out" "up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 assert_contains "186 pages: names setup as the fix" "$out" "Run './pithead setup'"
 assert_contains "186 pages: names the full boot parameters for GRUB" "$out" "put 'hugepagesz=2M hugepages=3072 transparent_hugepage=never' on GRUB_CMDLINE_LINUX_DEFAULT"
 assert_contains "186 pages: says to replace a stale hugepages= value" "$out" "in place of any other hugepages= value"
@@ -41,9 +41,9 @@ out="$(_hp 0)"
 assert_contains "3072 pages: OK" "$out" "✓ OK   HugePages reserved: 3072 total, 1800 free"
 assert_not_contains "3072 pages: no WARN" "$out" "WARN"
 
-# P2Pool's dataset boundary: below its 1040 pages P2Pool crash-loops under its 1 GiB limit whatever
-# else holds pages. From 1040 up to the budget the crash loop is named as conditional: monerod builds
-# no dataset unless it mines, but its RandomX caches and a scratchpad page per hashing thread share
+# P2Pool's dataset boundary: below its 1040 pages P2Pool falls back to ordinary RAM whatever else
+# holds pages. From 1040 up to the budget the fallback is named as conditional: monerod builds no
+# dataset unless it mines, but its RandomX caches and a scratchpad page per hashing thread share
 # the pool, so no fixed size short of the budget leaves P2Pool its 1040 for certain.
 _meminfo 1039 1039
 out="$(_hp 0)"
@@ -54,8 +54,8 @@ _meminfo 1040 1040
 out="$(_hp 0)"
 assert_contains "1040 pages: WARN, short of the budget" "$out" "⚠ WARN HugePages reserved: only 1040 of the 3072 pages"
 assert_not_contains "1040 pages: never a FAIL" "$out" "FAIL"
-assert_not_contains "1040 pages: no certain crash-loop claim" "$out" "too few for P2Pool's RandomX dataset"
-assert_contains "1040 pages: the crash loop hangs on what monerod holds" "$out" "(4064 MiB short). If monerod's own RandomX pages leave fewer than 1040 free when P2Pool starts, P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+assert_not_contains "1040 pages: no certain fallback claim" "$out" "too few for P2Pool's RandomX dataset"
+assert_contains "1040 pages: the fallback hangs on what monerod holds" "$out" "(4064 MiB short). If monerod's own RandomX pages leave fewer than 1040 free when P2Pool starts, P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead: up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 _meminfo 1296 1296
 out="$(_hp 0)"
 assert_contains "1296 pages: still conditional (monerod's pages are not a fixed 256)" "$out" "only 1296 of the 3072 pages this machine needs for RandomX (3552 MiB short). If monerod's own RandomX pages leave fewer than 1040 free"
@@ -63,7 +63,7 @@ assert_not_contains "1296 pages: never a FAIL" "$out" "FAIL"
 _meminfo 3071 3071
 out="$(_hp 0)"
 assert_contains "3071 pages: one page short of the budget is a WARN" "$out" "⚠ WARN HugePages reserved: only 3071 of the 3072 pages"
-assert_contains "3071 pages: the crash loop stays conditional" "$out" "(2 MiB short). If monerod's own RandomX pages leave fewer than 1040 free when P2Pool starts, P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+assert_contains "3071 pages: the fallback stays conditional" "$out" "(2 MiB short). If monerod's own RandomX pages leave fewer than 1040 free when P2Pool starts, P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead: up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 assert_not_contains "3071 pages: never a FAIL" "$out" "FAIL"
 
 # The appliance's reduced tier: its recorded pool IS the budget, so the full pool is not demanded.
@@ -109,7 +109,7 @@ rm -f "$MEMD/marker"
 # The unchanged edges: no pool, and no HugePages line at all.
 _meminfo 0 0
 out="$(_hp 0)"
-assert_contains "0 pages: WARN names the crash loop, not a slowdown" "$out" "⚠ WARN HugePages_Total is 0: P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+assert_contains "0 pages: WARN names the RAM the fallback costs" "$out" "⚠ WARN HugePages_Total is 0: P2Pool puts its RandomX dataset (1040 pages) and caches in ordinary RAM instead: up to 2592 MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
 assert_not_contains "0 pages: no 'slower' wording" "$out" "slower"
 assert_contains "0 pages: names setup as the fix" "$out" "Run './pithead setup'"
 assert_not_contains "0 pages: never a FAIL" "$out" "FAIL"
@@ -122,12 +122,12 @@ out="$(_hp 0)"
 assert_contains "non-numeric HugePages_Total: could-not-read WARN, not a zero pool" "$out" "⚠ WARN Could not read HugePages"
 assert_not_contains "non-numeric HugePages_Total: never a FAIL" "$out" "FAIL"
 
-# The crash-loop wording names P2Pool's memory limit as 1 GiB. Read the limit off both places it
-# is set, so the change that moves it (#2609) reds here and rewrites the wording with it.
-assert_eq "the wording's 1 GiB is P2Pool's compose mem_limit" \
-    "$(awk '/^  p2pool:$/{f=1;next} f&&/^  [a-z]/{exit} f&&/^    mem_limit:/{print $2}' "$ROOT/docker-compose.yml")" "1g"
-assert_eq "the wording's 1 GiB is P2Pool's quadlet --memory" \
-    "$(awk '/^Image=\$reg\/pithead-p2pool:/{f=1} f&&/^PodmanArgs=--memory /{print $2; exit}' "$ROOT/lib/pithead/36-quadlet-units.sh")" "1g"
+# The fallback wording names P2Pool's memory limit as 4 GiB (#2562). Read the limit off both places
+# it is set, so a change that moves it reds here and rewrites the wording with it.
+assert_eq "the wording's 4 GiB is P2Pool's compose mem_limit" \
+    "$(awk '/^  p2pool:$/{f=1;next} f&&/^  [a-z]/{exit} f&&/^    mem_limit:/{print $2}' "$ROOT/docker-compose.yml")" "4g"
+assert_eq "the wording's 4 GiB is P2Pool's quadlet --memory" \
+    "$(awk '/^Image=\$reg\/pithead-p2pool:/{f=1} f&&/^PodmanArgs=--memory /{print $2; exit}' "$ROOT/lib/pithead/36-quadlet-units.sh")" "4g"
 
 echo "== black-box: doctor's Memory section carries the HugePages verdict (#2610) =="
 # The unit rows prove the check; this proves doctor runs it. Same fake daemon as test-doctor.sh's

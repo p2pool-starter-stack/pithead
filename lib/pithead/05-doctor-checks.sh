@@ -116,11 +116,11 @@ check_hugepages_degraded() {
 # reduced pool), and never less than P2Pool's own RandomX pages — any non-zero pool used to read
 # OK, and a bench said OK at 186 pages (#2610). A short pool is a WARN, never a FAIL: the
 # appliance's A/B commit gate takes doctor's exit code. Below P2Pool's dataset the wording states
-# what develop does today: the 2080 MiB dataset built in ordinary RAM exceeds P2Pool's 1 GiB memory
-# limit and it restarts in a loop; once #2609 raises that limit it costs RAM and speed instead,
-# and the wording changes, not the level. Above that a short pool says the same conditionally:
-# monerod builds no dataset unless it mines, but its two RandomX caches and a scratchpad page per
-# hashing thread share the pool, so no fixed size short of the budget guarantees P2Pool its 1040.
+# the cost: P2Pool puts its dataset and caches in up to 2592 MiB of ordinary RAM, which its 4 GiB
+# memory limit holds (#2562) but the rest of the machine loses. Above that a short pool says the
+# same conditionally: monerod builds no dataset unless it mines, but its two RandomX caches and a
+# scratchpad page per hashing thread share the pool, so no fixed size short of the budget
+# guarantees P2Pool its 1040.
 # Reads PITHEAD_MEMINFO, the overlay's override, so the stack suite runs it against fixtures.
 check_hugepages_reserved() {
     local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need who="this machine needs for RandomX" short
@@ -135,15 +135,15 @@ check_hugepages_reserved() {
     elif [ "$total" -ge "$need" ]; then
         dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
     else
-        local crash="P2Pool builds its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+        local fallback="P2Pool puts its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) and caches in ordinary RAM instead: up to $((P2POOL_RANDOMX_PAGES * 2)) MiB, which its 4 GiB memory limit holds but the rest of the machine loses."
         if [ "$total" -eq 0 ]; then
-            short="HugePages_Total is 0: ${crash}"
+            short="HugePages_Total is 0: ${fallback}"
         else
             short="HugePages reserved: only ${total} of the ${need} pages ${who} ($(((need - total) * 2)) MiB short)."
             if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
-                short="${short} That is too few for P2Pool's RandomX dataset: ${crash}"
+                short="${short} That is too few for P2Pool's RandomX dataset: ${fallback}"
             else
-                short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${crash}"
+                short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${fallback}"
             fi
         fi
         dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
