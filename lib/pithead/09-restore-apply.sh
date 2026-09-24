@@ -256,10 +256,10 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
     # runs: prepare_directories, render_env, provision_tor never fire, no container starts. A
     # just-restored box has NOT completed deployment on this hardware — clear the marker in the
     # staged .env, before the commit, so the caller's setup() actually provisions it and a
-    # failure here leaves the live side untouched (#2689). The staged canonicalizer has already retained only
-    # validated generated secrets and Tor identity while deriving host and policy from config;
-    # this path changes its one hardware-specific lifecycle value. Scoped to THIS commit
-    # path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
+    # failure here leaves the live side untouched (#2689). The staged canonicalizer has already
+    # retained only validated generated secrets and Tor identity while deriving host and policy
+    # from config; this path changes its one hardware-specific lifecycle value. Scoped to THIS
+    # commit path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
     # deployed on its own hardware) has its own separate extraction and never calls restore_apply,
     # so a live box's restore keeps its completion marker exactly as it should.
     if ! safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$tree/$root$ENV_FILE"; then
