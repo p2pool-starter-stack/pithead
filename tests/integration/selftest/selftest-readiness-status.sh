@@ -8,9 +8,9 @@
 # The real wait_for, it_fail and redact from lib.sh are used.
 #
 # Proven able to fail: with the row reverted to the one-shot `pithead status >/dev/null 2>&1` plus
-# `assert_rc`, 7 rows go red (the settles-after-60s rows, the bound and the detail rows); with
-# status_verdict_lines reduced to plain `redact`, 3 go red (colour, the password/onion/compose-table
-# row, and the empty-output row); without its `redact`, the two address rows go red.
+# `assert_rc`, 8 rows go red (the settles-after-60s rows, the bound, the detail rows and the
+# redaction row); with status_verdict_lines reduced to plain `redact`, 3 go red (colour, the
+# leak row, and the empty-output row); without its `redact`, the two address rows go red.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -91,15 +91,15 @@ assert_contains "the detail redacts an address in a kept line" "$STAYS_ROW" "[WA
 assert_contains "the detail keeps the healthy services, colour stripped" "$STAYS_ROW" "        ✓ monerod       running"
 case "$STAYS_ROW" in
 *"$SECRET_PASS"* | *.onion* | *$'\033'* | *"IMAGE  STATUS"* | *203.0.113.9*)
-    it_fail "the detail leaves out the password, the onion, colour codes and the compose table" "$STAYS_ROW"
+    it_fail "the detail leaves out the password, the onion, colour codes, the compose table and the raw address" "$STAYS_ROW"
     ;;
-*) it_pass "the detail leaves out the password, the onion, colour codes and the compose table" ;;
+*) it_pass "the detail leaves out the password, the onion, colour codes, the compose table and the raw address" ;;
 esac
 
 EMPTY="$(printf 'ssh: connect failed\n' | (eval "$READINESS_SRC" && status_verdict_lines))"
 assert_eq "output without service lines yields no verdict lines" "$EMPTY" ""
-ERRORED="$(printf '[ERROR] No .env found. Run ./pithead apply first.\n' | (eval "$READINESS_SRC" && status_verdict_lines))"
-assert_eq "a status that errors out keeps its error line" "$ERRORED" "[ERROR] No .env found. Run ./pithead apply first."
+ERRORED="$(printf "[ERROR] No .env found. Run './pithead setup' first.\n" | (eval "$READINESS_SRC" && status_verdict_lines))"
+assert_eq "a status that errors out keeps its error line" "$ERRORED" "[ERROR] No .env found. Run './pithead setup' first."
 
 echo "selftest-readiness-status: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
