@@ -232,7 +232,7 @@ mutation_lock_holder() { # <lock file> — a holder description safe to show an 
     printf '%s' "holder unrecorded"
 }
 
-mutation_lock_acquire() { # <verb label> [--try]
+mutation_lock_acquire() { # <verb label>
     local label="${1:-pithead}"
 
     # Already inside a window this process holds (backup -> down/up): count and return.
@@ -281,9 +281,6 @@ mutation_lock_acquire() { # <verb label> [--try]
         warn "Another pithead operation is in progress ($holder) — waiting up to ${PITHEAD_LOCK_TIMEOUT}s for it to finish."
         if ! flock -w "$PITHEAD_LOCK_TIMEOUT" 9; then
             exec 9>&-
-            # --try: the caller handles contention itself (the control runner, whose handlers each
-            # write their own terminal "not started" result). Return instead of exiting.
-            [ "${2:-}" = --try ] && return "$PITHEAD_EX_LOCK_TIMEOUT"
             # error()'s message, error()'s exit — except the status, for the reason at
             # PITHEAD_EX_LOCK_TIMEOUT above. Anything reading only the message is unaffected.
             echo -e "${C_RED}[ERROR]${C_RESET} Timed out after ${PITHEAD_LOCK_TIMEOUT}s waiting for another pithead operation ($holder) — nothing was changed. Re-run '$0 $label' once it has finished." >&2

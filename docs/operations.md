@@ -98,10 +98,9 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. Dashboard control requests join that same window before they claim a spool file, and
-`uninstall` joins it before its first destructive step. Without it a `backup` — which stops the
-stack to take a consistent archive — could remove a container out from under a `setup`, `apply`,
-or dashboard request that was still using it.
+the first. `uninstall` joins that window before its first destructive step. Without it a `backup` — which stops the
+stack to take a consistent archive — could remove a container out from under a `setup` or an
+`apply` that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -272,14 +271,13 @@ only when the installed units genuinely differ (a stale checkout path, a contain
 a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
 (`current` symlink or its versioned directory).
 
-When re-provisioning is needed, `apply` already holds the shared mutation lock. A runner activation
-that systemd queued before `apply` stops `pithead-control.path` waits on that lock before claiming a
-request; a runner that claimed first holds the lock until its drain and result write finish, so
-`apply` waits for it. If the lock is still held after `PITHEAD_LOCK_TIMEOUT` (300 seconds by
-default), the runner proceeds anyway: each request it claims gets a result file with a rejection
-that says the change was never started. The bounded 30-second claim check remains as a backstop for a runner installed
-by an older version or a host without `flock`. A request still sitting in `requests/` is untouched,
-and `pithead-control.path` re-fires against it as soon as it (or its replacement) is enabled again.
+When re-provisioning is needed, `apply` holds the shared mutation lock while it stops
+`pithead-control.path`, waits up to 30 seconds for a request the runner has already claimed to
+write its result, rewrites the units and enables the path unit again. The runner itself never
+takes the lock, so a dashboard request is never delayed by a `pithead` command running in a shell,
+and never delays one. None of these calls stops a runner that is working a request: on systemd 255
+the running service finishes and writes its result. A request still sitting in `requests/` is
+untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a

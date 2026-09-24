@@ -38,15 +38,15 @@ control_units_owner_dir() {
 
 # Bounded wait for the root runner to finish a request it already claimed (#2363): a `.claim.*`
 # file next to $CONTROL_DIR exists only while control_run_pending is actively working one
-# (49-control-request-loop.sh claims by mv before parsing a byte). Stopping the runner mid-claim
-# kills a request whose requested change already landed — only the result file is lost, so the
-# dashboard caller polls to its own deadline and reports a failure that never happened.
+# (49-control-request-loop.sh claims by mv before parsing a byte). Measured on systemd 255: none of
+# the calls below (stop .path, unit rewrite, daemon-reload, enable --now) stops a running oneshot,
+# so this does not rescue a runner from being killed. It makes the re-provision wait for an
+# in-flight result before it swaps the units under it.
 control_runner_wait_idle() {
     local waited=0 max_wait=30 cdir="${CONTROL_DIR:-$PWD/data/control}" own_claim=""
-    # A control request that invokes a child `pithead apply` keeps its own parent claim until the
-    # handler returns. The child inherits this pid marker with the lock descriptor; waiting on that
-    # one claim would wait on itself. Claims from older/non-locking runners still need the fallback.
-    [ -n "${PITHEAD_LOCK_HELD:-}" ] && own_claim="$cdir/.claim.$PITHEAD_LOCK_HELD"
+    # A dashboard commit runs a child `pithead apply -y` while its parent runner still holds the
+    # claim; waiting on that one would wait on itself (control_run_pending exports its pid).
+    [ -n "${PITHEAD_CONTROL_RUNNER_PID:-}" ] && own_claim="$cdir/.claim.$PITHEAD_CONTROL_RUNNER_PID"
     while compgen -G "$cdir/.claim.*" | grep -Fvxq "$own_claim"; do
         if [ "$waited" -ge "$max_wait" ]; then
             warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish before re-provisioning the runner — its result may be lost."
@@ -106,11 +106,15 @@ provision_control_runner() {
             log "Removing the dashboard control runner units..."
             # Stop the trigger FIRST (#2363) — no new claim can start once .path is down — then
             # wait for one already in flight, and only then take the units away.
+            # The mutation window covers the drain and the removal; apply/uninstall already hold
+            # it, so this is a counted no-op for them. The runner itself never takes it.
+            mutation_lock_acquire apply
             sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
             control_runner_wait_idle
             sudo systemctl disable --now pithead-control.path >/dev/null 2>&1 || true
             sudo rm -f "$unit_dir/pithead-control.path" "$unit_dir/pithead-control.service"
             sudo systemctl daemon-reload
+            mutation_lock_release
         fi
         return 0
     fi
@@ -161,7 +165,8 @@ provision_control_runner() {
     # A fresh install has nothing running to drain. A re-provision (drifted unit, adoption, steal)
     # does: stop the trigger BEFORE the rewrite below so no new claim can start, then wait for one
     # already in flight to finish and write its result (#2363) — same ordering as the removal
-    # branch above.
+    # branch above, under the same mutation window (released after enable below).
+    mutation_lock_acquire apply
     if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
         sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
         control_runner_wait_idle
@@ -220,4 +225,5 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl "${enable_args[@]}" pithead-control.path >/dev/null 2>&1 ||
         warn "Could not enable pithead-control.path — dashboard config changes will not be applied until it is enabled."
+    mutation_lock_release
 }

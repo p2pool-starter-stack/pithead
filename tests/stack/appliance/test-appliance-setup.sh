@@ -94,8 +94,8 @@ touch "$V/Caddyfile"
 out=$(cd "$V" && printf 'no\n' | PATH="$V/bin:$PATH" ./pithead uninstall 2>&1) || true
 assert_contains "uninstall aborts without the confirm word" "$out" "Aborted"
 assert_eq "aborted uninstall keeps .env" "$([ -f "$V/.env" ] && echo yes)" "yes"
-# A queued dashboard runner and uninstall both mutate the same checkout. Hold the shared window
-# and prove uninstall refuses before its first destructive step rather than racing that runner.
+# Uninstall removes the control-runner units, so it joins the shared window like apply does. Hold
+# the window and prove uninstall refuses before its first destructive step.
 UNINSTALL_LOCK="$V/uninstall-held.lock"
 : >"$V/docker.log"
 (
@@ -110,7 +110,7 @@ assert_rc "uninstall contention fixture holds the mutation window" "$?" "0"
 rc=0
 out=$(cd "$V" && PITHEAD_LOCK_FILE="$UNINSTALL_LOCK" PITHEAD_LOCK_TIMEOUT=1 \
     PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
-assert_contains "uninstall waits on the same mutation window as the dashboard runner" "$out" "Timed out after 1s"
+assert_contains "uninstall waits on the same mutation window as apply" "$out" "Timed out after 1s"
 assert_not_contains "a contended uninstall never reaches container removal" "$(cat "$V/docker.log" 2>/dev/null)" "compose down"
 assert_eq "a contended uninstall changes nothing" "$([ -f "$V/.env" ] && echo yes)" "yes"
 kill "$UNINSTALL_HOLDER" 2>/dev/null || true

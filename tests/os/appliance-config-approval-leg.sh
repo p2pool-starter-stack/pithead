@@ -77,7 +77,7 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
 
 approval_restore_pending() {
     [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
-    # Keep the harness restore at a quiet phase boundary; the product serializes a runner with apply (#2363).
+    # Keep the harness restore at a quiet phase boundary; apply does not stop a running runner (#2363).
     _control_requests_drained || return 1
     _ssh 'set -euo pipefail
 install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json

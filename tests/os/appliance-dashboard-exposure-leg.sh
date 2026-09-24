@@ -152,7 +152,7 @@ dashboard_onion_exposure_verdict() { # <Caddyfile> <ss> <doctor-json> <bridge-ga
 phase_provision_dashboard_onion_exposure() {
     local caddy sockets doctor prefix gw verdict
     # Before the snapshot, so a spool that never drains leaves the guest exactly as it was found.
-    # The product serializes a runner with apply (#2363); this is the harness's phase boundary.
+    # Apply does not stop a running runner (#2363); this is the harness's phase boundary.
     _control_requests_drained || {
         bad "onion exposure: the control spool never drained — refusing to cross the harness phase boundary"
         return

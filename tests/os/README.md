@@ -119,7 +119,7 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
-  boundary deterministic. The product serializes an in-flight runner with apply (#2363). Then the
+  boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the
   stack must return from a reboot with no
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
