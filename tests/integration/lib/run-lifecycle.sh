@@ -118,7 +118,62 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
+
+    # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
+    # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
+    # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
+    # an EMPTY DB at the new path and silently re-seed the payout-wallet tripwire baseline (#375)
+    # on the next observation. Local mode only: remote mode has no local data dir to move.
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        local carry_old carry_new carry_epoch rows_before rows_after
+        carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
+        if [ -n "$carry_old" ]; then
+            carry_epoch="$(rx 'date +%s')"
+            carry_new="${carry_old}-carried-$carry_epoch"
+            # kv_store-volatile-shape is left out: the recreated dashboard rewrites those live keys
+            # within seconds, so their shape reflects what the new process has seen, not what was
+            # carried. The kv_store-key lines still require every key to arrive.
+            rows_before="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+            it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
+            push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
+            if pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+                assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
+                rows_after="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+                if telemetry_rows_continue "$rows_before" "$rows_after"; then
+                    it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+                else
+                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                    lifecycle_ok=0
+                fi
+            else
+                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy"
+                lifecycle_ok=0
+            fi
+            # The product correctly refuses to overwrite the old, still-complete directory on a
+            # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
+            # can return to its original configuration without discarding the source database.
+            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
+                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+                it_pass "dashboard carry cleanup restored its baseline safely"
+            else
+                it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline did not return healthy"
+                lifecycle_ok=0
+            fi
+        else
+            it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
+        fi
+    else
+        it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
+    fi
     [ "$lifecycle_ok" = 1 ]
+}
+
+# Table names and counts only (never row values): which families lost rows, and whether either probe
+# came back empty — an empty snapshot is a probe failure, not a divergence.
+telemetry_rows_diff() { # <before-lines> <after-lines>
+    local missing
+    missing="$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
+    printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
 
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }

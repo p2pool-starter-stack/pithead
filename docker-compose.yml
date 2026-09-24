@@ -217,8 +217,8 @@ services:
   # Only starts if "local_tari" profile is active (#103, mirrors monerod's "local_node" above).
   tari:
     profiles: ["local_tari"]
-    # Pinned by digest (#135) so the v6.0.0-mainnet tag can't be silently re-pointed.
-    image: ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:5e87b15b401dd485710b3efc8f8107ecde26f92c2dfad4c0ad1fab69705b393a
+    # Pinned by digest (#135) so the v6.0.1-pre.0-mainnet tag can't be silently re-pointed.
+    image: ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
     container_name: tari
     # Run non-root (#255). Pulled image (not our Dockerfile), so set the uid via compose to match the
     # uid pithead chowns ${TARI_DATA_DIR} to. The wrapper entrypoint reads the canonical config
@@ -306,7 +306,7 @@ services:
   tari-wallet:
     profiles: ["tari_payout_confirm"]
     # Pinned by digest (#135), same registry/tag as the Tari node so the version-match holds.
-    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.0-mainnet@sha256:f7bfb9edad7ec415ac2e6c8fa0fb28fa2162a9ecab63cb5fd853b00685960800
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
     container_name: tari-wallet
     # Run non-root (#255). Pulled image, so set uid via compose to match the uid the wallet named
     # volume is created under; the wrapper only writes the base-path (the volume) and /tmp.
