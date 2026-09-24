@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # LAN-only sources on the appliance's published node ports (#2616). Sourced by tests/os/run.sh.
 #
-# The `inet pithead_lan` nftables table (lib/pithead/02a-lan-guard.sh) is the appliance's backend;
+# The `inet pithead_lan` nftables table (lib/pithead/02b-lan-guard.sh) is the appliance's backend;
 # the e2e channel runs Docker and proves the iptables one, so this leg is the nft backend's only
 # live coverage. It turns the three *_lan_access switches on with a host-side apply (the dashboard
 # refuses those keys by design), then dials every published port from two throwaway network
