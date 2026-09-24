@@ -118,10 +118,10 @@ check_hugepages_degraded() {
 # appliance's A/B commit gate takes doctor's exit code. Below P2Pool's dataset the wording states
 # what develop does today: the 2080 MiB dataset built in ordinary RAM exceeds P2Pool's 1 GiB memory
 # limit and it restarts in a loop; once #2609 raises that limit it costs RAM and speed instead,
-# and the wording changes, not the level. Below P2Pool's 1296 the dataset fits only if P2Pool
-# allocates first: monerod keeps its two RandomX caches (up to 256 pages) in the same pool, though
-# it builds no dataset unless it mines. Reads PITHEAD_MEMINFO, the overlay's override, so the
-# stack suite runs it against fixtures.
+# and the wording changes, not the level. Above that a short pool says the same conditionally:
+# monerod builds no dataset unless it mines, but its two RandomX caches and a scratchpad page per
+# hashing thread share the pool, so no fixed size short of the budget guarantees P2Pool its 1040.
+# Reads PITHEAD_MEMINFO, the overlay's override, so the stack suite runs it against fixtures.
 check_hugepages_reserved() {
     local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need who="this machine needs for RandomX" short
     total=$(awk '/^HugePages_Total/{print $2}' "$meminfo" 2>/dev/null || true)
@@ -142,10 +142,8 @@ check_hugepages_reserved() {
             short="HugePages reserved: only ${total} of the ${need} pages ${who} ($(((need - total) * 2)) MiB short)."
             if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
                 short="${short} That is too few for P2Pool's RandomX dataset: ${crash}"
-            elif [ "$total" -lt "$P2POOL_RANDOMX_PAGES" ]; then
-                short="${short} P2Pool's RandomX dataset fits only if P2Pool takes its pages before monerod's RandomX caches do; if not, ${crash}"
             else
-                short="${short} RandomX data that does not fit falls back to ordinary RAM."
+                short="${short} If monerod's own RandomX pages leave fewer than ${P2POOL_RANDOMX_DATASET_PAGES} free when P2Pool starts, ${crash}"
             fi
         fi
         dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
