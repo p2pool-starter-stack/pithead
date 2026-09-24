@@ -128,18 +128,21 @@ check_hugepages_reserved() {
     [ "$need" -ge "$P2POOL_RANDOMX_PAGES" ] || need=$P2POOL_RANDOMX_PAGES
     if [ -z "$total" ]; then
         dr_warn "Could not read HugePages from $meminfo."
-    elif ! [ "$total" -gt 0 ] 2>/dev/null; then
-        dr_warn_surface "HugePages_Total is 0 — RandomX mining is slower. Run './pithead setup' (kernel optimization) to reserve them." "HugePages_Total is 0 — RandomX mining is slower. There is no dashboard control that reserves them."
-    elif [ "$total" -lt "$need" ]; then
-        short="HugePages reserved: only ${total} of the ${need} pages this machine needs for RandomX ($(((need - total) * 2)) MiB short)."
-        if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
-            short="${short} That is too few for P2Pool's RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages): P2Pool builds it in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+    elif [ "$total" -ge "$need" ] 2>/dev/null; then
+        dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
+    else
+        local crash="P2Pool builds its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+        if ! [ "$total" -gt 0 ] 2>/dev/null; then
+            short="HugePages_Total is 0: ${crash}"
         else
-            short="${short} RandomX data that does not fit falls back to ordinary RAM."
+            short="HugePages reserved: only ${total} of the ${need} pages this machine needs for RandomX ($(((need - total) * 2)) MiB short)."
+            if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
+                short="${short} That is too few for P2Pool's RandomX dataset: ${crash}"
+            else
+                short="${short} RandomX data that does not fit falls back to ordinary RAM."
+            fi
         fi
         dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool. To keep it across reboots, put '$(randomx_boot_params)' on GRUB_CMDLINE_LINUX_DEFAULT in /etc/default/grub in place of any other hugepages= value, then run 'sudo update-grub' and reboot; a reboot also fills a pool that fragmented memory cannot." "${short} There is no dashboard control that reserves them."
-    else
-        dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
     fi
 }
 

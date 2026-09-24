@@ -28,7 +28,7 @@ assert_not_contains "186 pages: never a FAIL" "$out" "FAIL"
 assert_not_contains "186 pages: not OK" "$out" "✓ OK"
 assert_contains "186 pages: names the shortfall against the budget" "$out" "only 186 of the 3072 pages"
 assert_contains "186 pages: names the shortfall in MiB" "$out" "(5772 MiB short)"
-assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset (1040 pages)"
+assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset: P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM"
 assert_contains "186 pages: says what that does to P2Pool today" "$out" "exceeds its 1 GiB memory limit and restarts in a loop"
 assert_contains "186 pages: names setup as the fix" "$out" "Run './pithead setup'"
 assert_contains "186 pages: names the full boot parameters for GRUB" "$out" "put 'hugepagesz=2M hugepages=3072 transparent_hugepage=never' on GRUB_CMDLINE_LINUX_DEFAULT"
@@ -80,6 +80,12 @@ printf 'released\npages=0\n' >"$MEMD/marker"
 _meminfo 186 186
 out="$(_hp 1)"
 assert_contains "released tier at 186 pages: WARN against P2Pool's 1296" "$out" "only 186 of the 1296 pages"
+_meminfo 1295 1295
+out="$(_hp 1)"
+assert_contains "released tier at 1295 pages: one short of P2Pool's 1296 is a WARN" "$out" "only 1295 of the 1296 pages"
+_meminfo 1296 1296
+out="$(_hp 1)"
+assert_contains "released tier at 1296 pages: P2Pool's dataset and caches fit: OK" "$out" "✓ OK   HugePages reserved: 1296 total"
 _meminfo 0 0
 out="$(_hp 1)"
 assert_contains "released tier at 0 pages: the existing zero WARN" "$out" "HugePages_Total is 0"
@@ -88,7 +94,9 @@ rm -f "$MEMD/marker"
 # The unchanged edges: no pool, and no HugePages line at all.
 _meminfo 0 0
 out="$(_hp 0)"
-assert_contains "0 pages: the existing zero WARN" "$out" "HugePages_Total is 0"
+assert_contains "0 pages: WARN names the crash loop, not a slowdown" "$out" "⚠ WARN HugePages_Total is 0: P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+assert_not_contains "0 pages: no 'slower' wording" "$out" "slower"
+assert_contains "0 pages: names setup as the fix" "$out" "Run './pithead setup'"
 printf 'MemTotal:       16318412 kB\n' >"$MEMD/meminfo"
 out="$(_hp 0)"
 assert_contains "no HugePages line: could-not-read WARN" "$out" "Could not read HugePages"
