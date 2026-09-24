@@ -51,7 +51,8 @@ unresolved half): the restore leg's source-provisioning machine can fail with to
 healthy, and the only evidence any battery captured for it was the compose orchestration's own
 verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
 healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
-own healthcheck verdict and its own log.
+own healthcheck verdict and its own log. The provision phase's onion-exposure leg calls the same dump,
+after the tail of the refused `./pithead apply -y` output, when that apply fails (#2680).
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
@@ -90,8 +91,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   `/data` must survive a second install over the same disk, and the three-way wipe choice
   (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
-  restore leg moves a real encrypted archive to a fresh disk and requires the running stack to
-  carry the original payout wallet and Tor onion identity.
+  restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
+  requires its running stack to carry the prior-release wallet, Tor identity and secrets while
+  both the fixture's and the target's chain-data sentinels survive.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a

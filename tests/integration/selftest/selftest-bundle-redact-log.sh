@@ -126,6 +126,15 @@ case "$OUT" in
 *) it_pass "the --rpc-login credential is redacted" ;;
 esac
 
+# #2414's line-selection gap does not exist here: every rule is an unanchored `g` substitution, so a
+# commented-out or indented launch line is scrubbed like a live one. Pinned so a later `^` anchor
+# cannot reopen it.
+OUT="$(printf -- '#   --rpc-login %s:%s --wallet %s\n' "$RPC_USER" "$RPC_PASS" "$MONERO_ADDR" | brl)"
+case "$OUT" in
+*"$RPC_PASS"* | *"$MONERO_ADDR"*) it_fail "a commented, indented launch line is redacted" "value survived: $OUT" ;;
+*) it_pass "a commented, indented launch line is redacted" ;;
+esac
+
 # --- NEGATIVE CONTROL -------------------------------------------------------------------------
 # The bundle exists to give support the STRUCTURE — ports, hosts, modes. A redactor that ate the
 # whole line would pass every row above. This row fails if it does.

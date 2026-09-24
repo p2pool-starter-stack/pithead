@@ -72,6 +72,7 @@ render_derived() {
     generate_caddyfile
     provision_onion_client_auth
     provision_control_runner
+    control_prune_results "${CONTROL_DIR:-$PWD/data/control}" # #1990: bounds results/ every boot (#790), not just per-request
     provision_ssh_access
     provision_console_login
     render_local_miner_config
@@ -101,12 +102,36 @@ apply_refresh_appliance_tls() { # -> prints one line when it restarted Caddy
     docker compose restart caddy
 }
 
+recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-dir> <apply-marker> <copy-published:0|1> <marker-preexisted:0|1>
+    local old="$1" new="$2" target="$3" marker="$4" copy_published="$5" marker_preexisted="$6" active current_target cleanup_ok=1
+    active=$(env_get_file "$ENV_FILE" DASHBOARD_DATA_DIR 2>/dev/null || true)
+    if [ "$active" = "$old" ]; then
+        if [ "$copy_published" -eq 1 ]; then
+            current_target=$(cd "$new" 2>/dev/null && pwd -P) || true
+            if [ "$current_target" != "$target" ]; then
+                cleanup_ok=0
+                warn "The new dashboard.data_dir no longer resolves to the copied directory; the retry marker was kept. Restore $new before re-running '$0 apply'."
+            elif ! rm -f -- "$target/mining_data.db" "$target/mining_data.db-wal" \
+                "$target/mining_data.db-shm" "$target/mining_data.db-journal"; then
+                cleanup_ok=0
+                warn "Could not remove the unpublished dashboard copy at $new; the retry marker was kept. Fix its permissions before re-running '$0 apply'."
+            fi
+        fi
+        # A marker an earlier failed apply left still owes that apply's recreate; only ours is cleared.
+        if [ "$cleanup_ok" -eq 1 ] && [ "$marker_preexisted" -eq 0 ]; then
+            rm -f "$marker" || warn "Could not clear $marker; a later apply may repeat recovery."
+        fi
+    fi
+    docker compose start dashboard >/dev/null 2>&1 ||
+        warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
+}
+
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
     # tracks its own hold rather than acquiring twice — the depth counter would then never reach
     # zero and the lock would outlive the verb inside a single process.
-    local lock_held=0
+    local lock_held=0 dashboard_carry_recovery=0 dashboard_carry_published=0 dashboard_carry_target=""
     local assume_yes=0 dry_run=0 porcelain=0 arg
     for arg in "$@"; do
         case "$arg" in
@@ -154,6 +179,7 @@ apply() {
     [ -f "$apply_marker" ] && incomplete=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
+    local dashboard_data_dir_old=""
     if [ "${#changed[@]}" -gt 0 ]; then
         echo ""
         log "The following changes will be applied:"
@@ -164,6 +190,9 @@ apply() {
             # confirmation below — one prompt per key, so a Monero+Tari double change can't
             # ride through on a single typed prefix.
             case "$key" in MONERO_WALLET_ADDRESS | TARI_WALLET_ADDRESS) wallet_keys+=("$key") ;; esac
+            # #2360: remember the active dashboard.data_dir for the carry before .env publication.
+            # The separate historical-default migration runs later, after service configuration.
+            [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -211,9 +240,24 @@ apply() {
         fi
 
         # After every confirm above (the typed wallet redirect, the disruptive-change y/N):
-        # committing the rendered .env is where apply starts mutating.
+        # carry the DB before the rendered .env switches its mount. A refusal therefore leaves
+        # the active path unchanged, rather than stranding the stopped dashboard on a new path.
         mutation_lock_acquire apply
         lock_held=1
+        if { [ "$dashboard_data_dir_old" != "$PWD/data/dashboard" ] || [ "${DASHBOARD_DIR_IS_DEFAULT:-0}" -eq 0 ]; }; then
+            if [ -n "$dashboard_data_dir_old" ] && [ -n "${DASHBOARD_DIR:-}" ] &&
+                [ "$dashboard_data_dir_old" != "$DASHBOARD_DIR" ] && [ -f "$dashboard_data_dir_old/mining_data.db" ]; then
+                # Arm recovery before carry_dashboard_data_move stops the dashboard. A later error
+                # either removes the unpublished copy and retries the change, or keeps the committed
+                # copy plus this marker so an unchanged re-apply still recreates the container.
+                dashboard_carry_target=$(cd "$DASHBOARD_DIR" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($DASHBOARD_DIR)."
+                : >"$apply_marker"
+                dashboard_carry_recovery=1
+                trap 'recover_dashboard_data_carry "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}" "$dashboard_carry_target" "$apply_marker" "$dashboard_carry_published" "$incomplete"; rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
+            fi
+            carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
+            [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
+        fi
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -290,6 +334,10 @@ apply() {
         warn "Config files were updated but containers were NOT recreated ('docker compose up' failed)."
         warn "Fix the cause shown above, then re-run '$0 apply' (it will retry the recreate) — or '$0 up'."
         exit 1 # leave $apply_marker in place so the retry re-attempts the recreate
+    fi
+    if [ "$dashboard_carry_recovery" -eq 1 ]; then
+        dashboard_carry_recovery=0
+        trap 'rm -f "${ENV_FILE}.new" "${ENV_FILE}.dryrun" 2>/dev/null || true' EXIT
     fi
     reconcile_appliance_hostname
     # Caddy mounts the Caddyfile read-only, so a content change alone won't recreate it.

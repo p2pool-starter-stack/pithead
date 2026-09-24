@@ -372,11 +372,11 @@ control_units_verdict() { # <doctor-output>
     esac
 }
 
-# Authoritative "is Monero caught up?" — query monerod's own get_info (creds stay on the box)
-# and trust its `synchronized` flag / target_height 0, exactly like the sync gate. "Its own"
-# follows the mode: in monero.mode=remote nothing listens on the box's loopback (the render
-# emits no MONERO_RPC_URL; the in-stack relay is container-local), so the endpoint derives from
-# config.json — found by #1083's first live remote run. Read the rc with `= 1`, never `!= 0` (#1605).
+# Authoritative "is Monero caught up?" — monerod's own get_info (creds stay on the box): its
+# `synchronized` flag or target_height 0 (looser than the #2472 sync gate, which needs the flag).
+# "Its own" follows the mode: in monero.mode=remote nothing listens on the box's loopback (the
+# render emits no MONERO_RPC_URL; the in-stack relay is container-local), so the endpoint derives
+# from config.json — found by #1083's first live remote run. Read the rc with `= 1`, never `!= 0` (#1605).
 monero_caught_up() { # 0 caught up / 1 answered, behind / ANY other could-not-ask: 2 no usable body, 255 ssh
     rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env 2>/dev/null | cut -d= -f2-);
         p=$(grep -E "^MONERO_NODE_PASSWORD=" .env 2>/dev/null | cut -d= -f2-);
@@ -680,7 +680,7 @@ capture_artifacts() {
     local dir="${outdir}/${scenario}"
     mkdir -p "$dir"
     it_step "capturing artifacts to ${dir}"
-    rx "docker compose ps" 2>&1 | redact >"${dir}/compose-ps.txt" || true
+    rx 'docker compose ps; docker inspect --format "{{.Name}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} restarts={{.RestartCount}}" $(docker compose ps -aq)' 2>&1 | redact >"${dir}/compose-ps.txt" || true
     rx "$IT_PITHEAD status" 2>&1 | redact >"${dir}/status.txt" || true
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true
     # config.json is masked BY PATH first (#1630) — redact() is line-wise and cannot see nesting.
