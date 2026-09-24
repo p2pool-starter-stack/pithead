@@ -20,16 +20,19 @@ TOR_EGRESS_TAG="pithead-tor-egress"
 TOR_EGRESS_NFT_TABLE="pithead_egress"
 
 # Ordered iptables rule bodies (no chain/comment) for <subnet> <tor_ip>. Pure (args only) so it
-# unit-tests; ACCEPTs first, DROP last — the order is load-bearing.
+# unit-tests; ACCEPTs first, DROP last — the order is load-bearing. conntrack accepts REPLIES only,
+# and an app's own established TCP flow to a public address is reset (#2672): a dial made while the
+# rules were absent (a re-apply, a rolled-back insert) no longer stays open under them.
 tor_egress_rules() { # <subnet> <tor_ip>
     local subnet="$1" tor_ip="$2"
     printf '%s\n' \
-        "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" \
+        "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" \
         "-s $tor_ip -j ACCEPT" \
         "-s $subnet -d 10.0.0.0/8 -j ACCEPT" \
         "-s $subnet -d 172.16.0.0/12 -j ACCEPT" \
         "-s $subnet -d 192.168.0.0/16 -j ACCEPT" \
         "-s $subnet -d 100.64.0.0/10 -j ACCEPT" \
+        "-s $subnet -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" \
         "-s $subnet -j DROP"
 }
 
@@ -38,14 +41,11 @@ tor_egress_rules() { # <subnet> <tor_ip>
 # canonical atomic idempotent-replace: `add table` no-ops if it already exists, `delete` then clears
 # it, and the block recreates it fresh — the whole file loads as one transaction. The base chain is
 # hooked at forward priority -5 so it evaluates before netavark's priority-0 blanket accept; a `drop`
-# there is terminal across the ruleset. accepts come first so LAN/Tor/established traffic skips the
-# final subnet-wide drop, mirroring the iptables order.
+# there is terminal across the ruleset. The rule order mirrors tor_egress_rules, reset included.
 #
-# The optional third arg is the mining bridge interface. mining_net is IPv4-only by design, so it is
-# empty on every normal apply and the ruleset stays v4-only. If mining_net ever gains an IPv6 subnet
-# the caller resolves the bridge and passes it here, which appends the v6 fail-closed backstop: there
-# is no assigned v6 range to source-match, so the drop is keyed on the mining bridge INTERFACE — the
-# host's own IPv6 forwarding on every other interface is left untouched.
+# The optional third arg is the mining bridge, passed only if mining_net ever gains an IPv6 subnet
+# (it is IPv4-only by design). It appends the v6 fail-closed backstop, keyed on that INTERFACE since
+# there is no assigned v6 range to source-match, leaving v6 forwarded on any other interface alone.
 render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge>]
     local subnet="$1" tor_ip="$2" br="${3:-}"
     printf '%s\n' \
@@ -54,17 +54,17 @@ render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge>]
         "table inet $TOR_EGRESS_NFT_TABLE {" \
         "  chain forward {" \
         "    type filter hook forward priority -5; policy accept;" \
-        "    ct state established,related accept" \
+        "    ct direction reply ct state established,related accept" \
         "    ip saddr $tor_ip accept" \
         "    ip saddr $subnet ip daddr 10.0.0.0/8 accept" \
         "    ip saddr $subnet ip daddr 172.16.0.0/12 accept" \
         "    ip saddr $subnet ip daddr 192.168.0.0/16 accept" \
         "    ip saddr $subnet ip daddr 100.64.0.0/10 accept" \
+        "    ip saddr $subnet meta l4proto tcp ct state established reject with tcp reset" \
         "    ip saddr $subnet drop"
-    # IPv6 backstop, only when mining_net actually has v6 (br set). ct established,related above is
-    # family-agnostic and already spares return traffic; here we allow the v6 LAN (ULA fc00::/7 +
-    # link-local fe80::/10) off the mining bridge and drop everything else it originates. Scoped to
-    # iifname so it can never touch v6 forwarded from any other interface.
+    # IPv6 backstop (br set). The reply ct accept above is family-agnostic; here the v6 LAN (ULA
+    # fc00::/7 + link-local fe80::/10) is allowed off the mining bridge and the rest it originates
+    # dropped, scoped to iifname so v6 forwarded from any other interface is never touched.
     if [ -n "$br" ]; then
         printf '%s\n' \
             "    iifname \"$br\" ip6 daddr fc00::/7 accept" \
@@ -364,7 +364,7 @@ tor_egress_enforced() {
     # iptables is FIRST MATCH WINS, so a rule ABOVE our DROP makes it dead while it is still
     # "present". Inserting an ACCEPT at DOCKER-USER position 1 is a documented ufw/firewalld
     # workaround, and this function measured rc 0 — "enforced" — with the DROP unreachable behind
-    # one. We install positions 1..7 with the DROP last, so anything untagged above it is foreign
+    # one. We install positions 1..8 with the DROP last, so anything untagged above it is foreign
     # and we cannot claim our drop decides. `-N`/`-P` are chain declarations, not rules; Docker's
     # own `-j RETURN` sits BELOW our inserts, so this loop breaks before ever reaching it.
     local line subnet
