@@ -326,11 +326,9 @@ assert_contains "the pools missing row names the required input" "$pools_rows" \
     "[missing] leg      pools write (#1002b) — no IT_RIG_POOLS_PROBE"
 
 echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the leg for good =="
-# The shape the real dashboard serves: once any pools apply is on record, .last_applied.pools is
-# there with `pass` stripped (#113, test_last_applied_is_clean). Before #2470 the leg took that as
-# its restore value, the #1546 check refused it, and the leg POSTed nothing on that rig ever again.
-# The empty record is #2325's case; a record that kept its `pass` would be a #113 regression, never a
-# restore source. The probe is pretty-printed on purpose: the #1379 ledger is one entry per line.
+# The real dashboard serves .last_applied.pools with `pass` stripped (#113); before #2470 the #1546
+# check refused it and the leg never POSTed again. `{}` is #2325's case; a record that kept its `pass`
+# is a #113 regression, not a restore source. Pretty-printed: the #1379 ledger is one line per entry.
 export IT_RIG_POOLS_PROBE=$'[\n  {"url": "probe:1", "pass": "probesecret"}\n]'
 MARK_LOG="$(mktemp)"
 trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
@@ -371,13 +369,16 @@ err="$(drive_err run_rigforge_pools rig1)"
 assert_contains "the passless skip names the probe's credential as what is missing" "$err" \
     "non-empty \`pass\` on every entry"
 
-export IT_RIG_POOLS_PROBE='not-json-fixturesecret42'
-reset_applies
-counts="$(quietly run_rigforge_pools rig1)"
-assert_eq "a malformed probe reds rather than being POSTed at a rig" "${counts#*,}" "1"
-assert_eq "and nothing is POSTed" "$(applies | grep -c .)" "0"
-assert_eq "and its credential-shaped input is not copied into the error log" \
-    "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
+# Two values back to back are one operator typo away, and would split the one-per-line ledger.
+for IT_RIG_POOLS_PROBE in 'not-json-fixturesecret42' '[{"url":"a","pass":"fixturesecret42"}] [{"url":"b","pass":"s"}]'; do
+    reset_applies
+    : >"$MARK_LOG"
+    counts="$(quietly run_rigforge_pools rig1)"
+    assert_eq "a malformed or multi-value probe reds, and POSTs and marks nothing" \
+        "${counts#*,}|$(applies | grep -c .)|$(grep -c . "$MARK_LOG")" "1|0|0"
+    assert_eq "and its credential-shaped input is not copied into the error log" \
+        "$(drive_err run_rigforge_pools rig1 | grep -c fixturesecret42)" "0"
+done
 unset IT_RIG_POOLS_PROBE
 
 echo "== run_rigforge_rollback: an absent rig-specific probe is a missing row, not green or red =="
