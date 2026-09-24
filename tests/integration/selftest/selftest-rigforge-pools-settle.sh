@@ -65,6 +65,8 @@ drive() { # <rig-reported-urls-json> <probe-row-status> <revert-row-status>
 export IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"secret"}]'
 
 echo "== run_rigforge_pools: a dial-time 'accepted' is settled, never read as the verdict (#2407) =="
+# The rig's reading is credential-stripped ({url} only, #113), so this pass also proves the readback
+# compares URLs rather than whole values.
 assert_eq "an async rig that reports the probe and settles both rows passes all four" \
     "$(drive '["probe:1"]' applied applied)" "4,0"
 assert_eq "the leg wrote the probe, then restored it" "$(applies | grep -c .)" "2"
@@ -73,12 +75,6 @@ assert_eq "the leg wrote the probe, then restored it" "$(applies | grep -c .)" "
 # every history row already applied. Kills a settle predicate stubbed to `true`.
 assert_eq "a rig that never reports the probe's URLs reds the apply and its readback" \
     "$(drive '["elsewhere:1"]' applied applied)" "1,3"
-
-# Only the URLs are compared: the rig's reading never carries `pass` (#113), so a whole-value
-# compare could never match and would red every run.
-STUB_DETAIL="$(pools_detail '["probe:1"]' applied applied)"
-assert_eq "the credential-stripped reading still matches on URLs" \
-    "$(_pred_rig_pool_urls rig1 "$(_pool_urls "$IT_RIG_POOLS_PROBE")" && echo match)" "match"
 
 # The revert's verdict is its OWN row. Seeded, the probe and the restore are one value, so the
 # readback matches before the revert has done anything; only c-pools-2 can say it landed. Kills
