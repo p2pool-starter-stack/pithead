@@ -1,5 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016 # the injected mv/cp wrappers are single-quoted on purpose: they expand inside run_sourced
+: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 #
 # Restore-at-setup commit (#2689): restore_apply publishes the accepted items all or nothing. A
 # failure part-way through the commit puts back every item it already replaced, removes what the
