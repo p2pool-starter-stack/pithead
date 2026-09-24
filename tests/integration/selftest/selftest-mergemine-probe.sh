@@ -185,7 +185,9 @@ echo "== a FAIL carries the redacted startup window that explains it (#2326) =="
 # keeps is an allowlist run ON THE TARGET, then redaction here. This stub runs the target half of
 # the composed pipeline — everything after the log read — over the fixture, so the allowlist is
 # exercised as behaviour rather than matched as text. The fixture carries the shapes that must not
-# leave: a bare user:pass credential in prose, a wallet in prose, a private bench address.
+# leave: a bare user:pass credential in prose, a wallet in prose, a private bench address. Each of
+# those is also caught by a mask, so one line no mask rewrites and no allowlist term matches is what
+# proves the allowlist itself drops lines.
 rx() {
     printf '%s\n' "$*" >>"$MM_RX_LOG_FILE"
     case "$*" in
@@ -203,7 +205,8 @@ MM_RX_LOGS=$(printf '%s\n' \
     'unknown token aGVsbG9Xb3JsZFNlY3JldFZhbHVlMTIzNA==' \
     'Tari wallet 12AbCdEfGhJkMnPqRsTuVwXyZ23456789abcdefghijkmnopq set' \
     '2026-09-20 05:54:06.0 MergeMiningClientTari tari://192.168.7.9:18142 connect failed' \
-    'Error response from daemon: no such container')
+    'Error response from daemon: no such container' \
+    'stratum worker sentinel-notallowed connected')
 REMOTE_MONERO_HOST=node.fixture
 : >"$MM_RX_LOG_FILE"
 ex="$(mm_startup_excerpt)"
@@ -215,6 +218,10 @@ assert_contains "the excerpt keeps the entrypoint's bridge line, with the remote
 case "$ex" in
 *node.fixture* | *"$MM_WALLET"* | *hunter2* | *192.168.* | *5678::9* | *12AbCdEf* | *Sup3rSecret* | *aGVsbG9X* | *$'\033'*) it_fail "the excerpt leaks no endpoint, wallet, credential, address or escape" "$ex" ;;
 *) it_pass "the excerpt leaks no endpoint, wallet, credential, address or escape" ;;
+esac
+case "$ex" in
+*sentinel-notallowed*) it_fail "the allowlist drops a line no keep term matches" "$ex" ;;
+*) it_pass "the allowlist drops a line no keep term matches" ;;
 esac
 MM_RX_LOGS=$(for i in $(seq 1 200); do printf 'error line %s\n' "$i"; done)
 assert_eq "the excerpt is capped at $MM_EXCERPT_LINES lines" "$(mm_startup_excerpt | wc -l | tr -d ' ')" "$MM_EXCERPT_LINES"
