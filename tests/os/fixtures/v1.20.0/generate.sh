@@ -46,14 +46,14 @@ docker run --rm -e HOME=/tmp -v "$work:/artifact:ro" -v "$repo:/trust:ro" "$COSI
 tar -xzf "$work/pithead.tar.gz" -C "$work"
 
 cd "$work/pithead"
-# dashboard.workers[], xmrig_proxy.* and telegram.control are live v1.20.0 keys that 2.0.0
-# removed; the restore leg asserts they migrate or drop as docs/configuration.md documents.
+# xmrig_proxy.* and telegram.control are live v1.20.0 keys that 2.0.0 removed; the restore leg
+# asserts they migrate or drop as docs/configuration.md documents. (dashboard.workers[] is not
+# here: v1.20.0's own setup already moves it to workers.list[], so no v1.20.0 backup carries it.)
 jq -n --arg wallet "$wallet" --arg tari "$TARI_WALLET" '{
   monero: {mode: "remote", wallet_address: $wallet, node_username: "fixture-rpc-user", node_password: "fixture-rpc-password", remote: {host: "10.0.0.1", rpc_port: 18081, zmq_port: 18083}},
   tari: {mode: "remote", wallet_address: $tari, remote: {host: "10.0.0.1", grpc_port: 18142}},
   p2pool: {pool: "mini", stratum_password: "fixture-stratum-password"},
-  dashboard: {auth: {username: "fixture-admin", password: "fixture-dashboard-password"}, onion: {enabled: true, client_auth: true}, control: {enabled: true}, energy: {cost_per_kwh: 0.27, currency: "USD"},
-    workers: [{name: "fixture-rig", host: "fixture-rig.invalid", port: 18088, token: "fixture-worker-token"}]},
+  dashboard: {auth: {username: "fixture-admin", password: "fixture-dashboard-password"}, onion: {enabled: true, client_auth: true}, control: {enabled: true}, energy: {cost_per_kwh: 0.27, currency: "USD"}},
   xmrig_proxy: {enabled: true, url: "eu.xmrvsbeast.com:4247", donor_id: "fixture-donor"},
   telegram: {control: {enabled: false, allowed_ids: [], confirm_timeout: 60}}
 }' >config.json
