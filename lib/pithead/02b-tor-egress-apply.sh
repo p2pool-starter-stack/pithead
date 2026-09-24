@@ -2,8 +2,8 @@
 # The apply and remove halves of the firewall in 02-tor-egress.sh, which owns the rule renderers and
 # the live enforcement readback these call.
 # Remove every rule we previously installed — idempotent, config-agnostic, engine-agnostic. Clears
-# BOTH backends so `down`, the opt-out or an engine change can't leave a stale set behind. apply
-# never calls this: it replaces the rules in one transaction (#2672).
+# BOTH backends so `down` or the opt-out can't leave a stale set behind. An enabled apply never calls
+# this: it replaces the rules in one transaction (#2672).
 remove_tor_egress_firewall() {
     if command -v nft >/dev/null 2>&1; then
         sudo nft delete table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null || true
@@ -38,7 +38,9 @@ render_tor_egress_restore() { # <subnet> <tor_ip>  (stdin: iptables-save)
     local pos=1 line rule
     printf '%s\n' '*filter'
     while IFS= read -r line; do
-        case "$line" in "-A DOCKER-USER "*"$TOR_EGRESS_TAG"*) printf '%s\n' "-D ${line#-A }" ;; esac
+        case "$line" in "-A DOCKER-USER "*"--comment $TOR_EGRESS_TAG "* | "-A DOCKER-USER "*"--comment \"$TOR_EGRESS_TAG\" "*)
+            printf '%s\n' "-D ${line#-A }" ;;
+        esac
     done
     while IFS= read -r rule; do
         printf '%s\n' "-I DOCKER-USER $pos -m comment --comment $TOR_EGRESS_TAG $rule"
@@ -122,7 +124,7 @@ apply_tor_egress_iptables() { # <subnet> <tor_ip>
     # chain and adds the FORWARD jump. Harmless (-N fails with rc 1) once the chain is already there.
     sudo iptables -N DOCKER-USER 2>/dev/null || true
     if ! saved=$(sudo iptables-save -t filter 2>/dev/null) ||
-        ! render_tor_egress_restore "$subnet" "$tor_ip" <<<"$saved" | sudo iptables-restore --noflush 2>/dev/null; then
+        ! render_tor_egress_restore "$subnet" "$tor_ip" <<<"$saved" | sudo iptables-restore -w --noflush 2>/dev/null; then
         warn "egress-apply:iptables-insert-failed — could not load the Tor-egress firewall (needs root + iptables); any rules already installed are unchanged. Clearnet egress is NOT provably fail-closed."
         return 1
     fi

@@ -176,7 +176,7 @@ PITHEAD_ENGINE=docker PATH="$FW/bin:$PATH" run_sourced "$FW" apply_tor_egress_fi
 iptlog="$(cat "$FW/ipt.log" 2>/dev/null)"
 assert_contains "installs the fail-closed clearnet DROP, tagged" "$iptlog" "-I DOCKER-USER 8 -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"
 assert_contains "exempts the Tor container" "$iptlog" "-m comment --comment pithead-tor-egress -s 172.28.0.25 -j ACCEPT"
-assert_contains "loads them as one --noflush transaction (#2672)" "$iptlog" "restore --noflush"
+assert_contains "loads them as one --noflush transaction (#2672)" "$iptlog" "restore -w --noflush"
 # Pre-creates DOCKER-USER so the BEFORE-compose install at `up` can't miss on a first-ever start where
 # Docker hasn't created the chain yet — closes the startup window that grandfathered leaks (#276).
 assert_contains "pre-creates the DOCKER-USER chain (idempotently)" "$iptlog" "-N DOCKER-USER"

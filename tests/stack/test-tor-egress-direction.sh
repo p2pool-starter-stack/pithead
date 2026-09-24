@@ -69,7 +69,7 @@ assert_eq "nft: the reset rule ahead of the drop leaves the hooked chain enforce
 
 echo "== unit: render_tor_egress_restore — a re-apply is one transaction, never remove-then-insert (#2672) =="
 EGD_SAVED=$(printf '%s\n' '*filter' ':DOCKER-USER - [0:0]' \
-    '-A DOCKER-USER -s 10.9.0.0/16 -j ACCEPT' \
+    '-A DOCKER-USER -s 10.9.0.0/16 -j ACCEPT' '-A DOCKER-USER -m comment --comment "not pithead-tor-egress" -j ACCEPT' \
     '-A DOCKER-USER -s 172.28.0.25/32 -m comment --comment pithead-tor-egress -j ACCEPT' \
     '-A DOCKER-USER -s 172.28.0.0/24 -m comment --comment pithead-tor-egress -j DROP' \
     '-A DOCKER-USER -j RETURN' 'COMMIT')

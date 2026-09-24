@@ -118,8 +118,12 @@ fault_firewall_rollback() {
 # a scratch netns on the box at TEST-NET-2 198.51.100.2: public to the firewall, reached only
 # through FORWARD, and ours, so no third party decides how long the control flow lives. monerod's
 # bash writes a byte a second; /proc/net/tcp shows its socket to 198.51.100.2:9001 as 026433C6:2329.
-_gf_flows() { rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null | awk '$3 == "026433C6:2329" && $4 == "01"' | grep -c .; }
-_gf_down() { rx 'sudo -n ip netns del itest2672; sudo -n ip link del it2672h; rm -f .itest-2672-peer.py' >/dev/null 2>&1 || true; }
+_gf_flows() { # a count, or "unreadable" so a failed read can never pass as zero
+    local t
+    t=$(rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null) && [ -n "$t" ] || { echo unreadable; return; }
+    awk '$3 == "026433C6:2329" && $4 == "01"' <<<"$t" | grep -c .
+}
+_gf_down() { rx 'sudo -n ip netns del itest2672; sudo -n ip link del it2672h; rm -f .itest-2672-peer.py; sudo -n pkill -f itest-2672-peer' >/dev/null 2>&1 || true; }
 fault_firewall_grandfathered_flow() {
     [ "$(env_on_box TOR_EGRESS_FIREWALL)" != "false" ] || { it_skip_leg "grandfathered-flow fault" "network.tor_egress_firewall=false"; return 0; }
     it_step "fault: open a direct clearnet flow with the rules out, then re-apply them (#2672)…"
