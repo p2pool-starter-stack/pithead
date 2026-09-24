@@ -2,9 +2,9 @@
 # Boot-time hugepages sizing: fit the baked RandomX reservation to the RAM actually present.
 #
 # The rootfs bakes vm.nr_hugepages=3072 (6 GiB of 2 MiB pages) into /etc/sysctl.d/ — sized for
-# the supported 16 GB machine, and load-bearing for the container caps (#78 spike): a RandomX
-# dataset must land in hugetlbfs, where the cgroup does not count it, or p2pool's ~2.3 GiB
-# dataset falls into its 1 GiB cap and the OOM-killer ends it at every start. On a smaller
+# the supported 16 GB machine. A RandomX dataset that lands in hugetlbfs is not counted by its
+# cgroup (#78 spike); one that does not costs p2pool 2592 MiB of ordinary RAM, which its 4 GiB
+# cap holds (a 1 GiB cap OOM-looped it at every start, #2562) but the machine pays. On a smaller
 # machine the unconditional 6 GiB silently starves everything else instead (#977) — no check,
 # no message, a box that just thrashes. This unit runs right after systemd-sysctl on every
 # boot, before either boot owner starts a container — the pool is still idle, so resizing it
@@ -17,12 +17,24 @@
 #
 # The tiers, and why the low one is "reduced", not "skip":
 #   >= 15 GiB   full 3072 pages (6 GiB). The supported machine; nothing to say.
-#   >= 7 GiB    2560 pages (5 GiB): both RandomX datasets — p2pool's AND monerod's, each
-#               dataset + cache = 1168 pages — with slack for their working pages. It cannot
-#               be smaller: with room for only one dataset, whichever process allocates second
-#               falls back to normal pages, and when that is p2pool its 1 GiB cap kills it —
-#               a crash-loop the commit gate then refuses, i.e. an unbootable slot. The rest
-#               of the stack runs squeezed (Tari's auto ceiling already re-reads
+#   >= 7 GiB    2560 pages (5 GiB). Only p2pool builds a RandomX dataset. At the pinned
+#               versions the stack's own large pages are:
+#                 p2pool v4.18.1   1040-page dataset + two 128-page caches (current and
+#                                  previous seed) = 1296, plus one scratchpad page for each
+#                                  of up to 9 VMs (3 lanes x 2 light + 1 full): ~1305.
+#                 monerod v0.18.5.1  no dataset: rx_alloc_dataset returns early unless
+#                                  MONERO_RANDOMX_FULL_MEM is set or monerod mines, and the
+#                                  stack does neither. Two 128-page caches (main and secondary
+#                                  seed) = 256, plus one scratchpad page for each light VM, up
+#                                  to two on each thread that verifies a hash.
+#               That is about 1560 pages plus monerod's per-thread pages. The pool must hold
+#               p2pool's share at least: a dataset that falls out of hugetlbfs costs p2pool
+#               2592 MiB of ordinary RAM, which its 4 GiB cap holds (#2562) but an 8 GB machine
+#               already squeezed by the reservation cannot spare, and it thrashes. Up to ~1000
+#               pages remain, less monerod's per-thread pages: unmeasured margin. The bench has
+#               never run a synced stack on a reduced-RAM box, which is the only way to observe
+#               the pool's real peak, so the margin stays until that is measured (#2685). The
+#               rest of the stack runs squeezed (Tari's auto ceiling already re-reads
 #               HugePages_Total at render time, so the caps adapt), and the console, journal
 #               and doctor all say so.
 #   below       0 pages: no reservation at all leaves more RAM than any reduced pool could,
