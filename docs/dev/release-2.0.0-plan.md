@@ -16,7 +16,7 @@ marked [i], and the bench-ci issue it names is a pointer for maintainers, not pu
   reboot-safe egress perimeter; restore onto new hardware.
 - **What blocks the cut:** the image-changing fixes in §2.1 that have not merged, each needing a
   tier-4 job on its head; the owner's ruling on the 53 open `v2 - appliance` issues, 14 of them
-  filed after the triage in §4 [r milestone].
+  not covered by the triage in §4 [r milestone].
 - **Critical path:** milestone ruling → serial merges with a tier-4 job on each head → frozen SHA →
   tier4-kvm `phases=all` → signed build and hardware battery → 7-day soak → release lane → publish.
 - **Who decides:** the owner rules milestones, GitHub settings, credentials and hardware; the queue
@@ -25,16 +25,16 @@ marked [i], and the bench-ci issue it names is a pointer for maintainers, not pu
 ## 1. Scope: what 2.0.0 promises
 
 1. Tari 6.0 fork compatibility as one pair (Tari 6.0.1-pre.0, P2Pool 4.18.1); a pre-2.0.0 install
-   is off the canonical chain until it upgrades [r CHANGELOG.md:50-58; #1129].
+   is off the canonical chain until it upgrades [r CHANGELOG.md:51-59; #1129].
 2. The migration is one-way and documented as such: not interruptible, 5.3.1 cannot reopen the
-   result, `backup --with-chains` first [r CHANGELOG.md:59-71].
+   result, `backup --with-chains` first [r CHANGELOG.md:60-72].
 3. The migration survives its own size: LMDB map headroom, exit 114 unmasked, phases logged
    [r #2593; PR #2621], and a free-space refusal before it starts: on the Compose path
-   [r lib/pithead/37-kernel-tuning-and-preflight.sh:286-311; CHANGELOG.md:61-65; #2636, PR #2646 merged] and on the
+   [r lib/pithead/37-kernel-tuning-and-preflight.sh:286-311; CHANGELOG.md:63-66; #2636, PR #2646 merged] and on the
    appliance's OS-update path [r #2645; PR #2666].
 4. A node that followed the dead 5.3.1 branch past height 350,000 is rewound before it syncs
    [r #2618; PR #2628].
-5. Remote Tari: the serving node upgrades first [r CHANGELOG.md:72-73].
+5. Remote Tari: the serving node upgrades first [r CHANGELOG.md:73-74].
 6. The appliance: A/B signed updates; the migrating bundle is declared with
    `PITHEAD_DATA_MIGRATION=true` and `PITHEAD_MIN_OS_VERSION`, so a rollback below the floor is
    refused [r os/rauc/mkbundle.sh:39-53; docs/dev/appliance-release.md "Compatibility metadata and
@@ -68,7 +68,7 @@ marked [i], and the bench-ci issue it names is a pointer for maintainers, not pu
 | C7 | Restore re-derives the sync-gate latch | #2626 → #2634 | draft, conflicting | tier4-kvm `install` restore leg |
 | C8 | LAN-only source guard on `*_lan_access` ports | #2616 → #2620 | open, conflicting | tier4-e2e and tier4-kvm |
 | C9 | DIY egress firewall restored at boot | #2460 → #2601 | merged | done |
-| C10 | Dashboard alert when the egress firewall is missing | #2599 → #2617 | draft, conflicting | tier4-kvm `provision`; or move to 2.0.x (R6) |
+| C10 | Dashboard alert when the egress firewall is missing | #2599 → #2617 | draft, conflicting | tier4-e2e `fault-injection` and tier4-kvm `provision` [r #2599]; or move to 2.0.x (R6) |
 | C11 | p2pool RandomX fallback under the memory ceiling | #2562 → #2609 | merged; #2548 still open | re-proof #2548 on the next matrix run [i] |
 | C12 | Forked-off Tari node detected | #2464 | no PR | targeted tier4-e2e |
 | C13 | Bundle built with `PITHEAD_DATA_MIGRATION=true PITHEAD_MIN_OS_VERSION=2.0.0` | #2602 | cut-day | `verify-image.sh` on the artifact |
@@ -78,17 +78,16 @@ marked [i], and the bench-ci issue it names is a pointer for maintainers, not pu
 
 `mkbundle.sh` refuses `PITHEAD_DATA_MIGRATION=true` without a `PITHEAD_MIN_OS_VERSION`
 [r os/rauc/mkbundle.sh:52-55]. It does not detect a migrating build that forgot to declare itself,
-which #2602's bullet 5 asks for; C13 is therefore a cut-day step, not a gate [r].
+which #2602's bullet 5 asks for; C13 is therefore a cut-day step, not a gate [i].
 
-Closed since #2602 was filed, drop from its list: #2472, #2496, #2414, #2604, #2360, #1990, #2460,
-#2562 [r].
+Closed since #2602 was filed, drop from its list: #2472, #2496, #2414, #2460, #2562 [r].
 
 ### 2.2 Must be true before the SHA is frozen
 
 | # | Condition | State at snapshot |
 |---|---|---|
 | P1 | Every image-changing row above merged with a tier-4 job on its head | C5, C6, C9, C11 and the node half of C15 merged |
-| P2 | Milestone ruled: each open `v2 - appliance` issue is in the cut or moved | 53 open; 14 filed after §4's triage and not yet ruled [r milestone] |
+| P2 | Milestone ruled: each open `v2 - appliance` issue is in the cut or moved | 53 open; 14 not covered by §4's triage [r milestone] |
 | P3 | Both e2e benches on the canonical Tari chain | bench-ci#556 open [i] |
 | P4 | A KVM bench can run the `image-upgrade` phase, else `phases=all` cannot complete | bench-ci#560 open [i]; the gate needs `cp --reflink=always` [r docs/dev/release-server.md:310] |
 | P5 | The shared matrix rows are green or attributed | #2362 → PR #2371 (draft): three rows red on every matrix run, among them the fault-injection failover-arm row at `tests/integration/lib/run-faults.sh:4-8` [r #2362] |
@@ -96,17 +95,21 @@ Closed since #2602 was filed, drop from its list: #2472, #2496, #2414, #2604, #2
 
 ### 2.3 Merge order
 
-The second PR to land on a shared file rebases [r PR diffs at snapshot]:
+Nearly every PR below changes `CHANGELOG.md` or `docs/dev/testing-strategy.md`, so each lands
+rebased on the one before it. The code they share sets the order [r PR diffs at snapshot]:
 
 1. **#2371** first: until it lands, every matrix job carries the three red rows of #2362.
-2. **#2621 → #2628**: both change `CHANGELOG.md` and `tests/stack/run.sh`.
+2. **#2621 → #2628**: both change `tests/stack/run.sh`.
 3. **#2611 and #2673** both change Tari's transport in `build/tari/config.toml.template` and
-   `build/tari/entrypoint.sh`, as does #2621's template; one design has to win before either lands
-   (R5).
-4. **#2617** after #2620: both change `lib/pithead/01-lifecycle.sh`, `08-uninstall-firstboot.sh`
-   and `tests/stack/run.sh`.
-5. **#2634**, **#2666**, **#2662**: independent of the above.
-6. **#2464's PR**, once opened; #2606 (PR #2635) waits behind it.
+   `build/tari/entrypoint.sh`; #2621 changes the same template, and #2628 the same entrypoint,
+   `tests/integration/lib/run-state.sh` and `tests/stack/test-tor-network.sh`. One transport
+   design has to win before either lands (R5), and it lands after #2628.
+4. **#2620 → #2617**: both change `lib/pithead/01-lifecycle.sh`, `08-uninstall-firstboot.sh` and
+   `tests/stack/run.sh`. #2634 shares `tests/integration/selftest/selftest-run-modules.sh` with
+   both and lands after them.
+5. **#2662** after #2628: both change `docker-compose.yml`.
+6. **#2666** shares only documentation with the others.
+7. **#2464's PR**, once opened; #2606 (PR #2635) waits behind it.
 
 Not on the SHA's path unless ruled in: #2394 (#1854), #2305 and #2428 (#1959, #2367), #2140
 (#1271), #2419 (#2351), #2180 (#2057), #2503 (#2363), #2585 (#2579), #2614 and #2615 (#2557,
@@ -137,25 +140,25 @@ from the flash of the signed image.
 | **Tor connectivity** (#2508) | 6.0's `tor` transport dials onions only [r build/tari/config.toml.template:85-87; #2508]; PR #2611 dials IP peers through Tor again | No measured number until an observation run beats the 6.0.0 baseline; #2464 is the only detector [i] |
 | **Egress firewall** (#855, #2460) | Appliance: an `inet pithead_egress` table at forward priority −5 [r lib/pithead/02-tor-egress.sh:14-18]. DIY: restored at boot [r PR #2601] | #855 stays open until a tier4-kvm `provision` run proves both egress rows; it waits on the probe fix in PR #2573 [r #855]. The dashboard's panel reads config, not host state (#2599); `doctor` is the host-state check [r #2599] |
 | **Migration on real disks** (#2636, #2645) | Refuses to start without room for the compacted copy [r lib/pithead/37-kernel-tuning-and-preflight.sh:286-311] | An OS rollback does not touch the data partition [r docs/appliance.md:415], so it cannot undo a half-migrated database. Durations are measured on benches only [i] |
-| **Upstream pre-release pin** | Pins `v6.0.1-pre.0-mainnet` by digest because 6.0.0 rejects canonical block 350,008 [r CHANGELOG.md:54-58] | When 6.0.1 final lands, the re-pin is an image change. #2480 (a new Tari release never becomes work) means nothing will announce it [r #2480] |
+| **Upstream pre-release pin** | Pins `v6.0.1-pre.0-mainnet` by digest because 6.0.0 rejects canonical block 350,008 [r CHANGELOG.md:55-59] | When 6.0.1 final lands, the re-pin is an image change. #2480 (a new Tari release never becomes work) means nothing will announce it [r #2480] |
 
 ## 4. Milestone triage, 2026-09-24
 
 173 open issues across pithead, rigforge and bench-ci were briefed and adversarially verified; the
-briefs that held were posted on their issues. The owner authorized the milestone
+briefs that held were posted on their issues [i: the batch itself is not published]. The owner authorized the milestone
 moves; the operator applied them on 2026-09-24:
 
 - **Closed** with merged-PR or on-develop evidence: pithead #2457, #2321, #1897, #1866, #1886,
-  #911, #2330; bench-ci #584, #540 [r].
+  #911, #2330 [r]; bench-ci #584, #540 [i].
 - **Moved into `v2 - appliance`:** pithead #2593, #2575, #2470 (since closed by PR #2660), #2407,
-  #2379; bench-ci #556 [r].
+  #2379 [r]; bench-ci #556 [i].
 - **Moved out:** #2633 → `v2.x - post-GA`; #2632, #2631 → `maintenance & gates`; #2466, #2384,
   #2499 → `v2.x - post-GA` (from Sovereign UI); #2476 → Sovereign UI [r].
-- **Left for the owner:** the trackers #940, #1875, #797, #786 (briefs say done or duplicate);
+- **Left for the owner:** the trackers #940, #1875, #797, #786 (the briefs on them say done or duplicate [r issue comments]);
   #2474 (confirm with #2057 first). #1998 closed with PR #2174 [r].
-- Two briefs are void (#2605, #2532: the verifier aborted); re-run them before acting on either.
+- Two briefs are void (#2605, #2532: the verifier aborted [i]); re-run them before acting on either.
 
-Issues in `v2 - appliance` filed after the triage, not yet ruled: #2639, #2641, #2645, #2649,
+Issues in `v2 - appliance` that the triage did not cover, not yet ruled: #2639, #2641, #2645, #2649,
 #2653, #2654, #2657, #2671, #2672, #2678, #2685, #2689, #2692, #2694 [r milestone].
 
 ## 5. The road after GA
@@ -169,12 +172,12 @@ OS update, first restore and first Tari stall without a shell and without losing
 | Belongs | Why here |
 |---|---|
 | Whatever P2 moves out of the cut | user-visible on day one, none data-destroying |
-| #2057, #1997, #2473, #2001 | the image-upgrade gate; 2.0.0 is the first appliance image, so its first customer is 2.0.1 [r CHANGELOG.md:174-177] |
+| #2057, #1997, #2473, #2001 | the image-upgrade gate; 2.0.0 is the first appliance image, so its first customer is 2.0.1 [r CHANGELOG.md:176-178] |
 | #2508's measurement | the fix ships in 2.0.0 (C14); the number needs a bench observation run [i] |
 | #2436 (silent boot gate), #2462 (serial-getty loop), #2463 (certificate never covers a later IPv6 address), #2461 | hit by a fresh box [r titles] |
 | #2458, #2459, #2349, #2465, #2498, #2497 | Tor guard self-heal, onion lookup churn, per-worker tokens, the forked-node postmortem, wallet health [r titles] |
 | #2480 (pull from `maintenance & gates`) | the pre-release pin makes it a 2.0.x hazard (§3) |
-| #1837, #2373 | first-update and first-restore surface |
+| #1837's version-visibility half (R11), #2373 | first-update and first-restore surface |
 
 Gate that ends 2.0.x [i, proposed]: 2.0.1 ships only through a green `image-upgrade` phase on a KVM
 bench, and an upgraded install has taken 2.0.0 then 2.0.1 through the dashboard with chains and
@@ -189,7 +192,7 @@ and audited, and a remote node is first-class by name.
 | #2351 (PR #2419): remote node by LAN name | draft, conflicting |
 | #1999 (PR #2175): multi-worker routing under load | draft, conflicting |
 | #2384 (PR #2449), #2353 (PR #2422) | drafts |
-| #2494, #2490, #2483, #2482, #2487, #912, #1837; rigforge #528, #533, #531 | designed, no PR (R1) |
+| #2494, #2490, #2483, #2482, #2487, #912, #1837's delivery half (R11); rigforge #528, #533, #531 | designed, no PR (R1) |
 | #786 appliance parity; #1319, #2437, #2438 onion stratum | trackers and designs |
 
 Gate that ends 2.1 [i, proposed]: #786's inventory closes: every `config.reference.json` leaf has a
@@ -232,4 +235,4 @@ The numbers are this page's own.
 | R11 | Split candidates: #2485, #1872, #1837, #2497, #2491, #2487, #2458, #2463; rigforge #533 | Split each into the half that is small now and the half that waits |
 | R12 | #1812, #1420 parked lane | Park, do not close |
 | R13 | Merge queue on `develop`, or drop "require branches to be up to date" | One of the two |
-| R14 | The 14 milestone issues filed after the triage | Rule each: in the cut, or moved |
+| R14 | The 14 milestone issues the triage did not cover | Rule each: in the cut, or moved |
