@@ -154,6 +154,16 @@ _phase_provision_initial_body() {
         return 1
         ;;
     esac
+    # dashboard and caddy start before monerod and tari, which wait for tor's healthcheck. The
+    # wizard's `up` holds the mutation lock until tor is healthy (#1945). In job 944 the control
+    # legs below began while that `up` was still waiting, then read the wizard it reopened when
+    # tor went unhealthy (#2648). Nothing below runs until provisioning has finished.
+    if provisioning_settled 900; then
+        ok "provisioning finished before the day-two legs ($(provisioning_state))"
+    else
+        bad "provisioning never finished; the day-two legs cannot run ($(provisioning_state))"
+        return 1
+    fi
     # Caddy fronts the dashboard once the wizard's window closes; self-signed on :443 by default.
     # Status-based on purpose: the landing response may be a redirect to the login page or an
     # auth challenge, both empty-bodied — any well-formed HTTP answer proves caddy is proxying.

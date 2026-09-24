@@ -102,3 +102,16 @@ verdict=$(fault_boot_verdict "$FBV/combined" "$mark")
 assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
 unset -f fault_boot_verdict
 rm -rf "$FBV"
+
+echo "== structure: the provision phase settles provisioning before its day-two legs (#2648) =="
+# dashboard and caddy run while the wizard's `up` still waits on tor's healthcheck, so the podman ps
+# row alone let job 944's control legs race an unfinished provisioning. Mutation run: move or drop
+# the provisioning_settled call -> order reads control-first or missing.
+PI_ORDER=$(awk '
+    /ok "stack containers are running/ { up = NR }
+    up && !settled && /provisioning_settled [0-9]+; then/ { settled = NR }
+    /^ *phase_provision_control_regressions / { control = NR }
+    END { print (up && settled && control && settled < control ? "settled-first" : "control-first or missing") }
+' "$ROOT/tests/os/phases/provision-initial.sh")
+assert_eq "provision settles provisioning after the stack row and before the control legs" "$PI_ORDER" "settled-first"
+unset PI_ORDER

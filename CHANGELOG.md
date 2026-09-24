@@ -124,7 +124,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   long, `docker compose up` stopped with `dependency tor failed to start` and never started the
   nodes. On the appliance, the setup wizard reopened with the configuration marked as failed. Tor
   now has 10 minutes to bootstrap before failed checks count against it. A Tor that bootstraps
-  sooner is marked healthy at its next 30-second check, as before.
+  sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
+  now fails `up` after about 12.5 minutes instead of 3.5.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
