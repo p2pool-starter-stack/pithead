@@ -254,6 +254,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-lifecycle.sh" && domain_ran test-life
 
 # shellcheck source=tests/stack/doctor/test-doctor-surface.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-surface.sh" && domain_ran test-doctor-surface.sh "$_d0" "$?" || domain_ran test-doctor-surface.sh "$_d0" "$?"
+# shellcheck source=tests/stack/doctor/test-doctor-memory.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-memory.sh" && domain_ran test-doctor-memory.sh "$_d0" "$?" || domain_ran test-doctor-memory.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/test-lock-reinvoke-wiring.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-lock-reinvoke-wiring.sh" && domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?" || domain_ran test-lock-reinvoke-wiring.sh "$_d0" "$?"

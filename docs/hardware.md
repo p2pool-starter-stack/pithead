@@ -156,9 +156,13 @@ A node running elsewhere is left out of this budget entirely — see
 > warning and can ignore it.
 >
 > `./pithead doctor` re-runs the same disk check on demand, and adds a live memory check rather than
-> repeating setup's: it warns when the HugePages reservation is missing, and when free memory is
-> under 2 GB right now. Setup asks whether the host has enough RAM at all; doctor asks whether enough
-> is free today.
+> repeating setup's: it warns when the HugePages reservation is missing or smaller than this
+> machine's budget (3072 pages, or the appliance's reduced pool on a low-RAM machine), and when free
+> memory is under 2 GB right now. A short reservation matters because P2Pool builds its RandomX
+> dataset in ordinary RAM when the pool cannot hold it, which exceeds P2Pool's 1 GiB memory limit and
+> makes it restart in a loop; doctor still reports this as a warning rather than a failure, because
+> the appliance's update check takes doctor's exit code. Setup asks whether the host has enough RAM
+> at all; doctor asks whether enough is free today.
 
 You can put any service's data on a dedicated disk by pointing its `*.data_dir` at an absolute path,
 e.g. to keep the Monero blockchain on a separate SSD. See

@@ -111,6 +111,40 @@ check_hugepages_degraded() {
     dr_warn "$(head -n 1 "$marker" | tr '\t' ' ')"
 }
 
+# The Memory section's HugePages verdict. A pool counts as reserved only when it holds this
+# machine's budget (hugepages_decision_pages: the full 3072 pages, or the appliance's recorded
+# reduced pool), and never less than P2Pool's own RandomX pages — any non-zero pool used to read
+# OK, and a bench said OK at 186 pages (#2610). A short pool is a WARN, never a FAIL: the
+# appliance's A/B commit gate takes doctor's exit code. The wording states what develop does
+# today: a P2Pool dataset built outside the pool exceeds P2Pool's 1 GiB memory limit and
+# restarts in a loop; once #2609 raises that limit it costs RAM and speed instead, and the
+# wording changes, not the level. Reads PITHEAD_MEMINFO, the overlay's override, so the stack
+# suite runs it against fixtures.
+check_hugepages_reserved() {
+    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need short
+    total=$(awk '/^HugePages_Total/{print $2}' "$meminfo" 2>/dev/null || true)
+    free=$(awk '/^HugePages_Free/{print $2}' "$meminfo" 2>/dev/null || true)
+    need=$(hugepages_decision_pages)
+    [ "$need" -ge "$P2POOL_RANDOMX_PAGES" ] || need=$P2POOL_RANDOMX_PAGES
+    if [ -z "$total" ]; then
+        dr_warn "Could not read HugePages from $meminfo."
+    elif ! [ "$total" -gt 0 ] 2>/dev/null; then
+        dr_warn_surface "HugePages_Total is 0 — RandomX mining is slower. Run './pithead setup' (kernel optimization) to reserve them." "HugePages_Total is 0 — RandomX mining is slower. There is no dashboard control that reserves them."
+    elif [ "$total" -lt "$need" ]; then
+        short="HugePages reserved: only ${total} of the ${need} pages this machine needs for RandomX ($(((need - total) * 2)) MiB short)."
+        if [ "$total" -lt "$P2POOL_RANDOMX_PAGES" ]; then
+            short="${short} That is too few for P2Pool's RandomX dataset and caches (${P2POOL_RANDOMX_PAGES} pages): P2Pool builds them in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+        elif [ "$total" -lt $((P2POOL_RANDOMX_PAGES + MONEROD_RANDOMX_PAGES)) ]; then
+            short="${short} That is too few for both P2Pool's (${P2POOL_RANDOMX_PAGES} pages) and a local monerod's (${MONEROD_RANDOMX_PAGES} pages) RandomX data: whichever starts second builds its dataset in ordinary RAM, and when that is P2Pool it exceeds its 1 GiB memory limit and restarts in a loop."
+        else
+            short="${short} Both RandomX datasets fit, without the headroom the stack budgets for them."
+        fi
+        dr_warn_surface "${short} Run './pithead setup' (kernel optimization) to grow the pool, and keep hugepages=${PITHEAD_HUGEPAGES} on the GRUB kernel command line so the kernel reserves it at boot. A pool that stays short after setup needs a reboot: fragmented memory cannot supply the pages." "${short} There is no dashboard control that reserves them."
+    else
+        dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
+    fi
+}
+
 # #1103: on the REDUCED tier, render_local_miner_config and provision_local_miner both refuse to
 # co-locate the built-in miner even though local_miner.enabled is on (see the comment above
 # local_miner_hugepages_blocked for why no headroom value could make that safe). Say so here too,
