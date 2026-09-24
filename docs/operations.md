@@ -628,7 +628,8 @@ fails before anything on disk is touched. `restore` also refuses unless Compose 
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
-only validated generated secrets and Tor identity are retained from the archived environment.
+only opaque generated secrets and Tor identity are retained from the archived environment. The
+dashboard bcrypt hash and fingerprint are regenerated from the restored plaintext password.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
