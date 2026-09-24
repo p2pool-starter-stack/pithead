@@ -137,6 +137,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   the previous configuration, Tor keys and database, and removes the chain files the restore
   added.
 
+- **`pithead doctor` no longer reports HugePages OK for a pool too small to use
+  ([#2610](https://github.com/p2pool-starter-stack/pithead/issues/2610)).** Any non-zero
+  `HugePages_Total` read OK, so a box with 186 pages passed while P2Pool's RandomX dataset and caches
+  need 1296. doctor now holds the pool to this machine's budget (3072 pages, or the appliance's
+  reduced pool, never below 1296) and warns when it is short. The warning gives the shortfall and
+  the memory P2Pool uses outside the pool instead. It stays a warning, never a failure, because the
+  appliance's update commit gate takes doctor's exit code.
+
 - **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
   ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
   HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB

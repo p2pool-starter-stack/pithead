@@ -10,21 +10,13 @@
 # #2067 allows a held (still-syncing) stack for a first version rather than the full remote-node
 # repoint M10 describes on real hardware — a KVM guest never clears the sync gate (#2063), so a
 # "resumed mining" assertion has nothing to observe here regardless of node mode. What IS provable
-# without a synced chain is that the height recorded before the cut never regresses, which is the
-# property M10 actually guards against (a slot that forgot how far it had gotten).
+# without a synced chain is that the height persisted before the cut never regresses, which is the
+# property M10 actually guards against (a slot that forgot how far it had gotten). "Persisted"
+# matters (#2557): monerod's default db-sync-mode never fsyncs a freshly synced block, so each cut
+# is preceded by a height read and then a guest-wide sync, and only that flushed height is owed.
 _phase_provision_power_cut() {
     info "power-cut leg (M10) — cut power while the provisioned stack is live, three times"
-    local i height_before names_before names images_before images slot_before slot_after before
-    # monerod's RPC can still be starting even once the provision phase has otherwise settled, so a
-    # single-shot read here raced it the same way the post-cut read once did (see below). Poll it
-    # the same way rather than failing the whole leg on a transient "not answering yet".
-    local htries_before=0
-    while [ "$htries_before" -lt 18 ]; do
-        height_before=$(_monerod_height)
-        [ -n "$height_before" ] && break
-        sleep 10
-        htries_before=$((htries_before + 1))
-    done
+    local i height_before htries_before names_before names images_before images slot_before slot_after before
     names_before=$(_ssh "podman ps --format '{{.Names}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
     images_before=$(_ssh "podman images --format '{{.Repository}}:{{.Tag}}@{{.Digest}}'" 2>/dev/null | LC_ALL=C sort | tr '\n' ' ')
     slot_before=$(_ssh "grub-editenv /boot/efi/grub/grubenv list 2>/dev/null | grep -E '^(A_OK|A_TRY)=' | LC_ALL=C sort" | tr '\n' ' ')
@@ -33,7 +25,7 @@ _phase_provision_power_cut() {
         return 1
     }
     m10_recovered() { # <cut number>; every invariant must hold before the next cut
-        local cut="$1" broken images height_after="" htries=0 mtries=0 miner_back=0 tries=0 code=000 answered=0 genv slot_after tries3=0
+        local cut="$1" broken images verdict height_after="" htries=0 mtries=0 miner_back=0 tries=0 code=000 answered=0 genv slot_after tries3=0
         broken=$(_ssh 'root=$(podman info --format "{{.Store.GraphRoot}}" 2>/dev/null); find "$root/overlay" -maxdepth 2 -name lower -size 0 -print -quit 2>/dev/null')
         if [ -z "$broken" ]; then
             ok "M10.$cut: the image store is runnable — no zero-length layer metadata"
@@ -48,20 +40,16 @@ _phase_provision_power_cut() {
             bad "M10.$cut: stored image digests changed (wanted: '$images_before'; got: '${images:-unreadable}')"
             return 1
         fi
-        if [ -z "$height_before" ]; then
-            bad "M10.$cut: could not read monerod's height before the power cuts"
-            return 1
-        fi
         while [ "$htries" -lt 18 ]; do
             height_after=$(_monerod_height)
             [ -n "$height_after" ] && break
             sleep 10
             htries=$((htries + 1))
         done
-        if [ -n "$height_after" ] && [ "$height_after" -ge "$height_before" ] 2>/dev/null; then
-            ok "M10.$cut: monerod reports height $height_after, at or past the pre-cut height $height_before"
+        if verdict=$(m10_height_verdict "$height_before" "$height_after"); then
+            ok "M10.$cut: $verdict"
         else
-            bad "M10.$cut: monerod height went backwards or is unreadable (before: $height_before, after: ${height_after:-unreadable})"
+            bad "M10.$cut: $verdict"
             return 1
         fi
         while [ "$mtries" -lt 24 ]; do
@@ -114,6 +102,20 @@ _phase_provision_power_cut() {
         esac
     }
     for i in 1 2 3; do
+        # monerod's RPC can still be starting after the previous boot, so poll it the same way the
+        # post-cut read does. Then flush the guest: monerod commits blocks without fsync, and only
+        # what reached the disk before the cut is owed back after it (#2557).
+        height_before="" htries_before=0
+        while [ "$htries_before" -lt 18 ]; do
+            height_before=$(_monerod_height)
+            [ -n "$height_before" ] && break
+            sleep 10
+            htries_before=$((htries_before + 1))
+        done
+        _ssh sync || {
+            bad "M10.$i: could not flush the guest before the power cut"
+            return 1
+        }
         before=$(_boot_id) || {
             bad "M10.$i: could not read the boot id before the power cut"
             return 1
