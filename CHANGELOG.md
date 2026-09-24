@@ -117,6 +117,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A slow first Tor bootstrap no longer fails provisioning
+  ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
+  for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
+  started. A cold bootstrap on a fresh Tor data directory has taken 5 minutes. When it ran that
+  long, `docker compose up` stopped with `dependency tor failed to start` and never started the
+  nodes. On the appliance, the setup wizard reopened with the configuration marked as failed. Tor
+  now has 10 minutes to bootstrap before failed checks count against it. A Tor that bootstraps
+  sooner is marked healthy at its next 30-second check, as before.
+
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
   just restarted and has no peers yet reports a target height of 0. The dashboard read that as
