@@ -415,8 +415,9 @@ enough proof of who is actually listening there. Submitting writes the descripto
 control channel [the Configuration view uses](#configuration-view) (preview, then commit) — no
 separate write path, and it can only ADD a new descriptor: it can never change the host or token of
 a rig that already has one, so adopting rig #4 can't be used to repoint rig #1. The address also
-can't resolve inside the stack's own network — loopback, link-local, or its own docker-bridge
-subnet are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
+can't resolve to this machine: loopback, link-local, any address on its own network interfaces
+(its LAN address included), and every container bridge on it (the stack's own, `docker0`, and any
+other) are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
 host yet, or the control channel off, still gets a plain explanation instead of the form.
 
 The write is durable immediately, but a rig descriptor renders to no `.env` key, so adopting alone

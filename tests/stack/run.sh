@@ -111,13 +111,13 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-confirm-approval.sh" && domain_ran te
 # shellcheck source=tests/stack/test-data-management.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran test-data-management.sh "$_d0" "$?" || domain_ran test-data-management.sh "$_d0" "$?"
 
-# The approval gate (#33): default-deny, workers.list[]'s add-only exception (#893), the #122 SSRF
-# floor; own sandbox (#1105 R13). The tier3 stanza is POSITION-LOCKED: gate_try()/$UUID5 (2026-09-13 perimeter audit).
+# Approval gate (#33), add-only (#893), SSRF floor (#122, #2671); own sandbox (#1105 R13). POSITION-LOCKED: the next three read gate_try()/$UUID5.
 # shellcheck source=tests/stack/control/test-control-add-only-ssrf.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
 
