@@ -53,10 +53,18 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   fork that activates at mainnet block **350,000**; a node on an older version forks off the
   network at that height. P2Pool 4.18.1 changes how it sends Tari merge-mined work and requires a
   Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
-  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.0-mainnet` indexes.
+  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.1-pre.0-mainnet` indexes: a
+  6.0.0 node rejects canonical block 350,008 as below target difficulty and stays on a dead fork,
+  and 6.0.1-pre.0 carries the upstream fix
+  ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
     one-time JMT migration that upstream describes as taking several minutes to much longer on a
-    large database; the node is unavailable while it runs. Have free disk space for it, and do not
+    large database; the node is unavailable while it runs. It writes a compacted copy of the
+    database beside the old one, so both are on the data volume at once. Before it starts or
+    recreates any container, `./pithead upgrade` requires free space there of the current
+    `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). The bound is
+    conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
@@ -70,8 +78,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     On a mismatch it rewinds the chain to 349,900, deletes the peer database (the bans) and starts
     the node again. A node below 350,000 or on the canonical chain is left as it is. Each step is
     logged in `docker logs tari` with the prefix `[pithead fork-check]`.
-  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
-    cannot merge-mine against an older node.
+  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.1-pre.0 first.** P2Pool
+    4.18.1 cannot merge-mine against a node older than 6.0.0, and a 6.0.0 node stops at 350,008.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
@@ -87,6 +95,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   or `commit-confirmed` against the signed-in dashboard user. Existing log rows are unchanged.
 
 ### Security
+
+- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
+  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
+  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
+  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
+  container starts; `doctor` warns when it is not enabled
+  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
@@ -121,6 +136,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
+  ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
+  HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
+  container ceiling OOM-killed it while it filled the dataset, on every start. That happened on a
+  host where `setup` skipped the persistent GRUB change and was then rebooted, and on a pool other
+  processes had used up. The ceiling is now 4 GB, both in Compose and in the appliance's units.
+  When the reservation holds the dataset, which is still the fast path, nothing changes.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
