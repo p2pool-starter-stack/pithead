@@ -202,7 +202,7 @@ check_release_verification() {
 tari_chain_verdict() {
     command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
     curl -fsS --max-time 5 "http://127.0.0.1:8000/api/state" 2>/dev/null |
-        jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null
+        jq -r '.tari.health // empty | [.level, ((.reasons | join("; ")) + " — next: " + .advice)] | @tsv' 2>/dev/null || true
 }
 
 # doctor: amber WARN, red FAIL (non-zero exit). Advice follows the verdict, never a restart's outcome.
@@ -231,4 +231,5 @@ tari_chain_status_line() {
     amber) printf '  %b⚠%b %-13s %s\n' "$C_YELLOW" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
     *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
     esac
+    return 0
 }

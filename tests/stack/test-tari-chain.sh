@@ -43,3 +43,9 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "tari.auto_restart:false renders false" "$(run_sourced "$V" env_get_file "$V/.env" TARI_AUTO_RESTART)" "false"
 assert_eq "a blank tari.explorer_url renders blank (reference off)" "$(run_sourced "$V" env_get_file "$V/.env" TARI_EXPLORER_URL)" ""
+
+# Under pithead's own `set -eo pipefail` a dashboard that does not answer must not abort status: the
+# verdict line is extra, and #2464 must not change status's exit code (CI caught curl's exit 7).
+tari_status_strict() { set -eo pipefail && tari_chain_status_line && echo "rc=0"; }
+assert_eq "tari chain: dashboard down under pipefail leaves status's line empty, rc 0" \
+    "$(CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_status_strict 2>&1)" "rc=0"

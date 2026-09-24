@@ -153,3 +153,13 @@ def _down():
         return [{"name": n, "status": "offline"} for n in names]
 
     return _down
+
+
+@pytest.fixture(autouse=True)
+def _no_tari_explorer_fetch(monkeypatch):
+    """No test reaches the public Tari explorer (#2464). A DataService built by a test would otherwise
+    dial it through a Tor SOCKS that does not exist here and wait out its timeout. The explorer tests
+    pass ``explorer_url`` and ``explorer`` explicitly, so the default being off costs them nothing."""
+    from mining_dashboard.service.health import tari_health
+
+    monkeypatch.setattr(tari_health, "TARI_EXPLORER_URL", "")

@@ -249,7 +249,10 @@ class DataSetupMixin:
         verdict (#2464) attached as ``tari_sync["health"]`` for the panel, /api/state and doctor.
         Off mode has no node to judge; the peer count is asked only of a node that answered."""
         if TARI_MODE != "off":
-            reachable = tari_sync.get("reachable", False)
-            connections = await tari_client.get_connections() if reachable else None
-            tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+            try:
+                reachable = tari_sync.get("reachable", False)
+                connections = await tari_client.get_connections() if reachable else None
+                tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+            except Exception as exc:  # the verdict must never break the data loop
+                logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
         return self.tari_health.update(tari_sync.get("reachable", True))
