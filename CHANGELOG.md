@@ -91,6 +91,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Security
 
+- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
+  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
+  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
+  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
+  container starts; `doctor` warns when it is not enabled
+  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
@@ -124,6 +131,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
+  ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
+  HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
+  container ceiling OOM-killed it while it filled the dataset, on every start. That happened on a
+  host where `setup` skipped the persistent GRUB change and was then rebooted, and on a pool other
+  processes had used up. The ceiling is now 4 GB, both in Compose and in the appliance's units.
+  When the reservation holds the dataset, which is still the fast path, nothing changes.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has

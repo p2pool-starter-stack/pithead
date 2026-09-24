@@ -28,7 +28,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -241,6 +241,12 @@ after a reboot or power loss, provided the Docker daemon starts at boot. Ubuntu'
 enables this by default; a custom/rootless install (or `setup --skip-deps`) may leave it disabled.
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
+
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
 
 ---
 
@@ -622,7 +628,8 @@ fails before anything on disk is touched. `restore` also refuses unless Compose 
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
-only validated generated secrets and Tor identity are retained from the archived environment.
+only opaque generated secrets and Tor identity are retained from the archived environment. The
+dashboard bcrypt hash and fingerprint are regenerated from the restored plaintext password.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
