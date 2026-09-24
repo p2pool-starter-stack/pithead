@@ -36,12 +36,17 @@ echo "== node-down call site never injects an unarmed fault =="
 FAULT_SRC="$(sed -n '/^fault_node_down() {$/,/^}$/p' "$HERE/../lib/run-faults.sh")"
 STOP_LOG="$(mktemp)"
 trap 'rm -f "$STOP_LOG"' EXIT
-wait_for() { return 1; }
-it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
-rx() { printf '%s\n' "$*" >>"$STOP_LOG"; }
-eval "$FAULT_SRC"
-fault_node_down
-assert_eq "an unarmed fault records one failure" "$IT_FAIL" "1"
+# A subshell: the simulated fault's own failure must not reach this file's exit gate.
+unarmed_failures="$(
+    wait_for() { return 1; }
+    it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+    rx() { printf '%s\n' "$*" >>"$STOP_LOG"; }
+    IT_FAIL=0
+    eval "$FAULT_SRC"
+    fault_node_down >/dev/null 2>&1
+    printf '%s' "$IT_FAIL"
+)"
+assert_eq "an unarmed fault records one failure" "$unarmed_failures" "1"
 assert_eq "an unarmed fault never calls docker compose stop" "$(grep -c 'stop monerod' "$STOP_LOG")" "0"
 
 echo "== injected RigForge credentials stay out of jq argv =="
@@ -53,3 +58,6 @@ assert_contains "jq reads the protected process environment" "$CONTROL_SRC" 'tok
 HARDENING_SRC="$(sed -n '/^run_hardening() {$/,/^}$/p' "$HERE/../lib/run-hardening.sh")"
 assert_eq "full preview configs reach jq on stdin" \
     "$(printf '%s' "$HARDENING_SRC" | grep -c -- '--argjson c')" "0"
+
+echo "selftest-failover-arm: $IT_PASS passed, $IT_FAIL failed"
+[ "$IT_FAIL" -eq 0 ] || exit 1
