@@ -41,9 +41,10 @@ out="$(_hp 0)"
 assert_contains "3072 pages: OK" "$out" "✓ OK   HugePages reserved: 3072 total, 1800 free"
 assert_not_contains "3072 pages: no WARN" "$out" "WARN"
 
-# P2Pool's dataset boundary: below its 1040 pages P2Pool crash-loops under its 1 GiB limit whatever
-# else holds pages. From 1040 up the dataset would fit an empty pool, so the wording makes no
-# crash-loop claim, but below the budget it still WARNs.
+# P2Pool's boundaries: below its 1040-page dataset P2Pool crash-loops under its 1 GiB limit whatever
+# else holds pages. From 1040 to 1295 the dataset fits only if P2Pool allocates before monerod's two
+# RandomX caches (up to 256 pages; monerod builds no dataset unless it mines), so the crash loop is
+# named as conditional. From 1296 it fits either way, but below the budget it still WARNs.
 _meminfo 1039 1039
 out="$(_hp 0)"
 assert_contains "1039 pages: WARN" "$out" "⚠ WARN"
@@ -53,8 +54,17 @@ _meminfo 1040 1040
 out="$(_hp 0)"
 assert_contains "1040 pages: WARN, short of the budget" "$out" "⚠ WARN HugePages reserved: only 1040 of the 3072 pages"
 assert_not_contains "1040 pages: never a FAIL" "$out" "FAIL"
-assert_not_contains "1040 pages: no crash-loop claim (the dataset would fit an empty pool)" "$out" "restarts in a loop"
-assert_contains "1040 pages: says what does not fit falls back" "$out" "RandomX data that does not fit falls back to ordinary RAM."
+assert_not_contains "1040 pages: no certain crash-loop claim" "$out" "too few for P2Pool's RandomX dataset"
+assert_contains "1040 pages: the crash loop hangs on who allocates first" "$out" "P2Pool's RandomX dataset fits only if P2Pool takes its pages before monerod's RandomX caches do; if not, P2Pool builds its RandomX dataset (1040 pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
+_meminfo 1295 1295
+out="$(_hp 0)"
+assert_contains "1295 pages: WARN, the crash loop still conditional" "$out" "⚠ WARN HugePages reserved: only 1295 of the 3072 pages this machine needs for RandomX (3554 MiB short). P2Pool's RandomX dataset fits only if"
+_meminfo 1296 1296
+out="$(_hp 0)"
+assert_contains "1296 pages: WARN, short of the budget" "$out" "⚠ WARN HugePages reserved: only 1296 of the 3072 pages"
+assert_not_contains "1296 pages: never a FAIL" "$out" "FAIL"
+assert_not_contains "1296 pages: no crash-loop claim (the dataset fits beside monerod's caches)" "$out" "restarts in a loop"
+assert_contains "1296 pages: says what does not fit falls back" "$out" "RandomX data that does not fit falls back to ordinary RAM."
 _meminfo 3071 3071
 out="$(_hp 0)"
 assert_contains "3071 pages: one page short of the budget is a WARN" "$out" "⚠ WARN HugePages reserved: only 3071 of the 3072 pages"
@@ -85,7 +95,7 @@ fi
 printf 'released\npages=0\n' >"$MEMD/marker"
 _meminfo 186 186
 out="$(_hp 1)"
-assert_contains "released tier at 186 pages: WARN against P2Pool's 1296" "$out" "⚠ WARN HugePages reserved: only 186 of the 1296 pages"
+assert_contains "released tier at 186 pages: WARN against P2Pool's 1296, labelled as its dataset and caches" "$out" "⚠ WARN HugePages reserved: only 186 of the 1296 pages P2Pool's RandomX dataset and its two caches need (2220 MiB short)."
 assert_not_contains "released tier at 186 pages: never a FAIL (the commit gate)" "$out" "FAIL"
 _meminfo 1295 1295
 out="$(_hp 1)"
@@ -111,6 +121,10 @@ printf 'MemTotal:       16318412 kB\n' >"$MEMD/meminfo"
 out="$(_hp 0)"
 assert_contains "no HugePages line: could-not-read WARN" "$out" "⚠ WARN Could not read HugePages"
 assert_not_contains "no HugePages line: never a FAIL" "$out" "FAIL"
+printf 'HugePages_Total:    n/a\n' >"$MEMD/meminfo"
+out="$(_hp 0)"
+assert_contains "non-numeric HugePages_Total: could-not-read WARN, not a zero pool" "$out" "⚠ WARN Could not read HugePages"
+assert_not_contains "non-numeric HugePages_Total: never a FAIL" "$out" "FAIL"
 
 # The crash-loop wording names P2Pool's memory limit as 1 GiB. Read the limit off both places it
 # is set, so the change that moves it (#2609) reds here and rewrites the wording with it.

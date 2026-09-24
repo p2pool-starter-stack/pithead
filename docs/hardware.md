@@ -157,10 +157,12 @@ A node running elsewhere is left out of this budget entirely — see
 >
 > `./pithead doctor` re-runs the same disk check on demand, and adds a live memory check rather than
 > repeating setup's: it warns when the HugePages reservation is missing or smaller than this
-> machine's budget (3072 pages, or the appliance's reduced pool on a low-RAM machine), and when free
-> memory is under 2 GB right now. A pool too small for P2Pool's RandomX dataset (about 2 GiB)
-> matters most: P2Pool then builds the dataset in ordinary RAM, exceeds its 1 GiB memory limit and
-> restarts in a loop. doctor still reports a short pool as a warning rather than a failure, because
+> machine's budget (3072 pages, or the appliance's reduced pool on a low-RAM machine, never less
+> than the 1296 pages of P2Pool's RandomX dataset and its two caches), and when free memory is under
+> 2 GB right now. A pool too small for P2Pool's RandomX dataset (1040 pages, about 2 GiB) matters
+> most: P2Pool then builds the dataset in ordinary RAM, exceeds its 1 GiB memory limit and restarts
+> in a loop. Below 1296 pages the same can happen when monerod's RandomX caches take their pages
+> first. doctor still reports a short pool as a warning rather than a failure, because
 > the appliance's boot-time commit gate for an update takes doctor's exit code. Setup asks whether
 > the host has enough RAM at all; doctor asks whether enough is free today.
 

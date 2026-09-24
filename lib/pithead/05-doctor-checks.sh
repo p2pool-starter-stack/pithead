@@ -118,26 +118,32 @@ check_hugepages_degraded() {
 # appliance's A/B commit gate takes doctor's exit code. Below P2Pool's dataset the wording states
 # what develop does today: the 2080 MiB dataset built in ordinary RAM exceeds P2Pool's 1 GiB memory
 # limit and it restarts in a loop; once #2609 raises that limit it costs RAM and speed instead,
-# and the wording changes, not the level. Reads PITHEAD_MEMINFO, the overlay's override, so the
+# and the wording changes, not the level. Below P2Pool's 1296 the dataset fits only if P2Pool
+# allocates first: monerod keeps its two RandomX caches (up to 256 pages) in the same pool, though
+# it builds no dataset unless it mines. Reads PITHEAD_MEMINFO, the overlay's override, so the
 # stack suite runs it against fixtures.
 check_hugepages_reserved() {
-    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need short
+    local meminfo="${PITHEAD_MEMINFO:-/proc/meminfo}" total free need who="this machine needs for RandomX" short
     total=$(awk '/^HugePages_Total/{print $2}' "$meminfo" 2>/dev/null || true)
     free=$(awk '/^HugePages_Free/{print $2}' "$meminfo" 2>/dev/null || true)
     need=$(hugepages_decision_pages)
-    [ "$need" -ge "$P2POOL_RANDOMX_PAGES" ] || need=$P2POOL_RANDOMX_PAGES
-    if [ -z "$total" ]; then
+    if [ "$need" -lt "$P2POOL_RANDOMX_PAGES" ]; then
+        need=$P2POOL_RANDOMX_PAGES who="P2Pool's RandomX dataset and its two caches need"
+    fi
+    if [[ ! "$total" =~ ^[0-9]+$ ]]; then
         dr_warn "Could not read HugePages from $meminfo."
-    elif [ "$total" -ge "$need" ] 2>/dev/null; then
+    elif [ "$total" -ge "$need" ]; then
         dr_ok "HugePages reserved: ${total} total, ${free:-?} free (RandomX uses these)."
     else
         local crash="P2Pool builds its RandomX dataset (${P2POOL_RANDOMX_DATASET_PAGES} pages) in ordinary RAM, exceeds its 1 GiB memory limit and restarts in a loop."
-        if ! [ "$total" -gt 0 ] 2>/dev/null; then
+        if [ "$total" -eq 0 ]; then
             short="HugePages_Total is 0: ${crash}"
         else
-            short="HugePages reserved: only ${total} of the ${need} pages this machine needs for RandomX ($(((need - total) * 2)) MiB short)."
+            short="HugePages reserved: only ${total} of the ${need} pages ${who} ($(((need - total) * 2)) MiB short)."
             if [ "$total" -lt "$P2POOL_RANDOMX_DATASET_PAGES" ]; then
                 short="${short} That is too few for P2Pool's RandomX dataset: ${crash}"
+            elif [ "$total" -lt "$P2POOL_RANDOMX_PAGES" ]; then
+                short="${short} P2Pool's RandomX dataset fits only if P2Pool takes its pages before monerod's RandomX caches do; if not, ${crash}"
             else
                 short="${short} RandomX data that does not fit falls back to ordinary RAM."
             fi
