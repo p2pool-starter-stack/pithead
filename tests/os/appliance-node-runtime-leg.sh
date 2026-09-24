@@ -80,32 +80,44 @@ guest_node_readiness() { # <monero-host> <rpc-port>
         allowlisted_node_readiness
 }
 
+# Input: `podman inspect monerod dashboard p2pool`; $cfg: config.json. Podman's .Name carries no
+# leading slash (Docker's does), so accept both rather than silently match nothing.
+# shellcheck disable=SC2016 # jq program, not shell
+LOCAL_NODE_LOGIN_JQ='($cfg[0].monero.node_username // "") as $u | ($cfg[0].monero.node_password // "") as $p |
+    def container($name): map(select((.Name | ltrimstr("/")) == $name))[0];
+    def has_login($name): container($name).Config.Env |
+        index("MONERO_NODE_USERNAME=" + $u) != null and index("MONERO_NODE_PASSWORD=" + $p) != null;
+    (container("p2pool").Config.Cmd) as $cmd | ($cmd | index("--rpc-login")) as $i |
+    $u != "" and $p != "" and has_login("monerod") and has_login("dashboard") and
+    $i != null and $cmd[$i+1] == ($u + ":" + $p)'
+LOCAL_NODE_LOGIN_REASON="not-run"
+
 local_node_login_runtime_verdict() {
-    # shellcheck disable=SC2016 # this script is intentionally evaluated by the guest shell
-    _ssh 'set -eu
-podman inspect monerod dashboard p2pool |
-    jq -e --slurpfile cfg /data/pithead/config.json '\''
-        ($cfg[0].monero.node_username // "") as $u | ($cfg[0].monero.node_password // "") as $p |
-        def container($name): map(select(.Name == ("/" + $name)))[0];
-        def has_login($name): container($name).Config.Env |
-            index("MONERO_NODE_USERNAME=" + $u) != null and index("MONERO_NODE_PASSWORD=" + $p) != null;
-        (container("p2pool").Config.Cmd) as $cmd | ($cmd | index("--rpc-login")) as $i |
-        $u != "" and $p != "" and has_login("monerod") and has_login("dashboard") and
-        $i != null and $cmd[$i+1] == ($u + ":" + $p)
-    '\'' >/dev/null'
+    local jq_q
+    printf -v jq_q %q "$(printf '%s' "$LOCAL_NODE_LOGIN_JQ" | tr '\n' ' ')" # one line: no $'' quoting
+    _ssh "podman inspect monerod dashboard p2pool | jq -e --slurpfile cfg /data/pithead/config.json $jq_q >/dev/null"
 }
 
 local_node_login_edit() { # <config-path> <env-key> <value> <label>
     local live proposed preview result rid
+    LOCAL_NODE_LOGIN_REASON="live-config-unreadable"
     live=$(sensitive_live_config) || return 1
+    LOCAL_NODE_LOGIN_REASON="proposal-unbuildable"
     proposed=$(printf '%s' "$live" | jq -c --arg value "$3" "$1 = \$value") || return 1
+    LOCAL_NODE_LOGIN_REASON="preview-failed"
     sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
+    LOCAL_NODE_LOGIN_REASON="preview-not-confirm-gated"
     printf '%s' "$preview" | jq -e --arg key "$2" \
         '.status == "previewed" and .destructive == true and any(.changes[]?; .key == $key and .flag == "CONFIRM")' >/dev/null || return 1
     result=$(approval_commit "$rid")
+    LOCAL_NODE_LOGIN_REASON="commit-$(printf '%s' "$result" | jq -r '.status // "unreadable"' 2>/dev/null || printf unreadable)"
     printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null || return 1
-    sensitive_live_config >/dev/null && local_node_login_runtime_verdict || return 1
+    LOCAL_NODE_LOGIN_REASON="dashboard-unreadable-after-apply"
+    sensitive_live_config >/dev/null || return 1
+    LOCAL_NODE_LOGIN_REASON="runtime-login-mismatch"
+    local_node_login_runtime_verdict || return 1
+    LOCAL_NODE_LOGIN_REASON="ok"
     ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
 }
 
@@ -134,11 +146,11 @@ phase_provision_remote_node_regressions() {
     }
 
     local_node_login_edit '.monero.node_username' MONERO_NODE_USERNAME os2333-local-user "username edit" || {
-        bad "standalone local node username edit did not preserve runtime access"
+        bad "standalone local node username edit did not preserve runtime access (step=$LOCAL_NODE_LOGIN_REASON)"
         return 1
     }
     local_node_login_edit '.monero.node_password' MONERO_NODE_PASSWORD os2333-local-pass "password edit" || {
-        bad "standalone local node password edit did not preserve runtime access"
+        bad "standalone local node password edit did not preserve runtime access (step=$LOCAL_NODE_LOGIN_REASON)"
         return 1
     }
 
@@ -267,6 +279,25 @@ _remote_node_runtime_reason_self_test() (
     [ "$REMOTE_NODE_RUNTIME_REASON" = startup-epoch-missing ]
 )
 
+# Drives the real verdict through a guest-shaped shell: a fake `podman` printing podman-shaped
+# inspect JSON (.Name without Docker's leading slash) and a fixture config in place of the guest's.
+_local_node_login_self_test() (
+    local tmp login
+    tmp=$(mktemp -d) || return 1
+    trap 'rm -rf "$tmp"' EXIT
+    printf '{"monero":{"node_username":"u1","node_password":"p1"}}' >"$tmp/config.json"
+    login=u1:p1
+    _ssh() { PATH="$tmp:$PATH" bash -c "${1//\/data\/pithead\/config.json/$tmp/config.json}"; }
+    write_podman() {
+        printf '#!/bin/sh\ncat <<EOF\n[{"Name":"monerod","Config":{"Env":["MONERO_NODE_USERNAME=u1","MONERO_NODE_PASSWORD=p1"],"Cmd":[]}},{"Name":"dashboard","Config":{"Env":["MONERO_NODE_USERNAME=u1","MONERO_NODE_PASSWORD=p1"],"Cmd":[]}},{"Name":"p2pool","Config":{"Env":[],"Cmd":["--rpc-login","%s"]}}]\nEOF\n' "$1" >"$tmp/podman"
+        chmod +x "$tmp/podman"
+    }
+    write_podman "$login"
+    local_node_login_runtime_verdict || return 1
+    write_podman u1:stale
+    ! local_node_login_runtime_verdict
+)
+
 _remote_node_self_test() {
     local f=0 here
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -278,6 +309,7 @@ _remote_node_self_test() {
     _remote_node_proposal_self_test || f=$((f + 1))
     _node_readiness_self_test || f=$((f + 1))
     _remote_node_runtime_reason_self_test || f=$((f + 1))
+    _local_node_login_self_test || f=$((f + 1))
     grep -Fq 'if [ "$tries" -lt 60 ]; then' "$here/appliance-node-runtime-leg.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-node-runtime-leg self-test FAILED: %s checks\n' "$f"
