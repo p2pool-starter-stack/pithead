@@ -165,7 +165,110 @@ run_lifecycle() {
     else
         it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
     fi
+    run_uninstall_round_trip || lifecycle_ok=0
     [ "$lifecycle_ok" = 1 ]
+}
+
+# A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
+# every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
+# on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
+# Any write to a file moves its mtime and ctime, and ctime cannot be set back from userspace, so
+# an unchanged line proves no byte of that file was written. Directories and links print their
+# type, so a removed or added entry shows too. pipefail makes an unreadable path a failed probe,
+# never an empty snapshot that equals another empty one. KEPT_SNAPSHOT_SUDO is the selftest seam.
+kept_data_snapshot_snippet() { # <path>...
+    local p paths=""
+    for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
+}
+
+# The same paths' large files as inode, birth time to the nanosecond and path: a chain that was
+# reused keeps all three, one re-created by a resync gets a new birth time even when the
+# filesystem hands the freed inode number straight back.
+kept_chain_files_snippet() { # <path>...
+    local p paths=""
+    for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find$paths -type f -size +65536k -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
+}
+
+# uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
+# path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
+# re-provisions from what was kept. The stack is stopped BEFORE the first snapshot: a running
+# monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
+# a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
+# nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
+# is empty. Always ends by bringing a stack back up, so the phases after this one have one.
+run_uninstall_round_trip() {
+    local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
+    it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
+    for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
+        p="$(env_on_box "$key")"
+        [ -n "$p" ] && rx "test -e $(quote_arg "$p")" && kept+=("$p")
+    done
+    kept+=(config.json)
+    rx 'test -e backups' && kept+=(backups)
+    for key in CONTROL_DIR CLEARNET_STATE_DIR CADDY_LOG_DIR PROXY_TLS_DIR; do
+        p="$(env_on_box "$key")"
+        [ -n "$p" ] && derived+=("$p")
+    done
+    derived+=(data/tari-wallet-secret.env .env)
+    onion_before="$(env_on_box MONERO_ONION_ADDRESS)"
+    local local_node=""
+    has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
+    snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
+    if ! pithead down >/dev/null 2>&1 || ! before="$(rx "$snippet")" || [ -z "$before" ] ||
+        ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
+        it_fail "stopped stack snapshot readable before uninstall" "pithead down or the kept-data snapshot failed"
+        pithead up >/dev/null 2>&1
+        wait_status_ok 240 || true
+        return 1
+    fi
+    out="$(pithead uninstall -y 2>&1)"
+    rc=$?
+    assert_rc "pithead uninstall -y succeeded" "$rc" "0"
+    assert_contains "uninstall states the removed column" "$out" "Removed:"
+    assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
+    assert_contains "uninstall states the left-behind column" "$out" "Left behind"
+    assert_contains "uninstall prints the removal command" "$out" "sudo rm -rf"
+    if after="$(rx "$snippet")" && [ "$after" = "$before" ]; then
+        it_pass "uninstall leaves every kept path byte-identical (no allowed writes)"
+    else
+        it_fail "uninstall leaves every kept path byte-identical (no allowed writes)" \
+            "$(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -n 12)"
+    fi
+    assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
+        "$(rx "docker volume ls -q" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+    local left=""
+    for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
+    assert_eq "uninstall removes every derived path and .env" "$left" ""
+
+    # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
+    # the pinned third-party images uninstall just removed; `missing` is what a release install,
+    # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
+    it_step "pithead setup re-provisions from the kept config…"
+    out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
+    rc=$?
+    assert_rc "setup after uninstall succeeded" "$rc" "0"
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
+    if wait_status_ok 600; then
+        it_pass "status OK after setup-after-uninstall"
+    else
+        it_fail "status OK after setup-after-uninstall" "pithead status did not recover within 600s"
+    fi
+    # The chains' large files are the same files after setup, and the kept Tor keys give back the
+    # same onion address.
+    if [ -n "$local_node" ]; then
+        big_after="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"
+        if [ -n "$big_before" ] && [ "$big_after" = "$big_before" ]; then
+            it_pass "setup after uninstall reuses the kept chain files"
+        else
+            it_fail "setup after uninstall reuses the kept chain files" "a chain file changed inode or birth time, or none was found"
+        fi
+    else
+        it_skip_leg "setup after uninstall reuses the kept chain files" "remote mode: no local chain" "by-design"
+    fi
+    assert_eq "setup after uninstall keeps the Monero onion address" "$(env_on_box MONERO_ONION_ADDRESS)" "$onion_before"
+    [ "$IT_FAIL" -le "$fails_before" ]
 }
 
 # Table names and counts only (never row values): which families lost rows, and whether either probe

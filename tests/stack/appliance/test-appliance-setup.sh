@@ -92,9 +92,11 @@ assert_rc "uninstall fixture: self-provisioned apply succeeds" "$rc" "0"
 # apply's ensure_directories/prepare_control_dirs/inject_service_configs create every derived
 # state dir unconditionally (#2379 §3), regardless of which chain/TLS flags the fixture config
 # sets — sanity-check that before trusting the removal assertions below.
+missing_derived=""
 for d in data/control data/clearnet-state data/caddy-logs data/proxy-tls; do
-    assert_eq "uninstall fixture: apply created $d" "$([ -d "$V/$d" ] && echo yes)" "yes"
+    [ -d "$V/$d" ] || missing_derived="$missing_derived $d"
 done
+assert_eq "uninstall fixture: apply created every derived state dir" "$missing_derived" ""
 : >"$V/data/tari-wallet-secret.env" # apply only populates this with a Tari view key configured; force it present for the test
 
 # Drop a marker into every kept path so "byte-identical before/after" is provable, not assumed.
@@ -140,6 +142,16 @@ assert_eq "uninstall keeps every *_DATA_DIR byte-identical (hash before == after
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
 # Re-render the sandbox .env for the sections below — uninstall just deleted it.
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+# A derived key an operator pointed at the data root is refused, never `rm -rf`'d: .env is
+# editable, and no edit may turn uninstall into the removal of the chains under it.
+grep -v '^CONTROL_DIR=' "$V/.env" >"$V/.env.tmp" && printf 'CONTROL_DIR=%s\n' "$V/data" >>"$V/.env.tmp" && mv "$V/.env.tmp" "$V/.env"
+mkdir -p "$V/data/tari" && printf 'marker' >"$V/data/tari/guard.txt"
+out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+assert_contains "uninstall refuses a derived key that points at the data root" "$out" "Not removing CONTROL_DIR="
+assert_eq "uninstall keeps the data root a derived key points at" "$(cat "$V/data/tari/guard.txt" 2>/dev/null)" "marker"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

@@ -37,6 +37,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         dashboard_durable_rows() { printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
+        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
         secret_fingerprint() {
