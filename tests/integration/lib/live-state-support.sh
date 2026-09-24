@@ -187,10 +187,11 @@ first_party_ref_shapes() { # <service/ref lines> -> service:reason for each ref 
         esac
         if [ "$registry" = "$repo" ] || ! [[ "$registry" =~ ^[A-Za-z0-9._:/-]+$ ]]; then
             printf '%s:no-registry\n' "$service"
-        elif [ -n "$found" ] && [ "$found" != "$registry" ]; then
+        elif [ -z "$found" ]; then
+            found="$registry"
+        elif [ "$found" != "$registry" ]; then
             printf '%s:mixed-registry\n' "$service"
         fi
-        found="$registry"
     done <<<"$1"
 }
 services_missing_from() { # <service/ref lines> <candidate service/ref lines> -> missing service names
@@ -208,5 +209,5 @@ upgrade_capture_gaps() { # <mounts> <mounts-rc> <all-refs> <first-refs> <registr
     [ -n "$5" ] || [ -z "$4" ] || gaps+=("baseline-registry($(first_party_ref_shapes "$4" | paste -sd, -))")
     [ -n "$6" ] || [ -z "$4" ] || gaps+=("candidate-first-party(missing:$(services_missing_from "$4" "$UPGRADE_CANDIDATE_ALL_REFS" | paste -sd, -))")
     [ -n "$7" ] || [ -z "$3" ] || gaps+=("candidate-all(missing:$(services_missing_from "$3" "$UPGRADE_CANDIDATE_ALL_REFS" | paste -sd, -))")
-    printf '%s\n' "${gaps[*]}"
+    printf '%s\n' "${gaps[*]:-}"
 }

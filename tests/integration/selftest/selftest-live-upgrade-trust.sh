@@ -72,6 +72,8 @@ gaps="$(upgrade_capture_gaps m 0 "$untagged" "$untagged" "" c c)"
 ! grep -Fq reg.test <<<"$gaps" || exit 1
 mixed=$'tor reg.test/pithead-tor:1@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-tor:1'
 [ "$(upgrade_capture_gaps m 0 "$mixed" "$mixed" "" c c)" = "baseline-registry(dashboard:mixed-registry,p2pool:unexpected-image)" ]
+bare=$'tor pithead-tor:1@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-p2pool:1@sha256:'"$d64"
+[ "$(upgrade_capture_gaps m 0 "$bare" "$bare" "" c c)" = "baseline-registry(tor:no-registry)" ]
 running=$'tor a\ndashboard b\nwallet-rpc c\ncaddy d'
 [ "$(upgrade_capture_gaps m 0 "$running" "$first" reg.test "" "")" = "candidate-first-party(missing:) candidate-all(missing:wallet-rpc)" ]
 
