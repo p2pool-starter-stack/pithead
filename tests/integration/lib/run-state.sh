@@ -268,6 +268,8 @@ assert_running_state() {
         *127.0.0.1*) it_pass "tari DNS sinkholed — no clearnet resolver (#162)" ;;
         *) it_fail "tari DNS sinkholed — no clearnet resolver (#162)" "unexpected HostConfig.Dns" ;;
         esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        # The entrypoint's fork check (#2618) reads the header at 350,000 once gRPC answers; a bench on the canonical chain must log its hash.
+        [ "$tmode" = "local" ] && assert_eq "tari fork-check: header 350000 is canonical (#2618)" "$(rx "for _ in \$(seq 60); do docker logs tari 2>&1 | grep -qF '[pithead fork-check] header 350000 is canonical (663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47)' && { echo 1; exit 0; }; sleep 5; done; echo 0")" "1" || it_skip_leg "tari fork-check: header 350000 is canonical (#2618)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The xmrig-proxy config knobs must reach the RUNNING proxy's argv, not just the compose
         # render. donate-level is rendered explicitly so it's always visible (#173). The matrix
         # deploys the default config (no p2pool.stratum_password) → stratum auth OFF, which must
