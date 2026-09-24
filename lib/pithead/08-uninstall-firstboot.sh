@@ -12,16 +12,17 @@
 # is plain log lines, one per line, because log() prefixes every call with "[pithead]".
 uninstall_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
-# uninstall_removable <path> <name> <checkout> <kept>... succeeds only for the derived directory a
-# setup would have made: an absolute path with no . or .. component, named <name>, not the
-# checkout or above it, and neither a kept path nor above or inside one. A derived *_DIR key is read from .env, which an operator can
-# edit; pointing one at a data dir, its parent or /etc must never become an `rm -rf`.
+# uninstall_removable <path> <expected> <checkout> <kept>... succeeds only for the derived
+# directory at exactly the path setup gives it (<expected>), with no . or .. component, not the
+# checkout or above it, and neither a kept path nor above or inside one. A derived *_DIR key is
+# read from .env, which an operator can edit; pointing one anywhere else must never become an
+# `rm -rf`.
 uninstall_removable() {
     local p k
     p=$(printf '%s' "$1" | sed 's#//*#/#g; s#/$##')
     case "$p" in /?*) ;; *) return 1 ;; esac
     case "$p/" in */../* | */./*) return 1 ;; esac
-    [ "${p##*/}" = "$2" ] || return 1
+    [ "$p" = "$(printf '%s' "$2" | sed 's#//*#/#g; s#/$##')" ] || return 1
     case "$3/" in "$p/"*) return 1 ;; esac
     shift 3
     for k in "$@"; do
@@ -52,16 +53,26 @@ stack_uninstall() {
     # data root for PROXY_TLS_DIR) that the old keep-list never named or removed. None is operator
     # data — the control spool + audit trail, the clearnet-sync marker, Caddy's access log, and the
     # stratum TLS keypair — so they are removed individually, by exact path, never `rm -rf data/`.
-    local dname
-    for dkey in CONTROL_DIR:control CLEARNET_STATE_DIR:clearnet-state CADDY_LOG_DIR:caddy-logs PROXY_TLS_DIR:proxy-tls; do
-        dname=${dkey#*:}
+    # Where setup puts each one (28-parse-and-validate-config.sh): three fixed under ./data, and
+    # proxy-tls in the shared data root when the four chain/Tor dirs share a parent.
+    local data_root want mon tar p2p tor
+    mon=$(env_get_file .env MONERO_DATA_DIR)
+    tar=$(env_get_file .env TARI_DATA_DIR)
+    p2p=$(env_get_file .env P2POOL_DATA_DIR)
+    tor=$(env_get_file .env TOR_DATA_DIR)
+    data_root=$(dirname "${mon:-$checkout_dir/data/monero}")
+    { [ "$(dirname "${tar:-/}")" = "$data_root" ] && [ "$(dirname "${p2p:-/}")" = "$data_root" ] &&
+        [ "$(dirname "${tor:-/}")" = "$data_root" ]; } || data_root="$checkout_dir/data"
+    for dkey in CONTROL_DIR:"$checkout_dir/data/control" CLEARNET_STATE_DIR:"$checkout_dir/data/clearnet-state" \
+        CADDY_LOG_DIR:"$checkout_dir/data/caddy-logs" PROXY_TLS_DIR:"$data_root/proxy-tls"; do
+        want=${dkey#*:}
         dkey=${dkey%%:*}
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] || continue
-        if uninstall_removable "$d" "$dname" "$checkout_dir" "${kept_dirs[@]}" "$checkout_dir/config.json" "$checkout_dir/backups"; then
+        if uninstall_removable "$d" "$want" "$checkout_dir" "${kept_dirs[@]}" "$checkout_dir/config.json" "$checkout_dir/backups"; then
             derived_dirs+=("$d")
         else
-            warn "Not removing $dkey=$d: it is not the $dname directory setup makes, or it overlaps data uninstall keeps. Remove it by hand if it is pithead's."
+            warn "Not removing $dkey=$d: setup puts it at $want, and it must not overlap data uninstall keeps. Remove it by hand if it is pithead's."
         fi
     done
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
@@ -133,7 +144,8 @@ stack_uninstall() {
     done
     log "Then, to remove the program itself:${inside}"
     printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
-    [ "$failed" -eq 0 ]
+    # error, not a bare non-zero return: that would also print the ERR trap's "aborted unexpectedly".
+    [ "$failed" -eq 0 ] || error "Uninstall finished, but a derived directory could not be removed: run the command in the warning above."
 }
 
 # --- First-boot wizard (#77 phase 3) -------------------------------------------------------------

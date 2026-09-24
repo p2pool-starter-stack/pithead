@@ -147,11 +147,15 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 # A derived key an operator pointed at the data root is refused, never `rm -rf`'d: .env is
 # editable, and no edit may turn uninstall into the removal of the chains under it.
-grep -v '^CONTROL_DIR=' "$V/.env" >"$V/.env.tmp" && printf 'CONTROL_DIR=%s\n' "$V/data" >>"$V/.env.tmp" && mv "$V/.env.tmp" "$V/.env"
-mkdir -p "$V/data/tari" && printf 'marker' >"$V/data/tari/guard.txt"
+grep -v '^CONTROL_DIR=\|^CLEARNET_STATE_DIR=' "$V/.env" >"$V/.env.tmp" && mv "$V/.env.tmp" "$V/.env"
+printf 'CONTROL_DIR=%s\nCLEARNET_STATE_DIR=%s\n' "$V/data" "$SANDBOX/elsewhere/clearnet-state" >>"$V/.env"
+mkdir -p "$V/data/tari" "$SANDBOX/elsewhere/clearnet-state" && printf 'marker' >"$V/data/tari/guard.txt"
+printf 'marker' >"$SANDBOX/elsewhere/clearnet-state/guard.txt"
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall refuses a derived key that points at the data root" "$out" "Not removing CONTROL_DIR="
 assert_eq "uninstall keeps the data root a derived key points at" "$(cat "$V/data/tari/guard.txt" 2>/dev/null)" "marker"
+assert_eq "uninstall keeps a derived-named dir outside the path setup gives it" \
+    "$(cat "$SANDBOX/elsewhere/clearnet-state/guard.txt" 2>/dev/null)" "marker"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
