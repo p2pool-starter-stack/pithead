@@ -60,7 +60,7 @@ async def test_an_unconfigured_machine_starts_with_the_built_in_miner_on(client)
 
 async def test_a_configuration_that_already_exists_wins_whole_over_that_default(client, spool):
     # The control, and the reason the default does not merge UNDERNEATH a previous config: an
-    # operator pre-seed (12-firstboot-wizard.sh:162), the reinstall pre-fill read off the target
+    # operator pre-seed (12-firstboot-wizard.sh:116), the reinstall pre-fill read off the target
     # disk (10-installer-preseed.sh:220) and a rejected submission all arrive as
     # last-attempt.json, and strip_defaults drops local_miner entirely when it is off. Layered
     # under one of those, this page would read a deliberate Pithead-only machine as

@@ -8,7 +8,7 @@
 //
 // The third choice, restore (#1923), is a door onto machinery that already exists: restore at
 // setup shipped under #909, and a restore submitted from a set-up-again boot lands today —
-// `12-firstboot-wizard.sh:129` skips the wizard only when `! setup_again_mode`, and
+// `12-firstboot-wizard.sh:77` skips the wizard only when `! setup_again_mode`, and
 // `restore_apply` refuses on size, magic, passphrase, integrity, unsafe paths and an unusable
 // config, never on the machine already having a configuration. So this adds no host behaviour.
 // It is deliberately NOT confirm-gated: the restore form is itself a file, usually a passphrase

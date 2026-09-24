@@ -82,7 +82,7 @@ async def test_plain_port_redirects_to_tls_keeping_the_host_used():
     # Someone typing a bare address lands on :80; a dead port there reads as a broken machine.
     req = _plain_request("pithead.local")
     with pytest.raises(web.HTTPMovedPermanently) as exc:
-        await wizard._redirect_to_tls(req)
+        await wizard.redirect_to_tls(req)
     assert exc.value.location == "https://pithead.local/setup"
 
 
@@ -90,14 +90,14 @@ async def test_plain_port_keeps_the_address_the_request_arrived_on():
     # A bare LAN address is the other documented way in, and the socket proves the box owns it.
     req = _plain_request("192.168.1.10")
     with pytest.raises(web.HTTPMovedPermanently) as exc:
-        await wizard._redirect_to_tls(req)
+        await wizard.redirect_to_tls(req)
     assert exc.value.location == "https://192.168.1.10/setup"
 
 
 async def test_plain_port_refuses_to_bounce_setup_to_a_forged_host():
     req = _plain_request("evil.example")
     with pytest.raises(web.HTTPMovedPermanently) as exc:
-        await wizard._redirect_to_tls(req)
+        await wizard.redirect_to_tls(req)
     assert exc.value.location == "https://192.168.1.10/setup"
 
 
@@ -106,7 +106,7 @@ async def test_plain_port_redirect_survives_a_transport_that_cannot_say():
     # mDNS name is the one address every pithead answers to.
     req = _plain_request("evil.example", sockname=None)
     with pytest.raises(web.HTTPMovedPermanently) as exc:
-        await wizard._redirect_to_tls(req)
+        await wizard.redirect_to_tls(req)
     assert exc.value.location == "https://pithead.local/setup"
 
 
@@ -114,7 +114,7 @@ async def test_plain_port_redirect_brackets_an_ipv6_address():
     # https://fd00::1/setup is not a URL; the brackets are what make it one.
     req = _plain_request("[fd00::1]", sockname=("fd00::1", 80, 0, 0))
     with pytest.raises(web.HTTPMovedPermanently) as exc:
-        await wizard._redirect_to_tls(req)
+        await wizard.redirect_to_tls(req)
     assert exc.value.location == "https://[fd00::1]/setup"
 
 

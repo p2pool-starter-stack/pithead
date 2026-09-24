@@ -164,3 +164,36 @@ wizard_spool_request() { # <spool-dir> <name> [max-bytes] -> snapshot
         return "$rc"
     fi
 }
+
+# Everything the wizard container needs in its spool, staged fresh for EVERY wizard start.
+#
+# It used to run once, before the loop — and the accept path removes the whole spool before
+# provisioning. So a provisioning failure re-entered the loop with the certificate, the reference
+# schema and the rig pre-fill all gone, and `wizard.py` gates TLS on the cert FILE existing: the
+# retry served the setup page — payout address, dashboard password, node secrets — in CLEARTEXT,
+# while the console still advertised HTTPS and a fingerprint minted before the loop (#1063).
+#
+# Prints the certificate fingerprint, empty when one could not be minted, so the caller can say
+# so honestly instead of promising a scheme it is not serving.
+stage_wizard_spool() { # <spool-dir> -> fingerprint on stdout
+    local spool="$1"
+    prepare_wizard_spool "$spool" || return 1
+    # The wizard renders the EXACT config that will be written, defaults included, so it needs
+    # the reference. It is a read-only schema, not a secret.
+    local ref=/opt/pithead/config.reference.json
+    [ -f "$ref" ] || ref="$PWD/config.reference.json"
+    wizard_spool_publish "$spool" config.reference.json cat "$ref" || return 1
+    # The rig pre-fill and (#1318) the saved role ride beside the reference — derived fresh each
+    # boot, like the disk inventory, so machine 2 on a fleet stick never opens on machine 1's.
+    publish_rig_defaults "$spool" || return 1
+    publish_saved_role "$spool" || return 1
+    # The data-wipe note (#1121): same "derived fresh every boot" rule, for the same fleet-stick
+    # reason — see publish_data_wipe_note.
+    publish_data_wipe_note "$spool" || return 1
+    # Installer mode reads the disk list from here too; a retry with no list is the same dead end
+    # in a different shape.
+    if installer_mode_available; then publish_disk_inventory "$spool" || return 1; fi
+    # Copies the canonical pair off /data — minting only happens the first time, so the
+    # fingerprint the console prints stays the machine's one certificate across retries.
+    wizard_mint_cert "$spool" 2>/dev/null || true
+}

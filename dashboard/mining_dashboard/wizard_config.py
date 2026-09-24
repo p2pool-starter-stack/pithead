@@ -154,3 +154,33 @@ def prepare_config(
     if reference:
         prepared = _known_only(prepared, reference, changes)
     return prepared, list(dict.fromkeys(changes))
+
+
+def deep_merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for k, v in (over or {}).items():
+        out[k] = (
+            deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        )
+    return out
+
+
+def strip_defaults(cfg: dict, ref: dict) -> dict:
+    """Drop every key whose value already equals the documented default.
+
+    The page shows the FULL effective config, because hiding what a machine will run is how
+    people get surprised. What gets written is only what actually differs — a config that
+    pins all several hundred defaults at install time would freeze them forever, and an
+    appliance receives improved defaults through OS updates. Same effective configuration,
+    minus the freeze."""
+    out: dict = {}
+    for k, v in (cfg or {}).items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict) and isinstance(ref.get(k), dict):
+            sub = strip_defaults(v, ref[k])
+            if sub:
+                out[k] = sub
+        elif k not in ref or v != ref[k]:
+            out[k] = v
+    return out

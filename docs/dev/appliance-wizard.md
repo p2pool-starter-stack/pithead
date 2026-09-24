@@ -536,7 +536,8 @@ validation. Each request publishes `submission-staging` first and `submission-ac
 consumers ignore a generation until the final marker exists, and startup removes an interrupted
 partial generation. Parsing and application use the pinned copy. The page can still replace its
 request or hold its original inode open; neither changes the validated copy.
-The shared helpers live in `lib/pithead/11a-wizard-spool.sh`. The shell boundary
+The shared helpers live in `lib/pithead/11a-wizard-spool.sh`; the install window and the
+restore and installer-credential cleanup live in `lib/pithead/12b-wizard-install-window.sh`. The shell boundary
 suite exercises hostile entries, replacement, private creation and the real root
 and page permissions. The integrated KVM battery checks boot and browser setup.
 
