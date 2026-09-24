@@ -7,3 +7,6 @@ fa2a05ad20af64dd0372816917048829de7dab20:dashboard/tests/frontend/workeradopt.te
 fa2a05ad20af64dd0372816917048829de7dab20:dashboard/tests/frontend/workeradoptlogic.test.mjs:generic-api-key:24
 fa2a05ad20af64dd0372816917048829de7dab20:tests/stack/test-worker-config.sh:generic-api-key:140
 e55d839eb8bbd47a8a1567031c2269af26f17549:tests/stack/test-worker-config.sh:generic-api-key:140
+# A made-up password in the chain-keep selftest's compose fixture (#2639), there to prove that no config
+# value leaves the box. Replaced by a low-entropy marker on the next commit; this entry covers the first.
+27bfbae2c042c978240df49d2dcf65181ca4377e:tests/integration/selftest/selftest-e2e-chain-keep.sh:generic-api-key:65

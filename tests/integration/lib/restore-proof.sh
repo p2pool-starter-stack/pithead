@@ -96,7 +96,7 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 #      — never on the ones this run built for the branch. Spelled out at the check itself.
 #   5. monerod and tari are the same containers they were before the deploy, when the branch left
 #      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
-#      recreated a node that the deploy and the harness both left running.
+#      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
 # Returns 0 when all five hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
 # shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources

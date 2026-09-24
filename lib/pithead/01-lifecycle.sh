@@ -107,10 +107,18 @@ remove_deactivated_profile_containers() {
 # pinned project. Their checkout-relative bind mounts resolve to different absolute paths per
 # checkout, so a plain up from the other checkout would recreate them; instead the up names every
 # other service with --no-deps, and Compose neither recreates nor restarts the kept ones. A kept
-# service that is not running is refused rather than left down. Sets KEEP_SCOPED_ARGS.
-scope_keep_running() { # <compose up args...>
+# service that is not running is refused rather than left down. The callers pass bare flags and
+# service names only. --remove-orphans is dropped: older Compose v2 counts the services left out of
+# a scoped up as orphans. Sets KEEP_SCOPED_ARGS, empty when nothing is left to bring up.
+scope_keep_running() { # <compose up flags and services...>
     local a svc services=() opts=()
-    for a in "$@"; do case "$a" in -*) opts+=("$a") ;; *) services+=("$a") ;; esac done
+    for a in "$@"; do
+        case "$a" in
+        --remove-orphans) ;;
+        -*) opts+=("$a") ;;
+        *) services+=("$a") ;;
+        esac
+    done
     [ "${#services[@]}" -gt 0 ] || mapfile -t services < <(docker compose config --services 2>/dev/null)
     [ "${#services[@]}" -gt 0 ] || {
         warn "Could not list compose services to scope PITHEAD_KEEP_RUNNING."
@@ -122,11 +130,14 @@ scope_keep_running() { # <compose up args...>
             return 1
         }
     done
-    KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps)
+    KEEP_SCOPED_ARGS=()
     for svc in "${services[@]}"; do
         case " $PITHEAD_KEEP_RUNNING " in *" $svc "*) ;; *) KEEP_SCOPED_ARGS+=("$svc") ;; esac
     done
     log "Keeping $PITHEAD_KEEP_RUNNING running as is (PITHEAD_KEEP_RUNNING)."
+    # Every named service kept: an up with no service list would be the whole stack, never that.
+    [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
+    KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
 }
 
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
@@ -135,6 +146,7 @@ compose_up_checked() {
     local tmp out rc _attempt
     if [ -n "${PITHEAD_KEEP_RUNNING:-}" ]; then
         scope_keep_running "$@" || return 1
+        [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
         set -- "${KEEP_SCOPED_ARGS[@]}"
     fi
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before

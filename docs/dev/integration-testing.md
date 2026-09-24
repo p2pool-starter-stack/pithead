@@ -345,13 +345,21 @@ via an `EXIT` trap):
    runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the
    `up` with `--no-deps`. `tests/integration/lib/chain-keep.sh` then compares each node between the
    two checkouts. The rendered `docker compose config` is compared with the image and build dropped
-   and the checkout path normalized, along with the content of those mounted files and the image
-   **ID**, never the tag. monerod also needs tor to have kept its container through the deploy,
-   because `restart: true` on its tor dependency exists to re-dial after a tor restart
-   ([#972](https://github.com/p2pool-starter-stack/pithead/issues/972)). A node that differs in
-   any of these is recreated from the branch by a second `pithead up`. On a release-bundle baseline
-   monerod's `:vX.Y.Z` image and the branch's `:dev` build are different objects, so there only
-   tari can stay up.
+   and the checkout path normalized. The content, mode and symlink targets of those mounted files
+   are compared too, and so is the image **ID**, never the tag. Two more conditions apply:
+   - The running node must be what the baseline renders: its Compose `config-hash` label must equal
+     `docker compose config --hash` in the restore directory.
+   - tor must have kept its container through the deploy. monerod's `restart: true` on tor exists to
+     re-dial after a tor restart ([#972](https://github.com/p2pool-starter-stack/pithead/issues/972)),
+     and tari holds tor's control and SOCKS sessions.
+
+   A node that fails any of these is recreated from the branch by a second `pithead up`. On a
+   release-bundle baseline, monerod's `:vX.Y.Z` image and the branch's `:dev` build are different
+   objects, so monerod is recreated there. The same goes for a branch that moves tari's pin.
+   Harness phases that run `pithead` from the e2e checkout themselves recreate or restart the nodes
+   on purpose. That covers `--lifecycle`'s restart, pool-flip `apply` and backup round trip,
+   `--subnet`, and a scenario's `apply`. `targeted` runs `--lifecycle`, so a job running any of
+   these still needs bench-ci's node guard.
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
@@ -360,7 +368,11 @@ via an `EXIT` trap):
    with `CANONICAL_DIR=<dir>`. The synced chains are never touched (asserted post-restore).
    The restore runs no `pithead down`. It removes the containers of any service the baseline does not
    define, then converges the baseline over the branch, so Compose recreates only what differs. A
-   node the deploy kept is the baseline's own container and is left running.
+   node the deploy kept is the baseline's own container and is left running. The one exception is a
+   `mining_net` left on another subnet by an interrupted `--subnet` phase. Compose cannot move an
+   attached bridge, so the restore then runs the baseline's own `pithead down` first. Preflight
+   reads the live install's directory from the first container label that does not name the e2e
+   checkout, because a container the restore left alone can still carry that label.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an
@@ -402,9 +414,9 @@ via an `EXIT` trap):
    ([#1449](https://github.com/p2pool-starter-stack/pithead/issues/1449)) while the other four
    images carry it.
    Finally the proof records each chain node against the container that ran before the deploy:
-   untouched, restarted in place (`--lifecycle` stops and starts monerod), recreated during the
-   run, or gone. It fails when the restore itself recreated a node that the deploy and the harness
-   both left running.
+   untouched, restarted during the run (`--lifecycle` restarts the stack), recreated during the
+   run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
+   kept and the harness left as the baseline's container.
 
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /

@@ -48,13 +48,20 @@ assert_eq "every other service is in the up" \
 assert_contains "the scope is announced" "$(cat "$KR/out")" "Keeping monerod tari running"
 
 kr_up "monerod" "monerod" -d --build --remove-orphans
-assert_contains "the caller's own flags survive the scoping" "$(kr_line)" "-d --build --remove-orphans --no-deps"
+assert_contains "the caller's own flags survive the scoping" "$(kr_line)" "-d --build --no-deps"
+# Older Compose v2 counts services left out of a scoped up as orphans, so the flag cannot ride along.
+assert_eq "--remove-orphans is dropped from a scoped up" "$(kr_line | grep -c -- --remove-orphans)" "0"
 assert_eq "tari stays in the up when only monerod is kept" "$(kr_names | grep -cx tari)" "1"
 
 # An explicit service list (reset-dashboard, the migration hold) is scoped too, never widened.
 kr_up "monerod" "monerod" -d dashboard monerod
 assert_eq "an explicit service list loses only the kept service" \
     "$(kr_line | sed 's/.* --no-deps//')" " dashboard"
+
+# Every named service kept: no up at all, never an up with no service list (the whole stack).
+kr_up "monerod tari" "monerod tari" -d monerod tari
+assert_rc "an all-kept service list succeeds" "$?" "0"
+assert_eq "an all-kept service list runs no compose up" "$(kr_line)" ""
 
 # The refusal: a kept service that is not running would stay down with nothing to report it.
 kr_up "monerod tari" "monerod" -d
