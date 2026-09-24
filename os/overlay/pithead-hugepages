@@ -3,7 +3,7 @@
 #
 # The rootfs bakes vm.nr_hugepages=3072 (6 GiB of 2 MiB pages) into /etc/sysctl.d/ — sized for
 # the supported 16 GB machine, and load-bearing for the container caps (#78 spike): a RandomX
-# dataset must land in hugetlbfs, where the cgroup does not count it, or p2pool's ~2.3 GiB
+# dataset must land in hugetlbfs, where the cgroup does not count it, or p2pool's 2080 MiB
 # dataset falls into its 1 GiB cap and the OOM-killer ends it at every start. On a smaller
 # machine the unconditional 6 GiB silently starves everything else instead (#977) — no check,
 # no message, a box that just thrashes. This unit runs right after systemd-sysctl on every
@@ -30,12 +30,12 @@
 #               That is about 1560 pages plus monerod's per-thread pages. The pool must hold
 #               p2pool's share at least: a dataset that falls out of hugetlbfs lands in p2pool's
 #               1 GiB cgroup cap and the OOM-killer ends it, a crash-loop the commit gate
-#               refuses, i.e. an unbootable slot. The remaining ~1000 pages are unmeasured
-#               margin. The bench has never run a synced stack on a reduced-RAM box, which is
-#               the only way to observe the pool's real peak, so the margin stays until that is
-#               measured (#2685). The rest of the stack runs squeezed (Tari's auto ceiling already
-#               re-reads HugePages_Total at render time, so the caps adapt), and the console,
-#               journal and doctor all say so.
+#               refuses, i.e. an unbootable slot. Up to ~1000 pages remain, less monerod's
+#               per-thread pages: unmeasured margin. The bench has never run a synced stack on a
+#               reduced-RAM box, which is the only way to observe the pool's real peak, so the
+#               margin stays until that is measured (#2685). The rest of the stack runs squeezed
+#               (Tari's auto ceiling already re-reads HugePages_Total at render time, so the
+#               caps adapt), and the console, journal and doctor all say so.
 #   below       0 pages: no reservation at all leaves more RAM than any reduced pool could,
 #               and the stack cannot run in what remains either way. Releasing it keeps the
 #               machine itself responsive enough to tell the operator what is wrong.
