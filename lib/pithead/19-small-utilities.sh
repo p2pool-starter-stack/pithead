@@ -169,6 +169,9 @@ assert_safe_dir() {
     case "$d" in
     *..*) error "Refusing data directory '$d' — '..' path traversal is not allowed." ;;
     esac
+    case "$d" in
+    *//* | */./* | */.) error "Refusing data directory '$d' — empty and '.' path components are not allowed." ;;
+    esac
     # 3) A ':' would split the compose bind-mount short syntax it renders into
     #    (`${MONERO_DATA_DIR}:/dest`) — e.g. a dir ending ':ro' forges a third MODE field, turning a
     #    read-write data mount read-only or breaking `compose up`. It's operator-set but, since #728,

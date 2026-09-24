@@ -26,7 +26,7 @@ assert_eq "tari lmdb: only keys LMDBConfig accepts (#2593)" \
 # A migration failure exits minotari_node with 114 (DatabaseError). The real wrapper runs against a
 # stub node that exits 114, so the container's exit code is the node's: nothing in the chain may run
 # it as a child and exit 0 afterwards. start_tari_app.sh ships in the upstream image, not here, so
-# the stub keeps only its last line as of v6.0.0 (it execs APP_EXEC with the config and base path).
+# the stub keeps only its last line as of v6.0.1-pre.0: exec APP_EXEC with the config and base path.
 TL_DIR="$SANDBOX/tari-exit"
 mkdir -p "$TL_DIR/bin"
 printf '#!/usr/bin/env bash\necho "$*" >"%s/node.args"\nexit 114\n' "$TL_DIR" >"$TL_DIR/bin/minotari_node"
