@@ -150,7 +150,7 @@ dashboard_onion_exposure_verdict() { # <Caddyfile> <ss> <doctor-json> <bridge-ga
 # snapshot/restore pair (approval_capture_restore_snapshot/approval_restore_pending) so the box is
 # always left as it was found, whatever the verdict.
 phase_provision_dashboard_onion_exposure() {
-    local caddy sockets doctor prefix gw verdict
+    local caddy sockets doctor prefix gw verdict apply_out
     # Before the snapshot, so a spool that never drains leaves the guest exactly as it was found:
     # this leg's apply restarts the control runner (#2363) and would kill a request in flight
     # (#2094). Nothing here has been captured or edited yet, so the red costs no cleanup.
@@ -162,12 +162,16 @@ phase_provision_dashboard_onion_exposure() {
         bad "onion exposure: could not snapshot the guest's config.json"
         return
     }
-    if ! _ssh 'set -eu
+    if ! apply_out=$(_ssh 'set -eu
 cd /data/pithead
 jq -c ".dashboard.onion.enabled = true" config.json >config.json.onion-test
 mv config.json.onion-test config.json
-./pithead apply -y' >/dev/null 2>&1; then
+./pithead apply -y' 2>&1); then
         bad "onion exposure: ./pithead apply -y did not accept the onion-enabled config"
+        # #2680: apply's own reason, then tor's own account of it, read before the cleanup apply
+        # below recreates tor. Job 1000's only evidence was compose's "container tor is unhealthy".
+        printf '%s\n' "$apply_out" | tail -n 20 | tr -d '\r' | sed 's/^/     | /'
+        tor_health_evidence
         approval_restore_pending || bad "onion exposure: cleanup after a failed apply also failed"
         return
     fi
