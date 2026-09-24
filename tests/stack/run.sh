@@ -33,8 +33,7 @@ _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-exposure-live.sh"
 # shellcheck source=tests/stack/dashboard/test-dashboard-onion.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/dashboard/test-dashboard-onion.sh" && domain_ran test-dashboard-onion.sh "$_d0" "$?" || domain_ran test-dashboard-onion.sh "$_d0" "$?"
 
-# Regression (#1330): test-dashboard-onion.sh must not depend on running after test-dashboard.sh. A
-# A subshell inherits this process's variables, so only a separate `bash` proves isolation.
+# Regression (#1330): test-dashboard-onion.sh passes alone; only a separate `bash`, not a subshell, proves it.
 # shellcheck disable=SC1090,SC2015  # STACK/HERE paths are dynamic by design
 bash -c '
     set -uo pipefail
@@ -95,9 +94,10 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_
 
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-tor-egress-enforcement.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_ran test-tor-egress-enforcement.sh "$_d0" "$?" || domain_ran test-tor-egress-enforcement.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"
@@ -147,10 +147,10 @@ esac
 
 # shellcheck source=tests/stack/test-spool-audit.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-spool-audit.sh" && domain_ran test-spool-audit.sh "$_d0" "$?" || domain_ran test-spool-audit.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/control/test-control-deploy.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy.sh" && domain_ran test-control-deploy.sh "$_d0" "$?" || domain_ran test-control-deploy.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/control/test-control-deploy-layout.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-deploy-layout.sh" && domain_ran test-control-deploy-layout.sh "$_d0" "$?" || domain_ran test-control-deploy-layout.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-lifecycle-verbs.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-lifecycle-verbs.sh" && domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?" || domain_ran test-control-lifecycle-verbs.sh "$_d0" "$?"
 

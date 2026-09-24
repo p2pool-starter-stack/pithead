@@ -22,13 +22,13 @@ separately, [below](#appliance-only-commands).
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
-| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
+| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -242,6 +242,12 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
 
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
+
 ---
 
 ## Editing config from the dashboard
@@ -323,7 +329,8 @@ rate and pattern of failures, not identity.
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
   guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`.
+  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a
   fresh onion and client key; the old ones stop working immediately
@@ -522,9 +529,9 @@ data root:
   the version dir — no data moves with the code. Installs that pre-date this carry the dashboard
   data at the old in-install default (`./data/dashboard`); the first `upgrade` (or `apply`)
   moves it to the shared root automatically, stops the dashboard for the move, and verifies the
-  database arrived. An explicit `dashboard.data_dir` is never touched — a warning names the
-  leftover instead — and data at *both* locations stops the run rather than guessing which
-  database is live.
+  database arrived. That automatic migration leaves an explicit `dashboard.data_dir` alone. When
+  you confirm a change to that setting, `apply` instead copies and verifies the live database at
+  the new path; a non-empty target refuses rather than guessing which database is live.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 

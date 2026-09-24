@@ -331,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the readiness check right after this will judge tari on what it just saw"
+            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
             return 1
         }
         sleep 8
@@ -389,11 +389,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on, captured for the same reason and at the same moment as
-    # RESTORE_DIR: deploy_branch is about to rebuild the first-party images, and on a source-checkout
-    # box it rebuilds them under the very tag the baseline resolves to. Nothing downstream can tell
-    # the baseline's images from the branch's once that has happened, so the record has to be taken
-    # here or not at all. Read by verify_restore_proof's check 4.
+    # The images the baseline is on (and whether it has the #2460 egress boot unit), captured before
+    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
+    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
+    # record is taken here or not at all. Read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
@@ -588,7 +588,7 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 1500 || true # 1500s (25min) covers tari's real reconnect; #2455 measured >18min, and the readiness check right after this never retries
+    wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }
 
@@ -633,7 +633,7 @@ run_harness() {
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
-    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.

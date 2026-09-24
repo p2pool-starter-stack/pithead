@@ -34,6 +34,13 @@ safety_backup() {
     fi
     wait_status_ok 240 || {
         it_fail "stack recovered after safety backup" "pithead status did not become healthy"
+        # This gate fails before any scenario can capture its usual diagnostics. Capture before the
+        # recovery changes the state, but never let diagnostic I/O alter that recovery or its verdict.
+        local recovery_dir="$OUT_DIR/safety-backup-recovery"
+        if mkdir -p "$recovery_dir"; then
+            rx "docker compose ps" 2>&1 | redact >"$recovery_dir/compose-ps.txt" || true
+            rx "$IT_PITHEAD status" 2>&1 | redact >"$recovery_dir/health-check.txt" || true
+        fi
         safety_restore_exact && safety_cleanup || true
         return 1
     }
