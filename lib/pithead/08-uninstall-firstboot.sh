@@ -13,6 +13,13 @@ stack_uninstall() {
         esac
     done
     [ -f .env ] || error "No .env here — nothing deployed to uninstall. A never-deployed checkout is just a directory: remove it."
+    # #2692: every version dir drives the one Compose project (`name: pithead`), the host firewall
+    # and the shared data root, so uninstall from a kept rollback dir would take down the LIVE
+    # stack. Refuse before anything runs; the live dir is where uninstall belongs.
+    local live
+    if live=$(superseded_by_live_install "$PWD"); then
+        error "This is not the live install: $(dirname "$PWD")/current points at $live, and uninstall here would stop that stack. Nothing changed. To uninstall, run it in $live. To tidy up this old version only, delete $PWD by hand, after checking that no *_DATA_DIR in $live/.env lives inside it."
+    fi
     detect_os
     # The keep-list is read from .env BEFORE it is removed.
     local data_dirs

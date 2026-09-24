@@ -104,6 +104,8 @@ Maintenance:
                             rules. Keeps what is yours: config.json, backups/, and the data
                             dirs (chains, Tor onion keys, dashboard DB) — the closing message
                             lists them for manual removal. Type-to-confirm unless -y.
+                            Refuses in a pithead-vX.Y.Z dir that 'current' does not point
+                            at: it would stop the live stack. Run it in the live dir.
                               -y, --yes        skip the confirmation prompt.
 
   firstboot-wizard [--cli]  Browser-first setup for an unconfigured checkout: serves a

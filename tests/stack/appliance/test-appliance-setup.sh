@@ -103,6 +103,30 @@ assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" 
 assert_eq "uninstall keeps config.json" "$([ -f "$V/config.json" ] && echo yes)" "yes"
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
+# #2692: every version dir drives the one Compose project, so uninstall in a kept rollback dir
+# must refuse before any docker, firewall or file step, and point at the live dir instead.
+# Mutation: drop the superseded_by_live_install guard in stack_uninstall -> the first four go red.
+UD="$SANDBOX/uninstall-deploy"
+rm -rf "$UD"
+mkdir -p "$UD/pithead-v1.0.0" "$UD/pithead-v1.0.1"
+ln -s pithead-v1.0.1 "$UD/current"
+for d in pithead-v1.0.0 pithead-v1.0.1; do
+    cp "$STACK" "$UD/$d/pithead"
+    printf 'MONERO_DATA_DIR=%s\n' "$UD/data/monero" >"$UD/$d/.env"
+done
+ud_live=$(cd "$UD/pithead-v1.0.1" && pwd -P)
+out=$(cd "$UD/pithead-v1.0.0" && DOCKER_LOG="$UD/docker.log" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+rc=$?
+assert_eq "uninstall in a superseded version dir refuses" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
+assert_contains "uninstall in a superseded version dir names the live dir" "$out" "$ud_live"
+assert_eq "refused uninstall keeps the old dir's .env" "$([ -f "$UD/pithead-v1.0.0/.env" ] && echo yes)" "yes"
+assert_eq "refused uninstall runs no docker command" "$([ -s "$UD/docker.log" ] && echo ran || echo none)" "none"
+# The live dir, reached directly or through `current`, still reaches the confirmation prompt.
+out=$(cd "$UD/current" && printf 'no\n' | DOCKER_LOG="$UD/docker.log" PATH="$V/bin:$PATH" ./pithead uninstall 2>&1) || true
+assert_contains "uninstall through current is the live dir, not refused" "$out" "Aborted"
+out=$(cd "$UD/pithead-v1.0.1" && printf 'no\n' | DOCKER_LOG="$UD/docker.log" PATH="$V/bin:$PATH" ./pithead uninstall 2>&1) || true
+assert_contains "uninstall in the live version dir is not refused" "$out" "Aborted"
+rm -rf "$UD"
 # Re-render the sandbox .env for the sections below — uninstall just deleted it.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
