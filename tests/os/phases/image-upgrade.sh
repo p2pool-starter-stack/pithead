@@ -84,6 +84,7 @@ _image_upgrade_prepare_inputs() {
     _image_upgrade_input_run signing 'cosign generate-key-pair <wrong-key>' \
         env COSIGN_PASSWORD= "$stage/cosign" generate-key-pair --output-key-prefix "$stage/wrong" || return $?
     COSIGN_PASSWORD='' PATH="$stage:$PATH" PITHEAD_REGISTRY="$PITHEAD_REGISTRY" \
+        PITHEAD_REGISTRY_CA="${PITHEAD_REGISTRY_CA:-}" \
         tests/os/image-upgrade-bundle.sh "$stage/candidate.tar.gz" "$(git rev-parse HEAD)" \
         "$stage/bundle.key" "$stage/image.pub" >/dev/null || {
         rc=$?

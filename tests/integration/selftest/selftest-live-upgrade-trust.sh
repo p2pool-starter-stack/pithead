@@ -12,7 +12,7 @@ echo "== image upgrade separates bundle trust, image trust, and registries =="
 same_registry=$'tor registry.test/pithead-tor:v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndashboard registry.test/pithead-dashboard:v2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 mixed_registry=${same_registry/registry.test\/pithead-dashboard/two.test\/pithead-dashboard}
 [ "$(first_party_registry "$same_registry")" = registry.test ]
-! first_party_registry "$mixed_registry" >/dev/null
+! first_party_registry "$mixed_registry" >/dev/null || exit 1
 BASELINE_CONFIG='{"monero":{"mode":"remote"}}'
 [ "$(first_party_running_services | tr '\n' ' ')" = "tor p2pool xmrig-proxy dashboard " ]
 UPGRADE_CANDIDATE_ALL_REFS=$'tor registry.test/pithead-tor:v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nmonerod registry.test/pithead-monero:v2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\np2pool registry.test/pithead-p2pool:v2@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nxmrig-proxy registry.test/pithead-xmrig-proxy:v2@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\ndashboard registry.test/pithead-dashboard:v2@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
@@ -28,5 +28,35 @@ ensure_cosign_image() { :; }
 docker() { printf '%s\n' "$*" >"$td/docker"; }
 run_trusted_image_cosign verify --key /trusted.pub "image@sha256:$(printf 'a%.0s' {1..64})"
 grep -Fq -- "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro" "$td/docker"
+! grep -Eq -- '--registry-cacert|--allow-http-registry' "$td/docker" || exit 1
+
+echo "== image verification trusts the candidate's registry the way verify_release_images does =="
+digest_ref="image@sha256:$(printf 'a%.0s' {1..64})"
+UPGRADE_STAGE_DIR="$td/stage"
+UPGRADE_CANDIDATE_REGISTRY=registry.test
+mkdir -p "$UPGRADE_STAGE_DIR/pithead"
+: >"$UPGRADE_STAGE_DIR/pithead/cosign.registry-ca.crt"
+run_trusted_image_cosign verify --key /trusted.pub "$digest_ref"
+grep -Fq -- "$UPGRADE_STAGE_DIR/pithead/cosign.registry-ca.crt:/registry-ca.crt:ro" "$td/docker"
+grep -Fq -- "$digest_ref --registry-cacert /registry-ca.crt" "$td/docker"
+rm "$UPGRADE_STAGE_DIR/pithead/cosign.registry-ca.crt"
+printf 'debug\n' >"$td/variant"
+PITHEAD_VARIANT_FILE="$td/variant" run_trusted_image_cosign verify --key /trusted.pub "$digest_ref"
+grep -Fq -- "$digest_ref --allow-http-registry" "$td/docker"
+printf 'release\n' >"$td/variant"
+PITHEAD_VARIANT_FILE="$td/variant" run_trusted_image_cosign verify --key /trusted.pub "$digest_ref"
+! grep -Fq -- '--allow-http-registry' "$td/docker" || exit 1
+UPGRADE_CANDIDATE_REGISTRY=ghcr.io/p2pool-starter-stack
+printf 'debug\n' >"$td/variant"
+PITHEAD_VARIANT_FILE="$td/variant" run_trusted_image_cosign verify --key /trusted.pub "$digest_ref"
+! grep -Fq -- '--allow-http-registry' "$td/docker" || exit 1
+
+echo "== a refused candidate names the trust sub-step it stopped at =="
+for input in bundle sig bundle.pub image.pub; do : >"$td/$input"; done
+CANDIDATE_BUNDLE="$td/bundle" CANDIDATE_SIGNATURE="$td/sig"
+TRUSTED_COSIGN_PUB="$td/bundle.pub" TRUSTED_IMAGE_COSIGN_PUB="$td/image.pub"
+docker() { return 1; }
+if TMPDIR="$td" prepare_candidate_bundle; then exit 1; fi
+[ "$UPGRADE_TRUST_STEP" = bundle-signature ]
 
 echo "selftest-live-upgrade-trust: PASS"

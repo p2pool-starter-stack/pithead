@@ -30,6 +30,7 @@ UPGRADE_BEFORE_MONERO=""
 UPGRADE_BEFORE_TARI=""
 UPGRADE_BEFORE_MONERO_ID=""
 UPGRADE_BEFORE_TARI_ID=""
+UPGRADE_TRUST_STEP="" # the check prepare_candidate_bundle refused at (job 1046); fixed words only
 _UPGRADE_RESTORE_ARMED=0
 _UPGRADE_FOREIGN_TRAP=""
 
@@ -186,10 +187,20 @@ ensure_cosign_image() {
         docker pull -q "$LIVE_COSIGN_IMAGE" >/dev/null 2>&1
 }
 
+# Registry trust mirrors verify_release_images (03-release-verify.sh), which the candidate's own
+# `pithead upgrade` runs next: the signed candidate's cosign.registry-ca.crt for a TLS debug
+# registry, else plain HTTP for a non-ghcr registry on a debug variant (job 1046).
 run_trusted_image_cosign() {
+    local ca="$UPGRADE_STAGE_DIR/pithead/cosign.registry-ca.crt" registry_args=() mounts=(-v "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro")
+    if [ -n "$UPGRADE_STAGE_DIR" ] && [ -f "$ca" ]; then
+        mounts+=(-v "$ca:/registry-ca.crt:ro")
+        registry_args=(--registry-cacert /registry-ca.crt)
+    elif [ -n "$UPGRADE_CANDIDATE_REGISTRY" ] && [ "$UPGRADE_CANDIDATE_REGISTRY" != ghcr.io/p2pool-starter-stack ] &&
+        [ "$(tr -d ' \t\r\n' <"${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" 2>/dev/null || true)" = debug ]; then
+        registry_args=(--allow-http-registry)
+    fi
     ensure_cosign_image || return 1
-    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-        -v "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro" "$LIVE_COSIGN_IMAGE" "$@"
+    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" "$LIVE_COSIGN_IMAGE" "$@" "${registry_args[@]}"
 }
 
 extract_candidate_archive() { # <snapshot.tar.gz> <private-stage>
@@ -213,7 +224,7 @@ PY
 
 prepare_candidate_bundle() {
     local _service ref revision service candidate_commit
-    UPGRADE_STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pithead-live-candidate.XXXXXX")" || return 1
+    UPGRADE_TRUST_STEP='stage-inputs' UPGRADE_STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pithead-live-candidate.XXXXXX")" || return 1
     chmod 700 "$UPGRADE_STAGE_DIR" || return 1
     UPGRADE_BUNDLE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.tar.gz"
     UPGRADE_SIGNATURE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.sig"
@@ -224,30 +235,31 @@ prepare_candidate_bundle() {
         cp "$TRUSTED_COSIGN_PUB" "$UPGRADE_TRUSTED_KEY" &&
         cp "${TRUSTED_IMAGE_COSIGN_PUB:-$TRUSTED_COSIGN_PUB}" "$UPGRADE_IMAGE_TRUSTED_KEY") || return 1
     chmod 400 "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_SIGNATURE_SNAPSHOT" "$UPGRADE_TRUSTED_KEY" "$UPGRADE_IMAGE_TRUSTED_KEY" || return 1
-    ensure_cosign_image || return 1
+    UPGRADE_TRUST_STEP='bundle-signature' && ensure_cosign_image || return 1
     docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
         -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" -v "$UPGRADE_BUNDLE_SNAPSHOT:/candidate.tar.gz:ro" \
         -v "$UPGRADE_SIGNATURE_SNAPSHOT:/candidate.sig:ro" "$LIVE_COSIGN_IMAGE" verify-blob --key /trusted.pub \
         --signature /candidate.sig --insecure-ignore-tlog=true /candidate.tar.gz >/dev/null 2>&1 || return 1
-    extract_candidate_archive "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_STAGE_DIR" || return 1
+    UPGRADE_TRUST_STEP='bundle-layout' && extract_candidate_archive "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_STAGE_DIR" || return 1
     [ -x "$UPGRADE_STAGE_DIR/pithead/pithead" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/docker-compose.yml" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/cosign.pub" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT" ] &&
         [ -z "$(find "$UPGRADE_STAGE_DIR/pithead" -type l -print -quit)" ] || return 1
-    cmp -s "$UPGRADE_IMAGE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
-    candidate_commit="$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
+    UPGRADE_TRUST_STEP='image-key-binding' && cmp -s "$UPGRADE_IMAGE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
+    UPGRADE_TRUST_STEP='candidate-commit' candidate_commit="$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
     valid_full_sha "$candidate_commit" && [ "$candidate_commit" = "$IMAGE_UPGRADE_TO_SHA" ] || return 1
-    UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
+    UPGRADE_TRUST_STEP='pinned-refs' UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
     all_refs_pinned "$UPGRADE_CANDIDATE_ALL_REFS" || return 1
     UPGRADE_CANDIDATE_REFS="$(candidate_refs_for_running_set "$(first_party_running_services)")" || return 1
     pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" "$(first_party_running_services)" || return 1
     # shellcheck disable=SC2034 # consumed by live-gates.sh after this sourced helper returns
     UPGRADE_CANDIDATE_REGISTRY="$(first_party_registry "$UPGRADE_CANDIDATE_REFS")" || return 1
     while read -r _service ref; do
-        run_trusted_image_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
-        docker pull -q "$ref" >/dev/null 2>&1 || return 1
-        revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref" 2>/dev/null)"
+        UPGRADE_TRUST_STEP='image-signature' && run_trusted_image_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
+        UPGRADE_TRUST_STEP='image-pull' && docker pull -q "$ref" >/dev/null 2>&1 || return 1
+        # shellcheck disable=SC2034 # read by live-gates.sh when this check refuses
+        UPGRADE_TRUST_STEP='image-revision' revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref" 2>/dev/null)"
         revision_matches_sha "$revision" "$IMAGE_UPGRADE_TO_SHA" || return 1
     done <<<"$UPGRADE_CANDIDATE_REFS"
 }

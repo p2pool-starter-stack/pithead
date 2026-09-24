@@ -84,6 +84,16 @@ cp "$IMAGE_PUB" "$WORKDIR/repack/pithead/cosign.pub" >/dev/null 2>&1 || {
     input_failure candidate-bundle 'cp <image-public-key> <candidate-cosign-public-key>' "$rc" || true
     exit "$rc"
 }
+# Job 1046: the candidate's images live in the bench registry, whose TLS CA the guest trusts but a
+# cosign container does not. A debug build ships that CA beside cosign.pub (os/build-image.sh) and
+# verify_release_images reads it from there; the signed candidate carries it the same way.
+if [ -n "${PITHEAD_REGISTRY_CA:-}" ]; then
+    [ -f "$PITHEAD_REGISTRY_CA" ] && [ ! -L "$PITHEAD_REGISTRY_CA" ] &&
+        cp "$PITHEAD_REGISTRY_CA" "$WORKDIR/repack/pithead/cosign.registry-ca.crt" >/dev/null 2>&1 || {
+        input_failure candidate-bundle 'cp <registry-ca> <candidate-registry-ca>' 1 || true
+        exit 1
+    }
+fi
 tar --no-xattrs -czf "$OUT" -C "$WORKDIR/repack" pithead >/dev/null 2>&1 || {
     rc=$?
     input_failure candidate-bundle 'tar -czf <candidate-bundle>' "$rc" || true

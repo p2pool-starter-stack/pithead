@@ -193,7 +193,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
   Tari-off mode. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
-  signed them. It runs the release-shaped stack under the CLI's existing test override inside the
+  signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
   otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,

@@ -86,7 +86,7 @@ run_image_upgrade() {
         [ -z "$UPGRADE_STAGE_DIR" ] || rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
         it_fail "candidate bundle and images verify against their external trust roots" \
-            "bundle signature, image-key binding, pinned refs, or an image signature failed; upgrade not attempted"
+            "stopped at ${UPGRADE_TRUST_STEP:-unattributed}; upgrade not attempted"
         return 0
     fi
     candidate_refs="$(candidate_refs_for_running_set "$before_first_refs")" || candidate_refs=""

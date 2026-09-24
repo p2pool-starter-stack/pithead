@@ -45,6 +45,18 @@ cmp -s "$td/image.pub" <(tar -xOf "$td/candidate.tar.gz" pithead/cosign.pub) || 
     echo "candidate image trust root was not replaced" >&2
     exit 1
 }
+if tar -tzf "$td/candidate.tar.gz" | grep -Fqx pithead/cosign.registry-ca.crt; then
+    echo "candidate carries a registry CA nobody supplied" >&2
+    exit 1
+fi
+printf 'test-ca\n' >"$td/registry-ca.crt"
+PATH="$td/bin:$PATH" PITHEAD_REGISTRY=registry.test PITHEAD_REGISTRY_CA="$td/registry-ca.crt" \
+    "$HERE/image-upgrade-bundle.sh" "$td/ca.tar.gz" \
+    0123456789abcdef0123456789abcdef01234567 "$td/key" "$td/image.pub"
+cmp -s "$td/registry-ca.crt" <(tar -xOf "$td/ca.tar.gz" pithead/cosign.registry-ca.crt) || {
+    echo "candidate did not carry the registry CA beside cosign.pub" >&2
+    exit 1
+}
 failure_rc=0
 failure_out="$(FAIL_IMAGE_PULL=1 PATH="$td/bin:$PATH" PITHEAD_REGISTRY=registry.test \
     "$HERE/image-upgrade-bundle.sh" "$td/failed.tar.gz" \
