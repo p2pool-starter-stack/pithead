@@ -54,8 +54,8 @@ ec_status() { # <rc tor_egress_enforced returns>
 EC_FILE="$EC/ctl/results/egress-status.json"
 for pair in 0:enforced 1:absent 2:no-tool 3:unreadable 4:jump-missing 5:shadowed; do
     out=$(ec_status "${pair%%:*}")
-    assert_eq "rc ${pair%%:*} prints ${pair#*:}" "$out" "${pair#*:}"
-    assert_eq "rc ${pair%%:*} is written as ${pair#*:}" "$(jq -c '[.rc, .verdict]' "$EC_FILE")" \
+    assert_eq "each tor_egress_enforced rc prints its verdict" "rc ${pair%%:*}:$out" "rc $pair"
+    assert_eq "each rc is written with its verdict" "$(jq -c '[.rc, .verdict]' "$EC_FILE")" \
         "[${pair%%:*},\"${pair#*:}\"]"
 done
 now=$(date +%s)
@@ -73,9 +73,8 @@ rm -f "$EC/systemctl.log"
 SYSTEMCTL_ACTIVE=0 ec_run provision_egress_check_units >/dev/null 2>&1
 assert_not_contains "a re-run with the same units and the timer active does not reload systemd" \
     "$(cat "$EC/systemctl.log")" "daemon-reload"
-for fn in stack_up render_derived; do
-    assert_contains "$fn provisions the pair" "$(run_sourced "$SANDBOX" type "$fn")" "provision_egress_check_units"
-done
+assert_contains "up provisions the pair" "$(run_sourced "$SANDBOX" type stack_up)" "provision_egress_check_units"
+assert_contains "render (every appliance boot) provisions the pair" "$(run_sourced "$SANDBOX" type render_derived)" "provision_egress_check_units"
 
 echo "== provision: another live install's pair is left alone unless stolen (#2599) =="
 mkdir -p "$EC/other"
