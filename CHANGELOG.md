@@ -117,6 +117,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A source checkout starts the whole stack after `uninstall` or on a new host
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
+  and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
+  built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
+  once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
+  have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
+
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
   just restarted and has no peers yet reports a target height of 0. The dashboard read that as

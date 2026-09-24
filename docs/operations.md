@@ -424,7 +424,9 @@ curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/downl
 ./pithead upgrade
 ```
 
-**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the images locally:
+**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the first-party
+images locally and pulls only the pinned third-party images (Tari, Caddy, the socket proxies) that
+are not on the host. `setup` and `up` fetch those images the same way:
 
 ```bash
 git pull
