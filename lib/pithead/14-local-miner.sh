@@ -21,13 +21,12 @@ rigforge_dir() { printf '%s' "${PITHEAD_RIGFORGE_DIR:-/data/rigforge}"; }
 # larger than the sizing decision by construction, and intentionally so on the supported 16 GB
 # machine, which is the case #305 co-location was measured on. On the REDUCED tier that is a
 # real over-reservation, because the tier's 2560 pages were sized for the stack's own RandomX
-# pages alone (p2pool's dataset and caches, monerod's caches) with no co-resident miner in the
-# budget. No value here fixes that: RigForge's grow-only write counts the stack's already-held
-# pages as unavailable while this headroom is already inside its requirement, so the
-# co-resident's pages are counted twice and no declared number bounds the result. Whether a
-# degraded box should co-locate a miner at all is a product decision, tracked in #1103 — out of
-# scope for the sizing fix here, which is what stopped the constant 6144 from re-inflating a pool
-# the boot had just shrunk.
+# pages alone with no co-resident miner in the budget. No value here fixes that: RigForge's
+# grow-only write counts the stack's already-held pages as unavailable while this headroom is
+# already inside its requirement, so the co-resident's pages are counted twice and no declared
+# number bounds the result. Whether a degraded box should co-locate a miner at all is a product
+# decision, tracked in #1103 — out of scope for the sizing fix here, which is what stopped the
+# constant 6144 from re-inflating a pool the boot had just shrunk.
 #
 # The headroom follows hugepages_decision_pages, NOT the
 # baked constant (#977): on a degraded box a constant 6144 had RigForge's sysctl re-inflate
