@@ -70,14 +70,15 @@ run_lifecycle() {
 
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # secrets survived — exercising both CLI verbs end-to-end (not just the rollback net).
+    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
+    # the rollback net makes (#2579), exercised here on a run that does not fail.
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
             local fp_b backed_pool fp_after
-            if ! fp_b="$(secret_fingerprint)" || [ -z "$fp_b" ]; then
+            if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
                 lifecycle_ok=0
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
@@ -99,7 +100,7 @@ run_lifecycle() {
                 # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
                 assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
-                if fp_after="$(secret_fingerprint)" && [ -n "$fp_after" ]; then
+                if fp_after="$(upgrade_secret_fingerprints)" && [ -n "$fp_after" ]; then
                     assert_eq "restore preserves secrets" "$fp_after" "$fp_b"
                 else
                     it_fail "restore preserves secrets" "could not fingerprint restored secrets"
