@@ -358,7 +358,7 @@ for _case in 'applied 2 apply,clear pools' 'rejected 1 apply,clear pools' 'rolle
 done
 
 # #1546: each shape would restore a borrowed miner to a credential-less config. Refused, never POSTed.
-for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"p":{"url":"probe:1","pass":"x"}}'; do
+for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"p":{"url":"probe:1","pass":"x"}}' null; do
     IT_RIG_POOLS_PROBE="$_shape"
     reset_applies
     counts="$(quietly run_rigforge_pools rig1)"

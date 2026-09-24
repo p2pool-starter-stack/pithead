@@ -203,10 +203,10 @@ run_rigforge_pools() { # <rig>
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
     # On the books before the write goes out (#1379), so a run that dies before the rig confirms the
     # probe still ends with the rig on it, and with the value the guard above has PROVEN carries
-    # `pass`. Retired once the rig has decided: `applied` leaves it on the probe, which is also the
-    # restore value, and `rejected`/`rolled_back` leave it on its own previous config, which the
-    # EXIT unwind must not overwrite with a value the rig just refused. Anything else (`accepted`,
-    # `failed`, no answer) stays on the books.
+    # `pass`. Retired once the rig reports which config it is on: `applied` leaves it on the probe,
+    # which is also the restore value, and `rejected`/`rolled_back` leave it on its own previous
+    # config, which the EXIT unwind must not overwrite with a value the rig just refused. `failed`
+    # (the resulting config varies), `accepted` and no answer stay on the books.
     rig_key_mark dash "$rig" pools "$probe"
     res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
     status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"

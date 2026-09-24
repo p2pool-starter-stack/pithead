@@ -624,9 +624,10 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   is the `pools` value the operator has attested this rig is to keep running, carrying a `pass`.
   pithead treats `pools` as opaque passthrough, so a guessed value risks a real `rejected` instead
   of proving the round trip. The rig is left on the probe: one confirmed apply is the round
-  trip. The restore ledger keeps the probe until the rig decides: `applied` leaves the rig on it,
-  and `rejected` or `rolled_back` leaves the rig on its previous config, which the unwind does not
-  overwrite. Any other answer, or none, leaves the probe for the unwind to re-apply. The probe
+  trip. The restore ledger keeps the probe until the rig reports it is on the probe (`applied`) or
+  on its previous config (`rejected`, `rolled_back`, which the unwind does not overwrite). `failed`,
+  whose resulting config varies, `accepted`, or no answer leaves the probe for the unwind to
+  re-apply. The probe
   must be exactly one JSON value and is checked for a non-empty `pass` on every entry before it is
   applied ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
   probe with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
@@ -701,7 +702,8 @@ cancelled CI job used to leave a borrowed production miner on a probe value, whi
 
 `rig-key-ledger.sh` closes that window. A key goes on a ledger when its write is sent — before, not
 after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**
-(for `pools`, whose restore value is the probe itself, when the probe apply is).
+(for `pools`, whose restore value is the probe itself, when the rig answers `applied`, `rejected`
+or `rolled_back`; see the `pools` entry above).
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
 rig's control API for #516's rig-side edit. Each restore names its key, rig and route on stderr,
