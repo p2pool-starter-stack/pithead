@@ -172,8 +172,10 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     staged_env="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[1]#/}"
     staged_caddy="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[2]#/}"
     paths_file="$RESTORE_STAGE_DIR/.validated-data-paths"
+    # Validate against the archive's own .env: the live one belongs to another render, so its
+    # dashboard fingerprint would force a Caddy rehash that this read-only check must not need.
     if [ ! -f "$staged_cfg" ] || [ ! -f "$staged_env" ] || { [ -e "$staged_caddy" ] && [ ! -f "$staged_caddy" ]; } ||
-        ! err=$(PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" RESTORE_PATH_FILE="$paths_file" bash -c \
+        ! err=$(PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$staged_env" RESTORE_PATH_FILE="$paths_file" bash -c \
             "source '${BASH_SOURCE[0]}' && parse_and_validate_config >/dev/null && printf '%s\\0' \"\$MONERO_DIR\" \"\$TARI_DIR\" \"\$P2POOL_DIR\" \"\$TOR_DATA_DIR\" \"\$DASHBOARD_DIR\" >\"\$RESTORE_PATH_FILE\"" 2>&1); then
         restore_discard_stage
         error "Archive does not contain a valid Pithead configuration — nothing was restored. ${err:0:240}"
