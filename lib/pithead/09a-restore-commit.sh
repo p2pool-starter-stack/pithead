@@ -13,7 +13,8 @@
 # Any failure undoes the swaps already made, newest first, and removes what is still staged. The
 # old copies are deleted only once every item is in place. rc 0: committed. rc 1: rolled back.
 # rc 2: rolled back only in part; the previous copies that could not be restored are still
-# beside their destinations under the .restore-old name.
+# beside their destinations under the .restore-old name. rc 3: every previous copy is back, but
+# a staged copy or a name the merge added could not be removed.
 restore_setup_item_dest() { # <relative item>
     case "$1" in
     "$CONFIG_FILE") restore_setup_config_path ;;
@@ -25,23 +26,28 @@ restore_commit_items() ( # <staged root> <scratch dir>
     local stage_root="$1" scratch="$2" rel source dest staged aside added name i=0 failed=0
     local -a staged_items=() staged_paths=() made_dirs=() done_kind=() done_dest=() done_aside=()
     restore_commit_rollback() {
-        local j k path rc=1
+        local j k path lost=0 left=0
         local -a names
         for ((j = ${#done_dest[@]} - 1; j >= 0; j--)); do
             if [ "${done_kind[j]}" = merge ]; then
                 # Newest name first, so an added directory is emptied before it is removed.
-                mapfile -d '' names <"${done_aside[j]}" || rc=2
+                mapfile -d '' names <"${done_aside[j]}" || left=1
                 for ((k = ${#names[@]} - 1; k >= 0; k--)); do
-                    rm -rf -- "${done_dest[j]:?}/${names[k]:?}" || rc=2
+                    rm -rf -- "${done_dest[j]:?}/${names[k]:?}" || left=1
                 done
                 continue
             fi
-            rm -rf -- "${done_dest[j]}" || rc=2
-            [ -z "${done_aside[j]}" ] || mv -T -- "${done_aside[j]}" "${done_dest[j]}" || rc=2
+            if [ -n "${done_aside[j]}" ]; then
+                { rm -rf -- "${done_dest[j]}" && mv -T -- "${done_aside[j]}" "${done_dest[j]}"; } || lost=1
+            else
+                rm -rf -- "${done_dest[j]}" || left=1
+            fi
         done
-        for path in "${staged_paths[@]}"; do rm -rf -- "$path" || rc=2; done
+        for path in "${staged_paths[@]}"; do rm -rf -- "$path" || left=1; done
         for ((j = ${#made_dirs[@]} - 1; j >= 0; j--)); do rmdir -- "${made_dirs[j]}" 2>/dev/null || true; done
-        return "$rc"
+        [ "$lost" = 0 ] || return 2
+        [ "$left" = 0 ] || return 3
+        return 1
     }
     restore_commit_mkdir() { # <dir>: create it and the missing parents, recording each for rollback
         [ -d "$1" ] && return 0

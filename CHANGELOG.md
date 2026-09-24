@@ -129,6 +129,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A restore at setup that fails while writing its files no longer leaves the machine half
+  restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
+  replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
+  database, leaving the archive's configuration beside this machine's own keys. Every item is now
+  staged beside its destination and swapped in only when all are ready; any failure puts back
+  the previous configuration, Tor keys and database, and removes the chain files the restore
+  added.
+
 - **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
   ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
   HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB

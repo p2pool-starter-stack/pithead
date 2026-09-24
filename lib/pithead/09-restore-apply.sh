@@ -279,6 +279,10 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         printf 'could not apply the backup files, and some previous files could not be put back — they are kept beside their original names as .restore-old copies' >"$errf"
         return 1
         ;;
+    3)
+        printf 'could not apply the backup files; the previous files are back, but some files the restore added could not be removed — look for .restore copies and new chain files' >"$errf"
+        return 1
+        ;;
     *)
         printf 'could not apply the backup files — nothing on this machine was changed' >"$errf"
         return 1

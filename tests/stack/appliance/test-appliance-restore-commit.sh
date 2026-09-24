@@ -89,6 +89,25 @@ assert_rc "a failed commit on a fresh machine reports failure" "$?" 1
 assert_contains "the failed commit on a fresh machine says nothing was changed" "$(cat "$RC/error")" 'nothing on this machine was changed'
 assert_eq "a failed commit removes the data directory it created" "$([ -e "$RC/data" ] || echo absent)" absent
 assert_eq "a failed commit on a fresh machine keeps the live config.json" "$(cat "$RC/config.json")" '{"live": true}'
+assert_eq "a failed commit on a fresh machine leaves no staged or set-aside copy" "$(rc_leftovers)" ""
+
+# A failure while staging, before any swap, touches nothing live.
+rc_plant_live
+rc_apply 'install() { [[ "${*: -1}" = "$PWD"/Caddyfile.restore.* ]] && return 1; command install "$@"; }'
+assert_rc "a commit that fails while staging the Caddyfile reports failure" "$?" 1
+assert_contains "the failed staging says nothing was changed" "$(cat "$RC/error")" 'nothing on this machine was changed'
+assert_eq "a failed staging leaves every live item as it was" "$(rc_live_state)" "$rc_before"
+assert_eq "a failed staging leaves no staged or set-aside copy" "$(rc_leftovers)" ""
+
+# Every previous copy comes back, but a staged copy cannot be removed: the error says what is left.
+rc_plant_live
+rc_apply "$RC_FAIL_DASHBOARD"'
+rm() { [[ "${*: -1}" = "$PWD"/data/dashboard.restore.* ]] && return 1; command rm "$@"; }'
+assert_rc "a commit whose staged copy outlives the rollback reports failure" "$?" 1
+assert_contains "a leftover staged copy is named in the error" "$(cat "$RC/error")" 'look for .restore copies'
+assert_eq "the staged copy that could not be removed is the one left" "$(rc_leftovers | sed "s|^$RC/||; s|restore\.[^/]*|restore.X|")" data/dashboard.restore.X
+rm -rf "$RC"/data/dashboard.restore.*
+assert_eq "a leftover staged copy still puts back every live item" "$(rc_live_state)" "$rc_before"
 
 # When the rollback itself cannot put an item back, the previous copy stays beside it and the error
 # says where to find it.
