@@ -43,7 +43,8 @@ rig_key_clear() { :; }
 # assertions while proving nothing at all. (It did, on this file's first run.)
 STUB_DETAIL='{"rig_config":{}}'
 APPLY_LOG="$(mktemp)"
-trap 'rm -f "$APPLY_LOG"' EXIT
+MARK_LOG="$(mktemp)" # the #1379 ledger calls the pools leg makes (#2470)
+trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
 
 applies() { cat "$APPLY_LOG"; }
 reset_applies() { : >"$APPLY_LOG"; }
@@ -330,8 +331,6 @@ echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the
 # check refused it and the leg never POSTed again. `{}` is #2325's case; a record that kept its `pass`
 # is a #113 regression, not a restore source. Pretty-printed: the #1379 ledger is one line per entry.
 export IT_RIG_POOLS_PROBE=$'[\n  {"url": "probe:1", "pass": "probesecret"}\n]'
-MARK_LOG="$(mktemp)"
-trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
 rig_key_mark() { printf '%s\n' "$4" >>"$MARK_LOG"; }
 rig_key_clear() { printf 'clear %s\n' "$3" >>"$MARK_LOG"; }
 for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'; do
@@ -344,19 +343,22 @@ for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{
     assert_eq "the ledger holds the probe on one line, uncleared while the rig says accepted [$_detail]" \
         "$(cat "$MARK_LOG")" '[{"url":"probe:1","pass":"probesecret"}]'
 done
+# The rig's decision retires the entry; the mark must land before the apply goes out (#1379).
 _worker_apply() {
     printf '%s\n' "$2" >>"$APPLY_LOG"
-    printf '{"status":"applied","changed_keys":["pools"]}'
+    echo apply >>"$MARK_LOG"
+    printf '{"status":"%s","changed_keys":["pools"]}' "$STUB_STATUS"
 }
-: >"$MARK_LOG"
-counts="$(quietly run_rigforge_pools rig1)"
-assert_eq "a confirmed apply passes both rows and retires the ledger entry" \
-    "$counts|$(sed -n 2p "$MARK_LOG")" "2,0|clear pools"
+for _case in 'applied 2 apply,clear pools' 'rejected 1 apply,clear pools' 'rolled_back 1 apply,clear pools' 'failed 1 apply'; do
+    read -r STUB_STATUS _passes _want <<<"$_case"
+    : >"$MARK_LOG"
+    counts="$(quietly run_rigforge_pools rig1)"
+    assert_eq "passing rows; marked before the apply, retired only once the rig decides [$STUB_STATUS]" \
+        "${counts%,*}|$(sed 1d "$MARK_LOG" | paste -sd, -)" "$_passes|$_want"
+done
 
-# #1546: the guard tests the probe's CREDENTIAL, never emptiness as a proxy for it. Each shape here
-# would restore a borrowed miner to a credential-less config; the pass-bearing runs above are the
-# positive control that the leg still POSTs.
-for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"url":"probe:1","pass":"x"}'; do
+# #1546: each shape would restore a borrowed miner to a credential-less config. Refused, never POSTed.
+for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"p":{"url":"probe:1","pass":"x"}}'; do
     IT_RIG_POOLS_PROBE="$_shape"
     reset_applies
     counts="$(quietly run_rigforge_pools rig1)"
@@ -364,12 +366,10 @@ for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"url"
         "$(applies | grep -c .)" "0"
     assert_eq "and self-skips rather than passing or failing [$_shape]" "$counts" "0,0"
 done
-# A skip that announces the wrong reason is its own small lie.
 err="$(drive_err run_rigforge_pools rig1)"
 assert_contains "the passless skip names the probe's credential as what is missing" "$err" \
     "non-empty \`pass\` on every entry"
 
-# Two values back to back are one operator typo away, and would split the one-per-line ledger.
 for IT_RIG_POOLS_PROBE in 'not-json-fixturesecret42' '[{"url":"a","pass":"fixturesecret42"}] [{"url":"b","pass":"s"}]'; do
     reset_applies
     : >"$MARK_LOG"

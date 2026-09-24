@@ -3,9 +3,9 @@
 # The Worker Inspect writable-key apply legs (#1236), and the reasoned refusals that go with them.
 #
 # The control phase used to prove the write path on ONE key. `max_temp_c` (#513) had a live readback
-# in the enriched feed, so its round trip could be asserted; `pools` (#1002b) did not, so it was
-# built on the dashboard's own `last_applied` record and gated behind an `IT_RIG_POOLS_PROBE` the
-# harness sets nowhere. The other four writable keys had no leg at all. A gate that applies one of
+# in the enriched feed, so its round trip could be asserted; `pools` (#1002b) did not, and is still
+# gated behind an operator-supplied `IT_RIG_POOLS_PROBE` (#2470, below). The other four writable
+# keys had no leg at all. A gate that applies one of
 # six keys is not a gate on "the writable path works" — it is a gate on max_temp_c.
 #
 # What changed: RigForge v1.10.0 (rigforge#253) serves the rig's own EFFECTIVE writable config on
@@ -160,9 +160,9 @@ run_rigforge_writable_keys() { # <rig>
 }
 
 # #1002b: pools, the repoint-your-hashrate key. Still operator-gated for the reason above: the
-# harness cannot read a pools value it could safely write back. pithead treats `pools` as opaque passthrough (WORKER_WRITABLE_KEYS checks
-# the key NAME, never the value shape), so a guessed value risks a real rejected/failed instead of
-# proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
+# harness cannot read a pools value it could safely write back. pithead treats `pools` as opaque
+# passthrough (WORKER_WRITABLE_KEYS checks the key NAME, never the value shape), so a guessed value
+# risks a real rejected/failed instead of proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
 #
 # #2470: the restore target is IT_RIG_POOLS_PROBE, and only that. The leg used to restore from
 # `.last_applied.pools`, which is the dashboard's record of what it pushed but is served through the
@@ -186,8 +186,8 @@ run_rigforge_pools() { # <rig>
     # holds one entry per line, so a pretty-printed probe, or two values back to back, would split
     # into fragments that never clear and that the EXIT unwind echoes to stderr, `pass` included.
     if ! probe="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" |
-        jq -cse 'if length == 1 then .[0] else error("not one JSON value") end' 2>/dev/null)"; then
-        it_fail "IT_RIG_POOLS_PROBE is valid JSON (#1002b)" "the operator-supplied pools probe is malformed"
+        jq -cs 'if length == 1 then .[0] else error("not one JSON value") end' 2>/dev/null)"; then
+        it_fail "IT_RIG_POOLS_PROBE is exactly one valid JSON value (#1002b)" "the operator-supplied pools probe is malformed"
         return 0
     fi
     # #1546: test the CREDENTIAL, never emptiness as a proxy for it. A pools array whose entries
@@ -203,13 +203,16 @@ run_rigforge_pools() { # <rig>
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
     # On the books before the write goes out (#1379), so a run that dies before the rig confirms the
     # probe still ends with the rig on it, and with the value the guard above has PROVEN carries
-    # `pass`. Retired once the apply is confirmed: the probe is also the restore value.
+    # `pass`. Retired once the rig has decided: `applied` leaves it on the probe, which is also the
+    # restore value, and `rejected`/`rolled_back` leave it on its own previous config, which the
+    # EXIT unwind must not overwrite with a value the rig just refused. Anything else (`accepted`,
+    # `failed`, no answer) stays on the books.
     rig_key_mark dash "$rig" pools "$probe"
     res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
     status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
     ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
     assert_contains "the rig's /status confirms pools changed (#1002b)" "$ckeys" "pools"
-    [ "$status" = "applied" ] && rig_key_clear dash "$rig" pools
+    case "$status" in applied | rejected | rolled_back) rig_key_clear dash "$rig" pools ;; esac
     return 0
 }

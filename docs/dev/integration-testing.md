@@ -624,9 +624,11 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   is the `pools` value the operator has attested this rig is to keep running, carrying a `pass`.
   pithead treats `pools` as opaque passthrough, so a guessed value risks a real `rejected` instead
   of proving the round trip. The rig is left on the probe: one confirmed apply is the round
-  trip, and the restore ledger re-applies the probe if the run dies before the rig confirms it. The
-  probe is checked for a non-empty `pass` on every entry before it is applied
-  ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  trip. The restore ledger keeps the probe until the rig decides: `applied` leaves the rig on it,
+  and `rejected` or `rolled_back` leaves the rig on its previous config, which the unwind does not
+  overwrite. Any other answer, or none, leaves the probe for the unwind to re-apply. The probe
+  must be exactly one JSON value and is checked for a non-empty `pass` on every entry before it is
+  applied ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
   probe with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
@@ -690,8 +692,9 @@ reported as a row that never settled.
 
 ### The abort-safe unwind
 
-Every leg above restores what it changed when it finishes. That covers a leg that *fails*; it does
-not cover a run that never reaches its own restore. Ctrl-C, a `set -u` abort, an SSH drop or a
+Every leg above restores what it changed when it finishes, except `pools`, which leaves the rig
+on the operator's probe. That covers a leg that *fails*; it does not cover a run that never reaches
+its own restore. Ctrl-C, a `set -u` abort, an SSH drop or a
 cancelled CI job used to leave a borrowed production miner on a probe value, while `e2e.sh`'s
 `restore_all` reported a clean restore of the *pool* config and said nothing about the writable keys
 ([#1379](https://github.com/p2pool-starter-stack/pithead/issues/1379)).
