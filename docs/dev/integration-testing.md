@@ -701,7 +701,7 @@ An `EXIT` trap restores whatever is still on the ledger, by the same route that 
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
 rig's control API for #516's rig-side edit. Each restore names its key, value and rig on stderr.
 
-Three properties are worth knowing rather than rediscovering:
+Four properties are worth knowing rather than rediscovering:
 
 - **It is a no-op by construction, not by a guard.** A run that writes no writable key never marks
   anything, so no trap is ever installed. `--mode targeted` runs that borrow no rig are unaffected.
@@ -712,6 +712,12 @@ Three properties are worth knowing rather than rediscovering:
 - **`#517` is deliberately outside the ledger.** Its leg induces a change the *rig* rolls back on
   its own. Unwinding it from here would race that rollback and could re-apply a value the rig had
   already reverted, so the rig stays the authority for it.
+- **An original goes on the ledger as compact JSON.** The ledger is one tab-separated line per key,
+  so the value is compacted with `jq -c` when it is recorded; a pretty-printed `IT_RIG_POOLS_PROBE`
+  is still one entry and is restored intact
+  ([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). A value that is not exactly
+  one JSON value is not recorded: the harness warns, by key and without the value, that an abort will
+  not restore it.
 
 What it cannot do: the restore dials the dashboard or the rig while the run is already dying, so it
 is best-effort, and it cannot run at all if the shell never exits — `kill -9`, an OOM kill, or the
