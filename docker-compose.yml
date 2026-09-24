@@ -226,6 +226,11 @@ services:
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 1m
+    # An init as PID 1 (#2627): the wrapper and upstream's start_tari_app.sh both exec, so without it
+    # minotari_node itself is PID 1, reaps no children, and a zombie PID 1 cannot be signalled —
+    # `docker stop` then fails until the grace period kills it. The init forwards the stop signal
+    # and reaps. The quadlet renderer carries the same as RunInit=true.
+    init: true
     logging: *default-logging
     # Tari's memory grows unbounded over time (#55, first reported in #14); left uncapped it can
     # pressure or OOM the whole host on small (e.g. 16 GB) machines. Cap it as a SAFETY CEILING so a
