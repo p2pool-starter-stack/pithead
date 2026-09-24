@@ -258,7 +258,10 @@ under one parent directory, the dashboard database defaults to `<that parent>/da
 of `./data/dashboard`, so it lives beside the chain data rather than inside the install directory
 (see [Operations › The deploy-box layout](operations.md#the-deploy-box-layout)).
 
-Set any `data_dir` to an absolute path to move that service's storage. For example, to put the
+Set any `data_dir` to a clean absolute path to move that service's storage. Since
+[#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360), `apply` refuses a path that
+contains `//`, a `/./` component or a trailing `/.` for all five `data_dir`s, so a config that
+already uses such a path fails `apply` until the path is written cleanly. For example, to put the
 Monero blockchain on a dedicated SSD:
 
 ```json
@@ -279,7 +282,13 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 
 > NOTE: `apply` does not copy your existing data into a new location; it only points the
 > container at the new path. If you're relocating data you already have, move the files yourself
-> first (with the stack stopped), then update `data_dir` and run `apply`.
+> first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
+> the one exception: it holds the payout-wallet tamper-tripwire baseline
+> ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
+> carries the live dashboard database and its SQLite companion files to the new path itself, then
+> verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
+> move instead of guessing which copy is live
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---
 
@@ -559,8 +568,9 @@ To merge-mine against a Tari base node running elsewhere instead of the bundled 
   (payout confirmation is unsupported in remote mode — see below).
 - `tari.remote.host` is required; `grpc_port` defaults to `18142`, the base node's standard gRPC
   port.
-- The remote node must run Tari 6.0.0 or newer. The bundled P2Pool (4.18.1) cannot merge-mine
-  against an older node, and older nodes fork off mainnet at block 350,000.
+- The remote node must run Tari 6.0.1-pre.0 or newer. The bundled P2Pool (4.18.1) cannot
+  merge-mine against a node older than 6.0.0, older nodes fork off mainnet at block 350,000, and a
+  6.0.0 node rejects canonical block 350,008 and stays on a dead fork.
 - The remote node must rebind its gRPC listener off the stock `grpc_address` (`127.0.0.1`), so it
   accepts connections from off-box, and enable the mining allowlist preset upstream ships for
   exactly this
