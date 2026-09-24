@@ -162,6 +162,8 @@ _phase_provision_initial_body() {
         ok "provisioning finished before the day-two legs ($(provisioning_state))"
     else
         bad "provisioning never finished; the day-two legs cannot run ($(provisioning_state))"
+        stack_never_up_evidence # the unit states alone do not name the dependency `up` waits on
+        info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1
     fi
     # Caddy fronts the dashboard once the wizard's window closes; self-signed on :443 by default.
