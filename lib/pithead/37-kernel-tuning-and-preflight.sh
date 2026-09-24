@@ -3,11 +3,11 @@
 # miner's declared headroom (hugepages_reserve_extra_mb in RigForge's config) all derive from it,
 # so the reservation and the declaration cannot drift apart.
 readonly PITHEAD_HUGEPAGES=3072
-# The two RandomX holders inside that budget (#2610): P2Pool's dataset plus its two caches (1040 +
-# 2 x 128 pages, 2592 MiB) and a local monerod's dataset plus its one cache (1168 pages). doctor
-# names these when the pool cannot hold them.
+# P2Pool's RandomX pages inside that budget (#2610): its dataset (1040 pages, 2080 MiB), allocated
+# first, and then its two caches (128 pages each), 1296 in all. doctor never calls a pool smaller
+# than the total enough, and names the dataset when even that does not fit.
+readonly P2POOL_RANDOMX_DATASET_PAGES=1040
 readonly P2POOL_RANDOMX_PAGES=1296
-readonly MONEROD_RANDOMX_PAGES=1168
 
 # The budget this MACHINE actually gets (#977). On the appliance, the boot-time sizing
 # (os/overlay/pithead-hugepages) may have chosen a smaller pool for the fitted RAM and recorded

@@ -28,11 +28,12 @@ assert_not_contains "186 pages: never a FAIL" "$out" "FAIL"
 assert_not_contains "186 pages: not OK" "$out" "✓ OK"
 assert_contains "186 pages: names the shortfall against the budget" "$out" "only 186 of the 3072 pages"
 assert_contains "186 pages: names the shortfall in MiB" "$out" "(5772 MiB short)"
-assert_contains "186 pages: says P2Pool's pages do not fit" "$out" "too few for P2Pool's RandomX dataset and caches (1296 pages)"
+assert_contains "186 pages: says P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset (1040 pages)"
 assert_contains "186 pages: says what that does to P2Pool today" "$out" "exceeds its 1 GiB memory limit and restarts in a loop"
 assert_contains "186 pages: names setup as the fix" "$out" "Run './pithead setup'"
-assert_contains "186 pages: names the GRUB parameter that keeps it across reboots" "$out" "keep hugepages=3072 on the GRUB kernel command line"
-assert_contains "186 pages: names the reboot for a pool setup cannot fill" "$out" "needs a reboot"
+assert_contains "186 pages: names the full boot parameters for GRUB" "$out" "put 'hugepagesz=2M hugepages=3072 transparent_hugepage=never' on GRUB_CMDLINE_LINUX_DEFAULT"
+assert_contains "186 pages: says to replace a stale hugepages= value" "$out" "in place of any other hugepages= value"
+assert_contains "186 pages: names update-grub and the reboot" "$out" "run 'sudo update-grub' and reboot"
 
 # The stack's full budget: OK, and the only verdict.
 _meminfo 3072 1800
@@ -40,21 +41,19 @@ out="$(_hp 0)"
 assert_contains "3072 pages: OK" "$out" "✓ OK   HugePages reserved: 3072 total, 1800 free"
 assert_not_contains "3072 pages: no WARN" "$out" "WARN"
 
-# P2Pool's boundary: 1295 cannot hold its pages, 1296 can but not beside a local monerod's.
-_meminfo 1295 1295
+# P2Pool's dataset boundary: below its 1040 pages P2Pool crash-loops under its 1 GiB limit. From
+# 1040 up the dataset fits and the wording makes no crash-loop claim, but below the budget it WARNs.
+_meminfo 1039 1039
 out="$(_hp 0)"
-assert_contains "1295 pages: P2Pool's pages do not fit" "$out" "too few for P2Pool's RandomX dataset"
-_meminfo 1296 1296
+assert_contains "1039 pages: P2Pool's dataset does not fit" "$out" "too few for P2Pool's RandomX dataset"
+_meminfo 1040 1040
 out="$(_hp 0)"
-assert_not_contains "1296 pages: P2Pool's pages alone fit" "$out" "too few for P2Pool's RandomX dataset"
-assert_contains "1296 pages: both holders do not fit" "$out" "too few for both P2Pool's (1296 pages) and a local monerod's (1168 pages)"
-_meminfo 2463 2463
+assert_contains "1040 pages: WARN, short of the budget" "$out" "only 1040 of the 3072 pages"
+assert_not_contains "1040 pages: the dataset fits, no crash-loop claim" "$out" "restarts in a loop"
+assert_contains "1040 pages: says what does not fit falls back" "$out" "RandomX data that does not fit falls back to ordinary RAM."
+_meminfo 3071 3071
 out="$(_hp 0)"
-assert_contains "2463 pages: both holders still do not fit" "$out" "too few for both"
-_meminfo 2464 2464
-out="$(_hp 0)"
-assert_contains "2464 pages: both datasets fit, short of the budget's headroom: WARN" "$out" "Both RandomX datasets fit, without the headroom"
-assert_not_contains "2464 pages: no crash-loop claim" "$out" "restarts in a loop"
+assert_contains "3071 pages: one page short of the budget is a WARN" "$out" "only 3071 of the 3072 pages"
 
 # The appliance's reduced tier: its recorded pool IS the budget, so the full pool is not demanded.
 printf 'reduced\npages=2560\n' >"$MEMD/marker"
