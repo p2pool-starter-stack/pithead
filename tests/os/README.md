@@ -234,9 +234,15 @@ a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits
 of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
 exit code.
 
-The image-upgrade phase fails closed unless `REMOTE_MONERO_HOST`, `REMOTE_MONERO_RPC_PORT`,
-`REMOTE_MONERO_ZMQ_PORT`, and `REMOTE_TARI_HOST` are supplied by the tier-4 remote-node wrapper.
-These are endpoint names, never values committed to the repository. Local-chain directory
+The image-upgrade phase fails closed unless `PITHEAD_OS_MONERO_NODE_HOST`,
+`PITHEAD_OS_MONERO_RPC_PORT`, `PITHEAD_OS_MONERO_ZMQ_PORT`, and `PITHEAD_OS_TARI_NODE_HOST` are
+set, the same inputs the stack phase reads. These are endpoint names, never values committed to
+the repository. The harness resolves each node host on the bench host with `getent ahostsv4` and
+gives the guest only the first IPv4 address; a host with no IPv4 address fails as a
+`monero-node-address` or `tari-node-address` input failure that does not print the host. The guest
+script prints `stage=<name> passed` or `stage=<name> failed` (with `primitive=tcp zmq` or
+`primitive=rpc http` for the remote-node probe) to its serial console and the harness log. These
+lines never include a host or port. Local-chain directory
 continuity is outside this lean-storage gate and tracked by
 [#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 

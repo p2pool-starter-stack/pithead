@@ -14,19 +14,34 @@ _image_upgrade_input_run() { # <sub-step> <redacted-command> <command...>
     _image_upgrade_input_failure "$step" "$display" "$rc"
 }
 
+# The same reserved-node inputs the stack phase passes on (#2057). The host is a name or an IPv4
+# literal; since bench-ci#386 the bench hands over its own name, resolved on this host below.
 _image_upgrade_inputs_valid() {
     local host port
-    for host in "${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}"; do
+    for host in "${PITHEAD_OS_MONERO_NODE_HOST:-}" "${PITHEAD_OS_TARI_NODE_HOST:-}"; do
         case "$host" in "" | *:* | *[!A-Za-z0-9._-]*) return 1 ;; esac
     done
-    for port in "${REMOTE_MONERO_RPC_PORT:-}" "${REMOTE_MONERO_ZMQ_PORT:-}"; do
+    for port in "${PITHEAD_OS_MONERO_RPC_PORT:-}" "${PITHEAD_OS_MONERO_ZMQ_PORT:-}"; do
         [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
     done
     [ -n "${PITHEAD_REGISTRY:-}" ]
 }
 
+# Job 978 failed at remote-node-reachable: the guest cannot resolve the bench's name the way this
+# host does (single label, IPv6-only on the LAN). Resolve it here, once, to its first IPv4
+# address and hand the guest only that literal. The failure names the sub-step, never the host.
+_image_upgrade_node_v4() { # <sub-step> <name-or-literal>
+    local address
+    address="$(getent ahostsv4 "$2" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+    [[ "$address" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || {
+        _image_upgrade_input_failure "$1" 'getent ahostsv4 <node-host>' 2
+        return 2
+    }
+    printf '%s\n' "$address"
+}
+
 _image_upgrade_prepare_inputs() {
-    local stage="$1" cosign_member rootfs_members rc
+    local stage="$1" cosign_member rootfs_members rc monero_v4 tari_v4
     if rootfs_members="$(tar -tf os/build/pithead-root.tar 2>/dev/null)"; then
         :
     else
@@ -87,9 +102,11 @@ _image_upgrade_prepare_inputs() {
     # Job 698 (#2057): the remote node's own get_info answers 401 unauthenticated — it requires
     # RPC login, and p2pool's --rpc-login was empty, which is why it never got past its own
     # startup no matter how reachable the host/port were. PITHEAD_OS_MONERO_NODE_USERNAME/
-    # _PASSWORD are already forwarded through the same `sudo env` as REMOTE_MONERO_HOST
+    # _PASSWORD are already forwarded through the same `sudo env` as PITHEAD_OS_MONERO_NODE_HOST
     # (bench-preparation.md/operations.md), just never read here; empty (the historical default)
     # still means "no auth", unchanged.
+    monero_v4="$(_image_upgrade_node_v4 monero-node-address "$PITHEAD_OS_MONERO_NODE_HOST")" || return $?
+    tari_v4="$(_image_upgrade_node_v4 tari-node-address "$PITHEAD_OS_TARI_NODE_HOST")" || return $?
     if (
         umask 077
         printf %s "${PITHEAD_OS_MONERO_NODE_PASSWORD:-}" >"$stage/monero-pass"
@@ -102,8 +119,8 @@ _image_upgrade_prepare_inputs() {
     fi
     if tar -xOf "$stage/v1.20.0.tar.gz" pithead/config.reference.json 2>/dev/null | jq \
         --arg monero_wallet "$HARNESS_WALLET" --arg tari_wallet "$HARNESS_TARI" \
-        --arg monero_host "$REMOTE_MONERO_HOST" --argjson monero_rpc "$REMOTE_MONERO_RPC_PORT" \
-        --argjson monero_zmq "$REMOTE_MONERO_ZMQ_PORT" --arg tari_host "$REMOTE_TARI_HOST" \
+        --arg monero_host "$monero_v4" --argjson monero_rpc "$PITHEAD_OS_MONERO_RPC_PORT" \
+        --argjson monero_zmq "$PITHEAD_OS_MONERO_ZMQ_PORT" --arg tari_host "$tari_v4" \
         --arg monero_user "${PITHEAD_OS_MONERO_NODE_USERNAME:-}" \
         --rawfile monero_pass "$stage/monero-pass" '
             .monero.wallet_address = $monero_wallet |
@@ -181,7 +198,7 @@ phase_image_upgrade() {
     info "phase: image-upgrade (signed v1.20.0 -> candidate on guest-local reflink XFS)"
     local ip="" rc=0 cleanup_rc=0 head guest_failure="" miner_readiness=""
     _image_upgrade_inputs_valid || {
-        bad "image-upgrade requires REMOTE_MONERO_HOST, REMOTE_MONERO_RPC_PORT, REMOTE_MONERO_ZMQ_PORT, REMOTE_TARI_HOST, and PITHEAD_REGISTRY"
+        bad "image-upgrade requires PITHEAD_OS_MONERO_NODE_HOST, PITHEAD_OS_MONERO_RPC_PORT, PITHEAD_OS_MONERO_ZMQ_PORT, PITHEAD_OS_TARI_NODE_HOST, and PITHEAD_REGISTRY"
         return
     }
     head="$(git rev-parse HEAD)"

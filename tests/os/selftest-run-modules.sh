@@ -9,7 +9,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     echo "os module order mismatch: $actual_modules" >&2
     exit 1
 }
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset _image_upgrade_input_failure _image_upgrade_input_run _image_upgrade_inputs_valid _image_upgrade_node_v4 _image_upgrade_prepare_inputs _image_upgrade_sign_wrong_key _image_upgrade_stage_guest _image_upgrade_clear_guest_inputs _image_upgrade_read_guest_failure _image_upgrade_read_miner_readiness phase_image_upgrade phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
 actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_height$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
@@ -84,13 +84,35 @@ grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" ||
 }
 trap - EXIT
 if (
-    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT=18083 \
-        REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083 \
+        PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example
     _image_upgrade_inputs_valid
 ); then
     :
 else
     echo "image-upgrade rejected the complete remote-node contract" >&2
+    exit 1
+fi
+# #2057 job 978: the guest gets the node as an IPv4 literal resolved on the bench host; a name
+# with no IPv4 address fails with the sub-step alone, never the name.
+if (
+    getent() {
+        case "$2" in
+        node.example) printf '192.0.2.7      STREAM node.example\n192.0.2.7      DGRAM\n' ;;
+        192.0.2.9) printf '192.0.2.9      STREAM 192.0.2.9\n' ;;
+        *) return 2 ;;
+        esac
+    }
+    [ "$(_image_upgrade_node_v4 monero-node-address node.example)" = 192.0.2.7 ] || exit 1
+    [ "$(_image_upgrade_node_v4 tari-node-address 192.0.2.9)" = 192.0.2.9 ] || exit 1
+    v6_rc=0
+    v6_out="$(_image_upgrade_node_v4 tari-node-address v6only.example 2>&1)" || v6_rc=$?
+    [ "$v6_rc" -eq 2 ] &&
+        [ "$v6_out" = 'image-upgrade input failure: sub-step=tari-node-address command="getent ahostsv4 <node-host>" exit=2' ]
+); then
+    :
+else
+    echo "image-upgrade did not resolve the node to one IPv4 literal or leaked the name" >&2
     exit 1
 fi
 diagnostic_rc=0
@@ -195,8 +217,8 @@ else
     exit 1
 fi
 if (
-    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT='' \
-        REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT='' \
+        PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example
     _image_upgrade_inputs_valid
 ); then
     echo "image-upgrade accepted a missing remote-node input" >&2
@@ -204,8 +226,8 @@ if (
 fi
 if (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
-    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT=18083
-    REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
+    PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
     _image_upgrade_prepare_inputs() { :; }
     _vm_boot_disk() { :; }
     _wait_ssh() { :; }
@@ -223,8 +245,8 @@ else
 fi
 if (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
-    REMOTE_MONERO_HOST=node.example REMOTE_MONERO_RPC_PORT=18081 REMOTE_MONERO_ZMQ_PORT=18083
-    REMOTE_TARI_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
+    PITHEAD_OS_MONERO_NODE_HOST=node.example PITHEAD_OS_MONERO_RPC_PORT=18081 PITHEAD_OS_MONERO_ZMQ_PORT=18083
+    PITHEAD_OS_TARI_NODE_HOST=tari.example PITHEAD_REGISTRY=registry.example IMAGE=fixture
     _image_upgrade_prepare_inputs() { :; }
     _vm_boot_disk() { :; }
     _wait_ssh() { :; }
