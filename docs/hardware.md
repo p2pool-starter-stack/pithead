@@ -43,7 +43,7 @@ plus headroom for the OS. Per-component breakdown, from each project's own guida
 | Service | RAM it wants | Container ceiling | Disk | Notes |
 |---|---|---|---|---|
 | **[Monero node](https://docs.getmonero.org/running-node/)** (`monerod`) | **4 GB** minimum; more RAM = bigger DB cache and faster sync | 6 GB (`monero.mem_limit`) | **~286 GB measured fresh-sync pruned** · **~267 GB measured full** — and growing | SSD strongly recommended. Not run at all with `monero.mode: remote`. |
-| **[P2Pool](https://github.com/SChernykh/p2pool)** | **~2.3 GB** for the RandomX dataset it uses to verify blocks fast | 1 GB | tiny (sidechain state) | Needs a 64-bit CPU with **AVX2** and a synced `monerod`. The dataset lives in the shared HugePages reservation, not in the container, so don't count it twice. |
+| **[P2Pool](https://github.com/SChernykh/p2pool)** | **~2.3 GB** for the RandomX dataset it uses to verify blocks fast | 4 GB | tiny (sidechain state) | Needs a 64-bit CPU with **AVX2** and a synced `monerod`. The dataset lives in the shared HugePages reservation, not in the container, so don't count it twice. When the reservation has too few free pages, P2Pool puts the dataset in ordinary memory instead (about 2.5 GB); the ceiling leaves room for that. |
 | **[Tari base node](https://www.tari.com/integration-guide)** (`minotari_node`) | **4 GB** minimum, **8 GB+** recommended; grows over time | auto (`tari.mem_limit`) | **~150 GB** SSD — and growing | Budget for it whenever it runs here. The stack caps its memory so growth can't take the host down. Not run at all with `tari.mode: remote` or `off`. |
 | **XMRig proxy · Tor · dashboard** | a few hundred MB combined | 512 MB each | a few GB (Docker images) | These coordinate and serve the UI. They don't mine, so no special CPU. |
 | **Caddy · Docker socket proxies** | small | 128 MB each | — | Serve the dashboard and mediate its Docker access. |
@@ -120,10 +120,10 @@ see [Running a node elsewhere](#running-a-node-elsewhere).
 > Prefer 16 GB+.
 >
 > The [appliance](appliance.md) makes this call itself: 16 GB is its supported floor, and on a
-> machine below it the boot shrinks the reservation to 5 GB — the smallest pool that still holds
-> both RandomX datasets — announces it on the console, and `doctor` reports it as a warning until
-> the machine has 16 GB. Far below the floor (under ~7 GB) the reservation is released entirely
-> and the stack will not run reliably.
+> machine below it the boot shrinks the reservation to 5 GB, which holds P2Pool's RandomX dataset
+> and caches and `monerod`'s caches with room to spare. It announces this on the console, and
+> `doctor` reports it as a warning until the machine has 16 GB. Far below the floor (under ~7 GB)
+> the reservation is released entirely and the stack will not run reliably.
 
 ### Disk
 

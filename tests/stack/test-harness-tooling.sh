@@ -339,6 +339,7 @@ test-appliance-identity-boot.sh|cli_pages
 test-appliance-identity-boot.sh|u
 test-appliance-identity.sh|1
 test-appliance-identity.sh|f
+test-appliance-install-restore.sh|_c
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-config.sh|2
@@ -376,7 +377,6 @@ VDEXP
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
 assert_eq "every PASS label that interpolates a value is one the suite has reviewed" \
     "$(vd_interp_names "$ROOT/tests/stack/lib.sh" "${stack_fragments[@]}")" "$vd_expected"
-
 # The row above is an equality over a set, so a sweep that silently stopped matching would report
 # an empty actual against a non-empty expectation and fail loudly — but it would fail naming the
 # wrong cause. These three drive the extractor over a file written for the purpose, so each

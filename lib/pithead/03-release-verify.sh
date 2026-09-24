@@ -148,6 +148,10 @@ stack_upgrade() {
     DEPLOYMENT_COMPLETED=true
     render_env "${ENV_FILE}.new"
     mv "${ENV_FILE}.new" "$ENV_FILE"
+    # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
+    # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
+    # nothing is started or recreated first, so the migrating node never starts on a full volume.
+    tari_upgrade_space_precheck
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
     generate_caddyfile
