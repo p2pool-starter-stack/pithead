@@ -1,7 +1,7 @@
-// The rig handoff card's contents, kept DOM-free so node --test covers the two states nobody can
+// The rig handoff card's contents, kept DOM-free so node --test covers the states nobody can
 // produce by hand (issue #1836). The host publishes the card as
-// {role, worker, stratum, token, address} — lib/pithead/12-firstboot-wizard.sh's rig handoff — and
-// two of those five are legitimately empty at the moment the page renders it:
+// {role, worker, stratum, token, address, control?, reason?} — lib/pithead/12-firstboot-wizard.sh's
+// rig handoff — and two of the first five are legitimately empty at the moment the page renders it:
 //
 //   token   — rig_access_token could not mint or keep one. The card is written BEFORE the miner is
 //             configured, so the wizard shows this state first. What happens next DIVERGES, which
@@ -10,6 +10,11 @@
 //             the installer path the target mints its own token and mines, but nothing prints that
 //             token after provisioning, so its console cannot tell the operator what to paste.
 //   address — hostname -I answered nothing, because the box has no IPv4 lease yet.
+//
+// control/reason (#1867) — present only when the pool host will not resolve to an IPv4 address:
+// render_rig_miner_config is about to leave the control API off (RigForge refuses a writable path
+// it cannot pin to one source), so the card says that instead of sending the operator to an adopt
+// form the rig will not answer.
 //
 // A label with a blank beside it is the one thing this card must never show, so an empty value
 // drops its own row and the note says what is missing instead. Worker and pool stay unconditional:
@@ -44,6 +49,14 @@ export function rigCardNote(handoff) {
     return (
       "This machine could not create its control token. There is nothing to copy here, and no " +
       "Pithead can adopt this rig until it has one — set this machine up again."
+    );
+  }
+  if (handoff.control === "off") {
+    return (
+      "This rig's control API is off: " +
+      handoff.reason +
+      ". It still mines, and its read-only feed still serves, but no Pithead can adopt it for " +
+      "control until that resolves."
     );
   }
   const adopt = handoff.address

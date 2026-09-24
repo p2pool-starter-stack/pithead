@@ -271,9 +271,9 @@ assert_contains "manifest renders the leading-dash Version line (printf --)" "$(
 # the notes regress to naming one of the two. Assert the rendered manifest, which is the artefact an
 # operator reads. A twin-sync conflict on release.sh is a realistic way to lose one of these lines.
 assert_contains "manifest names the tari NODE pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
-    "- tari node: \`quay.io/tarilabs/minotari_node:"
+    "- tari node: \`ghcr.io/tari-project/minotari_node:"
 assert_contains "manifest names the tari CONSOLE WALLET pin (#1138)" "$(cat "$man_out" 2>/dev/null)" \
-    "- tari console wallet: \`quay.io/tarilabs/minotari_console_wallet:"
+    "- tari console wallet: \`ghcr.io/tari-project/minotari_console_wallet:"
 # The ingredients manifest's component pins must resolve to a real value present in each Dockerfile —
 # a drift guard so a renamed ARG can't silently emit an empty pin in the release notes.
 for svc in p2pool monero xmrig-proxy; do
@@ -306,8 +306,8 @@ done
 # grep -F throughout: these values carry '/' and '.', and a regex match would accept a value that is
 # merely similar to one in the file.
 for row in \
-    "tari|docker-compose.yml|quay.io/tarilabs/minotari_node:" \
-    "tari-wallet|docker-compose.yml|quay.io/tarilabs/minotari_console_wallet:" \
+    "tari|docker-compose.yml|ghcr.io/tari-project/minotari_node:" \
+    "tari-wallet|docker-compose.yml|ghcr.io/tari-project/minotari_console_wallet:" \
     "caddy|docker-compose.yml|caddy:" \
     "socket-proxy|docker-compose.yml|tecnativa/docker-socket-proxy:" \
     "tor-base|build/tor/Dockerfile|:"; do

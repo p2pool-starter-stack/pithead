@@ -153,7 +153,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
 expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017"
-expect_present "tari node pinned by digest" "minotari_node:v5.3.1-mainnet@sha256:824fd6ec21d618805317d7eede374d6782906eeae17d2fc8aaad4df6205f94e0"
+expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
 JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
@@ -167,9 +167,10 @@ jq_assert() { # <label> <filter> [json, default $JSON]
 jq_assert "docker-proxy cannot POST (read-only API)" '(.services["docker-proxy"].environment.POST // "0") != "1"'
 jq_assert "docker-control is start/stop only (no exec/image ops)" \
     '.services["docker-control"].environment | (.POST=="1" and .ALLOW_START=="1" and .ALLOW_STOP=="1" and ((.EXEC // "0") != "1") and ((.IMAGES // "0") != "1") and ((.ALLOW_PAUSE // "0") != "1") and ((.ALLOW_UNPAUSE // "0") != "1"))'
-# Both proxies mount the Docker socket read-only.
 jq_assert "docker socket mounted read-only in both proxies" \
     '[.services["docker-proxy"], .services["docker-control"]] | all((.volumes // []) | any((.source == "/var/run/docker.sock") and (.read_only == true)))'
+jq_assert "dashboard mounts the pithead mutation lock read-only without replacing it (#2218)" '[.services[] | (.volumes // [])[] | select(.target == "/pithead-lock")] | length == 1 and .[0].type == "bind" and .[0].read_only == true'
+expect_min "dashboard lock bind refuses host-path creation (#2218)" "create_host_path: false" 1 "$(<"$ROOT/docker-compose.yml")"
 # Socket-proxy isolation (#345): neither proxy is on the mining bridge, and each is published ONLY to
 # the host loopback — so no mining container (monerod/tari/p2pool/xmrig-proxy) can reach the Docker
 # API to read secrets (inspect) or start/stop containers.
@@ -186,7 +187,6 @@ jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.co
 # The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
 jq_assert "tari healthcheck uses the [m]inotari self-match guard" \
     '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
-# The Compose project name is pinned to "pithead" (not derived from the checkout directory).
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
 # Memory ceilings (#132): every service carries a mem_limit so a leak/runaway OOM-restarts the
 # offender in its own cgroup instead of the host OOM-killer reaching monerod (the revenue service).
@@ -327,7 +327,7 @@ jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" \
 # it is not in that render at all. Here it is, for the same reason the healthcheck assertion above
 # is. Whole reference, not the `tag@sha256:` prefix, for the reason given at the other three.
 jq_assert "tari console wallet pinned by digest (#1137)" \
-    '.services["tari-wallet"].image == "quay.io/tarilabs/minotari_console_wallet:v5.3.1-mainnet@sha256:31b3cd7b2b390da33c279fd1a5cd457eb254aeea17a5a230ff4c7bfea79a47eb"'
+    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d"'
 # The two Tari images are one component, bumped together, so a tag that moves on one and not the
 # other is a silent split-brain — the node speaking one protocol version and the wallet another.
 # Nothing compared them, and `scripts/release/release.sh pin tari` reads the NODE only (#1138), so a wallet

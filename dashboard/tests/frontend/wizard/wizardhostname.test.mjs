@@ -56,6 +56,25 @@ test("keep-everything reinstall does not offer a name it would ignore", () => {
   assert.doesNotMatch(renderToString(app.renderSetup()), /Name this machine/);
 });
 
+test("ack() carries the applied dashboard address past the server dropping the handoff (#2350)", async () => {
+  const app = new WizardApp({});
+  app.setState = (patch) => Object.assign(app.state, patch);
+  app.state.handoff = { username: "admin", password: "x", dashboard: "https://garden-box.local", stratum: "stratum+tcp://garden-box.local:3333" };
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url) === "/handoff-ack") return { ok: true };
+    // The server has already dropped the handoff by the time this poll lands.
+    return { ok: true, json: async () => ({ config: {}, reference: {}, handoff: null }) };
+  };
+  try {
+    await app.ack();
+    assert.equal(app.state.handoff, null);
+    assert.equal(app.state.savedDashboard, "https://garden-box.local");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("coordinator submission carries its edited name in dashboard.host", async () => {
   const app = new WizardApp({});
   app.setState = (patch) => Object.assign(app.state, patch);

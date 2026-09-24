@@ -13,7 +13,7 @@ function Header({ state, theme, onTheme }) {
   const labelCls = (level) => (level === "high" ? "status-bad" : "text-muted");
   const valCls = (level) => (level === "high" ? "status-bad" : "");
   return html`
-    <div class="header" id="top-header">
+    <header class="header" id="top-header">
         <div>
             <div class="brand">
                 <img class="brand-logo" src="/static/pithead-mark.svg" alt="" width="40" height="40" />
@@ -37,7 +37,7 @@ function Header({ state, theme, onTheme }) {
                         }
                     </div>
                     <div class="brand-host font-mono text-muted">${state.host_ip}${state.host_addr ? html`<span class="brand-host-at">@</span>${state.host_addr}` : null}</div>
-                    <${OnionUrl} onion=${state.dashboard_onion} />
+                    <${OnionUrl} onion=${state.dashboard_onion} enabled=${state.control_enabled} />
                 </div>
             </div>
             <div class="text-small mt-2">
@@ -72,7 +72,7 @@ function Header({ state, theme, onTheme }) {
                 : null
             }
         </div>
-    </div>`;
+    </header>`;
 }
 
 export { Header };

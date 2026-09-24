@@ -160,7 +160,8 @@ because the token guards every API on the rig — the miner's own included, so n
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
 IPv4 address (an onion address, say) keeps the token and the read-only feed but runs with
-control off, since RigForge refuses a writable path it cannot pin to one source.
+control off, since RigForge refuses a writable path it cannot pin to one source — the card
+says so and why, instead of pointing you at an adopt form the rig will not answer.
 Where the machine cannot fill a line in, the card leaves that line out rather than
 showing a blank beside its label: with no IPv4 address yet it tells you to read the
 address off the console once the machine is up, and on the rare failure to mint a token
@@ -318,6 +319,36 @@ retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
+
+### Reaching it from outside your network, over Tor
+
+Turn it on during setup. Open **Advanced** at the bottom of the setup page and set
+`dashboard.onion.enabled` to `true` in the configuration shown there. Leave
+`dashboard.onion.client_auth` at `true`: setup refuses the config editor and the onion together
+without it. The machine publishes the dashboard as a Tor hidden service — no port forwarding, no
+VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
+dashboard, with a **Copy** button.
+
+After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
+onion settings until
+[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
+[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
+or off on a running machine, use
+[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes its own copy moments later, and pressing the button
+again gives you a fresh reveal rather than the old one. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
+on this machine rotating means setting it up again.
 
 ## What the machine does on its own
 

@@ -139,7 +139,7 @@ the desired value is not presented as proof of what the still-running services u
 | `p2pool.stratum_port` | `3333` | TCP port the stratum endpoint your rigs connect to is published on. Default `3333` is the standard path — leave it unless another service already holds the port on the host. Change it and **every rig must repoint** at the new port (RigForge: `pool.port`); `apply` flags the change as destructive because rigs on the old port can't connect until updated. Only the operator-facing published port moves; p2pool's container-internal stratum stays fixed at `3333` (nothing outside the stack touches it). See [Connecting Miners › Non-standard port](workers.md#non-standard-stratum-port). |
 | `p2pool.stratum_password` | `""` _(off; new installs get `"auto"`)_ | Password every rig must send to mine through the proxy. Turns the otherwise-open `3333` port into authenticated stratum. `""` (the fallback for an absent key, which is what pre-#208 installs have) = no password, any rig may connect. `"auto"` = generate a random secret once and keep it stable (shown after `setup`/`apply` and stored in `.env`); set it as each rig's stratum `pass` — the wizard and `config.minimal.json` write this for every new install. Any literal string of 1–128 characters drawn from `A-Z a-z 0-9 . _ : @ -` = use exactly that password; anything else (spaces, quotes, `$`) is rejected at `apply`, since the value travels through `.env` onto the proxy's command line. Only devices that know the secret can mine, which also shrinks the worker-name [SSRF](workers.md#authentication) surface. The password is sent in cleartext over stratum, so this is access control ("who may mine"), not encryption. Pair it with `stratum_bind`/a firewall. See [Connecting Miners › Authentication](workers.md#authentication). |
 | `p2pool.stratum_tls` | `false` | Serve TLS on the stratum port (#261). Same port, per-connection detection: cleartext rigs keep mining while rigs opt in one at a time (`pools[].tls: true` + pinning the certificate's SHA-256 fingerprint, printed after `apply` and by `status`). The self-signed cert lives under the data root and keeps its fingerprint across upgrades; regenerating it (delete + `apply`) is the rotation. Confidentiality only — pair with `stratum_password` for access control. See [Connecting Miners › Stratum over TLS](workers.md#stratum-over-tls). |
-| `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`). Set `true` to dial peers directly over clearnet for maximum yield: Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
+| `p2pool.clearnet` | `false` | Privacy-relevant, default off (Tor). P2Pool's `--onion-address` only advertises an onion for inbound peers; its outbound sidechain dials need a SOCKS proxy or they go over clearnet, exposing your home IP. Default (`false`) routes those dials through the bundled Tor proxy (`--socks5 <tor>:9050 --socks5-proxy-type tor`) and turns off P2Pool's clearnet seed-node DNS lookups (`--no-dns`). Set `true` to dial peers directly over clearnet for maximum yield: Tor latency raises the stale/uncle-share rate and onion-only shrinks the peer set, both worse on `--mini`/`--nano`, so a high-variance small rig may prefer clearnet (at the cost of IP exposure). Full threat model: [Privacy › P2Pool outbound peers](privacy.md#p2pool-outbound-peers-165---tor-by-default). |
 | `proxy.donate_level` | `0` | xmrig-proxy's built-in dev-fee donation to the xmrig developers, as a percentage of submitted hashrate. Defaults to `0`, no donation (xmrig-proxy's own compiled-in default, which the stack now renders explicitly so it's visible rather than invisible). Set an integer `1`–`99` to donate that share to the xmrig devs if you want to support them. This is not the XvB donation; that's the separate `xvb.*` mechanism the optimizer steers, never this dev fee. |
 | `local_miner.enabled` | `false` | Also mine on the stack host itself with its spare CPU: a RigForge worker co-located on this box, pointed at the stack's own stratum over loopback. `setup` asks about it; `setup`/`apply` then print the pool URL and stratum password a RigForge install needs. See [Connecting Miners › Mine on the stack host itself](workers.md#mine-on-the-stack-host-itself). |
 | `xvb.enabled` | `true` | Enable XMRvsBeast bonus-round hashrate switching. |
@@ -184,7 +184,7 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.auth.username` | `admin` | Login name for the dashboard when a password is set (see below). Letters, digits, and `. _ @ -`, 1–64 chars. Ignored while `dashboard.auth.password` is empty. |
 | `dashboard.auth.password` | `""` _(off)_ | Optional password to open the dashboard. Turns on a Caddy [HTTP basic-auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth) prompt in front of every page. `""` (default) = no login, anyone who can reach the dashboard sees it (fine for a private LAN appliance). Any 8–128-character string (no double-quotes) turns the prompt on. The plaintext lives only in your owner-only `config.json`; pithead bcrypt-hashes it with the pinned Caddy image and stores only the hash in `.env`, so the password itself is never persisted in rendered state. Basic-auth credentials travel in cleartext over HTTP, so keep `dashboard.secure: true` (the default); pithead warns if you set a password with `secure: false`. See [Exposing the dashboard safely](#exposing-the-dashboard-safely). |
 | `dashboard.onion.enabled` | `false` _(off)_ | Privacy-relevant, default off. `true` publishes the dashboard as a Tor v3 onion service so you can reach it remotely over Tor — no port-forward, no VPN, no public IP. It fronts the authenticated Caddy login on the internal bridge, never the LAN. pithead **fails closed**: if no `dashboard.auth.password` is set it generates a strong one (saved to `config.json`, login `admin`); a password you set yourself must be at least 16 characters. See [Remote access over Tor](#remote-access-over-tor-onion-service). |
-| `dashboard.onion.client_auth` | `true` _(on)_ | Only applies when `dashboard.onion.enabled` is `true`. Keeps Tor v3 **client authorization** on: the onion does not respond at all without your client key, so the address can't be scanned or brute-forced — the password becomes a second factor behind it. pithead generates the keypair and prints the client line via `./pithead onion-client-key`. Set to `false` for a deliberately password-only onion — but not alongside `dashboard.control.enabled: true`: `apply` refuses that pairing, since a root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable address. |
+| `dashboard.onion.client_auth` | `true` _(on)_ | Only applies when `dashboard.onion.enabled` is `true`. Keeps Tor v3 **client authorization** on: the onion does not respond at all without your client key, so the address can't be scanned or brute-forced — the password becomes a second factor behind it. pithead generates the keypair; get the client line from the dashboard header's **Show client key** button, or with `./pithead onion-client-key` on a machine you can log in to. Set to `false` for a deliberately password-only onion — but not alongside `dashboard.control.enabled: true`: `apply` refuses that pairing, since a root-capable config-mutation channel must not sit behind only a brute-forceable password on an anonymously-reachable address. Because an appliance turns the config editor on for itself, an appliance onion is always client-authorized. |
 | `dashboard.control.enabled` | `false` _(off)_ | Security-relevant, default off. `true` turns on the dashboard's **Configuration view**: edit `config.json` from the browser, preview the changes, and apply them. The dashboard container never runs `pithead` itself — it writes a typed change request into a spool directory and a root systemd unit on the host (`pithead-control`) validates and applies it (see [Dashboard › Configuration view](dashboard.md#configuration-view)). Fails closed twice: enabling it without a `dashboard.auth.password` is a validation error, because this channel can change the payout wallet; and enabling it on a published onion (`dashboard.onion.enabled`) with `dashboard.onion.client_auth: false` is refused too, since a password alone is brute-forceable over Tor. |
 | `dashboard.timezone` | `auto` | Timezone for the dashboard's timestamps and charts. `auto` = the host machine's timezone (auto-detected, falling back to `Etc/UTC`); set an IANA name (e.g. `America/Chicago`) to override. |
 | **Notifications** |  | _Choose where operational messages and alerts are sent._ |
@@ -258,7 +258,10 @@ under one parent directory, the dashboard database defaults to `<that parent>/da
 of `./data/dashboard`, so it lives beside the chain data rather than inside the install directory
 (see [Operations › The deploy-box layout](operations.md#the-deploy-box-layout)).
 
-Set any `data_dir` to an absolute path to move that service's storage. For example, to put the
+Set any `data_dir` to a clean absolute path to move that service's storage. Since
+[#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360), `apply` refuses a path that
+contains `//`, a `/./` component or a trailing `/.` for all five `data_dir`s, so a config that
+already uses such a path fails `apply` until the path is written cleanly. For example, to put the
 Monero blockchain on a dedicated SSD:
 
 ```json
@@ -279,7 +282,13 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 
 > NOTE: `apply` does not copy your existing data into a new location; it only points the
 > container at the new path. If you're relocating data you already have, move the files yourself
-> first (with the stack stopped), then update `data_dir` and run `apply`.
+> first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
+> the one exception: it holds the payout-wallet tamper-tripwire baseline
+> ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
+> carries the live dashboard database and its SQLite companion files to the new path itself, then
+> verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
+> move instead of guessing which copy is live
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---
 
@@ -398,9 +407,19 @@ the `.onion` as a secret: anyone who has it can _attempt_ the login (and, withou
 it), so the header shows it only to a browser that is already through the dashboard's own login.
 
 **Connecting with client authorization.** With `client_auth: true` the onion won't answer at all
-until your Tor client presents the private key. Run `./pithead onion-client-key` on the host — it
-prints the address and the key in both forms you might need (it's kept out of `status`, which is a
-shareable report). Then pick your client:
+until your Tor client presents the private key. Get the key either way:
+
+- **From the dashboard**, wherever the config editor is on (`dashboard.control.enabled`) — which is
+  every appliance, because it is that machine's only way to change a setting. The header's
+  client-authorization note carries a **Show client key** button; it asks the host, which answers
+  once and then wipes its own copy, so save the key when it appears. The key is never in the
+  dashboard container's environment: the container asks, the host decides, and every reveal is
+  written to the config-change audit log.
+- **From a shell on the host**, with `./pithead onion-client-key` — it prints the address and the
+  key in both forms (it's kept out of `status`, which is a shareable report). An appliance has no
+  shell, so this is the Compose answer.
+
+Then pick your client:
 
 - **Tor Browser (easiest).** Open `http://<address>.onion` (Tor Browser upgrades it to `https://`
   automatically). Accept the one-time self-signed-cert prompt ("Advanced" → "Accept the Risk and
@@ -419,7 +438,8 @@ address becomes online-guessable, so lean on the password).
 
 **Rotation.** A leaked `.onion` address or client key is otherwise permanent. Run
 `./pithead rotate-dashboard-onion` to mint a fresh address and client key; the old ones stop working
-immediately, and the command prints the new client line.
+immediately, and the command prints the new client line. This one is still host-CLI-only: on an
+appliance, rotating means setting the machine up again.
 
 Prefer a mesh VPN like Tailscale instead? Point it at the LAN yourself — the stack does not ship a
 profile for it, and the onion service is the supported remote path.
@@ -548,6 +568,9 @@ To merge-mine against a Tari base node running elsewhere instead of the bundled 
   (payout confirmation is unsupported in remote mode — see below).
 - `tari.remote.host` is required; `grpc_port` defaults to `18142`, the base node's standard gRPC
   port.
+- The remote node must run Tari 6.0.1-pre.0 or newer. The bundled P2Pool (4.18.1) cannot
+  merge-mine against a node older than 6.0.0, older nodes fork off mainnet at block 350,000, and a
+  6.0.0 node rejects canonical block 350,008 and stays on a dead fork.
 - The remote node must rebind its gRPC listener off the stock `grpc_address` (`127.0.0.1`), so it
   accepts connections from off-box, and enable the mining allowlist preset upstream ships for
   exactly this
