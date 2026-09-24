@@ -43,9 +43,7 @@ def main():
                 client.sendall(GREETING)
                 if read_exact(client, 27) != SUB_READY:
                     raise ValueError("expected ZMTP SUB READY")
-                client.sendall(READY[:2])
-                time.sleep(0.05)  # The probe reads the ZMTP header before its body.
-                client.sendall(READY[2:])
+                client.sendall(READY)
                 if read_exact(client, 3) != b"\x00\x01\x01":
                     raise ValueError("expected empty-topic SUBSCRIBE")
                 if args.silent:

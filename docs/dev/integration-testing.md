@@ -995,7 +995,11 @@ it ([#1500](https://github.com/p2pool-starter-stack/pithead/issues/1500)): every
 read with `16#`, which is fatal on an empty string, so a peer that stalled part-way through a
 header left an interpreter error on stderr and an empty verdict. Those cases assert the empty
 stderr alongside the reason, because the return code was already 1 while the bug was live and a
-case checking only the code would have passed against it.
+case checking only the code would have passed against it. The same file runs the shipped probe
+over loopback against `tests/integration/fakes/fake_zmq_publisher.py`, a one-shot XPUB that
+publishes one frame or, with `--silent`, none; the probe must pass the first and fail the second.
+The fixture's own checks are asserted by the message it exits with, not only its code, because a
+peer that hangs up early also makes it exit 1.
 `selftest-stack-sandbox.sh` reaches the other way, into the tier-1 suite's own plumbing.
 `tests/stack/lib.sh` built its throwaway sandbox as `SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"`, and
 `mktemp -d` prints nothing on stdout when it fails, so the inner substitution collapsed to `cd ""`

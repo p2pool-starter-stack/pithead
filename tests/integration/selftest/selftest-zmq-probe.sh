@@ -225,62 +225,56 @@ start_fixture() { # [--silent] -> leaves FIXTURE_PID/FIXTURE_PORT_FILE set
 }
 
 # The fixture's own protocol checks are deliberate: a raw TCP peer is not the probe path.
-# Send the real greeting and then a bad READY or subscription; the server must reject both.
-fixture_rejects() { # <READY hex> <subscription hex>
+# Each peer below breaks one step; the fixture must exit non-zero and name that step, so an
+# unrelated socket error cannot pass for the check.
+fixture_rejects() { # <label> <expected stderr> <READY hex | half-greeting | bad-greeting> [subscription hex]
     start_fixture
     port="$(cat "$FIXTURE_PORT_FILE")"
-    python3 - "$port" "$1" "$2" <<'PY'
+    PYTHONPATH="$HERE/../fakes" timeout 5 python3 - "$port" "${@:3}" <<'PY'
 import socket
 import sys
 
-greeting = b"\xff" + b"\0" * 8 + b"\x7f\x03\x01NULL" + b"\0" * 48
+import fake_zmq_publisher as fx
 
-
-def recv_exact(client, size):
-    reply = bytearray()
-    while len(reply) < size:
-        if not (chunk := client.recv(size - len(reply))):
-            raise ConnectionError(f"short read: got {len(reply)}, want {size}")
-        reply.extend(chunk)
-    return bytes(reply)
-
-
-class Closed:
-    def recv(self, _size):
-        return b""
-
-
-try:
-    recv_exact(Closed(), 1)
-except ConnectionError:
-    pass
-else:
-    raise AssertionError("EOF must fail instead of spinning")
-
-
-port, ready, subscription = sys.argv[1:]
-with socket.create_connection(("127.0.0.1", int(port))):
-    pass
+port, ready, *subscription = sys.argv[1:]
 with socket.create_connection(("127.0.0.1", int(port)), timeout=1) as client:
     client.settimeout(1)
-    client.sendall(greeting)
-    recv_exact(client, 64)
-    ready = bytes.fromhex(ready)
-    client.sendall(ready)
-    if ready == bytes.fromhex("04190552454144590b536f636b65742d5479706500000003535542"):
-        recv_exact(client, 28)
-    client.sendall(bytes.fromhex(subscription))
+    if ready == "half-greeting":
+        client.sendall(fx.GREETING[:32])  # Then EOF: the fixture must not spin on it.
+        sys.exit()
+    if ready == "bad-greeting":
+        client.sendall(fx.GREETING[:-1] + b"\x01")
+        sys.exit()
+    client.sendall(fx.GREETING)
+    fx.read_exact(client, 64)
+    client.sendall(bytes.fromhex(ready))
+    if bytes.fromhex(ready) == fx.SUB_READY:
+        fx.read_exact(client, 28)
+    client.sendall(bytes.fromhex(subscription[0]))
 PY
-    wait "$FIXTURE_PID"
-    fixture_rc=$?
+    for _ in $(seq 1 30); do
+        kill -0 "$FIXTURE_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    if kill -0 "$FIXTURE_PID" 2>/dev/null; then
+        kill "$FIXTURE_PID"
+        it_fail "$1" "fixture still running after 3s"
+    else
+        wait "$FIXTURE_PID"
+        assert_rc "$1: exits 1" "$?" "1"
+        assert_contains "$1: names the step" "$(cat "$FIXTURE_ERROR_FILE")" "$2"
+    fi
+    wait "$FIXTURE_PID" 2>/dev/null
     rm -f "$FIXTURE_PORT_FILE" "$FIXTURE_ERROR_FILE"
-    return "$fixture_rc"
 }
 
-fixture_rejects "00$(printf '%s' "$READY_SUB" | cut -c3-)" "000101"
-assert_rc "the fixture rejects a non-READY peer" "$?" "1"
-fixture_rejects "$READY_SUB" "000100"
-assert_rc "the fixture rejects a non-SUBSCRIBE peer" "$?" "1"
+fixture_rejects "the fixture rejects a non-READY peer" "expected ZMTP SUB READY" \
+    "00$(printf '%s' "$READY_SUB" | cut -c3-)" "000101"
+fixture_rejects "the fixture rejects a non-SUBSCRIBE peer" "expected empty-topic SUBSCRIBE" \
+    "$READY_SUB" "000100"
+fixture_rejects "the fixture rejects a non-ZMTP greeting" "unexpected ZMTP greeting" bad-greeting
+fixture_rejects "the fixture fails on EOF instead of spinning" "short read" \
+    half-greeting
 
 start_fixture
 port="$(cat "$FIXTURE_PORT_FILE")"
