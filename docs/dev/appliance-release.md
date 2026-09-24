@@ -119,8 +119,8 @@ Three guards consume them, because a correctly-signed bundle is not automaticall
 - **No migration on a volume without room for it.** A `data_migration` bundle is refused
   when the local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB: a
   Tari major migration writes a compacted copy beside the old database, and on a full volume
-  it fails part-way after the slot has committed (#2645). The sizing and the refusal's
-  wording are `pithead upgrade`'s (`tari_db_space_shortfall`, #2636). The guard keys on
+  it fails part-way after the slot has committed (#2645). The sizing, and the sizes the
+  refusal names, are `pithead upgrade`'s (`tari_db_space_shortfall`, #2636). The guard keys on
   `data_migration` alone, since the Tari image a bundle starts is in its compose file, which
   cannot be read before the install. So a migrating bundle is held to the Tari bound even
   when only Monero's data migrates. A Tari node that is `remote` or `off`, or no Tari

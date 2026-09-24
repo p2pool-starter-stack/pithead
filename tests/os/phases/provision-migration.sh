@@ -7,6 +7,7 @@
 # leave both slots' RAUC records, the /data floor and the migration marker as they were. The filler
 # then goes, and the caller's install below is the has-room case. The filler is fallocated on
 # data.mdb's own filesystem, so no bytes are written; any leftover from an aborted run is removed.
+# Returns 2 only when the filler is still there, the one failure the install below cannot survive.
 _provision_migration_space_refusal() {
     local db mode mount fill rauc_before rauc_after floor_before out rc
     mode=$(_ssh "sed -n 's/^TARI_MODE=//p' /data/pithead/.env" | tr -d '\r')
@@ -61,7 +62,7 @@ _provision_migration_space_refusal() {
         ok "the space fixture is gone; the install below is the has-room case"
     else
         bad "the space fixture could not be removed from $mount"
-        return 1
+        return 2
     fi
 }
 _phase_provision_migration() {
@@ -82,8 +83,10 @@ _phase_provision_migration() {
         bad "staging the migration bundle failed"
         return 1
     }
-    # Not gating: a failed sub-leg is its own row, and the install below still runs.
+    # Not gating: a failed sub-leg is its own row, and the install below still runs, unless the
+    # filler is still on /data, where that install would be refused for the fixture's fault.
     _provision_migration_space_refusal
+    [ "$?" -ne 2 ] || return 1
     # os-update is the path that writes the pending marker (a bare rauc install does not) — and
     # this is also the first tier-4 exercise of os-update against a REAL bundle: it needs
     # unsquashfs on the appliance to read the manifest back, which CI's stubbed rauc never shows.
