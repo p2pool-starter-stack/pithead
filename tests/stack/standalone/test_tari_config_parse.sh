@@ -96,16 +96,18 @@ echo "  ✓ minotari_node accepted the rendered config (still running after the 
 # #2653: the image is built with the `libtor` feature and `base_node.use_libtor` defaults to true, so
 # under a Tor hidden-service transport the node starts its own Tor, which dials Tor relays straight
 # from the tari container instead of through the stack's tor. That Tor keeps its data under
-# <base_path>/libtor, created before the node starts networking.
-if [ -e "$WORK_DIR/node/libtor" ]; then
+# <base_path>/<network>/libtor (Tari's get_base_path() appends the network, as the log4rs path
+# /var/tari/node/mainnet/... shows), created before the node starts networking.
+libtor_dir() { find "$1" -mindepth 2 -maxdepth 2 -type d -name libtor -print -quit 2>/dev/null; }
+if [ -n "$(libtor_dir "$WORK_DIR/node")" ]; then
     echo "$output" >&2
-    echo "FAIL: minotari_node started its in-process Tor (<base_path>/libtor exists) (#2653)" >&2
+    echo "FAIL: minotari_node started its in-process Tor (<base_path>/<network>/libtor exists) (#2653)" >&2
     exit 1
 fi
-echo "  ✓ minotari_node started no in-process Tor (no <base_path>/libtor) (#2653)"
+echo "  ✓ minotari_node started no in-process Tor (no <base_path>/<network>/libtor) (#2653)"
 
-# Calibration: the same image on the pre-#2653 transport (`tor`, use_libtor left at its
-# default) must create <base_path>/libtor, or the absence above proves nothing. If a future image
+# Calibration: the same image on the pre-#2653 transport (`tor`, use_libtor left at its default)
+# must create <base_path>/<network>/libtor, or the absence above proves nothing. If a future image
 # drops the libtor feature this fails, and use_libtor = false can go with it.
 mkdir -p "$WORK_DIR/calibration-config" "$WORK_DIR/calibration-node"
 cp -p "$ROOT/build/tari/entrypoint.sh" "$WORK_DIR/calibration-config/"
@@ -117,12 +119,12 @@ docker run -d --network none --name "$CALIBRATION" --user root -e WAIT_FOR_TOR=0
     --entrypoint /var/tari/config/entrypoint.sh \
     "$TARI_IMAGE" --disable-splash-screen --non-interactive >/dev/null
 for _ in $(seq 1 20); do
-    [ -e "$WORK_DIR/calibration-node/libtor" ] && break
+    [ -n "$(libtor_dir "$WORK_DIR/calibration-node")" ] && break
     sleep 1
 done
-if [ ! -e "$WORK_DIR/calibration-node/libtor" ]; then
+if [ -z "$(libtor_dir "$WORK_DIR/calibration-node")" ]; then
     docker logs "$CALIBRATION" >&2 || true
-    echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/libtor" >&2
+    echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/<network>/libtor" >&2
     exit 1
 fi
 echo "  ✓ calibration: the same image on a Tor transport with use_libtor at its default starts libtor"
