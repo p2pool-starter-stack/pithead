@@ -135,5 +135,5 @@ rm -rf "$DF"
 unset DF BD
 
 # The other data-migration refusal: no room on the Tari data volume for the migration (#2645).
-# shellcheck source=tests/stack/appliance/test-appliance-os-update-migration-space.sh
-source "$HERE/appliance/test-appliance-os-update-migration-space.sh" || return $?
+# shellcheck source=tests/stack/appliance/os-update-migration-space.sh
+source "$HERE/appliance/os-update-migration-space.sh" || return $?
