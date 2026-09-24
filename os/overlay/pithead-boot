@@ -124,29 +124,6 @@ gate_url() { # -> scheme://host:port/ for the dashboard's own site
     if [ -z "$port" ]; then [ "$scheme" = https ] && port=443 || port=80; fi
     printf '%s|%s|%s' "$scheme" "$host" "$port"
 }
-# dashboard.host is validated as "a hostname or IP address — letters, digits, dots, hyphens, and
-# colons", so HOST_IP can be an IPv6 literal, and these two exist because of what curl does with one:
-#   - a URL needs it bracketed, or the port reads as part of the address;
-#   - `--resolve` cannot take one at all — curl rejects the whole option with "Couldn't parse
-#     CURLOPT_RESOLVE entry", which fails the request, which on this gate means a healthy box never
-#     commits and #1065 reboots it. Measured against curl 8.7, bracketed and unbracketed alike.
-# A literal needs no resolution anyway: the box owns the address. So --resolve is for NAMES, where
-# it is what keeps the dial on loopback instead of depending on the machine resolving its own mDNS
-# name — the one lookup a boot-time health probe must not be hostage to.
-gate_target_url() { # <scheme> <host> <port>
-    case "$2" in
-    *:*) printf '%s://[%s]:%s/' "$1" "$2" "$3" ;;
-    *) printf '%s://%s:%s/' "$1" "$2" "$3" ;;
-    esac
-}
-gate_resolve_spec() { # <host> <port> -> a --resolve spec, or empty when the host needs no lookup
-    case "$1" in
-    *:*) ;;                                          # IPv6 literal
-    *[!0-9.]*) printf '%s:%s:127.0.0.1' "$1" "$2" ;; # a name
-    *) ;;                                            # IPv4 literal
-    esac
-}
-
 # shellcheck source=os/overlay/pithead-boot-stack-health
 . "$(dirname "${BASH_SOURCE[0]}")/pithead-boot-stack-health"
 
@@ -311,7 +288,13 @@ fi
 OS_INFLIGHT=data/os-update/in-flight.json
 OS_STATE_DIR=data/control/results
 os_update_rollback_verdict
-# Reload derived containers before finishing a target restore or the ordinary render (#798).
+
+# Containers are DERIVED too (#798): the baked archives ship in the slot, but podman's store
+# lives on /data and the image tag is constant across releases — a keep-reinstall or A/B
+# update ran RC-old containers under an RC-new OS until this loaded them. ONE loader, shared
+# with the first-boot wizard (load_baked_images): sha-keyed, so a normal boot pays one sha256
+# per archive, and 'up' below recreates on the image-id change. Loaded before a target restore
+# is finished below, because that finish runs setup and starts the stack.
 ./pithead load-images
 [ ! -f .restore-incomplete ] || fail_boot "the carried restore is incomplete; run the installer restore again"
 if [ -f .restore-pending ]; then

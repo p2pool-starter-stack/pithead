@@ -7,7 +7,7 @@
 # working while Healthchecks, Telegram and XvB all go dark at once. Production once sat that way
 # for six hours. The heal is probe-driven, rate-limited and bounded, so the risk it guards
 # against does not apply the way it does interactively.
-apply_appliance_defaults() {
+apply_appliance_defaults() { # [config, default $CONFIG_FILE]
     local config="${1:-$CONFIG_FILE}" tmp
     [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1

@@ -1,72 +1,31 @@
-# Consume a restore upload (#909, #786 B), verifying and validating a copy before mutation.
-# rc: 0 landed like typed config, 1 rejected with error.txt, 2 none, 3 cleanup unsafe. Submitted
-# and accepted passphrases live only in volatile storage; the installer applies one without crossing the ESP.
-restore_carry_dir() { printf '%s' "${PITHEAD_RESTORE_CARRY_DIR:-/run/pithead-restore}"; }
-restore_submission_dir() { printf '%s' "${PITHEAD_RESTORE_SUBMISSION_DIR:-/run/pithead-restore-submit}"; }
-restore_stage_root() { printf '%s' "${PITHEAD_RESTORE_STAGE_ROOT:-/run/pithead-restore-stage}"; }
-clear_restore_carry() { # [<carry-dir>]
-    rm -rf -- "${1:-$(restore_carry_dir)}" || {
-        warn "Could not clear the temporary restore handoff — reboot before trying another install."
-        return 1
-    }
-}
-clear_restore_stage() { # <volatile-stage-dir>
-    rm -rf -- "$1" || {
-        warn "Could not clear the private restore staging area — reboot before continuing."
-        return 1
-    }
-}
-clear_setup_candidate() { # <secret-file>...
-    rm -f -- "$@" || {
-        warn "Could not clear temporary setup credentials — do not leave the machine unattended."
-        return 1
-    }
-}
-clear_legacy_restore_carry() { # [<ESP-dir>]
-    local dir="${1:-$PRESEED_DIR}"
-    rm -f -- "$dir/pithead-restore.enc" "$dir/pithead-restore-pass" "$dir/pithead-setup-wizard" || {
-        warn "Could not clear every legacy restore handoff file — do not leave the machine unattended."
-        return 1
-    }
-}
-clear_restore_submission() { # <archive-spool> [<passphrase-spool>] [<keep-archive|keep-marker>]
-    local pass_dir="${2:-$1}" mode="${3:-}" paths
-    case "$mode" in
-    keep-archive) paths=("$1/restore-passphrase" "$pass_dir/restore-passphrase") ;;
-    keep-marker) paths=("$1/restore-archive" "$pass_dir/restore-archive" "$1/restore-passphrase" "$pass_dir/restore-passphrase") ;;
-    *) paths=("$1/restore-archive" "$pass_dir/restore-archive" "$1/restore-passphrase" "$pass_dir/restore-passphrase" "$1/restore-inflight") ;;
-    esac
-    rm -f -- "${paths[@]}" || {
-        warn "Could not clear the submitted restore files — do not leave the machine unattended."
-        wizard_spool_publish "$1" error.txt printf '%s' 'Could not clear the submitted restore files safely.' || true
-        return 1
-    }
-}
-clear_restore_snapshots() { # <private-dir>...
-    local dir rc=0
-    for dir in "$@"; do
-        [ -z "$dir" ] || wizard_spool_clean_checked "$dir" || rc=1
-    done
-    [ "$rc" = 0 ] || {
-        warn "Could not clear every private restore snapshot — do not leave the machine unattended."
-        return 1
-    }
-}
-# Keep one appliance-layout list for membership checks and application; slashes name trees.
+# Setup accepts the appliance backup layout, never arbitrary host paths from an archive.
+# Trailing slashes name data trees; other entries name individual files. Keep the same list
+# for membership checks and application so a newly accepted item cannot escape the mapping.
 restore_setup_config_path() {
     case "$CONFIG_FILE" in
     /*) printf '%s\n' "$CONFIG_FILE" ;;
     *) printf '%s\n' "$PWD/$CONFIG_FILE" ;;
     esac
 }
-# Find the archive's own working directory instead of assuming this appliance's $PWD (#2181).
-# The config maps through restore_setup_config_path; every other accepted item joins onto $PWD.
+
+# The accepted layout, named relative to whatever directory the archive was made from — a
+# genuine older release's `pithead backup` ran from the operator's own working directory, never
+# this appliance's $PWD (#2181). restore_setup_root() finds that directory from the archive
+# itself; restore_setup_members() and restore_apply() match/extract relative to it, never
+# assuming it is $PWD. restore_setup_config_path() maps the one path-shaped exception
+# ($CONFIG_FILE) to its destination on THIS box; every other item joins directly onto $PWD.
 restore_setup_relative_items() {
     printf '%s\n' "$CONFIG_FILE" "$ENV_FILE" "Caddyfile" \
         "data/tor/" "data/dashboard/" "data/monero/" \
         "data/tari/" "data/p2pool/"
 }
-# Find the archive's single shared root from config.json; ambiguity or an absolute override fails.
+
+# The single absolute directory every member of a genuine backup shares — found from wherever
+# `config.json` sits, since that item is always present and never a directory. Requires exactly
+# one match: a backup with config.json at two different depths is not one this codebase ever
+# produces, so more than one is corruption or an attack, not a layout to guess between. An
+# already-absolute $CONFIG_FILE (only a single-invocation validation override, never the wizard
+# restore path) has no archive-relative root to detect.
 restore_setup_root() { # <tar name listing>
     case "$CONFIG_FILE" in /*) return 1 ;; esac
     local member root="" hits=0
@@ -85,6 +44,7 @@ restore_setup_root() { # <tar name listing>
     [ "$hits" -eq 1 ] || return 1
     printf '%s' "$root"
 }
+
 restore_setup_archive_within_limits() { # <names-file> <verbose-file> [max-members] [max-bytes]
     local members bytes
     members=$(wc -l <"$1")
@@ -92,6 +52,7 @@ restore_setup_archive_within_limits() { # <names-file> <verbose-file> [max-membe
     bytes=$(awk '$1 ~ /^-/ { if ($3 !~ /^[0-9]+$/) exit 1; total += $3 } END { printf "%.0f", total }' "$2") || return 1
     [ "$bytes" -le "${4:-1073741824}" ]
 }
+
 restore_setup_tar_list() { # <archive> <tar-list-option> <output> [max-KiB] [seconds]
     timeout "${5:-30}" bash -c \
         'ulimit -f "$1"; exec tar --numeric-owner --quoting-style=escape "$2" "$3"' \
@@ -131,16 +92,22 @@ restore_setup_members() { # <tar name listing> <root, from restore_setup_root>
     done <<<"$1"
 }
 
-# Shared acceptance for wizard uploads and legacy ESP pre-seeds: cap, decrypt, inspect, stage,
-# validate, then commit.
-# With <config-only-dest> set, only the validated config is copied there. <destination-root>
-# applies the full restore under a mounted target instead of this process's working directory.
-# rc 0: done. rc 1: refused, one page-ready line in <errfile>. Never deletes <archive>.
+# The whole restore acceptance, shared by its doors — the wizard's spool channel
+# (firstboot_consume_restore), the installer applying an accepted restore onto the target's data
+# (install_restore_to_target) and a legacy ESP pre-seed (consume_preseed_restore): size cap,
+# encryption detection, decrypt verification, tar integrity, path-safety audit, extract-and-validate
+# through a staging copy, then commit. One set of checks, several doors.
+# With <config-only-dest> set, the validated config is copied there and NOTHING ELSE touches
+# this machine — the installer's accept step, where the restored tree belongs to the TARGET and
+# decrypted keys must never rest on the stick. <destination-root> applies the full restore under
+# a mounted target instead of this process's working directory. rc 0: done. rc 1: refused, one
+# page-ready line in <errfile>. Never deletes <archive> — the callers own their files.
 restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<destination-root>] [<staging-root>]
     local archive="$1" pass="$2" errf="$3" cfg_dest="${4:-}" dest_root="${5:-$PWD}" stage_root="${6:-$(restore_stage_root)}"
     local size magic encrypted=0 tmp plain tree staged_cfg err root restore_rc=0
 
-    # Repeat the server cap for archives supplied by another path.
+    # Server-side cap already refused an oversize upload before it reached the spool; checked
+    # again here so a file dropped by any other means gets the same honest refusal.
     size=$(wc -c <"$archive" 2>/dev/null || echo 0)
     if [ "$size" -gt "$RESTORE_MAX_BYTES" ]; then
         printf 'backup archive is too large (max %s MB) — a Pithead backup holds only config, keys and the dashboard database, never the blockchains' "$((RESTORE_MAX_BYTES / 1048576))" >"$errf"
@@ -326,14 +293,41 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
         printf 'could not apply the backup files' >"$errf"
         return 1
     fi
-    # This archive records its source as deployed, but the wizard/pre-seed target is new hardware
-    # and must run setup. Administrative `pithead restore` does not call this path (#1239).
+    # #1239 (live KVM guest evidence): the archive's .env is the SOURCE machine's own —
+    # DEPLOYMENT_COMPLETED=true there records THAT machine's prior deployment, not this
+    # hardware's. Every door that reaches here feeds a headless `setup()` on the restored machine
+    # (firstboot's spool-accept path, or the installed target's first boot after the installer
+    # applied the restore): setup()'s
+    # is_deployed guard exists to stop an operator re-running setup on a box that is already
+    # live (#924), and it has no way to tell "restored, never provisioned HERE" apart from
+    # "live" — a carried true fires that guard's exact fatal, no-tty refusal, and setup never
+    # runs: prepare_directories, render_env, provision_tor never fire, no container starts. A
+    # just-restored box has NOT completed deployment on this hardware — clear the marker so the
+    # caller's setup() actually provisions it. The staged canonicalizer has already retained only
+    # validated generated secrets and Tor identity while deriving host and policy from config;
+    # this path changes its one hardware-specific lifecycle value. Scoped to THIS commit
+    # path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
+    # deployed on its own hardware) has its own separate extraction and never calls restore_apply,
+    # so a live box's restore keeps its completion marker exactly as it should.
     if [ -f "$dest_root/$ENV_FILE" ]; then
         safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$dest_root/$ENV_FILE"
     fi
     return 0
 )
 
+# Consume a restore-at-setup submission (#909, #786 sub-issue B): an uploaded encrypted backup
+# archive + its emergency-kit passphrase, in place of the config form. Same decrypt/verify
+# machinery as `stack_restore` (magic-byte format check, full-stream integrity verify BEFORE
+# anything is touched), but staged through a COPY like consume_preseed_config — the exact
+# validate-through-a-copy idiom this codebase already uses for "never mutate real state until
+# accepted" — because a wizard-time restore must be able to fail clean and fall back to the
+# form, not leave a half-restored Tor identity or dashboard database behind for a follow-up
+# manual submit to inherit. rc: 0 landed (the config candidate + $spool/applied, identical to a
+# typed submission — the caller falls into the SAME accept path), 1 rejected (error.txt
+# written), 2 none, 3 its temporary secrets could not be cleared safely. The passphrase lives
+# only in the volatile submission spool, is read once and deleted either way — it never outlives
+# this call, except that an installer's accepted pair parks in the volatile carry dir until the
+# installer applies it to the target without crossing the ESP.
 firstboot_consume_restore() ( # <spool-dir> [<installer>] [<volatile-passphrase-spool>] [<config-dest>]
     local spool="$1" installer="${2:-0}" submission="${3:-$1}" config_dest="${4:-$PWD/config.json}"
     local archive archive_spool="$spool" pass_snap="" pass="" rc=0 errf accepted=0
@@ -357,6 +351,7 @@ firstboot_consume_restore() ( # <spool-dir> [<installer>] [<volatile-passphrase-
         wizard_spool_publish "$spool" error.txt printf '%s' 'Unsafe restore passphrase file — submit again.'
         return 1
     fi
+    # Error text is private too: restore_apply never receives a page-writable path.
     umask 077
     rc=0
     if [ "$installer" -eq 1 ]; then

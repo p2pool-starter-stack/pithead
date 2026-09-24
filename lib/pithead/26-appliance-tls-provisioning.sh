@@ -281,7 +281,7 @@ wizard_mint_cert() { # <spool-dir>  -> prints the fingerprint
 # defensible default: the operator ran the CLI wizard, was asked, and pressed Enter to skip. A
 # headless appliance was never asked, so the safe answer is the one it gets. The credential is
 # generated on the machine and printed to its console; it never crosses the setup page.
-ensure_appliance_dashboard_password() { # [spool-dir]
+ensure_appliance_dashboard_password() { # [spool-dir] [config, default $CONFIG_FILE]
     local config="${2:-$CONFIG_FILE}"
     [ -f "$config" ] || return 0
     [ -z "$(jq -r '.dashboard.auth.password // ""' "$config")" ] || return 0
