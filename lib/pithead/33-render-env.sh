@@ -64,14 +64,14 @@ render_env() {
     local prune
     prune=$(monero_prune_flag)
 
-    # Optional clearnet initial sync (#183). DEFAULT OFF (privacy-first). When on for a daemon, its
-    # initial blockchain download runs over CLEARNET (fast) instead of Tor — briefly exposing this
-    # host's IP to that P2P network. Per-component, since Monero and Tari sync independently.
-    # config_bool honours an explicit false; normalize_bool then maps the result to true/false.
-    # Monero keeps tx-proxy=tor the whole time. Flip back to false + `apply` once synced.
-    local monero_clearnet tari_clearnet
-    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
+    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
+    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
+    local monero_clearnet=false tari_clearnet=false
+    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
+        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    fi
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores

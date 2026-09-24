@@ -79,15 +79,15 @@ echo "== black-box: confirm-gate — an in-scope disruptive change needs a typed
 assert_eq "reference default enables XvB" "$(jq -r '.xvb.enabled' "$ROOT/config.reference.json")" "true"
 assert_eq "a config without xvb.enabled renders the same enabled state" "$(grep '^XVB_ENABLED=' "$C/.env" | cut -d= -f2-)" "true"
 UUID3="33333333-3333-4333-8333-333333333333"
-# Clean baseline: pool mini, clearnet off, applied.
-control_config mini
+# Clean baseline: pool mini, clearnet off, the host's egress firewall off (only then does a clearnet flag reach .env, #2649), applied.
+control_config mini && jq '.network.tor_egress_firewall=false' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 # Candidate turns on Monero clearnet initial sync — describe_change flags this CONFIRM (#719): an
 # in-scope disruptive change (host IP exposed during IBD), confirm-gated rather than host-only DEST.
 preview_clearnet() {
     jq -n --arg w "$WALLET" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:{
         monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",clearnet_initial_sync:true},
-        tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
+        tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"}, network:{tor_egress_firewall:false},
         dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},control:{enabled:true}}}}' >"$REQS/$UUID3.json"
     run_pending >/dev/null
 }
@@ -117,6 +117,7 @@ assert_eq "confirmed change landed in config.json" "$(jq -r '.monero.clearnet_in
 # commit-confirmed action, carrying the changed key NAME (never a value).
 assert_contains "confirmed commit audits as commit-confirmed with the key name" \
     "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" "monero.clearnet_initial_sync"
+jq 'del(.network)' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json" && (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1) # the host's firewall back on
 
 echo "== black-box: sensitive changes need the typed payout-confirmation envelope (#1959, #2076) =="
 # Type-to-confirm alone is still only friction, and it is no longer the ONLY thing the gate wants:

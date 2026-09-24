@@ -150,6 +150,7 @@ run_scenario() {
     if ! pithead apply -y >"$OUT_DIR/${name}.apply.log" 2>&1; then
         it_fail "apply succeeded" "see $OUT_DIR/${name}.apply.log"
         capture_artifacts "$name" "$OUT_DIR"
+        restore_firewall_after_clearnet "$name" "$config"
         return 0
     fi
 
@@ -177,7 +178,47 @@ run_scenario() {
     assert_scenario "$name" "$config"
     # If this scenario turned anything red, grab artifacts for it.
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "$name" "$OUT_DIR"
+    restore_firewall_after_clearnet "$name" "$config"
     return 0
+}
+
+# The clearnet-sync scenario runs with the egress firewall off, the only way its flags reach the
+# daemons (#2649). Before that scenario ends, turn the firewall back on with the flags left set and
+# prove what the operator then gets: the rules are installed again, render_env zeroes both .env
+# flags, and a sync that already completed stays spent. The marker survives the apply, so turning
+# the firewall off again later would not put a synced node back on clearnet. Any other config is
+# left alone.
+restore_firewall_after_clearnet() { # <name> <config>
+    local name="$1" config="$2" sdir chain had=""
+    [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ] || return 0
+    [ "$(jq_get "$config" '.monero.clearnet_initial_sync')" = "true" ] ||
+        [ "$(jq_get "$config" '.tari.clearnet_initial_sync')" = "true" ] || return 0
+    # Only a marker that existed before this apply can prove it survives it; a missing one is the
+    # transition row's failure, reported there once.
+    sdir="$(env_on_box CLEARNET_STATE_DIR)"
+    [ -n "$sdir" ] || sdir="$IT_REMOTE_DIR/data/clearnet-state"
+    for chain in monero tari; do
+        [ "$(jq_get "$config" ".$chain.clearnet_initial_sync")" = "true" ] || continue
+        rx "test -f $(quote_arg "$sdir/$chain.synced")" && had="$had $chain"
+    done
+    it_step "turning the egress firewall back on after the clearnet sync (#2649)…"
+    push_config "$(printf '%s' "$config" | jq '.network.tor_egress_firewall = true')"
+    if ! pithead apply -y >"$OUT_DIR/${name}.firewall-on.apply.log" 2>&1; then
+        it_fail "egress firewall back on after the clearnet sync (#2649)" "apply failed; see $OUT_DIR/${name}.firewall-on.apply.log"
+        capture_artifacts "${name}-firewall-on" "$OUT_DIR"
+        return 0
+    fi
+    wait_status_ok 240 || true
+    assert_contains "egress firewall back on after the clearnet sync (#2649)" "$(pithead doctor 2>&1)" "egress firewall is installed"
+    assert_eq "firewall on: monero clearnet flag ignored (#2649)" "$(env_on_box MONERO_CLEARNET_SYNC)" "false"
+    assert_eq "firewall on: tari clearnet flag ignored (#2649)" "$(env_on_box TARI_CLEARNET_SYNC)" "false"
+    for chain in $had; do
+        if rx "test -f $(quote_arg "$sdir/$chain.synced")"; then
+            it_pass "firewall on: the completed $chain clearnet sync stays spent (#234/#2649)"
+        else
+            it_fail "firewall on: the completed $chain clearnet sync stays spent (#234/#2649)" "$chain.synced marker removed by the firewall-on apply"
+        fi
+    done
 }
 
 # The read-only assertion battery (infrastructure-level). Asserts the live running state of

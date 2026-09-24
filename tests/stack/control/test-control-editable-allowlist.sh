@@ -127,9 +127,20 @@ assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PRO
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
+# A clearnet flag reaches .env only while the egress firewall is off (#2649), and the gate reads the
+# .env diff, so the two clearnet rows run after the host turns the firewall off. The firewall is a
+# host-only key: the host sets it here, not the gate, and turns it back on after them.
+host_firewall() { # <true|false>
+    jq ".network.tor_egress_firewall=$1" "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
+    (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
+}
+host_firewall false
 roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
-roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
+host_firewall true
+assert_eq "firewall back on: MONERO_CLEARNET_SYNC ignored (#2649)" "$(env_now MONERO_CLEARNET_SYNC)" "false"
+assert_eq "firewall back on: TARI_CLEARNET_SYNC ignored (#2649)" "$(env_now TARI_CLEARNET_SYNC)" "false"
+roundtrip_confirm "TARI_DATA_DIR" '.tari.data_dir="'"$C"'/data/tari2"' '.tari.data_dir' "$C/data/tari2"
 roundtrip_confirm "MONERO_OUT_PEERS" '.monero.out_peers=24' '.monero.out_peers' "24"
 roundtrip_confirm "MONERO_DATA_DIR" '.monero.data_dir="'"$C"'/data/monero2"' '.monero.data_dir' "$C/data/monero2"
 roundtrip_confirm "P2POOL_DATA_DIR" '.p2pool.data_dir="'"$C"'/data/p2pool2"' '.p2pool.data_dir' "$C/data/p2pool2"

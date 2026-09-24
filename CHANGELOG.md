@@ -117,6 +117,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
+  `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped
+  its Tor proxy while the firewall dropped every clearnet dial. The node had no peers, never
+  reported `synchronized`, and so never switched back to Tor. `apply` now passes the flag to the
+  daemons only while the firewall is off. With the firewall on, both nodes stay on Tor, and the
+  apply/doctor warning says the flag is ignored. A clearnet sync that already completed stays
+  complete when the firewall is turned back on.
+
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
   just restarted and has no peers yet reports a target height of 0. The dashboard read that as
