@@ -22,14 +22,16 @@
 # ever-up guard). The migration hold kept Tari away until the release, so the leg first waits until
 # the dashboard has read the released node: both containers up for a whole window with no
 # `Tari gRPC GetTipInfo error` and no `Data Collection Error` (a cycle that raised before its Tari
-# call) in the dashboard's log over it. A cycle is the 30 s sleep plus its work, whose slowest calls
-# time out at 20 s over Tor, so the window holds at least two polls while a cycle stays under 90 s,
-# and with no error in it at least one of them reached the node. Without that wait a
+# call) in the dashboard's log over it. Only a successful GetTipInfo leaves a poll clean, so one Tari
+# poll inside the window proves a read. The window must outlast the gap between two Tari polls: the
+# 30 s sleep plus a cycle's work, usually seconds, longer on a tenth cycle whose XvB or update calls
+# wait out Tor timeouts. A cycle that outlasted the window would let the check pass unread; the badge
+# row would then go red, never green. Without that wait a
 # missing badge would say nothing about reporting. A dashboard restarted by the recovery `up` starts
 # a fresh monitor with no badge, so its clear counts only if the dashboard kept its start time.
 
 CHAIN_FAULT_SERVICE=tari
-# Two dashboard cycles of up to 90 s each (see above).
+# Several times the usual gap between two dashboard Tari polls (see above).
 CHAIN_FAULT_READ_WINDOW=180
 
 # The service's row in `pithead status`'s health list, colour stripped. The compose table above the
