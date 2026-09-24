@@ -207,9 +207,8 @@ assert_running_state() {
         "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
-    local want_bind
-    [ "$rpc_lan" = "true" ] && want_bind="0.0.0.0" || want_bind="127.0.0.1"
-    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" "$want_bind"
+    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
+        "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
     assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
@@ -335,33 +334,7 @@ assert_running_state() {
             # client supplies one (monerod's image carries curl; xmrig-proxy's carries GNU wget,
             # which cannot speak SOCKS). Without it, a DROP and a bench with no route out are the
             # same observation and the assertion passes for the wrong reason on a disconnected box.
-            local tor_socks
-            tor_socks="$(env_on_box NETWORK_PREFIX)"
-            [ -n "$tor_socks" ] || tor_socks="172.28.0"
-            tor_socks="$tor_socks.25:9050"
-            # Prove the INSTRUMENT before reading it: `docker exec` against a missing container, or
-            # a monerod without curl, fails exactly like a DROPped dial, so the next assertion would
-            # print a green "dial is DROPPED" for a broken probe. Same guard, same reason, as
-            # tests/os/appliance-egress-leg.sh (#887).
-            if ! rx "docker exec monerod sh -c 'command -v curl' >/dev/null 2>&1" >/dev/null 2>&1; then
-                # ONE failure for one cause: reporting the dial and its control separately would
-                # print two reds for a single broken probe and bury the cause.
-                it_fail "the Tor-egress dial pair can run at all (#270/#2059)" \
-                    "monerod is missing or carries no curl — neither the drop nor its control can be asserted, so the firewall is UNVERIFIED, not proven"
-            else
-                if rx "docker exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" >/dev/null 2>&1; then
-                    it_fail "clearnet dial is DROPPED with the firewall on (#270/#2059)" \
-                        "monerod reached 1.1.1.1 directly — the firewall is installed but NOT enforced (fail-open)"
-                else
-                    it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
-                fi
-                if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
-                    it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
-                else
-                    it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
-                        "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
-                fi
-            fi
+            assert_egress_dial_pair
         fi
     fi
 
@@ -396,6 +369,34 @@ assert_running_state() {
 
     # 10. Secrets intact (proxy token + onions unchanged vs the baseline we captured).
     assert_eq "secrets intact (token + onions)" "$(secret_fingerprint)" "$BASELINE_SECRET_FP"
+}
+
+# The Tor-egress dial pair (#270/#2059), shared with the boot-restore fault (#2460): a direct dial
+# is DROPPED, and the same container reaches clearnet through Tor (so the drop is not a dead route).
+assert_egress_dial_pair() {
+    local tor_socks
+    tor_socks="$(env_on_box NETWORK_PREFIX)"
+    [ -n "$tor_socks" ] || tor_socks="172.28.0"
+    tor_socks="$tor_socks.25:9050"
+    # Prove the INSTRUMENT first: a missing container or a monerod without curl fails exactly like a
+    # DROPped dial and would print a green "DROPPED" for a broken probe (#887).
+    if ! rx "docker exec monerod sh -c 'command -v curl' >/dev/null 2>&1" >/dev/null 2>&1; then
+        it_fail "the Tor-egress dial pair can run at all (#270/#2059)" \
+            "monerod is missing or carries no curl — neither the drop nor its control can be asserted, so the firewall is UNVERIFIED, not proven"
+    else
+        if rx "docker exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" >/dev/null 2>&1; then
+            it_fail "clearnet dial is DROPPED with the firewall on (#270/#2059)" \
+                "monerod reached 1.1.1.1 directly — the firewall is installed but NOT enforced (fail-open)"
+        else
+            it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
+        fi
+        if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
+            it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
+        else
+            it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
+                "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
+        fi
+    fi
 }
 
 # Full per-scenario battery: the read-only state assertions, plus the apply-only idempotency

@@ -1,7 +1,8 @@
 # `uninstall` (#77 phase 1): the clean exit for the DIY channel — stop and remove what pithead
 # created on this host, keep what the operator owns. Kept: config.json, the data dirs (chains,
 # Tor onion keys, dashboard DB), backups/. Removed: containers, the stack's images, the rendered
-# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules. The
+# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules and their boot
+# unit. The
 # appliance has no uninstall — its equivalents are the reset tiers.
 stack_uninstall() {
     local yes=0 arg
@@ -30,6 +31,7 @@ stack_uninstall() {
         }
     fi
     remove_tor_egress_firewall 2>/dev/null || true
+    remove_tor_egress_boot_unit
     remove_lan_guard
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
