@@ -51,7 +51,8 @@ unresolved half): the restore leg's source-provisioning machine can fail with to
 healthy, and the only evidence any battery captured for it was the compose orchestration's own
 verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
 healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
-own healthcheck verdict and its own log.
+own healthcheck verdict and its own log. The provision phase's onion-exposure leg calls the same dump,
+after the tail of the refused `./pithead apply -y` output, when that apply fails (#2680).
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
@@ -90,8 +91,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   `/data` must survive a second install over the same disk, and the three-way wipe choice
   (`keep`/`data`/`all`) is asserted on the raw partition. A previous 1.x `xmrig_proxy` setting
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
-  restore leg moves a real encrypted archive to a fresh disk and requires the running stack to
-  carry the original payout wallet and Tor onion identity.
+  restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
+  requires its running stack to carry the prior-release wallet, Tor identity and secrets while
+  both the fixture's and the target's chain-data sentinels survive.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a
@@ -99,7 +101,17 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   Tor's SOCKS — runs on EVERY path through this phase, including the aborting ones, and reports RED
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
-  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)). Before the successful attempt, an
+  ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
+  The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
+  path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
+  the same process before the unsynced controller can return it to P2Pool. This bounded injection
+  proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
+  until their chains sync. Each of its verdicts is a counted row in the phase's own summary and none of
+  them aborts it: a controller that cannot move the live route is one RED row, and the rows after it still
+  run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
+  stops the proxy again on every path, including the ones that bail mid-transition.
+  Before the successful attempt, an
   unreachable remote node must be refused by preflight with its safe form values retained; a
   separate injected post-validation setup fault must open a recoverable failed page and retry
   with those values. The successful wizard submission names the appliance `fixture-box`; the
