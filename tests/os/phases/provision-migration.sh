@@ -8,10 +8,11 @@
 # then goes, and the caller's install below is the has-room case. The filler is fallocated on
 # data.mdb's own filesystem, so no bytes are written; any leftover from an aborted run is removed.
 _provision_migration_space_refusal() {
-    local db mount fill rauc_before rauc_after floor_before out rc
+    local db mode mount fill rauc_before rauc_after floor_before out rc
+    mode=$(_ssh "sed -n 's/^TARI_MODE=//p' /data/pithead/.env" | tr -d '\r')
     db=$(_ssh "cd /data/pithead && bash -c '. ./pithead && tari_local_db_file'" | tr -d '\r')
-    if [ -z "$db" ]; then
-        bad "no Tari data.mdb on the guest — the space refusal needs the local node's database to measure"
+    if [ "$mode" != "local" ] || [ -z "$db" ]; then
+        bad "the space refusal needs a local Tari node with a database to measure: TARI_MODE='$mode', data.mdb '${db:-none}'"
         return 1
     fi
     mount=$(_ssh "df -P '$db' | awk 'NR==2{print \$6}'" | tr -d '\r')
@@ -32,7 +33,7 @@ _provision_migration_space_refusal() {
     out=$(_ssh "cd /data/pithead && ./pithead os-update /data/update.bundle --yes 2>&1")
     rc=$?
     _ssh "rm -f '$fill'"
-    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "Refusing: this update migrates chain data"; then
+    if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "Refusing: this update declares a chain data migration"; then
         ok "os-update refused the data_migration bundle with $mount at 1 GiB free (rc=$rc)"
     else
         bad "os-update did not refuse the data_migration bundle on a full $mount (rc=$rc): $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"
@@ -81,7 +82,8 @@ _phase_provision_migration() {
         bad "staging the migration bundle failed"
         return 1
     }
-    _provision_migration_space_refusal || return 1
+    # Not gating: a failed sub-leg is its own row, and the install below still runs.
+    _provision_migration_space_refusal
     # os-update is the path that writes the pending marker (a bare rauc install does not) — and
     # this is also the first tier-4 exercise of os-update against a REAL bundle: it needs
     # unsquashfs on the appliance to read the manifest back, which CI's stubbed rauc never shows.

@@ -162,7 +162,7 @@ os_update_migration_space_guard() { # $1: the bundle's data_migration value
     db=$(tari_local_db_file) || return 0
     sizes=$(tari_db_space_shortfall "$db") || rc=$?
     case "$rc" in
-    1) printf '%s' "Refusing: this update migrates chain data once it commits, and the Tari migration writes a compacted copy of the node database beside the old one, which needs $sizes. Free space there, then retry. Nothing was installed." ;;
+    1) printf '%s' "Refusing: this update declares a chain data migration, which runs once it commits. A Tari major migration writes a compacted copy of the node database beside the old one, and whether this update carries one cannot be read before it installs, so it needs $sizes. Free space there, then retry. Nothing was installed." ;;
     2) warn "Could not read the size of $db or the free space on its volume, so the space this update's Tari database migration needs was not checked." ;;
     esac
     return 0

@@ -10,14 +10,17 @@
 MS="$SANDBOX/os-migration-space"
 mkdir -p "$MS/bin" "$MS/tari/mainnet/data/base_node/db"
 truncate -s 100G "$MS/tari/mainnet/data/base_node/db/data.mdb"
-# Stub df: column 4 (Available, KiB) of the second line, on the appliance's data mount.
+# Stub df: column 4 (Available, KiB) of the second line, on the appliance's data mount. It answers
+# only for a path under the Tari data dir, so a guard that measured another volume would not refuse.
 cat >"$MS/bin/df" <<'EOF'
 #!/usr/bin/env bash
+case "${*: -1}" in "$MS_DF_ROOT"/*) ;; *) exit 1 ;; esac
 [ "${MS_DF_FAIL:-0}" = 1 ] && exit 1
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
 printf '/dev/vdb1 999999999 1 %s 1%% /data\n' "${MS_AVAIL_KB:-999999999}"
 EOF
 chmod +x "$MS/bin/df"
+export MS_DF_ROOT="$MS/tari"
 ms_env() { # <TARI_MODE or empty> — the .env the guard reads the Tari mode and data dir from
     printf 'TARI_DATA_DIR=%s\n' "$MS/tari" >"$MS/.env"
     [ -z "$1" ] || printf 'TARI_MODE=%s\n' "$1" >>"$MS/.env"
@@ -29,7 +32,7 @@ ms_guard() { # <data_migration value> <avail GiB> — the guard's stdout and std
 echo "== unit: os_update_migration_space_guard (#2645) =="
 ms_env local
 out="$(ms_guard true 50)"
-assert_contains "a migrating bundle on a volume without room is refused" "$out" "Refusing: this update migrates chain data"
+assert_contains "a migrating bundle on a volume without room is refused" "$out" "Refusing: this update declares a chain data migration"
 assert_contains "the refusal names the volume" "$out" "on /data"
 assert_contains "the refusal names the size needed (data.mdb + 5 GiB margin)" "$out" "about 105 GiB free"
 assert_contains "the refusal names the size free" "$out" "and it has 50 GiB free"
@@ -144,3 +147,4 @@ ms_verb os-install 200
 assert_eq "os-install with room installs" "$(jq -r '.status' "$MSRES/$MSU.json" 2>/dev/null)" "installed"
 assert_contains "…through rauc install" "$(cat "$MS/rauc.log")" "install $MSDIR/pithead-os-v2.0.0.raucb"
 unset -f ms_env ms_guard ms_os_update ms_verb ms_staged
+unset MS MSC MSRES MSDIR MSU MS_DF_ROOT verb out

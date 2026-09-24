@@ -1421,11 +1421,11 @@ re-derives and re-verifies every step itself.
    locally: the RAUC signature against the machine's baked release keys, the machine-class
    `compatible` stamp, and the version — an older release, or one below the
    [`/data` migration floor](appliance.md#updates), is refused even with a valid signature. A
-   file that fails any check is deleted; there is no override in the dashboard. One refusal
-   keeps the file: an update that migrates the chain data, on a data partition without room for
-   the Tari migration's copy of the database (its current size plus 5 GiB). The message names the
-   size needed and the size free. Free space, then verify and install again. The install step
-   runs the same check again.
+   file that fails any check is deleted; there is no override in the dashboard. An update that
+   migrates the chain data is also refused when the data partition lacks room for the Tari
+   migration's copy of the database (its current size plus 5 GiB). That refusal names the size
+   needed and the size free, and keeps the file: free space, then verify and install again. The
+   install step runs the same check again.
 4. **Install.** The verified bundle is written to the idle system slot, with progress shown.
    Mining keeps running; nothing about the running system changes yet.
 5. **Reboot.** Nothing reboots on its own. The reboot is its own confirmed action (type
