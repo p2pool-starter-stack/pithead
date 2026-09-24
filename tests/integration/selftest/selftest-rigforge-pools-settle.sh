@@ -8,7 +8,9 @@
 # bug no self-test saw: selftest-rigforge-writable-keys.sh drives this leg for its gate and its
 # restore source, but stubs wait_for to succeed and never counts the leg's verdicts. Here every case
 # runs the REAL predicates through a one-shot wait_for, so a settle wired to `true`, or no settle at
-# all, cannot pass. Its own file because that one sits at its file-budget ceiling.
+# all, cannot pass. The same drives decide the #1379 restore ledger, so its retire rule is pinned
+# here too: an entry kept or retired on the wrong verdict passes every assertion on the leg's rows.
+# Its own file because that one sits at its file-budget ceiling.
 #
 set -uo pipefail
 
@@ -20,15 +22,15 @@ source "$HERE/../lib/rigforge-apply-settle.sh"
 # shellcheck source=tests/integration/lib/rigforge-writable-keys.sh
 source "$HERE/../lib/rigforge-writable-keys.sh"
 
-# Ledger behavior has its own selftest.
-rig_key_mark() { :; }
-rig_key_clear() { :; }
-
-# A file, not a variable: _worker_apply runs inside `$(...)`, and a variable would lose every write
+# Files, not variables: _worker_apply runs inside `$(...)`, and a variable would lose every write
 # to that subshell (selftest-rigforge-writable-keys.sh explains the first run this cost).
 APPLY_LOG="$(mktemp)"
-trap 'rm -f "$APPLY_LOG"' EXIT
+MARK_LOG="$(mktemp)" # the #1379 ledger calls the leg makes; the ledger itself has its own selftest
+trap 'rm -f "$APPLY_LOG" "$MARK_LOG"' EXIT
 applies() { cat "$APPLY_LOG"; }
+rig_key_mark() { echo mark >>"$MARK_LOG"; }
+rig_key_clear() { echo clear >>"$MARK_LOG"; }
+ledger() { paste -sd, "$MARK_LOG"; } # "mark" = kept for the EXIT unwind, "mark,clear" = retired
 
 # One-shot: run the predicate once and return its verdict — no polling, no timing.
 wait_for() {
@@ -38,7 +40,7 @@ wait_for() {
 DIAL_STATUS=accepted
 _worker_apply() {
     printf '%s\n' "$2" >>"$APPLY_LOG"
-    printf '{"status":"%s","change_id":"c-pools"}' "$DIAL_STATUS"
+    [ -z "$DIAL_STATUS" ] || printf '{"status":"%s","change_id":"c-pools"}' "$DIAL_STATUS"
 }
 _worker_detail() { printf '%s' "$STUB_DETAIL"; }
 pools_detail() { # <rig-reported-urls-json> <history-row-status>
@@ -52,6 +54,7 @@ drive() { # <rig-reported-urls-json> <history-row-status>
     local p="$IT_PASS" f="$IT_FAIL" dp df
     STUB_DETAIL="$(pools_detail "$@")"
     : >"$APPLY_LOG"
+    : >"$MARK_LOG"
     run_rigforge_pools rig1 >/dev/null 2>&1
     dp=$((IT_PASS - p))
     df=$((IT_FAIL - f))
@@ -83,6 +86,25 @@ assert_eq "a change whose history row never settles reds that row" \
 DIAL_STATUS=rejected
 assert_eq "a dial-time 'rejected' is never promoted to applied, readback or not" \
     "$(drive '["probe:1"]' rejected)" "0,3"
+DIAL_STATUS=accepted
+
+echo "== run_rigforge_pools: the #1379 ledger retires on what the rig decided, and only on that =="
+# The realistic path: the dial says "accepted", so the verdict arrives on the readback and the row.
+# A readback that never matches leaves the settle at "accepted", which is how a timeout looks here.
+# <rig-reported-urls> <row> <ledger>: `applied` needs both halves; a refusal on the row is final.
+for _case in '["probe:1"] applied mark,clear' '["elsewhere:1"] applied mark' \
+    '["elsewhere:1"] accepted mark' '["probe:1"] accepted mark' '["probe:1"] failed mark' \
+    '["elsewhere:1"] rejected mark,clear' '["elsewhere:1"] rolled_back mark,clear'; do
+    read -r _urls _row _want <<<"$_case"
+    drive "$_urls" "$_row" >/dev/null
+    assert_eq "dial accepted, rig reports $_urls, row $_row: ledger [$_want]" "$(ledger)" "$_want"
+done
+DIAL_STATUS=rejected
+drive '["elsewhere:1"]' accepted >/dev/null
+assert_eq "a dial-time 'rejected' retires the entry before any row is written" "$(ledger)" "mark,clear"
+DIAL_STATUS="" # no answer at all: the rig may or may not have taken the probe
+drive '["probe:1"]' applied >/dev/null
+assert_eq "a dial with no answer keeps the entry for the unwind" "$(ledger)" "mark"
 DIAL_STATUS=accepted
 
 echo ""

@@ -634,11 +634,10 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   the verdict that counts once an earlier run has left the rig on the probe, because the URLs then
   match before this apply has done anything. The restore ledger keeps the probe until the rig
   reports it is on the probe (`applied`, on the readback and the row) or on its previous config
-  (`rejected`, `rolled_back`, which the unwind does not overwrite). `failed`,
-  whose resulting config varies, `accepted`, or no answer leaves the probe for the unwind to
-  re-apply. The probe
-  must be exactly one JSON value and is checked for a non-empty `pass` on every entry before it is
-  applied ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  (`rejected`, `rolled_back`, at the dial or on the row, which the unwind does not overwrite).
+  `failed`, whose resulting config varies, `accepted`, or no answer leaves the probe for the unwind
+  to re-apply. The probe must be exactly one JSON value and is checked for a non-empty `pass` on
+  every entry before it is applied ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
   probe with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
