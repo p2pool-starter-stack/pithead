@@ -121,7 +121,36 @@ local_node_login_edit() { # <config-path> <env-key> <value> <label>
     ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
 }
 
+# p2pool.clearnet (#165) keeps the reserved private Tari endpoint out of P2Pool's Tor SOCKS path,
+# which cannot reach a LAN address. On an appliance it is fixed at setup and never committable from
+# the dashboard, so the fixture sets it host-side, the way "Set up again" would, before the
+# dashboard proposal that carries only the node change.
+reserved_node_clearnet_fixture() {
+    _control_requests_drained || return 1 # the apply restarts the control runner (#2094)
+    _ssh 'set -euo pipefail
+cd /data/pithead
+jq ".p2pool.clearnet = true" config.json >config.json.os2333-clearnet
+chmod 600 config.json.os2333-clearnet
+mv config.json.os2333-clearnet config.json
+./pithead apply -y >/dev/null
+jq -e ".p2pool.clearnet == true" config.json >/dev/null'
+}
+
 phase_provision_remote_node_regressions() {
+    local rc=0
+    _reserved_node_regressions || rc=$?
+    # Every exit, early or not, hands the later legs the original config, not the edited login.
+    [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return "$rc"
+    if approval_restore_pending; then
+        ok "approved-node fixture restored the original local-node configuration"
+    else
+        bad "approved-node fixture could not restore the original node configuration"
+        rc=1
+    fi
+    return "$rc"
+}
+
+_reserved_node_regressions() {
     local live proposed preview result rid audit logs tries node_ok readiness
     local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
     local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
@@ -154,9 +183,17 @@ phase_provision_remote_node_regressions() {
         return 1
     }
 
-    # Endpoint and login land through one confirmed proposal (#2333/#2367). Clearnet keeps the
-    # reserved private Tari endpoint out of P2Pool's Tor SOCKS path (#165).
-    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc" | jq -c '.p2pool.clearnet = true') || {
+    reserved_node_clearnet_fixture || {
+        bad "reserved-node fixture could not set p2pool.clearnet host-side"
+        return 1
+    }
+    # Re-read after the fixture: a proposal built on the stale config would revert clearnet.
+    live=$(sensitive_live_config) || {
+        bad "dashboard config unreadable after the clearnet fixture"
+        return 1
+    }
+    # Endpoint and login land through one confirmed proposal (#2333/#2367).
+    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
         bad "reserved-node proposal could not be constructed"
         return
     }
@@ -231,12 +268,6 @@ phase_provision_remote_node_regressions() {
         bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip (provider=${CI_NODE_PROVIDER:-unknown} runtime=$REMOTE_NODE_RUNTIME_REASON readiness=$readiness; mm log: $(mm_roundtrip_verdict "$logs"))"
         node_ok=0
     fi
-
-    if approval_restore_pending; then
-        ok "approved-node fixture restored the original local-node configuration"
-    else
-        bad "approved-node fixture could not restore the original node configuration"
-    fi
     [ "$node_ok" -eq 1 ] || return 1
 }
 
@@ -298,6 +329,31 @@ _local_node_login_self_test() (
     ! local_node_login_runtime_verdict
 )
 
+# The dashboard proposal may change only monero.* and tari.* against the config live when it is
+# previewed: any other key (p2pool.clearnet, job 1044) is refused by the default-deny gate. And an
+# early failure still restores the snapshot for the legs after this one.
+_reserved_node_proposal_scope_self_test() (
+    local out clearnet=false restored=0
+    PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2
+    PITHEAD_OS_TARI_NODE_HOST=th PITHEAD_OS_TARI_GRPC_PORT=3
+    PITHEAD_OS_MONERO_NODE_USERNAME="" PITHEAD_OS_MONERO_NODE_PASSWORD=""
+    sensitive_live_config() { printf '{"p2pool":{"clearnet":%s},"monero":{"mode":"local"},"tari":{"mode":"local"}}' "$clearnet"; }
+    approval_capture_restore_snapshot() { APPROVAL_RESTORE_SNAPSHOT=snap; }
+    approval_restore_pending() { restored=1; }
+    local_node_login_edit() { return 0; }
+    dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
+    reserved_node_clearnet_fixture() { clearnet=true; }
+    sensitive_preview() {
+        printf '%s' "$1" | jq -e --argjson live "$(sensitive_live_config)" \
+            '.config | del(.monero, .tari) == ($live | del(.monero, .tari))' >/dev/null && out=scoped
+        return 1
+    }
+    ok() { :; }
+    bad() { :; }
+    phase_provision_remote_node_regressions
+    [ "${out:-}" = scoped ] && [ "$restored" -eq 1 ]
+)
+
 _remote_node_self_test() {
     local f=0 here
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -310,6 +366,7 @@ _remote_node_self_test() {
     _node_readiness_self_test || f=$((f + 1))
     _remote_node_runtime_reason_self_test || f=$((f + 1))
     _local_node_login_self_test || f=$((f + 1))
+    _reserved_node_proposal_scope_self_test || f=$((f + 1))
     grep -Fq 'if [ "$tries" -lt 60 ]; then' "$here/appliance-node-runtime-leg.sh" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-node-runtime-leg self-test FAILED: %s checks\n' "$f"
