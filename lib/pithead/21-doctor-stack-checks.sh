@@ -67,8 +67,15 @@ check_egress_firewall_installed() {
     fi
     tor_egress_enforced || rc=$?
     case "$rc" in
-    0) dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how." ;;
-    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a host reboot (the rules are gone but the containers auto-restarted). Run './pithead up' to reinstall them." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
+    0)
+        dr_ok "Tor-only egress firewall is installed — clearnet dials from the stack are fail-closed via $how."
+        # Live now is not live after the next reboot (#2460): without the boot unit the containers
+        # come back on their own and the rules do not.
+        if tor_egress_boot_unit_applies && ! systemctl is-enabled "$TOR_EGRESS_BOOT_UNIT" >/dev/null 2>&1; then
+            dr_warn_surface "The Tor-egress firewall is live but will NOT survive a reboot — $TOR_EGRESS_BOOT_UNIT is not enabled, so the containers would restart without it. Run './pithead up' to install it." "The Tor-egress firewall is live but will NOT survive a reboot on this machine."
+        fi
+        ;;
+    1) dr_fail_surface "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. On a DIY host $TOR_EGRESS_BOOT_UNIT restores it at boot, ahead of the containers; see 'systemctl status $TOR_EGRESS_BOOT_UNIT'. Run './pithead up' to reinstall the rules and the unit." "Tor-only egress firewall is MISSING while the stack runs — clearnet egress is NOT fail-closed. This happens after a reboot in which the rules were lost but the containers came back. Restarting this machine reinstalls them." ;;
     2) dr_fail_surface "Tor-only egress CANNOT be enforced — the $how backend's command is not installed on this host, so nothing is dropping clearnet dials from the stack. Install it and run './pithead up', or set network.tor_egress_firewall=false to acknowledge running without it." "Tor-only egress CANNOT be enforced on this machine — the firewall command it needs is missing, so clearnet dials from the stack are not being dropped." ;;
     # #855's own failure mode, and the one a presence-only check cannot see: the rules are there and
     # nothing traverses them. The stack is up by the time this runs, so the engine has had its chance
@@ -221,6 +228,10 @@ REVENUE_MINER_CONTAINERS="p2pool xmrig-proxy"
 # Without this arm the commit gate would fail on the very hold it is gating, a deadlock.
 revenue_container_verdict() { # <name> <state> <status> [chain_hold]
     local name="$1" state="$2" status="$3" chain_hold="${4:-0}" running=0
+    # Compose recreates a service under "<12-hex id>_<service>" and renames it afterwards; an
+    # interrupted recreate leaves that name in place (#2556). Judged by the literal name, a monerod
+    # left so was invisible here, and doctor passed with the node stopped.
+    [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] && name=${BASH_REMATCH[1]}
     # "running" from EITHER signal: podman and docker both print an "Up …" status for a live
     # container, and `.State` is "running". Reading both is belt-and-suspenders — some docker CLI
     # versions leave the `.State` ps field empty, and a chain node judged down on that alone would

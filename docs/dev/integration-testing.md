@@ -230,7 +230,7 @@ Useful flags (full list in `run.sh --help`):
 | `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and externally anchored public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature and key continuity, requires every Compose image to be digest-pinned, and verifies the five unique Pithead-built images' signatures and exact OCI revisions. Candidate-provided trust roots are rejected. |
 | `--xvb-routing-smoke` | From a known live `xvb.enabled=true`, `xvb.tor=true` baseline with hooked kernel DROP rules, prove the candidate wallet-bearing client in a temporary Tor-only Docker network, then use a strict apply that refuses to start containers unless those rules are installed. Observe the real proxy/dashboard move from P2Pool to XvB and naturally return, then restore exact enabled config, route, worker identities, hashes, and secrets. The isolated fetch proves the candidate client/network leg, not process attribution for the host-network dashboard. Requires `--safety-backup`; no recent PPLNS share is a failure. Every poll is bounded; worst case is about 45 minutes. |
 | `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Destructive-then-restored; ssh or local mode. |
-| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). |
+| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
@@ -495,8 +495,10 @@ and `--list` prints it).
   named for what the handshake proves, which is narrower than "publishes block notifications": a
   node whose publisher is bound but permanently silent answers it exactly as a live one does. A
   second row closes that case: it subscribes and waits for the peer to actually send something,
-  which a silent publisher never does. Measured on one host against both targets, the live node
-  passed in about 2 seconds and a permanently silent publisher red at its budget. The budget is
+  which a silent publisher never does. Its loopback fixture sends a bounded data frame or stays
+  silent, proving the real probe accepts the former and rejects the latter without a transaction,
+  payout, chain event, or bench configuration change. That fixture proves protocol sampling only;
+  the tier-4 row separately proves the configured node answers the same probe. The budget is
   90 seconds, and the sample behind that figure is part of it — time-to-first-message against the
   live node over eight samples ran 0.3, 1.5, 1.8, 3.3, 4.5, 5.6, 16.0 and 26.5 seconds, and the
   first three would have justified a 30-second budget that the tail turns into a flaky red. It is
@@ -614,19 +616,29 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   from "a password is stored here", but RigForge restores a stored password only for an entry whose
   `url` and `user` still match what the rig holds, and a probe moves the URL. Writing the rig's own
   reading back under a probe would silently strand a borrowed miner on password `x`.
-- `pools`, the operator-supplied route (the repoint-your-hashrate key): because the rig's own
-  reading cannot be written back, the restore target is the dashboard's record of what *it* last
-  pushed (`GET /api/worker`'s `.last_applied.pools`), which is un-stripped, and the probe is
-  operator-supplied (`IT_RIG_POOLS_PROBE` — pithead treats `pools` as opaque passthrough, so a
-  guessed value risks a real `rejected` instead of proving the round trip). If the dashboard has
-  never applied a `pools` value to this rig before, there is nothing on record to restore — so the
-  leg seeds the record with the probe itself
-  ([#2325](https://github.com/p2pool-starter-stack/pithead/issues/2325)): the probe is by contract
-  a value already known safe to apply and carrying a `pass`, so it doubles as "the original" too,
-  and it leaves `.last_applied.pools` seeded for every run after this one. Either way, the value the
-  leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
-  ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
-  probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
+- `pools`, the operator-supplied route (the repoint-your-hashrate key): the harness has no
+  credential-bearing reading of a rig's pools to restore. The rig's own reading is lossy (above),
+  and the dashboard's record of what it last pushed (`GET /api/worker`'s `.last_applied.pools`)
+  goes through the same credential strip, so it carries no `pass` either
+  ([#113](https://github.com/p2pool-starter-stack/pithead/issues/113)). The leg therefore never
+  reads either one: it applies `IT_RIG_POOLS_PROBE` and treats that probe as the value to restore
+  ([#2470](https://github.com/p2pool-starter-stack/pithead/issues/2470)). By contract the probe
+  is the `pools` value the operator has attested this rig is to keep running, carrying a `pass`.
+  pithead treats `pools` as opaque passthrough, so a guessed value risks a real `rejected` instead
+  of proving the round trip. The rig is left on the probe: one confirmed apply is the round
+  trip. The rig answers `accepted` and applies asynchronously, so the leg settles the apply instead
+  of reading the dial-time status
+  ([#2407](https://github.com/p2pool-starter-stack/pithead/issues/2407)): it waits for the rig's
+  own `.rig_config.pools` to carry the probe's pool URLs (the URLs, because the credentials never
+  reach that surface), then for the change's per-worker history row to turn `applied`. The row is
+  the verdict that counts once an earlier run has left the rig on the probe, because the URLs then
+  match before this apply has done anything. The restore ledger keeps the probe until the rig
+  reports it is on the probe (`applied`, on the readback and the row) or on its previous config
+  (`rejected`, `rolled_back`, at the dial or on the row, which the unwind does not overwrite).
+  `failed`, whose resulting config varies, `accepted`, or no answer leaves the probe for the unwind
+  to re-apply. The probe must be exactly one JSON value and is checked for a non-empty `pass` on
+  every entry before it is applied ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
+  probe with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
   failure.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
@@ -689,17 +701,21 @@ reported as a row that never settled.
 
 ### The abort-safe unwind
 
-Every leg above restores what it changed when it finishes. That covers a leg that *fails*; it does
-not cover a run that never reaches its own restore. Ctrl-C, a `set -u` abort, an SSH drop or a
+Every leg above restores what it changed when it finishes, except `pools`, which leaves the rig
+on the operator's probe. That covers a leg that *fails*; it does not cover a run that never reaches
+its own restore. Ctrl-C, a `set -u` abort, an SSH drop or a
 cancelled CI job used to leave a borrowed production miner on a probe value, while `e2e.sh`'s
 `restore_all` reported a clean restore of the *pool* config and said nothing about the writable keys
 ([#1379](https://github.com/p2pool-starter-stack/pithead/issues/1379)).
 
 `rig-key-ledger.sh` closes that window. A key goes on a ledger when its write is sent — before, not
-after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**.
+after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**
+(for `pools`, whose restore value is the probe itself, when the rig answers `applied`, `rejected`
+or `rolled_back`; see the `pools` entry above).
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
-rig's control API for #516's rig-side edit. Each restore names its key, value and rig on stderr.
+rig's control API for #516's rig-side edit. Each restore names its key, rig and route on stderr,
+never the value: for `pools` the value carries the stratum `pass`.
 
 Three properties are worth knowing rather than rediscovering:
 
@@ -720,9 +736,9 @@ one back by hand.
 
 Prerequisites: a real RigForge rig connected (self-skips otherwise); `--rig-host` + `IT_RIG_TOKEN`
 to inject a descriptor when the baseline lacks one, and to dial the rig directly for the #516 feed
-leg; `IT_RIG_POOLS_PROBE` (a JSON `pools` value safe to apply to the borrowed rig) for the pools
-leg; `IT_RIG_ROLLBACK_CHANGES` (a writable-key `changes` object the rig's fault-injection reverts)
-for the #517 leg.
+leg; `IT_RIG_POOLS_PROBE` (the `pass`-bearing JSON `pools` value the borrowed rig is to keep
+running) for the pools leg; `IT_RIG_ROLLBACK_CHANGES` (a writable-key `changes` object the rig's
+fault-injection reverts) for the #517 leg.
 
 Under `e2e.sh` the first two are supplied for you
 ([#1378](https://github.com/p2pool-starter-stack/pithead/issues/1378)): `RIG_HOST` defaults to the
@@ -802,6 +818,11 @@ On a scenario failure, the harness captures (redacted) to `results/<scenario>/`:
 `compose-ps.txt`, `status.txt`, `doctor.txt`, `config.json`, `env.redacted.txt`,
 `api-state.json`, and `logs.txt` (last 200 lines per service). The end-of-run summary lists
 each failed assertion and points at these.
+
+The safety-backup recovery gate runs before scenarios, so if its health wait fails it writes
+redacted `compose-ps.txt` and `health-check.txt` to `results/safety-backup-recovery/` before
+starting restoration. Diagnostic capture is best-effort: it never changes the failed verdict or
+the recovery sequence.
 
 `config.json` and `env.redacted.txt` are the two artifacts that are not streamed straight through
 the generic redactor. Both are documents with an enumerable shape, and the stack classifies each on
@@ -1003,7 +1024,11 @@ it ([#1500](https://github.com/p2pool-starter-stack/pithead/issues/1500)): every
 read with `16#`, which is fatal on an empty string, so a peer that stalled part-way through a
 header left an interpreter error on stderr and an empty verdict. Those cases assert the empty
 stderr alongside the reason, because the return code was already 1 while the bug was live and a
-case checking only the code would have passed against it.
+case checking only the code would have passed against it. The same file runs the shipped probe
+over loopback against `tests/integration/fakes/fake_zmq_publisher.py`, a one-shot XPUB that
+publishes one frame or, with `--silent`, none; the probe must pass the first and fail the second.
+The fixture's own checks are asserted by the message it exits with, not only its code, because a
+peer that hangs up early also makes it exit 1.
 `selftest-stack-sandbox.sh` reaches the other way, into the tier-1 suite's own plumbing.
 `tests/stack/lib.sh` built its throwaway sandbox as `SANDBOX="$(cd "$(mktemp -d)" && pwd -P)"`, and
 `mktemp -d` prints nothing on stdout when it fails, so the inner substitution collapsed to `cd ""`
