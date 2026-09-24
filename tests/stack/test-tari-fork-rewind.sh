@@ -30,15 +30,17 @@ while :; do
     wait $!
 done
 EOF
-# Stub curl: refuses while gRPC is closed; answers TFR_HTTP_CODE with no body when set; otherwise
-# frames a ListHeaders or GetTipInfo answer from the state dir's tip and hash. It keeps the request
-# body it was sent and whether the URL came after `--`.
+# Stub curl: refuses while gRPC is closed; answers TFR_HTTP_CODE with no body when set; answers the
+# first TFR_GRPC_ERRORS calls with a trailers-only gRPC error (HTTP 200, grpc-status 14, no body),
+# the way the node answers before it is ready; otherwise frames a ListHeaders or GetTipInfo answer
+# from the state dir's tip and hash. It keeps the request body and whether the URL came after `--`.
 cat >"$TFR_BIN/curl" <<'EOF'
 #!/usr/bin/env bash
-S="$TFR_STATE" out="" url="" prev=""
+S="$TFR_STATE" out="" hdrs=/dev/null url="" prev=""
 while [ $# -gt 0 ]; do
     case $1 in
         -o) out=$2; shift ;;
+        -D) hdrs=$2; shift ;;
         -w | -H | --max-time | --data-binary) shift ;;
         http*) url=$1; echo "$prev" >"$S/url.prev" ;;
     esac
@@ -48,6 +50,15 @@ done
 req=$(od -An -v -tx1 | tr -d ' \n')
 [ -f "$S/grpc_up" ] || { printf 000; exit 7; }
 [ -n "${TFR_HTTP_CODE:-}" ] && { printf '%s' "$TFR_HTTP_CODE"; exit 0; }
+n=$(($(cat "$S/grpc_errors" 2>/dev/null || echo 0) + 1))
+echo "$n" >"$S/grpc_errors"
+if [ "$n" -le "${TFR_GRPC_ERRORS:-0}" ]; then
+    printf 'HTTP/2 200\r\ncontent-type: application/grpc\r\ngrpc-status: 14\r\ngrpc-message: not ready\r\n\r\n' >"$hdrs"
+    : >"$out"
+    printf 200
+    exit 0
+fi
+printf 'HTTP/2 200\r\ncontent-type: application/grpc\r\n\r\ngrpc-status: 0\r\n\r\n' >"$hdrs"
 # shellcheck disable=SC1090
 PITHEAD_TEST_SOURCE=1 source "$TFR_ENTRY"
 tip=$(cat "$S/tip")
@@ -192,3 +203,21 @@ wait "$TFR_PID"
 assert_rc "fork-check: a TARI_GRPC_URL without http:// exits 1 (#2618)" "$?" "1"
 assert_contains "fork-check: a bad TARI_GRPC_URL is logged (#2618)" "$(cat "$TFR_STATE/out")" "ERROR: TARI_GRPC_URL must start with http://"
 assert_eq "fork-check: a bad TARI_GRPC_URL starts no node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "0"
+
+# A gRPC error status (HTTP 200, no body) means the node is not ready yet: retry, then check.
+tfr_start 350500 "$TFR_CANONICAL" TFR_GRPC_ERRORS=2
+tfr_wait "$TFR_STATE/out" "is canonical"
+assert_contains "fork-check: a gRPC error status is logged and retried (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered grpc-status 14: not ready; retrying for up to 1800s while the node starts"
+assert_contains "fork-check: after the retries the canonical hash is checked (#2618)" "$(cat "$TFR_STATE/out")" "header 350000 is canonical ($TFR_CANONICAL)"
+tfr_stop
+assert_eq "fork-check: retrying a gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
+
+# A gRPC error status that outlasts TARI_GRPC_ERROR_TIMEOUT ends the check and leaves the node alone.
+tfr_start 350239 "$TFR_DEAD" TFR_GRPC_ERRORS=100000 TARI_GRPC_ERROR_TIMEOUT=1
+tfr_wait "$TFR_STATE/out" "without a header"
+assert_contains "fork-check: a persistent gRPC error status gives up with its status logged (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered (grpc-status 14: not ready) without a header at 350000; leaving the node as it is"
+tfr_stop
+assert_eq "fork-check: a persistent gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
+assert_eq "fork-check: a persistent gRPC error keeps the peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"

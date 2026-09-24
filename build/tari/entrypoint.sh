@@ -62,6 +62,7 @@ CANONICAL_HASH_AT_FORK=663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8
 TARI_GRPC_URL="${TARI_GRPC_URL:-http://127.0.0.1:18142}"
 TARI_PROBE_INTERVAL="${TARI_PROBE_INTERVAL:-10}"
 TARI_REWIND_TIMEOUT="${TARI_REWIND_TIMEOUT:-1800}"
+TARI_GRPC_ERROR_TIMEOUT="${TARI_GRPC_ERROR_TIMEOUT:-1800}"
 NODE_PID=""
 STOP_SIGNAL=""
 
@@ -119,18 +120,25 @@ pb_field() {
     return 1
 }
 
-# Unary or server-streaming call on the node's loopback gRPC. Sets GRPC_CODE to the HTTP status
-# and GRPC_MSG to the first message as hex (empty on any error). Returns 1 only while nothing
-# answers (curl's 000); any HTTP status is an answer.
+# Unary or server-streaming call on the node's loopback gRPC. Sets GRPC_CODE to the HTTP status,
+# GRPC_STATUS/GRPC_ERR to the grpc-status/grpc-message headers or trailers, and GRPC_MSG to the
+# first message as hex (empty on any error). Returns 1 only while nothing answers (curl's 000);
+# any HTTP status is an answer.
 tari_grpc() {
-    local method="$1" req="$2" out code frame len
+    local method="$1" req="$2" out hdrs code frame len
     out=$(mktemp /tmp/tari-grpc.XXXXXX) || return 1
+    hdrs=$(mktemp /tmp/tari-grpc.XXXXXX) || {
+        rm -f "$out"
+        return 1
+    }
     code=$(printf '%b' "$(printf '00%08x%s' $((${#req} / 2)) "$req" | sed 's/../\\x&/g')" |
-        curl -s --http2-prior-knowledge --max-time 30 -o "$out" -w '%{http_code}' \
+        curl -s --http2-prior-knowledge --max-time 30 -o "$out" -D "$hdrs" -w '%{http_code}' \
             -H 'content-type: application/grpc' -H 'te: trailers' --data-binary @- \
             -- "$TARI_GRPC_URL/tari.rpc.BaseNode/$method")
     frame=$(od -An -v -tx1 "$out" 2>/dev/null | tr -d ' \n')
-    rm -f "$out"
+    GRPC_STATUS=$(tr -d '\r' <"$hdrs" | sed -n 's/^grpc-status: *//Ip' | tail -1)
+    GRPC_ERR=$(tr -d '\r' <"$hdrs" | sed -n 's/^grpc-message: *//Ip' | tail -1)
+    rm -f "$out" "$hdrs"
     GRPC_CODE=${code:-000}
     GRPC_MSG=""
     [ "$GRPC_CODE" != 000 ] || return 1
@@ -141,11 +149,16 @@ tari_grpc() {
 }
 
 # The node's header at FORK_HEIGHT: prints its hash, or "below" when the tip is under FORK_HEIGHT
-# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent; 2, printing the
-# HTTP status, when it answers without a header.
+# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent; 4, printing the
+# status, on a gRPC error status (the server listens before the node is ready); 2, printing the
+# HTTP status, on any other answer without a header.
 header_at_fork() {
     local header height
     tari_grpc ListHeaders "08$(pb_encode_varint "$FORK_HEIGHT")10011801" || return 1
+    if [ "$GRPC_CODE" = 200 ] && [ -n "$GRPC_STATUS" ] && [ "$GRPC_STATUS" != 0 ]; then
+        echo "grpc-status $GRPC_STATUS${GRPC_ERR:+: $GRPC_ERR}"
+        return 4
+    fi
     header=$(pb_field "$GRPC_MSG" 1) || {
         echo "HTTP $GRPC_CODE"
         return 2
@@ -214,14 +227,23 @@ clear_peer_state() {
 # Wait for gRPC, then check the header at FORK_HEIGHT. Returns 0 when the running node may keep
 # running, 3 when it is on the dead branch, and the node's exit status when it stops first.
 check_fork() {
-    local hash rc
+    local hash rc err_deadline=""
     fork_log "waiting for gRPC (the 6.0.0 database migration runs first and can take hours)"
     while :; do
         [ -n "$STOP_SIGNAL" ] && return 0
         node_alive || return 0
         hash=$(header_at_fork)
         rc=$?
-        [ "$rc" -ne 1 ] && break
+        if [ "$rc" -eq 4 ]; then
+            if [ -z "$err_deadline" ]; then
+                err_deadline=$((SECONDS + TARI_GRPC_ERROR_TIMEOUT))
+                fork_log "gRPC answered $hash; retrying for up to ${TARI_GRPC_ERROR_TIMEOUT}s while the node starts"
+            elif [ "$SECONDS" -ge "$err_deadline" ]; then
+                break
+            fi
+        elif [ "$rc" -ne 1 ]; then
+            break
+        fi
         pause
     done
     if [ "$rc" -ne 0 ]; then
