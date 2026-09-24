@@ -201,6 +201,13 @@ assert_current_state() {
 box_fstype() { rx "df --output=fstype $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -d ' '"; }
 box_avail_gb() { rx "df -BG --output=avail $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -dc '0-9'"; }
 box_mode() { rx "stat -c %a $(quote_arg "$1") 2>/dev/null"; }
+# The readiness health row polls where it once read `pithead status` a single time (#2656): job 949
+# failed it minutes after deploy where 973 passed at the same commit, and discarded the output that
+# would have named the container. The predicate keeps the last read in the caller's
+# `status_out`. Only the per-service verdict lines and warnings leave it: the same output
+# prints the stratum password and the dashboard onion.
+_pred_readiness_status() { status_out="$(pithead status 2>&1)"; }
+status_verdict_lines() { sed -E 's/\x1b\[[0-9;]*m//g' | grep -E '^  (✓|…|⚠|✗) |^\[WARNING\] ' | redact | tail -n 30; }
 
 assert_release_readiness() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
@@ -217,8 +224,15 @@ assert_release_readiness() {
     else
         it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
     fi
-    pithead status >/dev/null 2>&1
-    assert_rc "stack is healthy (pithead status)" "$?" "0"
+    local status_out=""
+    if wait_for 240 5 "pithead status OK" _pred_readiness_status; then
+        it_pass "stack is healthy (pithead status)"
+    else
+        local verdict
+        verdict="$(status_verdict_lines <<<"$status_out")"
+        it_fail "stack is healthy (pithead status)" "still unhealthy after 240s; last pithead status:
+$(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")"
+    fi
 
     # 2. The prune axis must vary the DB without re-syncing or mutating the canonical chain. The
     #    OTHER prune mode is unlocked either by (a) a snapshot/reflink-capable live FS (so a

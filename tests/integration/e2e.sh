@@ -321,7 +321,7 @@ wait_bench_healthy() { # <timeout_s>
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
 # tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
 # measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
+# so its one-shot Tari readiness row (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
