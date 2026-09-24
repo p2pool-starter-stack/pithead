@@ -162,7 +162,9 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         control_units_verdict() { echo on-target; }
         wait_bench_healthy() { return 0; }
         verify_restore_proof() { return 0; }
+        chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
         on_bench() {
+            echo "$1" >>"${ALL_LOG:-/dev/null}"
             case "$1" in
             # The source-checkout probe: answer as the fixture says, and never record it as the
             # restore command.
@@ -284,6 +286,18 @@ assert_num_ge "M2 (branch image graded 'rebuilt') is killed" \
 # M3 — unanchor census_get, so one service name resolves off another's line.
 assert_num_ge "M3 (unanchored census_get) is killed" \
     "$(mutate_and_count_fails 's|sed -n "s/\^\$2=//p"|sed -n "s/.*$2=//p"|')" 1
+
+# #2639: the restore converges the baseline over the branch and never runs `pithead down`, which
+# stopped and recreated monerod and tari on every deploying run, however unchanged. Every command
+# restore_all gives the box is recorded, for both baseline kinds.
+echo "== the restore never takes the stack down (#2639) =="
+for kind in yes no; do
+    ALL_LOG="$(mktemp)"
+    ALL_LOG="$ALL_LOG" drive_restore "$kind" >/dev/null
+    assert_eq "no 'pithead down' on the restore path (source checkout: $kind)" "$(grep -c 'pithead down' "$ALL_LOG")" "0"
+    assert_eq "the restore prepares the chain record first (source checkout: $kind)" "$(head -n1 "$ALL_LOG")" "chain_restore_prepare"
+    rm -f "$ALL_LOG"
+done
 
 # --check deploys nothing and borrows nothing, so restore_all has nothing to put back — and an
 # outer restore would mutate a bench this mode promised only to read.

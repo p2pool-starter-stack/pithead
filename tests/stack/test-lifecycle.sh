@@ -9,3 +9,5 @@ source "$HERE/lifecycle/lock-core.sh" || return $?
 source "$HERE/lifecycle/lock-wiring.sh" || return $?
 # shellcheck source=tests/stack/lifecycle/appliance-lock.sh
 source "$HERE/lifecycle/appliance-lock.sh" || return $?
+# shellcheck source=tests/stack/lifecycle/keep-running.sh
+source "$HERE/lifecycle/keep-running.sh" || return $?

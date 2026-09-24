@@ -337,12 +337,30 @@ via an `EXIT` trap):
    [#272](https://github.com/p2pool-starter-stack/pithead/issues/272)) and runs
    `run.sh` detached on the box (survives an SSH drop on a long matrix), streaming a heartbeat and
    the full log at the end.
+   The deploy leaves monerod and tari running when the branch leaves them unchanged
+   ([#2639](https://github.com/p2pool-starter-stack/pithead/issues/2639)). Both bind-mount paths
+   inside the checkout (`build/monero/bitmonero.conf.template`, `build/tari`,
+   `data/clearnet-state`), and Compose hashes the resolved absolute paths into each service's config.
+   A plain `up` from the e2e checkout would therefore recreate both nodes on every run. The upgrade
+   runs with `PITHEAD_KEEP_RUNNING` set, a harness-only knob that names every other service in the
+   `up` with `--no-deps`. `tests/integration/lib/chain-keep.sh` then compares each node between the
+   two checkouts. The rendered `docker compose config` is compared with the image and build dropped
+   and the checkout path normalized, along with the content of those mounted files and the image
+   **ID**, never the tag. monerod also needs tor to have kept its container through the deploy,
+   because `restart: true` on its tor dependency exists to re-dial after a tor restart
+   ([#972](https://github.com/p2pool-starter-stack/pithead/issues/972)). A node that differs in
+   any of these is recreated from the branch by a second `pithead up`. On a release-bundle baseline
+   monerod's `:vX.Y.Z` image and the branch's `:dev` build are different objects, so there only
+   tari can stay up.
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
    `com.docker.compose.project.working_dir` label — which on a release box is the per-version bundle
    dir, not `CANONICAL_DIR`. That keeps the restore from handing the `pithead` project locally-built
    `:dev` images. If the label can't be read (stack down), it falls back to `CANONICAL_DIR`; override
    with `CANONICAL_DIR=<dir>`. The synced chains are never touched (asserted post-restore).
+   The restore runs no `pithead down`. It removes the containers of any service the baseline does not
+   define, then converges the baseline over the branch, so Compose recreates only what differs. A
+   node the deploy kept is the baseline's own container and is left running.
    How the baseline comes back depends on what it is. A release bundle gets `pithead apply` then
    `pithead up`: its images are versioned tags the branch never touched, so rebuilding them would be
    waste. A **source checkout** gets `pithead upgrade` instead, and the difference is not an
@@ -383,6 +401,10 @@ via an `EXIT` trap):
    dashboard's `org.opencontainers.image.revision` ships empty
    ([#1449](https://github.com/p2pool-starter-stack/pithead/issues/1449)) while the other four
    images carry it.
+   Finally the proof records each chain node against the container that ran before the deploy:
+   untouched, restarted in place (`--lifecycle` stops and starts monerod), recreated during the
+   run, or gone. It fails when the restore itself recreated a node that the deploy and the harness
+   both left running.
 
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
