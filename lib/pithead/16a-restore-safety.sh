@@ -115,9 +115,11 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         bcrypt)
             [ "$dash_fp_ok" -eq 1 ] || continue
             # A 60-byte bcrypt string is exactly 80 base64 characters; openssl alone ignores junk.
-            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || return 1
-            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
-            [[ "$decoded" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]] || return 1
+            # A hash that is not well-formed (an older release's, or a damaged one) is dropped, not
+            # refused, so the render hashes the restored password again and the archive still restores.
+            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || continue
+            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || continue
+            [[ "$decoded" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]] || continue
             ;;
         bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         esac
