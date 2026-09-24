@@ -126,7 +126,7 @@ Any image-changing merge after the cut restarts this list [r #2602].
 | 3 | Signed build with the release key and C13's environment | `PITHEAD_EXPECT_COMMIT=<SHA> verify-image.sh` passes and refuses a debug variant | docs/dev/appliance-release.md "Build variants", "Cutting a release"; manual-release-checklist.md:46 |
 | 4 | Hardware battery M1–M10 (M11–M13 if the rig role changed) on a real box | results on the release issue; the recorded dev-image runs do not carry | docs/dev/manual-release-checklist.md:55, :81-87 |
 | 5 | Soak decision | re-soak if boot path, quadlets, base images, kernel or a container image changed; pass condition written before the run | #1652 |
-| 6 | Release-lane rehearsal: `release.sh --dry-run`, `make release --draft`, image, bundle and checksums attached | draft opened; the git tag is spent at `--draft` | #1653; docs/dev/manual-release-checklist.md:176 |
+| 6 | Release-lane rehearsal: `release.sh --dry-run`, `make release --draft`, image, bundle and checksums attached | draft opened; the git tag is spent at `--draft` | #1653; docs/dev/manual-release-checklist.md:181-184 |
 | 7 | Publish; post-publish smoke, including the upgrade from 1.20.0 | `make release-smoke` against the tag | docs/dev/releasing.md:441-452 |
 
 The soak will not transfer from an earlier image [i]: C4 changes the Tari entrypoint, C15 the
@@ -154,7 +154,8 @@ moves; the operator applied them on 2026-09-24:
   #2379 [r]; bench-ci #556 [i].
 - **Moved out:** #2633 → `v2.x - post-GA`; #2632, #2631 → `maintenance & gates`; #2466, #2384,
   #2499 → `v2.x - post-GA` (from Sovereign UI); #2476 → Sovereign UI [r].
-- **Left for the owner:** the trackers #940, #1875, #797, #786 (the briefs on them say done or duplicate [r issue comments]);
+- **Left for the owner:** the trackers #940, #1875, #797 (the briefs on them say done or
+  duplicate [r issue comments]) and #786 [i];
   #2474 (confirm with #2057 first). #1998 closed with PR #2174 [r].
 - Two briefs are void (#2605, #2532: the verifier aborted [i]); re-run them before acting on either.
 
@@ -188,7 +189,7 @@ and audited, and a remote node is first-class by name.
 
 | Belongs | State at snapshot |
 |---|---|
-| #1959 (PR #2305), #2367 (PR #2428): every field editable, sensitive ones behind typed `APPLY` | drafts, conflicting |
+| #1959 (PR #2305), #2367 (PR #2428): every field editable, sensitive ones behind typed `APPLY` | drafts; #2428 conflicting |
 | #2351 (PR #2419): remote node by LAN name | draft, conflicting |
 | #1999 (PR #2175): multi-worker routing under load | draft, conflicting |
 | #2384 (PR #2449), #2353 (PR #2422) | drafts |
