@@ -35,21 +35,20 @@ wait_for() {
     shift 3
     "$@"
 }
-# Change ids are minted per apply, so the revert's history row is a row of its own.
 DIAL_STATUS=accepted
 _worker_apply() {
     printf '%s\n' "$2" >>"$APPLY_LOG"
-    printf '{"status":"%s","change_id":"c-pools-%s"}' "$DIAL_STATUS" "$(applies | grep -c .)"
+    printf '{"status":"%s","change_id":"c-pools"}' "$DIAL_STATUS"
 }
 _worker_detail() { printf '%s' "$STUB_DETAIL"; }
-pools_detail() { # <rig-reported-urls-json> <probe-row-status> <revert-row-status>
-    jq -cn --argjson u "$1" --arg a "$2" --arg b "$3" '{
+pools_detail() { # <rig-reported-urls-json> <history-row-status>
+    jq -cn --argjson u "$1" --arg a "$2" '{
         rig_config: {pools: [$u[] | {url: .}]}, last_applied: {},
-        history: [{change_id: "c-pools-1", status: $a}, {change_id: "c-pools-2", status: $b}]}'
+        history: [{change_id: "c-pools", status: $a}]}'
 }
 
 # Echoes "<passes>,<fails>" for one drive of the leg, without touching this file's own verdict.
-drive() { # <rig-reported-urls-json> <probe-row-status> <revert-row-status>
+drive() { # <rig-reported-urls-json> <history-row-status>
     local p="$IT_PASS" f="$IT_FAIL" dp df
     STUB_DETAIL="$(pools_detail "$@")"
     : >"$APPLY_LOG"
@@ -61,36 +60,29 @@ drive() { # <rig-reported-urls-json> <probe-row-status> <revert-row-status>
     printf '%s,%s' "$dp" "$df"
 }
 
-# Seeded (#2325: nothing on record), so the probe is also the restore target.
 export IT_RIG_POOLS_PROBE='[{"url":"probe:1","pass":"secret"}]'
 
 echo "== run_rigforge_pools: a dial-time 'accepted' is settled, never read as the verdict (#2407) =="
 # The rig's reading is credential-stripped ({url} only, #113), so this pass also proves the readback
 # compares URLs rather than whole values.
-assert_eq "an async rig that reports the probe and settles both rows passes all four" \
-    "$(drive '["probe:1"]' applied applied)" "4,0"
-assert_eq "the leg wrote the probe, then restored it" "$(applies | grep -c .)" "2"
+assert_eq "an async rig that reports the probe and settles its row passes all three" \
+    "$(drive '["probe:1"]' applied)" "3,0"
+assert_eq "the leg wrote the probe once (#2470: the probe is its own restore)" "$(applies | grep -c .)" "1"
 
 # The readback is consulted: a rig still running other pools is NOT promoted to applied, even with
-# every history row already applied. Kills a settle predicate stubbed to `true`.
+# its history row already applied. Kills a settle predicate stubbed to `true`.
 assert_eq "a rig that never reports the probe's URLs reds the apply and its readback" \
-    "$(drive '["elsewhere:1"]' applied applied)" "1,3"
+    "$(drive '["elsewhere:1"]' applied)" "1,2"
 
-# The revert's verdict is its OWN row. Seeded, the probe and the restore are one value, so the
-# readback matches before the revert has done anything; only c-pools-2 can say it landed. Kills
-# dropping the revert's history settle.
-assert_eq "a revert whose own history row never settles reds the revert, and only it" \
-    "$(drive '["probe:1"]' applied accepted)" "3,1"
-
-# The probe's own row is asserted too: the readback is as blind for the probe once the seed is on
-# the rig, so an unreconciled row must red rather than ride the readback's pass.
-assert_eq "a probe whose history row never settles reds that row" \
-    "$(drive '["probe:1"]' accepted applied)" "3,1"
+# The row is asserted too: once a run has left the rig on the probe the readback matches before this
+# apply has done anything, so an unreconciled row must red rather than ride the readback's pass.
+assert_eq "a change whose history row never settles reds that row" \
+    "$(drive '["probe:1"]' accepted)" "2,1"
 
 # A refusal is left alone by the settle: the readback may match, the verdict must not change.
 DIAL_STATUS=rejected
 assert_eq "a dial-time 'rejected' is never promoted to applied, readback or not" \
-    "$(drive '["probe:1"]' rejected rejected)" "0,4"
+    "$(drive '["probe:1"]' rejected)" "0,3"
 DIAL_STATUS=accepted
 
 echo ""
