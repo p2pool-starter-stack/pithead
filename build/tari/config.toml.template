@@ -38,9 +38,10 @@ peer_seeds = [
 mining_enabled = true
 
 # No in-process Tor (#2653). The upstream image is built with the `libtor` feature and this defaults
-# to true, so under a Tor transport minotari starts its own Tor, which dials Tor relays (ORPort 9001)
-# straight from this container instead of going through the stack's `tor` container. The SOCKS5
-# transport below never starts it either; this keeps it off if the transport is ever changed back.
+# to true, so under a Tor transport minotari starts its own Tor, which dials Tor relays (ORPort
+# 9001) straight from this container instead of going through the stack's `tor` container. The
+# SOCKS5 transport below never starts it either; this keeps it off if the transport is ever changed
+# back.
 use_libtor = false
 
 # gRPC Interface Configuration
@@ -93,8 +94,8 @@ max_concurrent_outbound_tasks = 100
 # transport needs a Tor control port to create its own hidden service, and the stack's control port
 # is cookie-authenticated with the cookie private to the `tor` container. The onion Tari advertises
 # (public_addresses above) is the stack Tor's hidden service, which forwards to the TCP listener
-# below. There is no proxy bypass under `socks5`: onion and clearnet peer addresses alike are dialled
-# through the proxy, so the node never opens a direct clearnet connection (#271).
+# below. There is no proxy bypass under `socks5`: onion and clearnet peer addresses alike are
+# dialled through the proxy, so the node never opens a direct clearnet connection (#271).
 type = "socks5"
 
 [base_node.p2p.transport.tcp]
