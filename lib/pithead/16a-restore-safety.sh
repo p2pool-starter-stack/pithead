@@ -112,6 +112,8 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
             # Auth disabled in the restored config: the archived hash is stale policy, dropped.
             dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
             [ -n "$dash_password" ] || continue
+            # Raw shape first, like every sibling kind: openssl's decoder skips stray bytes.
+            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || return 1
             decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
             [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
             # apply's own rule: keep the hash only while the archived fingerprint is the restored

@@ -203,6 +203,17 @@ assert_rc "restore rejects an excessive-cost dashboard hash" "$?" 1
 assert_eq "excessive-cost dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 assert_eq "excessive-cost dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
 
+# openssl's base64 decoder skips bytes outside its alphabet, so the raw value is checked too.
+awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u--"; next } { print }' \
+    "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+printf 'LIVE-ENV\n' >"$BK/.env"
+cr_archive "$CR/dirty-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dirty-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects a dashboard hash with bytes outside base64" "$?" 1
+assert_eq "dirty dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
+awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next } { print }' \
+    "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+
 printf 'LIVE-ENV\n' >"$BK/.env"
 printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
 cat >>"$ROOTS/${BK#/}/.env" <<'EOF'
