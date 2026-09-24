@@ -136,6 +136,22 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
   have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
 
+- **A restore at setup that fails while writing its files no longer leaves the machine half
+  restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
+  replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
+  database, leaving the archive's configuration beside this machine's own keys. Every item is now
+  staged beside its destination and swapped in only when all are ready; any failure puts back
+  the previous configuration, Tor keys and database, and removes the chain files the restore
+  added.
+
+- **`pithead doctor` no longer reports HugePages OK for a pool too small to use
+  ([#2610](https://github.com/p2pool-starter-stack/pithead/issues/2610)).** Any non-zero
+  `HugePages_Total` read OK, so a box with 186 pages passed while P2Pool's RandomX dataset and caches
+  need 1296. doctor now holds the pool to this machine's budget (3072 pages, or the appliance's
+  reduced pool, never below 1296) and warns when it is short. The warning gives the shortfall and
+  the memory P2Pool uses outside the pool instead. It stays a warning, never a failure, because the
+  appliance's update commit gate takes doctor's exit code.
+
 - **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
   ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
   HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB

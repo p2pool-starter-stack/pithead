@@ -120,16 +120,7 @@ doctor() {
     if [ "$OS_TYPE" != "Linux" ]; then
         dr_info "Skipped HugePages / free-RAM checks — not supported on $OS_TYPE (Linux-only)."
     else
-        local huge_total huge_free
-        huge_total=$(awk '/^HugePages_Total/{print $2}' /proc/meminfo 2>/dev/null || true)
-        huge_free=$(awk '/^HugePages_Free/{print $2}' /proc/meminfo 2>/dev/null || true)
-        if [ -z "$huge_total" ]; then
-            dr_warn "Could not read HugePages from /proc/meminfo."
-        elif [ "$huge_total" -gt 0 ] 2>/dev/null; then
-            dr_ok "HugePages reserved: ${huge_total} total, ${huge_free:-?} free (RandomX uses these)."
-        else
-            dr_warn_surface "HugePages_Total is 0 — RandomX mining is slower. Run './pithead setup' (kernel optimization) to reserve them." "HugePages_Total is 0 — RandomX mining is slower. There is no dashboard control that reserves them."
-        fi
+        check_hugepages_reserved
         check_hugepages_degraded
         check_local_miner_hugepages_blocked
 
