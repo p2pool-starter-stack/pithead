@@ -274,35 +274,55 @@ tari_node_db_file() {
     return 1
 }
 
-# Free-space precheck before a Tari major migrates the node's database (#2636). The 6.0.0
-# migration compacts data.mdb by writing a new copy beside the old one (161 GB grew to 216 GB at
-# peak on both benches), and a volume that fills fails it part-way through. The bound is
-# data.mdb's size plus a 5 GiB margin for LMDB's 2 GiB map growth steps and what the rest of the
-# stack writes to the same volume meanwhile: conservative, since the compacted copy is smaller than
-# the original, and it is the one number known before the migration runs. It fires only when the
-# existing tari container runs an older major than the one compose is about to start. With no
-# container to read (after a `down`) it cannot tell, so a shortfall is a warning, not a refusal.
-# The size comes from stat, which needs only the directory: data.mdb belongs to uid 1000.
-tari_upgrade_space_precheck() {
-    local dir db size to_img from_img to from mount avail_kb need_kb
+# The node's data.mdb under the Tari data dir .env names (the default layout when unset).
+tari_local_db_file() {
+    local dir
     dir=$(env_get TARI_DATA_DIR)
     [ -n "$dir" ] || dir="$PWD/data/tari"
-    db=$(tari_node_db_file "$dir") || return 0
+    tari_node_db_file "$dir"
+}
+
+# The room a Tari database migration needs beside data.mdb (#2636). The 6.0.0 migration compacts
+# data.mdb by writing a new copy beside the old one (161 GB grew to 216 GB at peak on both
+# benches), and a volume that fills fails it part-way through. The bound is data.mdb's size plus a
+# 5 GiB margin for LMDB's 2 GiB map growth steps and what the rest of the stack writes to the same
+# volume meanwhile: conservative, since the compacted copy is smaller than the original, and it is
+# the one number known before the migration runs. The size comes from stat, which needs only the
+# directory: data.mdb belongs to uid 1000. Returns 0 when the volume has room; 1 when it does not,
+# printing the sizes for the caller's refusal; 2 when the size or the free space cannot be read.
+# Shared by `pithead upgrade` and the OS-update guard (#2645), so both name the same numbers.
+tari_db_space_shortfall() { # <data.mdb>
+    local db="$1" size avail_kb mount need_kb
+    size=$(stat -c %s -- "$db" 2>/dev/null) || size=""
+    avail_kb=$(df -Pk "$db" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
+    [[ "$size" =~ ^[0-9]+$ && "$avail_kb" =~ ^[0-9]+$ ]] || return 2
+    need_kb=$((size / 1024 + 5 * 1048576))
+    [ "$avail_kb" -ge "$need_kb" ] && return 0
+    mount=$(disk_fs_mount "$db") || mount=""
+    printf '%s' "about $(((need_kb + 1048575) / 1048576)) GiB free on ${mount:-the volume holding $db} (Tari's data.mdb plus a 5 GiB margin), and it has $((avail_kb / 1048576)) GiB free"
+    return 1
+}
+
+# Free-space precheck before a Tari major migrates the node's database (#2636), sized by
+# tari_db_space_shortfall. It fires only when the existing tari container runs an older major
+# than the one compose is about to start. With no container to read (after a `down`) it cannot
+# tell, so a shortfall is a warning, not a refusal.
+tari_upgrade_space_precheck() {
+    local db to_img from_img to from sizes rc=0
+    db=$(tari_local_db_file) || return 0
     to_img=$(docker compose config --format json 2>/dev/null | jq -r '.services.tari.image // empty' 2>/dev/null) || to_img=""
     to=$(tari_image_major "$to_img") || return 0
     from_img=$(docker inspect --type container --format '{{.Config.Image}}' tari 2>/dev/null) || from_img=""
     from=$(tari_image_major "$from_img") || from=""
     [ -n "$from" ] && [ "$from" -ge "$to" ] && return 0
-    size=$(stat -c %s -- "$db" 2>/dev/null) || size=""
-    avail_kb=$(df -Pk "$db" 2>/dev/null | awk 'NR==2{print $4}') || avail_kb=""
-    mount=$(disk_fs_mount "$db") || mount=""
-    if ! [[ "$size" =~ ^[0-9]+$ && "$avail_kb" =~ ^[0-9]+$ ]]; then
+    sizes=$(tari_db_space_shortfall "$db") || rc=$?
+    case "$rc" in
+    0) return 0 ;;
+    2)
         warn "Could not read the size of $db or the free space on its volume, so the space a Tari $to database migration needs was not checked."
         return 0
-    fi
-    need_kb=$((size / 1024 + 5 * 1048576))
-    [ "$avail_kb" -ge "$need_kb" ] && return 0
-    local sizes="about $(((need_kb + 1048575) / 1048576)) GiB free on ${mount:-the volume holding $db} (Tari's data.mdb plus a 5 GiB margin), and it has $((avail_kb / 1048576)) GiB free"
+        ;;
+    esac
     if [ -z "$from" ]; then
         warn "Could not tell which Tari version last ran on this database (no tari container to read). If this upgrade crosses a Tari major, its database migration needs $sizes."
         return 0

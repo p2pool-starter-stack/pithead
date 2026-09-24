@@ -89,7 +89,7 @@ update path reads back before it installs:
 | `data_migration` | `true` if this release runs a forward-only `/data` (lmdb) migration |
 | `minimum_os_version` | the lowest OS version that can still read `/data` once it has migrated |
 
-Two guards consume them, because a correctly-signed bundle is not automatically a safe one:
+Three guards consume them, because a correctly-signed bundle is not automatically a safe one:
 
 - **No signed downgrade.** `os-update` installs without confirmation only a clean `X.Y.Z`
   release whose `version` is at or newer than the running OS. It fails **closed**: an older
@@ -116,6 +116,17 @@ Two guards consume them, because a correctly-signed bundle is not automatically 
   guard tells the truth about the state instead: a floor above the running version means the
   migration never ran (or the slot was installed outside `pithead`), the floor version or newer
   installs, and nothing needs resetting or restoring for it (#1393).
+- **No migration on a volume without room for it.** A `data_migration` bundle is refused
+  when the local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB: a
+  Tari major migration writes a compacted copy beside the old database, and on a full volume
+  it fails part-way after the slot has committed (#2645). The sizing and the refusal's
+  wording are `pithead upgrade`'s (`tari_db_space_shortfall`, #2636). The guard keys on
+  `data_migration` alone, since the Tari image a bundle starts is in its compose file, which
+  cannot be read before the install. So a migrating bundle is held to the Tari bound even
+  when only Monero's data migrates. A Tari node that is `remote` or `off`, or no Tari
+  database, skips it, and a size or free space that cannot be read is a warning. The
+  dashboard's verify and install steps run it too, and keep the downloaded bundle when it
+  refuses.
 
 **The data-migration contract for release authors:** a release that ships a forward-only
 schema bump MUST declare it, or a later rollback silently strands the migrated chain data.
