@@ -122,8 +122,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
   form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
   no way to be adopted short of a configuration stick. The host now lets an append through: every
-  existing descriptor must come back unchanged, a new rig's host must not resolve inside this
-  machine's own network, and the commit needs the typed `APPLY`. The preview names the rig and the
+  existing descriptor must come back unchanged, a new rig may not reuse an existing rig's name,
+  its host must not resolve to loopback, link-local or the stack's own docker-bridge subnet, and
+  the commit needs the typed `APPLY`. The preview names the rig and the
   address the dashboard will send its control token to, and the audit log records the commit as
   confirmed with `workers.list` as its key. Repointing or removing a rig the dashboard already
   controls is still refused.

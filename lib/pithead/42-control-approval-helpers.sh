@@ -32,20 +32,37 @@ control_physical_presence_error() {
 # append — every live entry byte-for-byte and in order, then the new ones (#893's prefix match) —
 # prints one "name at host" per new entry, once each new host clears the #122 SSRF floor. The
 # gate then asks for the typed APPLY (#2641): friction, not a second identity (the #1959 ruling).
-# Any other change edits a rig the dashboard already controls, and is refused (#912's scope).
+# Any other change edits a rig the dashboard already controls, and is refused (#912's scope). So is
+# a new entry reusing a name: first-declared wins, so it would be inert, and the preview's by-name
+# token restore would hand it an existing rig's token.
+# An appliance's documented route for an existing descriptor is the stick, not "Set up again".
+_control_worker_remedy() {
+    if is_appliance; then
+        printf 'To change one, put the new workers.list in pithead-config.json on a configuration stick and reboot with it inserted.'
+    else
+        _control_host_remedy
+    fi
+}
+
 control_worker_append() { # <staged-file>
-    local staged="$1" live_n new_host
+    local staged="$1" live_n new_host hosts dup
     jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' \
         "$staged" >/dev/null 2>&1 && return 0
     if ! live_n=$(jq -er --slurpfile live "$CONFIG_FILE" '
         (($live[0].workers.list // []) | length) as $n
         | select((.workers.list | type) == "array" and (.workers.list | length) > $n
             and .workers.list[0:$n] == ($live[0].workers.list // [])) | $n' "$staged" 2>/dev/null); then
-        if is_appliance; then
-            printf 'this change edits or removes a rig the dashboard already controls (workers.list); only adopting a new rig is committable from the dashboard. To change or remove one, put the new workers.list in pithead-config.json on a configuration stick and reboot with it inserted.'
-        else
-            printf 'this change edits or removes a rig the dashboard already controls (workers.list); only adopting a new rig is committable from the dashboard. %s' "$(_control_host_remedy)"
-        fi
+        printf 'this change edits or removes a rig the dashboard already controls (workers.list); only adopting a new rig is committable from the dashboard. %s' "$(_control_worker_remedy)"
+        return 1
+    fi
+    dup=$(jq -r --argjson n "$live_n" '.workers.list as $l | [range($n; $l | length) as $i
+        | $l[$i].name as $x | select(any($l[0:$i][]; .name == $x)) | $x] | first // empty' "$staged" 2>/dev/null) &&
+        hosts=$(jq -r --argjson n "$live_n" '.workers.list[$n:][] | select(has("host")) | .host' "$staged" 2>/dev/null) || {
+        printf 'could not read the new worker descriptors — refusing'
+        return 1
+    }
+    if [ -n "$dup" ]; then
+        printf 'a rig named %s already has a worker descriptor (workers.list), so a second one would be ignored; only a rig with no descriptor can be adopted from the dashboard. %s' "$dup" "$(_control_worker_remedy)"
         return 1
     fi
     while IFS= read -r new_host; do
@@ -54,8 +71,8 @@ control_worker_append() { # <staged-file>
             printf 'a new worker descriptor points at %s, which resolves inside this host'"'"'s own network — a rig'"'"'s control address must be a distinct machine on your LAN, not this host or one of its own containers.' "$new_host"
             return 1
         fi
-    done < <(jq -r --argjson n "$live_n" '.workers.list[$n:][] | select(has("host")) | .host' "$staged" 2>/dev/null)
-    jq -r --argjson n "$live_n" '.workers.list[$n:][] | "\(.name) at \(.host // "its proxy-reported address")"' "$staged"
+    done <<<"$hosts"
+    jq -r --argjson n "$live_n" '.workers.list[$n:][] | .name + (if has("host") then " at \(.host)" else " (no control address)" end)' "$staged"
 }
 
 control_carried_ssh() { # <staged-file>

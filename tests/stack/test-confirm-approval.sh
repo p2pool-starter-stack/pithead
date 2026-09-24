@@ -185,8 +185,8 @@ run_pending >/dev/null
 assert_eq "APPLY and a self-written envelope do not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
-jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
-run_pending >/dev/null
+jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json" && run_pending >/dev/null
+assert_contains "the adopt preview's audit row names workers.list" "$(tail -n 1 "$AUDIT")" '"action":"preview","status":"previewed","keys":"workers.list"'
 assert_eq "an adopt preview is a destructive, typed-APPLY change" "$(jq -c '[.status, .destructive, (.changes[] | select(.key == "workers.list") | .flag)]' "$RESULTS/$APPEND_UUID.json")" '["previewed",true,"CONFIRM"]'
 assert_contains "the adopt warning names the rig and its address" "$(jq -r '.changes[].msg' "$RESULTS/$APPEND_UUID.json")" "rig-2 at 192.168.1.52"
 assert_not_contains "the adopt preview never echoes the token" "$(cat "$RESULTS/$APPEND_UUID.json")" "another-token"

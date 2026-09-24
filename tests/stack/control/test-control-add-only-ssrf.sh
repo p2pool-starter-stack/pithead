@@ -26,9 +26,8 @@
 # outlive the source as they outlived the old in-run.sh position: the editable-allowlist domain file
 # run.sh sources next reads both, as test-spool-audit.sh reuses $UUID5. Hence the stanza stays put.
 #
-# MUTATION PROOF: dropping the adopt append's typed APPLY turns the unconfirmed-append rows red;
-# dropping the prefix match turns the repoint/removal rows red; weakening _control_host_is_internal
-# lets a confirmed unsafe append apply.
+# MUTATION PROOF: dropping the adopt's typed APPLY, prefix match or duplicate-name check turns its rows
+# red; weakening _control_host_is_internal lets a confirmed unsafe append apply.
 # Round 5's resolve-and-check battery (below) names its own mutation kills.
 
 build_control_sandbox
@@ -161,9 +160,8 @@ assert_contains "the refusal names dashboard.workers as a schema-unknown key" "$
 assert_contains "the refusal is the closed-schema door, not the descriptor door" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "not in the schema"
 assert_eq "config.json keeps no worker descriptors" "$(jq -r '.dashboard.workers // "unset"' "$C/config.json")" "unset"
 
-# workers.list[] (#506): adopting a rig is an append behind the typed APPLY (#2641); a repoint or a
-# removal edits a rig the dashboard already controls and is refused even WITH the APPLY.
-# Seed one from the host CLI (never the gate) as the baseline to protect.
+# workers.list[] (#506): adopting a rig is an append behind the typed APPLY (#2641); a repoint or removal
+# edits a rig the dashboard already controls, refused even WITH it. rig1 is seeded from the host CLI.
 jq '.workers.list=[{name:"rig1",host:"10.0.0.9",control_port:8082,token:"tok_rig1"}]' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 assert_eq "workers.list seed applies from the host CLI" "$(jq -r '.workers.list[0].token' "$C/config.json")" "tok_rig1"
@@ -178,7 +176,9 @@ assert_eq "workers.list REMOVAL of an existing entry is refused even with APPLY"
 jq '.workers.list += [{name:"rig2",host:"192.168.1.50",control_port:8082,token:"tok_rig2"}]' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "a safe workers.list append without the typed APPLY is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "the unconfirmed append asks for APPLY and names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY in the dashboard to confirm"
+assert_contains "the unconfirmed append asks for APPLY and names the rig" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "(adopting a rig: rig2 at 192.168.1.50) — type APPLY in the dashboard to confirm"
+jq '.workers.list += [{name:"rig1",host:"10.0.0.51",token:{__secret__:true}}]' "$C/config.json" >"$C/cand.json" && gate_try "$C/cand.json" APPLY
+assert_contains "a second rig1 descriptor (it would inherit rig1's token) is refused even with APPLY" "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected: a rig named rig1 already has a worker descriptor"
 assert_eq "config.json keeps only rig1 after the unconfirmed append" "$(jq -c '[.workers.list[].host]' "$C/config.json")" '["10.0.0.9"]'
 
 # NEGATIVE — the #122 SSRF floor on a NEWLY appended entry (_control_host_is_internal): a

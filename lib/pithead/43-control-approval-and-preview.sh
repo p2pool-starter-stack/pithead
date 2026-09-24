@@ -243,7 +243,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         # Same classifier as the gate: a repoint/removal or an SSRF-floor host refuses HERE, before
         # the operator is asked to type anything.
-        worker_new=$(control_worker_append "$staged") || { worker_err="$worker_new" && worker_new=""; }
+        worker_new=$(control_worker_append "$staged") || { worker_err="${worker_new:-could not classify the worker descriptors — refusing}" && worker_new=""; }
         if control_never_path_changed "$staged"; then
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(control_physical_presence_error)" '{status:"rejected",error:$e,ts:(now|floor)}')"
             rm -f "$errf"

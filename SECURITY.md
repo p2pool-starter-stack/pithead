@@ -106,8 +106,9 @@ The stack's defaults:
   edits must be applied from the host CLI, or on an appliance from a configuration stick.
   **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
   in this perimeter, with one route through it: adopting a new rig (#2641). The dashboard may
-  append a descriptor when every existing one comes back unchanged, the new host does not resolve
-  inside this machine's own network, and the operator types `APPLY`; the audit log records the
+  append a descriptor when every existing one comes back unchanged, no existing rig's name is
+  reused, the new host does not resolve to loopback, link-local or the stack's own docker-bridge
+  subnet, and the operator types `APPLY`; the audit log records the
   commit as confirmed and names `workers.list`. Repointing or removing a rig the dashboard already
   controls is refused, host-CLI-only (a configuration stick on an appliance). The typed `APPLY` is
   friction, not a second identity: the dashboard container writes its own request, so a
