@@ -51,7 +51,8 @@ unresolved half): the restore leg's source-provisioning machine can fail with to
 healthy, and the only evidence any battery captured for it was the compose orchestration's own
 verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
 healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
-own healthcheck verdict and its own log.
+own healthcheck verdict and its own log. The provision phase's onion-exposure leg calls the same dump,
+after the tail of the refused `./pithead apply -y` output, when that apply fails (#2680).
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
 values live in the private bench notes.
