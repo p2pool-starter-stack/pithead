@@ -185,12 +185,12 @@ jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
 # The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
-jq_assert "tari healthcheck uses the [m]inotari self-match guard" \
-    '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
-# Memory ceilings (#132): every service carries a mem_limit so a leak/runaway OOM-restarts the
-# offender in its own cgroup instead of the host OOM-killer reaching monerod (the revenue service).
-jq_assert "memory ceiling (mem_limit) on every service (#132)" '[.services[] | select(.mem_limit != null)] | length >= 9'
+# Memory ceilings (#132) OOM-restart a leak in its own cgroup, not monerod via the host OOM-killer.
+# p2pool's holds its 2592 MiB RandomX fallback off short HugePages plus heap: 1g OOM-looped (#2562).
+jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
 # Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
 # scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
 # re-creating the executable staging area read_only exists to remove — must fail CI, not evolve

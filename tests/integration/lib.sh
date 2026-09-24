@@ -679,7 +679,7 @@ capture_artifacts() {
     local dir="${outdir}/${scenario}"
     mkdir -p "$dir"
     it_step "capturing artifacts to ${dir}"
-    rx "docker compose ps" 2>&1 | redact >"${dir}/compose-ps.txt" || true
+    rx 'docker compose ps; docker inspect --format "{{.Name}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} restarts={{.RestartCount}}" $(docker compose ps -aq)' 2>&1 | redact >"${dir}/compose-ps.txt" || true
     rx "$IT_PITHEAD status" 2>&1 | redact >"${dir}/status.txt" || true
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true
     # config.json is masked BY PATH first (#1630) — redact() is line-wise and cannot see nesting.
