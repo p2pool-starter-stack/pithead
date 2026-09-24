@@ -104,7 +104,7 @@ if [ -e "$WORK_DIR/node/libtor" ]; then
 fi
 echo "  ✓ minotari_node started no in-process Tor (no <base_path>/libtor) (#2653)"
 
-# Calibration: the same image on develop's pre-#2653 transport (`tor`, use_libtor left at its
+# Calibration: the same image on the pre-#2653 transport (`tor`, use_libtor left at its
 # default) must create <base_path>/libtor, or the absence above proves nothing. If a future image
 # drops the libtor feature this fails, and use_libtor = false can go with it.
 mkdir -p "$WORK_DIR/calibration-config" "$WORK_DIR/calibration-node"
@@ -121,7 +121,7 @@ for _ in $(seq 1 20); do
     sleep 1
 done
 if [ ! -e "$WORK_DIR/calibration-node/libtor" ]; then
-    docker logs "$CALIBRATION" >&2 2>&1 || true
+    docker logs "$CALIBRATION" >&2 || true
     echo "FAIL: calibration: a Tor transport with use_libtor at its default created no <base_path>/libtor" >&2
     exit 1
 fi

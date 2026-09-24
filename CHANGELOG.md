@@ -83,6 +83,20 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Security
 
+- **The Tari node no longer runs its own Tor**
+  ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)). The upstream
+  `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.
+  Under the `tor` transport the node therefore started an in-process Tor, gave it its control port
+  and hidden service, and let it dial Tor relays straight from the tari container rather than
+  through the stack's `tor` container. Tari's source shows the same default in the released 5.3.1
+  pin. The egress firewall drops those dials. A tier-4 run still caught one that opened while the
+  rules were being re-applied, and the firewall's established-flow accept then kept it
+  ([#2672](https://github.com/p2pool-starter-stack/pithead/issues/2672)). With the firewall off,
+  nothing stopped them. Tari now uses the `socks5` transport through the stack's Tor SOCKS port
+  with `use_libtor = false`. Onion and `/ip4` peers are both dialled through Tor, and inbound peers
+  reach the node through the stack Tor's Tari onion, which now has a listener behind it. A node
+  upgraded from the `tor` transport keeps its old onion in `base_node_id.json` next to the stack's
+  one. Nothing serves that onion any more.
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a

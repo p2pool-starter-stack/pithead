@@ -22,8 +22,8 @@ dns_seeds_use_dnssec = false
 # Bootstrap from the onion peer_seeds below instead (refresh them periodically as seeds rotate).
 dns_seeds = []
 
-# Hardcoded ONION peer seeds (bootstrap over Tor). The clearnet /ip4//ip6/ variants are inert under
-# `transport = tor` and were dropped for a strict no-clearnet audit (#162) — onion-only.
+# Hardcoded ONION peer seeds (bootstrap over Tor). The clearnet /ip4//ip6/ variants were dropped for
+# a strict no-clearnet audit (#162) — onion-only.
 # Source of truth: `dig TXT seeds.tari.com`. Last synced 2026-09-22 (minotari_node v6.0.0).
 peer_seeds = [
     "1069fb56a3aaba45b9aa9839714251a4dfeb850e8d79d6ac9ca180377120fe1c::/onion3/urvwskrhqa52km46xt2oevblebmylleglph6dythhndmctwdzl6cuoqd:18141",
@@ -37,8 +37,8 @@ peer_seeds = [
 # Enable merge mining capabilities
 mining_enabled = true
 
-# No in-process Tor (#2653). The upstream image is built with the `libtor` feature and this defaults to
-# true, so under a Tor transport minotari starts its own Tor, which dials Tor relays (ORPort 9001)
+# No in-process Tor (#2653). The upstream image is built with the `libtor` feature and this defaults
+# to true, so under a Tor transport minotari starts its own Tor, which dials Tor relays (ORPort 9001)
 # straight from this container instead of going through the stack's `tor` container. The SOCKS5
 # transport below never starts it either; this keeps it off if the transport is ever changed back.
 use_libtor = false
