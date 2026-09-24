@@ -20,15 +20,17 @@
 # THE DASHBOARD HALF HAS A PRECONDITION. Its `Tari DOWN` badge is debounced (90 s unreachable) and
 # fires only for a node the dashboard has reached at least once since it started (NodeHealthMonitor's
 # ever-up guard). The migration hold kept Tari away until the release, so the leg first waits until
-# the dashboard has read the released node: both containers up for a window holding at least two
-# dashboard polls, with at most one `Tari gRPC GetTipInfo error` in the dashboard's log over it, so
-# at least one poll reached the node (a busy syncing node may time one out). Without that wait a
+# the dashboard has read the released node: both containers up for a whole window with no
+# `Tari gRPC GetTipInfo error` and no `Data Collection Error` (a cycle that raised before its Tari
+# call) in the dashboard's log over it. A cycle is the 30 s sleep plus its work, whose slowest calls
+# time out at 20 s over Tor, so the window holds at least two polls while a cycle stays under 90 s,
+# and with no error in it at least one of them reached the node. Without that wait a
 # missing badge would say nothing about reporting. A dashboard restarted by the recovery `up` starts
 # a fresh monitor with no badge, so its clear counts only if the dashboard kept its start time.
 
 CHAIN_FAULT_SERVICE=tari
-# Two dashboard polls (UPDATE_INTERVAL 30 s) plus slack.
-CHAIN_FAULT_READ_WINDOW=75
+# Two dashboard cycles of up to 90 s each (see above).
+CHAIN_FAULT_READ_WINDOW=180
 
 # The service's row in `pithead status`'s health list, colour stripped. The compose table above the
 # list also names the service, but only the health rows are indented under a status glyph. The
@@ -95,16 +97,16 @@ chain_fault_dashboard_verdict() { # <api-state-json> <faulted|recovered>
 }
 
 # The precondition, judged from one guest reading: "<tari-started> <dashboard-started> <now>
-# <grpc-errors>" (unix seconds from podman inspect, and the count of the dashboard's Tari gRPC errors
-# over the read window). Both containers must be up for the whole window, which holds two polls or
-# more, and at most one of them may have failed to reach the node.
+# <errors>" (unix seconds from podman inspect, and the count of the dashboard's Tari gRPC and
+# data-collection errors over the read window, or `none` when its log cannot be read). Both
+# containers must be up for the whole window and no cycle in it may have failed.
 chain_fault_dashboard_reached() { # <probe>
     local tari dash now errors latest
     read -r tari dash now errors <<<"$1"
     [[ "$tari" =~ ^[0-9]+$ && "$dash" =~ ^[0-9]+$ && "$now" =~ ^[0-9]+$ && "$errors" =~ ^[0-9]+$ ]] || return 1
     [ "$tari" -gt 0 ] && [ "$dash" -gt 0 ] || return 1
     latest=$((tari > dash ? tari : dash))
-    [ $((now - latest)) -ge "$CHAIN_FAULT_READ_WINDOW" ] && [ "$errors" -lt 2 ]
+    [ $((now - latest)) -ge "$CHAIN_FAULT_READ_WINDOW" ] && [ "$errors" -eq 0 ]
 }
 
 chain_fault_probe() {
@@ -113,7 +115,8 @@ chain_fault_probe() {
 started() { id=\$(id_of \$1); [ -n \"\$id\" ] && podman inspect --format '{{.State.StartedAt.Unix}}' \"\$id\" 2>/dev/null; }
 dash=\$(id_of dashboard)
 errors=none
-[ -z \"\$dash\" ] || errors=\$(podman logs --since ${CHAIN_FAULT_READ_WINDOW}s \"\$dash\" 2>&1 | grep -c 'Tari gRPC GetTipInfo error')
+[ -z \"\$dash\" ] || { logs=\$(podman logs --since ${CHAIN_FAULT_READ_WINDOW}s \"\$dash\" 2>&1) &&
+    errors=\$(printf '%s\\n' \"\$logs\" | grep -cE 'Tari gRPC GetTipInfo error|Data Collection Error'); }
 printf '%s %s %s %s\n' \"\$(started $CHAIN_FAULT_SERVICE)\" \"\$(started dashboard)\" \"\$(date +%s)\" \"\$errors\"" 2>/dev/null | tr -d '\r'
 }
 
@@ -145,13 +148,13 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
         bad "post-commit $svc fault: pithead-boot never settled after the release — the fault was not injected"
         return 1
     fi
-    for tries in $(seq 72); do
+    for tries in $(seq 120); do
         probe=$(chain_fault_probe)
         chain_fault_dashboard_reached "$probe" && break
         sleep 5
     done
     if ! chain_fault_dashboard_reached "$probe"; then
-        bad "post-commit $svc fault: the dashboard never read the released $svc node (probe '${probe:-none}': $svc-started dashboard-started now gRPC-errors) — the fault was not injected"
+        bad "post-commit $svc fault: the dashboard never read the released $svc node within 120 polls (probe '${probe:-none}': $svc-started dashboard-started now errors) — the fault was not injected"
         return 1
     fi
     ok "post-commit $svc fault: the dashboard reads the $svc node the release started"
@@ -215,14 +218,14 @@ phase_provision_chain_fault_after_release() { # <dashboard-user> <dashboard-pass
     if chain_fault_doctor_verdict "$doctor" "$svc" recovered; then
         ok "post-commit $svc fault: pithead doctor no longer fails on $svc"
     else
-        bad "post-commit $svc fault: pithead doctor still fails on $svc after the recovery ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
+        bad "post-commit $svc fault: pithead doctor still fails on $svc 120 polls after the recovery ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
     fi
     if [ -z "$dash_after" ] || [ "$dash_after" != "$dash_before" ]; then
         bad "post-commit $svc fault: the dashboard restarted during the recovery (started $dash_before, now ${dash_after:-unreadable}) — a fresh monitor has no badge, so the clear is not proven"
     elif chain_fault_dashboard_verdict "$state" recovered; then
         ok "post-commit $svc fault: the dashboard cleared Tari DOWN"
     else
-        bad "post-commit $svc fault: the dashboard did not clear Tari DOWN after the recovery ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
+        bad "post-commit $svc fault: the dashboard did not clear Tari DOWN within 120 polls of the recovery ($(chain_fault_evidence "$status_out" "$doctor" "$state"))"
     fi
 }
 
@@ -270,20 +273,19 @@ _chain_fault_self_test() {
     chain_fault_doctor_verdict "$(printf '%s' "$doc_ok" | jq -c '.checks += [{status:"fail",message:"tari is not ready (Up 5s (starting))"}]')" tari recovered && f=$((f + 1))
     chain_fault_doctor_verdict "" tari recovered && f=$((f + 1))
 
-    chain_fault_dashboard_verdict '{"badges":[{"text":"Tari DOWN","variant":"bad"}],"tari":{"connected":false}}' faulted || f=$((f + 1))
-    chain_fault_dashboard_verdict '{"badges":[{"text":"monerod DOWN"}],"tari":{"connected":false}}' faulted && f=$((f + 1))
+    chain_fault_dashboard_verdict '{"badges":[{"text":"Tari DOWN","variant":"bad"}]}' faulted || f=$((f + 1))
+    chain_fault_dashboard_verdict '{"badges":[{"text":"monerod DOWN"}]}' faulted && f=$((f + 1))
     chain_fault_dashboard_verdict '' faulted && f=$((f + 1))
-    chain_fault_dashboard_verdict '{"badges":[{"text":"Miner held (sync)"}],"tari":{"connected":false}}' recovered || f=$((f + 1))
+    chain_fault_dashboard_verdict '{"badges":[{"text":"Miner held (sync)"}]}' recovered || f=$((f + 1))
     chain_fault_dashboard_verdict '{"badges":[{"text":"Tari DOWN"}]}' recovered && f=$((f + 1))
     chain_fault_dashboard_verdict '' recovered && f=$((f + 1))
     chain_fault_dashboard_verdict '{"error":"unauthorized"}' recovered && f=$((f + 1))
     chain_fault_dashboard_verdict '<html>login</html>' recovered && f=$((f + 1))
 
-    chain_fault_dashboard_reached '1000 900 1075 0' || f=$((f + 1))
-    chain_fault_dashboard_reached '1000 900 1074 0' && f=$((f + 1))
-    chain_fault_dashboard_reached '900 1000 1074 0' && f=$((f + 1))
-    chain_fault_dashboard_reached '1000 900 2000 1' || f=$((f + 1))
-    chain_fault_dashboard_reached '1000 900 2000 2' && f=$((f + 1))
+    chain_fault_dashboard_reached '1000 900 1180 0' || f=$((f + 1))
+    chain_fault_dashboard_reached '1000 900 1179 0' && f=$((f + 1))
+    chain_fault_dashboard_reached '900 1000 1179 0' && f=$((f + 1))
+    chain_fault_dashboard_reached '1000 900 2000 1' && f=$((f + 1))
     chain_fault_dashboard_reached '1000 900 2000 none' && f=$((f + 1))
     chain_fault_dashboard_reached ' 900 2000 0' && f=$((f + 1))
     chain_fault_dashboard_reached '0 900 2000 0' && f=$((f + 1))
@@ -299,7 +301,7 @@ case "$*" in
 *'ps -q --filter label=com.docker.compose.service=dashboard') echo did ;;
 *'inspect --format {{.State.StartedAt.Unix}} tid') echo 1000 ;;
 *'inspect --format {{.State.StartedAt.Unix}} did') echo 900 ;;
-'logs --since 75s did') printf 'INFO poll\nERROR Tari gRPC GetTipInfo error: refused\nERROR Tari gRPC GetTipInfo error: refused\n' ;;
+'logs --since 180s did') [ -z "${LOGS_FAIL:-}" ] || exit 125; printf 'INFO poll\nERROR Tari gRPC GetTipInfo error: refused\nERROR Data Collection Error: boom\nERROR Tari gRPC GetTipInfo error: refused\n' ;;
 *) exit 1 ;;
 esac
 STUB
@@ -307,8 +309,10 @@ STUB
         chmod +x "$bin/podman" "$bin/date"
         _ssh() { PATH="$bin:$PATH" bash -c "$1"; }
         probe=$(chain_fault_probe)
+        # An unreadable log is no reading, never zero errors.
+        unread=$(LOGS_FAIL=1 chain_fault_probe)
         rm -rf "$bin"
-        [ "$probe" = '1000 900 2000 2' ]
+        [ "$probe" = '1000 900 2000 3' ] && [ "$unread" = '1000 900 2000 none' ]
     ) || f=$((f + 1))
 
     # The live leg against a stubbed guest: all green when every surface reports the fault and the
@@ -364,7 +368,7 @@ STUB
         scenario 8/1 "D_UP=$doc_down" || rc=1
         scenario 8/1 "B_UP=$b_down" || rc=1
         scenario 8/1 "P_UP=1000 950 2000 0" || rc=1
-        scenario 0/1 "P_PRE=1000 900 2000 2" || rc=1
+        scenario 0/1 "P_PRE=1000 900 2000 1" || rc=1
         rm -f "$log"
         exit "$rc"
     ) || f=$((f + 1))
