@@ -43,7 +43,7 @@ Description=pithead Tor-only egress firewall check for the dashboard
 Type=oneshot
 User=root
 WorkingDirectory=$1
-# Pinned for the same reason as pithead-control.service (#2059): a unit does not read
+# Pinned for the same reason as pithead-control.service: a unit does not read
 # /etc/environment, and an unpinned probe on the appliance takes podman-docker's shim for Docker.
 Environment=PITHEAD_ENGINE=$2
 ExecStart=$1/pithead egress-status
