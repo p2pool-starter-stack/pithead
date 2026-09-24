@@ -4,9 +4,9 @@
 # bridge. It could not see the addresses that are this host on THIS machine only: its LAN address,
 # the engine's default bridge (docker0/podman0) and every other bridge network on the box. A
 # workers.list[] host pointed at one of those passed the floor, and worker-apply/worker-upgrade then
-# dialed it from the host with a bearer the request writer chose. Since #2641 a dashboard adopt can
-# commit behind the typed APPLY, so this floor is the only host-side check left between a
-# compromised dashboard container and that dial.
+# dialed it from the host with a bearer the request writer chose. Once #2641 lets a dashboard adopt
+# commit behind the typed APPLY, this floor is the only host-side check left between a compromised
+# dashboard container and that dial.
 #
 # Two rules, because the two kinds of interface mean different things:
 #   - every address on every interface is refused EXACTLY: the LAN address is this host, but its
@@ -21,14 +21,17 @@
 # without asking docker or podman, so a slow engine cannot shrink the list.
 
 # Prints this host's own networks, one "<address> <prefix-bits>" per line: the full address length
-# for an exact address, the interface's prefix for a bridge subnet. Non-zero when `ip` fails or
-# lists nothing (every Linux host has at least loopback): the caller then FAILS CLOSED, because an
-# unknown interface list can never prove a host is not this machine. This is the one seam a test
+# for an exact address, the interface's prefix for a bridge subnet. Non-zero when `ip` fails to list
+# addresses or bridges, or lists no address (every Linux host has at least loopback): the caller then
+# FAILS CLOSED, because an unknown interface list can never prove a host is not this machine. A
+# failed bridge listing counts too: busybox `ip` rejects `type bridge`, and an empty bridge set would
+# quietly drop every subnet rule. A failed route lookup only refuses more, so it stays lenient. This is the one seam a test
 # replaces: a fake `ip` ahead of the real one on $PATH (tests/stack/control/test-control-ssrf-host-local.sh).
 _host_local_networks() {
     local listing bridges routed
     listing=$(ip -o addr show 2>/dev/null) && [ -n "$listing" ] || return 1
-    bridges=" $(ip -o link show type bridge 2>/dev/null | sed 's/^[0-9]*: *//; s/[:@].*//' | tr '\n' ' ') "
+    bridges=$(ip -o link show type bridge 2>/dev/null) || return 1
+    bridges=" $(sed 's/^[0-9]*: *//; s/[:@].*//' <<<"$bridges" | tr '\n' ' ') "
     routed=" $({
         ip -4 route show default
         ip -6 route show default
