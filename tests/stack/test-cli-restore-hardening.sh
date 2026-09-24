@@ -188,15 +188,18 @@ jq '.dashboard.auth.password = "fixture-dashboard-pass"' "$ROOTS/${BK#/}/config.
 # A hash that is not well-formed bcrypt (an older release's, or a damaged one) must not survive,
 # nor block the restore: it is dropped and the configured password is hashed again.
 CR_REHASH="DASHBOARD_AUTH_HASH_B64=$(printf '$2y$14$%s' "$(printf 'R%.0s' {1..53})" | openssl base64 -A)"
-for cr_bad in not-bcrypt trailing-text; do
-    case "$cr_bad" in not-bcrypt) cr_value=$(printf 'not-bcrypt' | openssl base64 -A) ;; *) cr_value="$CR_DASH_HASH}" ;; esac
-    sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$cr_value/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
-    cr_archive "$CR/malformed-dashboard-hash.tar.gz"
-    out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"
-    assert_rc "restore accepts a malformed dashboard hash ($cr_bad)" "$?" 0
-    assert_contains "restore rehashes over a malformed dashboard hash ($cr_bad)" "$(cat "$BK/.env")" "$CR_REHASH"
-    assert_eq "restore keeps the matching fingerprint over a malformed hash ($cr_bad)" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
-done
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$(printf 'not-bcrypt' | openssl base64 -A)/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/malformed-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore accepts a non-bcrypt dashboard hash" "$?" 0
+assert_contains "restore rehashes over a non-bcrypt dashboard hash" "$(cat "$BK/.env")" "$CR_REHASH"
+assert_eq "restore keeps the matching fingerprint over a non-bcrypt dashboard hash" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH}/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/malformed-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$CR/hashbin:$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore accepts a trailing-text dashboard hash" "$?" 0
+assert_contains "restore rehashes over a trailing-text dashboard hash" "$(cat "$BK/.env")" "$CR_REHASH"
+assert_eq "restore keeps the matching fingerprint over a trailing-text dashboard hash" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
 rm -f "$BK/docker-compose.yml"
 sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 
@@ -220,4 +223,4 @@ out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-pres
 assert_rc "restore rejects malformed preserved-secret values" "$?" 1
 assert_eq "malformed preserved-secret refusal leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 unset -f cr_archive
-unset CR ROOTS CR_ARCHIVE CR_DASH_FP CR_DASH_HASH CR_KEPT CR_REHASH cr_bad cr_value out
+unset CR ROOTS CR_ARCHIVE CR_DASH_FP CR_DASH_HASH CR_KEPT CR_REHASH out
