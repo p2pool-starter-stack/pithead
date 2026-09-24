@@ -59,4 +59,20 @@ docker() { return 1; }
 if TMPDIR="$td" prepare_candidate_bundle; then exit 1; fi
 [ "$UPGRADE_TRUST_STEP" = bundle-signature ]
 
+echo "== an incomplete pre-upgrade capture names each empty input, never a ref =="
+d64=$(printf 'a%.0s' {1..64})
+first=$'tor reg.test/pithead-tor:1.20.0@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1.20.0@sha256:'"$d64"
+UPGRADE_CANDIDATE_ALL_REFS=$'tor x\ndashboard y\ncaddy z'
+[ -z "$(upgrade_capture_gaps m 0 "$first" "$first" reg.test c c)" ]
+[ "$(upgrade_capture_gaps "" 1 "$first" "$first" reg.test c c)" = "stateful-mounts(exit=1)" ]
+[ "$(upgrade_capture_gaps m 0 "" "" "" "" "")" = "running-refs first-party-refs" ]
+untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1.20.0@sha256:'"$d64"
+gaps="$(upgrade_capture_gaps m 0 "$untagged" "$untagged" "" c c)"
+[ "$gaps" = "baseline-registry(tor:no-tag)" ]
+! grep -Fq reg.test <<<"$gaps" || exit 1
+mixed=$'tor reg.test/pithead-tor:1@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-tor:1'
+[ "$(upgrade_capture_gaps m 0 "$mixed" "$mixed" "" c c)" = "baseline-registry(dashboard:mixed-registry,p2pool:unexpected-image)" ]
+running=$'tor a\ndashboard b\nwallet-rpc c\ncaddy d'
+[ "$(upgrade_capture_gaps m 0 "$running" "$first" reg.test "" "")" = "candidate-first-party(missing:) candidate-all(missing:wallet-rpc)" ]
+
 echo "selftest-live-upgrade-trust: PASS"

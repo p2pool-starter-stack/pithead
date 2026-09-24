@@ -158,3 +158,55 @@ _pred_xvb_routed_visible() {
         [ "$(jq_get "$st" '.shares_window.count')" -gt 0 ] 2>/dev/null &&
         [ -n "$routed" ] && [ "$routed" != "0.00 H/s" ]
 }
+
+# Which pre-upgrade capture came back empty, and why, in fixed labels and public service names
+# only: a ref carries the registry, which can be private topology (#2057, job 1089 reported only
+# "stateful mounts or candidate refs are incomplete").
+first_party_ref_shapes() { # <service/ref lines> -> service:reason for each ref first_party_registry refuses
+    local service ref repo image registry found=""
+    while read -r service ref; do
+        [ -n "$service" ] || continue
+        [ -n "$ref" ] || {
+            printf '%s:no-ref\n' "$service"
+            continue
+        }
+        repo="${ref%@*}" image="${ref%@*}"
+        image="${image##*/}"
+        registry="${repo%/*}"
+        case "$image" in *:*) ;; *)
+            printf '%s:no-tag\n' "$service"
+            continue
+            ;;
+        esac
+        case "$service:${image%%:*}" in
+        tor:pithead-tor | monerod:pithead-monero | p2pool:pithead-p2pool | xmrig-proxy:pithead-xmrig-proxy | dashboard:pithead-dashboard) ;;
+        *)
+            printf '%s:unexpected-image\n' "$service"
+            continue
+            ;;
+        esac
+        if [ "$registry" = "$repo" ] || ! [[ "$registry" =~ ^[A-Za-z0-9._:/-]+$ ]]; then
+            printf '%s:no-registry\n' "$service"
+        elif [ -n "$found" ] && [ "$found" != "$registry" ]; then
+            printf '%s:mixed-registry\n' "$service"
+        fi
+        found="$registry"
+    done <<<"$1"
+}
+services_missing_from() { # <service/ref lines> <candidate service/ref lines> -> missing service names
+    local service _ref
+    while read -r service _ref; do
+        [ -n "$service" ] || continue
+        awk -v s="$service" '$1==s {f=1} END {exit !f}' <<<"$2" || printf '%s\n' "$service"
+    done <<<"$1"
+}
+upgrade_capture_gaps() { # <mounts> <mounts-rc> <all-refs> <first-refs> <registry> <candidate-refs> <candidate-all-refs>
+    local gaps=()
+    [ -n "$1" ] || gaps+=("stateful-mounts(exit=$2)")
+    [ -n "$3" ] || gaps+=("running-refs")
+    [ -n "$4" ] || gaps+=("first-party-refs")
+    [ -n "$5" ] || [ -z "$4" ] || gaps+=("baseline-registry($(first_party_ref_shapes "$4" | paste -sd, -))")
+    [ -n "$6" ] || [ -z "$4" ] || gaps+=("candidate-first-party(missing:$(services_missing_from "$4" "$UPGRADE_CANDIDATE_ALL_REFS" | paste -sd, -))")
+    [ -n "$7" ] || [ -z "$3" ] || gaps+=("candidate-all(missing:$(services_missing_from "$3" "$UPGRADE_CANDIDATE_ALL_REFS" | paste -sd, -))")
+    printf '%s\n' "${gaps[*]}"
+}

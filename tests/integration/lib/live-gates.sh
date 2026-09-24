@@ -14,7 +14,7 @@ run_image_upgrade() {
     it_log "── cross-version image upgrade phase ────────────────"
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
-    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs
+    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs before_mounts_rc capture_gaps
     # #2057: safety_backup() (run before this) stops and restarts the whole stack around the
     # archive, which resets p2pool's stratum session and the proxy's worker count exactly like an
     # apply does (_pred_stratum_hashes's own comment: "resets to 0 on a p2pool restart, then climbs
@@ -46,7 +46,9 @@ run_image_upgrade() {
     before_tari="$(jq_get "$before_state" '.sync.tari.current')"
     before_monero_dir="$(env_on_box MONERO_DATA_DIR)"
     before_tari_dir="$(env_on_box TARI_DATA_DIR)"
-    before_mounts="$(stateful_mounts)" || before_mounts=""
+    before_mounts_rc=0
+    before_mounts="$(stateful_mounts)" || before_mounts_rc=$?
+    [ "$before_mounts_rc" = 0 ] || before_mounts=""
     before_all_refs="$(all_running_refs)" || before_all_refs=""
     before_first_refs="$(first_party_running_refs)" || before_first_refs=""
     UPGRADE_BASELINE_REGISTRY="$(first_party_registry "$before_first_refs")" || UPGRADE_BASELINE_REGISTRY=""
@@ -93,9 +95,11 @@ run_image_upgrade() {
     candidate_all_refs="$(candidate_refs_for_running_set "$before_all_refs")" || candidate_all_refs=""
     if [ -z "$before_mounts" ] || [ -z "$before_all_refs" ] || [ -z "$before_first_refs" ] ||
         [ -z "$UPGRADE_BASELINE_REGISTRY" ] || [ -z "$candidate_refs" ] || [ -z "$candidate_all_refs" ]; then
+        capture_gaps="$(upgrade_capture_gaps "$before_mounts" "$before_mounts_rc" "$before_all_refs" "$before_first_refs" \
+            "$UPGRADE_BASELINE_REGISTRY" "$candidate_refs" "$candidate_all_refs")"
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
-        it_fail "pre-upgrade mounts and full running image set captured" "stateful mounts or candidate refs are incomplete; upgrade not attempted"
+        it_fail "pre-upgrade mounts and full running image set captured" "incomplete: $capture_gaps; upgrade not attempted"
         return 0
     fi
     it_pass "candidate bundle, every compose digest, first-party signatures, and exact revisions verify externally"
