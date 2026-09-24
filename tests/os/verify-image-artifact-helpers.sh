@@ -26,11 +26,48 @@ compose_reference() { # <image-root> <out-file>
     esac
 }
 
+compose_matches_source() { # <image-root> <reference-file>
+    local actual="$2.actual" rc suffix expected_count pinned_count
+    for suffix in tor monero p2pool xmrig-proxy dashboard; do
+        expected_count="$(grep -oE "pithead-${suffix}:[^[:space:]@]+" "$2" | wc -l)"
+        pinned_count="$(grep -oE "pithead-${suffix}:[^[:space:]@]+@sha256:[0-9a-f]{64}" "$1/opt/pithead/docker-compose.yml" | wc -l)"
+        [ "$expected_count" -gt 0 ] && [ "$expected_count" = "$pinned_count" ] || return 1
+    done
+    sed -E '/pithead-(tor|monero|p2pool|xmrig-proxy|dashboard):/s/@sha256:[0-9a-f]{64}//' "$1/opt/pithead/docker-compose.yml" >"$actual" || return 1
+    cmp -s "$actual" "$2"
+    rc=$?
+    rm -f "$actual"
+    return "$rc"
+}
+
 # pithead-data-reset runs these behind `|| true`, so both must be baked into the image (#1069 W11).
 data_reset_repair_tools_present() { # <image-root> — 0 iff both tools are executable
     local root="$1"
     { [ -x "$root/usr/sbin/e2fsck" ] || [ -x "$root/sbin/e2fsck" ]; } &&
         { [ -x "$root/usr/sbin/mkfs.ext4" ] || [ -x "$root/sbin/mkfs.ext4" ]; }
+}
+
+package_absent() { # <image-root> <package> — 0 iff a readable dpkg status has no exact package stanza
+    local status="$1/var/lib/dpkg/status" rc=0
+    [ -f "$status" ] && [ -s "$status" ] || return 1
+    awk -v wanted="$2" 'BEGIN { RS=""; FS="\n" }
+        { package = status = field = 0
+          for (i = 1; i <= NF; i++) {
+              if ($i ~ /^[A-Za-z0-9][A-Za-z0-9-]*:($| )/) field = 1
+              else if ($i !~ /^[ \t]/ || !field) malformed = 1
+              if ($i ~ /^Package: /) {
+                  package++
+                  if ($i !~ /^Package: [a-z0-9][a-z0-9+.-]*$/) malformed = 1
+                  if ($i == "Package: " wanted) found = 1
+              }
+              if ($i ~ /^Status: /) {
+                  status++
+                  if ($i !~ /^Status: [a-z-]+ [a-z-]+ [a-z-]+$/) malformed = 1
+              }
+          }
+          if (package != 1 || status != 1) malformed = 1 }
+        END { exit malformed || !NR ? 2 : found ? 1 : 0 }' "$status" || rc=$?
+    [ "$rc" -eq 0 ]
 }
 
 # Compare the final exact wizard implementation in a single-image `docker save` archive. The Python

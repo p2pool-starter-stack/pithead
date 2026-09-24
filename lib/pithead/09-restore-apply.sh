@@ -225,7 +225,7 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
     # Validated through the COPY — parse_and_validate_config fills in generated fields as it
     # goes (consume_preseed_config's own reasoning), and only a config that survives this is
     # ever promoted to the real config.json.
-    if ! err=$(PITHEAD_CONFIG_FILE="$staged_cfg" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+    if ! err=$(PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
         rm -rf "$tmp"
         printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 >"$errf"
         return 1
@@ -261,7 +261,8 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
                 # Chain data survives this box's own `keep` policy (#2195): a restore must not
                 # force a resync, so the archive's tree is MERGED into whatever already sits here
                 # instead of replacing it — an existing file wins on a name collision, and files
-                # only the archive has are added alongside it.
+                # only the archive has are added alongside it. See docs/operations.md's
+                # "Restore collision rules" for why this differs from `pithead restore`.
                 mkdir -p -- "$dest" || {
                     copy_failed=1
                     break

@@ -77,6 +77,30 @@ fi
 
 is_immutable_image_ref() { [[ "$1" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; }
 
+# Resolve each first-party image to the digest the RELEASE SIGNED, and pin the compose to it.
+# The resolution is scripts/release/release.sh's manifest_digest, on purpose and to the letter: the
+# `Digest:` line of `docker buildx imagetools inspect`, which is the manifest-LIST (index) digest,
+# and the index digest is what sign_images hands to `cosign sign`. A multi-arch tag's per-platform
+# children are NOT signed: `docker manifest inspect --verbose` returns those children, so pinning
+# one (`.[0]`) pins bytes no signature covers and verify_release_images then fails closed on every
+# boot — the exact brick #1891 exists to avoid. `^Digest:` is anchored and `exit` takes the first
+# line because the child entries this output also lists are indented beneath `Manifests:`.
+pin_first_party_images() { # <compose-file> <registry> <stack-version>
+    local compose="$1" registry="$2" version="$3" svc digest
+    for svc in tor monero p2pool xmrig-proxy dashboard; do
+        digest="$(docker buildx imagetools inspect "${registry}/pithead-${svc}:${version}" 2>/dev/null |
+            awk '/^Digest:/{print $2; exit}')"
+        [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "build-image: could not resolve an immutable digest for pithead-${svc}:${version}" >&2
+            return 1
+        }
+        awk -v svc="$svc" -v digest="$digest" '
+            $0 ~ ("pithead-" svc ":") { sub("@sha256:[0-9a-f]{64}", ""); sub("pithead-" svc ":[^[:space:]@]+", "&@" digest) }
+            { print }
+        ' "$compose" >"$compose.new" && mv "$compose.new" "$compose" || return 1
+    done
+}
+
 # stage_compose (#1215): put the compose file the image will ship, plus a COMPOSE_SOURCE stamp
 # naming where it came from, into <stage-dir>. Every `image:` in docker-compose.yml is pinned by
 # STACK_VERSION, which the appliance derives from its baked VERSION — so an image built from a
@@ -94,6 +118,10 @@ stage_compose() { # <version-tag> <stage-dir>  -> prints the COMPOSE_SOURCE line
     mkdir -p "$dir" || return 1
     rm -f "$dir/docker-compose.yml" "$dir/COMPOSE_SOURCE" || return 1
     if [ -n "${PITHEAD_OS_COMPOSE_FILE:-}" ]; then
+        [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" = 1 ] && [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+            echo "PITHEAD_OS_COMPOSE_FILE is restricted to synthetic debug harness builds" >&2
+            return 1
+        }
         [ -r "$PITHEAD_OS_COMPOSE_FILE" ] && [ -f "$PITHEAD_OS_COMPOSE_FILE" ] && [ ! -L "$PITHEAD_OS_COMPOSE_FILE" ] || {
             echo "PITHEAD_OS_COMPOSE_FILE: $PITHEAD_OS_COMPOSE_FILE is not a readable file" >&2
             return 1
@@ -185,9 +213,15 @@ WIZARD_SOURCE="$WIZARD_IMAGE"
 # registry and first boot re-derives the same name at runtime, so the two must agree, and nothing
 # on the box sets the runtime half otherwise. Release builds never carry either file.
 TEST_REGISTRY=""
+TEST_COSIGN_PUB=""
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
     [ "$PITHEAD_REGISTRY" != "ghcr.io/p2pool-starter-stack" ]; then
     TEST_REGISTRY="$PITHEAD_REGISTRY"
+    TEST_COSIGN_PUB="${PITHEAD_REGISTRY_COSIGN_PUB:-}"
+    [ -s "$TEST_COSIGN_PUB" ] || {
+        echo "PITHEAD_REGISTRY_COSIGN_PUB: a readable alternate public key is required for a debug registry" >&2
+        exit 1
+    }
     if [ -n "${PITHEAD_REGISTRY_CA:-}" ]; then
         [ -s "$PITHEAD_REGISTRY_CA" ] || {
             echo "PITHEAD_REGISTRY_CA: $PITHEAD_REGISTRY_CA is not a readable file" >&2
@@ -200,6 +234,13 @@ if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -n "${PITHEAD_REGISTRY:-}" ] &&
 fi
 if [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] && [ -z "$TEST_REGISTRY" ]; then
     require_pullable_services "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
+fi
+# A synthetic-compose build (PITHEAD_OS_SYNTHETIC_COMPOSE, see stage_compose above) stamps a
+# version no registry ever published on purpose — tests/os/data-floor-fallback-leg.sh relies on
+# `pithead up` failing to pull it at guest runtime, not on the build refusing to produce the
+# bundle. Pinning digests here would turn that into a build-time failure instead.
+if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
+    pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"
@@ -234,6 +275,14 @@ if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
     # USER root/pithead mirrors dashboard/Dockerfile: the runtime user cannot write /app.
     printf 'FROM %s\nUSER root\nRUN printf %%s "%s" >/app/mining_dashboard/web/static/os-test-marker.txt\nUSER pithead\n' \
         "$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
+fi
+# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail —
+# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
+# stays failed. FROM $WIZARD_IMAGE (not $WIZARD_SOURCE) so this stacks on top of a marker stamp
+# when both are set. Release builds set neither and get no extra layer.
+if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
+    printf 'FROM %s\nUSER root\nRUN printf "#!/bin/sh\\nexit 1\\n" >/app/healthcheck.sh\nUSER pithead\n' \
+        "$WIZARD_IMAGE" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 
@@ -301,7 +350,10 @@ if [ -n "$TEST_REGISTRY" ]; then
         printf '[[registry]]\nlocation = "%s"\ninsecure = true\n' "${TEST_REGISTRY%%/*}" \
             >"$stage/etc/containers/registries.conf.d/pithead-test-registry.conf"
     fi
-    (cd "$stage" && find etc -type f) |
+    mkdir -p "$stage/opt/pithead"
+    cp "$TEST_COSIGN_PUB" "$stage/opt/pithead/cosign.pub"
+    [ -z "${PITHEAD_REGISTRY_CA:-}" ] || cp "$PITHEAD_REGISTRY_CA" "$stage/opt/pithead/cosign.registry-ca.crt"
+    (cd "$stage" && find etc opt -type f) |
         tar --append -f os/build/pithead-root.tar --owner=0 --group=0 --mode=0644 -C "$stage" -T -
     rm -r "$stage"
 fi

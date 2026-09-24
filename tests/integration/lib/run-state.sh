@@ -98,11 +98,9 @@ assert_running_state() {
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"
 
-    # 3. Dashboard reachable and reading live state. In local mode, let the monero sync panel finish
-    #    its first poll after the scenario's apply/restart before snapshotting, so step 4 sees settled
-    #    state instead of a cold "loading" (a stuck panel never settles, so the assert still catches the
-    #    #180 regression). Poll, don't sleep (issue #54).
-    [ "$mode" = "local" ] && wait_for 60 3 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
+    # 3+4. Dashboard live, then monerod caught up; local mode settles the panel first (#180/#54).
+    #    Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch held "not synced" past 60s.
+    [ "$mode" = "local" ] && wait_for 150 5 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
     st="$(api_state)"
     if [ -z "$st" ]; then
         it_fail "dashboard /api/state reachable" "empty response"
@@ -110,7 +108,7 @@ assert_running_state() {
     fi
     it_pass "dashboard /api/state reachable"
 
-    # 4. Monero caught up — per monerod's own get_info, not the dashboard UI field.
+    wait_for 150 5 "monerod caught up (RPC)" monero_caught_up || true
     if monero_caught_up; then it_pass "monerod reports synced (RPC)"; elif [ $? = 1 ]; then it_fail "monerod reports synced (RPC)" "get_info answered: not synchronized"; else it_fail "monerod reports synced (RPC)" "get_info could not be asked — unreachable, refused, timed out or rejected"; fi
     # 4b. The node's ZMQ endpoint is a live ZMTP PUBLISHER (#1497) — strictly less than "publishes
     #     block notifications", and this row is named for what it proves, not for what the issue
@@ -138,7 +136,7 @@ assert_running_state() {
     if zv=$(zmq_pub_probe "$zmq_host" "$zmq_port" 8); then it_pass "monero ZMQ endpoint is a live ZMTP publisher (#1497)"; else it_fail "monero ZMQ endpoint is a live ZMTP publisher (#1497)" "$zv"; fi
     if zv=$(zmq_publishes_probe "$zmq_host" "$zmq_port" 8 90); then it_pass "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)"; else it_fail "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)" "$zv"; fi
     it_skip_leg "monero ZMQ published frame is a BLOCK notification" "tier C (#1497): the row above proves the publisher is not silent, which is the starving-p2pool failure; proving the frame was chain_main rather than txpool_add needs a new block, a wait of minutes against seconds" missing
-    assert_mergemine_roundtrip
+    [ "$tmode" != "off" ] && assert_mergemine_roundtrip || it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" "tari.mode=off (#1855) — p2pool renders no merge-mine args, so no client is ever built (#2323)" by-design
     # The dashboard's sync panel must also read "done" for a synced node — not stay stuck at
     # "loading". A synced monerod reports target_height 0, so the panel has to trust the caught-up
     # flag, not percent-vs-target; getting that wrong left a synced node "loading" forever (the real
@@ -198,15 +196,15 @@ assert_running_state() {
     #     Assert the data contract survives the trip (the on-the-wire privacy posture is verified
     #     separately by assert_egress_posture via /proc/net/tcp): both sections present, the badge
     #     summary shared verbatim with the map so they can never disagree, and the canonical node
-    #     set exposed. Holds for every scenario — the node set is static and the summary invariant
-    #     is config-independent.
+    #     set exposed. NOT config-independent (#2303): local_miner.enabled gates a "local-miner"
+    #     node, same as topology_graph.py; expected_topology_nodes (lib.sh) mirrors + selftests it.
     assert_eq "egress posture section present" "$(jq_get "$st" '.egress.summary | type')" "object"
     assert_eq "topology section present" "$(jq_get "$st" '.topology.summary | type')" "object"
     assert_eq "topology + egress share one summary" \
         "$(jq_get "$st" '.topology.summary == .egress.summary')" "true"
-    assert_eq "topology exposes the canonical node set" \
+    assert_eq "topology exposes the canonical node set (#2303)" \
         "$(jq_get "$st" '[.topology.nodes[].id] | sort | join(",")')" \
-        "browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+        "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
     local want_bind
@@ -224,10 +222,11 @@ assert_running_state() {
     # "this IP runs Monero/Tari" to the clearnet.
     if [ "$mode" = "local" ]; then
         local svc memlim
-        for svc in monerod tari p2pool dashboard; do
+        for svc in monerod p2pool dashboard; do
             memlim="$(rx "docker inspect $svc --format '{{.HostConfig.Memory}}' 2>/dev/null")"
             assert_num_gt "memory ceiling live on $svc (#132)" "${memlim:-0}" 0
         done
+        [ "$tmode" = "local" ] && assert_num_gt "memory ceiling live on tari (#132)" "$(rx "docker inspect tari --format '{{.HostConfig.Memory}}' 2>/dev/null")" 0 || it_skip_leg "memory ceiling live on tari (#132)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # Per-service runtime uid (#255/#91): compose only pins tari's `user: 1000:1000` at
         # config time (tests/stack/standalone/test_compose.sh) — nothing checks what's actually running. The
         # 5 first-party pithead-* images run their own build-time USER (tor's alpine 'tor' package
@@ -241,13 +240,14 @@ assert_running_state() {
         # silent drift either way — a hardened image reverting to root, or an accepted-root service
         # unexpectedly changing uid — is caught.
         local pair svc uid_want uid_got
-        for pair in "tor=100" "monerod=1000" "p2pool=1000" "tari=1000" "xmrig-proxy=1000" \
+        for pair in "tor=100" "monerod=1000" "p2pool=1000" "xmrig-proxy=1000" \
             "dashboard=1000" "caddy=0" "docker-proxy=0" "docker-control=0"; do
             svc="${pair%%=*}"
             uid_want="${pair#*=}"
             uid_got="$(rx "docker exec $svc id -u" 2>/dev/null)"
             assert_eq "runtime uid of $svc is $uid_want (#255/#91)" "$uid_got" "$uid_want"
         done
+        [ "$tmode" = "local" ] && assert_eq "runtime uid of tari is 1000 (#255/#91)" "$(rx "docker exec tari id -u" 2>/dev/null)" "1000" || it_skip_leg "runtime uid of tari is 1000 (#255/#91)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         assert_num_ge "monerod DNS checkpoints disabled (#161)" \
             "$(rx "docker exec monerod grep -c '^disable-dns-checkpoints=1' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null")" 1
         assert_eq "monerod has no clearnet priority-node hostnames (#161)" \
@@ -259,17 +259,15 @@ assert_running_state() {
         # monerod always carries the Tor P2P proxy and Tari's canonical config stays `type = "tor"`.
         assert_eq "MONERO_CLEARNET_SYNC matches config (#183)" "$(env_on_box MONERO_CLEARNET_SYNC)" "$monero_clearnet"
         assert_eq "TARI_CLEARNET_SYNC matches config (#183)" "$(env_on_box TARI_CLEARNET_SYNC)" "$tari_clearnet"
-        assert_num_ge "tari canonical config is always Tor (#234)" \
-            "$(rx "docker exec tari grep -c '^type = \"tor\"' /var/tari/config/config.toml 2>/dev/null")" 1
-        assert_num_ge "monerod runs Tor-only in steady state — proxy present (#183/#234)" \
-            "$(rx "docker exec monerod grep -cE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null")" 1
+        [ "$tmode" = "local" ] && assert_num_ge "tari canonical config is always Tor (#234)" "$(rx "docker exec tari grep -c '^type = \"tor\"' /var/tari/config/config.toml 2>/dev/null")" 1 || it_skip_leg "tari canonical config is always Tor (#234)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        assert_num_ge "monerod runs Tor-only in steady state — proxy present (#183/#234)" "$(rx "docker exec monerod grep -cE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null")" 1
         # (The clearnet→Tor auto-transition was already awaited + asserted at the top of this function,
         # before the steady-state battery, so the assertions above see the settled post-flip state.)
-        case "$(rx "docker inspect tari --format '{{.HostConfig.Dns}}' 2>/dev/null")" in
+        { [ "$tmode" = "local" ] && case "$(rx "docker inspect tari --format '{{.HostConfig.Dns}}' 2>/dev/null")" in
         *1.1.1.1* | *8.8.8.8*) it_fail "tari DNS sinkholed — no clearnet resolver (#162)" "clearnet nameserver present" ;;
         *127.0.0.1*) it_pass "tari DNS sinkholed — no clearnet resolver (#162)" ;;
         *) it_fail "tari DNS sinkholed — no clearnet resolver (#162)" "unexpected HostConfig.Dns" ;;
-        esac
+        esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The xmrig-proxy config knobs must reach the RUNNING proxy's argv, not just the compose
         # render. donate-level is rendered explicitly so it's always visible (#173). The matrix
         # deploys the default config (no p2pool.stratum_password) → stratum auth OFF, which must
@@ -336,33 +334,7 @@ assert_running_state() {
             # client supplies one (monerod's image carries curl; xmrig-proxy's carries GNU wget,
             # which cannot speak SOCKS). Without it, a DROP and a bench with no route out are the
             # same observation and the assertion passes for the wrong reason on a disconnected box.
-            local tor_socks
-            tor_socks="$(env_on_box NETWORK_PREFIX)"
-            [ -n "$tor_socks" ] || tor_socks="172.28.0"
-            tor_socks="$tor_socks.25:9050"
-            # Prove the INSTRUMENT before reading it: `docker exec` against a missing container, or
-            # a monerod without curl, fails exactly like a DROPped dial, so the next assertion would
-            # print a green "dial is DROPPED" for a broken probe. Same guard, same reason, as
-            # tests/os/appliance-egress-leg.sh (#887).
-            if ! rx "docker exec monerod sh -c 'command -v curl' >/dev/null 2>&1" >/dev/null 2>&1; then
-                # ONE failure for one cause: reporting the dial and its control separately would
-                # print two reds for a single broken probe and bury the cause.
-                it_fail "the Tor-egress dial pair can run at all (#270/#2059)" \
-                    "monerod is missing or carries no curl — neither the drop nor its control can be asserted, so the firewall is UNVERIFIED, not proven"
-            else
-                if rx "docker exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" >/dev/null 2>&1; then
-                    it_fail "clearnet dial is DROPPED with the firewall on (#270/#2059)" \
-                        "monerod reached 1.1.1.1 directly — the firewall is installed but NOT enforced (fail-open)"
-                else
-                    it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
-                fi
-                if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
-                    it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
-                else
-                    it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
-                        "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
-                fi
-            fi
+            assert_egress_dial_pair
         fi
     fi
 
@@ -397,6 +369,34 @@ assert_running_state() {
 
     # 10. Secrets intact (proxy token + onions unchanged vs the baseline we captured).
     assert_eq "secrets intact (token + onions)" "$(secret_fingerprint)" "$BASELINE_SECRET_FP"
+}
+
+# The Tor-egress dial pair (#270/#2059), shared with the boot-restore fault (#2460): a direct dial
+# is DROPPED, and the same container reaches clearnet through Tor (so the drop is not a dead route).
+assert_egress_dial_pair() {
+    local tor_socks
+    tor_socks="$(env_on_box NETWORK_PREFIX)"
+    [ -n "$tor_socks" ] || tor_socks="172.28.0"
+    tor_socks="$tor_socks.25:9050"
+    # Prove the INSTRUMENT first: a missing container or a monerod without curl fails exactly like a
+    # DROPped dial and would print a green "DROPPED" for a broken probe (#887).
+    if ! rx "docker exec monerod sh -c 'command -v curl' >/dev/null 2>&1" >/dev/null 2>&1; then
+        it_fail "the Tor-egress dial pair can run at all (#270/#2059)" \
+            "monerod is missing or carries no curl — neither the drop nor its control can be asserted, so the firewall is UNVERIFIED, not proven"
+    else
+        if rx "docker exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" >/dev/null 2>&1; then
+            it_fail "clearnet dial is DROPPED with the firewall on (#270/#2059)" \
+                "monerod reached 1.1.1.1 directly — the firewall is installed but NOT enforced (fail-open)"
+        else
+            it_pass "clearnet dial is DROPPED with the firewall on (#270/#2059)"
+        fi
+        if rx "docker exec monerod curl -s -o /dev/null -m 30 --socks5-hostname $tor_socks http://1.1.1.1/" >/dev/null 2>&1; then
+            it_pass "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)"
+        else
+            it_fail "the same container still reaches clearnet THROUGH Tor — the drop above is the firewall, not a dead route (#270/#2059)" \
+                "no egress even via Tor SOCKS at $tor_socks — either the firewall is too tight or this bench has no route out, and the DROP above proves nothing either way"
+        fi
+    fi
 }
 
 # Full per-scenario battery: the read-only state assertions, plus the apply-only idempotency

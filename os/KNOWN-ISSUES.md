@@ -382,14 +382,35 @@ not proven.
   The CLI remainder is on the dashboard too now — support bundle, doctor detail, rotations
   (#913). What remains rides the post-GA fast-follows: out-of-band approval at the commit gate
   (#911) and fleet descriptor editing (#912).
-- **The manual hardware battery has not been run (#2044).** Everything above is KVM. Secure
-  Boot, real disks, headless discovery and a genuine power cut are exactly what a VM cannot
-  show — M1–M10, M15 and M16 in the release doc must pass on a physical box before an image
-  ships. (M11–M14 are the rig-role steps and stay manual today — see the manual release
-  checklist — because the `rig` KVM phase does not yet prove an accepted share, MSR/hugepages,
-  a dashboard adopt, a rig power cut, or a stick-root boot; converting what it can is #1886's
-  first gap.) #394's gate list still does not name this battery — the same omission #976's own
-  title records for the OS-update path.
+- **The manual hardware battery has run once, on a dev image, and is incomplete (#2044).** The
+  operator ran it on one physical box on 2026-09-18 and 2026-09-19 against a debug image built
+  from `develop` at `1b0da07016`; the per-step results are in the manual release checklist's
+  recorded runs. M1, M3, M5, M6, M7, M8, M9 and M10 passed; M2 passed in part; M15 failed at
+  its backup step (#2364, fixed since); M16 is partial (#2367 open); M4 and the RC1 addendum were
+  not run. Still not shown on hardware: the wrong-disk guard with a real second disk, the box
+  powering on by itself after a cut at the wall (Restore on AC Power Loss), the M15 backup and
+  restore after #2364's fix, and the M16 node-endpoint `APPLY`. Open findings from the run: #2351,
+  #2367, #2436, #2447. A dev image is not the shipping image: the final image still
+  needs the soak (#1652) and pre-publication verification (#1653), which #394's gate list names
+  beside this battery. (M11–M14 are the rig-role steps and stay manual today — see the manual
+  release checklist — because the `rig` KVM phase does not yet prove MSR/hugepages, a dashboard
+  adopt, or a stick-root boot (its share leg, #2063, does now prove an accepted share, against a
+  second guest the battery itself boots as a coordinator); converting what it can is #1886's
+  first gap.)
+- **The appliance does not boot with Secure Boot on, and nothing signs the chain (#2187).** The
+  KVM battery now measures this rather than leaving it an unread flag: every other guest in
+  `tests/os/run.sh` pins `firmware.feature0.enabled=no`, and `--phase boot`'s second guest
+  (`_secure_boot_guest_leg`, #2055 G2) boots one with it ON and records whether userspace is
+  reached. It is not: **that measured deferred limitation does not fail the boot phase.** The image
+  installs `shim-signed`, which is Microsoft-signed, but plain `grub-efi-amd64` and an unsigned
+  kernel, and the repo carries no `sbsign`, no `mokutil` and no enrolled keys — so shim refuses to
+  chainload the bootloader and the boot stops there. The blocker is therefore signing, not the
+  harness. #2187 defers signing past 2.0.0 to `v2.x - post-GA`; `secure_boot_boot_verdict` states
+  the measured outcome plainly for 2.0.0, while later versions fail a non-boot. A guest that
+  cannot even be DEFINED — no OVMF
+  secure-boot firmware on the host — is reported as unmeasured rather than as a product defect, so a bench firmware gap cannot
+  read as this one. This is the KVM half only: hardware-enforced Secure Boot with real platform
+  keys is still the manual battery's M-row above (#2044).
 - **The faulted-setup leg armed the wrong seam, and a real dead page sat behind it (#2050).**
   Measured on the KVM bench 2026-09-10 at pithead#2002's head, with the registry override in place
   so image refs were NOT a factor (the zero-container dump's `comm -23 want have` was empty). The

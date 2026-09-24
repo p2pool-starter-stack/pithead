@@ -20,6 +20,7 @@ pithead/
 │   ├── lint/             repository gates and their selftests
 │   ├── release/          release preparation, publication, and verification
 │   └── watch/            scheduled dependency and security checks
+├── .config/              tool-discovered configs each linter is pointed at explicitly
 ├── docs/                 operator guides
 │   ├── dev/              contributor guides and architecture contracts
 │   ├── images/           documentation images
@@ -90,6 +91,7 @@ Keep local code out of `vendor/`.
 | `tests/integration/lib/` | Sourced helpers and phase functions for `tests/integration/run.sh`. |
 | `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
+| `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
 | `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement). Each carries a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh`, so its logic is provable without a KVM. |
@@ -112,7 +114,10 @@ described in the [AI workflow](ai-workflow.md).
 - Shared agent guidance: `AI_RULES.md`, with relative symlinks from `AGENTS.md`,
   `CLAUDE.md`, and `.cursorrules`.
 - Tool-discovered configuration such as `.editorconfig`, `ruff.toml`,
-  `biome.json`, and `.pre-commit-config.yaml`.
+  `biome.json`, and `.pre-commit-config.yaml`. A linter that takes an explicit config
+  path instead — yamllint, markdownlint, hadolint, lychee, taplo, gitleaks, trivy — is
+  pointed at `.config/` (the invocation is single-sourced in the Makefile or, for
+  trivy and gitleaks, in the CI job that runs it).
 
 Release bundles and appliance images use explicit file lists. Moving a source
 file does not authorize adding development tools or private evidence to an image.

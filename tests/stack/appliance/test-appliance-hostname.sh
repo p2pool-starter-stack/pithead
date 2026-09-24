@@ -12,6 +12,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
         source "$STACK"
         set -e
         printf 'old-name' >kernel-name
+        printf 'old-name' >static-name
         : >calls
         rm -f .env.apply-incomplete Caddyfile
         printf 'HOST_IP=old-name.local\n' >.env
@@ -28,11 +29,30 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
                 ;;
             esac
         }
+        # hostnamectl is the one call left to fix #2350: it must land BOTH names from the single
+        # `hostnamectl hostname NAME` verb, so a reader of either — `hostname` (transient) or
+        # `hostnamectl --static` — sees the same applied name. ensure_etc_overlay is the real
+        # /etc-overlay mount; a no-op here, unit-proven on its own in the mDNS suite below.
+        ensure_etc_overlay() { return 0; }
+        hostnamectl() {
+            case "$1" in
+            --static) cat static-name 2>/dev/null || printf 'old-name' ;;
+            hostname)
+                printf '%s' "$2" >kernel-name
+                printf '%s' "$2" >static-name
+                printf 'hostname %s\n' "$2" >>calls
+                ;;
+            esac
+        }
         sudo() {
             case "$1" in
             hostname)
                 shift
                 hostname "$@"
+                ;;
+            hostnamectl)
+                shift
+                hostnamectl "$@"
                 ;;
             systemctl) printf '%s\n' "$*" >>calls ;;
             *)
@@ -50,7 +70,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
         case "$3" in
         resolve)
             resolve_dashboard_host
-            printf 'host=%s kernel=%s calls=%s\n' "$HOST_IP" "$(hostname)" "$(wc -l <calls)"
+            printf 'host=%s kernel=%s static=%s calls=%s\n' "$HOST_IP" "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
             ;;
         names)
             resolve_dashboard_host
@@ -64,7 +84,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
             ;;
         reconcile)
             reconcile_appliance_hostname
-            printf 'kernel=%s calls=%s\n' "$(hostname)" "$(wc -l <calls)"
+            printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
             ;;
         apply | dry | render | setup)
             # Drive the real verb's ordering; replace only unrelated services and I/O.
@@ -86,6 +106,7 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
             generate_caddyfile() { echo "$HOST_IP" >Caddyfile; }
             docker() { :; }
             compose_up_checked() { [ "$mode" != failed ]; }
+            # shellcheck disable=SC2034  # read by sourced apply/setup helpers
             DEPLOYMENT_COMPLETED=true P2POOL_ONION=fixture.onion DASHBOARD_ONION_ENABLED=false
             [ "$mode" != retry ] || : >.env.apply-incomplete
             case "$3" in
@@ -103,19 +124,19 @@ hn_run() { # engine-kind, configured host, operation, optional apply state
                 (setup) >/dev/null
                 ;;
             esac
-            printf 'kernel=%s calls=%s\n' "$(hostname)" "$(wc -l <calls)"
+            printf 'kernel=%s static=%s calls=%s\n' "$(hostname)" "$(hostnamectl --static)" "$(wc -l <calls)"
             ;;
         esac
     )
 }
 
-assert_eq "label resolves for mDNS without mutation" "$(hn_run appliance Garden-Box resolve)" 'host=garden-box.local kernel=old-name calls=0'
-assert_eq "Docker label is only a dashboard address" "$(hn_run docker garden-box reconcile)" 'kernel=old-name calls=0'
+assert_eq "label resolves for mDNS without mutating either hostname" "$(hn_run appliance Garden-Box resolve)" 'host=garden-box.local kernel=old-name static=old-name calls=0'
+assert_eq "Docker label is only a dashboard address" "$(hn_run docker garden-box reconcile)" 'kernel=old-name static=old-name calls=0'
 for pin in example.test 192.168.1.10 auto '' 'bad name' '-bad' "$(printf 'a%.0s' {1..64})"; do
-    assert_eq "legacy or invalid non-label does not rename host" "$(hn_run appliance "$pin" reconcile)" 'kernel=old-name calls=0'
+    assert_eq "legacy or invalid non-label does not rename host" "$(hn_run appliance "$pin" reconcile)" 'kernel=old-name static=old-name calls=0'
 done
-assert_eq "reconcile sets kernel name and refreshes Avahi" "$(hn_run appliance Garden-Box reconcile)" 'kernel=garden-box calls=2'
-assert_eq "existing name still retries mDNS announcement" "$(hn_run appliance old-name reconcile)" 'kernel=old-name calls=1'
+assert_eq "reconcile sets the kernel AND static name and refreshes Avahi (#2350)" "$(hn_run appliance Garden-Box reconcile)" 'kernel=garden-box static=garden-box calls=2'
+assert_eq "existing name still retries mDNS announcement" "$(hn_run appliance old-name reconcile)" 'kernel=old-name static=old-name calls=1'
 assert_eq "named cert includes mDNS and permitted IP" "$(hn_run appliance garden-box names)" 'DNS:garden-box.local,IP:192.168.1.10,DNS:localhost'
 assert_contains "minted certificate follows resolved name" "$(hn_run appliance garden-box cert)" 'DNS:garden-box.local'
 HN_LONG=$(printf 'a%.0s' {1..63})
@@ -123,14 +144,14 @@ assert_contains "longest valid machine label mints its full SAN" "$(hn_run appli
 unset HN_LONG
 assert_not_contains "name change removes old cert name" "$(hn_run appliance next-box cert)" 'DNS:garden-box.local'
 for op in setup render apply; do
-    assert_eq "$op reconciles appliance name" "$(hn_run appliance garden-box "$op")" 'kernel=garden-box calls=2'
+    assert_eq "$op reconciles appliance name" "$(hn_run appliance garden-box "$op")" 'kernel=garden-box static=garden-box calls=2'
 done
 for mode in unchanged retry; do
-    assert_eq "$mode apply reconciles identity" "$(hn_run appliance garden-box apply "$mode")" 'kernel=garden-box calls=2'
+    assert_eq "$mode apply reconciles identity" "$(hn_run appliance garden-box apply "$mode")" 'kernel=garden-box static=garden-box calls=2'
 done
-assert_contains "failed apply keeps old hostname" "$(hn_run appliance garden-box apply failed)" 'kernel=old-name calls=0'
-assert_eq "dry-run does not call hostname or Avahi" "$(hn_run appliance garden-box dry)" 'kernel=old-name calls=0'
-assert_eq "Docker apply with external DNS preserves host" "$(hn_run docker example.test apply)" 'kernel=old-name calls=0'
+assert_contains "failed apply keeps old hostname" "$(hn_run appliance garden-box apply failed)" 'kernel=old-name static=old-name calls=0'
+assert_eq "dry-run does not touch either hostname or Avahi" "$(hn_run appliance garden-box dry)" 'kernel=old-name static=old-name calls=0'
+assert_eq "Docker apply with external DNS preserves host" "$(hn_run docker example.test apply)" 'kernel=old-name static=old-name calls=0'
 unset HN
 
 echo "== unit: mDNS is published on this machine's NICs, never on a container bridge (#2060) =="
@@ -169,6 +190,7 @@ md_run() { # <operation> [conf-body-mode]
         noline) printf '[server]\nuse-ipv6=no\n' >avahi.conf ;;
         missing) rm -f avahi.conf ;;
         esac
+        # shellcheck disable=SC2034  # read by the sourced Avahi helper
         PITHEAD_AVAHI_CONF="$PWD/avahi.conf"
         ensure_etc_overlay() { printf 'overlay\n' >>calls; }
         sudo_sed() { sed -i.bak "$1" "$2" && rm -f "$2.bak"; }
@@ -187,6 +209,7 @@ md_run() { # <operation> [conf-body-mode]
             appliance_reconcile_mdns_interfaces && printf 'changed\n' || printf 'unchanged\n'
             ;;
         reconcile)
+            # shellcheck disable=SC2034  # read by sourced hostname helpers
             DASHBOARD_HOST=auto PITHEAD_DRY_RUN=0
             hostname() { printf 'pithead'; }
             sudo() { printf '%s\n' "$*" >>calls; }

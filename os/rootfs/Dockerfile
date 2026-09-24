@@ -59,7 +59,7 @@ ARG COSIGN_COMMIT=11926fa5bbbbde47e88fc006b625a17769b743b2
 # (x/mod pulls x/tools, x/net, x/crypto...). When you add one, read Go's own upgrade list, not this.
 #
 # Every entry here is debt, not a feature: drop it the moment an upstream release makes it a no-op,
-# and delete its .trivyignore mute in the SAME change — a mute left over a finding you have just
+# and delete its .config/trivyignore mute in the SAME change — a mute left over a finding you have just
 # fixed means the scan can no longer tell "fixed" from "hidden", which is how two obsolete mutes
 # survived in that file until #1153. Verify by re-running the scan against the built binaries with
 # NO ignore file, never by reading release notes: the first version of this change fixed x/mod and
@@ -121,7 +121,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # The OS: init + kernel + bootloader userland for the generic-grub-efi target, the container
 # engine, pithead's host dependencies, mDNS (pithead.local), and time sync (before Tor — the
-# firstboot ordering rule). openssh-server ships installed but DISABLED: SSH is a wizard opt-in.
+# firstboot ordering rule). openssh-server ships installed but disabled: release SSH is never provisioned.
 # The shell-out set is LOAD-BEARING and debian-slim ships none of it: netavark calls nft to
 # program container networking, and pithead-install calls sgdisk (gdisk), partprobe (parted),
 # jq, lsblk, mkfs and the grub tools ON THE APPLIANCE — a tool the build host happens to have is
@@ -135,13 +135,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
 # hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
 ARG APT_INDEX_STAMP=0
-# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps: pull past the digest pin, openssl's same purpose for CVE-2026-14456 (#1438, #2104).
+# gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
-        jq openssl curl ca-certificates xxd iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
+        jq openssl curl ca-certificates iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
         fdisk gdisk parted e2fsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
@@ -157,7 +157,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # answer to "did my change ship?". os/build/stage/: the compose file + its COMPOSE_SOURCE stamp — the
 # STACK_VERSION tag's copy when that tag exists, else the tree's (#1215, staged by build-image.sh).
 COPY os/rootfs/BUILD_COMMIT os/build/stage/docker-compose.yml os/build/stage/COMPOSE_SOURCE /opt/pithead/
-COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json /opt/pithead/
+COPY pithead pithead-completion.bash VERSION config.reference.json config.core-keys.json config.minimal.json cosign.pub /opt/pithead/
 # ONLY the build/ paths services bind-mount at runtime (config templates and wrapper entrypoints).
 # dashboard/Dockerfile isn't among them (moved out of build/, #1106; see
 # KNOWN-ISSUES.md) — is_source_checkout() keys off its presence here, so shipping one by accident
@@ -199,7 +199,7 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # The toolchain is RigForge's Debian dependency list, with one naming fix: trixie ships the
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
-# every boot and is the ONLY tool a prebuilt tree strictly needs.
+# every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
 RUN apt-get install -y --no-install-recommends \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
         linux-cpupower msr-tools
@@ -208,7 +208,7 @@ RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
     && mkdir -p /opt/rigforge \
     && tar -xzf /tmp/rigforge.tar.gz -C /opt/rigforge --strip-components=1 \
-    && rm /tmp/rigforge.tar.gz \
+    && rm -rf /tmp/rigforge.tar.gz /opt/rigforge/tests \
     && chmod +x /opt/rigforge/rigforge.sh \
     && printf 'ref=%s version=%s\n' "$RIGFORGE_REF" "$(tr -d ' \t\r\n' </opt/rigforge/VERSION)" \
         >/opt/rigforge/RIGFORGE_REF
@@ -292,7 +292,7 @@ COPY os/overlay/pithead-sync /usr/local/sbin/pithead-sync
 COPY os/overlay/pithead-mount-generator /usr/lib/systemd/system-generators/pithead-mount-generator
 COPY os/overlay/pithead-boot.service /etc/systemd/system/pithead-boot.service
 COPY os/overlay/pithead-setup-again.service /etc/systemd/system/pithead-setup-again.service
-COPY os/overlay/pithead-boot os/overlay/pithead-boot-version /usr/local/sbin/
+COPY os/overlay/pithead-boot os/overlay/pithead-boot-stack-health os/overlay/pithead-boot-version /usr/local/sbin/
 # Physical-presence configuration channel (#786 sub-issue D): pithead-boot's one stage before render; no unit of its own.
 COPY os/overlay/pithead-media-config /usr/local/sbin/pithead-media-config
 # Hugepages sizing (#977): the sysctl.d reservation above is sized for the supported 16 GB machine;

@@ -180,13 +180,17 @@ stack_backup() {
     # it for the duration of the backup, restarting afterwards. The docker check is best-effort:
     # if docker (or its daemon) is unavailable we treat the stack as not running and continue.
     # This runs AFTER the disk check so an aborted backup never leaves the stack stopped.
+    #
+    # caddy is deliberately left running (stack_down_except_caddy, #2364): none of its own state
+    # is in the archive, and it's the container fronting the very request that triggered this
+    # backup — stopping it too races podman's overlay teardown against that in-flight request.
     local running=""
     if command -v docker >/dev/null 2>&1; then
         running=$(docker compose ps --status running -q 2>/dev/null)
     fi
     if [ -n "$running" ]; then
         log "A consistent backup needs the services stopped, so the archive isn't captured mid-write."
-        log "The stack will be stopped during the backup and started again afterwards."
+        log "The stack (except caddy, the reverse proxy) will be stopped during the backup and started again afterwards."
         if [ "$assume_yes" -eq 1 ]; then
             log "Stopping the stack for the backup (--yes)..."
         else
@@ -197,9 +201,9 @@ stack_backup() {
             fi
         fi
         # AFTER both prompts (passphrase, and permission to stop the stack): the hold must not
-        # span an unbounded human wait. It runs from here across stack_down -> tar -> stack_up,
-        # so nothing can mutate config.json inside that span. Nested acquisition is a no-op, so
-        # the stack_down/stack_up below take no second lock.
+        # span an unbounded human wait. It runs from here across stack_down_except_caddy -> tar ->
+        # stack_up, so nothing can mutate config.json inside that span. Nested acquisition is a
+        # no-op, so the stack_down_except_caddy/stack_up below take no second lock.
         mutation_lock_acquire backup
         # Re-checked under the lock and BEFORE anything is stopped, so a file that vanished while
         # the operator was at a prompt refuses here rather than failing tar with the stack already
@@ -208,7 +212,7 @@ stack_backup() {
         was_running=1
         if ! (
             trap - ERR
-            stack_down
+            stack_down_except_caddy
         ); then
             warn "The stack did not stop cleanly, so no backup archive was attempted."
             backup_restart_stack ||
@@ -382,7 +386,7 @@ stack_restore() {
     restore_commit_stage
 
     # Refresh auxiliary generated files and ownership under the mutation lock.
-    parse_and_validate_config
+    PITHEAD_CONFIG_SET=1 parse_and_validate_config
     load_preserved_state
     resolve_dashboard_host
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env

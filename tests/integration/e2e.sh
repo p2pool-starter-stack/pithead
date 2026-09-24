@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034 # output globals are consumed by sourced helpers
 #
 # e2e.sh — one-command Tier-4 end-to-end run of a branch against a live test bench.
 #
@@ -10,21 +11,17 @@
 #   5. Deploys the branch (`pithead upgrade` — re-renders configs AND rebuilds the branch's first-party
 #      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
 #      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
-#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even
-#      on failure or Ctrl-C (an EXIT trap). The synced chains are never touched. The restore then
-#      PROVES the live stack matches the on-disk config (#971): a credential marker baked into a
-#      running container must equal the on-disk .env's line, and monerod must answer a host-side
-#      authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
+#   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
+#      (an EXIT trap). The synced chains are never touched. The restore then PROVES the live stack matches the on-disk
+#      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
+#      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
-# The Compose project name is pinned to "pithead", so the e2e checkout and the canonical checkout
-# drive the SAME containers + the SAME shared chains — they are two code copies of one stack, run
-# one at a time, not two stacks. That's why borrow→test→restore is a code/image swap, not a re-sync.
+# The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
+# code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
 #
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
 # See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
-
 set -uo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # lib.sh: rig_lock/rig_lock_remote (#430) from rigforge#183. rig-supply.sh: the write phase's rig host + token (#1378).
 # shellcheck source=tests/integration/lib.sh
@@ -36,7 +33,7 @@ source "$HERE/lib/borrow-fixture.sh" || exit $?
 # shellcheck source=tests/integration/lib/restore-proof.sh
 source "$HERE/lib/restore-proof.sh" || exit $?
 # shellcheck source=tests/integration/lib/detached-harness.sh
-source "$HERE/lib/detached-harness.sh" || exit $?
+source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
 BENCH_HOST="${BENCH_HOST:-}"
 MINER_HOST="${MINER_HOST:-}"
@@ -50,8 +47,9 @@ BORROW_MINER=1
 SKIP_PREFLIGHT=0
 KEEP=0
 SCENARIO=""
-BRANCH=""
-
+REMOTE_NODE_ARGS=()
+REMOTE_NODE_HOSTS=()
+BRANCH="" HARNESS_ARGS=() HARNESS_PHASE_ARGS="" # raw --harness-arg values -> validate_harness_args's output
 # --- Output -----------------------------------------------------------------
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     C_RESET='\033[0m'
@@ -76,7 +74,6 @@ die() {
     printf '%b ✗%b %s\n' "$C_RED" "$C_RESET" "$*" >&2
     exit 1
 }
-
 usage() {
     cat <<EOF
 Run a branch end-to-end against a live test bench, then restore everything.
@@ -89,10 +86,13 @@ OPTIONS:
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
-  --workers <n>     workers expected mining through the stack (default: 1 — the borrowed miner)
+  --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
+  --workers <n>     positive workers expected mining through the stack (default: 1 — the borrowed miner)
   --bench <host>    SSH host of the test bench to deploy onto (or set BENCH_HOST)
   --miner <host>    SSH host of the miner to borrow (or set MINER_HOST)
   --no-miner        do not borrow a miner; skip its two mining assertions
+  --remote-monero-host <h> [--remote-monero-rpc-port <p>] [--remote-monero-zmq-port <p>]
+  --remote-tari-host <h>  pass external node endpoints through to the live harness
   --skip-preflight  skip the bench-chains-synced pre-flight
   --keep            don't restore at the end (leave the branch deployed + miner repointed — debugging)
   -h, --help        this help
@@ -106,7 +106,6 @@ EXAMPLES:
   tests/integration/e2e.sh main --mode targeted --keep       # quick, leave it deployed to inspect
 EOF
 }
-
 # --- Arg parsing ------------------------------------------------------------
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -122,6 +121,7 @@ while [ $# -gt 0 ]; do
         SCENARIO="$2"
         shift 2
         ;;
+    --harness-arg) HARNESS_ARGS+=("$2") && shift 2 ;;
     --bench)
         BENCH_HOST="$2"
         shift 2
@@ -133,6 +133,10 @@ while [ $# -gt 0 ]; do
     --no-miner)
         BORROW_MINER=0
         shift
+        ;;
+    --remote-monero-host | --remote-monero-rpc-port | --remote-monero-zmq-port | --remote-tari-host)
+        add_remote_node_arg "$1" "${2:-}" || die "$1 takes a bare hostname or IPv4 address, or a TCP port 1-65535."
+        shift 2
         ;;
     --skip-preflight)
         SKIP_PREFLIGHT=1
@@ -159,11 +163,11 @@ done
 }
 case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
-[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO"
+[[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
 [[ "$RIG_CONTROL_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$RIG_CONTROL_PORT" -ge 1 ] && [ "$RIG_CONTROL_PORT" -le 65535 ] || die "RIG_CONTROL_PORT must be a TCP port 1-65535."
-
+[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]] || die "--workers must be a positive integer (got '$WORKERS')."
 # --- SSH helpers ------------------------------------------------------------
 # Keepalives so a quiet (but live) connection isn't dropped; BatchMode so we never hang on a prompt.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=8 -o StrictHostKeyChecking=accept-new)
@@ -171,7 +175,6 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o Ser
 # non-interactive remote shell. jq filters (quoted) are fine; shell subshells are not.
 on_bench() { parent_lock_on_bench "$BENCH_HOST" "$1"; }
 on_miner() { ssh "${SSH_OPTS[@]}" "$MINER_HOST" "$1"; }
-
 # State captured for the restore trap.
 SAFETY_ARCHIVE=""
 MINER_CFG_BACKUP=""
@@ -188,7 +191,6 @@ CONTROL_VERDICT_BEFORE=""
 # Where the LIVE stack actually runs from — resolved in preflight (#454). Defaults to CANONICAL_DIR
 # so the EXIT trap always has a target even if it fires before preflight refines it.
 RESTORE_DIR="$CANONICAL_DIR"
-
 # --- Restore: fires ONCE on EXIT, Ctrl-C included. Never add INT/TERM (#1401) ----
 restore_all() {
     local rc=$?
@@ -307,7 +309,6 @@ restore_all() {
     if [ "$rc" -eq 0 ]; then ok "restore complete."; else warn "restore complete (the run itself failed — see above)."; fi
 }
 trap restore_all EXIT
-
 # --- Small waiters / helpers ------------------------------------------------
 wait_bench_healthy() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300}))
@@ -317,11 +318,10 @@ wait_bench_healthy() { # <timeout_s>
         sleep 10
     done
 }
-
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
-# the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as
-# a direct check that the sync-detection logic settles correctly against the reused chains.
+# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
+# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
+# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -331,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the harness will wait further on real sync signals"
+            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
             return 1
         }
         sleep 8
@@ -361,7 +361,6 @@ wait_workers() { # <n> <timeout_s>
         sleep 8
     done
 }
-
 # --- Phase 0: preflight -----------------------------------------------------
 preflight() {
     log "Preflight"
@@ -390,11 +389,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on, captured for the same reason and at the same moment as
-    # RESTORE_DIR: deploy_branch is about to rebuild the first-party images, and on a source-checkout
-    # box it rebuilds them under the very tag the baseline resolves to. Nothing downstream can tell
-    # the baseline's images from the branch's once that has happened, so the record has to be taken
-    # here or not at all. Read by verify_restore_proof's check 4.
+    # The images the baseline is on (and whether it has the #2460 egress boot unit), captured before
+    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
+    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
+    # record is taken here or not at all. Read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
@@ -589,13 +588,13 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 300 || true # let the recreated monerod/tari re-confirm their tip before the harness pre-check
+    wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }
 
 # --- Phase 5: run the live harness (detached on the box) --------------------
 run_harness() {
-    local phases rearm_id rearm_request rearm_ack
+    local phases remote_args="" rearm_id rearm_request rearm_ack
     rearm_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
     rearm_request="$E2E_DIR/results/borrow-rearm.$rearm_id.request"
     rearm_ack="$E2E_DIR/results/borrow-rearm.$rearm_id.ack"
@@ -608,6 +607,7 @@ run_harness() {
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
+    [ "${#REMOTE_NODE_ARGS[@]}" -eq 0 ] || printf -v remote_args ' %q' "${REMOTE_NODE_ARGS[@]}"
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
@@ -620,20 +620,20 @@ run_harness() {
     # mining assertions (workers online, stratum hashes) instead of failing a healthy stack.
     local no_mining=""
     [ "$BORROW_MINER" = "1" ] || no_mining="--no-mining-asserts"
-    phases="$phases $no_mining"
+    phases="$phases$remote_args $no_mining${HARNESS_PHASE_ARGS:-}" # bench-ci's one-phase selection, after the mode's own (#2179)
     log "Running the live harness on $BENCH_HOST (mode=$MODE, detached so an SSH drop can't kill it)"
-    step "phases: $phases  (workers=$WORKERS)"
+    printf '%s\n' "  → phases: $phases  (workers=$WORKERS)" | redact_remote_output
     local rollback_b64 pools_b64
     harness_install_runner || die "Failed to install the detached harness runner."
     # Safe readiness/current-state assertions run inline first and are BINDING: an unfit bench
     # must not reach the destructive phases (see harness_pregate).
     if [ "$MODE" != "check" ]; then
-        harness_pregate "$no_mining" || return 1
+        harness_pregate "$WORKERS" "$remote_args $no_mining" > >(redact_remote_output) 2> >(redact_remote_output >&2) || return 1
     fi
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
-    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.
@@ -653,12 +653,12 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
     done
 
     echo ""
     log "Harness finished (exit $rc). Full log:"
-    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | sed 's/^/  /'
+    on_bench "cat '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/  /'
     return "${rc:-1}"
 }
 

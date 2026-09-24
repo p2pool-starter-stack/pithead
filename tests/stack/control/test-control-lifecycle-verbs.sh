@@ -42,7 +42,8 @@ mkdir -p "$CC/staged" "$CC/results" "$CC/audit"
 cat >"$CC/self" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$SELF_LOG"
-exit 0
+[ "${SELF_RC:-0}" -eq 0 ] || echo "$*" >&2
+exit "${SELF_RC:-0}"
 EOF
 chmod +x "$CC/self"
 export SELF_LOG="$CC/self.log"
@@ -50,6 +51,7 @@ export PITHEAD_SELF="$CC/self"
 uid_r="11111111-1111-4111-8111-111111111111"
 uid_a="22222222-2222-4222-8222-222222222222"
 uid_x="33333333-3333-4333-8333-333333333333"
+uid_f="44444444-4444-4444-8444-444444444444"
 
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"restart","actor":"tester"}\n' "$uid_r" >"$CC/req_r.json"
@@ -64,6 +66,12 @@ printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_a" >"$CC/req_a.js
 run_sourced_e "$SANDBOX" control_process_request "$CC/req_a.json" "$CC" >/dev/null 2>&1
 assert_eq "apply intent runs the fixed 'apply -y' verb (config re-apply, no edit)" "$(cat "$SELF_LOG")" "apply -y"
 assert_eq "apply result is applied" "$(jq -r .status "$CC/results/$uid_a.json")" "applied"
+
+export SELF_RC=1
+printf '{"id":"%s","action":"apply","actor":"tester"}\n' "$uid_f" >"$CC/req_f.json"
+run_sourced "$SANDBOX" control_process_request "$CC/req_f.json" "$CC" >/dev/null 2>&1
+assert_contains "failed lifecycle result carries the child log separately" "$(jq -r .log "$CC/results/$uid_f.json")" "apply -y"
+unset SELF_RC
 
 : >"$SELF_LOG"
 printf '{"id":"%s","action":"frobnicate","actor":"tester"}\n' "$uid_x" >"$CC/req_x.json"

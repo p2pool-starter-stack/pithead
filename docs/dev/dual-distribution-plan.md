@@ -47,7 +47,7 @@ All channels consume the same release manifest: five digest-pinned GHCR images +
 `pithead` + rendered Quadlet units + config schema. The appliance embeds the same
 digests the installer pulls. Image ownership is per-service, not structural: the
 manifest already pins the Tari node from a registry we do not own
-(`quay.io/tarilabs`) — a service image moving to another repo or registry changes a
+(`ghcr.io/tari-project`) — a service image moving to another repo or registry changes a
 digest line, nothing else.
 
 curl-pipe trust mitigations: the script lives in the repo (reviewable), is served over
@@ -174,10 +174,11 @@ cut, and the installer smoke rides the same checklist.
 
 - Minimal Debian 13, read-only root, overlay discarded each boot.
 - RAUC A/B slots; new slot boots provisionally; **the commit gate is a `localhost` curl plus
-  `pithead doctor --json`** (`os/overlay/pithead-boot`). The curl proves the derived-config →
-  caddy → dashboard chain answers; doctor exits non-zero on critical failures and checks the
-  revenue containers (monerod/p2pool/tari), Tor, and the egress firewall. Both must pass before
-  `rauc status mark-good`. One rule the gate must hold: commit on "services up and progressing",
+  `pithead doctor --json` plus `pithead status`** (`os/overlay/pithead-boot`). The curl proves the
+  derived-config → caddy → dashboard chain answers; doctor exits non-zero on critical failures and
+  checks the revenue containers (monerod/p2pool/tari), Tor, and the egress firewall; status covers
+  the containers doctor does not judge, so one left `unhealthy` or restarting holds the slot
+  (#2383). All three must pass before `rauc status mark-good`. One rule the gate must hold: commit on "services up and progressing",
   never "chain synced" — initial sync takes days, so the check is liveness-only, and the sync-held
   miners (#35) never count as crashed. The #718 scan-grace lesson (healthy-during-long-scan
   markers) applies to the commit window too. No commit or failed boot → automatic fallback.
@@ -389,8 +390,8 @@ container is the dashboard image in a flag mode, and the host-side wait-then-app
 loop lives in `pithead`. `install.sh`'s last step becomes the wizard handoff instead
 of `exec ./pithead setup`.
 
-Lockout insurance: physical console login always works (the appliance has no SSH by
-default; SSH is a wizard opt-in) — a broken wizard must never brick the box.
+Lockout insurance: physical console login always works (release appliances never
+provision SSH) — a broken wizard must never brick the box.
 
 ### Phase 4 — release pipeline + channels
 

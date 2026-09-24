@@ -14,15 +14,15 @@ automatable should move off it, and anything that keeps biting should get a harn
 
 ### Confirm what the harness cannot see
 
-The KVM battery boots a VM on a virtual NIC with a private address, one virtual disk, and no
-firmware. It is structurally blind to the following, all of which have produced real defects:
+The KVM battery boots a VM on a virtual NIC, one virtual disk, and no firmware. It can stage an
+unrouted documentation-range global IPv6 address, but it is structurally blind to the following,
+all of which have produced real defects:
 
 | Check | Why a VM cannot show it |
 |---|---|
-| No world-addressable address is served | The guest only ever has a private LAN address. A real box gets an ISP-assigned globally-routable IPv6, and the dashboard was found bound to it. |
 | Secure Boot, firmware power-on behaviour, real disk topology | No firmware, one virtual disk. |
 | Thermals, CPU governor, the hardware watchdog actually resetting a wedged board | A VM has no watchdog device and no heat. |
-| First-boot on real media — wall-clock, and what a power cut leaves behind | Writing container storage to a USB stick is nothing like a virtual disk, and the operator experience lives in that gap. An interrupted write to a stick left a store that was present, digest-matched and unrunnable, and it bricked install-from-stick on every later boot (#1029). A virtual disk does not produce that damage; the repair for it is covered at tier 1, the cause is not. |
+| First-boot on real media — wall-clock, and what a power cut leaves behind | Writing container storage to a USB stick is nothing like a virtual disk, and the operator experience lives in that gap. An interrupted write to a stick left a store that was present, digest-matched and unrunnable, and it bricked install-from-stick on every later boot (#1029). Fault D covers the interrupted first-boot image-load path on a virtual disk: it must repair and serve the wizard, or refuse with a legible console message; real-media wear and firmware behaviour remain hardware-only. |
 
 ### Reserve the hardware
 
@@ -54,20 +54,68 @@ image; never hand one to a user.
 
 ## The manual hardware battery (M1–M10)
 
-Defined in [appliance-release.md](appliance-release.md). Run it on a physical box and record the
-results in the release issue. Today every item is driven by hand; a harness that automates the
-parts a script can reach, and demands typed attestation for the rest, is tracked as #1022 and is
-not yet merged. Until it is, this whole battery is a human procedure.
+Defined in [appliance-release.md](appliance-release.md). Run its remaining hardware-only checks on a physical box and record the
+results in the release issue. The KVM battery covers the scriptable parts noted below; the physical
+checks remain hands-on until #1022 can collect the scripted and attested results together.
 
 Needs hands, every time:
 
-- **M1 — flash and boot** from a real stick with Secure Boot in its real state.
-- **M4 — the wrong-disk guard**, which needs a second physical disk holding unrelated data.
-- **M8 — power cut during the update's write phase.** Pull the plug at the wall.
-- **M10 — power cut during normal mining.** Same, while the stack is live.
+- **M1 — flash and boot** from a real stick with Secure Boot disabled in firmware.
+
+M4's mechanics (the wrong-disk guard) now have a KVM analog — see
+[appliance-release.md](appliance-release.md) — so only the real-hardware disk-controller
+cases still need a physical second disk.
 
 The power-cut items are the ones that justify the whole appliance design (A/B slots, the
-health-gated commit, the migration hold). They have never been proven on real hardware.
+health-gated commit, the migration hold). Two are now in the KVM battery — a virtual disk cannot
+show USB-stick media damage or the firmware's Restore-on-AC-Power-Loss setting, so the box coming
+back **by itself** after the plug is pulled still needs hands on real hardware:
+
+- **M8 — power cut during the update's write phase.** *Covered by: `fault` phase Fault A
+  (destroy mid-write, `tests/os/phases/fault.sh`) — pull the plug at the wall on real hardware to
+  confirm Restore on AC Power Loss, not the write itself.*
+- **M10 — power cut during normal mining.** *Covered by: `provision` phase's power-cut leg
+  (M10, #2067, `tests/os/phases/provision-power-cut.sh`), which checks the complete recovery after
+  every one of its three cuts — same caveat.*
+
+### Recorded runs
+
+The operator's own record is the evidence; each run is reported in full on
+[#2044](https://github.com/p2pool-starter-stack/pithead/issues/2044). The runs below are a dev
+image, not a shipping image: they do not prove the final release SHA, and the final shipping
+image's evidence stays with the GA gates (the soak,
+[#1652](https://github.com/p2pool-starter-stack/pithead/issues/1652), and pre-publication
+verification, [#1653](https://github.com/p2pool-starter-stack/pithead/issues/1653)).
+
+**2026-09-18 and 2026-09-19, one physical x86-64 UEFI laptop with an NVMe and no second disk.**
+Source: `develop` at `1b0da07016`, the debug variant (SSH, dev certificate, LAN registry) built by
+bench job 482, flashed to a USB stick. Image checksum: UNKNOWN, not recorded at the run. The M7,
+M8 and M9 bundles were dev bundles built on the bench from that head with a raised VERSION
+(2.0.1, and the deliberately broken 2.0.2 and 2.0.3).
+
+| Step | Result | Observed |
+|---|---|---|
+| M1 flash and boot | PASS | Booted from the stick with Secure Boot off and reached the wizard. |
+| M2 discovery | PASS, partial | `http://pithead.local` reached from another machine: token gate, the expected certificate warning. Not run: the monitor-unplug half (the target is a laptop). |
+| M3 install to disk | PASS | Pithead and RigForge installed with "Keep everything" on the NVMe; stick pulled; the box booted from the internal disk and served the setup page. |
+| M4 wrong-disk guard | NOT RUN | No second disk in the machine. |
+| M5 reinstall keeps the chain | PASS | After the M6 reinstall, monerod kept its chain and caught up only the blocks missed during the test. |
+| M6 configure by paste | PASS, with findings | A pasted subaddress was refused with an explanation; a node name that does not resolve was refused; the stack provisioned and the dashboard came up. Findings: #2350, #2351, #2352. |
+| M7 real update | PASS | 2.0.1 installed with `pithead os-update`; after a manual reboot the box came up on slot B and `pithead-boot` committed it. Finding: #2382 (no "reboot next" message). |
+| M8 pull the plug, three times | PASS | Forced power-off at 61%, 87% and 99% of the slot copy; each time the box booted slot A with the dashboard serving. RAUC marked the target slot bad before each write and active only after a complete copy. |
+| M9 bad release rollback | PASS, with finding | 2.0.3 (Caddy started against a missing config): the gate waited, left the slot uncommitted and rebooted; the box fell back to slot A and committed it with nobody present. The operator rollback from a committed 2.0.1 with `rauc status mark-bad booted && reboot` returned to A. Findings: 2.0.2 (dashboard healthcheck always failing) was committed because the gate did not read container health, #2383; the console is silent for the whole gate wait, #2436. |
+| M10 power loss while mining | PASS | Forced off by holding the power button and powered on again: stack healthy, RigForge mining, dashboard reachable. Not shown: the box powering on by itself after a cut at the wall (Restore on AC Power Loss). |
+| M15 backup and restore | FAIL | "Backup did not complete", no archive: `compose down` failed on a podman overlay unmount of the Caddy container (#2364). Not run: the restore half. |
+| M16 settings after provisioning | PARTIAL | The energy value previewed, applied and persisted, and the change history was accurate. Findings: #2365, #2366, #2367. Not run: the node-endpoint `APPLY` step. |
+| RC1 addendum | NOT RUN | |
+
+Hardware-only observation: a freshly booted slot reads `bad` in `rauc status` until its gate
+commits it, about two and a half minutes into the boot; rebooting inside that window leaves both
+slots reading `bad` until the gate runs again. The Fresh Start reinstall sequence behind #2352 is
+not in the KVM install phase yet (#2447).
+
+Still open from these runs: #2351, #2367, #2436 and #2447. Fixed on `develop` since, and not
+re-run on hardware: #2350, #2352, #2364, #2365, #2366, #2382 and #2383.
 
 ### Install-path cases worth walking deliberately
 
@@ -76,20 +124,25 @@ health-gated commit, the migration hold). They have never been proven on real ha
   (this is M5, and it is where the corrupt-container-store blocker was found: a partially written
   image store left every `podman run` failing, so the wizard never served).
 - Reaching the wizard **by mDNS name** and **by IP**, since the appliance serves both.
+- Confirming once that the dashboard refuses the real box's ISP-assigned IPv6 address. The
+  provision battery proves the listener boundary with an unrouted RFC 3849 address; this check
+  confirms that the physical network presents the same address shape.
 - Configuring **by paste** for both addresses (M6, which now needs a yes to merge-mining first —
   a new machine is asked for the Monero address only): a wallet address typed by hand is a support
   ticket waiting to happen.
 
 ---
 
-## The rig-role manual battery (M11–M14)
+## The rig-role manual battery (M11–M13)
 
 Defined in [appliance-release.md](appliance-release.md). Required for any release that touches
 the rig role. The `rig` KVM phase only proves the wizard's
 rig card, role select, a submit toward a faked pool listener, volatile journald, a plain reboot,
-and the A/B update leg — so these four stay hands-on until #1886's first gap converts what it can
-and names a bench e2e for the rest. Each row below names the check that replaces it once that
-lands.
+a power cut, and the A/B update leg — so these three stay hands-on until #1886's first gap
+converts what it can and names a bench e2e for the rest. Each row below names the check that
+replaces it once that lands. M14 (run-from-USB) no longer needs a hand-run: the `rigmedia` KVM
+phase (`tests/os/phases/rigmedia.sh`, #2069) covers it — see the row below for what it proves and
+what it still leaves out.
 
 - **M11 — rig install and mine.** Flash the same stick; boot a rig-class loaner (never a
   production-only rig); choose RigForge; point it at a real coordinator. Expected: the rig card
@@ -105,13 +158,18 @@ lands.
   phase exercises this today.*
 - **M13 — rig power loss and rig update.** Cut power at the wall with the rig mining; it must
   return mining unaided (Restore on AC power loss). Then install the release bundle on the rig and
-  confirm it comes back mining on the new slot and self-commits. *Replaced by: a power-cut leg on
-  the rig phase — the KVM phase already covers the update/slot-commit half with a plain reboot,
-  not a power cut, so only the power-loss half of this row is still open.*
-- **M14 — run-from-USB rig.** Boot the stick, choose RigForge, do **not** install to disk.
-  Expected: it mines from the stick; a reboot returns it mining; reaching the wizard again needs
-  the bootloader path (#1318). *Replaced by: a stick-root boot leg — the KVM phase always boots the
-  rig image as an installed disk, never as the stick itself.*
+  confirm it comes back mining on the new slot and self-commits. *Covered by: the `rig` phase's
+  power-cut leg (#2067, `tests/os/phases/rig.sh`) proves the return-mining-unaided fact off a real
+  `virsh destroy`, and the phase's existing update leg proves the install/self-commit half. What
+  stays manual is Restore on AC Power Loss itself — a firmware setting a virtual disk cannot show.*
+- **M14 — run-from-USB rig. AUTOMATED (#2069).** Boot the stick, choose RigForge, do **not**
+  install to disk. Expected: it mines from the stick; a reboot returns it mining; reaching the
+  wizard again needs the bootloader path (#1318). *Replaced by: the `rigmedia` KVM phase
+  (`tests/os/phases/rigmedia.sh`), which boots the image as removable media beside a blank
+  internal disk, answers RigForge with no install offered, and asserts the stick-run rig mines
+  the baked binary with no containers, volatile journald, an unaided reboot returns it mining,
+  and the blank disk stays byte-for-byte untouched. Still manual: reaching the wizard again via
+  the bootloader path (#1318) on a stick-run rig, and stick wear / wall-clock on real USB media.*
 
 ---
 

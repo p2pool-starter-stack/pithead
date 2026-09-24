@@ -1,7 +1,8 @@
 # `uninstall` (#77 phase 1): the clean exit for the DIY channel — stop and remove what pithead
 # created on this host, keep what the operator owns. Kept: config.json, the data dirs (chains,
 # Tor onion keys, dashboard DB), backups/. Removed: containers, the stack's images, the rendered
-# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules. The
+# .env and Caddyfile, this checkout's control-runner units, the egress firewall rules and their boot
+# unit. The
 # appliance has no uninstall — its equivalents are the reset tiers.
 stack_uninstall() {
     local yes=0 arg
@@ -30,6 +31,7 @@ stack_uninstall() {
         }
     fi
     remove_tor_egress_firewall 2>/dev/null || true
+    remove_tor_egress_boot_unit
     docker compose down --remove-orphans 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup."
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
@@ -67,11 +69,11 @@ firstboot_consume_spool() ( # <spool-dir>
     local snap rc=0
     snap=$(wizard_spool_request "$spool" config.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
-    trap 'wizard_spool_clean "${snap%/*}"' EXIT
+    trap 'rm -f "${snap}.bak-1x"; wizard_spool_clean "${snap%/*}"' EXIT
     cand="$snap"
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
-    if err=$(PITHEAD_CONFIG_FILE="$cand" bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
+    if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
         install -m 600 "$cand" "$PWD/config.json" || return 1
         rm -f "$spool/config.json"
         wizard_spool_publish "$spool" applied true

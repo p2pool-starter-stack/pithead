@@ -2,17 +2,18 @@ import { UpgradeControl } from "../config/configview.mjs";
 import { OnionUrl } from "../network/onionurl.mjs";
 import { OsUpdateControl } from "../system/osupdate.mjs";
 import { html } from "./preact.mjs";
-import { Badges, cVar, HighUsage, UpdateBadge, VersionBadge } from "./ui.mjs";
+import { Badges, cVar, HighUsage, ThemeSwitcher, UpdateBadge, VersionBadge } from "./ui.mjs";
 
 // --- Top bar -------------------------------------------------------------------------
 
-function Header({ state }) {
+function Header({ state, theme, onTheme }) {
   const s = state.system,
-    hr = state.hashrate;
+    hr = state.hashrate,
+    appliance = !!state.os_update;
   const labelCls = (level) => (level === "high" ? "status-bad" : "text-muted");
   const valCls = (level) => (level === "high" ? "status-bad" : "");
   return html`
-    <div class="header" id="top-header">
+    <header class="header" id="top-header">
         <div>
             <div class="brand">
                 <img class="brand-logo" src="/static/pithead-mark.svg" alt="" width="40" height="40" />
@@ -22,18 +23,21 @@ function Header({ state }) {
                         <${Badges} badges=${state.badges} />
                         <${VersionBadge} version=${state.version} />
                         <${UpdateBadge} update=${state.update} />
+                        <${ThemeSwitcher} theme=${theme} onTheme=${onTheme} />
+                        <${UpgradeControl} update=${state.update}
+                            enabled=${state.control_enabled && !appliance} appliance=${appliance} />
                         ${
-                          // The appliance updates through signed OS images (state.os_update
-                          // present), so the tarball Upgrade button yields to the OS control —
-                          // the host would refuse its verb there anyway.
-                          state.os_update
+                          // The appliance updates through signed OS images. Keep the tarball
+                          // control mounted so an in-flight failure retains its state, but its
+                          // button stays disabled and yields to this OS control.
+                          appliance
                             ? html`<${OsUpdateControl} os=${state.os_update} update=${state.update}
                                   version=${state.version} enabled=${state.control_enabled} />`
-                            : html`<${UpgradeControl} update=${state.update} enabled=${state.control_enabled} />`
+                            : null
                         }
                     </div>
                     <div class="brand-host font-mono text-muted">${state.host_ip}${state.host_addr ? html`<span class="brand-host-at">@</span>${state.host_addr}` : null}</div>
-                    <${OnionUrl} onion=${state.dashboard_onion} />
+                    <${OnionUrl} onion=${state.dashboard_onion} enabled=${state.control_enabled} />
                 </div>
             </div>
             <div class="text-small mt-2">
@@ -68,7 +72,7 @@ function Header({ state }) {
                 : null
             }
         </div>
-    </div>`;
+    </header>`;
 }
 
 export { Header };

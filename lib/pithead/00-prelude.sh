@@ -93,6 +93,17 @@ SKIP_DEPS=0
 # generating in-memory creds so the preview/diff is realistic.
 PITHEAD_DRY_RUN=0
 
+# Missing stamps are old release images: fail closed rather than letting configuration reopen SSH.
+appliance_variant() {
+    local variant_file="${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" variant
+    [ -r "$variant_file" ] || {
+        printf release
+        return
+    }
+    variant=$(tr -d ' \t\r\n' <"$variant_file")
+    [ "$variant" = debug ] && printf debug || printf release
+}
+
 # Detect whether we're being sourced (e.g. by the test suite). When sourced we only define
 # functions/constants and skip all side effects (cd, traps, running main).
 _STACK_SOURCED=0
@@ -275,6 +286,11 @@ mutation_lock_acquire() { # <verb label>
             echo -e "${C_RED}[ERROR]${C_RESET} Timed out after ${PITHEAD_LOCK_TIMEOUT}s waiting for another pithead operation ($holder) — nothing was changed. Re-run '$0 $label' once it has finished." >&2
             exit "$PITHEAD_EX_LOCK_TIMEOUT"
         fi
+    fi
+    # The dashboard opens this same non-secret inode through a read-only bind mount. Normalise its
+    # mode only after taking the lock; chmod changes neither the inode nor the held flock.
+    if ! chmod 644 "$_PITHEAD_LOCK_PATH" 2>/dev/null; then
+        warn "Cannot make the pithead lock file ($_PITHEAD_LOCK_PATH) readable to the dashboard — dashboard container control will fail closed."
     fi
     _PITHEAD_LOCK_OWNED=1
     _PITHEAD_LOCK_DEPTH=1

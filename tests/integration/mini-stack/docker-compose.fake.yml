@@ -37,6 +37,12 @@ services:
     volumes:
       - dashboard_data:/data
       - dashboard_stats:/app/stats:ro
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:?PITHEAD_LOCK_FILE is required}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"
@@ -66,6 +72,12 @@ services:
       XVB_DONOR_ID: ""
       P2POOL_URL: "itest-p2pool:3333"
       MONERO_WALLET_ADDRESS: "49iTestWalletPlaceholderXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      PAYOUT_CONFIRM_ENABLED: "${PAYOUT_CONFIRM_ENABLED:-true}"
+      MONERO_WALLET_RPC_URL: "http://fake-wallet-rpc:18082/json_rpc"
+      WALLET_RPC_USERNAME: ""
+      WALLET_RPC_PASSWORD: ""
+      TARI_PAYOUT_CONFIRM_ENABLED: "${TARI_PAYOUT_CONFIRM_ENABLED:-true}"
+      TARI_WALLET_GRPC_ADDRESS: "fake-tari-wallet:18143"
       PROXY_HOST: "xmrig-proxy"
       PROXY_API_PORT: "3344"
       PROXY_AUTH_TOKEN: "itest"
@@ -78,7 +90,15 @@ services:
       # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
-    depends_on: [fake-monerod, fake-tari, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc]
+      TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
+      TELEGRAM_BOT_TOKEN: "itest-token"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
+      TELEGRAM_API_BASE: "${TELEGRAM_API_BASE:-http://fake-sink:9000}"
+      NOTIFY_WEBHOOK_URLS: "${NOTIFY_WEBHOOK_URLS-http://fake-sink:9000/webhook}"
+      NTFY_URL: "${NTFY_URL-http://fake-sink:9000/ntfy}"
+      NTFY_TOKEN: "itest-token"
+      NOTIFY_TOR: "false"
+    depends_on: [fake-monerod, fake-tari, fake-wallet-rpc, fake-tari-wallet, docker-control, docker-proxy, p2pool, xmrig-proxy, fake-hc, fake-sink]
 
   fake-monerod:
     image: *fake_image
@@ -106,6 +126,22 @@ services:
     ports: ["28152:18152"]   # HTTP control side-channel on host 28152
     volumes: ["../fakes:/fakes:ro"]
 
+  fake-wallet-rpc:
+    image: *fake_image
+    container_name: itest-fake-wallet-rpc
+    networks: [itestnet]
+    entrypoint: []
+    command: ["python3", "/fakes/fake_wallet_rpc.py", "--port", "18082"]
+    volumes: ["../fakes:/fakes:ro"]
+
+  fake-tari-wallet:
+    image: *fake_image
+    container_name: itest-fake-tari-wallet
+    networks: [itestnet]
+    entrypoint: []
+    command: ["python3", "/fakes/fake_tari_wallet.py", "--grpc-port", "18143", "--control-port", "18153"]
+    volumes: ["../fakes:/fakes:ro"]
+
   # Stand-ins for the miner containers: real, named containers the dashboard genuinely
   # stops/starts via docker-control. They just idle.
   p2pool:
@@ -129,6 +165,15 @@ services:
     networks: [itestnet]
     entrypoint: []
     command: ["python3", "/fakes/fake_hc.py", "--port", "9000", "--log", "/tmp/pings.log"]
+    volumes:
+      - "../fakes:/fakes:ro"
+
+  fake-sink:
+    image: *fake_image
+    container_name: itest-fake-sink
+    networks: [itestnet]
+    entrypoint: []
+    command: ["python3", "/fakes/fake_sink.py", "--port", "9000"]
     volumes:
       - "../fakes:/fakes:ro"
 

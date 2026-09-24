@@ -77,7 +77,9 @@ resolve_pull_policy() {
 compose_up() {
     local build_args=()
     is_source_checkout || build_args+=(--no-build)
-    docker compose up "${build_args[@]}" "$@"
+    # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
+    # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@"
 }
 
 # #795: `compose up --remove-orphans` never removes the container of a service whose profile just
@@ -103,16 +105,36 @@ remove_deactivated_profile_containers() {
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
 compose_up_checked() {
-    local tmp out rc
+    local tmp out rc _attempt
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
-    tmp="$(mktemp)"
-    compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
-    rc=${PIPESTATUS[0]}
-    out="$(<"$tmp")"
-    rm -f "$tmp"
-    [ "$rc" -ne 0 ] && explain_subnet_collision "$out"
+    # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
+    # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
+    # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped
+    # state to be started" (Docker/Podman both use this shape). That resolves itself once the
+    # in-flight transition finishes, so a short second pass recovers it instead of failing an
+    # otherwise-successful config change; a real failure (bad image, port clash, subnet collision)
+    # repeats identically and stays fatal.
+    for _attempt in 1 2; do
+        tmp="$(mktemp)"
+        compose_up --pull "$(resolve_pull_policy)" "$@" 2>&1 | tee "$tmp"
+        rc=${PIPESTATUS[0]}
+        out="$(<"$tmp")"
+        rm -f "$tmp"
+        [ "$rc" -eq 0 ] && return 0
+        case "$out" in
+        *"must be in Created or Stopped state to be started"*)
+            [ "$_attempt" -eq 1 ] && {
+                warn "Compose hit a container still starting from a prior recreate — retrying once in 3s."
+                sleep 3
+                continue
+            }
+            ;;
+        esac
+        break
+    done
+    explain_subnet_collision "$out"
     return "$rc"
 }
 
@@ -184,6 +206,36 @@ stack_down() {
         error "Stack failed to stop — see the error above."
     fi
     log "Stack stopped."
+    mutation_lock_release
+}
+
+# Stop every service except caddy — the backup window's own stop (#2364). None of caddy's own
+# runtime state (its Caddyfile bind, its internal-CA data volume) is ever part of the backup
+# archive, and caddy is also the one container fronting the dashboard request that triggered this
+# stop in the first place: a `docker compose down` sends caddy its stop signal while that very
+# request can still be in flight, and podman forcing the container to exit before Caddy finishes
+# draining it can leave its read-only rootfs's `/tmp`/`/config` tmpfs submounts un-torn-down —
+# so it then finds caddy's overlay `merged` directory non-empty when it tries to remove it
+# ("directory not empty"), and `down` fails before any archive is written. Backup does not need
+# caddy stopped at all, so the fix is simply to leave it running across the window.
+stack_down_except_caddy() {
+    mutation_lock_acquire down
+    log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
+    remove_tor_egress_firewall
+    local services
+    # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
+    # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
+    # takes the shell out before the guard below can run. The guard has to see the FILTERED list —
+    # an empty one must never reach `docker compose stop`, which with no arguments stops every
+    # service, caddy included, and walks straight back into the failure this function exists to avoid.
+    services=$(docker compose config --services 2>/dev/null)
+    services=$(printf '%s\n' "$services" | grep -vxF caddy || true)
+    [ -n "$services" ] || error "Could not list compose services to stop for the backup."
+    # shellcheck disable=SC2086 # word-splitting the service list is the point
+    if ! docker compose stop $services; then
+        error "Stack failed to stop — see the error above."
+    fi
+    log "Stack stopped (caddy left running)."
     mutation_lock_release
 }
 

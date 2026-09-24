@@ -158,10 +158,29 @@ test("BackupPanel kit phase reveals the passphrase exactly once, with download l
   assert.match(out, /I.ve saved it/);
 });
 
-test("BackupPanel failed phase surfaces the host's error", () => {
-  const c = inst({ enabled: true });
-  c.state = { phase: "failed", id: null, result: { status: "failed", error: "boom" } };
-  assert.match(renderToString(c.render()), /boom/);
+test("BackupPanel failed phase labels the log on an appliance", () => {
+  const c = inst({ enabled: true, appliance: true });
+  c.state = { phase: "failed", id: null, result: { status: "failed", log: "run ./pithead backup" } };
+  const out = renderToString(c.render());
+  assert.match(out, /Backup did not complete/);
+  assert.match(out, /this machine's own log from the failed\s+backup/);
+  assert.match(out, /\.\/pithead backup/);
+});
+
+test("BackupPanel keeps the raw log on a host without an appliance caption", () => {
+  const c = inst({ enabled: true, appliance: false });
+  c.state = { phase: "failed", id: null, result: { status: "failed", log: "run ./pithead backup" } };
+  const out = renderToString(c.render());
+  assert.match(out, /\.\/pithead backup/);
+  assert.doesNotMatch(out, /machine's own log/);
+});
+
+test("BackupPanel does not label an authored rejection as a machine log", () => {
+  const c = inst({ enabled: true, appliance: true });
+  c.state = { phase: "failed", id: null, result: { status: "rejected", error: "wait 10 minutes" } };
+  const out = renderToString(c.render());
+  assert.match(out, /wait 10 minutes/);
+  assert.doesNotMatch(out, /machine's own log/);
 });
 
 // #1854: the appliance has no shell, so the host-CLI remedy in the explainer above is advice its
@@ -177,13 +196,31 @@ test("BackupPanel on the appliance names the login, not a channel that is coming
   assert.doesNotMatch(out, /config\.json/);
 });
 
-test("BackupPanel off a non-appliance host keeps the remedy — the appliance branch is narrow (#1854)", () => {
+test("BackupPanel off a non-appliance host points at Configuration instead of repeating the remedy (#1871)", () => {
   const out = renderToString(inst({ enabled: false, appliance: false }).render());
-  assert.match(out, /pithead apply/);
+  assert.match(out, /see Configuration/);
+  assert.doesNotMatch(out, /pithead apply/);
+  assert.doesNotMatch(out, /config\.json/);
 });
 
 test("BackupPanel names both halves the operator has to keep — archive and kit (#1854)", () => {
   const out = renderToString(inst({ enabled: true }).render());
   assert.match(out, /Keep both halves/);
   assert.match(out, /passphrase/);
+});
+
+// --- Native <dialog> modal (#1876) -----------------------------------------------------
+
+test("the backup confirm and creating modals are <dialog>s, not backdrop divs", () => {
+  const titles = { confirm: "Create a backup", creating: "Creating a backup…" };
+  for (const phase of ["confirm", "creating"]) {
+    const c = inst({ enabled: true });
+    c.state.phase = phase;
+    const out = renderToString(c.render());
+    assert.match(out, /<dialog class="card config-modal"/, phase);
+    assert.match(out, /role="dialog"/, phase);
+    assert.match(out, /aria-modal="true"/, phase);
+    assert.match(out, new RegExp(`aria-label="${titles[phase].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), phase);
+    assert.doesNotMatch(out, /config-modal-backdrop/, phase);
+  }
 });

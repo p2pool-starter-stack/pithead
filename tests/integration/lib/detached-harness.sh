@@ -53,11 +53,20 @@ harness_finished() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
-harness_pregate() { # <no_mining flags>
-    local phase
+harness_pregate() { # <workers> <no_mining flags>
+    local phase lock_pair
+    # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
+    # carried the bytes correctly — but a pipeline whose reader can return before the write lands
+    # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
+    # pipeline's status. A readiness that PASSED is read as "reported issues" and the destructive
+    # launch is refused for a failure that never happened. A here-string has no pipeline to poison.
+    # $( ) strips the trailing newline that <<< then re-adds, so `a` and `n` arrive byte-identical to
+    # what the pipe delivered. The one difference: with NONCE unset the second read hits EOF (rc 1)
+    # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
+    # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
+    lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
     for phase in readiness check; do
-        printf '%s\n%s\n' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" |
-            on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase $1" || {
+        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" || {
             warn "$phase reported issues (see above) — destructive phases refused"
             return 1
         }

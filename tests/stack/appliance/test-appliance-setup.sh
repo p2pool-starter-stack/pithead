@@ -51,11 +51,12 @@ assert_eq "tokens vary" "$([ "$tok" = "$tok2" ] && echo same || echo differ)" "d
 WSPOOL="$V/data/firstboot-test"
 mkdir -p "$WSPOOL"
 rm -f "$V/config.json"
-printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini","stratum_password":"auto"} }\n' "$WALLET" >"$WSPOOL/config.json"
+printf '{ "monero": {"wallet_address":"%s"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini","stratum_password":"auto"}, "dashboard":{"workers":[{"name":"legacy-rig","token":"fixture-secret"}]} }\n' "$WALLET" >"$WSPOOL/config.json"
 out=$(cd "$V" && PATH="$V/bin:$PATH" run_sourced "$V" firstboot_consume_spool "$WSPOOL" && echo rc0)
 assert_contains "valid submission accepted" "$out" "rc0"
 assert_eq "valid submission installs config.json" "$([ -f "$V/config.json" ] && echo yes)" "yes"
 assert_eq "applied marker set" "$([ -f "$WSPOOL/applied" ] && echo yes)" "yes"
+assert_eq "wizard validation snapshot leaves no migration backup" "$(find "$WSPOOL" -name '*.bak-1x' -print -quit)" ""
 rm -f "$WSPOOL/applied"
 printf '{ "monero": {"wallet_address":"8-not-a-primary"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"} }\n' >"$WSPOOL/config.json"
 out=$(cd "$V" && PATH="$V/bin:$PATH" run_sourced "$V" firstboot_consume_spool "$WSPOOL" || echo "rc$?")

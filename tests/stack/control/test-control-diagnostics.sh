@@ -8,9 +8,9 @@
 # What this domain proves, and the one place the issue's wording splits between the two verbs:
 # - diag-doctor hands back the doctor document NESTED under .doctor, and a doctor that cannot
 #   report is `failed` — never an empty `applied` the panel would render as "no data".
-# - diag-doctor's rc is doctor's own FAILURE COUNT, not a run failure, so a non-zero rc with a
-#   readable document still applies. That is the inverse of the case above and the easier one to
-#   regress, because both look like "doctor exited non-zero" from outside.
+# - diag-doctor's rc is doctor's own FAILURE COUNT, so a non-zero rc produces a failed result that
+#   still carries the readable document. That is the inverse of an unreadable failure and the
+#   easier one to regress, because both look like "doctor exited non-zero" from outside.
 # - diag-logs serves all nine names in the fixed allowlist and refuses every other container by
 #   membership before the docker command is built. #1745 asks for that refusal on "both verbs";
 #   diag-doctor takes no container at all — it never reads the request file — so the honest form of
@@ -97,7 +97,7 @@ assert_eq "errexit stops the sourced call at its first failure" "$out" ""
 
 # ---------------------------------------------------------------------------
 echo "== control channel: diag-doctor returns a nested, redacted document (#913) =="
-export DIAG_DOCTOR_DOC='{"version":"1.19.3","exit":1,"summary":{"ok":7,"warn":2,"fail":1},"checks":[{"status":"ok","message":"Docker is running"},{"status":"fail","message":"Dashboard onion: '"$DIAG_ONION"'"}]}'
+export DIAG_DOCTOR_DOC='{"version":"1.19.3","exit":0,"summary":{"ok":1,"warn":0,"fail":0},"checks":[{"status":"ok","message":"Docker is running"},{"status":"ok","message":"Dashboard onion: '"$DIAG_ONION"'"}]}'
 did1="b1b1b1b1-0000-4000-8000-000000000001"
 : >"$DIAG_SELF_LOG"
 : >"$DIAG_DOCKER_LOG"
@@ -106,7 +106,7 @@ assert_eq "diag-doctor applies on a readable report" "$(jq -r .status "$DGC/resu
 assert_eq "diag-doctor asks for the machine-readable report, not the human one" \
     "$(cat "$DIAG_SELF_LOG")" "doctor --json"
 assert_eq "the document is nested under .doctor, which is the key the panel renders" \
-    "$(jq -r '.doctor.summary.fail' "$DGC/results/$did1.json")" "1"
+    "$(jq -r '.doctor.summary.fail' "$DGC/results/$did1.json")" "0"
 assert_eq "the document is not flattened into the result envelope" \
     "$(jq -r 'has("summary")' "$DGC/results/$did1.json")" "false"
 assert_eq "the checks array survives the round-trip intact" \
@@ -118,20 +118,23 @@ assert_not_contains "the raw onion address is ABSENT from the whole result file"
 assert_contains "diag-doctor is audited applied" \
     "$(cat "$DGC/audit/control.log")" '"action":"diag-doctor","status":"applied"'
 
-echo "== control channel: diag-doctor — a failure is a failure, a failure COUNT is not (#913) =="
-# doctor's rc is the number of failing checks. A non-zero rc carrying a readable document is a
-# successful diagnostic run reporting bad news, and must still apply.
+echo "== control channel: diag-doctor — a failure count returns a failed, readable result (#2093) =="
+# doctor's rc is the number of failing checks. A non-zero rc carrying a readable document reports
+# failed health without turning the diagnostic run into a missing result.
 did2="b1b1b1b1-0000-4000-8000-000000000002"
 export DIAG_DOCTOR_MODE=failcount
+export DIAG_DOCTOR_DOC='{"version":"1.19.3","exit":3,"summary":{"ok":1,"warn":0,"fail":3},"checks":[{"status":"ok","message":"Docker is running"},{"status":"fail","message":"monerod is down"},{"status":"fail","message":"p2pool is down"},{"status":"fail","message":"Dashboard onion: '"$DIAG_ONION"'"}]}'
 diag_run "$(diag_req "$did2" diag-doctor)"
-assert_eq "a non-zero doctor rc with a readable report still applies (rc is a failure count)" \
-    "$(jq -r .status "$DGC/results/$did2.json")" "applied"
-assert_eq "and the bad news it carries is preserved, not flattened away" \
-    "$(jq -r '.doctor.exit' "$DGC/results/$did2.json")" "1"
+assert_eq "a non-zero doctor rc produces a failed result file" \
+    "$(jq -r .status "$DGC/results/$did2.json")" "failed"
+assert_eq "the failed result preserves several failing checks instead of flattening them away" \
+    "$(jq -r '[.doctor.exit, (.doctor.checks | map(select(.status == "fail")) | length)] | @tsv' "$DGC/results/$did2.json")" $'3\t3'
+assert_contains "the readable failed report is audited failed" \
+    "$(cat "$DGC/audit/control.log")" '"action":"diag-doctor","status":"failed"'
 
 # The same case again, under the runner's OWN shell options. `run_sourced_e` preserves the
-# prelude's `set -e`, so capturing a nonzero doctor used to abort the
-# whole runner before the branch that writes a result could run. Measured on a provisioned
+# prelude's `set -e`, so capturing a nonzero doctor used to abort the whole runner before the
+# branch that writes a result could run. Measured on a provisioned
 # appliance (#2060): the unit died with "pithead aborted unexpectedly (exit 1)", the audit stopped
 # at `diag-doctor -> started`, no result document was ever written, and the caller polled four
 # minutes into silence. The assertion directly above passes on that broken code, because `set +e`
@@ -142,9 +145,9 @@ diag_req "$did_e" diag-doctor >/dev/null
 PATH="$DGC/bin:$PATH" run_sourced_e "$SANDBOX" \
     control_process_request "$DGC/req-$did_e.json" "$DGC" >/dev/null 2>&1
 assert_eq "a nonzero doctor under the runner's own errexit still writes its result" \
-    "$(jq -r .status "$DGC/results/$did_e.json" 2>/dev/null)" "applied"
+    "$(jq -r .status "$DGC/results/$did_e.json" 2>/dev/null)" "failed"
 assert_eq "and under errexit the bad news still survives" \
-    "$(jq -r '.doctor.exit' "$DGC/results/$did_e.json" 2>/dev/null)" "1"
+    "$(jq -r '.doctor.exit' "$DGC/results/$did_e.json" 2>/dev/null)" "3"
 
 did3="b1b1b1b1-0000-4000-8000-000000000003"
 export DIAG_DOCTOR_MODE=empty
@@ -164,6 +167,7 @@ assert_eq "output that is not a JSON document is failed, not shipped as half an 
 assert_contains "the unreadable-report attempt is audited failed" \
     "$(cat "$DGC/audit/control.log")" '"action":"diag-doctor","status":"failed"'
 unset DIAG_DOCTOR_MODE
+export DIAG_DOCTOR_DOC='{"version":"1.19.3","exit":0,"summary":{"ok":1,"warn":0,"fail":0},"checks":[{"status":"ok","message":"Docker is running"}]}'
 
 # #1745 asks that both verbs refuse a name outside the allowlist. diag-doctor takes no container:
 # it is called with <id> <actor> <control-dir> and never opens the request file, so the field is

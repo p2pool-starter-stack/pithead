@@ -14,7 +14,10 @@ manage the host.
 - 16 GB RAM or more — that is the supported floor, not a suggestion: the appliance reserves
   6 GB of it for mining at every boot. With less RAM it still boots, but it prints a warning
   on the machine's screen and shrinks that reservation — mining runs slower and everything
-  else runs squeezed, at every boot until the machine has 16 GB.
+  else runs squeezed, at every boot until the machine has 16 GB. If that warning never reaches
+  the physical console (a serial line can lose a message to a login prompt claiming it at the
+  wrong moment), the line is always in the journal: `journalctl -u pithead-hugepages` on that
+  machine.
 - An internal SSD or NVMe with room for the chains. The stack budgets
   320 GiB for Monero in either prune mode and 200 GiB for a local Tari node, so
   **600 GB or more** runs both locally: the appliance keeps a 256 MB boot partition and two 4 GB
@@ -147,7 +150,8 @@ addresses, runs no node, and serves nothing to log into. If a Pithead already an
 network at `pithead.local:3333`, its address is filled in for you; otherwise enter it by hand
 from that machine's own "Point miners at" line. Confirming shows a summary card with the worker
 name, where it mines, this machine's address and a **control token** — **not a login**, because
-a rig has none. The token is shown once — a rig serves no page after this — so copy it now. If you lose
+a rig has none. The token is shown once — a rig serves no page after this — so tap it to select it,
+then copy it now. If you lose
 it, the boot menu's **Set up again** with the same worker name shows the same token again
 (see [The boot menu](#the-boot-menu)). It is what lets that Pithead adopt the rig: in its dashboard, under Workers, the adopt
 form takes this rig's address, control port `8082` and the token. Until you do that, the rig
@@ -156,7 +160,8 @@ because the token guards every API on the rig — the miner's own included, so n
 network can read or change it. From then on its own console is the only place to look at it, the
 same way you would watch any other machine on the network. A rig pointed at a pool with no
 IPv4 address (an onion address, say) keeps the token and the read-only feed but runs with
-control off, since RigForge refuses a writable path it cannot pin to one source.
+control off, since RigForge refuses a writable path it cannot pin to one source — the card
+says so and why, instead of pointing you at an adopt form the rig will not answer.
 Where the machine cannot fill a line in, the card leaves that line out rather than
 showing a blank beside its label: with no IPv4 address yet it tells you to read the
 address off the console once the machine is up, and on the rare failure to mint a token
@@ -249,10 +254,6 @@ the time zone (detected from the machine unless set). They are still there to ch
 
 The dashboard login is also the machine's **console login**: sit at the machine, log in as
 `root` with the dashboard password. It is set fresh at every boot and never stored on disk.
-Two more switches live only in the setup page's **Advanced** view, deliberately out of the quick
-form: `ssh.enabled` with `ssh.authorized_key` turns on key-only SSH (never passwords) for remote
-debugging. The day-two Configuration view does not list them and cannot approve them remotely;
-changing SSH still requires a configuration stick.
 
 **Already know exactly what you want?** Open **Advanced** at the bottom. It shows the complete
 configuration — every key, with its default filled in — and it *is* what the machine will run:
@@ -312,11 +313,42 @@ not the dashboard. Changing any of these later does not mean reinstalling: write
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set anything,
-including what no remote channel is allowed to touch.
+media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting, including what no remote channel is allowed to touch. Release images reject
+retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
+
+### Reaching it from outside your network, over Tor
+
+Turn it on during setup. Open **Advanced** at the bottom of the setup page and set
+`dashboard.onion.enabled` to `true` in the configuration shown there. Leave
+`dashboard.onion.client_auth` at `true`: setup refuses the config editor and the onion together
+without it. The machine publishes the dashboard as a Tor hidden service — no port forwarding, no
+VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
+dashboard, with a **Copy** button.
+
+After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
+onion settings until
+[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
+[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
+or off on a running machine, use
+[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes its own copy moments later, and pressing the button
+again gives you a fresh reveal rather than the old one. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
+on this machine rotating means setting it up again.
 
 ## What the machine does on its own
 
@@ -545,9 +577,9 @@ place.
 Insert a stick carrying a `pithead-config.json` and reboot: the machine validates it, shows
 the exact change on the console, and applies it after a countdown — no password, no browser,
 no keyboard required. This is the same file format the setup wizard reads (see [setting it up
-without a monitor](#setting-it-up-without-a-monitor)), and it can change **any** setting,
-including the ones the dashboard never exposes: the SSH toggle, the dashboard login password,
-and the Telegram alert channel's own identity. That is deliberate. Whoever can insert media
+without a monitor](#setting-it-up-without-a-monitor)), and it can change settings the dashboard
+never exposes, including the dashboard login password and the Telegram alert channel's own
+identity. That is deliberate. Whoever can insert media
 and power the machine off and on already has full authority over it — a shell at the console
 proves the same thing today — so this channel makes that authority usable instead of assuming
 you have a monitor and a working password. It is the recovery path when the dashboard password
@@ -598,9 +630,8 @@ try the IP the console prints as well as <https://pithead.local>; some networks 
 `.local` name. Plain `http://` addresses redirect to `https://`, so either spelling works. Wi-Fi is not supported, so a wireless-only network will not work.
 
 **You need a shell on the machine.** Log in at its console as `root` with the dashboard
-password. For SSH, set `ssh.enabled` and `ssh.authorized_key` in the Advanced view at setup —
-key-only, and only if you need it. The dashboard does not offer them after that; a configuration
-stick is the way in later.
+password. A release image does not provide SSH. Reinstall from the USB media to recover a broken
+appliance; a manually deployed debug image carries its own SSH key for development diagnostics.
 
 **"Wrong token."** The token changes each time the setup service restarts — read the
 current one from the console. After five wrong attempts it mints a new one on purpose.

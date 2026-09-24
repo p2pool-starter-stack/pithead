@@ -14,13 +14,22 @@
 // preview, and the gate are all untouched by this display-only regroup. A secret left blank keeps
 // its sentinel — the server swaps it for the live value ("unchanged").
 
-import { isHidden } from "./confighidden.mjs";
+import { pathGet } from "./configsync.mjs";
 
 export const SECRET_HINT = "set — leave blank to keep";
 
 export function isSecretSentinel(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v) && v.__secret__ === true;
 }
+
+export const editableCandidate = (cfg) =>
+  JSON.parse(
+    JSON.stringify(cfg, (key, value) =>
+      key !== "__secret__" && (key[0] === "_" || ["ssh", "__proto__", "constructor"].includes(key))
+        ? undefined
+        : value,
+    ),
+  );
 
 // Fixed-choice fields; everything else renders from its JSON type.
 const FIELD_OPTIONS = {
@@ -92,9 +101,7 @@ function walk(node, path, out) {
 // never overlap across groups and first-match is unambiguous; classifyGroup's own test asserts
 // that invariant directly. Any leaf no group claims renders in the catch-all "Other" group below
 // (never silently dropped) — buildSections' own test suite asserts every config.reference.json
-// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either. The one
-// exception is a HIDDEN path (confighidden.mjs, #1850), dropped below before any of this runs —
-// `ssh.*` has no group entry BECAUSE it can never render, not the other way round.
+// path resolves to a REAL group, so a new key can't slip into "Other" unnoticed either.
 export const OTHER_GROUP = "Other";
 export const LOGICAL_GROUPS = [
   {
@@ -228,7 +235,7 @@ export function buildSections(cfg) {
   const byGroup = new Map();
   for (const g of LOGICAL_GROUPS) byGroup.set(g.name, []);
   byGroup.set(OTHER_GROUP, []);
-  for (const f of fields) if (!isHidden(f.key)) byGroup.get(classifyGroup(f.key)).push(f);
+  for (const f of fields) byGroup.get(classifyGroup(f.key)).push(f);
   const sections = [];
   for (const [name, groupFields] of byGroup)
     if (groupFields.length)
@@ -351,6 +358,28 @@ export function parseConfigJson(text) {
     return { error: "Enter a JSON object." };
   }
   return { config: cfg };
+}
+
+function removePath(node, [key, ...rest]) {
+  if (!isPlainObject(node)) return;
+  if (rest.length) {
+    removePath(node[key], rest);
+    if (isPlainObject(node[key]) && Object.keys(node[key]).length === 0) delete node[key];
+  } else delete node[key];
+}
+
+// The full candidate the host stages and commits (#2365), minus reference defaults that were
+// absent from config.json and remain untouched. Existing explicit values and secret sentinels must
+// stay: the host replaces config.json with this object, then resolves sentinels from the live file.
+export function explicitCandidate(pristine, candidate, defaultKeys) {
+  const out = JSON.parse(JSON.stringify(candidate));
+  for (const dotted of defaultKeys) {
+    const path = dotted.split(".");
+    if (JSON.stringify(pathGet(pristine, dotted)) === JSON.stringify(pathGet(candidate, dotted))) {
+      removePath(out, path);
+    }
+  }
+  return out;
 }
 
 // Live syntax check for the JSON textarea, surfaced inline as the operator types (not only on

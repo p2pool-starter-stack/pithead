@@ -127,16 +127,16 @@ l_ready=$(bl_line '    if gate_ready "')
 l_elif=$(bl_line '    elif [ "$gate_doctor_ran" = 1 ] && gate_blocked_only_by_cert; then')
 l_remint=$(bl_line '        gate_remint_cert || true')
 l_sleep=$(bl_line '    sleep 10')
-l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor)"')
+l_fail=$(bl_line 'fail_boot "the stack never became healthy (serving + doctor + status)"')
 assert_eq "every anchor is present exactly where a reader would look" \
     "$([ -n "$l_loop" ] && [ -n "$l_reset" ] && [ -n "$l_ready" ] && [ -n "$l_elif" ] && [ -n "$l_remint" ] && [ -n "$l_sleep" ] && [ -n "$l_fail" ] && echo all)" "all"
 assert_eq "gate_doctor_ran is reset INSIDE the loop, before the ready check" \
     "$([ "${l_loop:-0}" -lt "${l_reset:-0}" ] && [ "${l_reset:-0}" -lt "${l_ready:-0}" ] && echo ordered)" "ordered"
 assert_eq "the re-mint branch follows the ready check and precedes the sleep and the fail" \
     "$([ "${l_ready:-0}" -lt "${l_elif:-0}" ] && [ "${l_elif:-0}" -lt "${l_remint:-0}" ] && [ "${l_remint:-0}" -lt "${l_sleep:-0}" ] && [ "${l_sleep:-0}" -lt "${l_fail:-0}" ] && echo ordered)" "ordered"
-l_gr=$(bl_line 'gate_ready() {')
-l_set=$(bl_line '    gate_doctor_ran=1')
-l_doc=$(bl_line '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"')
+l_gr=$(grep -n -F 'gate_ready() {' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_set=$(grep -n -F '    gate_doctor_ran=1' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
+l_doc=$(grep -n -F '    ./pithead doctor --json >"$BOOT_DOCTOR_JSON"' "$ROOT/os/overlay/pithead-boot-stack-health" | head -1 | cut -d: -f1)
 assert_eq "gate_ready marks the round BEFORE it runs doctor, so a quiet round can never act on last round's file" \
     "$([ "${l_gr:-0}" -lt "${l_set:-0}" ] && [ "${l_set:-0}" -lt "${l_doc:-0}" ] && echo ordered)" "ordered"
 
@@ -160,7 +160,7 @@ fv_run() { # <doctor json, or ""> -> "flag=<json> verdict=<json> outcome=<..> co
         OS_INFLIGHT=data/os-update/in-flight.json
         OS_STATE_DIR=data/control/results
         BOOT_DOCTOR_JSON="$FV/doctor.json"
-        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor)" 2>/dev/null
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
     )
     flag=$(jq -rc '.blocking // "absent"' "$FV/data/os-update/in-flight.json" 2>/dev/null)
     printf '1.0.0\n' >"$FV/VERSION" # the fallback boot runs the OLD version
@@ -187,26 +187,177 @@ fv_none=$(fv_run "")
 assert_contains "no doctor file: nothing added to the flag" "$fv_none" "flag=absent"
 assert_contains "…the verdict carries an empty list and is still rolled_back" "$fv_none" "verdict=[] outcome=rolled_back"
 assert_not_contains "…and the console line is the plain one" "$fv_none" "held by"
+echo "== unit: the A/B commit gate also consumes 'pithead status', a third signal (#2383) =="
+# Manual battery M9: a dashboard container whose OWN healthcheck failed committed the slot,
+# because doctor only judges the revenue containers (monerod/p2pool/tari). `pithead status` exits
+# non-zero on any unhealthy/restarting container, closing that gap. A stubbed `pithead` answers
+# `doctor` and `status` independently, so the two can disagree — proving status is really
+# consulted rather than riding doctor's exit code.
+# Mutation run: drop the `./pithead status` call (or its `|| return 1` on doctor) from gate_ready
+# -> the "doctor clean but status unhealthy" row goes red.
+GS="$BR/gate-status"
+mkdir -p "$GS"
+gs_run() { # <doctor-exit> <status-exit> <code> <size> -> ready|held
+    cat >"$GS/pithead" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  doctor) exit $1 ;;
+  status) exit $2 ;;
+esac
+EOF
+    chmod +x "$GS/pithead"
+    (
+        cd "$GS" || exit 1
+        # shellcheck disable=SC1090
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        BOOT_DOCTOR_JSON="$GS/doctor.json"
+        BOOT_STATUS_LOG="$GS/status.log"
+        gate_ready "$3" "$4" && echo ready || echo held
+    )
+}
+assert_eq "doctor clean and status clean -> commit" "$(gs_run 0 0 200 4096)" "ready"
+assert_eq "doctor clean but status reports an unhealthy/restarting container -> held" \
+    "$(gs_run 0 1 200 4096)" "held"
+assert_eq "doctor itself fails -> held, status is never consulted (cheaper-first ordering)" \
+    "$(gs_run 1 0 200 4096)" "held"
+# The bench-caught regression (#2383): status exits 0 while a container is still inside its
+# healthcheck's start_period — informational to an operator, but the gate must not read that as
+# healthy, or a slot with a DOOMED healthcheck commits before it ever ran once (leg 5's own bench
+# run caught this at ~74s, inside the dashboard's 60s start_period). Mutation run: drop the
+# 'health check pending' grep from gate_ready -> this row goes red.
+cat >"$GS/pithead" <<'STARTING'
+#!/usr/bin/env bash
+case "$1" in
+  doctor) exit 0 ;;
+  status) printf '  . dashboard     starting (health check pending)\n'; exit 0 ;;
+esac
+STARTING
+chmod +x "$GS/pithead"
+gs_starting=$(
+    cd "$GS" || exit 1
+    # shellcheck disable=SC1090
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    BOOT_DOCTOR_JSON="$GS/doctor.json"
+    BOOT_STATUS_LOG="$GS/status.log"
+    gate_ready 200 4096 && echo ready || echo held
+)
+assert_eq "status exits 0 but a container is still 'starting' -> held, not committed early" "$gs_starting" "held"
+unset -f gs_run
+unset GS gs_starting
+
+echo "== unit: boot_status_blocking — names the container 'pithead status' called unhealthy or restarting (#2383) =="
+# The exact shape stack_status (lib/pithead/04-status.sh) prints, reproduced here rather than run
+# for real: a running-but-unhealthy row, a restarting row, a plain-missing row, an ok row, and a
+# sync-held "likely intentional" row that must NOT count (#31/#35 — that one is deliberate, not a
+# fault, and `pithead status` itself does not count it against its own exit code either).
+# Mutation run: drop the UNHEALTHY arm of the grep -> the first row goes red; drop the exclusion
+# implicit in requiring UNHEALTHY on the ⚠ arm -> the sync-held row wrongly appears.
+SB="$BR/status-blocking"
+mkdir -p "$SB"
+sb_run() { # <status log body> -> newline-joined "container NAME: reason" lines
+    printf '%s\n' "$1" >"$SB/status.log"
+    (
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        BOOT_STATUS_LOG="$SB/status.log"
+        boot_status_blocking
+    )
+}
+sb_out=$(sb_run '  ✓ monerod       running
+  ⚠ dashboard     running but UNHEALTHY
+  ✗ caddy         restarting (possible crash loop — check logs)
+  ✗ tari          missing
+  ⚠ p2pool        exited — likely intentional: held until the required chains finish syncing — check the dashboard')
+assert_contains "an unhealthy container is named" "$sb_out" "container dashboard: running but UNHEALTHY"
+assert_contains "a restarting container is named" "$sb_out" "container caddy: restarting (possible crash loop — check logs)"
+assert_contains "a missing container is named" "$sb_out" "container tari: missing"
+assert_not_contains "a healthy container is never named" "$sb_out" "monerod"
+assert_not_contains "the sync-hold's likely-intentional row is never named (#31/#35)" "$sb_out" "p2pool"
+assert_eq "no status log at all -> nothing to add" "$(sb_run '')" ""
+unset -f sb_run
+unset SB sb_out
+
+echo "== unit: fail_boot folds status's problems into the SAME blocking list as doctor's (#2383) =="
+# Doctor alone gates monerod/p2pool/tari; a dashboard container failing its OWN healthcheck (M9)
+# never shows up in doctor --json at all, so the rollback verdict has to carry it from the OTHER
+# record fail_boot now reads. Both land in the one list the fallback boot's
+# os_update_rollback_verdict publishes, doctor's checks first, status's rows appended after.
+FS="$BR/fail-status"
+fs_run() { # <doctor json, or ""> <status log body, or ""> -> "flag=<json>"
+    rm -rf "$FS"
+    mkdir -p "$FS/data/os-update" "$FS/data/control/results"
+    printf '{"from":"1.0.0","to":"1.0.1"}\n' >"$FS/data/os-update/in-flight.json"
+    [ -n "$1" ] && printf '%s\n' "$1" >"$FS/doctor.json"
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' "$2" >"$FS/pithead"
+    chmod +x "$FS/pithead" # fail_boot must refresh this real status output
+    (
+        cd "$FS" || exit 1
+        # shellcheck disable=SC1090
+        source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+        OS_INFLIGHT=data/os-update/in-flight.json
+        OS_STATE_DIR=data/control/results
+        BOOT_DOCTOR_JSON="$FS/doctor.json"
+        BOOT_STATUS_LOG="$FS/status.log"
+        PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>/dev/null
+    )
+    printf 'flag=%s' "$(jq -rc '.blocking // "absent"' "$FS/data/os-update/in-flight.json" 2>/dev/null)"
+}
+assert_eq "doctor clean, status names the unhealthy dashboard -> the flag carries just that" \
+    "$(fs_run '' '  ⚠ dashboard     running but UNHEALTHY')" 'flag=["container dashboard: running but UNHEALTHY"]'
+assert_eq "both fail: doctor's message first, then status's container row" \
+    "$(fs_run "$(dj fail "$COVER")" '  ✗ caddy         restarting (possible crash loop — check logs)')" \
+    "flag=[\"$COVER\",\"container caddy: restarting (possible crash loop — check logs)\"]"
+assert_eq "neither fails -> nothing added" "$(fs_run '' '')" "flag=absent"
+unset -f fs_run
+unset FS
+
+echo "== unit: fail_boot names the container on ITS OWN console, with no update in flight (#2383) =="
+# The bench-caught gap: leg 5 installs the fault bundle the cheap way (a raw rauc install, like
+# legs 1-3), which never arms OS_INFLIGHT — so the in-flight-flag path above never fires, and a
+# console-only echo is the only way this boot's own journal can name the container at all.
+FC="$BR/fail-console"
+rm -rf "$FC"
+mkdir -p "$FC"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" %q\nexit 1\n' '  ⚠ dashboard     running but UNHEALTHY' >"$FC/pithead"
+chmod +x "$FC/pithead" # fail_boot must refresh this real status output
+fc_out=$(
+    cd "$FC" || exit 1
+    # shellcheck disable=SC1090
+    source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
+    BOOT_STATUS_LOG="$FC/status.log" PITHEAD_REBOOT_CMD=true fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
+)
+assert_contains "no OS_INFLIGHT at all: the console still names the container" "$fc_out" "pithead-boot: held by container dashboard: running but UNHEALTHY"
+unset FC fc_out
+
 unset -f dj bc_run bl_line fv_run
 unset BR RM FV COVER rm_out BOOTSCRIPT l_loop l_reset l_ready l_elif l_remint l_sleep l_fail l_gr l_set l_doc fv_one fv_two fv_none
 
 echo "== unit: provisioning_settled — the restore leg waits on the provisioning UNITS, not on podman ps (#1945) =="
 # The wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps`
 # shows a live stack; the helper settles only when neither pithead-firstboot nor pithead-boot is
-# `activating`. Driven with a stubbed `_ssh` answering the two probes the helper makes; PS_FLIP=1
-# turns the first `activating` reading into `inactive` on the next, so the poll itself is exercised.
+# `activating` AND at least one of them actually ran (#2055 G3 — is-active alone cannot tell a
+# correctly-skipped unit from one that never got the chance). Driven with a stubbed `_ssh`
+# answering the ActiveState/ConditionResult probes the helper makes; PS_FLIP=1 turns the first
+# `activating` reading into `inactive` (having run) on the next, so the poll itself is exercised.
+# ConditionResult is derived from ActiveState: any state other than `unknown`/empty counts as
+# "ran" here, since none of these cases are about the ConditionResult discrimination itself — that
+# is covered on its own in test-appliance-boot-verdicts.sh's provisioning_ran_verdict block.
 PS="$SANDBOX/ps1945"
 mkdir -p "$PS"
-ps_run() { # $1 is-active output (printf %b), $2 seconds, $3 settled|state
+ps_run() { # $1 ActiveState pair (printf %b, "<firstboot>\n<boot>\n"), $2 seconds, $3 settled|state
     rm -f "$PS/seen"
     (
         PS_ACT="$1" PROVISIONING_POLL_S=0
+        _ps_cond() { case "$1" in unknown | '') printf no ;; *) printf yes ;; esac }
         _ssh() {
             case "$*" in
-            *is-active*)
-                if [ "${PS_FLIP:-0}" = 1 ] && [ -f "$PS/seen" ]; then printf 'inactive\ninactive\n'; else
+            *ActiveState*)
+                if [ "${PS_FLIP:-0}" = 1 ] && [ -f "$PS/seen" ]; then
+                    printf 'inactive\ninactive\nyes\nyes\n'
+                else
                     touch "$PS/seen"
-                    printf '%b' "$PS_ACT"
+                    # shellcheck disable=SC2046,SC2086  # intentional split: exactly two ActiveState words
+                    set -- $(printf '%b' "$PS_ACT")
+                    printf '%s\n%s\n%s\n%s\n' "${1:-}" "${2:-}" "$(_ps_cond "${1:-}")" "$(_ps_cond "${2:-}")"
                 fi
                 ;;
             *error.txt*) printf '%s' "${PS_ERR:-}" ;;
@@ -235,13 +386,60 @@ assert_rc "a partial one-unit probe is not a settled machine" "$?" "1"
 PS_RC=255 ps_run 'inactive\ninact' 1 settled
 assert_rc "a transport-truncated two-word probe is not a settled machine" "$?" "1"
 ps_run 'unknown\nunknown\n' 1 settled
-assert_rc "two unknown unit states are not a settled machine" "$?" "1"
+assert_rc "two unknown unit states are not a settled machine (unknown is neither terminal nor a ran-signal)" "$?" "1"
+# The two rows that pin provisioning_terminal_state, one per call site. `reloading` is the one real
+# systemd ActiveState that is neither in that helper's terminal list nor caught by the
+# word-anchored `activating` match above, and a unit mid-reload has NOT let go of the mutation
+# lock (#1945) — so these are the only rows that reach the terminal check with a non-terminal state
+# and everything else already satisfied: four fields, no `activating`, and a ran-signal of yes.
+# Every row above either never reaches that check (the `activating`, short-probe and
+# transport-failure rows) or reaches it with both states terminal, where it cannot discriminate.
+# So without these two, the #2055 G3 four-field probe left the helper called but unpinned.
+# Mutation runs: provisioning_terminal_state() { return 0; } -> both rows red; drop the
+# `provisioning_terminal_state "$1"` call -> the first alone; drop the `"$2"` call -> the second
+# alone.
+ps_run 'reloading\ninactive\n' 1 settled
+assert_rc "the wizard mid-reload has not let go of the lock: not settled, even though one unit ran" "$?" "1"
+ps_run 'inactive\nreloading\n' 1 settled
+assert_rc "pithead-boot mid-reload: the same, pinning the second unit's check too" "$?" "1"
 PS_FLIP=1 ps_run 'activating\ninactive\n' 5 settled
 assert_rc "activating on the first read, inactive on the next: settled after one poll" "$?" "0"
+# A rig's miner can answer before pithead-boot completes its final mark-good and exits. Its
+# phase must therefore use this settled-unit wait before requiring the retained active state.
+RIG_PHASE="$ROOT/tests/os/phases/rig.sh"
+rig_boot_window=$(sed -n '/info "reboot leg/,/unit_ran_this_boot/p' "$RIG_PHASE")
+rig_order=$(printf '%s\n' "$rig_boot_window" | awk '
+    /provisioning_settled 60/ && /systemctl is-active pithead-boot/ {
+        wait=index($0, "provisioning_settled 60")
+        active=index($0, "systemctl is-active pithead-boot")
+        print (wait < active ? "settled-first" : "active-first")
+    }
+')
+if [ "$rig_order" = settled-first ]; then
+    ok "the rig reboot settles pithead-boot before requiring it active"
+else
+    bad "the rig reboot settles pithead-boot before requiring it active" "order=${rig_order:-missing}"
+fi
+unset RIG_PHASE rig_boot_window rig_order
 ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run 'activating\ninactive\n' 0 state)
-assert_contains "the verdict names both units" "$ps_out" "units: activating inactive"
+assert_contains "the verdict names both units" "$ps_out" "units: one provisioning unit ran this boot (firstboot: activating/ran=yes, boot: inactive/ran=yes)"
 assert_contains "…and the wizard's spooled error when there is one" "$ps_out" "setup error: [ERROR] Stack failed to start"
 ps_out=$(ps_run 'inactive\ninactive\n' 0 state)
 assert_not_contains "an empty spool: no error claimed" "$ps_out" "setup error"
+# The short-probe arity guard (#2055). provisioning_state's every caller is a `bad` line reporting
+# that provisioning did NOT finish, so it runs precisely when the guest may answer with fewer than
+# four fields — and the suite runs under `set -u`, where passing a short read straight into
+# provisioning_ran_verdict read "$4" unbound and killed the whole verdict, taking the spooled setup
+# error with it. Both halves are asserted: the line survives, AND it still carries the one field
+# that says why. Mutation run: drop the `[ "$#" -eq 4 ]` branch -> both rows below go red.
+ps_out=$(PS_ERR='[ERROR] Stack failed to start — see the error above.' ps_run '' 0 state 2>"$PS/err-none")
+assert_contains "a probe that answers nothing still names the arity it got" "$ps_out" "field(s), not the 4 expected"
+assert_contains "…and still carries the spooled setup error, the one line that says why" \
+    "$ps_out" "setup error: [ERROR] Stack failed to start"
+assert_not_contains "…with nothing dying on an unbound variable under set -u" \
+    "$(cat "$PS/err-none")" "unbound variable"
+ps_out=$(ps_run 'inactive\n' 0 state 2>"$PS/err-short")
+assert_contains "a truncated mid-probe read names its arity too" "$ps_out" "field(s), not the 4 expected"
+assert_not_contains "…and also dies on nothing" "$(cat "$PS/err-short")" "unbound variable"
 unset -f ps_run
 unset PS ps_out

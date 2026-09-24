@@ -34,13 +34,15 @@ test("picker: an empty disk restates the erase in red, and offers NO wipe choice
   assert.doesNotMatch(destructive, /Keep my data/);
 });
 
-test("picker: a previous install offers the three-way data choice as a dropdown", () => {
+test("picker: a previous install offers the three-way data choice as radios", () => {
   const out = sect({ chosen: "sda" });
+  assert.equal((out.match(/<select/g) || []).length, 1); // the target-disk inventory only
+  assert.equal((out.match(/type="radio"/g) || []).length, 3);
   assert.match(out, /Keep everything/);
-  assert.match(out, /keep the blockchains/);
+  assert.match(out, /Keep the blockchains/);
   assert.match(out, /Wipe everything/);
   // The expensive consequence is named where the choice is made, not discovered later.
-  assert.match(out, /re-download from scratch/);
+  assert.match(out, /Download the chains again from scratch/);
   // Not yet the red warning — that appears only once "all" is chosen.
   assert.doesNotMatch(out, /took days to download/);
 });
@@ -83,4 +85,16 @@ test("handoff card: credentials shown once, provisioning gated on the ack", () =
   const dark = renderToString(html`<${Done} status="" handoff=${null} onAck=${() => {}} />`);
   assert.match(dark, /stop responding/);
   assert.match(dark, /pithead\.local/);
+});
+
+test("dark-period notice, once acked on a renamed box, names the applied host — not pithead.local (#2350)", () => {
+  // The server drops the handoff the instant it is acknowledged, so this screen has nothing of
+  // its own to read the address from — the caller (WizardApp.ack) must have carried the applied
+  // dashboard address over as savedDashboard before that happened.
+  const out = renderToString(
+    html`<${Done} status="" handoff=${null} savedDashboard="https://garden-box.local" onAck=${() => {}} />`,
+  );
+  assert.match(out, /stop responding/);
+  assert.match(out, /garden-box\.local/);
+  assert.doesNotMatch(out, /pithead\.local/);
 });

@@ -89,8 +89,7 @@ _phase_install_restore() {
         backup_watch_report # a vanish the backup happened to survive is still the #1059 event
     else
         bad "restore leg: could not take the source backup"
-        # The reason lives on the guest — capture ALL of it, log AND tree, or this failure is
-        # undiagnosable after the VM is recycled (it has been, twice: #1059).
+        # Capture guest evidence before recycling the VM (#1059).
         backup_failure_evidence
         # shellcheck disable=SC2154  # shared through the assembled runner scope
         rm -f "$target_disk"
@@ -105,25 +104,30 @@ _phase_install_restore() {
         rm -f "$target_disk"
         return 1
     }
-    # Restore the source archive first, then the checked-in supported-N-1 artifact. This retains
-    # the existing same-version KVM coverage while proving the operator upgrade path separately.
-    local source_archive="$restore_archive"
+    # Restore the source archive first, then the checked-in supported-N-1 artifact.
+    local source_archive="$restore_archive" source_target="$target_disk"
     restore_fixture_fingerprints || {
         bad "restore leg: source or v1.20.0 archive is missing required restore fingerprints"
         rm -f "$target_disk" "$restore_archive" "${RESTORE_N1_ARCHIVE:-}"
         return 1
     }
-    local expected_wallet expected_onion expected_secrets expected_config
-    local restore_case restore_target target_chain_sentinel
+    local expected_wallet expected_onion expected_onion_key expected_onion_dir expected_secrets expected_config
+    local restore_case restore_target target_chain_sentinel same_version_target=""
     for restore_case in same-version n1; do
         case "$restore_case" in
         same-version)
             restore_archive="$source_archive"
             expected_wallet="$HARNESS_WALLET"
             expected_onion="$RESTORE_SOURCE_ONION"
+            expected_onion_key="MONERO_ONION_ADDRESS"
+            expected_onion_dir="monero"
             expected_secrets="$RESTORE_SOURCE_SECRETS"
             expected_config="$RESTORE_SOURCE_CONFIG"
             target_chain_sentinel=""
+            same_version_target="/srv/code/bench-vm/pithead-restore-target.img"
+            rm -f "$same_version_target"
+            qemu-img create -f raw "$same_version_target" 30G >/dev/null
+            restore_target="$same_version_target"
             ok "restore leg: restoring the source archive through the same-version wizard path"
             ;;
         n1)
@@ -131,9 +135,12 @@ _phase_install_restore() {
             restore_pass=$(tr -d '\r\n' <"$RESTORE_N1_DIR/passphrase")
             expected_wallet="$RESTORE_N1_WALLET"
             expected_onion="$RESTORE_N1_ONION"
+            expected_onion_key="DASHBOARD_ONION_ADDRESS"
+            expected_onion_dir="dashboard"
             expected_secrets="$RESTORE_N1_SECRETS"
             expected_config="$RESTORE_N1_CONFIG"
             target_chain_sentinel="n1-target-chain-sentinel"
+            restore_target="$same_version_target"
             _ssh "printf '%s\\n' keep-this-chain-data > /data/pithead/data/monero/$target_chain_sentinel" || {
                 bad "restore leg: could not plant the target chain-data sentinel before the N-1 restore"
                 rm -f "$target_disk" "$restore_archive" "$RESTORE_N1_ARCHIVE"
@@ -146,9 +153,7 @@ _phase_install_restore() {
         sleep 8
         vm_destroy_or_refuse || return
 
-        # Restore onto the existing appliance disk: wipe=keep must preserve its chain data while
-        # the N-1 archive supplies configuration and secrets.
-        restore_target="$target_disk"
+        # The N-1 archive follows the source restore onto its now-provisioned disk, so keep has data to preserve.
         img=$(_build_image v1) || {
             bad "restore leg: image build failed"
             # shellcheck disable=SC2154  # shared through the assembled runner scope
@@ -358,15 +363,12 @@ _phase_install_restore() {
                 ;;
             esac
         fi
-        local restored_config restored_secrets
+        local restored_config
         restored_config=$(_ssh "jq -c '{monero: (.monero | {mode, wallet_address, node_username, node_password, remote}), tari: (.tari | {mode, wallet_address, remote}), p2pool: (.p2pool | {pool, stratum_password}), dashboard: (.dashboard | {auth, onion, control, energy})}' /data/pithead/config.json | sha256sum | cut -d' ' -f1")
         [ "$restored_config" = "$expected_config" ] &&
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
-        restored_secrets=$(_ssh "[ \$(grep -Ec '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env) = 4 ] && grep -E '^(MONERO_NODE_(USERNAME|PASSWORD)|DASHBOARD_AUTH_HASH_B64|DASHBOARD_ONION_CLIENT_PRIVKEY)=' /data/pithead/.env | sha256sum | cut -d' ' -f1")
-        [ "$restored_secrets" = "$expected_secrets" ] &&
-            ok "restore leg: restored RPC, dashboard-auth and onion-client secrets match the v1.20.0 fixture" ||
-            bad "restore leg: restored RPC, dashboard-auth or onion-client secrets differ from the v1.20.0 fixture"
+        restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
         if [ -n "$target_chain_sentinel" ]; then
             _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
                 ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
@@ -376,8 +378,8 @@ _phase_install_restore() {
         local odeadline
         odeadline=$(($(date +%s) + 600))
         while [ "$(date +%s)" -lt "$odeadline" ]; do
-            new_onion=$(_ssh "grep DASHBOARD_ONION_ADDRESS /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
-            tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/dashboard/hostname 2>/dev/null" | tr -d '\r')
+            new_onion=$(_ssh "grep $expected_onion_key /data/pithead/.env 2>/dev/null" | cut -d= -f2 | tr -d '\r')
+            tor_hostname=$(_ssh "podman exec tor cat /var/lib/tor/$expected_onion_dir/hostname 2>/dev/null" | tr -d '\r')
             [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && break
             sleep 15
         done
@@ -386,11 +388,12 @@ _phase_install_restore() {
         # the Tor data dir (the onion PRIVATE KEYS) was dropped and Tor mints a fresh service underneath
         # (#1090). Only Tor's OWN hostname file, from the restored key material, proves the keys came back.
         if [ -n "$new_onion" ] && [ -n "$tor_hostname" ] && [ "$new_onion" = "$expected_onion" ] && [ "$tor_hostname" = "$expected_onion" ]; then
-            ok "restore leg: restored machine kept the v1.20.0 Tor identity, not a regenerated one"
+            ok "restore leg: restored machine kept the archive's Tor identity, not a regenerated one"
         else
-            bad "restore leg: v1.20.0 onion identity not restored"
+            bad "restore leg: archive Tor identity not restored"
         fi
+        [ "$restore_case" != same-version ] || target_disk="$restore_target"
     done
-    phase_install_prefill_submit_leg "$target_disk" || return # #1846, last: nothing after it needs the disk
-    rm -f "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
+    phase_install_prefill_submit_leg "$target_disk" "$expected_wallet" || return # #1846, last: nothing after it needs the disk
+    rm -f "$source_target" "$target_disk" "$source_archive" "$RESTORE_N1_ARCHIVE" "$restore_target"
 }

@@ -82,7 +82,8 @@ if [ ! -f "$WALLET_FILE" ]; then
     [ -n "$height" ] || height=0
     echo "Creating view-only payout wallet at restore height $height (#381)..."
     # Mark the initial scan (#718): the healthcheck tolerates an unreachable RPC while this exists
-    # (genesis scan is hours) and clears it on the first successful RPC.
+    # (genesis scan is hours) and clears it on the first successful RPC. The healthcheck also limits
+    # this grace to 24h by default, so a wallet that never answers becomes unhealthy.
     touch "$SCAN_MARKER" 2>/dev/null || true
     # The view key lives ONLY in this tmpfs file, never on argv.
     write_gen_json "$height"

@@ -7,9 +7,11 @@
 # Telegram lifecycle verbs, #338), `worker-apply`/`worker-upgrade` (a rig's own control API,
 # #185/#597), `backup` (an encrypted archive + one-time emergency kit, #908), the five staged
 # appliance OS-update verbs `os-check`/`os-download`/`os-verify`/`os-install`/`os-reboot`
-# (47-/48-os-update-*.sh), and the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
-# (#913/#943, 46a-control-diagnostics.sh). The dispatching `case` in 49-control-request-loop.sh
-# is the list this sentence must match; check it there before trusting this one.
+# (47-/48-os-update-*.sh), the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
+# (#913/#943, 46a-control-diagnostics.sh), and `onion-client-key` (the dashboard onion's
+# client-auth credential as a one-time kit, #1882, 45-control-backup.sh). The dispatching `case`
+# in 49-control-request-loop.sh is the list this sentence must match; check it there before
+# trusting this one.
 # Outcomes land in results/ and an audit line in audit/, both mounted read-only in the container —
 # as is masked/, the pre-masked config copy the editor form prefills from (#440); the raw
 # config.json is never mounted, so the container holds no secret it wasn't given.
@@ -160,10 +162,12 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # host shell; what the 2026-09-13 perimeter audit removed is the "everything not otherwise listed" rule that silently swept
 # the entire security perimeter into it once #2076 took the second identity away.
 #
-# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential:
-# TELEGRAM_ENABLED and TELEGRAM_COMMANDS_ENABLED switch a channel #2076 made READ-ONLY, so neither
-# can be used to commit anything, and both are instantly reversible by the same route. The two
-# tamper alarms on that channel are NOT here and never may be: they sit in
+# Today it is two BOOLEAN toggles on a channel that cannot move value or reach a credential, plus
+# HOST_IP. The Telegram toggles switch a channel #2076 made READ-ONLY, so neither can be used to
+# commit anything, and both are instantly reversible by the same route. HOST_IP is the validated
+# dashboard.host: changing it remints the local certificate and changes the machine's mDNS
+# identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here
+# and never may be: they sit in
 # CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
 # unnoticed. TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not here either — repointing the alarm is
 # silencing it by another name.
@@ -189,7 +193,7 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.
 # Space-separated exact env-key names.
-CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED'
+CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
 # The committable universe as one alternation: the three lists above and nothing else. Defined
 # ONCE because the commit gate and the preview MUST classify identically — while they did not

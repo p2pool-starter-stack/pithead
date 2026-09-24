@@ -1,4 +1,16 @@
 /* Utilities */
+/* Visually hidden but present for assistive tech (table captions, corner headers). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .flex {
   display: flex;
 }
@@ -54,6 +66,9 @@
 }
 .c-accent {
   color: var(--accent);
+}
+.c-warn {
+  color: var(--warn);
 }
 .c-muted {
   color: var(--text-muted);
@@ -111,7 +126,10 @@
   font-size: 0.85rem;
   color: var(--text-muted);
 }
-.advanced-hint .btn-link {
+/* The inline "switch to that view" button, wherever it appears (#425 in the Advanced hint, #1861
+ * in the Earnings table). Scoped to `.advanced-hint` until #1861, so a second caller shipped as a
+ * UA-chrome <button> — the same ButtonFace box that made #1858's badge 2.67:1 in dark. */
+.btn-link {
   background: none;
   border: none;
   padding: 0;

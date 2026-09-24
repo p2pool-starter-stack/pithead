@@ -198,11 +198,13 @@ chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/conta
 chk "container storage on /data" 'grep -q "graphroot = \"/data/containers/storage\"" "$ROOT/etc/containers/storage.conf"'
 chk "wizard image baked (offline first boot)" 'ls "$ROOT"/opt/pithead/images/*.tar.gz'
 chk "installer + its whole toolset" '[ -x "$ROOT/usr/local/sbin/pithead-install" ] && [ -e "$ROOT/usr/sbin/sgdisk" ] && [ -e "$ROOT/usr/bin/jq" ]'
+chk "unused xxd package absent (#1380)" 'package_absent "$ROOT" xxd'
 chk "grub.cfg staged for installs" '[ -s "$ROOT/usr/share/pithead/grub.cfg" ]'
 chk "rauc daemon present (CLI alone cannot install)" '[ -f "$ROOT/usr/lib/systemd/system/rauc.service" ]'
 chk "rauc keyring baked" '[ -s "$ROOT/etc/rauc/keyring.pem" ]'
 chk "firstboot + sync units enabled" 'ls "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-firstboot.service "$ROOT"/etc/systemd/system/multi-user.target.wants/pithead-sync.service'
 chk "program tree at /opt/pithead" '[ -x "$ROOT/opt/pithead/pithead" ] && [ -s "$ROOT/opt/pithead/VERSION" ]'
+chk "unsupported RigForge tests absent (#1380)" '[ ! -e "$ROOT/opt/rigforge/tests" ]'
 
 echo "==> the built-in miner (local_miner on the appliance)"
 # The whole point of baking: nothing here can be installed after the image ships. A missing
@@ -244,6 +246,9 @@ chk "boot unit triggers on a coordinator's config.json" 'grep -q "^ConditionPath
 chk "boot unit triggers on an accepted role marker (a rig has no config.json)" 'grep -q "^ConditionPathExists=|/data/pithead/machine-role" "$BOOTU"'
 chk "firstboot is closed by config.json" 'grep -q "^ConditionPathExists=!/data/pithead/config.json" "$FBU"'
 chk "firstboot is closed by the role marker (no wizard on a provisioned rig)" 'grep -q "^ConditionPathExists=!/data/pithead/machine-role" "$FBU"'
+# shellcheck disable=SC2034  # read inside chk's eval'd conditions
+INSTALLER="$ROOT/usr/local/sbin/pithead-install"
+chk "a carried restore clears keep-preserved boot markers, not chains" 'grep -q "pithead-restore.enc" "$INSTALLER" && grep -q "pithead/config.json.*pithead/machine-role" "$INSTALLER"'
 # Prebuilt-first for the rig role: the baked binary is asserted above, and the seeding that puts
 # it in the rig's workspace is pithead-sync's, shared with the Both role.
 chk "sync seeds the prebuilt into the miner workspace" 'grep -q "prebuilt/xmrig" "$ROOT/usr/local/sbin/pithead-sync"'
@@ -278,8 +283,8 @@ if [ -f ./pithead ] && [ -d dashboard/mining_dashboard ]; then
     # The compose file is staged from the STACK_VERSION tag when that tag exists (#1215), so the
     # tree is the wrong reference then. The stamp says which; compose_reference refuses the rest.
     COMPOSE_REF=$(mktemp)
-    chk "shipped compose file matches its stamped source ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
-        'compose_reference "$ROOT" "$COMPOSE_REF" && cmp -s "$ROOT/opt/pithead/docker-compose.yml" "$COMPOSE_REF"'
+    chk "shipped compose file matches its stamped source with immutable first-party pins ($(cat "$ROOT/opt/pithead/COMPOSE_SOURCE" 2>/dev/null || echo missing))" \
+        'compose_reference "$ROOT" "$COMPOSE_REF" && compose_matches_source "$ROOT" "$COMPOSE_REF"'
     rm -f "$COMPOSE_REF"
     chk "shipped config reference matches" 'cmp -s "$ROOT/opt/pithead/config.reference.json" ./config.reference.json'
 
@@ -352,6 +357,8 @@ chk "blanket disable preset baked (first-boot preset-all must be a no-op)" \
     'grep -qx "disable \*" "$ROOT/etc/systemd/system-preset/00-pithead.preset"'
 chk "systemd-firstboot masked (every boot is a first boot with an empty machine-id)" \
     '[ "$(readlink "$ROOT/etc/systemd/system/systemd-firstboot.service")" = "/dev/null" ]'
+chk "release image ignores config-driven SSH" \
+    'release_line=$(grep -nF "[ \"\$variant\" = release ]" "$ROOT/opt/pithead/pithead" | head -1 | cut -d: -f1) && start_line=$(grep -nF "systemctl start ssh" "$ROOT/opt/pithead/pithead" | head -1 | cut -d: -f1) && [ "$release_line" -lt "$start_line" ] && sed -n "${release_line},$((release_line + 4))p" "$ROOT/opt/pithead/pithead" | grep -qx "        en=false"'
 
 # The sibling carries the refusals that stop a debug image shipping as a release; this script runs
 # without -e, so a missing sibling must refuse here rather than source nothing and report clean.

@@ -34,8 +34,12 @@ MATRIX:
                             host:port (pithead appends the port itself, #1491)
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
-  --remote-tari-host <h>  external Tari node endpoint for the tari.mode=remote scenario (#103;
-                         e.g. an already-synced Tari node on the LAN)
+  --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
+  --appliance-channel    this run is driving a KVM appliance guest, not a DIY install (#2062,
+                         tests/os/phases/stack.sh) — the ONLY effect is that the merge-mining
+                         gRPC round-trip (#1397) reports a by-design skip naming #2326 instead of
+                         failing, since that gap is real on the appliance channel and open
+                         separately; every other assertion runs exactly as it does without this flag.
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -73,6 +77,19 @@ MATRIX:
                          then restore the original config. Requires --safety-backup, miners, a
                          recent PPLNS share, and xvb.enabled=true ALREADY in the box's config —
                          the gate moves an existing donor route, it does not turn XvB on for you.
+  --alert-egress         also run the live alert-egress leg (#2266): drive `pithead test-alert`
+                         through the real Tor SOCKS proxy, one leg per configured sink
+                         (IT_TELEGRAM_BOT_TOKEN + IT_TELEGRAM_CHAT_ID, IT_NTFY_URL,
+                         IT_WEBHOOK_URLS, IT_HEALTHCHECKS_PING_URL), asserting each answered.
+                         An absent credential self-skips that sink (missing); a third party
+                         refusing the dial reports as its own verdict, never a stack failure.
+                         DESTRUCTIVE-then-restored.
+  --mergemine-submit     also run the merge-mining submission leg (#2586, V6 of #1129): a
+                         throwaway peerless P2Pool (IT_MM_P2POOL_VERSION, default v4.18.1) mines
+                         against the box's monerod and a recording Tari node; Tari's own validator
+                         (tests/integration/mergemine, built at the pinned Tari tag) judges each
+                         submission and its legacy/mutated controls at 349,999/350,000/350,001
+                         under mainnet rules. Leaves the live stack alone; needs local Monero.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -162,9 +179,13 @@ parse_args() {
             shift
             ;;
         --remote-monero-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-monero-host contains unsupported characters. Use a hostname or IPv4 address."
+                exit 2
+            fi
             case "${2:-}" in
             *:*)
-                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port). Got \"$2\"."
+                it_err "--remote-monero-host takes a BARE host or IP, not host:port — pithead renders the port separately (--remote-monero-rpc-port)."
                 exit 2
                 ;;
             esac
@@ -172,14 +193,8 @@ parse_args() {
             shift 2
             ;;
         --remote-monero-rpc-port | --remote-monero-zmq-port)
-            case "${2:-}" in
-            "" | *[!0-9]*)
-                it_err "$1 takes a TCP port 1-65535. Got \"${2:-}\"."
-                exit 2
-                ;;
-            esac
-            if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then
-                it_err "$1 takes a TCP port 1-65535. Got \"$2\"."
+            if ! valid_tcp_port "${2:-}"; then
+                it_err "$1 takes a TCP port 1-65535."
                 exit 2
             fi
             if [ "$1" = "--remote-monero-rpc-port" ]; then
@@ -190,8 +205,22 @@ parse_args() {
             shift 2
             ;;
         --remote-tari-host)
+            if ! valid_remote_host "${2:-}"; then
+                it_err "--remote-tari-host contains unsupported characters. Use a bare hostname or IPv4 address."
+                exit 2
+            fi
+            case "$2" in
+            *:*)
+                it_err "--remote-tari-host takes a bare host or IPv4 address; Pithead renders tari.remote.grpc_port separately."
+                exit 2
+                ;;
+            esac
             REMOTE_TARI_HOST="$2"
             shift 2
+            ;;
+        --appliance-channel)
+            IT_APPLIANCE_CHANNEL=1
+            shift
             ;;
         --pruned-data-dir)
             PRUNED_DATA_DIR="$2"
@@ -231,6 +260,14 @@ parse_args() {
             ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
+            shift
+            ;;
+        --alert-egress)
+            RUN_ALERT_EGRESS=1
+            shift
+            ;;
+        --mergemine-submit)
+            RUN_MERGEMINE_SUBMIT=1
             shift
             ;;
         --auth-fail-closed)

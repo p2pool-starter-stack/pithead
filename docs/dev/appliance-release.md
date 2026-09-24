@@ -157,7 +157,7 @@ bench is the KVM-capable build box; a laptop cannot run this (`/dev/kvm` is requ
 
 ```bash
 # PITHEAD_REGISTRY is not optional while VERSION is unreleased — see the note below.
-PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> os/build-image.sh --ssh &&
+PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> os/build-image.sh --ssh &&
     sudo os/rauc/mkimage.sh --dev
 ```
 
@@ -177,7 +177,9 @@ container that stayed unhealthy for good (#1098). `os/build-image.sh` therefore 
 `/opt/pithead/COMPOSE_SOURCE` (`tag NAME SHA`, or `tree`) and prints it. What that costs: a compose
 change on the branch is not exercised on the appliance until the next cut, where the tag does not
 exist yet and the tree is the source. A clone that has not fetched the tag is refused rather than
-silently built the old way; `git fetch --tags` clears it.
+silently built the old way; `git fetch --tags` clears it. Only the appliance battery's synthetic
+bundle fixture may opt into an explicit compose file; ordinary builds cannot replace the tag or
+tree source.
 
 `--dev` auto-generates a throwaway `CN=pithead-dev` signing key for the bench. A release build
 omits it and must name the real key instead (`PITHEAD_RAUC_CERT` + `PITHEAD_RAUC_KEY`) — see
@@ -197,8 +199,13 @@ Two build variants, chosen by one flag:
   pins that registry into its boot units, the dashboard control runner and `/etc/environment`
   (so a `pithead` verb run by hand over SSH pulls from the same place, #1931), and tells podman
   how to trust it — the CA file named by `PITHEAD_REGISTRY_CA` for a TLS registry, or an insecure
-  entry without one — so a bench box can provision from a registry on the LAN (#1892); the release
-  variant never carries any of that, and `verify-image.sh` checks both ways.
+  entry without one — and requires `PITHEAD_REGISTRY_COSIGN_PUB` for that registry's signed images.
+  For the no-CA debug route, cosign explicitly permits HTTP too; a release image or a custom
+  release-registry override never does.
+  The staged five service references are digest-pinned and verified before provision; the release
+  variant uses the shipped release key, while the debug variant replaces it with that alternate key.
+  A failed verification refuses the pull and leaves the wizard/console error visible. The release
+  variant never carries the debug material, and `verify-image.sh` checks both ways.
 
 The updater defaults to RAUC; an image built without it cannot take another update, and the
 only way to get one now is to set `PITHEAD_UPDATER` to something else on purpose.
@@ -247,7 +254,7 @@ Then the tiered battery, lowest tier first — the same rule as
 [`testing-strategy.md`](testing-strategy.md):
 
 ```bash
-sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> \
+sudo env PITHEAD_REGISTRY=<host:port> PITHEAD_REGISTRY_CA=<ca.crt> PITHEAD_REGISTRY_COSIGN_PUB=<cosign.pub> \
     tests/os/run.sh --phase boot --image os/rauc/build/system.img
 ```
 
@@ -286,13 +293,13 @@ is the only thing standing between the hand-written boot path and a fleet.
 | Phase | Asserts | Count |
 |---|---|---|
 | `boot` | EFI boot to userspace; first-boot wizard announces itself with a console token; wizard serves the token gate on `:80`; machine-id is STABLE across a plain reboot (#895 — an empty-baked id with no restore mechanism regenerates on every boot, worse than the bug it fixes) | 4 |
-| `update` | `/data` grew to the disk and slots did not (#784); bundle installs into the spare; spare boots; **an uncommitted update reverts on reboot**; a committed update persists; **after the commit, the page served comes from the NEW dashboard image** (marker baked into the image and read back over HTTP — the tag never changes, so "containers run" proves nothing about staleness, #798); an operator can roll back off a committed version; **host identity (SSH host-key fingerprint, machine-id) survives the A/B swap** (#894/#895 — both live on `/data`, untouched by a slot swap). Then leg 4, **the dashboard OS-update action end-to-end** (#976): the machine is provisioned through the wizard's real HTTP flow, the release lookup is pointed at a bench-local server through the root-owned test seam, and the flow runs check → download (a pre-staged partial must RESUME, not restart) → verify — with the `/data`-floor and **bad-signature refusals proven against RAUC's real keyring**, refused bundles deleted — → install (in-flight flag armed, state says reboot-pending, nothing auto-reboots) → the explicit reboot intent → the new slot boots, the health gate commits, and the persisted **"updated" verdict reaches `/api/state`** | 15 + leg 4 |
-| `provision` | A config submitted through the wizard's real HTTP flow provisions the stack: validation, cosign-verified image pulls, containers running under podman, dashboard served through caddy. Before the successful submission, an unreachable remote node must be refused by preflight with its safe form values retained; a separate injected post-validation setup fault must return to the setup page with a useful error and the retained values for an ordinary corrected submit (#1955). The submitted config also enables the on-box miner, so the **built-in RigForge worker** must come up on its own, wired to the machine's own stratum, with mining held behind the sync gate cleanly. After provisioning, dashboard control applies a benign setting, refuses a disruptive setting without `APPLY`, accepts it with `APPLY`, returns doctor and log-tail reports, and creates a downloadable encrypted backup; the stack and dashboard must recover after that backup (#1931/#1965). Then a **reboot with no hands on it** must return the stack unaided through `pithead-boot`. Finally the **commit gate's honesty** (#852) requires the real `pithead doctor --json` gate to PASS on the healthy still-syncing stack yet REFUSE once a revenue service is crashed. The provisioned boot also pins hugepages sizing, migration and floor-fallback behavior. | 24 + 14 added (battery pending) |
-| `install` | The image boots as **removable** media (usb bus — the gate keys on it); the inventory offers the internal disk and never the boot medium; the real installer runs; the machine then boots from the target alone with a **complete** copy (`/var/lib/dpkg` — the overlay made an incomplete copy easy and invisible), a fresh machine-id, `/data` sized to the target, and the wizard serving. Then the **reinstall leg** plants a sentinel in `/data`, installs over the same disk, and requires the sentinel afterwards. The keep leg reinstalls from a **newer stick** over `/data` that holds the old dashboard image and digest record; the image ID and served page must change (#798). A 1.x `xmrig_proxy` pre-fill must migrate to `xvb` without carrying the removed key (#1954). The restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk, then proves the running stack carries its wallet, Tor identity, RPC/dashboard/onion secrets, and both fixture and target chain-data sentinels without a resync (#2001). | 33 + 1 added (battery pending) |
-| `rig` | The removable image installs the RigForge role, which mines from the baked binary with no stack containers and follows the A/B update contract. | Printed by the run |
+| `update` | `/data` grew to the disk and slots did not (#784); bundle installs into the spare; spare boots; **an uncommitted update reverts on reboot**; a committed update persists; **after the commit, the page served comes from the NEW dashboard image** (marker baked into the image and read back over HTTP — the tag never changes, so "containers run" proves nothing about staleness, #798); an operator can roll back off a committed version; **host identity (SSH host-key fingerprint, machine-id) survives the A/B swap** (#894/#895 — both live on `/data`, untouched by a slot swap). Then leg 4, **the dashboard OS-update action end-to-end** (#976): the machine is provisioned through the wizard's real HTTP flow, the release lookup is pointed at a bench-local server through the root-owned test seam, and the flow runs check → download (a pre-staged partial must RESUME, not restart) → verify — with the `/data`-floor and **bad-signature refusals proven against RAUC's real keyring**, refused bundles deleted — → install (in-flight flag armed, state says reboot-pending — **and the header badge carries reboot-pending plus the target version, so a reboot stays owed even with the modal closed** — nothing auto-reboots) → the explicit reboot intent → the new slot boots, the health gate commits, and the persisted **"updated" verdict reaches `/api/state`** | 15 + leg 4 |
+| `provision` | A config submitted through the wizard's real HTTP flow provisions the stack: validation, cosign-verified image pulls, containers running under podman, dashboard served through caddy. Before the successful submission, an unreachable remote node must be refused by preflight with its safe form values retained; a separate injected post-validation setup fault must return to the setup page with a useful error and the retained values for an ordinary corrected submit (#1955). The submitted config also enables the on-box miner, so the **built-in RigForge worker** must come up on its own, wired to the machine's own stratum, with mining held behind the sync gate cleanly. After provisioning, dashboard control applies a benign setting, refuses a disruptive setting without `APPLY`, accepts it with `APPLY`, returns doctor and log-tail reports, and creates a downloadable encrypted backup; the stack and dashboard must recover after that backup (#1931/#1965). Then a **reboot with no hands on it** must return the stack unaided through `pithead-boot`. M10 cuts that live stack three times and after EVERY cut requires every pre-cut container, image digest, non-regressing monerod height, miner, Caddy, and committed slot to survive. Finally the **commit gate's honesty** (#852) requires the real `pithead doctor --json` gate to PASS on the healthy still-syncing stack yet REFUSE once a revenue service is crashed. The provisioned boot also pins hugepages sizing, migration and floor-fallback behavior. | Printed by the run |
+| `install` | The image boots as **removable** media (usb bus — the gate keys on it); the inventory offers the internal disk and never the boot medium; the real installer runs; the machine then boots from the target alone with a **complete** copy (`/var/lib/dpkg` — the overlay made an incomplete copy easy and invisible), a fresh machine-id, `/data` sized to the target, and the wizard serving. Then the **reinstall leg** plants a sentinel in `/data`, installs over the same disk, and requires the sentinel afterwards. The keep leg reinstalls from a **newer stick** over `/data` that holds the old dashboard image and digest record; the image ID and served page must change (#798). A 1.x `xmrig_proxy` pre-fill must migrate to `xvb` without carrying the removed key (#1954). The restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk, then proves the running stack carries its wallet, Tor identity, opaque RPC/onion secrets, and both fixture and target chain-data sentinels without a resync; its dashboard password survives while the bcrypt and fingerprint are regenerated and authenticate with it (#2001/#2230). | 34 |
+| `rig` | The removable image installs the RigForge role, which mines from the baked binary with no stack containers and follows the A/B update contract. M13 cuts power while it mines, then requires a new boot, unattended mining, and the committed slot to return. | Printed by the run |
 | `media` | The physical-presence config stick shows the exact diff, applies after its countdown, is consumed, and cancels when removed mid-countdown. | Printed by the run |
-| `fault` | three power cuts mid-write; a deliberately corrupted bundle is refused without crashing and without bricking; a power cut inside the commit window; operator rollback after all of it; the box is still updatable afterwards | 11 |
-| `reset` | leg 1, the real `pithead factory-reset` off a provisioned machine: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | 17 |
+| `fault` | three power cuts mid-write; a deliberately corrupted bundle is refused without crashing and without bricking; a power cut inside the commit window; operator rollback after all of it; Fault D cuts an active first-boot baked-image load and requires the wizard and repaired image store afterwards; the box is still updatable afterwards | 15 |
+| `reset` | leg 0, the real `pithead config-reset` off a provisioned machine: it clears the config and re-arms the wizard while preserving the monero chain and Tor onion identity through reconfiguration. Leg 1, the real `pithead factory-reset`: it comes back unprovisioned at the wizard, the config is gone, the container store holds no pulled stack images, machine-id and the SSH host key are **fresh** (a handed-over box must not keep the old owner's identity), and the wipe is recorded on the ESP — a wiped machine must be tellable from a brand-new one (#1062). Leg 2, the wedged-`/data` recovery: the ext4 magic corrupted on the real data partition, the box comes back usable with **`/data` repaired, not erased** — a sentinel planted before the corruption must survive (#1087) — and the ESP wipe log must not grow, because a repair recorded as a wipe would cry wolf | 17 |
 
 A **brick is disqualifying, not deducted** — any run that leaves a machine unable to boot
 fails the release regardless of the rest.
@@ -306,10 +313,9 @@ on a physical box before publishing an image. Record the results in the release 
 Hardware: one x86-64 machine with UEFI, ≥ 16 GiB RAM, an internal SSD/NVMe, wired
 ethernet, and a USB stick. A second disk makes M4 and M5 meaningful.
 
-**M1 — flash and boot.** Write the image to the USB stick. Boot the target from it with
-Secure Boot **enabled**, then again **disabled**. Expected: reaches userspace both times,
-or fails with a legible message on Secure Boot rather than a blank screen. *KVM cannot
-see this: the harness disables Secure Boot because our GRUB is unsigned.*
+**M1 — flash and boot.** Write the image to the USB stick. Disable Secure Boot in firmware,
+then boot the target from it. Expected: reaches userspace. Secure Boot support is deferred past
+2.0.0 to `v2.x - post-GA` (#2187); the KVM boot row records the current failure.
 
 **M2 — discovery.** Read the token from the console, then find the box from another machine
 at `http://pithead.local` and at the IP it printed. Expected: both load the token gate, and
@@ -322,10 +328,11 @@ token or a whole config from the stick's FAT partition **is** built — `pithead
 the target by `os/installer/pithead-install`, with the `install` and `media` phases covering it.
 What is still unbuilt is choosing the target disk headlessly — see KNOWN-ISSUES (#979).
 
-KVM analog: `--phase install` automates the mechanics of M3 and M5 (inventory, guards,
-copy completeness, target boot, and reinstall preserving `/data`). The manual cases remain
-about what KVM cannot fake — real firmware's boot order, a real USB controller, and a real
-internal disk.
+KVM analog: `--phase install` automates the mechanics of M3, M4 and M5 (inventory with real
+model/serial, the wrong-disk guard against a second scsi disk, copy completeness, target
+boot, and reinstall preserving `/data`). The manual cases remain about what KVM cannot fake
+— real firmware's boot order, a real USB controller, and a real internal disk.
+M4's "will be erased" wording is pinned at tier 1 from the `empty` state asserted by the KVM row.
 
 **M3 — install to disk.** From the browser, choose the internal disk. Confirm that the
 USB stick itself is **not offered**, that no disk is preselected, and that model, size and
@@ -377,16 +384,25 @@ obvious way: a mains outage took the build bench down overnight and it was still
 the morning.
 
 M11–M14 are the rig-role steps: rig install and mining, dashboard-driven adopt and config push,
-rig power-loss and update, and run-from-USB. They stay a manual procedure today — see
-[the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) does not yet cover them: it proves the
-wizard's rig card and role select, that a rig submits toward a pool (against a faked listener, so
-it deliberately never proves an *accepted* share), volatile journald, an unaided plain reboot, and
-the A/B update leg committing on a rig. It proves none of an accepted share at a real coordinator,
-MSR tuning or hugepages via `doctor`, a dashboard-driven adopt or config push, a power cut on a
-rig, or booting the rig role from the stick without installing to disk. No bench release e2e
-scenario for the rig role exists yet either. Converting what KVM can prove, and naming a bench e2e
-for the rest, is tracked as #1886's first gap; the numbering here stays stable so old release
-records still point at the same steps once that lands.
+rig power-loss and update, and run-from-USB. M11–M13 stay a manual procedure today — see
+[the manual release checklist](manual-release-checklist.md) — because the `rig` KVM phase (`tests/os/phases/rig.sh`) covers only the virtualized subset: it proves the
+wizard's rig card and role select, that a rig submits toward a pool, volatile journald, an unaided
+plain reboot, a virsh power cut with unattended mining and slot commit recovery, and the A/B update
+leg committing on a rig. Its own share leg (#2063) then re-points the rig at a SECOND, concurrent
+guest the battery itself boots as a remote-node coordinator (the same precondition as #2062) and
+proves an accepted share both ways — the rig's own worker and the coordinator's built-in miner —
+so an accepted share at a real p2pool is no longer manual-only. What it still does not prove: MSR
+tuning or hugepages via `doctor` (a KVM guest cannot take RandomX MSR writes), a dashboard-driven
+adopt or config push, or firmware Restore-on-AC-Power-Loss on a real rig — those still need a real
+loaner box. M14 — run-from-USB, never installed — is now the `rigmedia` KVM phase
+(`tests/os/phases/rigmedia.sh`, #2069): it boots the image as removable media beside a blank
+internal disk and answers RigForge without installing, and asserts the rig mines from the stick,
+no containers, volatile journald, an unaided reboot returns it mining, and the blank disk stays
+untouched; it does not touch the bootloader "Set up again" path (#1318), which stays whatever
+reaches the wizard again from a stick-run rig needs by hand. No bench release e2e scenario for the
+rig role exists yet. Converting M11–M13, and naming a bench e2e for what KVM cannot prove, is
+tracked as #1886's first gap; the numbering here stays stable so old release records still point
+at the same steps once that lands.
 
 **M15 — backup and restore end to end.** On a provisioned machine, record the payout wallet,
 the dashboard's onion address, and the current time. From **Backup**, create a backup and save
@@ -404,16 +420,17 @@ Never use the physical-media path for this approval check; that path remains del
 to self-approve disruptive changes.
 
 The automated battery first keeps the stable `monero.out_peers` `CONFIRM` round trip, then drives
-the sensitive path with fake test-only Telegram identifiers. Its transport recognizes only the
-fake approval calls and cannot fall through to the real provider. It proves missing and wrong
-identities stay refused, the host-generated preview and allow-listed callback bind the exact
-prompt text and commit,
-and a dashboard password remains physical-presence-only. With the reserved-node environment
+the sensitive path through the ordinary authenticated control route. It proves a commit without
+the typed confirmation is refused, a confirmed commit applies and audits against the signed-in
+actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
+each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
+waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
+never drains: an apply re-provisions the control runner, which kills a request in flight and loses
+its result (#2363). With the reserved-node environment
 inputs, it requires the real host preflight, rendered endpoints, the current p2pool container's
 narrowly extracted endpoints, an endpoint-bound current-startup `uses chain_id` round trip, and
 root-side restoration from a mode-600 raw snapshot. Reserved-node credentials must be disposable
-test values. The payout-address
-confirmation and a real human Telegram click remain manual M16 evidence.
+test values. The payout-address confirmation remains manual M16 evidence.
 
 RC1 addendum, still manual after the automated rows run:
 
@@ -436,28 +453,37 @@ RC1 addendum, still manual after the automated rows run:
 The custom-hostname row is now specific: the wizard's `fixture-box` name must agree across the
 kernel, rendered `HOST_IP`, dashboard header state, certificate DNS and LAN-IP SANs, and active
 Avahi with working mDNS resolution. Its day-two `fixture-next` preview must leave those readings
-unchanged; missing and wrong approvals remain refused. The fake allow-listed callback then applies
-the host-generated preview, and `fixture-next` must survive the unaided reboot and A/B update.
+unchanged; an authenticated commit without the approval envelope remains refused. A confirmed
+ordinary control-route commit then applies the host-generated preview, and `fixture-next` must
+survive the unaided reboot and A/B update.
 The reserved-node `uses chain_id` row is automated but still needs actual reachable node inputs;
-the payout confirmation and human approval click remain manual. #1956 has written the serial
+the payout and browser confirmations remain manual. #1956 has written the serial
 assertion for boot labels, but none of these tier-4 rows is PASS until the product branches are
 integrated into an image and the full battery runs.
 
 ## Cutting a release
 
-The branch mechanics are the DIY doc's ([releasing.md](releasing.md#branch-mechanics)): the cut
-runs from the release-prep commit on `develop`, and `main` fast-forwards to the tag only when
-`release.sh` publishes it. The steps here run from that same prep commit; both channels share
-one version and one GitHub Release.
+The branch mechanics are the DIY doc's ([releasing.md](releasing.md#branch-mechanics)): the prep
+commit carries the version bump and draft notes, and the final cut commit refreshes and dates
+those notes on `develop`. `main` fast-forwards only when `release.sh` publishes the tag. Both
+channels share the final cut commit, one version and one GitHub Release.
 
-1. The release commit is green: `make lint && make test`, and `tests/os/run.sh --phase all`
-   on the bench. `make lint-sh` refuses to run on any shellcheck but the pinned one and names the
+1. On the cut date, land the final cut commit: refresh the top `CHANGELOG.md` section for every
+   operator-visible change included since prep and set its heading to the current UTC date.
+   `release.sh` publishes that heading verbatim. Every gate, build and tag below uses that final
+   cut commit. Run `make lint && make test`. Do not hand-run the KVM battery on this commit:
+   submit it as a bench-ci `tier4-kvm` job with `phases: ["all"]` against this exact SHA
+   (`~/code/pithead-ci/AGENTS.md`) and record the job id in the release issue —
+   [Releasing § Which gates are automated](releasing.md#which-gates-are-automated-and-which-are-not)
+   already blocks stage 1 without a green `bench-ci/tier4` status on this SHA, so this step just
+   surfaces that early rather than at `release.sh`. `make lint-sh`
+   refuses to run on any shellcheck but the pinned one and names the
    version it found alongside the one it wants; `make -s print-shellcheck-version` prints the pin.
    A distro build reports different findings over the same files, so a skew reds the cut for
    nothing — install the pin from [`release-server.md`](release-server.md#the-lintrelease-toolchain).
-2. Bump `VERSION`. The tag is `v<VERSION>` and every artifact derives from it —
-   `STACK_VERSION` is the single place the registry tag comes from. The compose file the image
-   ships comes from that tag whenever it already exists and from the tree only while it does not;
+2. Confirm `VERSION` still holds the version set by the prep commit. The tag is `v<VERSION>` and
+   every artifact derives from it — `STACK_VERSION` is the single place the registry tag comes from.
+   The compose file the image ships comes from that tag whenever it already exists and from the tree only while it does not;
    at this step it does not, so the release build bakes the tree's copy, and the tag `release.sh`
    then creates on this commit names those same bytes.
 3. Build the image and bundle with the **release key**, never the throwaway `--dev` chain. Point
@@ -497,7 +523,7 @@ one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M11–M14 for any release touching the rig role, M15 and M16) on
+4. Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
    real hardware. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside

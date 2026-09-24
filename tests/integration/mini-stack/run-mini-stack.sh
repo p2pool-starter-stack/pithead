@@ -14,11 +14,13 @@
 #    4. Tari down (required)      → dashboard REJECTS workers (stops itest-xmrig-proxy) (#31)
 #    5. Tari back                 → dashboard READMITS workers
 #    6. monerod down              → dashboard REJECTS workers (#31/#564)
+#    +. alert sinks (#2263)       → Telegram, webhook, and ntfy receive the real down edge
 #    7. monerod back              → dashboard READMITS workers (#564)
 #    8. monerod busy/mid-reorg    → dashboard REJECTS, then READMITS on recovery
 #    9. monerod + Tari both down  → REJECTS; recovering only one does NOT readmit; both does
 #   10. dashboard restart         → the one-way sync latch survives (#35 persistence)
 #   11. Tari OPTIONAL, Tari down  → dashboard keeps mining, workers stay accepted (#562)
+#   12. payout confirmation       → both wallet fakes reach /api/state and alert once (#2267)
 #
 set -uo pipefail
 
@@ -42,7 +44,9 @@ if ! docker compose version >/dev/null 2>&1; then
     exit 0
 fi
 
-compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+LOCK_FILE="$(mktemp)"
+chmod 644 "$LOCK_FILE"
+compose() { PITHEAD_LOCK_FILE="$LOCK_FILE" docker compose -f "$COMPOSE_FILE" "$@"; }
 cstate() { docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || echo "missing"; }
 ctl() { curl -fsS --max-time 5 "$1" -d "$2" >/dev/null; } # POST JSON to a fake /control
 
@@ -93,27 +97,73 @@ set_tari() { ctl "http://$HOST_ADDR:28152/control" "{\"mode\":\"$1\"}" || c_bad 
 # Healthchecks.io e2e (#79): the fake receiver records each ping path to /hc/pings.log. Poll it
 # until an (extended-regex) pattern shows up, proving the REAL dashboard loop fired that request.
 hc_pings() { compose exec -T fake-hc cat /tmp/pings.log 2>/dev/null; }
-wait_hc() { # wait_hc <label> <ere-pattern> [timeout]
-    local label="$1" pat="$2" timeout="${3:-40}" end
+sink_requests() { compose exec -T fake-sink cat /tmp/requests.log 2>/dev/null; }
+
+# wait_for_line <getter-fn> <log-name> <label> <ere-pattern> [timeout]: poll a fake's log (via its
+# reader function) until a line matches, or time out. hc_pings/sink_requests are the two readers.
+wait_for_line() {
+    local getter="$1" logname="$2" label="$3" pat="$4" timeout="${5:-40}" end
     end=$(($(date +%s) + timeout))
     while :; do
-        hc_pings | grep -Eq "$pat" && {
+        "$getter" | grep -Eq "$pat" && {
             c_ok "$label"
             return 0
         }
         [ "$(date +%s)" -ge "$end" ] && {
-            c_bad "$label" "no line matching /$pat/ in the ping log (got: $(hc_pings | tr '\n' ' '))"
+            c_bad "$label" "no line matching /$pat/ in the $logname log (got: $("$getter" | tr '\n' ' '))"
+            return 1
+        }
+        sleep 1
+    done
+}
+wait_hc() { wait_for_line hc_pings ping "$1" "$2" "${3:-40}"; }        # wait_hc <label> <pattern> [timeout]
+wait_sink() { wait_for_line sink_requests sink "$1" "$2" "${3:-40}"; } # wait_sink <label> <pattern> [timeout]
+wait_sink_alerts() {
+    local timeout=40 end
+    end=$(($(date +%s) + timeout))
+    while :; do
+        if sink_requests | python3 -c '
+import json, sys
+rows = [json.loads(line) for line in sys.stdin if line.strip()]
+paths = {"/botitest-token/sendMessage", "/webhook", "/ntfy"}
+alerts = [row for row in rows if row["method"] == "POST" and "Monero node is DOWN" in row["body"]]
+assert paths == {row["path"] for row in alerts}
+assert len(alerts) == len(paths)
+ntfy = next(row for row in alerts if row["path"] == "/ntfy")
+assert ntfy.get("headers", {}).get("Authorization") == "Bearer itest-token"
+'; then
+            c_ok "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert"
+            return 0
+        fi
+        [ "$(date +%s)" -ge "$end" ] && {
+            c_bad "alert sinks: Telegram, webhook, and ntfy received the monerod-down alert" "$(sink_requests | tr '\n' ' ')"
             return 1
         }
         sleep 1
     done
 }
 
+# Poll until the dashboard's REAL process answers /api/state (it binds 127.0.0.1:8000 inside the
+# container) — used after every boot/restart/recreate below, since the container reaching
+# "running" says nothing about the python process inside it being ready yet.
+wait_dashboard_api() { # wait_dashboard_api [tries]
+    local tries="${1:-30}"
+    for _ in $(seq 1 "$tries"); do
+        compose exec -T dashboard python3 -c \
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && return 0
+        sleep 2
+    done
+    return 1
+}
+
 teardown() {
     log "tearing down"
     compose down -v --remove-orphans >/dev/null 2>&1 || true
+    rm -f "$LOCK_FILE"
 }
 trap teardown EXIT
+
+source "$HERE/run-payout-scenario.sh"
 
 log "building images"
 if ! compose build >/dev/null 2>&1; then
@@ -124,18 +174,8 @@ fi
 log "starting the mini-stack (fakes boot mid-sync)"
 compose up -d >/dev/null 2>&1
 
-# Wait for the dashboard's API to answer (it binds 127.0.0.1:8000 inside the container).
 log "waiting for the dashboard API"
-api_up=0
-for _ in $(seq 1 30); do
-    if compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1; then
-        api_up=1
-        break
-    fi
-    sleep 2
-done
-[ "$api_up" = 1 ] && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
+wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
 
 # 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
 #    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/
@@ -235,6 +275,7 @@ if [ "$(cstate itest-p2pool)" = "running" ]; then
 else
     c_bad "monerod-outage rejection leaves itest-p2pool running" "itest-p2pool is '$(cstate itest-p2pool)'"
 fi
+wait_sink_alerts
 
 # 7. monerod recovers → readmit (after the recovery-hysteresis window). (#564)
 log "scenario 7: readmits workers when monerod recovers"
@@ -264,11 +305,7 @@ set_tari synced
 #     re-held: both containers stay running across the restart. (#35 persistence)
 log "scenario 10: a dashboard restart does not re-hold a released miner"
 compose restart dashboard >/dev/null 2>&1
-for _ in $(seq 1 30); do
-    compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1 && break
-    sleep 2
-done
+wait_dashboard_api
 assert_stays "itest-p2pool stays up across restart" itest-p2pool running 6
 assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy running 6
 
@@ -278,22 +315,28 @@ assert_stays "itest-xmrig-proxy stays up across restart" itest-xmrig-proxy runni
 #     cycle rather than a live toggle.
 log "scenario 11: Tari-optional — sync gate releases on monerod alone; Tari outage does not reject workers"
 compose down -v --remove-orphans >/dev/null 2>&1 || true
-TARI_REQUIRED=false compose up -d >/dev/null 2>&1
-api_up=0
-for _ in $(seq 1 30); do
-    if compose exec -T dashboard python3 -c \
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/state', timeout=3)" >/dev/null 2>&1; then
-        api_up=1
-        break
-    fi
-    sleep 2
-done
-[ "$api_up" = 1 ] && c_ok "Tari-optional stack: dashboard API is up" || c_bad "Tari-optional stack: dashboard API is up" "no /api/state after ~60s"
+TARI_REQUIRED=false TELEGRAM_ENABLED=false NOTIFY_WEBHOOK_URLS='' NTFY_URL='' compose up -d >/dev/null 2>&1
+wait_dashboard_api && c_ok "Tari-optional stack: dashboard API is up" || c_bad "Tari-optional stack: dashboard API is up" "no /api/state after ~60s"
 # Tari is non-blocking, so monerod alone gates the sync-hold; release it to reach steady state.
 set_monerod synced
 assert_state "Tari-optional: released itest-xmrig-proxy running" itest-xmrig-proxy running 90
 set_tari down
 assert_stays "Tari-optional: itest-xmrig-proxy keeps mining through a Tari outage" itest-xmrig-proxy running 8
+set_monerod down
+assert_state "Tari-optional: monerod outage still rejects workers" itest-xmrig-proxy exited 90
+# A dead recorder returns the same empty string as a quiet one: a missing container, a failed
+# exec or an unreadable log would all read as "no requests" and pass this control vacuously.
+# Prove fake-sink is up FIRST, so emptiness means the sinks stayed silent (#2263).
+sink_state="$(cstate itest-fake-sink)"
+if [ "$sink_state" != running ]; then
+    c_bad "disabled alert sinks make no requests" "recorder itest-fake-sink is '$sink_state' — an empty log proves nothing"
+elif [ -z "$(sink_requests)" ]; then
+    c_ok "disabled alert sinks make no requests"
+else
+    c_bad "disabled alert sinks make no requests" "$(sink_requests | tr '\n' ' ')"
+fi
+
+scenario_payout_confirmation
 
 echo ""
 log "mini-stack: $PASS passed, $FAIL failed"

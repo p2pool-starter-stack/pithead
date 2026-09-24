@@ -27,8 +27,7 @@
 #   --skip-integration   Skip the #54 live integration matrix (still runs `make test`).
 #   --skip-smoke         Skip the staged-image smoke verification.
 #   --draft              Create the GitHub Release as a DRAFT (held for review; publish it by hand).
-#   --resume-promote     Skip build/stage; promote the already-staged digests (retry after a smoke pass).
-#   --allow-dirty        Don't require a clean git working tree (for local experimentation only).
+#   --allow-dirty        Permit a dirty tree for --dry-run only.
 #   --unsigned           Publish WITHOUT cosign signatures. One-click upgrades refuse an unsigned
 #                        release once cosign.pub is committed — deliberate, loud, and rarely right.
 #   -y, --yes            Don't prompt before the irreversible steps (push, tag, publish).
@@ -38,12 +37,15 @@
 #   PITHEAD_REGISTRY        Registry namespace (default: ghcr.io/p2pool-starter-stack).
 #   PITHEAD_IMAGE_PREFIX    Image-name prefix (default: pithead-) -> ghcr.io/.../pithead-dashboard.
 #   GHCR_USER / GHCR_TOKEN  Registry login. Token falls back to GITHUB_TOKEN, then `gh auth token`.
+#   BENCH_CI_APP_ID       Numeric id of the installed bench-ci GitHub App (required, no default).
+#   BENCH_CI_APP_SLUG     Slug of that same App: pithead-bench-ci (required, no default).
 #   RELEASE_INTEGRATION_ARGS  Extra args passed to `make test-integration ARGS=...` (the #54 gate).
 #   RELEASE_SMOKE_CMD       Optional command run during the smoke stage for a fuller functional check.
 #   COSIGN_KEY / COSIGN_PASSWORD  Release signing (#376): path to the cosign private key on this box
 #                           and its passphrase. Promoted digests + the bundle get key signatures;
 #                           the committed cosign.pub (repo root, shipped in the bundle) verifies them.
 #                           Required — preflight refuses the cut without them (#960).
+# End help
 #
 set -euo pipefail
 
@@ -114,7 +116,6 @@ RC=1
 SKIP_TESTS=0
 SKIP_INTEGRATION=0
 SKIP_SMOKE=0
-RESUME_PROMOTE=0
 ALLOW_DIRTY=0
 ASSUME_YES=0
 DRAFT=0
@@ -132,12 +133,11 @@ while [ $# -gt 0 ]; do
     --skip-integration) SKIP_INTEGRATION=1 ;;
     --skip-smoke) SKIP_SMOKE=1 ;;
     --draft) DRAFT=1 ;;
-    --resume-promote) RESUME_PROMOTE=1 ;;
     --allow-dirty) ALLOW_DIRTY=1 ;;
     --unsigned) UNSIGNED=1 ;;
     -y | --yes) ASSUME_YES=1 ;;
     -h | --help)
-        sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'
+        awk 'NR > 1 { if ($0 == "# End help") exit; sub(/^# ?/, ""); print }' "$0"
         exit 0
         ;;
     *) die "Unknown option: $1 (try --help)" ;;
@@ -205,8 +205,8 @@ pin() {
     # bumped together, and the release notes have to name both or a wallet-only move reads as
     # unchanged (#1138). tests/stack/standalone/test_compose.sh asserts the two carry the same tag, so the
     # lockstep this relies on is guarded rather than assumed.
-    tari) grep -oE 'quay.io/tarilabs/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
-    tari-wallet) grep -oE 'quay.io/tarilabs/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
+    tari) grep -oE 'ghcr.io/tari-project/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
+    tari-wallet) grep -oE 'ghcr.io/tari-project/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
     caddy) grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1 ;;
     socket-proxy) grep -oE 'tecnativa/docker-socket-proxy:[^ ]+' docker-compose.yml | head -1 ;;
     esac
@@ -227,28 +227,14 @@ source "$RELEASE_LIB_DIR/bundle.sh"
 main() {
     log "Pithead release pipeline (#44)$([ "$DRY_RUN" -eq 1 ] && echo '  [DRY RUN]')"
     preflight
+    require_bench_tier4
     WORKDIR="$(mktemp -d)" # holds the captured digests, the ingredients manifest and the bundle
-    if [ "$RESUME_PROMOTE" -eq 1 ]; then
-        warn "--resume-promote: skipping build/stage. Re-staging to recover digests..."
-        ghcr_login
-        local suffix repo digest
-        for suffix in "${IMAGES[@]}"; do
-            repo="$(image_for "$suffix")"
-            # #557: same errexit-unreachable shape as stage_push above — a bare assignment aborts
-            # under errexit once retries are exhausted, before this die() fires.
-            if ! digest="$(manifest_digest "$repo:$STAGING_TAG")" || [ -z "$digest" ]; then
-                die "Cannot resolve a staged digest for $repo:$STAGING_TAG — stage first."
-            fi
-            set_digest "$suffix" "$repo@$digest"
-        done
-    else
-        test_gate
-        build_images
-        stage_push
-    fi
+    test_gate
+    build_images
+    stage_push
     smoke_test
     promote
-    sign_images # #376 — signs the digests promote re-tagged; --resume-promote reaches this too
+    sign_images # #376 — signs the digests promote re-tagged
     publish
 
     printf '\n'
