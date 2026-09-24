@@ -26,6 +26,8 @@ printf 'stack_up() { :; }\n' >"$td/pithead"
 [ "$(PITHEAD_ENGINE=docker baseline_ruleset_verdict)" = predates:docker ]
 printf 'exit 1\n' >"$td/pithead"
 [ -z "$(PITHEAD_ENGINE=podman baseline_ruleset_verdict)" ]
+rm "$td/pithead"
+[ -z "$(PITHEAD_ENGINE=podman baseline_ruleset_verdict)" ]
 
 echo "== an engine-aware CLI stays strict on podman =="
 printf 'container_engine() { :; }\n' >"$td/pithead"

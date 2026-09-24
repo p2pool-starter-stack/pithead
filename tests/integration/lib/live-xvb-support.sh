@@ -102,10 +102,12 @@ SH
 }
 
 # Which CLI the stack directory holds, for the ruleset it can install: `aware` when it defines
-# container_engine, `predates:<engine>` when it does not. The engine is read before sourcing, from
-# the environment or the appliance's /etc/environment pin, the way container_engine itself reads it.
+# container_engine, `predates:<engine>` when it does not, nothing when there is no CLI to read.
+# The engine is read before sourcing, from the environment or the appliance's /etc/environment
+# pin, the way container_engine itself reads it.
 baseline_ruleset_verdict() {
     rx 'e=${PITHEAD_ENGINE:-$(sed -n "s/^PITHEAD_ENGINE=//p" /etc/environment 2>/dev/null | tr -d "\"")}
+[ -f ./pithead ] || exit 0
 source ./pithead >/dev/null 2>&1 </dev/null
 if declare -F container_engine >/dev/null; then echo aware; else echo "predates:$e"; fi' 2>/dev/null
 }
