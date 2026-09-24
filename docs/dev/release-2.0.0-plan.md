@@ -89,7 +89,7 @@ Closed since #2602 was filed, drop from its list: #2472, #2496, #2414, #2460, #2
 | P1 | Every image-changing row above merged with a tier-4 job on its head | C5, C6, C9, C11 and the node half of C15 merged |
 | P2 | Milestone ruled: each open `v2 - appliance` issue is in the cut or moved | 53 open; 14 not covered by §4's triage [r milestone] |
 | P3 | Both e2e benches on the canonical Tari chain | bench-ci#556 open [i] |
-| P4 | A KVM bench can run the `image-upgrade` phase, else `phases=all` cannot complete | bench-ci#560 open [i]; the gate needs `cp --reflink=always` [r docs/dev/release-server.md:310] |
+| P4 | Only if P2 keeps #2057, #1997 and #2473 in 2.0.0: a KVM bench can run the `--image-upgrade` gate | bench-ci#560 open [i]; the gate needs `cp --reflink=always` [r docs/dev/release-server.md:310; #2057]. `tests/os/phases/` has no image-upgrade phase at this snapshot [r] |
 | P5 | The shared matrix rows are green or attributed | #2362 → PR #2371 (draft): three rows red on every matrix run, among them the fault-injection failover-arm row at `tests/integration/lib/run-faults.sh:4-8` [r #2362] |
 | P6 | `make lint && make test` green on the cut commit | cut-day |
 
@@ -173,14 +173,15 @@ OS update, first restore and first Tari stall without a shell and without losing
 | Belongs | Why here |
 |---|---|
 | Whatever P2 moves out of the cut | user-visible on day one, none data-destroying |
-| #2057, #1997, #2473, #2001 | the image-upgrade gate; 2.0.0 is the first appliance image, so its first customer is 2.0.1 [r CHANGELOG.md:176-178] |
+| #2057, #1997, #2473, if P2 moves them | the image-upgrade gate; 2.0.0 is the first appliance image, so its first customer is 2.0.1 [r CHANGELOG.md:176-178] |
+| #2001, if R6 moves C16 | the N-1 restore proof |
 | #2508's measurement | the fix ships in 2.0.0 (C14); the number needs a bench observation run [i] |
 | #2436 (silent boot gate), #2462 (serial-getty loop), #2463 (certificate never covers a later IPv6 address), #2461 | hit by a fresh box [r titles] |
 | #2458, #2459, #2349, #2465, #2498, #2497 | Tor guard self-heal, onion lookup churn, per-worker tokens, the forked-node postmortem, wallet health [r titles] |
 | #2480 (pull from `maintenance & gates`) | the pre-release pin makes it a 2.0.x hazard (§3) |
 | #1837's version-visibility half (R11), #2373 | first-update and first-restore surface |
 
-Gate that ends 2.0.x [i, proposed]: 2.0.1 ships only through a green `image-upgrade` phase on a KVM
+Gate that ends 2.0.x [i, proposed]: 2.0.1 ships only through a green `--image-upgrade` gate on a KVM
 bench, and an upgraded install has taken 2.0.0 then 2.0.1 through the dashboard with chains and
 secrets intact.
 
@@ -192,7 +193,7 @@ and audited, and a remote node is first-class by name.
 | #1959 (PR #2305), #2367 (PR #2428): every field editable, sensitive ones behind typed `APPLY` | drafts; #2428 conflicting |
 | #2351 (PR #2419): remote node by LAN name | draft, conflicting |
 | #1999 (PR #2175): multi-worker routing under load | draft, conflicting |
-| #2384 (PR #2449), #2353 (PR #2422) | drafts |
+| #2384 (PR #2449), #2353 (PR #2422) | drafts; #2449 conflicting |
 | #2494, #2490, #2483, #2482, #2487, #912, #1837's delivery half (R11); rigforge #528, #533, #531 | designed, no PR (R1) |
 | #786 appliance parity; #1319, #2437, #2438 onion stratum | trackers and designs |
 
@@ -224,8 +225,8 @@ The numbers are this page's own.
 | # | Ruling | Default |
 |---|---|---|
 | R1 | No `2.1` milestone exists for the designed features in §5 | Keep them in `v2.x - post-GA`; the owner creates `v2.1` at GA if wanted |
-| R2 | Existing PR or a fresh implementation, for every conflicting row in §2.3 | Resume the open PR; rebase, then one tier4 job on the rebased head |
-| R3 | A KVM bench able to run `image-upgrade` (P4) | Provide one now; #1651, #2057, #1997 and #2473 need it |
+| R2 | Existing PR or a fresh implementation, for every conflicting row in §2.1 | Resume the open PR; rebase, then one tier4 job on the rebased head |
+| R3 | #2057, #1997, #2473 (the image-upgrade gate): in 2.0.0 or 2.0.x | 2.0.x, since nothing upgrades to the first appliance image; provide the KVM bench (P4) now either way |
 | R4 | #2593's targeted tier4-e2e without a mainnet-database bench mode | Sufficient, per ruling 4 on #2593 |
 | R5 | #2508: transport fix (#2611) vs #2653's stack-SOCKS design (#2673) | Pick one design; ship the fix in 2.0.0 and move the measurement post-GA |
 | R6 | C10 (#2599), C16 (#2001): ship or move | C10 ships if #2620 lands cleanly; C16 ships if its tier4-kvm job is green by the freeze |
