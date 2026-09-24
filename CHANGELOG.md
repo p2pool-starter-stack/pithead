@@ -129,6 +129,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A restore at setup that fails while writing its files no longer leaves the machine half
+  restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
+  replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
+  database, leaving the archive's configuration beside this machine's own keys. Every item is now
+  staged beside its destination and swapped in only when all are ready; any failure puts back
+  the previous configuration, Tor keys and database, and removes the chain files the restore
+  added.
+
 - **`pithead doctor` no longer reports HugePages OK for a pool too small to use
   ([#2610](https://github.com/p2pool-starter-stack/pithead/issues/2610)).** Any non-zero
   `HugePages_Total` read OK, so a box with 186 pages passed while P2Pool's RandomX dataset and caches
