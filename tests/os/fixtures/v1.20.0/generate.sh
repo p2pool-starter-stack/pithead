@@ -48,7 +48,7 @@ tar -xzf "$work/pithead.tar.gz" -C "$work"
 cd "$work/pithead"
 # xmrig_proxy.* and telegram.control are live v1.20.0 keys that 2.0.0 removed; the restore leg
 # asserts they migrate or drop as docs/configuration.md documents. (dashboard.workers[] is not
-# here: v1.20.0's own setup already moves it to workers.list[], so no v1.20.0 backup carries it.)
+# here: v1.20.0's own setup already moves a populated one to workers.list[].)
 jq -n --arg wallet "$wallet" --arg tari "$TARI_WALLET" '{
   monero: {mode: "remote", wallet_address: $wallet, node_username: "fixture-rpc-user", node_password: "fixture-rpc-password", remote: {host: "10.0.0.1", rpc_port: 18081, zmq_port: 18083}},
   tari: {mode: "remote", wallet_address: $tari, remote: {host: "10.0.0.1", grpc_port: 18142}},

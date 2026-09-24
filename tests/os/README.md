@@ -93,8 +93,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
   both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
-  `xmrig_proxy` settings must move to `xvb` unchanged, with the original kept in
-  `config.json.bak-1x`, and `telegram.control` must be dropped.
+  `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
+  and `telegram.control` must be dropped.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a

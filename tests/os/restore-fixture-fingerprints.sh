@@ -34,13 +34,13 @@ restore_fixture_fingerprints() {
 }
 
 # The 1.x XvB settings 2.0.0 renamed (docs/configuration.md): xmrig_proxy.* -> xvb.*. Read off the
-# v1.20.0 fixture and its .bak-1x copy as written, and off the restored config.json under the new
-# name, so all three hash the same when the move is lossless.
+# v1.20.0 fixture as written and off the restored config.json under the new name, so both hash the
+# same when the move is lossless.
 readonly RESTORE_LEGACY_JQ='.xmrig_proxy | {enabled, url, donor_id}'
 readonly RESTORE_MIGRATED_JQ='.xvb | {enabled, url, donor_id}'
 
 restore_fixture_migration_verdict() {
-    local migrated backup xvb_url xvb_donor
+    local migrated xvb_url xvb_donor
     _ssh "jq -e '(has(\"xmrig_proxy\") or ((.telegram // {}) | has(\"control\"))) | not' /data/pithead/config.json" >/dev/null &&
         ok "restore leg: the removed 1.x keys are gone from the restored config" ||
         bad "restore leg: the restored config still carries a removed 1.x key (xmrig_proxy or telegram.control)"
@@ -48,10 +48,11 @@ restore_fixture_migration_verdict() {
     [ "$migrated" = "$RESTORE_N1_LEGACY" ] &&
         ok "restore leg: v1.20.0 xmrig_proxy settings moved to xvb.* unchanged" ||
         bad "restore leg: v1.20.0 xmrig_proxy settings were lost or changed by the 1.x migration"
-    backup=$(_ssh "jq -c '$RESTORE_LEGACY_JQ' /data/pithead/config.json.bak-1x | sha256sum | cut -d' ' -f1")
-    [ "$backup" = "$RESTORE_N1_LEGACY" ] &&
-        ok "restore leg: config.json.bak-1x keeps the pre-migration v1.20.0 settings" ||
-        bad "restore leg: config.json.bak-1x is missing or does not hold the pre-migration v1.20.0 settings"
+    # Restore migrates its staged copy and sweeps the staging dir (#1845): the archive is the
+    # pre-migration copy, so no secret-bearing config.json.bak-1x may land on /data.
+    _ssh "test ! -e /data/pithead/config.json.bak-1x" &&
+        ok "restore leg: the restore left no config.json.bak-1x beside the migrated config" ||
+        bad "restore leg: the restore left a config.json.bak-1x copy of the v1.20.0 config on /data"
     xvb_url=$(_ssh "sed -n 's/^XVB_POOL_URL=//p' /data/pithead/.env" | tr -d '\r')
     xvb_donor=$(_ssh "sed -n 's/^XVB_DONOR_ID=//p' /data/pithead/.env" | tr -d '\r')
     [ "$xvb_url" = "$RESTORE_N1_XVB_URL" ] && [ "$xvb_donor" = "$RESTORE_N1_XVB_DONOR" ] &&
