@@ -16,13 +16,14 @@ _RESTART_HTTP_TIMEOUT = (
 class ClearnetSyncSupervisor:
     """Auto-transition a clearnet-syncing node back to Tor once it's synced (#183/#234).
 
-    When ``monero.clearnet_initial_sync`` / ``tari.clearnet_initial_sync`` is on, the daemon does
+    When ``monero.clearnet_initial_sync`` / ``tari.clearnet_initial_sync`` is on (and reaches the env:
+    ``pithead`` renders it only with the egress firewall off, #2649), the daemon does
     its initial block download over CLEARNET (fast) instead of Tor — briefly exposing this host's IP
     to that chain's P2P network. This supervisor watches the per-chain "synced" signal the data loop
     already computes; the first time a clearnet node reports synced it drops a persistent marker in
     the shared ``state_dir`` and restarts the container. The daemon's entrypoint, seeing the marker,
     comes back up Tor-only — and stays there across restarts/``apply`` (a reboot can't silently
-    re-expose it). The marker is removed by ``pithead`` only when the flag is re-enabled, re-arming.
+    re-expose it). ``pithead apply`` removes the marker while the configured flag is off, re-arming.
 
     Direction is one-way: it only ever moves a node TOWARD Tor. Fail-safe: the marker is written
     BEFORE the restart (so the restarted container is guaranteed to pick Tor), and a failed restart

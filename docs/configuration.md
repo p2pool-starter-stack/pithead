@@ -453,7 +453,7 @@ There are two ways to do it.
 
 > No existing node, but the over-Tor first sync is too slow? You don't have to reuse a chain. You
 > can sync the bundled nodes over clearnet for the one-time initial download, then switch back to
-> Tor. It's a default-off, privacy-relevant opt-in: see
+> Tor. It's a default-off, privacy-relevant opt-in that needs the egress firewall off for the sync: see
 > [`monero.clearnet_initial_sync` / `tari.clearnet_initial_sync`](#configuration-reference) and the
 > full [threat model in Privacy](privacy.md#optional-clearnet-initial-sync-off-by-default).
 

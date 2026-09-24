@@ -19,6 +19,8 @@ assert_running_state() {
     [ "$monero_clearnet" = "true" ] || monero_clearnet="false"
     tari_clearnet="$(jq_get "$config" '.tari.clearnet_initial_sync')"
     [ "$tari_clearnet" = "true" ] || tari_clearnet="false"
+    # render_env ignores both flags while the egress firewall is on (#2649).
+    [ "$(jq_get "$config" '.network.tor_egress_firewall')" = "false" ] || monero_clearnet=false tari_clearnet=false
 
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
     # dashboard supervisor flip it back to Tor, which RESTARTS the daemon(s). Wait for that to fully

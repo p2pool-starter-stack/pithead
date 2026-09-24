@@ -347,7 +347,7 @@ Tari transition independently, each as soon as *it* finishes.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
-off and on again with `./pithead apply`, which re-arms it.)
+off and on again with `./pithead apply`, which re-arms it; the egress firewall must be off for it.)
 
 ### It is loud and always-visible
 
