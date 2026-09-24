@@ -18,8 +18,8 @@ TARI_POLL_SLACK=120 # one dashboard poll plus the harness's own 10 s sampling, w
 
 tari_ip_of() { rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $1" 2>/dev/null | head -n1; }
 
-tari_strand_rule() { # <-I|-D> <tari-ip> <tor-ip>
-    rx "sudo -n iptables $1 DOCKER-USER -s $2 -d $3 -m comment --comment $TARI_STRAND_TAG -j DROP" >/dev/null 2>&1
+tari_strand_rule() { # <tari-ip> <tor-ip>
+    rx "sudo -n iptables -I DOCKER-USER -s $1 -d $2 -m comment --comment $TARI_STRAND_TAG -j DROP" >/dev/null 2>&1
 }
 
 # Every rule carrying the tag, whatever addresses it was written with. Idempotent; never fails.
@@ -69,7 +69,7 @@ run_tari_stranded() {
     trap tari_strand_abort EXIT
 
     it_step "fault: drop tari -> tor at DOCKER-USER ($TARI_STRAND_TAG)…"
-    tari_strand_rule -I "$tari" "$tor"
+    tari_strand_rule "$tari" "$tor"
     t0=$(now_s)
     if wait_for $((600 + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_level amber; then
         it_pass "tari-stranded: amber after $(($(now_s) - t0)) s: $(tari_health_field reasons)"
