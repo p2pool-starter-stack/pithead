@@ -119,15 +119,20 @@ phase_provision_egress_backstop() { # <phase-rc>
         return 0
     fi
 
-    # NEGATIVE — a direct clearnet dial by IP must be DROPPED (curl times out, non-zero). This is
-    # the check whose absence let a leaking appliance ship green: it FAILS against the
-    # orphaned-chain code and PASSES once the nft table is installed and effective.
-    if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null; then
+    # NEGATIVE — a direct clearnet dial by IP must be DROPPED. This is the check whose absence let
+    # a leaking appliance ship green: it FAILS against the orphaned-chain code and PASSES once the
+    # nft table is installed and effective. The rule is a silent `drop`, so a refused dial is a
+    # curl timeout (28). Any other failure (podman 125, ssh 255) is a dial that never ran.
+    rc=0
+    _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null || rc=$?
+    case "$rc" in
+    0)
         bad "clearnet egress is FAIL-OPEN — monerod reached 1.1.1.1 directly, bypassing Tor (the firewall is not enforced)"
         _egress_capture_diagnostics
-    else
-        ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced"
-    fi
+        ;;
+    28) ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced" ;;
+    *) bad "the direct clearnet dial from monerod failed without timing out (rc=$rc) — the Tor-only egress drop is unverified" ;;
+    esac
     # POSITIVE — the SAME container still reaches clearnet THROUGH Tor's SOCKS, proving the drop
     # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
     # failed because of the firewall rather than because the guest has no route to the internet at
@@ -150,12 +155,16 @@ phase_provision_egress_backstop() { # <phase-rc>
     if [ "$rc" -ne 0 ]; then
         bad "could not read /proc/net/if_inet6 in monerod (rc=$rc) — the IPv6 egress backstop is unverified"
     elif egress_has_global_v6 "$inet6"; then
-        if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null; then
+        rc=0
+        _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null || rc=$?
+        case "$rc" in
+        0)
             bad "IPv6 clearnet egress is FAIL-OPEN — monerod reached a v6 address directly, bypassing Tor"
             _egress_capture_diagnostics
-        else
-            ok "direct IPv6 clearnet dial from a mining container is dropped — the v6 backstop holds"
-        fi
+            ;;
+        28) ok "direct IPv6 clearnet dial from a mining container is dropped — the v6 backstop holds" ;;
+        *) bad "the direct IPv6 dial from monerod failed without timing out (rc=$rc) — the v6 backstop is unverified" ;;
+        esac
     else
         ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
     fi
@@ -164,8 +173,9 @@ phase_provision_egress_backstop() { # <phase-rc>
 
 # Drive the leg against a stubbed guest in a subshell, so the stubs and counters never leak into the
 # caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
-# <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6.
-# A well-behaved guest: the direct dials time out and the Tor SOCKS dial succeeds.
+# <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
+# dial-lost (global v6, and both direct dials die in podman with 125). Otherwise the guest is
+# well behaved: the direct dials time out (28) and the Tor SOCKS dial succeeds.
 _egress_drive() { # <phase-rc> <guest>
     (
         guest=$2
@@ -185,9 +195,12 @@ _egress_drive() { # <phase-rc> <guest>
                 [ "$guest" != no-cat ] || return 127
                 printf '00000000000000000000000000000001 01 80 10 80       lo\n'
                 printf 'fe800000000000000000000000000001 02 40 20 80     eth0\n'
-                [ "$guest" != global-v6 ] ||
+                case "$guest" in global-v6 | dial-lost)
                     printf 'fd000000000000000000000000000002 02 40 00 00     eth0\n'
+                    ;;
+                esac
                 ;;
+            *"/usr/bin/curl -s -o /dev/null -m 8 "*) if [ "$guest" = dial-lost ]; then return 125; else return 28; fi ;;
             *) return 1 ;;
             esac
         }
@@ -257,6 +270,13 @@ _egress_self_test() {
     grep -q "^call podman exec monerod /usr/bin/curl .*2606:4700" <<<"$out" &&
         grep -q '^ok direct IPv6 clearnet dial from a mining container is dropped' <<<"$out" || {
         printf 'a container with a global v6 address did not run the v6 dial: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    # Only a timeout is a drop: a direct dial that never ran must not read as one, on either family.
+    out=$(_egress_drive 0 dial-lost)
+    [ "$(grep -c '^bad .*failed without timing out (rc=125)' <<<"$out")" = 2 ] &&
+        ! grep -q '^ok .*dropped' <<<"$out" || {
+        printf 'a direct dial that never ran was reported as dropped: %s\n' "$out" >&2
         f=$((f + 1))
     }
     # Every exec names its executable by absolute path, so no probe depends on the exec's PATH.
