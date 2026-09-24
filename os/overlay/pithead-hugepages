@@ -17,14 +17,25 @@
 #
 # The tiers, and why the low one is "reduced", not "skip":
 #   >= 15 GiB   full 3072 pages (6 GiB). The supported machine; nothing to say.
-#   >= 7 GiB    2560 pages (5 GiB): both RandomX datasets — p2pool's AND monerod's, each
-#               dataset + cache = 1168 pages — with slack for their working pages. It cannot
-#               be smaller: with room for only one dataset, whichever process allocates second
-#               falls back to normal pages, and when that is p2pool its 1 GiB cap kills it —
-#               a crash-loop the commit gate then refuses, i.e. an unbootable slot. The rest
-#               of the stack runs squeezed (Tari's auto ceiling already re-reads
-#               HugePages_Total at render time, so the caps adapt), and the console, journal
-#               and doctor all say so.
+#   >= 7 GiB    2560 pages (5 GiB). Only p2pool builds a RandomX dataset. At the pinned
+#               versions the stack's own large pages are:
+#                 p2pool v4.18.1   1040-page dataset + two 128-page caches (current and
+#                                  previous seed) = 1296, plus one scratchpad page for each
+#                                  of up to 9 VMs (3 lanes x 2 light + 1 full): ~1305.
+#                 monerod v0.18.5.1  no dataset: rx_alloc_dataset returns early unless
+#                                  MONERO_RANDOMX_FULL_MEM is set or monerod mines, and the
+#                                  stack does neither. Two 128-page caches (main and secondary
+#                                  seed) = 256, plus one scratchpad page for each light VM, up
+#                                  to two on each thread that verifies a hash.
+#               That is about 1560 pages plus monerod's per-thread pages. The pool must hold
+#               p2pool's share at least: a dataset that falls out of hugetlbfs lands in p2pool's
+#               1 GiB cgroup cap and the OOM-killer ends it, a crash-loop the commit gate
+#               refuses, i.e. an unbootable slot. The remaining ~1000 pages are unmeasured
+#               margin. The bench has never run a synced stack on a reduced-RAM box, which is
+#               the only way to observe the pool's real peak, so the margin stays until that is
+#               measured (#2685). The rest of the stack runs squeezed (Tari's auto ceiling already
+#               re-reads HugePages_Total at render time, so the caps adapt), and the console,
+#               journal and doctor all say so.
 #   below       0 pages: no reservation at all leaves more RAM than any reduced pool could,
 #               and the stack cannot run in what remains either way. Releasing it keeps the
 #               machine itself responsive enough to tell the operator what is wrong.

@@ -120,10 +120,10 @@ see [Running a node elsewhere](#running-a-node-elsewhere).
 > Prefer 16 GB+.
 >
 > The [appliance](appliance.md) makes this call itself: 16 GB is its supported floor, and on a
-> machine below it the boot shrinks the reservation to 5 GB — the smallest pool that still holds
-> both RandomX datasets — announces it on the console, and `doctor` reports it as a warning until
-> the machine has 16 GB. Far below the floor (under ~7 GB) the reservation is released entirely
-> and the stack will not run reliably.
+> machine below it the boot shrinks the reservation to 5 GB, which holds P2Pool's RandomX dataset
+> and caches and `monerod`'s caches with room to spare. It announces this on the console, and
+> `doctor` reports it as a warning until the machine has 16 GB. Far below the floor (under ~7 GB)
+> the reservation is released entirely and the stack will not run reliably.
 
 ### Disk
 
