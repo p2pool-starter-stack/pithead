@@ -153,7 +153,7 @@ assert_contains "internal control refusal names the boundary" \
 # service remains forbidden even if the same candidate moves that service elsewhere.
 preview_dashboard_move "$C/data/dashboard-v2"
 assert_contains "dashboard move preview says apply carries the database (#2360)" \
-    "$(jq -r '.changes[] | select(.flag == "CONFIRM") | .msg' "$RESULTS/$UUID7.json")" "copied there and verified"
+    "$(jq -r '.changes[] | select(.flag == "CONFIRM") | .msg' "$RESULTS/$UUID7.json")" "copied and verified"
 preview_dashboard_move "$C/data"
 printf '{"id":"%s","action":"commit","actor":"admin","confirm":"APPLY"}\n' "$UUID7" >"$REQS/$UUID7.json"
 run_pending >/dev/null

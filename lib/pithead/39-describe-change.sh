@@ -133,7 +133,7 @@ describe_change() {
         ;;
     DASHBOARD_DATA_DIR)
         flag=CONFIRM
-        msg="$key: ${old:-unset} → $new — the dashboard database (history and the payout-wallet alarm baseline) is copied there and verified; a non-empty target refuses the move${old:+, and the old copy stays at $old}."
+        msg="$key: ${old:-unset} → $new — the dashboard database (history and the payout-wallet alarm baseline) follows it: moved from the old in-install default, otherwise copied and verified with the old copy left in place; a non-empty target refuses the move."
         ;;
     MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR | TOR_DATA_DIR)
         flag=CONFIRM

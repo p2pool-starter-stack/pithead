@@ -51,7 +51,7 @@ gate_try "$C/cand.json" APPLY "$(jq -n --arg s "${ATTACKER_WALLET: -8}" '{payout
 assert_eq "payout swap plus dashboard-data move is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_contains "combined refusal preserves the wallet alarm baseline" "$(jq -r '.error' "$RESULTS/$UUID5.json")" "wallet-change alarm"
 assert_eq "combined refusal keeps the payout address" "$(jq -r '.monero.wallet_address' "$C/config.json")" "$WALLET"
-assert_eq "operator-pinned dashboard-data move leaves the baseline at the old path" \
+assert_eq "refused dashboard-data move leaves the baseline at the old path" \
     "$(python3 -c 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT value FROM kv_store WHERE key=\"payout_wallet\"").fetchone()[0])' "$LIVE_DASHBOARD_DIR/mining_data.db")" "$WALLET"
 if [ -e "$MOVED_DASHBOARD_DIR/mining_data.db" ]; then bad "combined refusal does not create a new dashboard database" "created anyway"; else ok "combined refusal does not create a new dashboard database"; fi
 # Drop the seeded database: a later confirmed dashboard.data_dir round-trip copies it (#2360), and
