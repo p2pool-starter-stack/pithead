@@ -747,10 +747,9 @@ node_onion_probe() { # <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> 
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
-        : >asked
-        : >dockerlog
-        : >renders
+        tee asked dockerlog renders </dev/null >/dev/null
         log() { :; }
+        restore_recreate_names() { :; } # its own test is tests/stack/lifecycle/recreate-names.sh
         docker() { printf '%s ' "$*" >>dockerlog; }
         render_env() { printf 'x' >>renders; }
         wait_for_onion() {
