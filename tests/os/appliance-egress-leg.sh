@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
-# tests/os/run.sh; --self-test exercises the pure probe list without a guest.
+# tests/os/run.sh; --self-test drives the leg against a stubbed guest.
 #
 # Why this lives in its own file rather than inline at the tail of the provision phase (#2059):
 # it is the only tier-4 assertion in the repo that proves the KERNEL enforces Tor-only egress, and
@@ -174,8 +174,10 @@ phase_provision_egress_backstop() { # <phase-rc>
 # Drive the leg against a stubbed guest in a subshell, so the stubs and counters never leak into the
 # caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
 # <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
-# dial-lost (global v6, and both direct dials die in podman with 125). Otherwise the guest is
-# well behaved: the direct dials time out (28) and the Tor SOCKS dial succeeds.
+# dial-lost (both direct dials die in podman, 125) | dial-refused (both are refused, curl 7) |
+# fail-open (both connect) | tor-down (the SOCKS dial fails, curl 7). All but v4-only hold a global
+# v6 address. Otherwise the guest is well behaved: the direct dials time out (28) and the Tor SOCKS
+# dial succeeds.
 _egress_drive() { # <phase-rc> <guest>
     (
         guest=$2
@@ -189,18 +191,23 @@ _egress_drive() { # <phase-rc> <guest>
             case "$1" in
             true) return 0 ;;
             *"podman ps"*) printf 'monerod\n' ;;
-            *--socks5-hostname*) return 0 ;;
+            *--socks5-hostname*) if [ "$guest" = tor-down ]; then return 7; else return 0; fi ;;
             *"/usr/bin/curl --version"*) [ "$guest" != no-curl ] || return 127 ;;
             *"/usr/bin/cat /proc/net/if_inet6"*)
                 [ "$guest" != no-cat ] || return 127
                 printf '00000000000000000000000000000001 01 80 10 80       lo\n'
                 printf 'fe800000000000000000000000000001 02 40 20 80     eth0\n'
-                case "$guest" in global-v6 | dial-lost)
+                [ "$guest" = v4-only ] ||
                     printf 'fd000000000000000000000000000002 02 40 00 00     eth0\n'
-                    ;;
+                ;;
+            *"/usr/bin/curl -s -o /dev/null -m 8 "*)
+                case "$guest" in
+                dial-lost) return 125 ;;
+                dial-refused) return 7 ;;
+                fail-open) return 0 ;;
+                *) return 28 ;;
                 esac
                 ;;
-            *"/usr/bin/curl -s -o /dev/null -m 8 "*) if [ "$guest" = dial-lost ]; then return 125; else return 28; fi ;;
             *) return 1 ;;
             esac
         }
@@ -272,11 +279,31 @@ _egress_self_test() {
         printf 'a container with a global v6 address did not run the v6 dial: %s\n' "$out" >&2
         f=$((f + 1))
     }
-    # Only a timeout is a drop: a direct dial that never ran must not read as one, on either family.
-    out=$(_egress_drive 0 dial-lost)
-    [ "$(grep -c '^bad .*failed without timing out (rc=125)' <<<"$out")" = 2 ] &&
+    # Only a timeout is a drop: a direct dial that never ran, or that something other than the silent
+    # drop refused, must not read as one, on either family.
+    local guest rc_want
+    for guest in dial-lost:125 dial-refused:7; do
+        rc_want=${guest#*:}
+        out=$(_egress_drive 0 "${guest%:*}")
+        [ "$(grep -c "^bad .*failed without timing out (rc=$rc_want)" <<<"$out")" = 2 ] &&
+            ! grep -q '^ok .*dropped' <<<"$out" || {
+            printf 'a direct dial that exited %s was reported as dropped: %s\n' "$rc_want" "$out" >&2
+            f=$((f + 1))
+        }
+    done
+    # The verdicts themselves: a dial that connects is FAIL-OPEN on both families, and a Tor path
+    # that fails is red, however green the drop looks.
+    out=$(_egress_drive 0 fail-open)
+    grep -q '^bad clearnet egress is FAIL-OPEN' <<<"$out" &&
+        grep -q '^bad IPv6 clearnet egress is FAIL-OPEN' <<<"$out" &&
         ! grep -q '^ok .*dropped' <<<"$out" || {
-        printf 'a direct dial that never ran was reported as dropped: %s\n' "$out" >&2
+        printf 'a direct dial that connected was not reported FAIL-OPEN: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    out=$(_egress_drive 0 tor-down)
+    grep -q '^bad the mining container can no longer reach clearnet even through Tor' <<<"$out" &&
+        ! grep -q "^ok egress through Tor's SOCKS" <<<"$out" || {
+        printf 'a failed Tor SOCKS dial was not reported: %s\n' "$out" >&2
         f=$((f + 1))
     }
     # Every exec names its executable by absolute path, so no probe depends on the exec's PATH.
