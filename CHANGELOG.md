@@ -64,11 +64,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     a working state. Take a backup first (`./pithead backup --with-chains`).
   - **A node that followed the dead 5.3.1 branch past 350,000 is rewound on its own
     ([#2618](https://github.com/p2pool-starter-stack/pithead/issues/2618)).** Such a node bans
-    every canonical peer for `Invalid Proof of work` after the migration and never syncs. When the
-    node's gRPC first answers, the Tari entrypoint compares its block header at 350,000 with the
-    canonical hash. On a mismatch it rewinds the chain to 349,900, deletes the peer database (the
-    bans) and starts the node again. A node below 350,000 or on the canonical chain is left as it
-    is. Each step is logged in `docker logs tari` with the prefix `[pithead fork-check]`.
+    every canonical peer for `Invalid Proof of work` after the migration and never syncs. Once the
+    node's gRPC returns a header, the Tari entrypoint compares its block header at 350,000 with the
+    canonical hash; while the node answers that it is not ready, it retries for up to 30 minutes.
+    On a mismatch it rewinds the chain to 349,900, deletes the peer database (the bans) and starts
+    the node again. A node below 350,000 or on the canonical chain is left as it is. Each step is
+    logged in `docker logs tari` with the prefix `[pithead fork-check]`.
   - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
     cannot merge-mine against an older node.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses

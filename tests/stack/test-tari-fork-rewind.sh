@@ -31,7 +31,8 @@ while :; do
 done
 EOF
 # Stub curl: refuses while gRPC is closed; answers TFR_HTTP_CODE with no body when set; answers the
-# first TFR_GRPC_ERRORS calls with a trailers-only gRPC error (HTTP 200, grpc-status 14, no body),
+# first TFR_GRPC_ERRORS calls with a trailers-only gRPC error (HTTP 200, grpc-status 14 unless
+# TFR_GRPC_ERR_STATUS is set empty, no body),
 # the way the node answers before it is ready; otherwise frames a ListHeaders or GetTipInfo answer
 # from the state dir's tip and hash. It keeps the request body and whether the URL came after `--`.
 cat >"$TFR_BIN/curl" <<'EOF'
@@ -53,7 +54,8 @@ req=$(od -An -v -tx1 | tr -d ' \n')
 n=$(($(cat "$S/grpc_errors" 2>/dev/null || echo 0) + 1))
 echo "$n" >"$S/grpc_errors"
 if [ "$n" -le "${TFR_GRPC_ERRORS:-0}" ]; then
-    printf 'HTTP/2 200\r\ncontent-type: application/grpc\r\ngrpc-status: 14\r\ngrpc-message: not ready\r\n\r\n' >"$hdrs"
+    st=${TFR_GRPC_ERR_STATUS-14}
+    printf 'HTTP/2 200\r\ncontent-type: application/grpc\r\n%b\r\n' "${st:+grpc-status: $st\r\ngrpc-message: not ready\r\n}" >"$hdrs"
     : >"$out"
     printf 200
     exit 0
@@ -221,3 +223,10 @@ assert_contains "fork-check: a persistent gRPC error status gives up with its st
 tfr_stop
 assert_eq "fork-check: a persistent gRPC error starts no second node (#2618)" "$(grep -c . "$TFR_STATE/starts")" "1"
 assert_eq "fork-check: a persistent gRPC error keeps the peer state (#2618)" "$(tfr_has "$TFR_STATE/base/data/base_node/peer_db")" "yes"
+
+# An empty HTTP 200 answer is retried even when curl captured no grpc-status (it arrived as a trailer).
+tfr_start 350500 "$TFR_CANONICAL" TFR_GRPC_ERRORS=2 TFR_GRPC_ERR_STATUS=
+tfr_wait "$TFR_STATE/out" "is canonical"
+assert_contains "fork-check: an empty 200 answer without grpc-status is retried (#2618)" "$(cat "$TFR_STATE/out")" \
+    "gRPC answered grpc-status unknown; retrying for up to 1800s while the node starts"
+tfr_stop

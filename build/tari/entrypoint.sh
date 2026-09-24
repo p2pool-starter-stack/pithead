@@ -149,14 +149,15 @@ tari_grpc() {
 }
 
 # The node's header at FORK_HEIGHT: prints its hash, or "below" when the tip is under FORK_HEIGHT
-# (ListHeaders clamps from_height to the tip). Returns 1 while gRPC is silent; 4, printing the
-# status, on a gRPC error status (the server listens before the node is ready); 2, printing the
-# HTTP status, on any other answer without a header.
+# (ListHeaders clamps from_height to the tip, so a node with any chain returns a header). Returns
+# 1 while gRPC is silent; 4, printing the grpc-status, on HTTP 200 with no message: a gRPC error,
+# as the server listens before the node is ready; 2, printing the HTTP status, on any other answer
+# without a header.
 header_at_fork() {
     local header height
     tari_grpc ListHeaders "08$(pb_encode_varint "$FORK_HEIGHT")10011801" || return 1
-    if [ "$GRPC_CODE" = 200 ] && [ -n "$GRPC_STATUS" ] && [ "$GRPC_STATUS" != 0 ]; then
-        echo "grpc-status $GRPC_STATUS${GRPC_ERR:+: $GRPC_ERR}"
+    if [ "$GRPC_CODE" = 200 ] && [ -z "$GRPC_MSG" ]; then
+        echo "grpc-status ${GRPC_STATUS:-unknown}${GRPC_ERR:+: $GRPC_ERR}"
         return 4
     fi
     header=$(pb_field "$GRPC_MSG" 1) || {
