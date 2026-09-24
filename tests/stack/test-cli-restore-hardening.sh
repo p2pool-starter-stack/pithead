@@ -151,9 +151,21 @@ assert_eq "restore preserves the dashboard auth hash" "$(sed -n 's/^DASHBOARD_AU
 assert_eq "restore preserves the dashboard auth fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$CR_DASH_FP"
 assert_eq "restore preserves the Tor onion identity" "$(sed -n 's/^MONERO_ONION_ADDRESS=//p' "$BK/.env")" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion
 assert_eq "restore preserves onion client-auth identity" "$(sed -n 's/^DASHBOARD_ONION_CLIENT_PRIVKEY=//p' "$BK/.env")" BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+CR_KEPT='^(PROXY_AUTH_TOKEN|WALLET_RPC_PASSWORD|TARI_WALLET_PASSWORD|[A-Z0-9]+_ONION_ADDRESS|DASHBOARD_ONION_CLIENT_(PUB|PRIV)KEY|DASHBOARD_AUTH_(HASH_B64|PW_FP))='
+assert_eq "restore preserves every archived secret and identity exactly" "$(grep -E "$CR_KEPT" "$BK/.env" | sort)" "$(grep -E "$CR_KEPT" "$ROOTS/${BK#/}/.env" | sort)"
 assert_not_contains "restore drops unrecognized archive env policy" "$(cat "$BK/.env")" ARCHIVE_ONLY_VALUE
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
+
+# An `auto` stratum password was generated once; restore keeps the archived value, never a new one.
+jq '.p2pool.stratum_password = "auto"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+sed 's/^PROXY_STRATUM_PASSWORD=.*/PROXY_STRATUM_PASSWORD=333333333333333333333333/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/auto-stratum.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/auto-stratum.tar.gz" 2>&1)"
+assert_rc "restore accepts an archived generated stratum password" "$?" 0
+assert_eq "restore preserves the generated stratum password" "$(sed -n 's/^PROXY_STRATUM_PASSWORD=//p' "$BK/.env")" 333333333333333333333333
+jq '.p2pool.stratum_password = "fixture.literal-pass"' "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
+sed 's/^PROXY_STRATUM_PASSWORD=.*/PROXY_STRATUM_PASSWORD=fixture.literal-pass/' "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 
 # A password changed after the last render leaves a stale pair: the old hash must not survive, or
 # the old password would keep opening the dashboard. The render rehashes through the fake Caddy.
@@ -183,6 +195,11 @@ out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-dash
 assert_rc "restore rejects a malformed dashboard hash" "$?" 1
 assert_eq "malformed dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 assert_eq "malformed dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH}/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
+cr_archive "$CR/trailing-dashboard-hash.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/trailing-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects a dashboard hash with trailing text" "$?" 1
+assert_eq "trailing-text dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 sed "s/^DASHBOARD_AUTH_HASH_B64=.*/DASHBOARD_AUTH_HASH_B64=$CR_DASH_HASH/" "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 
 printf 'LIVE-ENV\n' >"$BK/.env"
@@ -205,4 +222,4 @@ out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/malformed-pres
 assert_rc "restore rejects malformed preserved-secret values" "$?" 1
 assert_eq "malformed preserved-secret refusal leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 unset -f cr_archive
-unset CR ROOTS CR_ARCHIVE CR_DASH_FP CR_DASH_HASH out
+unset CR ROOTS CR_ARCHIVE CR_DASH_FP CR_DASH_HASH CR_KEPT out

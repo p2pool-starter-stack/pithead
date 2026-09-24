@@ -114,6 +114,8 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
         bcrypt)
             [ "$dash_fp_ok" -eq 1 ] || continue
+            # A 60-byte bcrypt string is exactly 80 base64 characters; openssl alone ignores junk.
+            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || return 1
             decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
             [[ "$decoded" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]] || return 1
             ;;

@@ -614,6 +614,9 @@ before committing them. `.env` and `Caddyfile` are regenerated from validated `c
 the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
 exactly from the archived environment. The dashboard login hash is retained with them while its
 fingerprint matches `dashboard.auth.password`; otherwise restore hashes the configured password again.
+A matching fingerprint beside a hash that is not bcrypt refuses the archive. An archive is trusted
+as far as its own `config.json`: whoever can edit it can change the login, so keep backups private
+and encrypted.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 
