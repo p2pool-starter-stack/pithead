@@ -4,6 +4,7 @@ import time
 import uuid
 
 from mining_dashboard.client.xmrig_client import (
+    _CONTROL_TERMINAL,
     parse_worker_control_status,
 )
 from mining_dashboard.config import config
@@ -35,6 +36,19 @@ logger = logging.getLogger("DataService")
 # untrusted source can make permanent. See service/workers/worker_change_audit.py.
 _RIG_EDIT_CAP_PER_HOUR = 12
 _RIG_EDIT_WINDOW_SEC = 3600
+_CONTROL_HISTORY_LIMIT = 20
+
+
+def _terminal_control_history(extra_stats):
+    """Yield terminal entries from rigforge#519's additive ``control_history`` ring."""
+    rf = extra_stats.get("rigforge") if isinstance(extra_stats, dict) else None
+    history = rf.get("control_history") if isinstance(rf, dict) else None
+    for entry in history[:_CONTROL_HISTORY_LIMIT] if isinstance(history, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        change_id, status = entry.get("change_id"), entry.get("status")
+        if isinstance(change_id, str) and change_id and status in _CONTROL_TERMINAL:
+            yield change_id, status, entry.get("reason")
 
 
 class DataAuditMixin:
@@ -194,6 +208,9 @@ class DataAuditMixin:
         still mid-change, or an unreachable/offline rig (``{}``) all parse to ``None`` via
         ``parse_worker_control_status`` and are a quiet no-op.
 
+        Before touching ``ctrl``, also sweeps ``_terminal_control_history`` (rigforge#519's ring,
+        #1702) for any entry this dashboard already spooled — reconcile-only, never rig-edit.
+
         A TERMINAL report whose ``change_id`` this dashboard never spooled (``worker_config`` has no
         row for it — checked via ``worker_config_change_known``) is a change the RIG applied on its
         own: reconciling it would be a silent no-op anyway (the ``WHERE status='accepted'`` UPDATE
@@ -225,6 +242,20 @@ class DataAuditMixin:
                 self, w, extra_stats, _RIG_EDIT_CAP_PER_HOUR, _RIG_EDIT_WINDOW_SEC
             )
             ctrl = parse_worker_control_status(extra_stats) if extra_stats else None
+            # #1702: history only reconciles existing rows; only the current slot can create a
+            # rig-edit event.
+            for change_id, status, reason in _terminal_control_history(extra_stats):
+                if ctrl and change_id == ctrl["change_id"]:
+                    continue
+                if await asyncio.to_thread(
+                    self.state_manager.worker_config_change_known, change_id
+                ):
+                    await asyncio.to_thread(
+                        self.state_manager.reconcile_worker_config_status,
+                        change_id,
+                        status,
+                        reason,
+                    )
             if not ctrl:
                 continue
             known = await asyncio.to_thread(

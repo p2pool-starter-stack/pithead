@@ -617,10 +617,10 @@ def create_app(state_manager, latest_data_ref):
                 web.get("/api/control/backup-download", download_views.handle_backup_download),
                 # Appliance OS update: one route, a closed action set, every judgment host-side.
                 web.post("/api/control/os-update", handle_control_os_update),
-                # Service Diagnostics (#913/#943): read-only asks answered by a host report. Both
-                # poll /api/control/result above — they add no polling route of their own.
+                # Service Diagnostics (#913/#943): read-only, polls /api/control/result above.
                 web.post("/api/control/diag-doctor", diagnostics_views.handle_diag_doctor),
                 web.post("/api/control/diag-logs", diagnostics_views.handle_diag_logs),
+                web.post("/api/control/onion-client-key", diagnostics_views.handle_onion_key),
             ]
         )
 

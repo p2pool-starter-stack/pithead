@@ -213,8 +213,11 @@ This masking is not a process-isolation claim. The running dashboard necessarily
 runtime credentials it consumes — node authentication, the fleet worker bearer, notification
 tokens and capability URLs — through its environment, plus derived per-worker read credentials.
 A full backend compromise can read those values, rewrite the dashboard database, suppress its
-notifiers, and ask to replace any configuration value below the physical-presence boundary. Treat
-the container as semi-trusted and keep the onion behind Tor client authorization: the request
+notifiers, and ask to replace any configuration value below the physical-presence boundary. It
+also sees the read-only mutation-lock inode and its non-secret holder record so its container
+start/stop requests can serialize with host CLI mutations. Read-only prevents it from rewriting
+the record, not from holding the advisory lock: a compromised dashboard can make host mutations
+time out, an availability impact. Treat the container as semi-trusted and keep the onion behind Tor client authorization: the request
 spool is a mutation-request surface, while masking protects the editor/browser and raw-config
 mount boundary.
 

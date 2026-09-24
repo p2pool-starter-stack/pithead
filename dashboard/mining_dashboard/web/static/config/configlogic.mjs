@@ -14,6 +14,8 @@
 // preview, and the gate are all untouched by this display-only regroup. A secret left blank keeps
 // its sentinel — the server swaps it for the live value ("unchanged").
 
+import { pathGet } from "./configsync.mjs";
+
 export const SECRET_HINT = "set — leave blank to keep";
 
 export function isSecretSentinel(v) {
@@ -349,6 +351,28 @@ export function parseConfigJson(text) {
     return { error: "Enter a JSON object." };
   }
   return { config: cfg };
+}
+
+function removePath(node, [key, ...rest]) {
+  if (!isPlainObject(node)) return;
+  if (rest.length) {
+    removePath(node[key], rest);
+    if (isPlainObject(node[key]) && Object.keys(node[key]).length === 0) delete node[key];
+  } else delete node[key];
+}
+
+// The full candidate the host stages and commits (#2365), minus reference defaults that were
+// absent from config.json and remain untouched. Existing explicit values and secret sentinels must
+// stay: the host replaces config.json with this object, then resolves sentinels from the live file.
+export function explicitCandidate(pristine, candidate, defaultKeys) {
+  const out = JSON.parse(JSON.stringify(candidate));
+  for (const dotted of defaultKeys) {
+    const path = dotted.split(".");
+    if (JSON.stringify(pathGet(pristine, dotted)) === JSON.stringify(pathGet(candidate, dotted))) {
+      removePath(out, path);
+    }
+  }
+  return out;
 }
 
 // Live syntax check for the JSON textarea, surfaced inline as the operator types (not only on

@@ -37,7 +37,7 @@ fi
 # DNS-resolvable hostname; on a home LAN, use a DHCP reservation or static IP.)
 #
 # Extra flags arrive via $P2POOL_FLAGS (rendered by pithead: the pool-type flag + the #165 Tor SOCKS
-# routing — e.g. "--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor"). We word-split it HERE
+# routing — e.g. "--mini --socks5 172.28.0.25:9050 --socks5-proxy-type tor --no-dns"). We word-split it HERE
 # because Docker Compose passes a `- ${VAR}` command item as ONE argument (no word-splitting), which
 # would hand p2pool a single mangled flag. An empty value expands to nothing (no stray empty arg).
 # #278: p2pool's --socks5 (#165 Tor sidechain routing) ALSO proxies the monerod RPC/ZMQ connection

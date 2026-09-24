@@ -45,6 +45,12 @@ services:
       - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/masked:/control/masked:ro
       - ../../../config.reference.json:/host-config/config.reference.json:ro
       - ../../../config.core-keys.json:/host-config/config.core-keys.json:ro
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:?PITHEAD_LOCK_FILE is required}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"
