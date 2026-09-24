@@ -129,6 +129,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **monerod flushes every chain-database commit to disk
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod ran with its
+  default `fast:async` database mode, which opens LMDB with `MDB_NOSYNC`, so a commit could return
+  before it reached the disk. The bundled node now runs with `db-sync-mode=safe`, which syncs every
+  commit. Initial sync is slower as a result.
+
 - **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
   ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
   HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
