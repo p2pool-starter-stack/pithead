@@ -109,7 +109,8 @@ assert_contains "0 pages: names setup as the fix" "$out" "Run './pithead setup'"
 assert_not_contains "0 pages: never a FAIL" "$out" "FAIL"
 printf 'MemTotal:       16318412 kB\n' >"$MEMD/meminfo"
 out="$(_hp 0)"
-assert_contains "no HugePages line: could-not-read WARN" "$out" "Could not read HugePages"
+assert_contains "no HugePages line: could-not-read WARN" "$out" "⚠ WARN Could not read HugePages"
+assert_not_contains "no HugePages line: never a FAIL" "$out" "FAIL"
 
 # The crash-loop wording names P2Pool's memory limit as 1 GiB. Read the limit off both places it
 # is set, so the change that moves it (#2609) reds here and rewrites the wording with it.
