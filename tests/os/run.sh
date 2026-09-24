@@ -126,6 +126,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
+# shellcheck source=tests/os/m10-height-verdict.sh
+. "$SCRIPT_DIR/m10-height-verdict.sh"
 IMAGE=""
 KEEP=0
 PHASE="all"

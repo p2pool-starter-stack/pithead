@@ -149,7 +149,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
   asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
-  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  monerod stays readable at or above the height read and flushed to disk just before that cut
+  (its default db-sync-mode does not fsync each block (batched flushes), so an unflushed height
+  is not owed back; #2557), and the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
   rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
   a first version.
