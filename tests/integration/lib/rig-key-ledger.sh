@@ -184,7 +184,11 @@ rig_key_unwind() {
         # reading the log needs to know the rig was left mid-change and what we did about it. (It is
         # invisible in the summary counters — #1365 — which is why it says the whole story here.)
         it_warn "aborted mid-change: restoring $k on rig '$w' via the $r route (#1379)"
-        payload="$(jq -nc --arg k "$k" --argjson v "$v" '{($k): $v}' 2>/dev/null)" || continue
+        # The value goes to jq on STDIN, never as an argument (#2663): the pools original carries the
+        # stratum `pass` (#113), and a jq argv is readable by any local user from the process table
+        # for as long as jq runs. `printf` is a builtin, so no process ever carries it. `-s` keeps
+        # the strictness `--argjson` had: exactly one JSON value, or nothing is restored.
+        payload="$(printf '%s' "$v" | jq -cs --arg k "$k" 'if length == 1 then {($k): .[0]} else error("original") end' 2>/dev/null)" || continue
         [ -n "$payload" ] || continue
         case "$r" in
         dash) _worker_apply "$w" "$payload" >/dev/null 2>&1 || true ;;
