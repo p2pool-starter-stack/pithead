@@ -3,8 +3,10 @@
 
 # firstboot_consume_restore's rejections, continued from test-appliance-restore.sh on its fixture
 # ($RS, $RSPOOL, $rarchive): every refused archive falls back to the form and touches nothing live.
+echo "== unit: firstboot_consume_restore — rejected archives fall back to the form (#909, #1854) =="
 # 2) Bad passphrase: rejected before anything is touched.
 printf 'CORRUPTED\n' >"$RS/Caddyfile"
+# shellcheck disable=SC2154 # test-appliance-restore.sh sets $rarchive before run.sh sources this file.
 cp "$rarchive" "$RSPOOL/restore-archive" && printf 'not-the-passphrase' >"$RSPOOL/restore-passphrase" # test fixture
 out=$(run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
 assert_contains "wrong passphrase rejected" "$out" "rc1"
