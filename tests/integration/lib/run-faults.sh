@@ -120,12 +120,18 @@ fault_firewall_rollback() {
 # bash writes a byte a second; /proc/net/tcp shows its socket to 198.51.100.2:9001 as 026433C6:2329.
 _gf_flows() { # a count, or "unreadable" so a failed read can never pass as zero
     local t
-    t=$(rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null) && [ -n "$t" ] || { echo unreadable; return; }
+    t=$(rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null) && [ -n "$t" ] || {
+        echo unreadable
+        return
+    }
     awk '$3 == "026433C6:2329" && $4 == "01"' <<<"$t" | grep -c .
 }
 _gf_down() { rx 'sudo -n ip netns del itest2672; sudo -n ip link del it2672h; rm -f .itest-2672-peer.py; sudo -n pkill -f itest-2672-peer' >/dev/null 2>&1 || true; }
 fault_firewall_grandfathered_flow() {
-    [ "$(env_on_box TOR_EGRESS_FIREWALL)" != "false" ] || { it_skip_leg "grandfathered-flow fault" "network.tor_egress_firewall=false"; return 0; }
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
+        it_skip_leg "grandfathered-flow fault" "network.tor_egress_firewall=false"
+        return 0
+    fi
     it_step "fault: open a direct clearnet flow with the rules out, then re-apply them (#2672)…"
     _gf_down
     rx 'printf "%s\n" "import socket" "l = socket.socket()" "l.bind((\"198.51.100.2\", 9001))" "l.listen()" "c, _ = l.accept()" "while c.recv(64):" "    pass" >.itest-2672-peer.py && sudo -n ip netns add itest2672 && sudo -n ip link add it2672h type veth peer name it2672p netns itest2672 && sudo -n ip addr add 198.51.100.1/30 dev it2672h && sudo -n ip link set it2672h up && sudo -n ip netns exec itest2672 sh -c "ip addr add 198.51.100.2/30 dev it2672p && ip link set it2672p up && ip route add default via 198.51.100.1" && { sudo -n setsid timeout 300 ip netns exec itest2672 python3 .itest-2672-peer.py </dev/null >/dev/null 2>&1 & }' >/dev/null 2>&1

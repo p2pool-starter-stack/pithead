@@ -39,7 +39,8 @@ render_tor_egress_restore() { # <subnet> <tor_ip>  (stdin: iptables-save)
     printf '%s\n' '*filter'
     while IFS= read -r line; do
         case "$line" in "-A DOCKER-USER "*"--comment $TOR_EGRESS_TAG "* | "-A DOCKER-USER "*"--comment \"$TOR_EGRESS_TAG\" "*)
-            printf '%s\n' "-D ${line#-A }" ;;
+            printf '%s\n' "-D ${line#-A }"
+            ;;
         esac
     done
     while IFS= read -r rule; do
