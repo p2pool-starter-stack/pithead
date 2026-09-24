@@ -274,10 +274,12 @@ sysctl imposed a silent ≥ 16 GiB floor the harness's 16 GiB VM could never not
 `pithead-hugepages.service` now sizes the pool every boot before either boot owner:
 full 3072 pages on a supported machine, 2560 below 15 GiB, zero below 7 GiB where the stack
 cannot run regardless. The reduced pool must hold p2pool's RandomX pages: its 2080 MiB dataset
-falling out of hugetlbfs lands in its 1 GiB cgroup cap and OOM-loops, the load-bearing finding
-from the #78 spike. Only p2pool builds a dataset. monerod v0.18.5.1 allocates one only when
-`MONERO_RANDOMX_FULL_MEM` is set or it mines, and the stack does neither (#2681). Its large
-pages are two 128-page caches and a scratchpad page per verifying VM. At the pinned versions
+falling out of hugetlbfs, with its caches, puts 2592 MiB of ordinary RAM on a machine the
+reservation already squeezes. Under the 1 GiB cgroup cap of the #78 spike that OOM-looped
+p2pool; the 4 GiB cap from #2562 holds it, and the machine pays. Only p2pool builds a dataset.
+monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
+stack does neither (#2681). Its large pages are two 128-page caches and a scratchpad page per
+verifying VM. At the pinned versions
 that comes to about 1560 pages: p2pool's dataset, two caches and VM scratchpads (~1305), and
 monerod's caches (256), plus monerod's per-thread pages. Up to ~1000 pages of the 2560, less
 those per-thread pages, are margin no bench run has measured, since none runs a synced stack on a
