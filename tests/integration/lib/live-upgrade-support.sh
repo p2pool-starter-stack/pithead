@@ -186,12 +186,6 @@ ensure_cosign_image() {
         docker pull -q "$LIVE_COSIGN_IMAGE" >/dev/null 2>&1
 }
 
-run_trusted_cosign() {
-    ensure_cosign_image || return 1
-    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-        -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" "$LIVE_COSIGN_IMAGE" "$@"
-}
-
 run_trusted_image_cosign() {
     ensure_cosign_image || return 1
     docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
