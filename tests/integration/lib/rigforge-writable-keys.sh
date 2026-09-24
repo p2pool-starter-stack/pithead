@@ -159,8 +159,21 @@ run_rigforge_writable_keys() { # <rig>
     fi
 }
 
-# #1002b: pools, the repoint-your-hashrate key. Unchanged in substance from the leg that lived in
-# run.sh, and still operator-gated for the reason above: the harness cannot read a pools value it
+# The pools readback is its URLs, and only its URLs: `pass` and `tls-fingerprint` never reach
+# `.rig_config` (#113), so a whole-value compare could never match. The URLs are enough to see which
+# pools the rig is running, and that is all a readback is asked here — it is never written back.
+_pool_urls() { # <pools-json> -> its entries' urls as a compact JSON array, or empty
+    printf '%s' "$1" | jq -c '[.[].url]' 2>/dev/null
+}
+
+_pred_rig_pool_urls() { # <rig> <want-urls-json>
+    local v
+    v="$(_rig_config_key "$(_worker_detail "$1")" pools)"
+    [ -n "$v" ] && [ "$(_pool_urls "$v")" = "$2" ]
+}
+
+# #1002b: pools, the repoint-your-hashrate key. Moved from run.sh, settled like the #1236 keys since
+# #2407 (it read the dial-time "accepted" as a failure), and still operator-gated for the reason above: the harness cannot read a pools value it
 # could safely write back. pithead treats `pools` as opaque passthrough (WORKER_WRITABLE_KEYS checks
 # the key NAME, never the value shape), so a guessed value risks a real rejected/failed instead of
 # proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
@@ -178,7 +191,7 @@ run_rigforge_writable_keys() { # <rig>
 # every run after this one. The #1546 credential check below still runs against whatever ends up in
 # `orig_pools`, seeded or not, so a probe missing its own `pass` is refused rather than applied.
 run_rigforge_pools() { # <rig>
-    local rig="$1" orig_pools res status ckeys
+    local rig="$1" orig_pools res status ckeys change_id
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
         it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (a JSON pools value safe to apply to rig '$rig')"
         return 0
@@ -209,14 +222,26 @@ run_rigforge_pools() { # <rig>
     # rather than assuming it — the same un-stripped value the revert below uses, and the only one
     # safe to write back (#113). (#1379, #1546)
     rig_key_mark dash "$rig" pools "$orig_pools"
+    # Settled, never read at dial time (#2407): the rig answers "accepted" and applies async
+    # (RigForge #344, #1309), exactly as it does for the #1236 keys above.
     res="$(_worker_apply "$rig" "{\"pools\":$IT_RIG_POOLS_PROBE}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
-    ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
+    IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply pools \
+        "the rig to report the probe's pool URLs applied (RigForge #344 async apply, #1309)" \
+        "$res" _pred_rig_pool_urls "$rig" "$(_pool_urls "$IT_RIG_POOLS_PROBE")")"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
-    assert_contains "the rig's /status confirms pools changed (#1002b)" "$ckeys" "pools"
+    assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
+    assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" \
+        "$(_settle_history_row "$rig" "$change_id")" "applied"
     it_step "reverting pools to the dashboard's last-applied value…"
     res="$(_worker_apply "$rig" "{\"pools\":$orig_pools}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
+    IFS='|' read -r status _ change_id <<<"$(_settle_worker_apply pools \
+        "the rig to report the last-applied pool URLs (RigForge #344 async apply, #1309)" \
+        "$res" _pred_rig_pool_urls "$rig" "$(_pool_urls "$orig_pools")")"
+    # The readback cannot tell this revert from the probe before it when the two share their URLs,
+    # and #2325's seed makes them the SAME value — so the revert's verdict is its own history row,
+    # the one surface keyed to THIS change. (The probe's readback is as blind once the seed is on
+    # the rig, which is why the history assertion above is not redundant with it either.)
+    [ "$status" = "applied" ] && status="$(_settle_history_row "$rig" "$change_id")"
     assert_eq "pools edit reverted on the rig (#1002b)" "$status" "applied"
     [ "$status" = "applied" ] && rig_key_clear dash "$rig" pools
     return 0

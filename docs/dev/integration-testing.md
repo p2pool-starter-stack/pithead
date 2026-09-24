@@ -627,7 +627,13 @@ as `[missing]` rows, while permanent safety refusals are recorded as `[by-design
   leg is about to restore to is checked for a usable `pass` before it is trusted, never assumed
   ([#1546](https://github.com/p2pool-starter-stack/pithead/issues/1546)). An absent probe, or a
   probe/record with no usable credential, is a `[missing]` row, never a pass or an unexplained gate
-  failure.
+  failure. The rig answers `accepted` and applies asynchronously, so the leg settles both writes
+  instead of reading the dial-time status
+  ([#2407](https://github.com/p2pool-starter-stack/pithead/issues/2407)): it waits for the rig's
+  own `.rig_config.pools` to carry the written value's pool URLs (the URLs, because the credentials
+  never reach that surface), then for each change's per-worker history row to turn `applied`. The
+  revert is judged on its history row alone, because a seeded probe and its restore are the same
+  value and the URLs cannot tell them apart.
 - Rig-side edit reflects ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)):
   a change made straight on the rig's control API shows up in the dashboard's enriched feed, and a
   `config.json` hand-edit shows up in the masked prefill (with the token still masked). The feed
