@@ -115,9 +115,14 @@ jobs:
           files=$(for g in $(cat /tmp/globs); do echo $g; done); echo "$files" | wc -l
           echo "== -x per file (KiB s file)"
           printf '%s\n' $files | xargs -P 4 -I{} /usr/bin/time -f 'MX %M %e {}' shellcheck -x --severity=warning {} >/dev/null 2>/tmp/mx || true
-          grep '^MX' /tmp/mx | sort -k2 -rn | head -25
-          echo "== no -x per file"
-          printf '%s\n' $files | xargs -P 4 -I{} /usr/bin/time -f 'NX %M %e {}' shellcheck --severity=warning {} >/dev/null 2>/tmp/nx || true
-          grep '^NX' /tmp/nx | sort -k2 -rn | head -10
-          echo "== old single call"
-          /usr/bin/time -f 'OLD %M %e' shellcheck --severity=warning $files || true
+          grep '^MX' /tmp/mx | sort -k2 -rn | head -12
+          echo "== make lint-sh with sampled concurrent shellcheck RSS"
+          ( tot=0; one=0; while sleep 1; do
+              read -r t m <<<"$(ps -C shellcheck -o rss= | awk '{t+=$1; if ($1>m) m=$1} END{print t+0, m+0}')"
+              [ "$t" -gt "$tot" ] && tot=$t; [ "$m" -gt "$one" ] && one=$m
+              echo "$tot $one" >/tmp/peak
+            done ) &
+          s0=$(date +%s); rc=0; make lint-sh || rc=$?
+          read -r tot one </tmp/peak
+          echo "MEASURE-2632 rc=$rc secs=$(( $(date +%s) - s0 )) peak_total_kib=$tot peak_single_kib=$one"
+          exit $rc

@@ -66,7 +66,7 @@ fb_rc() { # <lock file> <fn> <args...> -> rc on stdout
         cd "$FB" || return
         export PITHEAD_LOCK_FILE="$lk" PITHEAD_LOCK_TIMEOUT=1
         PATH="$FB/bin:$PATH"
-        # shellcheck disable=SC1090
+        # shellcheck source=/dev/null  # the CLI is linted as its own root; following it costs ~2 GiB per source (#2632)
         source "$FB/pithead"
         set +e
         systemctl() { echo "[systemctl] $*" >>"$FBLOG"; }
@@ -84,7 +84,7 @@ fb_window() { # <closing fn> <args...> -> begin-did-not-hold | released | still-
         cd "$FB" || return
         export PITHEAD_LOCK_FILE="$FBFREE" PITHEAD_LOCK_TIMEOUT=1
         PATH="$FB/bin:$PATH"
-        # shellcheck disable=SC1090
+        # shellcheck source=/dev/null  # the CLI is linted as its own root; following it costs ~2 GiB per source (#2632)
         source "$FB/pithead"
         set +e
         systemctl() { echo "[systemctl] $*" >>"$FBLOG"; }

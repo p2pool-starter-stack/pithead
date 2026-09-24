@@ -50,6 +50,7 @@ REPO="$(cd -P "$HERE/../../.." && pwd -P)"
 # readonly CONFIG_FILE into this harness. `source` reads from /dev/null so it can never consume
 # the payload on stdin.
 brl() { (
+    # shellcheck source=/dev/null  # the CLI is linted as its own root; following it costs ~2 GiB per source (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     bundle_redact_log
 ); }
@@ -58,6 +59,7 @@ brl() { (
 # Without this, a broken source makes every absence assertion below pass vacuously.
 echo "== unit: support-bundle log redactor is reachable (#1585) =="
 if (
+    # shellcheck source=/dev/null  # the CLI is linted as its own root; following it costs ~2 GiB per source (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     declare -F bundle_redact_log >/dev/null
 ); then
@@ -226,6 +228,7 @@ XMR_REAL_INTEGRATED="4JMJg6ic6R584YzzMa6fUueoELZ9ZRXq9VetWzYGzKt52XU5xvqgzYnDK9U
 
 # The shipped classifier, run the same way brl() runs the shipped redactor.
 mat() { (
+    # shellcheck source=/dev/null  # the CLI is linted as its own root; following it costs ~2 GiB per source (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     monero_address_type "$1"
 ); }
