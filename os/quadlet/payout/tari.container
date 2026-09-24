@@ -19,6 +19,7 @@ Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=127.0.0.1:18142:18142
 ReadOnly=true
 NoNewPrivileges=true
+RunInit=true
 StopTimeout=60
 PodmanArgs=--memory 7680m --memory-swap 7680m
 HealthCmd=ps | grep '[m]inotari_node' || exit 1

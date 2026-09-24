@@ -112,6 +112,8 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     docker-control.container dashboard.container; do
     assert_eq "quadlet local parity: $f" "$(diff -u "$ROOT/os/quadlet/local/$f" "$QLOCAL/$f" 2>&1 | head -c 300)" ""
 done
+# #2627: the node must not be PID 1 — a zombie PID 1 cannot be signalled, so a stop fails.
+assert_eq "#2627: tari runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QLOCAL/tari.container")" "1"
 assert_contains "local render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QLOCAL/dashboard.container")" '"TARI_MODE=local"'
 # The payout-confirm variant (bench-proven 2026-07-24): both wallet profiles, 13 files, the

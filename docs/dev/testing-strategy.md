@@ -131,6 +131,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Double outage; readmit follows monerod alone — Tari's state doesn't gate it either way | both down → monerod up | 1 ✅ (added) · 3 ▶ |
 | #35 latch × #31 failover coexist after release | down post-release | 1 ✅ (added) · 3 ▶ |
 | Stop/start fails → retry next cycle (idempotent) | docker error | 1 ✅ |
+| A stop reaches the Tari node (#2627): `tari` runs under an init (compose `init: true`, quadlet `RunInit=true`) because the wrapper and upstream's start script both `exec`, which would leave `minotari_node` as PID 1; a PID 1 that reaps nothing can turn zombie and then cannot be signalled | `docker stop` / `podman stop` | 1 ✅ (`standalone/test_compose.sh`; `test-render-quadlet.sh`) · 4 ▶ (the appliance's PID 1 is podman's init, `appliance-tari-mode-leg.sh`) |
 | `dashboard.fail_closed` (#490): default off never holds on an unrecoverable failure (alert-only); `true` holds (reusing #35's stop/start), releases once it clears (not a one-way latch), no-op before the sync gate releases | `is_db_unrecoverable() ∨ containers.is_confirmed_bad("dashboard")` | 1 ✅ · 3 ▶ |
 
 ### C1. Outbound third-party integrations
