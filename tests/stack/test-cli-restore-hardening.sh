@@ -151,51 +151,39 @@ assert_eq "restore derives disabled dashboard auth from config" "$(sed -n 's/^DA
 assert_contains "restore regenerates the dashboard proxy target" "$(cat "$BK/Caddyfile")" "reverse_proxy 127.0.0.1:8000"
 assert_not_contains "restore discards stale generated Caddy policy" "$(cat "$BK/Caddyfile")" STALE-GENERATED-CADDY
 
-# Bcrypt is salted. When the archived hash still authenticates config.json's password, retain it so
-# restore does not rotate a correct dashboard login.
-# Validation and the probe resolve the pinned Caddy image from the stack's compose file, and hash
-# or verify through the shared docker/curl stubs this file replaced above.
+# Bcrypt is salted. While the archived fingerprint is config.json's password's (apply's own rule),
+# restore keeps the hash so it does not rotate a correct dashboard login; otherwise it re-hashes.
+# Re-hashing resolves the pinned Caddy image from the compose file and runs the shared docker stub,
+# which this file replaced above.
 grep -E 'image: .*caddy:' "$ROOT/docker-compose.yml" >"$BK/docker-compose.yml"
-make_stubs "$CR/shared-bin" && cp "$CR/shared-bin/docker" "$CR/shared-bin/curl" "$BK/bin/"
+make_stubs "$CR/shared-bin" && cp "$CR/shared-bin/docker" "$BK/bin/"
 dashboard_password=dashboard-pass-123
+dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
 jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
     "$BK/config.json" >"$ROOTS/${BK#/}/config.json"
-# The archived fingerprint is stale on purpose: restore derives it from the verified password.
-awk '
+awk -v fp="$dashboard_fingerprint" '
     /^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next }
-    /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=stale-fingerprint"; next }
+    /^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next }
     { print }
 ' "$BK/.env" >"$ROOTS/${BK#/}/.env"
 cr_archive "$CR/dashboard-auth.tar.gz"
-out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.invalid CADDY_VERIFY_PASSWORD="$dashboard_password" PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/dashboard-auth.tar.gz" 2>&1)"
 assert_rc "restore accepts a matching dashboard login hash" "$?" 0
 assert_eq "restore retains the stable dashboard login hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")" JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u
 
-# The config-wide control-character guard runs before the probe, so a multi-line password never
-# reaches the probe's quoted curl config value.
-jq --arg password $'dashboard-pass-123\nurl = http://127.0.0.2/' '.dashboard.auth.password = $password' \
-    "$ROOTS/${BK#/}/config.json" >"$CR/multiline.json"
-cp "$ROOTS/${BK#/}/config.json" "$CR/config.keep" && mv "$CR/multiline.json" "$ROOTS/${BK#/}/config.json"
-cr_archive "$CR/multiline-dashboard-password.tar.gz"
-mv "$CR/config.keep" "$ROOTS/${BK#/}/config.json"
-printf 'LIVE-ENV\n' >"$BK/.env"
-out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/multiline-dashboard-password.tar.gz" 2>&1)"
-assert_rc "restore rejects a multi-line dashboard password" "$?" 1
-assert_eq "multi-line dashboard password leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
-
-dashboard_password=other-dashboard-pass
-dashboard_fingerprint=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
-jq --arg password "$dashboard_password" '.dashboard.auth = {username: "admin", password: $password}' \
-    "$ROOTS/${BK#/}/config.json" >"$ROOTS/${BK#/}/config.json.tmp" && mv "$ROOTS/${BK#/}/config.json.tmp" "$ROOTS/${BK#/}/config.json"
-awk -v fp="$dashboard_fingerprint" '/^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=" fp; next } { print }' \
+# A password edited after the last apply leaves a hash for the old one: restore drops it and
+# re-hashes the restored password instead of refusing a legitimate archive.
+awk '/^DASHBOARD_AUTH_PW_FP=/ { print "DASHBOARD_AUTH_PW_FP=stale-fingerprint"; next } { print }' \
     "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
-printf 'LIVE-ENV\n' >"$BK/.env"
-printf 'LIVE-CADDY\n' >"$BK/Caddyfile"
-cr_archive "$CR/mismatched-dashboard-hash.tar.gz"
-out="$(cd "$BK" && CADDY_VERIFY_PASSWORD=dashboard-pass-123 PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/mismatched-dashboard-hash.tar.gz" 2>&1)"
-assert_rc "restore rejects a dashboard hash for another password" "$?" 1
-assert_eq "mismatched dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
-assert_eq "mismatched dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
+cr_archive "$CR/stale-dashboard-fingerprint.tar.gz"
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/stale-dashboard-fingerprint.tar.gz" 2>&1)"
+assert_rc "restore accepts a dashboard hash for another password" "$?" 0
+rehashed=$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$BK/.env")
+[ -n "$rehashed" ] && [ "$rehashed" != JDJ5JDE0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u ] &&
+    ok "restore re-hashes the restored dashboard password" ||
+    bad "restore re-hashes the restored dashboard password" "hash [${rehashed:-empty}] is empty or the archived one"
+assert_eq "restore records the restored password's fingerprint" \
+    "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$BK/.env")" "$dashboard_fingerprint"
 
 awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDA0JC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next } { print }' \
     "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
@@ -210,8 +198,8 @@ assert_eq "weak-cost dashboard hash leaves live Caddyfile untouched" "$(cat "$BK
 awk '/^DASHBOARD_AUTH_HASH_B64=/ { print "DASHBOARD_AUTH_HASH_B64=JDJ5JDMxJC4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4uLi4u"; next } { print }' \
     "$ROOTS/${BK#/}/.env" >"$ROOTS/${BK#/}/.env.tmp" && mv "$ROOTS/${BK#/}/.env.tmp" "$ROOTS/${BK#/}/.env"
 cr_archive "$CR/expensive-dashboard-hash.tar.gz"
-out="$(cd "$BK" && http_proxy=http://proxy.invalid https_proxy=http://proxy.invalid PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/expensive-dashboard-hash.tar.gz" 2>&1)"
-assert_rc "restore rejects an excessive-cost dashboard hash despite proxy settings" "$?" 1
+out="$(cd "$BK" && PATH="$BK/bin:$PATH" ./pithead restore -y "$CR/expensive-dashboard-hash.tar.gz" 2>&1)"
+assert_rc "restore rejects an excessive-cost dashboard hash" "$?" 1
 assert_eq "excessive-cost dashboard hash leaves live env untouched" "$(cat "$BK/.env")" LIVE-ENV
 assert_eq "excessive-cost dashboard hash leaves live Caddyfile untouched" "$(cat "$BK/Caddyfile")" LIVE-CADDY
 

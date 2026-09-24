@@ -86,13 +86,13 @@ restore_staged_members_safe() {
 
 # An archive may carry generated files for round-trip compatibility, but they are never policy
 # inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
-# trees, including the stable dashboard-login hash when it still authenticates the restored config's
-# password. Validate them as single-line generated values, then use the normal writers to
-# rebuild .env and Caddyfile from the staged, validated config. This runs before any live path is
-# touched.
+# trees, including the stable dashboard-login hash while its archived password fingerprint matches
+# the restored config. Validate them as single-line generated values, then use the normal writers
+# to rebuild .env and Caddyfile from the staged, validated config. This runs before any live path
+# is touched.
 restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
     local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
-    local key value count kind decoded dash_user dash_password
+    local key value count kind decoded dash_password fp
     : >"$seed" || return 1
     while read -r key kind; do
         if [ "$key" = PROXY_STRATUM_PASSWORD ] && [ "$(jq -r '.p2pool.stratum_password // ""' "$staged_cfg")" != auto ]; then continue; fi
@@ -114,10 +114,12 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
             [ -n "$dash_password" ] || continue
             decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
             [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
-            dash_user=$(jq -r '.dashboard.auth.username // "admin"' "$staged_cfg") || return 1
-            caddy_hash_password_matches "$value" "$dash_user" "$dash_password" || return 1
-            # The archived fingerprint is never trusted; derive it from the password just verified.
-            printf 'DASHBOARD_AUTH_PW_FP=%s\n' "$(printf '%s' "$dash_password" | sha256_hex)" >>"$seed" || return 1
+            # apply's own rule: keep the hash only while the archived fingerprint is the restored
+            # password's; otherwise drop it and let the writer re-hash. The archive's author already
+            # chooses config.json's password, so the hash grants nothing the config does not.
+            fp=$(printf '%s' "$dash_password" | sha256_hex)
+            [ "$(env_get_file "$staged_env" DASHBOARD_AUTH_PW_FP)" = "$fp" ] || continue
+            printf 'DASHBOARD_AUTH_PW_FP=%s\n' "$fp" >>"$seed" || return 1
             ;;
         esac
         printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
