@@ -136,11 +136,14 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
   bundle through `pithead os-update` and proves the migration hold: the chain services stay down
-  until the slot commits, then start, with the pending marker consumed. After it, the floor-fallback
-  leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating bundle stamped with a version no
-  release carries. Its copied build tree opts into the harness-only synthetic compose path, names
-  its compose file explicitly, uses the resolved signing material, and records the file hash in
-  `COMPOSE_SOURCE`, so the build does not need a git origin or a local dev-key directory. The
+  until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
+  committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
+  the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
+  bundle stamped with a version no release carries. Its copied build tree opts into the
+  harness-only synthetic compose path, names its compose file explicitly, uses the resolved
+  signing material, and records the file hash in `COMPOSE_SOURCE`, so the build does not need a
+  git origin or a local dev-key directory. The
   resulting slot cannot bring the stack up and falls back uncommitted: the
   previous slot's boot must put the `/data` floor back from the record the raise left, and the same
   fall-back with the record deleted must leave the floor alone and make `os-update` refuse with the
@@ -149,7 +152,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (`fault`) or was a clean reboot; this is the first that hits a provisioned one. After EVERY cut,
   asserts every container returns, the image store stays runnable (the #1029 class — present, digest-matched
   and unrunnable — checked the same way the product's own `repair_broken_image_store` checks it),
-  monerod's height never regresses, the miner and the boot-gated slot commit both survive. A KVM
+  monerod stays readable at or above the height read and flushed to disk just before that cut
+  (its default db-sync-mode does not fsync each block (batched flushes), so an unflushed height
+  is not owed back; #2557), and the miner and the boot-gated slot commit both survive. A KVM
   guest never clears the sync gate (#2063), so this runs against the held (still-syncing) stack
   rather than the full remote-node repoint M10 describes on real hardware — #2067 allows that for
   a first version.
