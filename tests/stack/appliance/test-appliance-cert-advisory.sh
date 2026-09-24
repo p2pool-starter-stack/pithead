@@ -167,8 +167,9 @@ rf_out=$(
     # lint-sh's `-x` inlines os/overlay/pithead-boot's gate_cert_advisory and attributes the
     # status to the loop's printf instead. Without `-x` this line reports nothing. The shell
     # disagrees with the warning — $? here is the function's own status, measured 1 on this
-    # fixture and 127 with the function missing, and that 127 is the arming this row rests on. Collapsing the capture to an if/else that
-    # writes 1 would silence the warning and take the arming with it.
+    # fixture and 127 with the function missing, and that 127 is the arming this row rests on.
+    # Collapsing the capture to an if/else that writes 1 would silence the warning and take the
+    # arming with it.
     # shellcheck disable=SC2320
     adv_rc=$?
     printf 'advisory_rc=%s' "$adv_rc"
