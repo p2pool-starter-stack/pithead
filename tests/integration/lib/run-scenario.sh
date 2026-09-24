@@ -204,10 +204,10 @@ box_mode() { rx "stat -c %a $(quote_arg "$1") 2>/dev/null"; }
 # The readiness health row polls where it once read `pithead status` a single time (#2656): job 949
 # failed it minutes after deploy where 973 passed at the same commit, and discarded the output that
 # would have named the container. The predicate keeps the last read in the caller's
-# `status_out`. Only the per-service verdict lines and warnings leave it: the same output
-# prints the stratum password and the dashboard onion.
+# `status_out`. Only the per-service verdict lines, warnings and errors leave it: the same
+# output prints the stratum password and the dashboard onion.
 _pred_readiness_status() { status_out="$(pithead status 2>&1)"; }
-status_verdict_lines() { sed -E 's/\x1b\[[0-9;]*m//g' | grep -E '^  (✓|…|⚠|✗) |^\[WARNING\] ' | redact | tail -n 30; }
+status_verdict_lines() { sed -E 's/\x1b\[[0-9;]*m//g' | grep -E '^  (✓|…|⚠|✗) |^\[(WARNING|ERROR)\] ' | redact | tail -n 30; }
 
 assert_release_readiness() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
@@ -224,13 +224,13 @@ assert_release_readiness() {
     else
         it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
     fi
-    local status_out=""
-    if wait_for 240 5 "pithead status OK" _pred_readiness_status; then
+    local status_out="" status_bound=240
+    if wait_for "$status_bound" 5 "pithead status OK" _pred_readiness_status; then
         it_pass "stack is healthy (pithead status)"
     else
         local verdict
         verdict="$(status_verdict_lines <<<"$status_out")"
-        it_fail "stack is healthy (pithead status)" "still unhealthy after 240s; last pithead status:
+        it_fail "stack is healthy (pithead status)" "still unhealthy after ${status_bound}s; last pithead status:
 $(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")"
     fi
 

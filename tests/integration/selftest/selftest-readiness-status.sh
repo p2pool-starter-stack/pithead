@@ -10,7 +10,7 @@
 # Proven able to fail: with the row reverted to the one-shot `pithead status >/dev/null 2>&1` plus
 # `assert_rc`, 7 rows go red (the settles-after-60s rows, the bound and the detail rows); with
 # status_verdict_lines reduced to plain `redact`, 3 go red (colour, the password/onion/compose-table
-# row, and the empty-output row).
+# row, and the empty-output row); without its `redact`, the two address rows go red.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,6 +54,7 @@ drive_readiness() { # <healthy-at-second|never> -> "fails=<n> clock=<s>" then th
             printf '[pithead] Stratum authentication is ON: every rig must connect with pass "%s"\n' "$SECRET_PASS"
             printf '[pithead] Dashboard onion (remote access): http://%s.onion (login required)\n' "$(printf 'a%.0s' {1..56})"
             printf '[WARNING] 1 service(s) need attention (see above).\n'
+            printf '[WARNING] tor cannot reach its guard at 203.0.113.9\n'
             return 1
         }
         eval "$READINESS_SRC"
@@ -86,9 +87,10 @@ assert_contains "the failed row is the health row" "$STAYS_ROW" "✗ stack is he
 assert_contains "the detail states the bound" "$STAYS_ROW" "still unhealthy after 240s"
 assert_contains "the detail names the unhealthy service" "$STAYS_ROW" "        ⚠ tor           running but UNHEALTHY"
 assert_contains "the detail carries the status warning" "$STAYS_ROW" "[WARNING] 1 service(s) need attention"
+assert_contains "the detail redacts an address in a kept line" "$STAYS_ROW" "[WARNING] tor cannot reach its guard at <redacted-ip>"
 assert_contains "the detail keeps the healthy services, colour stripped" "$STAYS_ROW" "        ✓ monerod       running"
 case "$STAYS_ROW" in
-*"$SECRET_PASS"* | *.onion* | *$'\033'* | *"IMAGE  STATUS"*)
+*"$SECRET_PASS"* | *.onion* | *$'\033'* | *"IMAGE  STATUS"* | *203.0.113.9*)
     it_fail "the detail leaves out the password, the onion, colour codes and the compose table" "$STAYS_ROW"
     ;;
 *) it_pass "the detail leaves out the password, the onion, colour codes and the compose table" ;;
@@ -96,6 +98,8 @@ esac
 
 EMPTY="$(printf 'ssh: connect failed\n' | (eval "$READINESS_SRC" && status_verdict_lines))"
 assert_eq "output without service lines yields no verdict lines" "$EMPTY" ""
+ERRORED="$(printf '[ERROR] No .env found. Run ./pithead apply first.\n' | (eval "$READINESS_SRC" && status_verdict_lines))"
+assert_eq "a status that errors out keeps its error line" "$ERRORED" "[ERROR] No .env found. Run ./pithead apply first."
 
 echo "selftest-readiness-status: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1
