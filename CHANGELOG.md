@@ -53,7 +53,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   fork that activates at mainnet block **350,000**; a node on an older version forks off the
   network at that height. P2Pool 4.18.1 changes how it sends Tari merge-mined work and requires a
   Tari node on 6.0.0 or newer, so the two move as one pair. The node and console wallet images now
-  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.0-mainnet` indexes.
+  come from `ghcr.io/tari-project`, pinned by digest to the `v6.0.1-pre.0-mainnet` indexes: a
+  6.0.0 node rejects canonical block 350,008 as below target difficulty and stays on a dead fork,
+  and 6.0.1-pre.0 carries the upstream fix
+  ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
     one-time JMT migration that upstream describes as taking several minutes to much longer on a
     large database; the node is unavailable while it runs. Have free disk space for it, and do not
@@ -62,8 +65,8 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
     either database afterwards, so returning to an older Pithead release does not return Tari to
     a working state. Take a backup first (`./pithead backup --with-chains`).
-  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.0 first.** P2Pool 4.18.1
-    cannot merge-mine against an older node.
+  - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.1-pre.0 first.** P2Pool
+    4.18.1 cannot merge-mine against a node older than 6.0.0, and a 6.0.0 node stops at 350,008.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
     (a mined output that has not matured yet), so a payout is still recorded when it is mined.
 
