@@ -26,7 +26,7 @@ TOR_EGRESS_NFT_TABLE="pithead_egress"
 tor_egress_rules() { # <subnet> <tor_ip>
     local subnet="$1" tor_ip="$2"
     printf '%s\n' \
-        "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" \
+        "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" \
         "-s $tor_ip -j ACCEPT" \
         "-s $subnet -d 10.0.0.0/8 -j ACCEPT" \
         "-s $subnet -d 172.16.0.0/12 -j ACCEPT" \
