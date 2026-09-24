@@ -91,5 +91,7 @@ _phase_provision_migration() {
     else
         ok "the migration-pending marker was consumed"
     fi
+    # With the marker gone, a chain node that dies on its migration must reach the operator (#2588).
+    phase_provision_chain_fault_after_release "$pv_user" "$pv_pass"
     phase_provision_floor_fallback_leg "$mig_bundle"
 }
