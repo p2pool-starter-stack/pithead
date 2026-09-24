@@ -212,7 +212,7 @@ the desired value is not presented as proof of what the still-running services u
 | `monero.prep_blocks_threads` | `auto` | Block-verification threads during sync. `auto` = host cores − 2, clamped to 4–8. |
 | `monero.out_peers` | `48` | monerod's outbound peer target (8–1024). Over Tor each outbound peer is roughly one long-lived circuit, so this is the main steady-state lever on Tor's CPU (#595). Keep the default while syncing (more peers = more download bandwidth over Tor); once synced, `32` — the count P2Pool recommends for clearnet — cuts monerod's circuit maintenance by a third. |
 | `monero.data_dir` | `auto` | Where the Monero blockchain lives on the host. `auto` = `./data/monero`. Point this at an existing `.bitmonero` directory to reuse a synced node. See [Reusing an existing node](#reusing-an-existing-node). |
-| `monero.mem_limit` | `auto` | Upper limit on the monerod container's memory, so a leak/runaway OOM-restarts monerod alone instead of the host's OOM-killer picking a victim. `auto` is a generous ceiling (6 GB) that won't trip during normal operation or initial sync. monerod's OOM-triggering memory is small (~0.1 GiB at rest, ~1–3 GiB during sync) while its multi-GB blockchain DB is reclaimable, memory-mapped page cache that the kernel evicts under pressure rather than OOM-killing. Lower it only to free RAM. Raise it for a full (unpruned) node doing a heavy initial sync on a fast disk, or if a low-RAM host ever OOMs monerod during IBD (it restarts and resumes; the on-disk chain is transactional, no data loss). Accepts any Docker memory value, e.g. `"8g"`. (Tari has its own `tari.mem_limit`; the dashboard, P2Pool, Tor, and the proxies are small and carry fixed conservative ceilings in `docker-compose.yml`.) |
+| `monero.mem_limit` | `auto` | Upper limit on the monerod container's memory, so a leak/runaway OOM-restarts monerod alone instead of the host's OOM-killer picking a victim. `auto` is a generous ceiling (6 GB) that won't trip during normal operation or initial sync. monerod's OOM-triggering memory is small (~0.1 GiB at rest, ~1–3 GiB during sync) while its multi-GB blockchain DB is reclaimable, memory-mapped page cache that the kernel evicts under pressure rather than OOM-killing. Lower it only to free RAM. Raise it for a full (unpruned) node doing a heavy initial sync on a fast disk, or if a low-RAM host ever OOMs monerod during IBD (it restarts and resumes; the on-disk chain is transactional, no data loss). Accepts any Docker memory value, e.g. `"8g"`. (Tari has its own `tari.mem_limit`; the dashboard, P2Pool, Tor, and the proxies carry fixed ceilings in `docker-compose.yml`. P2Pool's is 4 GB, so it can hold its RandomX dataset when the HugePages reservation is short.) |
 | `tari.data_dir` | `auto` | Where the Tari node data lives on the host. `auto` = `./data/tari`. Unused with `tari.mode: remote` or `off` — no local node runs, and `setup`/`doctor` drop Tari's 200 GiB from this host's disk budget. Switching to `off` does not delete it, so switching back resumes from the chain already there. See [Hardware › Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
 | `tari.mem_limit` | `auto` | Upper limit on the Tari container's memory, so a runaway Tari restarts cleanly on its own instead of dragging down the whole host. `auto` picks a safe size for your machine. Leave it unless you want to give Tari less RAM (to free it for other apps) or more (if it ever restarts too often). Accepts any Docker memory value, e.g. `"8g"`. Local mode only: with `tari.mode: remote` or `off` there is no container to cap and the key is ignored. |
 | `p2pool.data_dir` | `auto` | Where P2Pool data lives on the host. `auto` = `./data/p2pool`. |
@@ -221,7 +221,7 @@ the desired value is not presented as proof of what the still-running services u
 | `dashboard.data_dir` | `auto` | Where the dashboard's database lives. `auto` = `./data/dashboard`, unless the four other `*.data_dir` all point under one parent directory — then the dashboard joins them at `<that parent>/dashboard`, and the first `upgrade`/`apply` moves data from the old default there automatically (see [Data directories](#data-directories)). |
 | `dashboard.check_for_updates` | `true` _(on)_ | The dashboard periodically asks GitHub whether a newer Pithead release exists and, if so, shows a header badge linking to it (e.g. "New release v1.4.0 available"). Notify-only: it never updates anything; you upgrade with `./pithead upgrade` on your own terms. On by default because the check is routed over Tor (the same bridge SOCKS as the XvB fetch, `socks5h` so the DNS lookup goes through Tor too), so GitHub sees a Tor exit, not your IP. It's cached (hourly) and fails silently offline. The same flag also covers the per-worker [RigForge new-release badge](workers.md#rigforge-new-release-badge) — one more hourly, Tor-routed fetch of the latest RigForge release, compared against every rig's reported version. Set to `false` to opt out of both. See [Privacy › Runtime egress](privacy.md#runtime-egress). |
 | `network.subnet` | `172.28.0.0/24` | The private Docker bridge the stack's containers run on. Change it only if install fails with `Pool overlaps with other one on this address space`, i.e. your host already uses `172.28.0.0/24` for another Docker network or interface. Must be a free `X.Y.Z.0/24` block (e.g. `"172.30.0.0/24"`); the services keep their fixed host octets (`.25`–`.31`) within it, so the structured addressing the dashboard and the worker SSRF guard rely on is preserved. |
-| `network.tor_egress_firewall` | `true` _(on)_ | Privacy-relevant, default on. Enforces "behind Tor" fail-closed: at `up`/`apply`, `pithead` installs host firewall rules (Docker's `DOCKER-USER` chain) that drop any direct clearnet dial from the mining containers (monerod/p2pool/tari/xmrig-proxy). Only the Tor container reaches the internet, so a misconfigured or buggy daemon can't leak your IP. Needs root (like the GRUB/HugePages steps); removed at `down`. Set `false` to skip it and rely on per-app Tor config only (e.g. a host where you manage egress yourself, or where `iptables` isn't available). Full detail: [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270). |
+| `network.tor_egress_firewall` | `true` _(on)_ | Privacy-relevant, default on. Enforces "behind Tor" fail-closed: at `up`/`apply`, `pithead` installs host firewall rules (Docker's `DOCKER-USER` chain) that drop any direct clearnet dial from the mining containers (monerod/p2pool/tari/xmrig-proxy). Only the Tor container reaches the internet, so a misconfigured or buggy daemon can't leak your IP. On a DIY host `pithead-egress.service` restores the rules at boot, before Docker starts the containers. Needs root (like the GRUB/HugePages steps); removed at `down`. Set `false` (which also removes the boot unit) to skip it and rely on per-app Tor config only (e.g. a host where you manage egress yourself, or where `iptables` isn't available). Full detail: [Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270). |
 
 ---
 
@@ -258,7 +258,10 @@ under one parent directory, the dashboard database defaults to `<that parent>/da
 of `./data/dashboard`, so it lives beside the chain data rather than inside the install directory
 (see [Operations › The deploy-box layout](operations.md#the-deploy-box-layout)).
 
-Set any `data_dir` to an absolute path to move that service's storage. For example, to put the
+Set any `data_dir` to a clean absolute path to move that service's storage. Since
+[#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360), `apply` refuses a path that
+contains `//`, a `/./` component or a trailing `/.` for all five `data_dir`s, so a config that
+already uses such a path fails `apply` until the path is written cleanly. For example, to put the
 Monero blockchain on a dedicated SSD:
 
 ```json
@@ -279,7 +282,13 @@ host where your account isn't uid 1000, expect to `sudo` when reading those dire
 
 > NOTE: `apply` does not copy your existing data into a new location; it only points the
 > container at the new path. If you're relocating data you already have, move the files yourself
-> first (with the stack stopped), then update `data_dir` and run `apply`.
+> first (with the stack stopped), then update `data_dir` and run `apply`. `dashboard.data_dir` is
+> the one exception: it holds the payout-wallet tamper-tripwire baseline
+> ([#375](https://github.com/p2pool-starter-stack/pithead/issues/375)), so a confirmed move
+> carries the live dashboard database and its SQLite companion files to the new path itself, then
+> verifies the published files — a non-empty target, or a failed or unverified copy, refuses the
+> move instead of guessing which copy is live
+> ([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)).
 
 ---
 

@@ -253,7 +253,7 @@ DropCapability=all
 AddCapability=IPC_LOCK SYS_NICE
 NoNewPrivileges=true
 Ulimit=memlock=-1:-1
-PodmanArgs=--memory 1g --memory-swap 1g
+PodmanArgs=--memory 4g --memory-swap 4g
 HealthCmd=/usr/local/bin/p2pool-healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
@@ -298,7 +298,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.4
+Image=docker.io/library/caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data
