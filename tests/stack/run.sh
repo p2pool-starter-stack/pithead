@@ -174,10 +174,10 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity.sh" && d
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-hostname.sh" && domain_ran test-appliance-hostname.sh "$_d0" "$?" || domain_ran test-appliance-hostname.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-defaults.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/appliance/test-appliance-install-restore.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install-restore.sh" && domain_ran test-appliance-install-restore.sh "$_d0" "$?" || domain_ran test-appliance-install-restore.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
 
