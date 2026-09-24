@@ -86,12 +86,12 @@ restore_staged_members_safe() {
 
 # An archive may carry generated files for round-trip compatibility, but they are never policy
 # inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
-# trees, including the stable dashboard-login hash while its archived password fingerprint matches
-# the restored config. Validate them as single-line generated values, then use the normal writers
-# to rebuild .env and Caddyfile from the staged, validated config. This runs before any live path
-# is touched.
-restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
-    local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
+# trees, including (admin restore only) the stable dashboard-login hash while its archived password
+# fingerprint matches the restored config. Validate them as single-line generated values, then use
+# the normal writers to rebuild .env and Caddyfile from the staged, validated config. This runs
+# before any live path is touched.
+restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy> [keep-dashboard-hash=0]
+    local staged_cfg="$1" staged_env="$2" staged_caddy="$3" keep_dashboard_hash="${4:-0}" seed="${2}.canonical"
     local key value count kind decoded dash_password fp
     : >"$seed" || return 1
     while read -r key kind; do
@@ -109,6 +109,8 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
         bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         bcrypt)
+            # Only the admin restore keeps it (archive wins); the wizard door re-hashes (#2231).
+            [ "$keep_dashboard_hash" = 1 ] || continue
             # Auth disabled in the restored config: the archived hash is stale policy, dropped.
             dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
             [ -n "$dash_password" ] || continue
@@ -203,7 +205,7 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
         restore_discard_stage
         error "Archive contains files or data paths outside this appliance's validated restore set — nothing was restored."
     fi
-    if ! restore_canonicalize_derived "$staged_cfg" "$staged_env" "$staged_caddy"; then
+    if ! restore_canonicalize_derived "$staged_cfg" "$staged_env" "$staged_caddy" 1; then
         restore_discard_stage
         error "Archive contains invalid generated identity or secret state — nothing was restored."
     fi
