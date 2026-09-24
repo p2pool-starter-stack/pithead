@@ -52,7 +52,7 @@ def header_response(
 
 
 def p2pool_log(heights, extra: str = "") -> str:
-    lines = [f"NOTICE  MergeMiningClientTari tari://10.0.0.2:18142 uses chain_id {'ab' * 32}"]
+    lines = [f"NOTICE  MergeMiningClientTari tari://192.0.2.2:18142 uses chain_id {'ab' * 32}"]
     for n in heights:
         lines.append(
             f"NOTICE  MergeMiningClientTari Tari aux block template: height = {n}, diff = 1, reward = 5, fees = 0, hash = {'cd' * 32}"
@@ -145,7 +145,7 @@ class Judge(unittest.TestCase):
         self.assertEqual(verdicts(lines)[1], "FAIL", lines)
 
     def test_templates_from_two_chains_fail(self):
-        extra = f"NOTICE  MergeMiningClientTari tari://10.0.0.3:18142 uses chain_id {'ef' * 32}\n"
+        extra = f"NOTICE  MergeMiningClientTari tari://192.0.2.3:18142 uses chain_id {'ef' * 32}\n"
         lines = judge(parse_log(p2pool_log([1, 2, 3], extra)), chain([1, 2, 3]), 3)
         self.assertEqual(verdicts(lines)[0], "FAIL", lines)
 

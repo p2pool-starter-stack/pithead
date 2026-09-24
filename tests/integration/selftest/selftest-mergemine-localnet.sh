@@ -28,13 +28,13 @@ RX_LOG="$OUT_DIR/rx.log"
 SHIP="ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce"
 SHIP_FACTS="80a52117 PATH=/bin dockerfile_version=v6.0.1-pre.0 TARI_NETWORK=mainnet TARI_TARGET_NETWORK=mainnet"
 LN_FACTS="80a52117 PATH=/bin dockerfile_version=v6.0.1-pre.0 TARI_NETWORK=esme TARI_TARGET_NETWORK=testnet"
-STUB_MONEROD=172.28.0.26 STUB_NODE_UP=1 STUB_SHIP_INSPECT_RC=1 STUB_JUDGE=""
+STUB_MONEROD=198.51.100.26 STUB_NODE_UP=1 STUB_SHIP_INSPECT_RC=1 STUB_JUDGE=""
 rx() {
     printf '%s\n' "$1" >>"$RX_LOG"
     case "$1" in
     *"grep -o 'ghcr.io/tari-project/minotari_node"*) echo "$SHIP" ;;
     *'Networks "mining_net"'*) echo "$STUB_MONEROD" ;;
-    *'Networks "itest-mm-localnet"'*) echo 10.99.0.2 ;;
+    *'Networks "itest-mm-localnet"'*) echo 192.0.2.2 ;;
     *"docker image inspect -f"*esme*) echo "$LN_FACTS" ;;
     *"docker image inspect -f"*) echo "$SHIP_FACTS" ;;
     *"docker image inspect "*) return "$STUB_SHIP_INSPECT_RC" ;;
@@ -100,7 +100,7 @@ STUB_MONEROD=""
 run_mergemine_localnet >/dev/null 2>&1
 check "remote Monero skips the phase" "$IT_SKIPPED_PHASES/$IT_FAIL" 1/0
 check "remote Monero builds nothing" "$(grep -c 'docker build' "$RX_LOG")" 0
-STUB_MONEROD=172.28.0.26
+STUB_MONEROD=198.51.100.26
 
 echo "== node never answers: fails, P2Pool never starts, everything cleaned up =="
 reset
@@ -119,10 +119,10 @@ check "target row, isolation row and two probe passes" "$IT_PASS" 4
 check "one probe failure" "$IT_FAIL" 1
 check "node network is internal" "$(grep -c "docker network create --internal $MML_NET" "$RX_LOG")" 1
 check "node runs LocalNet from the pinned -esme image" "$(grep -F -- "--network $MML_NET --entrypoint minotari_node $(quote_arg "$MML_TARI_IMAGE") --network localnet" "$RX_LOG" | grep -c -- '--mining-enabled --second-layer-grpc-enabled')" 1
-check "P2Pool reads monerod on mining_net" "$(grep -c -- '--network mining_net itest-mm-p2pool --host 172.28.0.26 ' "$RX_LOG")" 1
-check "P2Pool dials the LocalNet node" "$(grep -c -- '--merge-mine tari://10.99.0.2:18142' "$RX_LOG")" 1
+check "P2Pool reads monerod on mining_net" "$(grep -c -- '--network mining_net itest-mm-p2pool --host 198.51.100.26 ' "$RX_LOG")" 1
+check "P2Pool dials the LocalNet node" "$(grep -c -- '--merge-mine tari://192.0.2.2:18142' "$RX_LOG")" 1
 check "P2Pool joins the LocalNet network" "$(grep -c "docker network connect $MML_NET itest-mm-ln-p2pool" "$RX_LOG")" 1
-check "probe judges on the LocalNet network" "$(grep -c "network $MML_NET itest-mm-probe python3 /usr/local/bin/localnet_probe.py judge 10.99.0.2:18142 $MML_MIN_HEIGHTS" "$RX_LOG")" 1
+check "probe judges on the LocalNet network" "$(grep -c "network $MML_NET itest-mm-probe python3 /usr/local/bin/localnet_probe.py judge 192.0.2.2:18142 $MML_MIN_HEIGHTS" "$RX_LOG")" 1
 check "no compose or pithead CLI call" "$(grep -cE 'docker compose|docker-compose |pithead ' "$RX_LOG")" 0
 check "only itest-mm containers are named" "$(grep -oE -- '--name [a-z-]+' "$RX_LOG" | grep -vc 'itest-mm-')" 0
 check "shipping image pulled because absent" "$(grep -c "docker pull -q $(quote_arg "$SHIP")" "$RX_LOG")" 1
