@@ -57,7 +57,6 @@ tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
-tests/integration/selftest/selftest-rigforge-writable-keys.sh	411
 tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413

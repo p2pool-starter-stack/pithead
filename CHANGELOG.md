@@ -59,7 +59,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
     one-time JMT migration that upstream describes as taking several minutes to much longer on a
-    large database; the node is unavailable while it runs. Have free disk space for it, and do not
+    large database; the node is unavailable while it runs. It writes a compacted copy of the
+    database beside the old one, so both are on the data volume at once. Before it starts or
+    recreates any container, `./pithead upgrade` requires free space there of the current
+    `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). The bound is
+    conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
@@ -82,6 +87,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   or `commit-confirmed` against the signed-in dashboard user. Existing log rows are unchanged.
 
 ### Security
+
+- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
+  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
+  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
+  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
+  container starts; `doctor` warns when it is not enabled
+  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
@@ -116,6 +128,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
+  ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
+  HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
+  container ceiling OOM-killed it while it filled the dataset, on every start. That happened on a
+  host where `setup` skipped the persistent GRUB change and was then rebooted, and on a pool other
+  processes had used up. The ceiling is now 4 GB, both in Compose and in the appliance's units.
+  When the reservation holds the dataset, which is still the fast path, nothing changes.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has
