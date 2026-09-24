@@ -59,11 +59,118 @@ control_process_request() { # <claimed-file> <control-dir>
     # bounded host-side and the log tail is redacted by bundle_redact_log before it is written.
     diag-doctor) control_diag_doctor "$id" "$actor" "$cdir" ;;
     diag-logs) control_diag_logs "$file" "$id" "$actor" "$cdir" ;;
+    # Also read-only, and the one that hands back a SECRET rather than a report (#1882): the Tor
+    # client-auth line without which a client-auth'd dashboard onion cannot be opened at all. It is
+    # a one-time kit with the backup kit's TTL and redaction, and every reveal lands in audit/.
+    onion-client-key) control_onion_client_key "$id" "$actor" "$cdir" ;;
     *)
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unknown action",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "${action:-none}" "rejected"
         ;;
     esac
+}
+
+# Bound results/ by age, count and total bytes (#1990): every control request and every dashboard
+# backup lands here and NOTHING removed it, so an appliance an operator leaves running fills /data
+# with status JSON and (far bigger) encrypted archives until control, update and boot-time writes
+# start failing. Defaults, not a product decision — documented in docs/dashboard.md#backup-view,
+# change them there and here together:
+#   - a plain result JSON ages out after CONTROL_RESULT_MAX_AGE_S (1 day) or once more than
+#     CONTROL_RESULT_MAX_COUNT (200) exist;
+#   - a backup archive (and its result JSON) is untouchable for CONTROL_BACKUP_DOWNLOAD_WINDOW_S (1
+#     hour) after it is written — long enough for the operator to fetch it — then ages out once
+#     more than CONTROL_BACKUP_MAX_COUNT (3) exist;
+#   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
+#     oldest-first, unless the protected files alone exceed it.
+# os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
+# The result named by a live claim also never falls to age/count/bytes. A verb that blocks on a
+# background operation keeps rewriting its own result; the claimed request identifies that result
+# without making the newest completed result immortal.
+# Run at the top of every drain, after every claimed request, and from render_derived, the
+# appliance's every-boot pass (#790).
+control_prune_results() { # <control-dir>
+    local cdir="$1"
+    local dir="$cdir/results"
+    [ -d "$dir" ] || return 0
+    local age_min=$(((${CONTROL_RESULT_MAX_AGE_S:-86400}) / 60))
+    local window_min=$(((${CONTROL_BACKUP_DOWNLOAD_WINDOW_S:-3600}) / 60))
+    local max_count="${CONTROL_RESULT_MAX_COUNT:-200}"
+    local max_archives="${CONTROL_BACKUP_MAX_COUNT:-3}"
+    local max_bytes="${CONTROL_RESULTS_MAX_BYTES:-536870912}"
+    local archive id kept=0 claim active_result=""
+    for claim in "$cdir"/.claim.*; do
+        [ -f "$claim" ] || continue
+        id=$(jq -r '.id // ""' "$claim" 2>/dev/null)
+        if printf '%s' "$id" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'; then
+            active_result="$id.json"
+            break
+        fi
+    done
+
+    # Atomic result writes use only dot-prefixed *.tmp names. A killed writer can leave one with a
+    # backup kit's plaintext passphrase; remove it only after the download window, never while a
+    # normal atomic rename can still be in flight.
+    find "$dir" -maxdepth 1 -type f -name '.*.tmp' -mmin +"$window_min" -delete 2>/dev/null || true
+
+    for archive in $(cd "$dir" 2>/dev/null && ls -1t -- *.tar.gz.enc 2>/dev/null); do
+        [ -f "$dir/$archive" ] || continue
+        # Still inside its download window: untouchable, and does not count against the cap below.
+        [ -n "$(find "$dir/$archive" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+        kept=$((kept + 1))
+        if [ "$kept" -gt "$max_archives" ]; then
+            id=$(basename "$archive" .tar.gz.enc)
+            rm -f "$dir/$archive" "$dir/$id.json"
+        fi
+    done
+
+    local result n=0
+    # Age and count share one pass (and one skip list) so a backup's own result JSON is never
+    # evicted here while its archive is still protected above — a separate age-only find/-delete
+    # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
+    [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
+    for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
+        [ "$result" == "os-update-state.json" ] && continue
+        [ "$result" == "$active_result" ] && continue
+        [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
+        n=$((n + 1))
+        if [ "$n" -gt "$max_count" ] || [ -n "$(find "$dir/$result" -maxdepth 0 -mmin +"$age_min" 2>/dev/null)" ]; then
+            rm -f "$dir/$result"
+        fi
+    done
+
+    local total f
+    total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
+    [ -n "$total" ] || total=0
+    if [ "$total" -gt "$max_bytes" ]; then
+        for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
+            [ "$total" -le "$max_bytes" ] && break
+            [ "$f" == "os-update-state.json" ] && continue
+            [ "$f" == "$active_result" ] && continue
+            case "$f" in
+            *.tar.gz.enc)
+                [ -n "$(find "$dir/$f" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                id="${f%.tar.gz.enc}"
+                rm -f "$dir/$f" "$dir/$id.json"
+                ;;
+            # A backup's own result JSON: keep a fresh pair; evict an expired pair together.
+            *.json)
+                id="${f%.json}"
+                if [ -f "$dir/$id.tar.gz.enc" ]; then
+                    [ -n "$(find "$dir/$id.tar.gz.enc" -maxdepth 0 -mmin +"$window_min" 2>/dev/null)" ] || continue
+                    rm -f "$dir/$f" "$dir/$id.tar.gz.enc"
+                else
+                    rm -f "$dir/$f"
+                fi
+                ;;
+            *) rm -f "$dir/$f" ;;
+            esac
+            # Re-measure via du rather than subtracting wc -c: disk usage rounds to block size,
+            # and a byte-precise running total drifted from the real (block-rounded) figure that
+            # matters on a partition that is actually filling up.
+            total=$(du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}')
+            [ -n "$total" ] || total=0
+        done
+    fi
 }
 
 # `control-run-pending`: drain the request spool, oldest first. Each request is CLAIMED (moved out
@@ -93,6 +200,7 @@ control_run_pending() {
     # after that reboot runs it — nulls the passphrase in any kit older than the TTL that still
     # carries one. Belt to the TTL's braces; the passphrase is only ever meant for the live window.
     control_redact_stale_kits "$cdir/results"
+    control_prune_results "$cdir"
     local names name req claim n=0
     # Per-run cap (#33 hardening): a single trigger drains at most this many intents, so a flood in
     # the spool can't hold the root runner for an unbounded stretch — the leftovers wait for the
@@ -131,6 +239,7 @@ control_run_pending() {
         fi
         control_process_request "$claim" "$cdir"
         rm -f "$claim"
+        control_prune_results "$cdir"
         n=$((n + 1))
     done <<<"$names"
     log "Processed $n control request(s)."

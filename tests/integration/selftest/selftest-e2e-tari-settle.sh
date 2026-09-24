@@ -39,15 +39,18 @@ if [ "${WAIT_ARG:-0}" -ge 1080 ] 2>/dev/null; then
 else
     it_fail "deploy_branch's wait_synced ceiling is >= 1080s (18min, #2455's measurement)" "got ${WAIT_ARG:-<none>}s"
 fi
+assert_contains "deploy_branch refuses destructive phases when the bounded settle expires" "$DEPLOY_SRC" \
+    'wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."'
 
 # --- Drive the real wait_synced with SSH/sleep stubbed out ----------------------------------
-run_wait_synced() { # <timeout_s> <bench-state> -> "<rc>"
+run_wait_synced() { # <timeout_s> <first-state> [state-after-one-poll] -> "<rc>"
     # shellcheck disable=SC2034,SC2329  # STATE is read by on_bench; eval'd below, shellcheck cannot follow into it
     (
         STATE="$2"
+        NEXT="${3:-}"
         ok() { :; }
         warn() { :; }
-        sleep() { :; } # no real waiting — the deadline is real epoch seconds regardless
+        sleep() { [ -z "$NEXT" ] || STATE="$NEXT"; } # no real waiting
         on_bench() { printf '%s' "$STATE"; }
         eval "$WAIT_SRC"
         wait_synced "$1"
@@ -57,6 +60,8 @@ run_wait_synced() { # <timeout_s> <bench-state> -> "<rc>"
 
 echo "== wait_synced honors the timeout it's given (generic, not #2455-specific) =="
 assert_eq "an already-synced bench returns 0 immediately" "$(run_wait_synced 5 done/done)" "0"
+assert_eq "a delayed Tari reconnect proceeds once the existing done/done predicate passes" \
+    "$(run_wait_synced 5 loading/loading done/done)" "0"
 assert_eq "a bench stuck loading returns 1 once its OWN timeout elapses" "$(run_wait_synced 1 loading/loading)" "1"
 
 # --- The other caller that runs the SAME `pithead upgrade` with the SAME short-wait defect ---

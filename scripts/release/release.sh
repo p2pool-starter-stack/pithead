@@ -205,8 +205,8 @@ pin() {
     # bumped together, and the release notes have to name both or a wallet-only move reads as
     # unchanged (#1138). tests/stack/standalone/test_compose.sh asserts the two carry the same tag, so the
     # lockstep this relies on is guarded rather than assumed.
-    tari) grep -oE 'quay.io/tarilabs/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
-    tari-wallet) grep -oE 'quay.io/tarilabs/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
+    tari) grep -oE 'ghcr.io/tari-project/minotari_node:[^ ]+' docker-compose.yml | head -1 ;;
+    tari-wallet) grep -oE 'ghcr.io/tari-project/minotari_console_wallet:[^ ]+' docker-compose.yml | head -1 ;;
     caddy) grep -oE 'caddy:[0-9.]+@sha256:[a-f0-9]+' docker-compose.yml | head -1 ;;
     socket-proxy) grep -oE 'tecnativa/docker-socket-proxy:[^ ]+' docker-compose.yml | head -1 ;;
     esac
