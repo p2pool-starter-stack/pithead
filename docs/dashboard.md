@@ -1099,6 +1099,17 @@ typed `APPLY` and stays host-CLI only. This is the one place a confirmed data-di
 `./pithead apply`: the destination path is narrowed, because the move is now reachable at dashboard
 trust rather than shell trust.
 
+Once approved, `dashboard.data_dir` is also the one `data_dir` that `apply` carries: it copies the
+live SQLite database to the new path, verifies the copy, then lets the recreate mount it — the
+payout-wallet tripwire's baseline lives in that database (#375), and an empty DB at the new path
+would silently re-seed it, swallowing a payout change bundled with the move. A non-empty target, or
+a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
+([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
+still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
+If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+container, which is still mounted on the old path: rows written until the retried `apply` recreates
+it land in the old database, not the carried copy.
+
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.
 
@@ -1300,6 +1311,16 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 `config.json` or `./pithead apply`. If a backup attempt fails, the card keeps the error tail but
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
+
+**Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
+A fresh archive stays downloadable for at least one hour after the backup completes; past that
+window, only the 3 most recent archives are kept. Ordinary control-request results (config
+previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
+limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
+(`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone
+exceed it. Pruning runs host-side after every control request and on every boot; see
+`control_prune_results` in
+`lib/pithead/49-control-request-loop.sh` for the exact defaults.
 
 ## Upgrading from the dashboard
 

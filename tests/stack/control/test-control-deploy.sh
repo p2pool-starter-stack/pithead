@@ -6,7 +6,6 @@
 # deploy-box layout (shared data root outside the version dir). All three sections are fully
 # self-contained (their own throwaway sandboxes under $SANDBOX) — no shared control/config
 # sandbox, no re-derivation needed. Sourced by tests/stack/run.sh after lib.sh.
-
 echo "== unit: update_current_symlink (#455) =="
 # A non-versioned install dir (source checkout, plain `pithead/` extract) gets NO symlink —
 # `current` only makes sense beside pithead-vX.Y.Z version dirs.
@@ -17,7 +16,6 @@ if [ -e "$SANDBOX/plainroot/current" ]; then
 else
     ok "no current symlink for a non-versioned dir"
 fi
-
 # A versioned dir gets `../current -> <dirname>` (relative target, so the tree can move).
 mkdir -p "$SANDBOX/deployroot/pithead-v9.9.9" "$SANDBOX/deployroot/pithead-v9.9.10"
 run_sourced "$SANDBOX/deployroot/pithead-v9.9.9" update_current_symlink >/dev/null 2>&1
@@ -28,7 +26,6 @@ assert_eq "current re-pointed to pithead-v9.9.10" "$(readlink "$SANDBOX/deployro
 # Idempotent re-run keeps it.
 run_sourced "$SANDBOX/deployroot/pithead-v9.9.10" update_current_symlink >/dev/null 2>&1
 assert_eq "current unchanged on re-run" "$(readlink "$SANDBOX/deployroot/current")" "pithead-v9.9.10"
-
 # `current` existing as a REAL directory is never clobbered (ln -sfn would nest a link inside it).
 mkdir -p "$SANDBOX/dirroot/pithead-v1.2.3" "$SANDBOX/dirroot/current"
 out="$(run_sourced "$SANDBOX/dirroot/pithead-v1.2.3" update_current_symlink 2>&1)"
@@ -40,7 +37,6 @@ if [ -d "$SANDBOX/dirroot/current" ] && [ ! -L "$SANDBOX/dirroot/current" ]; the
 else
     bad "real-dir current left untouched" "was replaced"
 fi
-
 echo "== unit: migrate_dashboard_data (#455) =="
 # Direct unit calls with the parse-time globals set by hand; docker stubbed (no daemon in tests).
 mig455() { # <workdir> <DASHBOARD_DIR> <is_default>
@@ -87,7 +83,6 @@ rm -f "$M/shared/dashboard/mining_data.db"
 out="$(mig455 "$M" "$M/shared/dashboard" 1 2>&1)"
 assert_rc "empty pre-created target: move succeeds" "$?" "0"
 assert_eq "empty pre-created target: DB moved" "$(cat "$M/shared/dashboard/mining_data.db" 2>/dev/null)" "olddb2"
-
 # Wiring: stack_upgrade migrates BEFORE the containers are recreated and points `current` at the
 # install only AFTER a successful 'compose up' — a failed upgrade must not move the pointer.
 upg455_order=$(
@@ -145,63 +140,261 @@ upg455_fail=$(
     stack_upgrade
 )
 assert_not_contains "failed upgrade does NOT move the current pointer (#455)" "$upg455_fail" "symlink"
+echo "== unit: carry_dashboard_data_move (#2360) =="
+# Direct unit calls, mirroring mig455 above: a confirmed A-to-B dashboard.data_dir move, distinct
+# from the #455 default migration — this one COPIES (never moves) and verifies by content.
+carry2360() { # <workdir> <old> <new>
+    (
+        cd "$1" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        docker() { :; }
+        carry_dashboard_data_move "$2" "$3"
+    )
+}
+C="$SANDBOX/carry"
+mkdir -p "$C/old" "$C/new"
+printf 'livedb' >"$C/old/mining_data.db"
+printf 'wal-bytes' >"$C/old/mining_data.db-wal"
+printf 'journal-bytes' >"$C/old/mining_data.db-journal"
+rmdir "$C/new" # an unpopulated pre-created target (ensure_directories) is not a conflict
+out="$(carry2360 "$C" "$C/old" "$C/new" 2>&1)"
+assert_rc "carry: succeeds" "$?" "0"
+assert_eq "carry: DB copied intact" "$(cat "$C/new/mining_data.db" 2>/dev/null)" "livedb"
+assert_eq "carry: -wal companion copied" "$(cat "$C/new/mining_data.db-wal" 2>/dev/null)" "wal-bytes"
+assert_eq "carry: rollback journal copied" "$(cat "$C/new/mining_data.db-journal" 2>/dev/null)" "journal-bytes"
+assert_eq "carry: old copy left in place (never moved)" "$(cat "$C/old/mining_data.db" 2>/dev/null)" "livedb"
+# no DB at the old path: nothing live there, silent no-op.
+mkdir -p "$C/empty-old" "$C/empty-new"
+out="$(carry2360 "$C" "$C/empty-old" "$C/empty-new" 2>&1)"
+assert_rc "carry: no DB at old path is a no-op" "$?" "0"
+if [ -e "$C/empty-new/mining_data.db" ]; then bad "carry: nothing created with no source DB" "created anyway"; else ok "carry: nothing created with no source DB"; fi
+# non-empty target: refuse rather than guess which DB is live; old untouched.
+mkdir -p "$C/old2" "$C/occupied"
+printf 'srcdb' >"$C/old2/mining_data.db"
+printf 'existing' >"$C/occupied/mining_data.db"
+out="$(carry2360 "$C" "$C/old2" "$C/occupied" 2>&1)"
+assert_rc "carry: non-empty target refuses" "$?" "1"
+assert_contains "carry: refusal names the target" "$out" "$C/occupied"
+assert_eq "carry: target DB untouched by refusal" "$(cat "$C/occupied/mining_data.db")" "existing"
+assert_eq "carry: source DB untouched by refusal" "$(cat "$C/old2/mining_data.db")" "srcdb"
+# target nested under the live directory: refuse before a copy can be mistaken for live state.
+mkdir -p "$C/old-nested/target"
+printf 'nesteddb' >"$C/old-nested/mining_data.db"
+out="$(carry2360 "$C" "$C/old-nested" "$C/old-nested/target" 2>&1)"
+assert_rc "carry: nested target refuses" "$?" "1"
+assert_eq "carry: nested refusal leaves source untouched" "$(cat "$C/old-nested/mining_data.db")" "nesteddb"
+# A dashboard-writable old dir must not smuggle an otherwise allowed destination through a symlink.
+mkdir -p "$C/old-escape" "$C/outside"
+printf 'escapedb' >"$C/old-escape/mining_data.db"
+ln -s "$C/outside" "$C/old-escape/escape"
+out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/escape" 2>&1)"
+assert_rc "carry: nested symlink target refuses" "$?" "1"
+if [ -e "$C/outside/mining_data.db" ]; then bad "carry: symlink target untouched" "copied outside the old directory"; else ok "carry: symlink target untouched"; fi
+out="$(carry2360 "$C" "$C/old-escape" "$C/old-escape/./escape" 2>&1)"
+assert_rc "carry: nested symlink alias refuses" "$?" "1"
+# Resolve the active path before checking its child: a symlinked current data_dir must not make
+# its canonical spelling a way around the nested-target refusal.
+mkdir -p "$C/old-real" "$C/outside-real"
+printf 'realdb' >"$C/old-real/mining_data.db"
+ln -s "$C/old-real" "$C/old-link"
+ln -s "$C/outside-real" "$C/old-real/escape"
+out="$(carry2360 "$C" "$C/old-link" "$C/old-real/escape" 2>&1)"
+assert_rc "carry: symlinked current path refuses its canonical child" "$?" "1"
+if [ -e "$C/outside-real/mining_data.db" ]; then bad "carry: canonical symlink target untouched" "copied outside the old directory"; else ok "carry: canonical symlink target untouched"; fi
+# stop must succeed before copying an SQLite DB; do not snapshot a live WAL set.
+mkdir -p "$C/old-stop" "$C/new-stop"
+printf 'stopdb' >"$C/old-stop/mining_data.db"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { return 1; }
+    carry_dashboard_data_move "$C/old-stop" "$C/new-stop"
+} 2>&1)"
+assert_rc "carry: stop failure refuses" "$?" "1"
+if [ -e "$C/new-stop/mining_data.db" ]; then bad "carry: stop failure does not copy" "copied anyway"; else ok "carry: stop failure does not copy"; fi
+# corrupted/short copy: cmp catches it, refuses, source untouched (simulates a failed/partial cp).
+mkdir -p "$C/old3" "$C/new3"
+printf 'realdb' >"$C/old3/mining_data.db"
+rmdir "$C/new3"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { printf '%s\n' "$*" >"$C/dashboard-restart"; }
+    cp() { : >"${*: -1}"; } # a copy that silently truncates its DEST (cp -p, so $2 is -p's src) — must be CAUGHT, not trusted
+    carry_dashboard_data_move "$C/old3" "$C/new3"
+} 2>&1)"
+rc=$? # error() exits the subshell directly — capture ITS status, not a $? that never runs
+assert_rc "carry: verifies the copy (doesn't trust cp alone)" "$rc" "1"
+assert_contains "carry: restarts dashboard after a failed verify" "$(cat "$C/dashboard-restart")" "compose start dashboard"
+if [ -e "$C/old3/mining_data.db" ] && [ "$(cat "$C/old3/mining_data.db")" = "realdb" ]; then
+    ok "carry: source untouched after a failed verify"
+else
+    bad "carry: source untouched after a failed verify" "source was altered"
+fi
+# A successful main-DB copy is not enough: SQLite's WAL must verify too.
+mkdir -p "$C/old-wal" "$C/new-wal"
+printf 'waldb' >"$C/old-wal/mining_data.db"
+printf 'livewal' >"$C/old-wal/mining_data.db-wal"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { printf '%s\n' "$*" >"$C/dashboard-wal-restart"; }
+    cp() { [ "$3" = "$C/old-wal/mining_data.db-wal" ] && : >"$4" || command cp "$@"; }
+    carry_dashboard_data_move "$C/old-wal" "$C/new-wal"
+} 2>&1)"
+assert_rc "carry: verifies the WAL companion" "$?" "1"
+assert_contains "carry: restarts dashboard after a WAL verify failure" "$(cat "$C/dashboard-wal-restart")" "compose start dashboard"
+# Publishing may cross filesystems, so verify the final destination rather than trusting mv.
+mkdir -p "$C/old-publish"
+printf 'publishdb' >"$C/old-publish/mining_data.db"
+out="$({
+    cd "$C" || exit 1
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { printf '%s\n' "$*" >"$C/dashboard-publish-restart"; }
+    mv() { command mv "$@" && printf 'corrupt' >"${*: -1}"; }
+    carry_dashboard_data_move "$C/old-publish" "$C/new-publish"
+} 2>&1)"
+assert_rc "carry: verifies the published destination" "$?" "1"
+assert_contains "carry: restarts dashboard after a published verify failure" "$(cat "$C/dashboard-publish-restart")" "compose start dashboard"
+assert_eq "carry: publication failure leaves source intact" "$(cat "$C/old-publish/mining_data.db")" "publishdb"
+if [ -n "$(ls -A "$C/new-publish")" ]; then bad "carry: publication failure cleans the partial target" "files remain"; else ok "carry: publication failure cleans the partial target"; fi
+out="$(carry2360 "$C" "$C/old-publish" "$C/new-publish" 2>&1)"
+assert_rc "carry: clean retry succeeds after publication failure" "$?" "0"
 
-echo "== black-box: deploy-box layout (#455) =="
-# A sandboxed source-checkout install whose chain data dirs share one root — the live deploy-box
-# layout. Proves the default resolution, the apply-time migration, and the upgrade-time
-# symlink end to end through the real CLI (docker/sudo stubbed).
-L="$SANDBOX/boxroot/pithead-v9.9.9"
-mkdir -p "$L/build/tari" "$L/dashboard"
-: >"$L/dashboard/Dockerfile"
-cp "$STACK" "$L/pithead"
-make_stubs "$L/bin"
-cp "$ROOT/build/tari/config.toml.template" "$L/build/tari/"
-SHARED="$SANDBOX/boxroot/data"
-seed_L() {
-    cat >"$L/.env" <<EOF
-MONERO_ONION_ADDRESS=mona.onion
-TARI_ONION_ADDRESS=taria.onion
-P2POOL_ONION_ADDRESS=p2pa.onion
-PROXY_AUTH_TOKEN=ORIGINALTOKEN
-HOST_IP=box.lan
-DEPLOYMENT_COMPLETED=true
-COMPOSE_PROFILES=local_node
-EOF
+echo "== unit: apply recovery for carry_dashboard_data_move (#2360) =="
+APPLY2360="$SANDBOX/apply2360"
+APPLY2360_OLD="$APPLY2360/old"
+APPLY2360_NEW="$APPLY2360/new"
+APPLY2360_LOG="$APPLY2360/actions.log"
+reset_apply2360() {
+    rm -rf "$APPLY2360"
+    mkdir -p "$APPLY2360_OLD"
+    printf 'livedb' >"$APPLY2360_OLD/mining_data.db"
+    printf 'DASHBOARD_DATA_DIR=%s\n' "$APPLY2360_OLD" >"$APPLY2360/.env"
+    : >"$APPLY2360_LOG"
 }
-cfg_L() { # <dashboard-extra-json>  e.g. ',"data_dir":"/pinned"'
-    # $VALID_PRIMARY, not $WALLET: same trap as modules 7/8 -- $WALLET is only assigned inside
-    # build_val_sandbox() (lib.sh), never called in this file, and $VALID_PRIMARY is the lib.sh
-    # top-level fixture WALLET equals in that function's local/checksum-valid case.
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"%s/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'","data_dir":"%s/tari"}, "p2pool":{"pool":"main","data_dir":"%s/p2pool"}, "tor":{"data_dir":"%s/tor"}, "dashboard":{"secure":true,"host":"box.lan"%s} }\n' \
-        "$VALID_PRIMARY" "$SHARED" "$SHARED" "$SHARED" "$SHARED" "$1" >"$L/config.json"
+apply2360() {
+    (
+        cd "$APPLY2360" || exit 1
+        # shellcheck disable=SC1090
+        source "$STACK"
+        require_env() { :; }
+        ensure_onion_password() { :; }
+        load_preserved_state() { :; }
+        ensure_directories() { mkdir -p "$APPLY2360_NEW"; }
+        resolve_dashboard_host() { :; }
+        is_deployed() { return 0; }
+        onion_missing() { return 1; }
+        # shellcheck disable=SC2034  # read by the sourced apply()'s "not provisioned" guard
+        P2POOL_ONION=p2pa.onion
+        inject_service_configs() {
+            printf 'inject\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != inject ] || error "injected config failure"
+        }
+        generate_caddyfile() { :; }
+        provision_control_runner() { :; }
+        provision_onion_client_auth() { :; }
+        provision_ssh_access() { :; }
+        provision_console_login() { :; }
+        render_local_miner_config() { :; }
+        migrate_compose_project() { :; }
+        apply_tor_egress_firewall() { :; }
+        reconcile_appliance_hostname() { :; }
+        migrate_dashboard_data() { printf 'migrate\n' >>"$APPLY2360_LOG"; }
+        compose_up_checked() {
+            printf 'compose\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != compose ] || return 1
+            return 0
+        }
+        docker() { printf 'docker:%s\n' "$*" >>"$APPLY2360_LOG"; }
+        mutation_lock_acquire() { :; }
+        mutation_lock_release() { :; }
+        describe_change() { printf 'CONFIRM\tdata dir changed\n'; }
+        render_env() { printf 'DASHBOARD_DATA_DIR=%s\n' "${RENDER_DIR:-$APPLY2360_NEW}" >"$1"; }
+        # shellcheck disable=SC2034  # read by the sourced apply/carry_dashboard_data_move
+        parse_and_validate_config() {
+            DASHBOARD_DIR="${RENDER_DIR:-$APPLY2360_NEW}"
+            DASHBOARD_DIR_IS_DEFAULT=0
+        }
+        carry_dashboard_data_move() {
+            printf 'carry:%s:%s\n' "$1" "$2" >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != carry ] || error "injected carry failure"
+            mkdir -p "$2"
+            cp "$1/mining_data.db" "$2/mining_data.db"
+        }
+        mv() {
+            printf 'publish-env\n' >>"$APPLY2360_LOG"
+            [ "${FAIL_STEP:-}" != publish ] || error "injected environment publication failure"
+            command mv "$@"
+        }
+        apply -y
+    )
 }
-# Old layout on disk: the dashboard DB inside the version dir's ./data (the pre-#455 default).
-seed_L
-cfg_L ""
-mkdir -p "$L/data/dashboard"
-printf 'proddb' >"$L/data/dashboard/mining_data.db"
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "apply with a shared data root succeeds" "$?" "0"
-assert_eq "DASHBOARD_DATA_DIR joins the shared data root" \
-    "$(run_sourced "$L" env_get_file "$L/.env" DASHBOARD_DATA_DIR)" "$SHARED/dashboard"
-assert_eq "apply moved the dashboard DB to the shared root" \
-    "$(cat "$SHARED/dashboard/mining_data.db" 2>/dev/null)" "proddb"
-if [ -e "$L/data/dashboard" ]; then bad "apply: old in-version-dir data gone" "still exists"; else ok "apply: old in-version-dir data gone"; fi
-# Re-apply: no config change, nothing to migrate — clean no-op.
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "re-apply is a no-op" "$?" "0"
-assert_eq "re-apply leaves the migrated DB alone" "$(cat "$SHARED/dashboard/mining_data.db")" "proddb"
-# Upgrade from the versioned dir: maintains `current ->` beside it and stays idempotent.
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead upgrade 2>&1)"
-assert_rc "upgrade succeeds" "$?" "0"
-assert_eq "upgrade maintains current -> pithead-v9.9.9" "$(readlink "$SANDBOX/boxroot/current")" "pithead-v9.9.9"
-assert_eq "upgrade leaves the migrated DB alone" "$(cat "$SHARED/dashboard/mining_data.db")" "proddb"
-# Scattered custom dirs (no single parent): the classic in-install ./data default stands.
-seed_L
-# $VALID_PRIMARY, not $WALLET -- same trap as above.
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","data_dir":"%s/monero"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' \
-    "$VALID_PRIMARY" "$SHARED" >"$L/config.json"
-out="$(cd "$L" && PATH="$L/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "apply with scattered data dirs succeeds" "$?" "0"
-assert_eq "no shared root -> dashboard default stays ./data/dashboard" \
-    "$(run_sourced "$L" env_get_file "$L/.env" DASHBOARD_DATA_DIR)" "$L/data/dashboard"
+reset_apply2360
+apply2360 >/dev/null 2>&1
+assert_rc "apply: successful carry and recreation are green" "$?" "0"
+assert_contains "apply: carries with the pre-commit old path" "$(cat "$APPLY2360_LOG")" "carry:$APPLY2360_OLD:$APPLY2360_NEW"
+assert_eq "apply: carry runs before committing the new env and compose" \
+    "$(grep -xE 'carry:.*|publish-env|migrate|compose' "$APPLY2360_LOG" | tr '\n' ',')" \
+    "carry:$APPLY2360_OLD:$APPLY2360_NEW,publish-env,migrate,compose,"
+
+reset_apply2360
+out="$(FAIL_STEP=carry apply2360 2>&1)"
+assert_rc "apply: failed carry refuses the env switch" "$?" "1"
+assert_not_contains "apply: failed carry never commits the new env" "$(cat "$APPLY2360_LOG")" "publish-env"
+
+# An earlier apply's marker survives a refused carry, so the reverted re-apply still recreates.
+reset_apply2360
+: >"$APPLY2360/.env.apply-incomplete"
+out="$(FAIL_STEP=carry apply2360 2>&1)"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: failed carry keeps an earlier apply's retry marker"; else bad "apply: failed carry keeps an earlier apply's retry marker" "marker deleted"; fi
+: >"$APPLY2360_LOG"
+out="$(RENDER_DIR="$APPLY2360_OLD" apply2360 2>&1)"
+assert_rc "apply: unchanged apply after the refused carry is green" "$?" "0"
+assert_not_contains "apply: unchanged apply after the refused carry is not a no-op" "$out" "No configuration changes detected"
+assert_contains "apply: unchanged apply after the refused carry recreates" "$(cat "$APPLY2360_LOG")" "compose"
+
+reset_apply2360
+out="$(FAIL_STEP=publish apply2360 2>&1)"
+assert_rc "apply: environment publication failure is red" "$?" "1"
+assert_contains "apply: publication failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: publication failure keeps the old active path" "$(run_sourced "$APPLY2360" env_get DASHBOARD_DATA_DIR)" "$APPLY2360_OLD"
+if [ -e "$APPLY2360_NEW/mining_data.db" ]; then bad "apply: publication failure removes its unpublished copy" "DB remains"; else ok "apply: publication failure removes its unpublished copy"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after publication failure is green" "$?" "0"
+assert_contains "apply: publication retry carries again" "$(cat "$APPLY2360_LOG")" "carry:$APPLY2360_OLD:$APPLY2360_NEW"
+
+reset_apply2360
+out="$(FAIL_STEP=inject apply2360 2>&1)"
+assert_rc "apply: post-publication injection failure is red" "$?" "1"
+assert_contains "apply: injection failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+assert_eq "apply: injection failure keeps the published path" "$(run_sourced "$APPLY2360" env_get DASHBOARD_DATA_DIR)" "$APPLY2360_NEW"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: injection failure keeps the retry marker"; else bad "apply: injection failure keeps the retry marker" "marker missing"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after injection failure is green" "$?" "0"
+assert_not_contains "apply: injection retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
+assert_contains "apply: injection retry recreates the dashboard" "$(cat "$APPLY2360_LOG")" "compose"
+if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful retry clears its marker" "marker remains"; else ok "apply: successful retry clears its marker"; fi
+
+reset_apply2360
+out="$(FAIL_STEP=compose apply2360 2>&1)"
+assert_rc "apply: recreation failure is red" "$?" "1"
+assert_contains "apply: recreation failure restarts the dashboard" "$(cat "$APPLY2360_LOG")" "docker:compose start dashboard"
+if [ -f "$APPLY2360/.env.apply-incomplete" ]; then ok "apply: recreation failure keeps the retry marker"; else bad "apply: recreation failure keeps the retry marker" "marker missing"; fi
+: >"$APPLY2360_LOG"
+apply2360 >/dev/null 2>&1
+assert_rc "apply: retry after recreation failure is green" "$?" "0"
+assert_not_contains "apply: recreation retry does not repeat the carry" "$(cat "$APPLY2360_LOG")" "carry:"
+if [ -e "$APPLY2360/.env.apply-incomplete" ]; then bad "apply: successful recreation retry clears its marker" "marker remains"; else ok "apply: successful recreation retry clears its marker"; fi
