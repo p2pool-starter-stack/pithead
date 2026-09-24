@@ -97,11 +97,12 @@ run_lifecycle() {
                 fi
                 # #2626: the restore's marker drops the archive's sync-gate release. `status` passes
                 # with the miner held, so ask the gate itself: on these synced chains it must release
-                # again on its own and retire the marker.
-                if wait_for 180 5 "the sync gate to re-release after restore" _pred_gate_rereleased; then
+                # again on its own and retire the marker. `up` restarted Tari, whose Tor reconnect
+                # #2455 measured at >18 min, so this waits as long as e2e.sh's wait_synced.
+                if wait_for 1500 10 "the sync gate to re-release after restore" _pred_gate_rereleased; then
                     it_pass "restore re-derives the sync gate: released on synced chains, marker retired (#2626)"
                 else
-                    it_fail "restore re-derives the sync gate (#2626)" "miner_released=$(jq_get "$(api_state)" '.miner_released') or sync-gate-reset still present 180s after restore"
+                    it_fail "restore re-derives the sync gate (#2626)" "miner_released=$(jq_get "$(api_state)" '.miner_released') or sync-gate-reset still present 1500s after restore"
                     lifecycle_ok=0
                 fi
                 # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
@@ -203,8 +204,10 @@ _pred_failover_armed() {
     [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
 _pred_gate_rereleased() {
-    [ "$(jq_get "$(api_state)" '.miner_released')" = "true" ] &&
-        rx "sudo test ! -e $(quote_arg "$(env_on_box DASHBOARD_DATA_DIR)/sync-gate-reset")" >/dev/null 2>&1
+    local ddir
+    ddir="$(env_on_box DASHBOARD_DATA_DIR)"
+    [ -n "$ddir" ] && [ "$(jq_get "$(api_state)" '.miner_released')" = "true" ] &&
+        rx "sudo test -d $(quote_arg "$ddir") && sudo test ! -e $(quote_arg "$ddir/sync-gate-reset")" >/dev/null 2>&1
 }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }
 _pred_tor_healthy() {
