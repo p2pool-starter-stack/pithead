@@ -124,9 +124,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   hands on it, and the real commit gate — `pithead doctor --json` — must pass on that healthy
   stack yet refuse once a revenue service is down. The closing leg installs a `data_migration`
   bundle through `pithead os-update` and proves the migration hold: the chain services stay down
-  until the slot commits, then start, with the pending marker consumed. After it, the floor-fallback
-  leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating bundle stamped with a version no
-  release carries. Its copied build tree opts into the harness-only synthetic compose path, names
+  until the slot commits, then start, with the pending marker consumed. Tari is then stopped on the
+  committed slot (`appliance-chain-fault-leg.sh`, #2588): `pithead status`, `pithead doctor` and
+  the dashboard's `Tari DOWN` badge must report it, and `./pithead up` must bring all three back.
+  After it, the floor-fallback leg (`data-floor-fallback-leg.sh`, #1393) installs a migrating
+  bundle stamped with a version no release carries. Its copied build tree opts into the harness-only synthetic compose path, names
   its compose file explicitly, uses the resolved signing material, and records the file hash in
   `COMPOSE_SOURCE`, so the build does not need a git origin or a local dev-key directory. The
   resulting slot cannot bring the stack up and falls back uncommitted: the
