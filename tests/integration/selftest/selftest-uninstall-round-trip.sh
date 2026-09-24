@@ -26,7 +26,10 @@ EOF
 cat >"$T/fake-pithead" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
+down) : >.stopped ;;
 uninstall)
+    # A stack still running when uninstall stops it writes its shutdown state into the chain dir.
+    [ -e .stopped ] || printf x >>data/monero/p2pstate.bin
     printf 'Removed: x\nKept (yours): y\nLeft behind (shared with the machine): z\n  sudo rm -rf y\n'
     rm -rf .env data/control data/tari-wallet-secret.env
     case "$FAKE_CASE" in
@@ -38,6 +41,8 @@ uninstall)
     esac
     ;;
 setup)
+    # The real setup refuses a deployed .env; the harness must hand back its secrets without the flag.
+    ! grep -q '^DEPLOYMENT_COMPLETED=' .env && grep -q '^PROXY_AUTH_TOKEN=tok$' .env || exit 1
     cp .env.fixture .env
     [ "$FAKE_CASE" != resync ] || { rm data/monero/lmdb/data.mdb && truncate -s 70M data/monero/lmdb/data.mdb; }
     ;;
@@ -55,7 +60,8 @@ drive() { # <case> -> round-trip-rc|failures
         printf '{}' >"$B/config.json"
         : >"$B/data/tari-wallet-secret.env"
         printf '%s\n' "MONERO_DATA_DIR=$B/data/monero" "TOR_DATA_DIR=$B/data/tor" "CONTROL_DIR=$B/data/control" \
-            COMPOSE_PROFILES=local_node MONERO_ONION_ADDRESS=abc.onion >"$B/.env.fixture"
+            COMPOSE_PROFILES=local_node MONERO_ONION_ADDRESS=abc.onion PROXY_AUTH_TOKEN=tok \
+            DEPLOYMENT_COMPLETED=true >"$B/.env.fixture"
         cp "$B/.env.fixture" "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0

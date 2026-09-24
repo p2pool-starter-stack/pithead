@@ -175,25 +175,27 @@ run_lifecycle() {
 # Any write to a file moves its mtime and ctime, and ctime cannot be set back from userspace, so
 # an unchanged line proves no byte of that file was written. Directories and links print their
 # type, so a removed or added entry shows too. pipefail makes an unreadable path a failed probe,
-# never an empty snapshot that equals another empty one. KEPT_SNAPSHOT_SUDO is the selftest seam.
+# never an empty snapshot that equals another empty one. -H descends a kept dir that is itself a
+# symlink (a chain on another disk). KEPT_SNAPSHOT_SUDO is the selftest seam.
 kept_data_snapshot_snippet() { # <path>...
     local p paths=""
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
-    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
 }
 
-# The same paths' large files as inode, birth time to the nanosecond and path: a chain that was
+# The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
 # reused keeps all three, one re-created by a resync gets a new birth time even when the
-# filesystem hands the freed inode number straight back.
+# filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
+# inodes while the node runs, which says nothing about the chain.
 kept_chain_files_snippet() { # <path>...
     local p paths=""
     for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
-    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find$paths -type f -size +65536k -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths -type f -name '*.mdb' -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
 }
 
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
-# re-provisions from what was kept. The stack is stopped BEFORE the first snapshot: a running
+# re-provisions from what was kept (and the harness's own secrets). The stack is stopped BEFORE the first snapshot: a running
 # monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
 # a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
 # nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
@@ -216,9 +218,11 @@ run_uninstall_round_trip() {
     local local_node=""
     has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
     snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
-    if ! pithead down >/dev/null 2>&1 || ! before="$(rx "$snippet")" || [ -z "$before" ] ||
+    if ! pithead down >/dev/null 2>&1 || ! rx 'cp -p .env .env.itest-round-trip' ||
+        ! before="$(rx "$snippet")" || [ -z "$before" ] ||
         ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
         it_fail "stopped stack snapshot readable before uninstall" "pithead down or the kept-data snapshot failed"
+        rx 'rm -f .env.itest-round-trip'
         pithead up >/dev/null 2>&1
         wait_status_ok 240 || true
         return 1
@@ -236,12 +240,22 @@ run_uninstall_round_trip() {
         it_fail "uninstall leaves every kept path byte-identical (no allowed writes)" \
             "$(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -n 12)"
     fi
-    assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
-        "$(rx "docker volume ls -q" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+    local vols
+    if vols="$(rx "docker volume ls -q")"; then
+        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
+            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+    else
+        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+    fi
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
     assert_eq "uninstall removes every derived path and .env" "$left" ""
 
+    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
+    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
+    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
+    # wallet volume created under a new password would not open under the restored old one.
+    rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
     # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
     # the pinned third-party images uninstall just removed; `missing` is what a release install,
     # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
