@@ -372,10 +372,10 @@ control_units_verdict() { # <doctor-output>
     esac
 }
 
-# Authoritative "is Monero caught up?" — query monerod's own get_info (creds stay on the box)
-# and trust its `synchronized` flag / target_height 0, exactly like the sync gate. "Its own"
-# follows the rendered MONERO_RPC_URL. The config.json derivation remains only for testing upgrades
-# from versions that predate that rendered key. Read the rc with `= 1`, never `!= 0` (#1605).
+# Authoritative "is Monero caught up?" — monerod's own get_info (creds stay on the box): its
+# `synchronized` flag or target_height 0 (looser than the #2472 sync gate, which needs the flag).
+# "Its own" follows the rendered MONERO_RPC_URL. The config.json derivation remains only for testing
+# upgrades from versions that predate that rendered key. Read the rc with `= 1`, never `!= 0` (#1605).
 monero_caught_up() { # 0 caught up / 1 answered, behind / ANY other could-not-ask: 2 no usable body, 255 ssh
     rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env 2>/dev/null | cut -d= -f2-);
         p=$(grep -E "^MONERO_NODE_PASSWORD=" .env 2>/dev/null | cut -d= -f2-);

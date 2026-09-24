@@ -46,9 +46,11 @@ chains report synced, the dashboard swaps Sync Mode for the operational view and
 refresh or restart needed.
 
 While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a `Miner held (sync)`
-badge shows next to the hostname) and starts them once the chains are ready. Running p2pool against
-an unsynced node does nothing and floods Tari's logs with merge-mining chatter. Releasing the miner
-is one-way: once it starts it stays up. By default the stack waits for both Monero and Tari. With
+badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
+ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
+yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. By default the
+stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 
@@ -945,11 +947,15 @@ button sits next to the Simple/Advanced toggle whether or not the channel is on;
 view explains how to turn it on and nothing else.
 
 One editing surface: the form on top and, beneath it, a collapsed **Advanced** pane holding
-the configuration this page sends — both live views of a single candidate. Editing
-a field rewrites the pane; editing the pane refills the fields; what the pane shows is
-byte-for-byte what Save previews, apart from the developer-only keys named below, which the
-machine keeps and this page never touches. (This is the setup wizard's pattern — the first page and
-the config tab now behave identically.) The pieces:
+the full proposed configuration — both live views of a single candidate. Editing
+a field rewrites the pane; editing the pane refills the fields. The pane shows the whole
+candidate, developer-only keys aside (named below). Save sends the complete explicit
+configuration because the host stages and commits it as a replacement, but removes every
+`config.reference.json` default that was absent from `config.json` and remains untouched. Existing
+values and masked secrets survive, while a placeholder default can't be committed as if the
+operator had typed it
+([#2365](https://github.com/p2pool-starter-stack/pithead/issues/2365)). (This is the setup
+wizard's pattern — the first page and the config tab now behave identically.) The pieces:
 ([#529](https://github.com/p2pool-starter-stack/pithead/issues/529)):
 
 - **The form** pins a **Core** group at the top — the same wallet-address /
@@ -1092,6 +1098,17 @@ any other absolute path — another user's home, another service's volume — is
 typed `APPLY` and stays host-CLI only. This is the one place a confirmed data-dir move differs from
 `./pithead apply`: the destination path is narrowed, because the move is now reachable at dashboard
 trust rather than shell trust.
+
+Once approved, `dashboard.data_dir` is also the one `data_dir` that `apply` carries: it copies the
+live SQLite database to the new path, verifies the copy, then lets the recreate mount it — the
+payout-wallet tripwire's baseline lives in that database (#375), and an empty DB at the new path
+would silently re-seed it, swallowing a payout change bundled with the move. A non-empty target, or
+a copy that fails or doesn't verify, refuses the whole apply instead of guessing which copy is live
+([#2360](https://github.com/p2pool-starter-stack/pithead/issues/2360)); the other four `data_dir`s
+still only re-point the mount (see [Configuration › Data directories](configuration.md#data-directories)).
+If the recreate fails after the new path is published, `apply` restarts the existing dashboard
+container, which is still mounted on the old path: rows written until the retried `apply` recreates
+it land in the old database, not the carried copy.
 
 A pool switch (`p2pool.pool` main/mini/nano) carries its standing warning: p2pool re-syncs the new
 sidechain and your PPLNS window (and XvB shares) reset.
@@ -1242,8 +1259,14 @@ other three hidden services — the Monero node's, the Tari node's and P2Pool's 
 than by address, so there is nothing of theirs on this page to hide.
 
 The two surfaces disagree about your dashboard's **own** onion on purpose: the header shows it in
-full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix. This
-panel still redacts it. A `[redacted].onion` here is not a promise that the address is absent from
+full, with a **Copy** button, because a machine you cannot reach is a machine you cannot fix — and,
+when client authorization is on and the config editor with it, a **Show client key** button beside
+it, because on a machine with no shell an address nothing can open is the same as no address at
+all. The key is not in this container: the button asks the host, the host answers once through the
+read-only results spool and then wipes its copy, and the reveal is recorded in the [config-change
+log](#access-log-and-recent-config-changes). This panel still redacts the address.
+
+A `[redacted].onion` here is not a promise that the address is absent from
 the browser — scroll up and it is in the header on both the Compose stack and the appliance. When
 you need one of the node onions, they are in the stack's `.env`, which the encrypted backup archive
 carries.
@@ -1288,6 +1311,16 @@ set up without a dashboard login, it points at **Set up again** in the boot menu
 `config.json` or `./pithead apply`. If a backup attempt fails, the card keeps the error tail but
 labels it as the machine's own backup log, so commands in that log do not read as instructions for
 the browser.
+
+**Retention.** The host prunes control results and backup archives so they cannot fill `/data`.
+A fresh archive stays downloadable for at least one hour after the backup completes; past that
+window, only the 3 most recent archives are kept. Ordinary control-request results (config
+previews, applies, upgrades) age out after a day or once more than 200 accumulate. Whatever these
+limits leave behind is capped at 512 MiB total, oldest first, unless the files that must remain
+(`os-update-state.json`, the result of a request still in flight, or a fresh backup pair) alone
+exceed it. Pruning runs host-side after every control request and on every boot; see
+`control_prune_results` in
+`lib/pithead/49-control-request-loop.sh` for the exact defaults.
 
 ## Upgrading from the dashboard
 

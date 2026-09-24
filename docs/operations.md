@@ -22,7 +22,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
-| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
+| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
@@ -127,6 +127,12 @@ another command is running comes back refused with nothing changed, instead of o
 install underneath it. Read-only commands — `status`, `doctor` and `logs` among them — never take
 it and never wait.
 
+The dashboard takes the same lock for each container start or stop it sends through its control
+proxy. This keeps the sync gate, node-down failover, clearnet-to-Tor transition and Tor self-heal
+from changing a container while a CLI mutation is recreating the stack. The dashboard receives a
+read-only bind mount of the same inode: it can hold the advisory lock, but it cannot alter the
+holder record.
+
 The lock covers one stack, not one directory. A bundle install keeps each release in its own
 `pithead-vX.Y.Z` directory beside the one before it (see [The deploy-box
 layout](#the-deploy-box-layout)), and every one of those directories drives the same containers
@@ -134,12 +140,16 @@ and the same data — including the fresh directory a one-click upgrade creates 
 share a single `.pithead.lock` in the directory that holds them all. A plain `pithead/` checkout
 has no siblings and keeps its lock in the checkout. `PITHEAD_LOCK_FILE` overrides the path.
 
-The lock belongs to the running process rather than to the file: if a command is killed, the lock
-is released with it. A leftover `.pithead.lock` after a crash is an ordinary file, not a stale
-lock, and there is nothing to clean up by hand. The line inside it can outlive the command that
-wrote it, which is why the next command checks it before quoting it back to you. Where the file cannot be opened at all — a
-directory only root can write, a read-only mount — pithead says so and runs anyway rather than
-refusing every command that changes the stack.
+The lock belongs to the running process rather than to the file: if a command or dashboard request
+ends, the lock is released with it. A leftover `.pithead.lock` after a crash is an ordinary file,
+not a stale lock, and there is nothing to clean up by hand. Do not delete or replace it while the
+stack is running: the CLI and dashboard must keep locking the same inode. The line inside it can
+outlive the command that wrote it, which is why the next command checks it before quoting it back
+to you. Where the file cannot be opened at all — a directory only root can write, a read-only
+mount — pithead says so and runs anyway rather than refusing every command that changes the stack.
+Dashboard container control instead fails closed if its read-only lock mount cannot be opened.
+A compromised dashboard can hold the lock and make a CLI mutation time out, so the lock protects
+operation ordering rather than availability.
 
 ### Tab completion
 
@@ -178,6 +188,9 @@ it works from any checkout or bundle directory.
 
 `status` prints the usual compose table, then a per-service health check: a green ✓ for each
 running (and healthy) service, and a ⚠/✗ for anything unhealthy, restarting, stopped, or missing.
+A miner deliberately created/exited/stopped by the sync gate or node failover is the sole stopped
+exception during normal operation. A pending appliance data migration also withholds its chain
+services until the slot commits. Restarting or unhealthy services always make `status` exit non-zero.
 Every container carries its own healthcheck — including the dashboard, Caddy, xmrig-proxy and the
 two Docker-socket proxies — so a ✓ usually means the service answered its probe, not merely that a
 process exists. xmrig-proxy is the one exception: its healthcheck script ships in the same image
@@ -310,7 +323,8 @@ rate and pattern of failures, not identity.
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
   guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`.
+  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a
   fresh onion and client key; the old ones stop working immediately
@@ -509,9 +523,9 @@ data root:
   the version dir — no data moves with the code. Installs that pre-date this carry the dashboard
   data at the old in-install default (`./data/dashboard`); the first `upgrade` (or `apply`)
   moves it to the shared root automatically, stops the dashboard for the move, and verifies the
-  database arrived. An explicit `dashboard.data_dir` is never touched — a warning names the
-  leftover instead — and data at *both* locations stops the run rather than guessing which
-  database is live.
+  database arrived. That automatic migration leaves an explicit `dashboard.data_dir` alone. When
+  you confirm a change to that setting, `apply` instead copies and verifies the live database at
+  the new path; a non-empty target refuses rather than guessing which database is live.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 
