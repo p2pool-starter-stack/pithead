@@ -73,6 +73,22 @@ harness_pregate() { # <workers> <no_mining flags>
     done
 }
 
+# The detached launch's stdin, one record per line, in the order run_harness reads them: the rig
+# token, the parent lock pair, the two base64 JSON inputs, then the payout-confirm row's wallet keys
+# (#2675). Secrets ride stdin, never the remote command line where ps on the bench shows them. The
+# JSON may span lines, hence base64; a newline in any other record would shift the ones after it.
+harness_launch_records() {
+    local rollback_b64 pools_b64 record
+    rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
+    pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
+    HARNESS_RECORDS=""
+    for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" \
+        "${IT_MONERO_VIEW_KEY:-}" "${IT_TARI_VIEW_KEY:-}" "${IT_TARI_SPEND_PUBLIC_KEY:-}"; do
+        [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
+        HARNESS_RECORDS+="$record"$'\n'
+    done
+}
+
 # Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,
 # which is what lets drain_harness/harness_finished prove the identity of the process they act on
 # (a bare pid is not enough — pids get reused). `dir` owns the harness source, `target` is the

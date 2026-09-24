@@ -17,8 +17,10 @@ assert_eq "the extraction is the whole run_harness function" \
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare"
+# The payout-confirm keys come from the caller's environment; start from none, whatever CI exports.
+unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 
-capture_launch() { # <rollback> <pools> [rig-lock-wait]
+capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globals pass through
     : >"$LAUNCH_FILE"
     : >"$STDIN_FILE"
     rm -f "$PREPARE_FILE"
@@ -63,22 +65,31 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]
 }
 
 execute_launch() { # <stdin-file> <capture-file>
-    CAPTURE_FILE="$2" bash -c '
+    # env -u: the launched runner must see only what the stream carried, never this shell's exports.
+    CAPTURE_FILE="$2" LIB="$HERE/../lib.sh" env -u IT_MONERO_VIEW_KEY -u IT_TARI_VIEW_KEY -u IT_TARI_SPEND_PUBLIC_KEY bash -c '
         rm() { :; }; cd() { :; }
         grep() { test -s "$CAPTURE_FILE"; }
         nohup() {
-            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nARGV[%s]\n" \
-                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$*" >"$CAPTURE_FILE"
+            printf "ROLLBACK_BEGIN\n%s\nROLLBACK_END\nPOOLS_BEGIN\n%s\nPOOLS_END\nRIG_LOCK_WAIT=%s\nMONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s\nARGV[%s]\n" \
+                "$IT_RIG_ROLLBACK_CHANGES" "$IT_RIG_POOLS_PROBE" "$RIG_LOCK_WAIT" "$IT_MONERO_VIEW_KEY" "$IT_TARI_VIEW_KEY" "$IT_TARI_SPEND_PUBLIC_KEY" "$*" >"$CAPTURE_FILE"
+            # The harness-side consumer, fed the environment the runner received.
+            # shellcheck source=tests/integration/lib.sh
+            source "$LIB"
+            if resolve_overrides "payout_confirm=env"; then
+                printf "PAYOUT_CONFIRM=run [%s]\n" "$RESOLVED" >>"$CAPTURE_FILE"
+            else
+                printf "PAYOUT_CONFIRM=skip [%s]\n" "$SKIP_REASON" >>"$CAPTURE_FILE"
+            fi
         }
         eval "$1"
     ' _ "$(cat "$LAUNCH_FILE")" <"$1" >/dev/null
 }
 
-echo "== exact five-record transport, multiline decode, environment, and argv hygiene =="
+echo "== exact eight-record transport, multiline decode, environment, and argv hygiene =="
 ROLLBACK=$'{"pools":[\n{"url":"127.0.0.1:1"}]}' POOLS='[{"url":"probe:1"}]'
 capture_launch "$ROLLBACK" "$POOLS"
-assert_eq "the producer emits exactly five records" "$(awk 'END {print NR}' "$STDIN_FILE")" 5
-EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s' \
+assert_eq "the producer emits exactly eight records" "$(awk 'END {print NR}' "$STDIN_FILE")" 8
+EXPECTED="$(printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n%s\n%s\n\n\n' \
     'eyJwb29scyI6Wwp7InVybCI6IjEyNy4wLjAuMToxIn1dfQ==' 'W3sidXJsIjoicHJvYmU6MSJ9XQ==')"
 assert_eq "record values and order are exact" "$(cat "$STDIN_FILE")" "$EXPECTED"
 execute_launch "$STDIN_FILE" "$WORK/captured"
@@ -95,12 +106,31 @@ capture_launch "$ROLLBACK" "$POOLS" 1
 execute_launch "$STDIN_FILE" "$WORK/wait"
 assert_contains "the bench lock-wait setting reaches the detached runner" "$(cat "$WORK/wait")" "RIG_LOCK_WAIT=1"
 
+echo "== payout-confirm view keys reach the harness environment, never argv (#2675) =="
+assert_contains "unset view keys arrive empty" "$CAPTURED" $'MONERO_VIEW_KEY=\nTARI_VIEW_KEY=\nTARI_SPEND_PUBLIC_KEY=\n'
+assert_contains "unset view keys leave the payout-confirm row skipped" "$CAPTURED" "PAYOUT_CONFIRM=skip [needs IT_MONERO_VIEW_KEY"
+MVK=mvk-0123456789abcdef TVK=tvk-fedcba9876543210 TSPK=tspk-00112233445566778899
+IT_MONERO_VIEW_KEY="$MVK" IT_TARI_VIEW_KEY="$TVK" IT_TARI_SPEND_PUBLIC_KEY="$TSPK" capture_launch "$ROLLBACK" "$POOLS"
+assert_eq "the keys are the last three records, in order" "$(tail -n 3 "$STDIN_FILE")" "$(printf '%s\n%s\n%s' "$MVK" "$TVK" "$TSPK")"
+execute_launch "$STDIN_FILE" "$WORK/keys"
+KEYS="$(cat "$WORK/keys")"
+assert_contains "the wrapper's view keys reach the runner environment" "$KEYS" \
+    "$(printf 'MONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s' "$MVK" "$TVK" "$TSPK")"
+assert_contains "the harness runs the payout-confirm row with all three keys" "$KEYS" \
+    "PAYOUT_CONFIRM=run [monero.view_key=$MVK tari.view_key=$TVK tari.spend_public_key=$TSPK]"
+for k in "$MVK" "$TVK" "$TSPK"; do
+    assert_eq "view key ${k%%-*} stays off the remote command line" "$(contains "$(cat "$LAUNCH_FILE")" "$k")" no
+done
+IT_MONERO_VIEW_KEY=$'mvk\nextra' capture_launch "$ROLLBACK" "$POOLS"
+assert_eq "a view key with a newline refuses to launch" "$?" 1
+assert_eq "a view key with a newline never reaches the remote launch" "$(if [ -s "$LAUNCH_FILE" ]; then echo 1; else echo 0; fi)" 0
+
 echo "== empty values remain supplied, while missing records and encoder errors fail closed =="
 capture_launch "" ""
 execute_launch "$STDIN_FILE" "$WORK/empty"
 assert_contains "empty rollback survives as an environment entry" "$(cat "$WORK/empty")" $'ROLLBACK_BEGIN\n\nROLLBACK_END'
 assert_contains "empty pools survives as an environment entry" "$(cat "$WORK/empty")" $'POOLS_BEGIN\n\nPOOLS_END'
-printf 'tok\nactor\n0123456789abcdef0123456789abcdef\n' >"$WORK/truncated"
+printf 'tok\nactor\n0123456789abcdef0123456789abcdef\nrb\npb\nmvk\ntvk\n' >"$WORK/truncated"
 execute_launch "$WORK/truncated" "$WORK/missing" 2>/dev/null
 assert_eq "a truncated stream refuses to launch" "$?" 1
 base64() { return 9; }
