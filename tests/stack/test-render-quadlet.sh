@@ -18,7 +18,7 @@
 # level, outside every function body — so neither is the ordering dependency the $WALLET case
 # turned out to be. (Re-derive by grepping lib.sh for the assignment and reading the indent, not
 # by line number: a citation into another file is the perishable part of any claim here.) Every other name is assigned here: $QOUT, $QLOCAL, $QPAY, the loops'
-# own $f and $svc, and $compose_img. The only provider functions called are run_sourced, assert_eq
+# own $f and $svc, and $compose_tari. The only provider functions called are run_sourced, assert_eq
 # and assert_contains. Every write lands in
 # the three $SANDBOX/quadlet-*-out trees, and a sweep of all of tests/stack/ finds those three
 # paths named ONLY in this block — nothing else in the suite reads what this file creates, so it
@@ -119,9 +119,10 @@ done
 # The appliance must run the Tari the compose stack runs: #2604 moved compose to v6.0.1-pre.0 and
 # the quadlet pins stayed on 6.0.0 with an amd64-only wallet digest (#2624). Read each compose
 # service's image off the file itself and compare it with the rendered unit's Image=.
-for svc in tari tari-wallet; do
-    compose_img=$(awk -v s="  $svc:" '$0==s{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2;exit}' "$ROOT/docker-compose.yml")
-    assert_contains "compose parse finds the $svc image (control)" "$compose_img" "ghcr.io/tari-project/minotari_"
-    assert_eq "quadlet $svc image matches compose (#2624)" "$(sed -n 's/^Image=//p' "$QPAY/$svc.container")" "$compose_img"
-done
+compose_tari=$(for svc in tari tari-wallet; do
+    awk -v s="  $svc:" '$0==s{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2;exit}' "$ROOT/docker-compose.yml"
+done)
+assert_eq "compose parse finds both Tari images (control)" "$(grep -c '^ghcr.io/tari-project/minotari_' <<<"$compose_tari")" "2"
+assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
+    "$(sed -n 's/^Image=//p' "$QPAY/tari.container" "$QPAY/tari-wallet.container")" "$compose_tari"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"
