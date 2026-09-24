@@ -83,6 +83,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Security
 
+- **The Tor-only egress firewall now survives a DIY host reboot.** A reboot emptied `DOCKER-USER`
+  while the containers restarted on their own, so a DIY host mined without the fail-closed rules
+  until someone ran `./pithead up`. `up`, `apply` and `upgrade` now install
+  `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
+  container starts; `doctor` warns when it is not enabled
+  ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 - **The Tari node no longer runs its own Tor
   ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)).** The upstream
   `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.

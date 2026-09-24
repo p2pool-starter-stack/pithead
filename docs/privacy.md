@@ -36,6 +36,10 @@ by channel:
 
 - **Docker (DIY channel):** the rules go in Docker's `DOCKER-USER` chain. Docker adds the
   `FORWARD → DOCKER-USER` jump when it creates the network, so the chain is traversed on egress.
+  A reboot empties the chain, and the containers restart on their own when Docker starts, so
+  `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
+  `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
+  so a start that fails halfway blocks more than intended rather than less.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -58,7 +62,8 @@ and everything else the bridge originates is dropped, leaving the host's own IPv
 other interface untouched. If a v6 subnet is present but the bridge interface can't be resolved,
 `pithead` refuses to install a v4-only firewall it would otherwise report as fail-closed.
 
-- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`.
+- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`. The
+  DIY boot unit stays through `down` and is removed by `uninstall` or by opting out.
 - Opt out with `network.tor_egress_firewall: false` (then routing falls back to per-app config only).
 - The accepted destinations are the private ranges only: `10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, and `100.64.0.0/10` (CGNAT, so Tailscale addresses work). A remote Monero or
