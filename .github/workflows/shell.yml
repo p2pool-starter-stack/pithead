@@ -107,4 +107,13 @@ jobs:
         # between here and the Makefile). Covers build/*/*.sh and dashboard/*.sh — the entrypoints
         # + healthchecks that run in every container (#124). Gate on warnings+errors; info-level
         # style nits vary by shellcheck version.
-        run: make lint-sh
+        run: | # TEMPORARY measurement for #2632, reverted in the next commit
+          ( tot=0; one=0; while sleep 1; do
+              read -r t m <<<"$(ps -C shellcheck -o rss= | awk '{t+=$1; if ($1>m) m=$1} END{print t+0, m+0}')"
+              [ "$t" -gt "$tot" ] && tot=$t; [ "$m" -gt "$one" ] && one=$m
+              echo "$tot $one" >/tmp/peak
+            done ) &
+          rc=0; make lint-sh || rc=$?
+          read -r tot one </tmp/peak
+          echo "MEASURE-2632 peak_total_shellcheck_rss_kib=$tot peak_single_process_rss_kib=$one nproc=$(nproc) memtotal=$(awk '/MemTotal/{print $2}' /proc/meminfo)"
+          exit $rc
