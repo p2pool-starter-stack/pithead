@@ -38,7 +38,7 @@ _restore_reason() { # <pithead-restore-rc> <config: match|drift> <secrets: match
             up) return 0 ;;
             esac
         }
-        strict_pithead() { return 0; }
+        baseline_up() { return 0; }
         wait_status_ok() { return 0; }
         rx() { [ "$_config_state" = match ] && printf 'baseline' || printf 'drifted'; }
         upgrade_secret_fingerprints() { [ "$_secret_state" = match ] && printf fp || printf other; }

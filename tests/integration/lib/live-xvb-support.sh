@@ -101,6 +101,33 @@ SH
     rx "printf %s $(quote_arg "$payload") | base64 -d | bash -s --$args"
 }
 
+# Which CLI the stack directory holds, for the ruleset it can install: `aware` when it defines
+# container_engine, `predates:<engine>` when it does not. The engine is read before sourcing, from
+# the environment or the appliance's /etc/environment pin, the way container_engine itself reads it.
+baseline_ruleset_verdict() {
+    rx 'e=${PITHEAD_ENGINE:-$(sed -n "s/^PITHEAD_ENGINE=//p" /etc/environment 2>/dev/null | tr -d "\"")}
+source ./pithead >/dev/null 2>&1 </dev/null
+if declare -F container_engine >/dev/null; then echo aware; else echo "predates:$e"; fi' 2>/dev/null
+}
+
+# Start the restored baseline. v1.20.0, the image gate's baseline, predates container_engine and
+# the podman/netavark nft ruleset: its stack_up installs only DOCKER-USER rules, a chain netavark
+# never jumps to, so strict_pithead cannot hold for it on the appliance (#2057). Only that exact
+# pairing starts with a plain `up` and one counted by-design skip; any other verdict, including an
+# unreadable one, stays strict. #2696 removes the exemption once 2.0.0 is the baseline.
+_BASELINE_RULESET_SKIPPED=0
+baseline_up() {
+    if [ "$(baseline_ruleset_verdict)" != predates:podman ]; then
+        strict_pithead up
+        return
+    fi
+    if [ "$_BASELINE_RULESET_SKIPPED" = 0 ]; then
+        _BASELINE_RULESET_SKIPPED=1
+        it_skip_leg "baseline Tor-egress ruleset (#2696)" "v1.20.0 predates the podman ruleset" "by-design"
+    fi
+    pithead up
+}
+
 restore_xvb_or_safety() {
     if restore_xvb_original; then
         _XVB_RESTORE_ARMED=0

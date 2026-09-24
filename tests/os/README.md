@@ -198,7 +198,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
   noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
   refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
-  and resumed hashes. Release-input preparation failures name only the failed sub-step, a redacted
+  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
+  release cannot install the podman ruleset; the run records it as a counted by-design row that
+  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
   command, and its exit status. Downstream guest failures name only a fixed stage (including the
   mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
   keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the

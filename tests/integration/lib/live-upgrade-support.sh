@@ -329,7 +329,7 @@ restore_upgrade_baseline() {
     fi
     if [ "$files_ok" = 1 ]; then
         if ! reset_control_units_for_render || ! pithead render >/dev/null 2>&1 ||
-            ! strict_pithead up >/dev/null 2>&1 || ! wait_status_ok 300 ||
+            ! baseline_up >/dev/null 2>&1 || ! wait_status_ok 300 ||
             ! wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS"; then
             failed=1
         fi

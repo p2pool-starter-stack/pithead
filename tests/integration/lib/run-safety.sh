@@ -62,7 +62,7 @@ safety_restore_exact() {
     SAFETY_RESTORE_FAIL_REASON=""
     if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="pithead restore failed"
-    elif ! strict_pithead up >/dev/null 2>&1; then
+    elif ! baseline_up >/dev/null 2>&1; then
         SAFETY_RESTORE_FAIL_REASON="stack did not come back up"
     elif ! wait_status_ok 240; then
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
