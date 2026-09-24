@@ -253,7 +253,7 @@ DropCapability=all
 AddCapability=IPC_LOCK SYS_NICE
 NoNewPrivileges=true
 Ulimit=memlock=-1:-1
-PodmanArgs=--memory 1g --memory-swap 1g
+PodmanArgs=--memory 4g --memory-swap 4g
 HealthCmd=/usr/local/bin/p2pool-healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
