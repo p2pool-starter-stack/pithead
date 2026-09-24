@@ -217,6 +217,7 @@ PublishPort=127.0.0.1:18143:18143
 ReadOnly=true
 DropCapability=all
 NoNewPrivileges=true
+RunInit=true
 PodmanArgs=--memory 512m --memory-swap 512m
 HealthCmd=ps | grep '[m]inotari_consol' || exit 1
 HealthInterval=30s
@@ -361,8 +362,7 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-    # Payout-confirmation env reaches the dashboard only when a payout profile is active —
-    # emitted conditionally so the payout-off unit stays byte-identical to the proven fixtures.
+    # Payout env reaches the dashboard only under a payout profile, so the payout-off unit matches its fixture.
     local payout_env=""
     case ",$profiles," in
     *,payout_confirm,*) payout_env=" PAYOUT_CONFIRM_ENABLED=true MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc WALLET_RPC_USERNAME=wallet $(_qenvq WALLET_RPC_PASSWORD)" ;;
