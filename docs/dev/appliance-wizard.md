@@ -246,7 +246,8 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    under a later release's new-configuration preflight policy.
 4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only opaque
    generated secrets and Tor identity from the archived environment. The restored dashboard
-   password remains in `config.json`; its bcrypt hash and fingerprint are regenerated from it.
+   password remains in `config.json`; its archived bcrypt hash and fingerprint are kept exactly
+   while the fingerprint matches it and the hash is well-formed, and are regenerated from it otherwise.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
    trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
    database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
@@ -471,7 +472,7 @@ had a gap between it and the next one.
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, uploaded through `/submit-restore` instead of the form onto an existing appliance disk — the running wallet, Tor identity and opaque RPC/onion secrets must match the prior-release fixture, the dashboard hash and fingerprint must be regenerated from the preserved password and authenticate with it, both its chain sentinel and the target's pre-restore sentinel must survive, and its removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
+| the restore leg | `tests/os/run.sh --phase install` | a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, uploaded through `/submit-restore` instead of the form onto an existing appliance disk — the running wallet, Tor identity and opaque RPC/onion secrets must match the prior-release fixture, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both its chain sentinel and the target's pre-restore sentinel must survive, and its removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.
