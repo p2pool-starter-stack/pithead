@@ -71,7 +71,7 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 # A pair pithead rendered carries a hash of exactly the configured password, so canonicalization
 # keeps it byte-for-byte while its fingerprint matches (#2579); a salted rehash would change the
 # credential the safety rollback compares. A stale pair is hashed again from the plaintext.
-RSAUTH="$RS/auth-canonical"; mkdir -p "$RSAUTH"
+RSAUTH="$RS/auth-canonical" && mkdir -p "$RSAUTH"
 cp "$RS/config.json" "$RSAUTH/config.json"
 printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$RS_AUTH_FP" >"$RSAUTH/.env"
 PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
@@ -94,7 +94,7 @@ assert_rc "restore fixture: backup exits 0" "$rc" "0"
 rarchive="$(ls "$RS"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
 { [ -n "$rarchive" ] && [ -f "$rarchive" ]; } && ok "restore fixture: encrypted archive created" || bad "restore fixture: encrypted archive created" "no .enc archive"
 
-RSPOOL="$RS/data/firstboot-test"; mkdir -p "$RSPOOL"
+RSPOOL="$RS/data/firstboot-test" && mkdir -p "$RSPOOL"
 rm -f "$RS/config.json"
 
 # 1) Accept: the right passphrase decrypts, verifies, validates and lands config.json — settings,
@@ -155,7 +155,7 @@ printf 'STICK-CADDY\n' >"$RS/Caddyfile"
 printf 'STICK-DB\n' >"$RS/data/dashboard/dashboard.db"
 cp "$rarchive" "$RSPOOL/restore-archive"
 printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
-rm -f "$RS/data/dashboard/sync-gate-reset"; RCARRY="$RS/carry"
+rm -f "$RS/data/dashboard/sync-gate-reset" && RCARRY="$RS/carry"
 out=$(cd "$RS" && PATH="$RS/bin:$PATH" PITHEAD_RESTORE_CARRY_DIR="$RCARRY" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 && echo rc0)
 assert_contains "installer restore accepted" "$out" "rc0"
 assert_contains "installer restore surfaces the config for the card" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
@@ -283,10 +283,10 @@ tar -czf "$RS/list-fixture.tar.gz" -C "$RS/list-fixture" .
 if run_sourced "$RS" restore_setup_tar_list "$RS/list-fixture.tar.gz" -tvzf "$RS/list-output" 1 30; then out=accepted; else out=refused; fi
 assert_eq "archive listing is stopped at its output cap" "$out" refused
 rm -f "$RS/restore-names" "$RS/restore-verbose"
-RPSEED="$RS/preseed"; mkdir "$RPSEED"
+RPSEED="$RS/preseed" && mkdir "$RPSEED"
 cp "$rarchive" "$RPSEED/pithead-restore.enc"
 printf hunter2 >"$RPSEED/pithead-restore-pass"
-rm -f "$RS/data/dashboard/sync-gate-reset"; out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore && echo rc0')
+rm -f "$RS/data/dashboard/sync-gate-reset" && out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore && echo rc0')
 assert_contains "carried normal backup passes the shared member policy" "$out" rc0
 assert_eq "carried backup restores the original database" "$(cat "$RS/data/dashboard/dashboard.db")" DBDATA-ORIG
 assert_eq "carried backup marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
