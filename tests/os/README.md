@@ -104,8 +104,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
-  The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
-  path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
+  path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
+  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
   the same process before the unsynced controller can return it to P2Pool. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine

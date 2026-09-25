@@ -69,6 +69,12 @@ _xvb_real_tor_fetch() {
     _xvb_guest_python "$payload"
 }
 
+# #2726 (job 1194): a Tor circuit read-timing out against a third-party host says nothing about the
+# stack, so retry. Each attempt runs the whole audit-hook probe: a retry never passes non-Tor egress.
+_xvb_real_tor_fetch_retry() {
+    _xvb_real_tor_fetch || { sleep 15 && _xvb_real_tor_fetch; } || { sleep 15 && _xvb_real_tor_fetch; }
+}
+
 # The last guest-side stderr _ssh captured, folded onto one line for a verdict message. Throwing
 # this away is why #2321 was filed off job 442 with no diagnostic: the row said the actuator failed
 # and the guest's own traceback — the only thing that says whether the leg or the product is at
@@ -148,7 +154,7 @@ phase_provision_xvb_routing() {
         bad "guest Tor never reported bootstrapped within ${XVB_TOR_READY_TIMEOUT:-300}s (last health: $tor_status) — the real XvB stats request was never made"
         return 1
     fi
-    if _xvb_real_tor_fetch; then
+    if _xvb_real_tor_fetch_retry; then
         ok "XvB stats request reached the real endpoint through the guest Tor SOCKS only"
     else
         bad "XvB stats request did not complete through the guest Tor SOCKS only (guest: $(_xvb_guest_stderr))"
@@ -213,7 +219,7 @@ _xvb_self_test() {
     # Drive the REAL leg, one inverted assertion at a time. A source grep would pass on a leg whose
     # rows never reach the harness's counters, which is exactly the defect this replaced: the rows
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
-    local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
+    local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
     local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_RESTORE_TIMEOUT=1
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
@@ -229,7 +235,8 @@ _xvb_self_test() {
         esac
         return 0
     }
-    _xvb_real_tor_fetch() { return "$XVBT_FETCH_RC"; }
+    XVBT_FETCH_CALLS="$(mktemp)"
+    _xvb_real_tor_fetch() { printf x >>"$XVBT_FETCH_CALLS" && [ "$(wc -c <"$XVBT_FETCH_CALLS")" -gt "$XVBT_FETCH_FAILS" ]; }
     _xvb_guest_python() { # answers the mode the leg actually asked the guest to switch to
         case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
         *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
@@ -281,35 +288,31 @@ _xvb_self_test() {
     XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=1
     _xvb_case "a Tor that never bootstraps is a counted red row before any request is made" 0 1 1
     XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-
-    XVBT_FETCH_RC=1
+    # #2726 (job 1194): one Tor read timeout then an answer is green; three misses stay red.
+    : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=1
+    _xvb_case "a real XvB request that times out once and then answers is NOT a red row" 3 0 0
+    : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=99
     _xvb_case "an unreachable real XvB request over guest Tor is a counted red row" 0 1 1
-    XVBT_FETCH_RC=0
-
+    [ "$(wc -c <"$XVBT_FETCH_CALLS")" = 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
+    XVBT_FETCH_FAILS=0 && rm -f "$XVBT_FETCH_CALLS"
     XVBT_START_RC=1
     _xvb_case "a held xmrig-proxy that will not start is a counted red row" 1 1 1
     XVBT_START_RC=0
-
     # Job 629's own cause: xmrig-proxy started but its API never answered before the actuator was
     # tried, so the switch silently no-opped. That must be a counted red row on its own, before the
     # actuator ever runs — not the actuator's "could not switch" row, which would misname the cause.
     XVBT_PROXY_READY_RC=1
     _xvb_case "an xmrig-proxy API that never answers after starting is a counted red row" 1 1 1
     XVBT_PROXY_READY_RC=0
-
     # #2321's own row: the actuator answering nothing must be RED and must reach the summary.
     XVBT_XVB_JSON=""
     _xvb_case "an actuator that cannot switch the live proxy to XvB is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting P2POOL after the XvB switch is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "an XvB route that is not Tor-routed is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":true,"tor":false}]}'
     _xvb_case "a second pool left enabled beside XvB is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":false,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "an XvB route whose own pool is disabled is a counted red row" 1 1 1
     XVBT_XVB_JSON="$xvb_ok"
@@ -320,13 +323,10 @@ _xvb_self_test() {
     # guest really is left misrouted, not just the first attempt.
     XVBT_P2P_JSON=""
     _xvb_case "an actuator that cannot restore P2Pool is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting XVB after the restore is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "a P2Pool route left Tor-routed is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":false,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a restored P2Pool route whose own pool is disabled is a counted red row, twice over" 2 2 1
 
