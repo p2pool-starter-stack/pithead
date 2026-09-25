@@ -63,7 +63,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     database beside the old one, so both are on the data volume at once. Before it starts or
     recreates any container, `./pithead upgrade` requires free space there of the current
     `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
-    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). The bound is
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). On the
+    appliance, `pithead os-update` and the dashboard's OS-update verify and install steps refuse a
+    bundle that declares a data migration against the same bound, before anything is installed
+    ([#2645](https://github.com/p2pool-starter-stack/pithead/issues/2645)). The bound is
     conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
@@ -128,6 +131,22 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **A restore at setup that fails while writing its files no longer leaves the machine half
+  restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
+  replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
+  database, leaving the archive's configuration beside this machine's own keys. Every item is now
+  staged beside its destination and swapped in only when all are ready; any failure puts back
+  the previous configuration, Tor keys and database, and removes the chain files the restore
+  added.
+
+- **`pithead doctor` no longer reports HugePages OK for a pool too small to use
+  ([#2610](https://github.com/p2pool-starter-stack/pithead/issues/2610)).** Any non-zero
+  `HugePages_Total` read OK, so a box with 186 pages passed while P2Pool's RandomX dataset and caches
+  need 1296. doctor now holds the pool to this machine's budget (3072 pages, or the appliance's
+  reduced pool, never below 1296) and warns when it is short. The warning gives the shortfall and
+  the memory P2Pool uses outside the pool instead. It stays a warning, never a failure, because the
+  appliance's update commit gate takes doctor's exit code.
 
 - **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
   ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free

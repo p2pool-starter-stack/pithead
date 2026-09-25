@@ -46,13 +46,15 @@ restore_fixture_secret_verdict() {
     expected_auth_fp=$(printf '%s' "$dashboard_password" | sha256sum | cut -d' ' -f1)
     # shellcheck disable=SC2154  # shared through the assembled runner scope
     auth_code=$(curl -sSk -u "$dashboard_user:$dashboard_password" -m 10 -o /dev/null -w '%{http_code}' "https://$ip/api/state" 2>/dev/null || true)
-    [ -n "$restored_auth_hash" ] && [ "$restored_auth_hash" != "$expected_auth_hash" ] &&
-        ok "restore leg: dashboard bcrypt was regenerated instead of restored from the archive" ||
-        bad "restore leg: dashboard bcrypt was not regenerated"
+    # Both archives carry a well-formed hash whose fingerprint matches their password, so restore
+    # keeps that exact hash (#2579); a salted rehash would read as a changed credential.
+    [ -n "$restored_auth_hash" ] && [ "$restored_auth_hash" = "$expected_auth_hash" ] &&
+        ok "restore leg: dashboard bcrypt was restored exactly from the archive" ||
+        bad "restore leg: dashboard bcrypt differs from the archive"
     [ -n "$dashboard_password" ] && [ "$restored_auth_fp" = "$expected_auth_fp" ] &&
-        ok "restore leg: dashboard fingerprint was regenerated from the restored password" ||
+        ok "restore leg: dashboard fingerprint matches the restored password" ||
         bad "restore leg: dashboard fingerprint does not match the restored password"
     [ "$auth_code" = 200 ] &&
-        ok "restore leg: the restored dashboard password authenticates against the regenerated bcrypt" ||
+        ok "restore leg: the restored dashboard password authenticates against the restored bcrypt" ||
         bad "restore leg: the restored dashboard password did not authenticate (got HTTP ${auth_code:-none})"
 }
