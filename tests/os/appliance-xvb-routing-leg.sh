@@ -294,7 +294,7 @@ _xvb_self_test() {
     : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=99
     _xvb_case "an unreachable real XvB request over guest Tor is a counted red row" 0 1 1
     [ "$(wc -c <"$XVBT_FETCH_CALLS")" = 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
-    XVBT_FETCH_FAILS=0 && rm -f "$XVBT_FETCH_CALLS"
+    XVBT_FETCH_FAILS=0
     XVBT_START_RC=1
     _xvb_case "a held xmrig-proxy that will not start is a counted red row" 1 1 1
     XVBT_START_RC=0
@@ -401,7 +401,7 @@ _xvb_self_test() {
     fi
     unset -f sleep
 
-    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case
+    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS"
     [ "$f" -eq 0 ]
 }
 
