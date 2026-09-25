@@ -63,7 +63,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     database beside the old one, so both are on the data volume at once. Before it starts or
     recreates any container, `./pithead upgrade` requires free space there of the current
     `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
-    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). The bound is
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). On the
+    appliance, `pithead os-update` and the dashboard's OS-update verify and install steps refuse a
+    bundle that declares a data migration against the same bound, before anything is installed
+    ([#2645](https://github.com/p2pool-starter-stack/pithead/issues/2645)). The bound is
     conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
