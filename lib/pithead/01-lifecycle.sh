@@ -189,8 +189,8 @@ stack_up() {
     # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
     # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
     # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could open a connection that
-    # the ESTABLISHED rule would then grandfather past the DROP.
+    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
+    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
     # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
     # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
