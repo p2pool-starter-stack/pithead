@@ -64,8 +64,8 @@ _phase_install_restore() {
         # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
         # mutation lock through its tor-health wait for minutes after the stack looks live, and a
         # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
-        if ! provisioning_settled 900; then
-            bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
+        if ! provisioning_settled 900 || provisioning_setup_failed; then # #2725: settled is not succeeded
+            bad "restore leg: provisioning did not finish clean on the machine ($(provisioning_state))"
             backup_failure_evidence
             rm -f "$target_disk"
             return
