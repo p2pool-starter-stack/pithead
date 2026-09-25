@@ -12,8 +12,9 @@ logger = logging.getLogger("Config")
 # --- Per-worker endpoint descriptors (#172, config.json: workers.list[]) ---
 # [{name, host?, port?, token?}] — per-rig overrides for the worker API probe when a rig doesn't
 # match the fleet defaults (different port, API on another interface/NAT hop, its own token).
-# Read from the read-only config.json bind mount above, NOT the .env render: entries carry
-# per-worker API tokens, which stay in the owner-only config.json instead of riding a second file.
+# Shape read from the read-only masked config.json bind mount above, which can only ever hold a SET
+# token as the {"__secret__": true} sentinel (#440) — the real value, when needed, rides the
+# owner-only .env instead (WORKER_API_TOKENS, #2349), the same path XMRIG_API_TOKEN already takes.
 # Every field is optional bar `name` (the rig's stratum name). Validation is fail-closed: an entry
 # with ANY invalid field is dropped whole, so a typo'd `host` can never leave its token attached
 # to the miner-IP fallback path (#122). pithead validates the same shape loudly at apply; this
@@ -42,12 +43,18 @@ def _valid_watts(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v < 1e6 else None
 
 
-def load_worker_endpoints(path, read_tokens_path=None) -> list[dict]:
+def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[dict]:
     """The validated workers.list[] entries (#506); invalid entries dropped, first name wins.
 
     The deprecated dashboard.workers[] fallback (#172) was removed in 2.0.0 (#1832): pithead
     migrates a pre-2.0 config in place before this mount is written, so the alias never reaches
     here. A stale mount still carrying it reads as no descriptors at all, which is fail-closed.
+
+    ``tokens_env`` — the raw ``WORKER_API_TOKENS`` value (#2349): a JSON object of
+    ``{name: token}`` rendered by ``render_env`` from the SAME ``workers.list[].token`` values,
+    carried through the owner-only ``.env`` the way ``XMRIG_API_TOKEN`` already travels — the
+    masked config mount can only ever hold the ``{"__secret__": true}`` sentinel. Used to recover
+    the real Bearer for a rig whose masked entry has no RigForge-derived ``read_token`` (below).
     """
     try:
         with open(path) as f:
@@ -58,6 +65,17 @@ def load_worker_endpoints(path, read_tokens_path=None) -> list[dict]:
     raw = workers_block.get("list") if isinstance(workers_block, dict) else None
     if not isinstance(raw, list):
         return []
+    worker_tokens = {}
+    try:
+        parsed_tokens = json.loads(tokens_env) if tokens_env else {}
+    except ValueError:
+        parsed_tokens = {}
+    if isinstance(parsed_tokens, dict):
+        worker_tokens = {
+            k: v
+            for k, v in parsed_tokens.items()
+            if isinstance(k, str) and isinstance(v, str) and _WORKER_NAME_RE.fullmatch(v)
+        }
     read_tokens = {}
     if read_tokens_path:
         try:
@@ -112,7 +130,8 @@ def load_worker_endpoints(path, read_tokens_path=None) -> list[dict]:
             # by the sentinel {"__secret__": true}. Keep the entry then (token present, value hidden)
             # so the worker stays editable — the HOST-side runner supplies the real token when it
             # dials the rig (#508). A genuinely bad token (bad string, or any other dict) still drops
-            # the whole entry, fail-closed.
+            # the whole entry, fail-closed. The sentinel is resolved back to a usable Bearer below,
+            # from either the RigForge read-token derivation or WORKER_API_TOKENS (#2349).
             if isinstance(tok, dict) and tok.get("__secret__") is True:
                 entry["token"] = tok
             elif isinstance(tok, str) and _WORKER_NAME_RE.match(tok):
@@ -124,11 +143,23 @@ def load_worker_endpoints(path, read_tokens_path=None) -> list[dict]:
             if watts is None:
                 continue  # fail-closed like every other field: a bad watts drops the whole entry
             entry["watts"] = watts
-        if "host" in entry and isinstance(entry.get("token"), dict):
-            read_token = read_tokens.get(name)
-            default_port = workers_block.get("api_port", 8080)
-            if read_token and read_token[:2] == (entry["host"], entry.get("port", default_port)):
-                entry["read_token"] = read_token[2]
+        if isinstance(entry.get("token"), dict):
+            # RigForge rigs derive a weaker read-only Bearer from their (write-capable) control
+            # token (#1985/#2313) — that derivation, matched by host+port, takes priority so a
+            # rig's control-plane credential never rides the read-only probe. Only when no such
+            # derivation applies does the raw per-worker token (#2349) become the direct Bearer;
+            # docs/configuration.md's "forces token-auth for that one rig" promise otherwise has
+            # no path once the config the container reads has masked the token to a sentinel.
+            if "host" in entry:
+                read_token = read_tokens.get(name)
+                default_port = workers_block.get("api_port", 8080)
+                if read_token and read_token[:2] == (
+                    entry["host"],
+                    entry.get("port", default_port),
+                ):
+                    entry["read_token"] = read_token[2]
+            if "read_token" not in entry and name in worker_tokens:
+                entry["token"] = worker_tokens[name]
         seen.add(name)
         out.append(entry)
     return out

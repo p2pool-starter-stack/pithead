@@ -289,7 +289,7 @@ describe_change() {
             msg="Tor guard self-heal DISABLED — a stuck guard is back to WARN-only ('./pithead doctor', fix with './pithead restart tor'); the dashboard container is recreated."
         fi
         ;;
-    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE) msg="Secret configuration value updated — the dashboard container is recreated." ;;
+    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE | WORKER_API_TOKENS) msg="Secret configuration value updated — the dashboard container is recreated." ;;
     MONERO_CLEARNET_SYNC)
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.

@@ -260,11 +260,11 @@ WORKER_READ_TOKENS_PATH, DASHBOARD_WORKERS = "/control/masked/worker-read-tokens
 
 
 def current_worker_endpoints():
-    return (
-        DASHBOARD_WORKERS
-        if DASHBOARD_WORKERS is not None
-        else load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH)
-    )
+    # WORKER_API_TOKENS (#2349): {name: token} JSON restores masked tokens (#440) from .env.
+    tokens_env = os.environ.get("WORKER_API_TOKENS", "")
+    if DASHBOARD_WORKERS is not None:
+        return DASHBOARD_WORKERS
+    return load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH, tokens_env)
 
 
 DASHBOARD_ENERGY = load_energy_config(HOST_CONFIG_PATH)
