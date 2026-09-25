@@ -545,7 +545,22 @@ and `--list` prints it).
   90 seconds, and the sample behind that figure is part of it — time-to-first-message against the
   live node over eight samples ran 0.3, 1.5, 1.8, 3.3, 4.5, 5.6, 16.0 and 26.5 seconds, and the
   first three would have justified a 30-second budget that the tail turns into a flaky red. It is
-  a ceiling rather than a cost: the read returns on the first byte. What remains unproven is
+  a ceiling rather than a cost: the read returns on the first byte. The 90-second budget still is
+  not proof against a quiet chain: monerod's ZMQ pub fires only on a new block, a new mempool tx,
+  or a template update, never on a timer, so a fully healthy publisher on a chain with none of
+  those inside the window has nothing to send ([#2705](https://github.com/p2pool-starter-stack/pithead/issues/2705)).
+  A bare "silent" verdict there cannot tell that node apart from a genuinely dead one. The row
+  corroborates with a witness the probe itself cannot see: monerod's own `get_info` height and
+  mempool size, sampled once before the probe starts and once after it returns. Only when a
+  "silent" verdict comes back next to two IDENTICAL, successfully-read fingerprints does it
+  downgrade to a warn — the chain provably did not move either, so the silence proves nothing about
+  the publisher — and the row stays a **warn**, not a pass or a fail, the same non-counted verdict
+  class `pool.type`'s Unknown reading and Tari's post-restart re-sync lag already use for "known
+  ambiguous, not a defect". A fingerprint that moved while ZMQ stayed silent is left exactly as
+  red as before: that combination is the real defect #1497 exists to catch, and an unreadable
+  fingerprint (RPC itself unreachable) cannot corroborate anything, so the original verdict passes
+  through unchanged rather than being waved through on missing evidence.
+  What remains unproven is
   narrower than it was — that the frame carried a block notification rather than a transaction or
   a miner update — and every run counts it as a missing leg, `monero ZMQ published frame is a
   BLOCK notification`, because a skip announces itself and a false green does not. Closing that
