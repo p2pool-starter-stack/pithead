@@ -172,12 +172,8 @@ stack_upgrade() {
     # Source checkout: rebuild the images from build/. Release install: pull the new published images
     # instead — force a re-pull so a moved tag is refreshed (#44).
     if is_source_checkout; then
-        # Source checkouts build the first-party images locally (--build) and use --pull never so up
-        # never tries to pull an unpublished :dev tag. But the THIRD-PARTY images (caddy, tari, the
-        # socket-proxies) are pinned by digest and CAN change between releases — under --pull never a
-        # bumped digest fails with "No such image". Pull just the non-buildable images first so a new
-        # digest is fetched; best-effort (older compose without --ignore-buildable falls through).
-        docker compose pull --ignore-buildable 2>/dev/null || true
+        # Source checkouts build the first-party images locally (--build); compose_up_checked pulls
+        # a bumped third-party digest, a missing image, before its `--pull never` up (#2654).
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
     else
         verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk

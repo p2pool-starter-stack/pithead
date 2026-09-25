@@ -49,8 +49,11 @@ While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a
 badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
 ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
 yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
-with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. By default the
-stack waits for both Monero and Tari. With
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. A restore at
+setup is the exception: the release belongs to the machine the backup was taken on, so after such a
+restore the dashboard holds the miner again until this machine's chains are ready. `./pithead
+restore`, the same-box recovery command, is not this door — its box's chains never desynced, so it
+keeps whatever gate state the backup carried. By default the stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 

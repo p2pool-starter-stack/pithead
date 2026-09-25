@@ -14,6 +14,35 @@ run_lifecycle() {
     pithead status >/dev/null 2>&1
     assert_rc "status OK after restart" "$?" "0"
 
+    # #2654: a source checkout ups with --pull never, so a digest-pinned third-party image that is
+    # gone from the engine (after `uninstall`, or on a new host) left its services down. Remove the
+    # socket-proxy image (docker-proxy and docker-control, both profile-free) and prove `up` fetches it.
+    if rx 'test -f dashboard/Dockerfile'; then
+        local proxy_ref proxy_id proxy_fails="$IT_FAIL"
+        proxy_ref="$(rx "docker compose config --images" 2>/dev/null | grep -m1 'docker-socket-proxy')"
+        proxy_id="$(rx "docker image inspect --format '{{.Id}}' $(quote_arg "$proxy_ref")" 2>/dev/null)"
+        it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
+        if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
+            rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
+            pithead up >/dev/null 2>&1
+            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$?" "0"
+            rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
+            assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
+            assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
+            if wait_status_ok 240; then
+                it_pass "status OK after up restored a missing pinned image (#2654)"
+            else
+                it_fail "status OK after up restored a missing pinned image (#2654)" "pithead status did not recover"
+            fi
+            [ "$IT_FAIL" -le "$proxy_fails" ] || lifecycle_ok=0
+        else
+            it_fail "missing pinned image fixture armed (#2654)" "no socket-proxy image found, or down / image rm returned non-zero"
+            lifecycle_ok=0
+        fi
+    else
+        it_skip_leg "missing pinned image on up (#2654)" "release install: --pull missing fetches it" "by-design"
+    fi
+
     # apply that changes the sidechain recreates only the affected containers, preserving
     # secrets. We flip main<->mini and assert the token/onions are untouched, then revert.
     local cur_pool fp_before
@@ -94,6 +123,25 @@ run_lifecycle() {
                     it_pass "status OK after restore"
                 else
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
+                    lifecycle_ok=0
+                fi
+                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
+                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
+                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
+                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
+                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
+                local ddir
+                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
+                if [ -n "$ddir" ]; then
+                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
+                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                fi
+                if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
+                    _pred_p2pool_running; then
+                    it_pass "restore does not hold p2pool behind the sync gate (#2626)"
+                else
+                    it_fail "restore does not hold p2pool behind the sync gate (#2626)" \
+                        "p2pool still not running 60s after restore+up"
                     lifecycle_ok=0
                 fi
                 # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
@@ -311,6 +359,7 @@ _pred_failover_armed() {
     st="$(api_state)"
     [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
+_pred_p2pool_running() { [ "$(svc_state_of "$(service_state p2pool)")" = "running" ]; }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }
 _pred_tor_healthy() {
     local s

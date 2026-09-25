@@ -155,6 +155,14 @@ compose_up_checked() {
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
+    # #2654: a source checkout's `never` policy builds the first-party `:dev` images, but the
+    # digest-pinned third-party ones (tari, caddy, the socket-proxies) have no build context, so
+    # after `uninstall` or on a fresh host `up` fails on them. Fetch only those that are missing;
+    # a pinned digest bump is a new ref, so this also covers `upgrade`. An explicit PITHEAD_PULL wins.
+    if [ -z "${PITHEAD_PULL:-}" ] && is_source_checkout; then
+        docker compose pull --policy missing --ignore-buildable ||
+            warn "Could not pull the missing third-party images — 'compose up' reports which ones below."
+    fi
     # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
     # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
     # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped

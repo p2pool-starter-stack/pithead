@@ -93,11 +93,9 @@ assert_running_state() {
     else
         assert_num_ge "Tari inbound onion published in local mode (#103)" "${hs_tari:-0}" 1
     fi
-
     # 2. pithead status is green for a healthy config.
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"
-
     # 3+4. Dashboard live, then monerod caught up; local mode settles the panel first (#180/#54).
     #    Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch held "not synced" past 60s.
     [ "$mode" = "local" ] && wait_for 150 5 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
@@ -268,6 +266,8 @@ assert_running_state() {
         *127.0.0.1*) it_pass "tari DNS sinkholed — no clearnet resolver (#162)" ;;
         *) it_fail "tari DNS sinkholed — no clearnet resolver (#162)" "unexpected HostConfig.Dns" ;;
         esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        # The entrypoint's fork check (#2618) reads the header at 350,000 once gRPC answers; a bench on the canonical chain must log its hash.
+        [ "$tmode" = "local" ] && assert_eq "tari fork-check: header 350000 is canonical (#2618)" "$(rx "for _ in \$(seq 60); do docker logs tari 2>&1 | grep -qF '[pithead fork-check] header 350000 is canonical (663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47)' && { echo 1; exit 0; }; sleep 5; done; echo 0")" "1" || it_skip_leg "tari fork-check: header 350000 is canonical (#2618)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The xmrig-proxy config knobs must reach the RUNNING proxy's argv, not just the compose
         # render. donate-level is rendered explicitly so it's always visible (#173). The matrix
         # deploys the default config (no p2pool.stratum_password) → stratum auth OFF, which must

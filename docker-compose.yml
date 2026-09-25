@@ -226,10 +226,10 @@ services:
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 1m
-    # An init as PID 1 (#2627): the wrapper and upstream's start_tari_app.sh both exec, so without it
-    # minotari_node itself is PID 1, reaps no children, and a zombie PID 1 cannot be signalled —
-    # `docker stop` then fails until the grace period kills it. The init forwards the stop signal
-    # and reaps. The quadlet renderer carries the same as RunInit=true.
+    # An init as PID 1 (#2627): it reaps, and forwards the stop signal to the wrapper entrypoint,
+    # which forwards it to the minotari_node it supervises (#2618). Without an init the wrapper is
+    # PID 1 and a zombie child it has not reaped yet delays the stop. The quadlet renderer carries
+    # the same as RunInit=true.
     init: true
     logging: *default-logging
     # Tari's memory grows unbounded over time (#55, first reported in #14); left uncapped it can
@@ -261,9 +261,9 @@ services:
       # tari (a bind-mount content change alone won't trigger a recreate).
       - TARI_CLEARNET_SYNC=${TARI_CLEARNET_SYNC:-false}
     # Immutable root filesystem (#377). The wrapper entrypoint copies the canonical config to
-    # /tmp/tari-runtime-config.toml; the upstream start_tari_app.sh (verified in the pinned image:
-    # APP_NAME=node → TARI_BASE=/var/tari/node, it only mkdir+cd there) then runs minotari_node with
-    # --base-path /var/tari/node — the data bind mount, which holds the DB, logs and peer DB.
+    # /tmp/tari-runtime-config.toml, then runs minotari_node as upstream's start_tari_app.sh would
+    # (APP_NAME=node → TARI_BASE=/var/tari/node) with --base-path /var/tari/node — the data bind
+    # mount, which holds the DB, logs and peer DB.
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -274,7 +274,8 @@ services:
       # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
     # Pithead wrapper (#183/#234): renders the runtime config (clearnet-vs-Tor, marker-gated) from
-    # pithead's canonical Tor config, then chains to the upstream start_tari_app.sh unchanged.
+    # pithead's canonical Tor config, then runs and supervises minotari_node, rewinding a database
+    # left on the dead 5.3.1 branch past the 350,000 fork first (#2618).
     entrypoint:
       - /var/tari/config/entrypoint.sh
     command:

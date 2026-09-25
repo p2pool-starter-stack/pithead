@@ -81,6 +81,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
     either database afterwards, so returning to an older Pithead release does not return Tari to
     a working state. Take a backup first (`./pithead backup --with-chains`).
+  - **A node that followed the dead 5.3.1 branch past 350,000 is rewound on its own
+    ([#2618](https://github.com/p2pool-starter-stack/pithead/issues/2618)).** Such a node bans
+    every canonical peer for `Invalid Proof of work` after the migration and never syncs. The Tari
+    entrypoint waits while the node's gRPC is closed or answers `UNAVAILABLE` (it does for the
+    whole database migration), then compares the node's block header at 350,000 with the canonical
+    hash. On a mismatch it rewinds the chain to 349,900, deletes the peer database (the bans) and starts
+    the node again. A node below 350,000 or on the canonical chain is left as it is. Each step is
+    logged in `docker logs tari` with the prefix `[pithead fork-check]`.
   - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.1-pre.0 first.** P2Pool
     4.18.1 cannot merge-mine against a node older than 6.0.0, and a 6.0.0 node stops at 350,008.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
@@ -146,6 +154,22 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **A restore at setup no longer carries the source machine's released miner onto new hardware
+  ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
+  database records that the source machine's chains had synced and its miner was released. Restored
+  onto a machine whose chains had not synced, the dashboard never held `p2pool`, which ran without
+  its stratum port and stayed unhealthy, so the appliance boot never committed. The wizard and
+  carried restore doors now leave a marker that makes the dashboard hold the miner until this
+  machine's own chains are synced. `./pithead restore`, the same-box recovery command, is
+  unaffected: its box's chains never desynced, so it keeps the backup's gate state as before.
+
+- **A source checkout starts the whole stack after `uninstall` or on a new host
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
+  and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
+  built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
+  once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
+  have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
 
 - **A restore at setup that fails while writing its files no longer leaves the machine half
   restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
