@@ -227,7 +227,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
-| `uninstall` | missing | #2343, blocked on bench-ci#347 |
+| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379); the dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
@@ -500,14 +500,14 @@ failure class the image exists to remove:
 
 Two host-level constraints apply to the container itself:
 
-- **Memory — at least 8 GiB for the engine.** `lint-sh` is the memory peak of the whole suite
-  (#1206), and the figure is easy to under-read. Against a 3.8 GiB Docker Desktop VM, shellcheck
-  reached 3.45 GiB RSS and the kernel OOM-killed it (`Out of memory: Killed process (shellcheck)`,
-  `make` rc 137) — that 3.45 is a *ceiling imposed by the kill*, not the requirement. Given room on
-  a 31 GiB Linux host it passes and peaks at **7.20 GiB**. The symptom of a shortfall is a bare
-  `Killed` after the shellcheck line, naming neither memory nor a file, so raise the allocation
-  before running the full `make test` in the container. Every other target measured here fits
-  comfortably; `test-container` warns when the engine is below the bar.
+- **Memory — at least 6 GiB for the engine.** `lint-sh` is the memory peak of the whole suite
+  (#1206). It runs one shellcheck process per file, four at a time (#2632). On a 16 GiB GitHub
+  runner the largest single process is the generated `pithead` at 2.2 GiB, and the four largest
+  files together come to 5.8 GiB. That sum is the worst case if all four run at once; one run
+  sampled 2.7 GiB in total. The symptom of a shortfall is a bare `Killed` after the shellcheck
+  line, naming neither memory nor a file, so raise the allocation before running the full
+  `make test` in the container. Every other target measured here fits comfortably;
+  `test-container` warns when the engine is below the bar.
 - **The Docker socket.** Tiers 1 (netwatch), 3, `test-compose` and `lint-proto` all shell out to
   Docker, so the container is given the host's socket. That is host-root-equivalent access by
   itself; it is the same trust the tiers already need when run directly on the host.
