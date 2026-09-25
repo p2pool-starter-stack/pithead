@@ -73,6 +73,7 @@ python3 "$HERE/lib/migration-state-probe.py" --self-test
 
 echo "== a restored baseline that will not start names the step that stopped it =="
 (
+    stack_cli_has() { :; }
     reset_control_units_for_render() { :; }
     pithead() { :; }
     baseline_up() { [ "${STOP_AT:-}" != up ]; }
@@ -135,5 +136,26 @@ tar_line="$(grep -F 'tar --no-xattrs -czf "$stage/harness.tar.gz"' "$HERE/../os/
 while IFS= read -r f; do
     grep -Fq -- " $f" <<<"$tar_line" || { echo "harness tarball misses $f" >&2; exit 1; }
 done <<<"$outside"
+
+echo "== a CLI without render (v1.20.0) skips the step; one with it still runs it =="
+(
+    IT_MODE=local IT_REMOTE_DIR="$td/renderless"
+    mkdir -p "$IT_REMOTE_DIR"
+    printf 'set -Eeuo pipefail\nstack_up() { :; }\n' >"$IT_REMOTE_DIR/pithead"
+    ! stack_cli_has render_derived || exit 1
+    printf 'render_derived() { :; }\n' >"$IT_REMOTE_DIR/pithead"
+    stack_cli_has render_derived
+    reset_control_units_for_render() { :; }
+    baseline_up() { :; }
+    wait_status_ok() { :; }
+    wait_for() { :; }
+    RENDERED=0
+    pithead() { [ "$1" = render ] && RENDERED=1; return 0; }
+    start_restored_baseline && [ "$RENDERED" = 1 ] || exit 1
+    printf 'set -Eeuo pipefail\n' >"$IT_REMOTE_DIR/pithead"
+    RENDERED=0
+    pithead() { [ "$1" = render ] && { RENDERED=1; return 1; }; return 0; }
+    start_restored_baseline && [ "$RENDERED" = 0 ] && [ -z "$BASELINE_START_STEP" ] || exit 1
+)
 
 echo "selftest-upgrade-layout: PASS"

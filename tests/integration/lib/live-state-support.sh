@@ -279,6 +279,12 @@ telemetry_rows_lost() { # <before-lines> <after-lines>
         awk 'NF { n[$1]++ } END { for (k in n) printf "%s:%d\n", k, n[k] }' | sort | paste -sd, -
 }
 
+# Whether the stack directory's CLI defines a function, asked in a contained bash so a CLI that
+# turns on errexit when sourced (v1.20.0) cannot abort the caller.
+stack_cli_has() { # <function>
+    rx "bash -c 'source ./pithead >/dev/null 2>&1 </dev/null; declare -F $1 >/dev/null' 2>/dev/null"
+}
+
 # Run one start step in this shell (baseline_up's counted skip must survive), and keep the fixed
 # text of its own [ERROR] line if it fails (job 1247 stopped at "render" with
 # the output discarded).
@@ -300,7 +306,12 @@ start_restored_baseline() {
     BASELINE_START_STEP=reset-units BASELINE_START_ERROR=""
     reset_control_units_for_render "$UPGRADE_CANDIDATE_DIR" || return 1
     BASELINE_START_STEP=render
-    start_step pithead render || return 1
+    # `render` arrived after v1.20.0 (job 1256: "Unknown command: render"). A CLI without it has
+    # nothing to re-derive: its `restore` already put config.json, .env and Caddyfile back from
+    # the archive, and the checks below still compare them exactly.
+    if stack_cli_has render_derived; then
+        start_step pithead render || return 1
+    fi
     BASELINE_START_STEP=up
     start_step baseline_up || return 1
     BASELINE_START_STEP=status
