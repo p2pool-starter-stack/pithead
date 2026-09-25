@@ -360,6 +360,7 @@ run_fault_injection() {
     fault_firewall_rollback
     fault_firewall_grandfathered_flow
     fault_firewall_boot_restore
+    fault_firewall_status_alert
     fault_tor_down
     fault_clock_drift
     fault_disk_enospc

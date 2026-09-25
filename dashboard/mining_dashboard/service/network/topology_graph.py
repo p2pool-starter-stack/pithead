@@ -66,6 +66,20 @@ def ext_node(route):
     return "internet" if route == CLEARNET else "tor"
 
 
+def _xvb_route(xvb_enabled, xvb_tor):
+    if not xvb_enabled:
+        return INACTIVE
+    return TOR if xvb_tor else CLEARNET
+
+
+def _notify_route(enabled, tor, private):
+    if not enabled:
+        return INACTIVE
+    if tor:
+        return TOR
+    return LOCAL if private else CLEARNET
+
+
 def node_route(address, *, is_local):
     """Route of a hop to a relocatable node, from its configured address SHAPE alone (#1350).
 

@@ -101,6 +101,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-direction.sh" && domain_ran test-tor-egress-direction.sh "$_d0" "$?" || domain_ran test-tor-egress-direction.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-check.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-check.sh" && domain_ran test-tor-egress-check.sh "$_d0" "$?" || domain_ran test-tor-egress-check.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/control/test-control-core.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-core.sh" && domain_ran test-control-core.sh "$_d0" "$?" || domain_ran test-control-core.sh "$_d0" "$?"

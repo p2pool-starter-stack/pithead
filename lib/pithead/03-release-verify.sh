@@ -207,6 +207,7 @@ stack_upgrade() {
     # legitimate takeover — the old versioned dir still exists (it is the rollback), and without
     # the escape the ownership guard would refuse and leave the units on the previous install.
     provision_control_runner steal
+    provision_egress_check_units steal
     log "Stack upgraded."
     mutation_lock_release
 }

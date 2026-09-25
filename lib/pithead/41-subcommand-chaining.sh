@@ -3,7 +3,7 @@
 # Every dispatchable subcommand, in help order. main's dispatch, the chain validator, and the
 # tab-completion script (pithead-completion.bash) key off this one list; tests/stack/run.sh fails
 # if any of the three drift apart.
-readonly PITHEAD_COMMANDS="setup apply render up down restart upgrade logs status test-alert doctor support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
+readonly PITHEAD_COMMANDS="setup apply render up down restart upgrade logs status test-alert doctor support-bundle reset-dashboard config-reset factory-reset backup restore uninstall firstboot-wizard load-images local-miner os-update control-run-pending egress-status onion-client-key rotate-dashboard-onion rotate-secrets render-quadlet version help"
 # The subset allowed in a chain: commands that take no positional argument and terminate on their
 # own. Excluded: setup (interactive first-run), logs (follows until Ctrl+C), restore (needs an
 # archive path), reset-dashboard (destructive — run it deliberately, alone), test-alert (outbound

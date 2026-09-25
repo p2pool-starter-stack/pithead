@@ -162,6 +162,10 @@ Maintenance:
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
 
+  egress-status             Check the Tor-only egress firewall and write the verdict to
+                            the dashboard (control results dir). Read-only. Normally
+                            fired every 2 minutes by the pithead-egress timer.
+
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a
                             rendered .env — the second render target beside docker-compose.

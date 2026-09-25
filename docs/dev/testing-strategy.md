@@ -105,6 +105,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | `pithead test-alert` (#2265): configured Telegram, webhook, and ntfy sinks each get one marked message; a failed endpoint does not hide the other verdicts; output carries only sink kind and failure class; unconfigured sinks and the Healthchecks dead-man-switch exclusion are explicit | operator command | 1 ✅ (real sink objects with mocked HTTP transport, plus CLI dispatch) · 3 ▶ (wire-level delivery is #2263) |
 | `network.tor_egress_firewall=true` (#270/#855/#2059), the **default**: the kernel actually DROPs a direct clearnet dial from a `mining_net` container, on both backends | config → live kernel | 1 ✅ (rendered iptables + nft rulesets) · 4 ▶ (real dial dropped, with a same-container dial through Tor's SOCKS as the within-row control — Docker backend in `run.sh`, netavark backend in the KVM battery) |
 | `network.tor_egress_firewall=false` (#270): the opt-out actually opens a direct clearnet dial, not just that no rule installed | config → live kernel | 1 ✅ (stubbed iptables installs no rule) · 4 ▶ (real dial succeeds) |
+| Egress firewall status (#2599): the dashboard reports the host's live firewall verdict, warns and sends one `clearnet_exposed` alert when the rules go missing while the stack runs, and one recovery message when they are back | host timer → status file → `/api/state` + alert | 1 ✅ (units, verb and status file in `test-tor-egress-check.sh`; state mapping, posture and edges in the dashboard suite) · 4 ▶ (`fault_firewall_status_alert`: runtime flush, the timer's own check, `/api/state` warns, `up` clears it; the appliance leg is a KVM boot check) |
 | `monero.view_key` / `tari.view_key` (#381/#462): payout-confirmation wallet-rpc/tari-wallet wiring | config → fake wallets → persisted state + configured webhook | 3 ✅ (`mini-stack`: one confirmed payout reaches `/api/state` and one alert; replay, empty-wallet, and disabled/no-dial controls for both chains, #2267) · 4 ▶ (needs `IT_MONERO_VIEW_KEY`/`IT_TARI_VIEW_KEY`+`IT_TARI_SPEND_PUBLIC_KEY`; a confirmed payout landing is real-money real-time, not e2e-reachable) |
 
 ### B. Sync lifecycle (#35)
@@ -230,6 +231,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `os-update` | covered | KVM (appliance-only verb) |
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
+| `egress-status` | covered | DIY bench (fault-injection leg, #2599) |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
 | `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379); the dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |

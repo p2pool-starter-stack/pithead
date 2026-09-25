@@ -114,6 +114,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   container starts; `doctor` warns when it is not enabled
   ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 
+- **The dashboard alerts when the Tor-only egress firewall is missing.** The dashboard took the
+  firewall's state from `network.tor_egress_firewall`, so it reported "blocked by the egress
+  firewall" over an open egress. `pithead-egress.timer` now runs `pithead egress-status` every two
+  minutes and writes the host's live verdict for the dashboard. A missing firewall turns the egress
+  badge and panel into a warning and sends one `clearnet_exposed` alert, with one more when the
+  rules are back. A missing or stale verdict reads as unverified, not as green
+  ([#2599](https://github.com/p2pool-starter-stack/pithead/issues/2599)).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a

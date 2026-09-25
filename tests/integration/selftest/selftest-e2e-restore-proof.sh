@@ -335,6 +335,32 @@ assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_re
 assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
 assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
 
+# --- #2599: the egress check pair goes back the same way ------------------------------------------
+check_restore() { # <before> <units now> [sticky] -> "<rc> <units after> <removal commands sent>"
+    (
+        EGRESS_CHECK_BEFORE="$1" UNITS="$2" STICKY="${3:-0}" removals=0
+        ok() { :; }
+        warn() { :; }
+        on_bench() {
+            case "$1" in
+            *"disable --now pithead-egress.timer"*)
+                removals=$((removals + 1))
+                [ "$STICKY" = 1 ] || UNITS=absent
+                ;;
+            *"systemctl cat pithead-egress"*) echo "$UNITS" ;;
+            esac
+        }
+        restore_egress_check_units
+        echo "$? $UNITS $removals"
+    )
+}
+assert_eq "a check pair this run added is removed, and the absence proven" "$(check_restore absent present)" "0 absent 1"
+assert_eq "a check pair the baseline already had is left alone" "$(check_restore present present)" "0 present 0"
+assert_eq "a check pair that survives the removal fails the restore proof" "$(check_restore absent present 1)" "1 present 1"
+assert_eq "an unrecorded baseline fails closed and removes nothing" "$(check_restore "" present)" "1 present 0"
+assert_contains "verify_restore_proof runs the check pair restore" "$(declare -f verify_restore_proof)" "restore_egress_check_units"
+assert_contains "e2e.sh records the timer before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"'
+
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]

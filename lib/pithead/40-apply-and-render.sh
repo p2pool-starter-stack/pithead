@@ -72,6 +72,7 @@ render_derived() {
     generate_caddyfile
     provision_onion_client_auth
     provision_control_runner
+    provision_egress_check_units
     control_prune_results "${CONTROL_DIR:-$PWD/data/control}" # #1990: bounds results/ every boot (#790), not just per-request
     provision_ssh_access
     provision_console_login
@@ -289,6 +290,7 @@ apply() {
             # Idempotent and sudo-free when the units already match.
             mutation_lock_acquire apply
             provision_control_runner
+            provision_egress_check_units
             reconcile_appliance_hostname
             apply_refresh_appliance_tls # #1265: the mint doctor sends the operator here for
             log "No configuration changes detected. Nothing to apply."
@@ -307,6 +309,7 @@ apply() {
     # client-auth toggle) takes effect on this apply rather than the next (#343).
     provision_onion_client_auth
     provision_control_runner
+    provision_egress_check_units
     provision_ssh_access
     provision_console_login   # #33: converge the control-runner units on the (new) toggle
     render_local_miner_config # #796: the built-in miner's config is derived — keep it current
