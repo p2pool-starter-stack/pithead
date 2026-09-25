@@ -30,6 +30,10 @@ assert_contains "the clearnet scenario turns the egress firewall off" "$ovr" "ne
 others="$(scenario_matrix | grep -v '^local-pruned-main-clearnet-sync' | grep -v '^local-pruned-main-firewall-off' | grep -c 'tor_egress_firewall' || true)"
 assert_eq "no other scenario turns the firewall off" "$others" "0"
 
+echo "== clearnet_flag_effective: the flag counts only with the firewall off (#2649) =="
+assert_eq "flag true + firewall false -> effective, firewall absent -> not" \
+    "$(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true},"network":{"tor_egress_firewall":false}}' monero) $(clearnet_flag_effective '{"monero":{"clearnet_initial_sync":true}}' monero)" "true false"
+
 echo "== restore_firewall_after_clearnet (#2649) =="
 # Stubs for the box: a config.json, an .env the fake apply rewrites, and a marker directory.
 BOX="$(mktemp -d)"
