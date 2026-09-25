@@ -98,9 +98,12 @@ assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)
 assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 
+eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
 assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"
 assert_eq "telemetry diff reports an empty probe" "$(telemetry_rows_diff "" "")" "before=0 after=0 missing: none"
+assert_eq "telemetry diff never blames a volatile kv_store shape the recreated dashboard rewrote (#2421)" \
+    "$(telemetry_rows_diff $'blocks -\nkv_store-volatile-shape:xvb_day aaa' $'blocks -\nkv_store-volatile-shape:xvb_day bbb')" "before=2 after=2 missing: none"
 
 # The real fingerprint must fail closed: an unreadable or secret-less .env is not a fingerprint.
 FP_SRC="$(sed -n '/^secret_fingerprint() {$/,/^}$/p' "$HERE/../lib/run-matrix.sh")"

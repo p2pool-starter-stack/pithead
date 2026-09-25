@@ -92,8 +92,10 @@ def snapshot(conn, epoch, require_current=False):
             "WHERE key NOT LIKE 'xvb_%' AND key != 'snapshot_latest_data'"
         )
     )
+    # The key rides in the category (a code-defined xvb_* or snapshot_latest_data name, never a
+    # value), so a lost line names which volatile key changed shape (#2057, job 1213).
     lines.extend(
-        f"kv_store-volatile-shape {hashlib.sha256(row_bytes((key, value_shape(value)))).hexdigest()}"
+        f"kv_store-volatile-shape:{key} {hashlib.sha256(row_bytes((key, value_shape(value)))).hexdigest()}"
         for key, value in conn.execute(
             "SELECT key,value FROM kv_store WHERE key LIKE 'xvb_%' OR key = 'snapshot_latest_data'"
         )

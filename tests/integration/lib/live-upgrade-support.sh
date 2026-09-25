@@ -327,12 +327,8 @@ restore_upgrade_baseline() {
             files_ok=0
         fi
     fi
-    if [ "$files_ok" = 1 ]; then
-        if ! reset_control_units_for_render || ! pithead render >/dev/null 2>&1 ||
-            ! baseline_up >/dev/null 2>&1 || ! wait_status_ok 300 ||
-            ! wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS"; then
-            failed+=" start"
-        fi
+    if [ "$files_ok" = 1 ] && ! start_restored_baseline; then
+        failed+=" start:$BASELINE_START_STEP"
     fi
     [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed+=" config"
     [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed+=" secrets"

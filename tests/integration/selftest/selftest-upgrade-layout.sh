@@ -62,4 +62,27 @@ grep -Fq '"differs:$failed; recovery' "$HERE/lib/live-upgrade-support.sh"
 ! grep -q 'failed=1' <(sed -n '/^restore_upgrade_baseline()/,/^}/p' "$HERE/lib/live-upgrade-support.sh") || exit 1
 [ "$(sed -n '/^restore_upgrade_baseline()/,/^}/p' "$HERE/lib/live-upgrade-support.sh" | grep -c 'failed+=" ')" = 22 ]
 
+echo "== a recreated dashboard may rewrite a volatile key's shape, never drop the key or a stable value (#2421) =="
+b=$'blocks -\nkv_store-key k1\nkv_store-key k2\nkv_store-stable s1\nkv_store-volatile-shape:snapshot_latest_data v1'
+telemetry_rows_continue "$b" "${b/v1/v2}"
+[ -z "$(telemetry_rows_lost "$b" "${b/v1/v2}")" ]
+! telemetry_rows_continue "$b" "${b/kv_store-key k2/}" || exit 1
+! telemetry_rows_continue "$b" "${b/s1/s9}" || exit 1
+[ "$(telemetry_rows_lost "$b" "${b/kv_store-key k2/}")" = "kv_store-key:1" ]
+python3 "$HERE/lib/migration-state-probe.py" --self-test
+
+echo "== a restored baseline that will not start names the step that stopped it =="
+(
+    reset_control_units_for_render() { :; }
+    pithead() { :; }
+    baseline_up() { [ "${STOP_AT:-}" != up ]; }
+    wait_status_ok() { [ "${STOP_AT:-}" != status ]; }
+    wait_for() { [ "${STOP_AT:-}" != worker-set ]; }
+    start_restored_baseline && [ -z "$BASELINE_START_STEP" ]
+    for STOP_AT in up status worker-set; do
+        ! start_restored_baseline && [ "$BASELINE_START_STEP" = "$STOP_AT" ] || exit 1
+    done
+    grep -Fq 'failed+=" start:$BASELINE_START_STEP"' "$HERE/lib/live-upgrade-support.sh"
+)
+
 echo "selftest-upgrade-layout: PASS"

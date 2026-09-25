@@ -267,9 +267,10 @@ the secret-continuity artifact contains only an unchanged/mismatch verdict, neve
 captures pass through the existing redaction path before restoration. The gate retains the pre-upgrade release files
 and safety archive until it has restored the old code, configuration, `.env`, onion material,
 every durable dashboard table (retention-aware at the safety archive's fixed capture epoch), exact
-stable row payloads, stable security `kv_store` values, and the identities/schema of volatile
-XvB/snapshot and observation-time cells; it does not claim byte equality for values expected to
-advance while the stack runs. It also checks exact container mounts,
+stable row payloads, stable security `kv_store` values, and the presence of every volatile
+XvB/snapshot key. A recreated dashboard rewrites those volatile values within seconds, so neither
+their values nor their shape are compared across the upgrade or the restore (#2421); the gate does
+not claim byte equality for values expected to advance while the stack runs. It also checks exact container mounts,
 chain anchors, workers, mining, image refs, revisions, and health. A failed verification retains both
 recovery trees and private CoW snapshots until verification; any mismatch makes the gate red.
 

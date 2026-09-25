@@ -147,8 +147,14 @@ archived_dashboard_durable_rows() { # <archive> <fixed capture epoch>
     rx "d=\$(mktemp -d); cleanup() { rm -rf \"\$d\"; }; trap cleanup EXIT; member=\$(tar -tzf $(quote_arg "$1") | grep '/mining_data.db$'); [ \$(printf '%s\\n' \"\$member\" | grep -c .) = 1 ] && tar -xOf $(quote_arg "$1") \"\$member\" >\"\$d/db\" && printf %s $(quote_arg "$payload") | base64 -d | python3 - $(quote_arg "$2") \"\$d/db\"" 2>/dev/null
 }
 
+# Every comparison of durable rows here spans a dashboard recreate (a data_dir carry, an image
+# upgrade, the rollback after it), and a recreated dashboard rewrites the volatile kv_store keys
+# within seconds: their shape reflects what the new process has seen, not what was carried (#2421).
+# So those lines are left out on both sides, in one place. The kv_store-key lines still require
+# every key, volatile ones included, to arrive, and kv_store-stable still requires every stable value.
+carried_rows() { grep -v '^kv_store-volatile-shape[: ]' || true; }
 telemetry_rows_continue() { # <before-lines> <after-lines>
-    [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort))" ]
+    [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort))" ]
 }
 
 proxy_active_route() {
@@ -263,6 +269,23 @@ data_dirs_inside_install() { # <install dir> -> the variable names that resolve 
 # first field is a table or kv_store class name (migration-state-probe.py), never a value, so it is
 # safe to print where the row hashes are not worth printing (job 1206 said only "one or more").
 telemetry_rows_lost() { # <before-lines> <after-lines>
-    comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) |
+    comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort) |
         awk 'NF { n[$1]++ } END { for (k in n) printf "%s:%d\n", k, n[k] }' | sort | paste -sd, -
+}
+
+# Bring the restored baseline back up, one named step at a time; $BASELINE_START_STEP says which
+# stopped it (job 1213 reported only "start"). Runs in this shell, not a subshell, so baseline_up's
+# counted skip survives.
+start_restored_baseline() {
+    BASELINE_START_STEP=reset-units
+    reset_control_units_for_render || return 1
+    BASELINE_START_STEP=render
+    pithead render >/dev/null 2>&1 || return 1
+    BASELINE_START_STEP=up
+    baseline_up >/dev/null 2>&1 || return 1
+    BASELINE_START_STEP=status
+    wait_status_ok 300 || return 1
+    BASELINE_START_STEP=worker-set
+    wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS" || return 1
+    BASELINE_START_STEP=""
 }
