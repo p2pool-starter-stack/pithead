@@ -275,7 +275,9 @@ stack_backup() {
     fi
 
     log "Backup written to: $archive"
-    [ -z "$pass" ] || log "The archive is useless without the passphrase — store it somewhere other than this host."
+    if [ -n "$pass" ]; then
+        log "The archive is useless without the passphrase — store it somewhere other than this host."
+    fi
     if [ "$with_chains" -eq 0 ]; then
         log "Blockchains excluded (they re-sync). Use 'backup --with-chains' to include them."
     fi

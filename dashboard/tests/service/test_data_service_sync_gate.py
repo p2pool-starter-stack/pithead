@@ -198,6 +198,9 @@ class TestSyncGateDecision:
         monkeypatch.setattr(ds_mod, "SYNC_GATE_RESET_PATH", str(marker))
         restored = _restored(sm)
         assert restored.miner_released is False
+        # telegram_commands.py reads latest_data, not the attribute, so the carried snapshot's
+        # "mining" state must be overridden there too, before the first poll ever runs.
+        assert restored.latest_data["miner_released"] is False
         await self._iterate(restored, _TARI_SYNCED, get_info=_PEERLESS_RESTART)
         stopped = {c.args[0] for c in restored.docker_control.stop.await_args_list}
         assert stopped == {"p2pool", "xmrig-proxy"}
