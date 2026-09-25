@@ -51,14 +51,16 @@ _xvb_proxy_ready_payload() {
 # that alone swallowed nearly the whole bounded wait, because xmrig-proxy's compose entry depends
 # on p2pool's own restart finishing first (com.docker.compose.depends_on=p2pool:service_started).
 # 150s gives one such worst-case gap room to happen and still leave a live window for the poll.
+# #2721: every bounded poll asks at least once before it reads the clock; a whole-second deadline
+# checked first could expire before the first attempt and time out having asked nothing.
 _xvb_wait_for_proxy_api() { # -> 0 once the proxy answers a real get_config()
     local deadline payload
     payload="$(_xvb_proxy_ready_payload)"
     deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-150}))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
+    while :; do
         _ssh "podman start xmrig-proxy >/dev/null 2>&1"
         _xvb_guest_python "$payload" >/dev/null 2>&1 && return 0
-        sleep 2
+        [ "$(date +%s)" -lt "$deadline" ] && sleep 2 || break
     done
     return 1
 }
@@ -84,10 +86,10 @@ _xvb_guest_stderr() {
 _xvb_wait_for_tor() { # -> 0 once tor is healthy; on timeout echoes the last status it read
     local deadline status=""
     deadline=$(($(date +%s) + ${XVB_TOR_READY_TIMEOUT:-300}))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
+    while :; do
         status="$(_ssh "podman inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' tor" 2>/dev/null | tr -d '\r\n')"
         [ "$status" = healthy ] && return 0
-        sleep 5
+        [ "$(date +%s)" -lt "$deadline" ] && sleep 5 || break
     done
     printf '%s' "${status:-unreadable}"
     return 1
@@ -106,13 +108,13 @@ _xvb_route_is() { # <route-json> <mode> <tor-routed: true|false>
 _xvb_restore_p2pool() { # -> pools JSON on stdout once P2POOL is confirmed live, empty + rc 1 on timeout
     local deadline pools
     deadline=$(($(date +%s) + ${XVB_RESTORE_TIMEOUT:-30}))
-    while [ "$(date +%s)" -lt "$deadline" ]; do
+    while :; do
         pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
         if [ -n "$pools" ] && _xvb_route_is "$pools" P2POOL false; then
             printf '%s' "$pools"
             return 0
         fi
-        sleep 2
+        [ "$(date +%s)" -lt "$deadline" ] && sleep 2 || break
     done
     return 1
 }
@@ -179,7 +181,7 @@ phase_provision_xvb_routing() {
 }
 
 _xvb_self_test() {
-    local f=0 payload real_guest_python
+    local f=0 payload real_guest_python decoded p2p_calls answers last_status proxy_answers start_calls=0
     # #2712 (job 1141): a single gate-driven xmrig-proxy outage ran ~59s, so the wait's own default
     # must stay wide enough to survive one — this is a source check, not a timed run, because a real
     # 150s wait has no place in a unit self-test. Both defaults (the wait's own and the row message's)
@@ -194,7 +196,6 @@ _xvb_self_test() {
     # here so the dedicated proxy-readiness drill below can run the REAL _xvb_guest_python (through
     # a stubbed _ssh) after the case-driven tests have overridden it for their own JSON responses.
     real_guest_python="$(declare -f _xvb_guest_python)"
-    local decoded
     payload="$(_xvb_payload XVB)"
     decoded="$(printf '%s' "$payload" | base64 -d)"
     # The KEY NAME is checked here because nothing downstream can see it: every case below stubs
@@ -215,7 +216,8 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_RESTORE_TIMEOUT=1
+    # Timeouts of 0 (#2721): each poll gets exactly its one guaranteed attempt, whatever the clock.
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=0 XVB_RESTORE_TIMEOUT=0
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -254,7 +256,6 @@ _xvb_self_test() {
     # #2708 (job 1172): a restore that hits one transient ConnectTimeout and then succeeds must NOT
     # strand the guest on XvB — the call has to retry until it confirms P2Pool, not trust (or
     # silently swallow) the first answer. A single-shot restore fails this case outright.
-    local p2p_calls
     p2p_calls="$(mktemp)"
     _xvb_guest_python() {
         case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
@@ -266,7 +267,7 @@ _xvb_self_test() {
         *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
         esac
     }
-    _xvb_case "a restore that times out once and then succeeds is NOT a red row" 3 0 0
+    XVB_RESTORE_TIMEOUT=30 _xvb_case "a restore that times out once and then succeeds is NOT a red row" 3 0 0
     rm -f "$p2p_calls"
     _xvb_guest_python() {
         case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
@@ -278,7 +279,7 @@ _xvb_self_test() {
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
-    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=1
+    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=0
     _xvb_case "a Tor that never bootstraps is a counted red row before any request is made" 0 1 1
     XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
 
@@ -334,7 +335,6 @@ _xvb_self_test() {
     # verdict — a single-shot check is the #2253 race itself, and it would pass every case above.
     # The poll reads the guest inside a command substitution, so the tally has to outlive a
     # subshell: a plain counter variable increments in the child and reads 0 here, forever.
-    local answers
     answers="$(mktemp)"
     _ssh() {
         printf 'x' >>"$answers"
@@ -348,9 +348,8 @@ _xvb_self_test() {
     rm -f "$answers"
     # And the timed-out wait must hand back the LAST status it read: on a guest whose Tor never
     # arrives, that string is the entire diagnostic.
-    local last_status
     _ssh() { printf 'starting\n'; }
-    if last_status="$(XVB_TOR_READY_TIMEOUT=1 _xvb_wait_for_tor)"; then
+    if last_status="$(XVB_TOR_READY_TIMEOUT=0 _xvb_wait_for_tor)"; then
         printf 'xvb self-test: the Tor wait reported ready for a guest that never bootstrapped\n' >&2
         f=$((f + 1))
     elif [ "$last_status" != starting ]; then
@@ -364,7 +363,6 @@ _xvb_self_test() {
     # real_guest_python above) so only _ssh answers, exercising the actual payload plumbing.
     eval "$real_guest_python"
     sleep() { command sleep 0.02; }
-    local proxy_answers
     proxy_answers="$(mktemp)"
     _ssh() {
         printf 'x' >>"$proxy_answers"
@@ -377,7 +375,7 @@ _xvb_self_test() {
     fi
     rm -f "$proxy_answers"
     _ssh() { return 1; }
-    if XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api; then
+    if XVB_PROXY_READY_TIMEOUT=0 _xvb_wait_for_proxy_api; then
         printf 'xvb self-test: the proxy-API wait reported ready for a guest that never answered\n' >&2
         f=$((f + 1))
     fi
@@ -385,16 +383,15 @@ _xvb_self_test() {
     # #1998 regression (jobs 701, 717): the sync gate (#35) re-stops xmrig-proxy every cycle on
     # this unsynced appliance, so a wait that starts it once and only polls loses that race. Prove
     # the wait keeps re-asserting the start itself, not just the one the caller made before it —
-    # a single start call here would time out having never answered, same as the case above.
-    local start_calls=0
+    # the API answers only after two starts, so the count, not the clock, sets the polls (#2721).
     _ssh() {
         case "$1" in
         *"podman start"*) start_calls=$((start_calls + 1)) ;;
+        *) [ "$start_calls" -ge 2 ] && return 0 ;;
         esac
         return 1
     }
-    XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api
-    if [ "$start_calls" -lt 2 ]; then
+    if ! XVB_PROXY_READY_TIMEOUT=300 _xvb_wait_for_proxy_api || [ "$start_calls" -lt 2 ]; then
         printf 'xvb self-test: the proxy-API wait does not re-assert the start against the sync gate (#1998), only asserted %s time(s)\n' \
             "$start_calls" >&2
         f=$((f + 1))
