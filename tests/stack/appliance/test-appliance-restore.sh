@@ -302,6 +302,24 @@ assert_rc "restore safely replaces a planted destination symlink" "$?" 0
 assert_eq "restore leaves the planted symlink target untouched" "$(cat "$RS/outside-target")" sentinel
 assert_eq "restored database is a regular file" "$([ -f "$RS/data/dashboard/dashboard.db" ] && [ ! -L "$RS/data/dashboard/dashboard.db" ] && echo yes)" yes
 assert_eq "restored database permissions are private" "$(stat -c '%a' "$RS/data/dashboard/dashboard.db")" 600
+# A 1.x backup's removed keys migrate while restore stages it (#2001): xmrig_proxy.* moves to xvb.*
+# and telegram.control is dropped, and the staging sweep leaves no .bak-1x on the live side (#1845).
+RL="$RS/legacy-1x"
+mkdir -p "$RL/${RS#/}"
+cp "$RS/config.json" "$RL/live-config.json"
+cp "$RS/.env" "$RL/live.env"
+jq '.xmrig_proxy = {enabled: true, url: "eu.xmrvsbeast.com:4247", donor_id: "legacy-donor"} | .telegram = {control: {enabled: false}} | del(.xvb)' \
+    "$RS/config.json" >"$RL/${RS#/}/config.json"
+tar -czf "$RL/archive.tar.gz" -C "$RL" "${RS#/}/config.json"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_apply "$RL/archive.tar.gz" '' "$RS/restore-error"
+assert_rc "restore accepts a backup carrying removed 1.x keys" "$?" 0
+assert_eq "restore moves xmrig_proxy.* to xvb.* unchanged" "$(jq -c '[has("xmrig_proxy"), .xvb.enabled, .xvb.url, .xvb.donor_id]' "$RS/config.json")" '[false,true,"eu.xmrvsbeast.com:4247","legacy-donor"]'
+assert_eq "restore drops the removed telegram.control" "$(jq -c '.telegram | has("control")' "$RS/config.json")" false
+assert_eq "restore renders the migrated XvB settings" "$(grep -E '^XVB_(POOL_URL|DONOR_ID)=' "$RS/.env" | sort | tr '\n' ' ')" "XVB_DONOR_ID=legacy-donor XVB_POOL_URL=eu.xmrvsbeast.com:4247 "
+assert_eq "restore leaves no pre-migration .bak-1x beside the config" "$(find "$RS" -maxdepth 1 -name '*.bak-1x' -print -quit)" ""
+cp "$RL/live-config.json" "$RS/config.json"
+cp "$RL/live.env" "$RS/.env"
+rm -rf "$RL"
 printf 'ordinary note' >"$RS/unexpected.txt"
 printf 'BACKUP-CADDY' >"$RS/Caddyfile"
 tar -czf "$RS/unexpected.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/.env" "${RS#/}/Caddyfile" "${RS#/}/unexpected.txt"
