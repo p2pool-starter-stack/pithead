@@ -25,7 +25,39 @@ restore_fixture_fingerprints() {
     RESTORE_N1_SECRETS=$(printf '%s\n' "$fixture_secrets" | sha256sum | cut -d' ' -f1)
     RESTORE_N1_AUTH_HASH=$(printf '%s\n' "$fixture_env" | sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p')
     RESTORE_N1_CONFIG=$(printf '%s\n' "$fixture_config" | jq -c '{monero: (.monero | {mode, wallet_address, node_username, node_password, remote}), tari: (.tari | {mode, wallet_address, remote}), p2pool: (.p2pool | {pool, stratum_password}), dashboard: (.dashboard | {auth, onion, control, energy})}' | sha256sum | cut -d' ' -f1)
+    # The fixture must carry the removed 1.x keys, or the migration rows below prove nothing.
+    printf '%s\n' "$fixture_config" | jq -e '(.xmrig_proxy | has("enabled") and has("url") and has("donor_id")) and (.telegram | has("control"))' >/dev/null || return 1
+    RESTORE_N1_LEGACY=$(printf '%s\n' "$fixture_config" | jq -c "$RESTORE_LEGACY_JQ" | sha256sum | cut -d' ' -f1)
+    RESTORE_N1_XVB_URL=$(printf '%s\n' "$fixture_config" | jq -r '.xmrig_proxy.url')
+    RESTORE_N1_XVB_DONOR=$(printf '%s\n' "$fixture_config" | jq -r '.xmrig_proxy.donor_id')
     [ -n "$RESTORE_N1_WALLET" ] && [ -n "$RESTORE_N1_ONION" ] && [ -n "$RESTORE_N1_SECRETS" ] && [ -n "$RESTORE_N1_AUTH_HASH" ] && [ -n "$RESTORE_N1_CONFIG" ]
+}
+
+# The 1.x XvB settings 2.0.0 renamed (docs/configuration.md): xmrig_proxy.* -> xvb.*. Read off the
+# v1.20.0 fixture as written and off the restored config.json under the new name, so both hash the
+# same when the move is lossless.
+readonly RESTORE_LEGACY_JQ='.xmrig_proxy | {enabled, url, donor_id}'
+readonly RESTORE_MIGRATED_JQ='.xvb | {enabled, url, donor_id}'
+
+restore_fixture_migration_verdict() {
+    local migrated xvb_url xvb_donor
+    _ssh "jq -e '(has(\"xmrig_proxy\") or ((.telegram // {}) | has(\"control\"))) | not' /data/pithead/config.json" >/dev/null &&
+        ok "restore leg: the removed 1.x keys are gone from the restored config" ||
+        bad "restore leg: the restored config still carries a removed 1.x key (xmrig_proxy or telegram.control)"
+    migrated=$(_ssh "jq -c '$RESTORE_MIGRATED_JQ' /data/pithead/config.json | sha256sum | cut -d' ' -f1")
+    [ "$migrated" = "$RESTORE_N1_LEGACY" ] &&
+        ok "restore leg: v1.20.0 xmrig_proxy settings moved to xvb.* unchanged" ||
+        bad "restore leg: v1.20.0 xmrig_proxy settings were lost or changed by the 1.x migration"
+    # Restore migrates its staged copy and sweeps the staging dir (#1845): the archive is the
+    # pre-migration copy, so no secret-bearing config.json.bak-1x may land on /data.
+    _ssh "test ! -e /data/pithead/config.json.bak-1x" &&
+        ok "restore leg: the restore left no config.json.bak-1x beside the migrated config" ||
+        bad "restore leg: the restore left a config.json.bak-1x copy of the v1.20.0 config on /data"
+    xvb_url=$(_ssh "sed -n 's/^XVB_POOL_URL=//p' /data/pithead/.env" | tr -d '\r')
+    xvb_donor=$(_ssh "sed -n 's/^XVB_DONOR_ID=//p' /data/pithead/.env" | tr -d '\r')
+    [ "$xvb_url" = "$RESTORE_N1_XVB_URL" ] && [ "$xvb_donor" = "$RESTORE_N1_XVB_DONOR" ] &&
+        ok "restore leg: the rendered stack uses the migrated v1.20.0 XvB endpoint and donor id" ||
+        bad "restore leg: the rendered XvB endpoint or donor id is not the migrated v1.20.0 value (got '${xvb_url:-none}', '${xvb_donor:-none}')"
 }
 
 restore_fixture_secret_verdict() {

@@ -385,6 +385,7 @@ _phase_install_restore() {
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
+        [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
         if [ -n "$target_chain_sentinel" ]; then
             _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
                 ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
