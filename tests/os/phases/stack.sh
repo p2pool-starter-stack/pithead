@@ -64,7 +64,15 @@ _stack_run_integration() { # <label> <extra args...>
     # The DIY gate's own SSH defaults to ssh-agent/default identities (tests/integration/run.sh's
     # IT_SSH_OPTS carries no -i); the KVM guest only trusts the os battery's test key ($KEY,
     # baked in via PITHEAD_TEST_SSH_PUBKEY), so it must be named explicitly with --identity.
-    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
+    # run.sh's own IT_SSH_OPTS default (StrictHostKeyChecking=accept-new) is right for its other
+    # caller, a real bench/rig with a stable host key — wrong here, where $ip is a DHCP lease this
+    # same guest recycles across boots, presenting a different host key each time (#2716). Override
+    # with the untrusted-by-design opts every other os-battery SSH call already uses (lib/core.sh's
+    # _ssh, soak-probe.sh, install-restore.sh); later -o wins per-keyword, so these win over the
+    # accept-new default without touching it for the real-bench caller.
+    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" \
+        --ssh-opt StrictHostKeyChecking=no --ssh-opt UserKnownHostsFile=/dev/null \
+        --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "DIY gate vs. appliance channel: $label"
