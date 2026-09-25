@@ -22,13 +22,13 @@ separately, [below](#appliance-only-commands).
 | `./pithead restore <archive>` | Restore configuration, data, and validated generated secrets from an encrypted or plaintext backup; regenerate `.env` and `Caddyfile` from the configuration (asks before overwriting; fixes Tor key ownership). `-y` / `--yes` skips the prompt. |
 | `./pithead reset-dashboard` | **DESTRUCTIVE**. Wipes and recreates the dashboard and P2Pool data. `-y` / `--yes` skips the prompt. |
 | `./pithead rotate-secrets` | Regenerate the stack's internal credentials after a suspected leak: the local Monero RPC password, the stratum access-password (only when `p2pool.stratum_password` is `"auto"`), and the xmrig-proxy control-API token. Recreates the affected containers. `-y` / `--yes` skips the prompt. See [Rotating the internal secrets](#rotating-the-internal-secrets). |
-| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
+| `./pithead onion-client-key` | Print the Tor client-auth line for the dashboard onion. This is the client *private* key, deliberately kept out of `status` — add it to your Tor client's `ClientOnionAuthDir`. With the config editor on, the dashboard header's **Show client key** button gets the same line without a shell, which is how an appliance operator gets it. See [Remote access over Tor](configuration.md#remote-access-over-tor-onion-service). |
 | `./pithead rotate-dashboard-onion` | Mint a new dashboard onion address and client-auth keypair, retiring the old one. Run after a leaked address or key. |
 | `./pithead control-run-pending` | Drain the dashboard's control-request spool once. Fired by the `pithead-control` systemd path unit; run it by hand only when debugging the control channel. See [Editing config from the dashboard](#editing-config-from-the-dashboard). |
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -52,7 +52,7 @@ boot path drives most of them for you:
 
 | Command | Description |
 |---|---|
-| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
+| `./pithead os-update BUNDLE` | Install an OS update bundle into the spare A/B slot (`rauc install`). Refuses a bundle older than the running OS — a signed downgrade re-opens fixed holes — and refuses one below the `/data` migration floor outright. `--allow-downgrade` overrides the first, never the second. A bundle that declares `data_migration` is refused when a local Tari node's data volume lacks free space of `data.mdb`'s size plus 5 GiB, the room its migration needs for the compacted copy; the refusal names the volume, the size needed and the size free, the same check `upgrade` makes (#2645). A floor above the running OS is a migrating update that fell back before its migration ran, not migrated data: the next boot of a fixed slot restores the floor, and the refusal says so and names the open route (the floor version or newer) rather than a reset. On a debug build (SSH baked in) installing a non-debug bundle, it warns first: that install removes the SSH channel you're driving it over. `-y` / `--yes` skips the prompt. On success it says the update is written to the spare slot, that this machine keeps running the current version until it reboots, that the reboot boots the new slot and commits it only if the stack comes up healthy (otherwise the next boot falls back), and the exact reboot command. `--reboot` reboots to finish the update once installed — it asks first unless `-y` is also given. |
 | `./pithead factory-reset` | **DESTRUCTIVE**, appliance only. Erase the whole data partition back to a blank machine — chains, wallets, Tor keys and settings all go — then reboot into the setup wizard. The resync that follows costs days, so reach for `config-reset` first. Type-to-confirm unless `-y`. |
 | `./pithead firstboot-wizard` | Browser-first setup for an unconfigured install: serves a token-gated form on `http://<this-host>/`, validates the answers host-side, then runs setup. A pre-seeded `config.json` skips the form; `--cli` runs the terminal wizard instead. The one-time token prints to the console, and five wrong tries mint a fresh one. |
 | `./pithead load-images` | Load the baked container-image archives from `/opt/pithead/images` into the engine when their content changed since the last load. The boot path runs this every boot, so a reinstall or update that ships new images converges with no wizard involvement. |
@@ -243,6 +243,12 @@ enables this by default; a custom/rootless install (or `setup --skip-deps`) may 
 `./pithead doctor` checks this and warns if Docker isn't boot-enabled. Fix it with
 `sudo systemctl enable --now docker`.
 
+The Tor-egress firewall lives in the kernel, so a reboot clears it while the containers restart.
+`up`, `apply` and `upgrade` install `pithead-egress.service`, which Docker's own start pulls in and
+waits for: it puts the rules back into `DOCKER-USER` before any container starts. `doctor` warns
+when the rules are live but the unit is not enabled, and FAILs when the rules are missing. See
+[Privacy › Enforced fail-closed](privacy.md#enforced-fail-closed-not-just-configured-270).
+
 ---
 
 ## Editing config from the dashboard
@@ -336,7 +342,8 @@ rate and pattern of failures, not identity.
 - **A burst of 401s** means someone who can already reach the dashboard — they have the onion
   address, and the client-auth key if `dashboard.onion.client_auth` is on (the default) — is
   guessing the password. Rotate it: set a new `dashboard.auth.password` in `config.json` and run
-  `./pithead apply`.
+  `./pithead apply`. Check `control.log` for an `onion-client-key` entry you did not make: that is
+  the one place a client key can be handed out while the stack is running.
 - **Unexplained traffic on a client-auth-off onion** means the address itself has leaked (it is
   online-guessable in that mode). Rotate the address: `./pithead rotate-dashboard-onion` mints a
   fresh onion and client key; the old ones stop working immediately
@@ -448,6 +455,17 @@ the new release *before* pulling/rebuilding, so a release that changes a config 
 `.env` var takes effect, not just the new image. Data directories and `config.json` are untouched, so
 blockchain sync and settings survive an upgrade.
 
+An upgrade to a new Tari major version, such as 5.x to 6.x, migrates the node database on its first
+start by writing a compacted copy beside the old one. Before it starts or recreates any container,
+`upgrade` compares the major version of the existing `tari` container with the one the new release
+starts. When the major goes up, `upgrade` checks free space on the volume that holds Tari's
+`data.mdb` against the file's current size plus 5 GiB. That is a conservative bound, since the
+compacted copy is smaller than the original. If there is less, `upgrade` stops, names the volume,
+the size needed and the size free, and leaves the running containers as they were. Free space on
+that volume, or move `tari.data_dir` to a larger one, and run `upgrade` again. If no `tari`
+container exists (for example after `./pithead down`), `upgrade` cannot tell which version wrote
+the database, so a shortfall is a warning instead.
+
 On a release install with the release public key on disk (`cosign.pub`, shipped in every signed
 bundle), `upgrade` verifies each image's cosign signature before pulling and aborts on any failure.
 There is nothing to install for this: the verifier runs as a digest-pinned container, so Docker —
@@ -497,6 +515,44 @@ so confirm yours is a `4…`/95-char address first (see [Configuration](configur
 
 ---
 
+### What `uninstall` removes
+
+`uninstall` tears down and removes everything pithead put on this machine. It deletes **no**
+data, on any flag — then prints where the data is and the exact command that removes it, if you
+want it gone.
+
+**Removed:**
+
+| item | what |
+|---|---|
+| containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
+| images | every ref from `docker compose config --images` |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
+| systemd units | `pithead-control.path` / `.service`, this checkout's only |
+| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
+| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
+| derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
+| version symlink | `<parent>/current`, only when it points at this checkout |
+
+**Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
+`config.json`; `backups/`.
+
+A derived directory is removed only at the path setup gives it. If `.env` names it anywhere else,
+or at, above or inside a kept path, `uninstall` leaves it in place with a warning. After
+`uninstall`, `./pithead setup` re-provisions from the kept `config.json` and data dirs. The chains
+are reused rather than re-synced, and the kept Tor data gives back the same onion addresses.
+Secrets that lived only in `.env` or in a removed directory are generated anew: the proxy token,
+an `auto` stratum password and the stratum TLS keypair. Rigs that use the generated password or
+pin the TLS fingerprint need the new values.
+
+**Left behind — installed by setup, shared with the machine, not removed:**
+
+| item | why it stays | to remove it by hand |
+|---|---|---|
+| apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
+
 ## The deploy-box layout
 
 A box that installs each release into its own directory keeps code and data apart. This is the
@@ -535,9 +591,9 @@ data root:
   the version dir — no data moves with the code. Installs that pre-date this carry the dashboard
   data at the old in-install default (`./data/dashboard`); the first `upgrade` (or `apply`)
   moves it to the shared root automatically, stops the dashboard for the move, and verifies the
-  database arrived. An explicit `dashboard.data_dir` is never touched — a warning names the
-  leftover instead — and data at *both* locations stops the run rather than guessing which
-  database is live.
+  database arrived. That automatic migration leaves an explicit `dashboard.data_dir` alone. When
+  you confirm a change to that setting, `apply` instead copies and verifies the live database at
+  the new path; a non-empty target refuses rather than guessing which database is live.
 - **Config archives** — `./pithead backup` writes under `backups/` inside the dir that ran it.
   Before deleting an old version dir, keep any `backups/` archives you still want.
 
@@ -623,7 +679,11 @@ fails before anything on disk is touched. `restore` also refuses unless Compose 
 services are stopped. It stages the archive privately, accepts only the configured files and data
 directories, rejects redirected destinations, and clamps restored secrets to owner-only modes
 before committing them. `.env` and `Caddyfile` are regenerated from validated `config.json`;
-only validated generated secrets and Tor identity are retained from the archived environment.
+the validated proxy token, wallet RPC and database passwords, and Tor identities are retained
+exactly from the archived environment. The dashboard login hash and fingerprint are retained with
+them while the fingerprint matches `dashboard.auth.password` and the hash is well-formed bcrypt;
+otherwise restore hashes the configured password again. An archive is trusted as far as its own
+`config.json`: whoever can edit it can change the login, so keep backups private and encrypted.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings.
 

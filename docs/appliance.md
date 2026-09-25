@@ -320,6 +320,36 @@ retired SSH settings.
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
 
+### Reaching it from outside your network, over Tor
+
+Turn it on during setup. Open **Advanced** at the bottom of the setup page and set
+`dashboard.onion.enabled` to `true` in the configuration shown there. Leave
+`dashboard.onion.client_auth` at `true`: setup refuses the config editor and the onion together
+without it. The machine publishes the dashboard as a Tor hidden service — no port forwarding, no
+VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
+dashboard, with a **Copy** button.
+
+After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
+onion settings until
+[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
+[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
+or off on a running machine, use
+[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+
+The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
+to publish a config editor behind nothing but a password on an anonymously-reachable address, so
+an appliance onion always runs with Tor **client authorization**: it does not answer at all unless
+your browser holds the machine's client key. Next to the address is a **Show client key** button —
+press it and the machine hands the key over **once**, in both the forms a Tor client might want.
+Save it there and then; the machine wipes its own copy moments later, and pressing the button
+again gives you a fresh reveal rather than the old one. Every reveal is written to the
+configuration history, so you can see whether anyone else has asked for it.
+
+Then follow [connecting with client
+authorization](configuration.md#remote-access-over-tor-onion-service) for your Tor client. A
+leaked key cannot be rotated from the dashboard — `rotate-dashboard-onion` is a host command, and
+on this machine rotating means setting it up again.
+
 ## What the machine does on its own
 
 Two things the appliance sets for itself, that a machine you installed the stack on yourself
@@ -373,7 +403,12 @@ the machine keeps the new version and notes the gap in its boot log and with the
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `pithead apply` on the machine mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. If another operation is changing the stack when you start an
+different hardware, or older than what it runs; there is no override. It also refuses an update
+that migrates the chain data when the data partition lacks room for the Tari migration. That
+migration writes a compacted copy of the Tari database beside the old one, so the machine needs
+free space of the database's current size plus 5 GiB. The refusal names the size needed and the
+size free, and the downloaded image stays on the machine, so you can free space and install it
+again. If another operation is changing the stack when you start an
 install, the install is not started at all: nothing is written to the idle copy and the
 dashboard says so rather than reporting a failed install. Start it again once that
 operation has finished. See
@@ -538,6 +573,11 @@ This works on the installation medium's combined page too.
 
 A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
 form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+A restore that fails while writing its files puts back the machine's previous configuration, Tor
+keys, and dashboard database, and removes any chain files it added. If one of them cannot be put
+back, the error says so, and the previous copy stays beside it under a `.restore-old` name. If a
+file the restore added cannot be removed, the error says that too, and the file stays under its
+`.restore` name or in the chain data directory.
 Restore is available at first setup and from the saved-setup screen. In both cases it runs through
 setup again; the day-two `restore` command is the separate path for restoring a running stack in
 place.

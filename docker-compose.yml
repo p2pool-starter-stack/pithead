@@ -217,8 +217,8 @@ services:
   # Only starts if "local_tari" profile is active (#103, mirrors monerod's "local_node" above).
   tari:
     profiles: ["local_tari"]
-    # Pinned by digest (#135) so the v6.0.0-mainnet tag can't be silently re-pointed.
-    image: ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:5e87b15b401dd485710b3efc8f8107ecde26f92c2dfad4c0ad1fab69705b393a
+    # Pinned by digest (#135) so the v6.0.1-pre.0-mainnet tag can't be silently re-pointed.
+    image: ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
     container_name: tari
     # Run non-root (#255). Pulled image (not our Dockerfile), so set the uid via compose to match the
     # uid pithead chowns ${TARI_DATA_DIR} to. The wrapper entrypoint reads the canonical config
@@ -226,6 +226,11 @@ services:
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 1m
+    # An init as PID 1 (#2627): the wrapper and upstream's start_tari_app.sh both exec, so without it
+    # minotari_node itself is PID 1, reaps no children, and a zombie PID 1 cannot be signalled —
+    # `docker stop` then fails until the grace period kills it. The init forwards the stop signal
+    # and reaps. The quadlet renderer carries the same as RunInit=true.
+    init: true
     logging: *default-logging
     # Tari's memory grows unbounded over time (#55, first reported in #14); left uncapped it can
     # pressure or OOM the whole host on small (e.g. 16 GB) machines. Cap it as a SAFETY CEILING so a
@@ -306,7 +311,7 @@ services:
   tari-wallet:
     profiles: ["tari_payout_confirm"]
     # Pinned by digest (#135), same registry/tag as the Tari node so the version-match holds.
-    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.0-mainnet@sha256:f7bfb9edad7ec415ac2e6c8fa0fb28fa2162a9ecab63cb5fd853b00685960800
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
     container_name: tari-wallet
     # Run non-root (#255). Pulled image, so set uid via compose to match the uid the wallet named
     # volume is created under; the wrapper only writes the base-path (the volume) and /tmp.
@@ -378,10 +383,12 @@ services:
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-p2pool:${STACK_VERSION:-dev}
     build: ./build/p2pool
     container_name: p2pool
-    # Memory ceiling (#132 — see monerod). RandomX HugePages are separate; this caps p2pool's own
-    # heap (~0.35 GiB observed).
-    mem_limit: 1g
-    memswap_limit: 1g
+    # Memory ceiling (#132 — see monerod). With enough free HugePages the RandomX dataset lives
+    # outside this cgroup and p2pool's own heap is ~0.35 GiB. With too few, p2pool falls back to
+    # 2592 MiB of ordinary memory (dataset + two caches); a 1g ceiling OOM-killed it while it
+    # filled the dataset, a restart loop at exit 137 (#2562). 4g holds that fallback.
+    mem_limit: 4g
+    memswap_limit: 4g
     restart: unless-stopped
     logging: *default-logging
     # Replaces 'privileged: true'. p2pool only needs to lock HugePages for the RandomX dataset
@@ -663,8 +670,9 @@ services:
       - TZ=${DASHBOARD_TZ:-Etc/UTC}
       - MONERO_NODE_HOST=${MONERO_NODE_HOST:-172.28.0.26}
       # monerod get_info RPC creds (Issue #29): the dashboard reads sync height/target over
-      # 127.0.0.1:18081 (reachable via network_mode: host) using digest auth, instead of
-      # scraping docker logs. Only used for a local node; harmless for remote-node setups.
+      # the local or remote endpoint rendered from config.json, using digest auth instead of
+      # scraping docker logs.
+      - MONERO_RPC_URL=${MONERO_RPC_URL:-http://127.0.0.1:18081}
       - MONERO_NODE_USERNAME=${MONERO_NODE_USERNAME}
       - MONERO_NODE_PASSWORD=${MONERO_NODE_PASSWORD}
       # Whether the local node prunes — shown as Pruned/Full in the Monero panel (Issue #32).

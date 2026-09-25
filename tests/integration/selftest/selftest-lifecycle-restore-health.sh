@@ -23,20 +23,30 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         pithead() {
             case "$RESTORE_CASE:$1" in
+            carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || return 1 ;; # the third push is the carry
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
         wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
-        env_on_box() { :; }
-        has_compose_profile() { return 1; }
+        # carry-* cases also run the local-node legs, including the #2360 dashboard carry.
+        env_on_box() { case "$RESTORE_CASE" in carry-*) printf /data/dashboard ;; esac }
+        has_compose_profile() { case "$RESTORE_CASE" in carry-*) return 0 ;; *) return 1 ;; esac }
+        wait_for() { :; }
+        assert_rc() { :; }
+        dashboard_durable_rows() { printf 'blocks -'; }
+        telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
+        telemetry_rows_diff() { :; }
+        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
-        secret_fingerprint() {
+        secret_fingerprint() { printf fingerprint; }
+        # The round-trip compares every secret category (#2579), not the coarse fingerprint.
+        upgrade_secret_fingerprints() {
             case "$RESTORE_CASE:$RESTORED" in
             secret-before-fails:* | secret-after-fails:yes) return 1 ;;
             esac
-            printf fingerprint
+            printf 'dashboard=fingerprint'
         }
         render_scenario_config() { printf '{}'; }
         push_config() {
@@ -50,7 +60,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             [ "$RESTORE_CASE:$1" != "secret-fails:restore preserves secrets" ] || it_fail
         }
         quote_arg() { printf '%s' "$1"; }
-        rx() { case "$1" in ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;; esac }
+        rx() {
+            case "$1" in
+            ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
+            "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
+            esac
+        }
         eval "$LIFECYCLE_SRC"
         run_lifecycle >/dev/null
         printf '%s|%s' "$?" "$IT_FAIL"
@@ -71,6 +86,14 @@ assert_eq "a failed restored-secret assertion fails lifecycle" "$(drive_restore 
 assert_eq "an unreadable backup secret fingerprint fails lifecycle" "$(drive_restore yes secret-before-fails)" "1|1"
 assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_restore yes secret-after-fails)" "1|1"
 assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
+assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_restore yes carry-ok)" "0|0"
+assert_eq "a failed dashboard carry apply fails lifecycle (#2360)" "$(drive_restore yes carry-apply-fails)" "1|1"
+assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
+assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
+
+eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
+assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"
+assert_eq "telemetry diff reports an empty probe" "$(telemetry_rows_diff "" "")" "before=0 after=0 missing: none"
 
 # The real fingerprint must fail closed: an unreadable or secret-less .env is not a fingerprint.
 FP_SRC="$(sed -n '/^secret_fingerprint() {$/,/^}$/p' "$HERE/../lib/run-matrix.sh")"

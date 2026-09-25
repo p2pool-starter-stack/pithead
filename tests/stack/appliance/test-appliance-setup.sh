@@ -72,7 +72,7 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out=$(run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/no-such.env" "$SANDBOX/quadlet-none" 2>&1)
 assert_contains "render-quadlet missing env errors" "$out" "env file not found"
 
-echo "== black-box: uninstall keeps the operator's files (#77 phase 1) =="
+echo "== black-box: uninstall keeps every byte of data and prints the three-column inventory (#2379, #77 phase 1) =="
 # Self-provision a fully-rendered .env rather than relying on an earlier section's ambient one:
 # this used to inherit it for free from the dashboard-auth-lifecycle black-box, which ran
 # immediately before this section in the original file; that test now lives in
@@ -89,6 +89,25 @@ jq --arg dir "$kept_dir" '.monero.data_dir = $dir' "$V/config.json" >"$V/config.
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 rc=$?
 assert_rc "uninstall fixture: self-provisioned apply succeeds" "$rc" "0"
+# apply's ensure_directories/prepare_control_dirs/inject_service_configs create every derived
+# state dir unconditionally (#2379 §3), regardless of which chain/TLS flags the fixture config
+# sets — sanity-check that before trusting the removal assertions below.
+missing_derived=""
+for d in data/control data/clearnet-state data/caddy-logs data/proxy-tls; do
+    [ -d "$V/$d" ] || missing_derived="$missing_derived $d"
+done
+assert_eq "uninstall fixture: apply created every derived state dir" "$missing_derived" ""
+: >"$V/data/tari-wallet-secret.env" # apply only populates this with a Tari view key configured; force it present for the test
+
+# Drop a marker into every kept path so "byte-identical before/after" is provable, not assumed.
+mkdir -p "$V/backups"
+kept_markers=("$V/config.json" "$V/backups/marker.txt" "$kept_dir/marker.txt" "$V/data/tari/marker.txt" "$V/data/p2pool/marker.txt" "$V/data/tor/marker.txt" "$V/data/dashboard/marker.txt")
+for f in "${kept_markers[@]}"; do
+    [ -f "$f" ] || { mkdir -p "$(dirname "$f")" && printf 'marker' >"$f"; }
+done
+hash_kept() { for f in "${kept_markers[@]}"; do sha256sum "$f" 2>/dev/null || shasum -a 256 "$f"; done; }
+hash_before="$(hash_kept)"
+
 # Without confirmation: aborts, changes nothing.
 touch "$V/Caddyfile"
 out=$(cd "$V" && printf 'no\n' | PATH="$V/bin:$PATH" ./pithead uninstall 2>&1) || true
@@ -97,7 +116,8 @@ assert_eq "aborted uninstall keeps .env" "$([ -f "$V/.env" ] && echo yes)" "yes"
 # Uninstall removes the control-runner units, so it joins the shared window like apply does. Hold
 # the window and prove uninstall refuses before its first destructive step.
 UNINSTALL_LOCK="$V/uninstall-held.lock"
-: >"$V/docker.log"
+DOCKER_LOG="$V/docker.log"
+: >"$DOCKER_LOG"
 (
     exec 9>>"$UNINSTALL_LOCK"
     flock 9
@@ -108,16 +128,15 @@ uninstall_lock_held() { ! flock -n "$UNINSTALL_LOCK" true 2>/dev/null; }
 wait_while_alive "$UNINSTALL_HOLDER" uninstall_lock_held
 assert_rc "uninstall contention fixture holds the mutation window" "$?" "0"
 rc=0
-out=$(cd "$V" && PITHEAD_LOCK_FILE="$UNINSTALL_LOCK" PITHEAD_LOCK_TIMEOUT=1 \
+out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_LOCK_FILE="$UNINSTALL_LOCK" PITHEAD_LOCK_TIMEOUT=1 \
     PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_contains "uninstall waits on the same mutation window as apply" "$out" "Timed out after 1s"
-assert_not_contains "a contended uninstall never reaches container removal" "$(cat "$V/docker.log" 2>/dev/null)" "compose down"
+assert_not_contains "a contended uninstall never reaches container removal" "$(cat "$DOCKER_LOG" 2>/dev/null)" "compose down"
 assert_eq "a contended uninstall changes nothing" "$([ -f "$V/.env" ] && echo yes)" "yes"
 kill "$UNINSTALL_HOLDER" 2>/dev/null || true
 wait "$UNINSTALL_HOLDER" 2>/dev/null || true
 unset UNINSTALL_LOCK UNINSTALL_HOLDER rc
 unset -f uninstall_lock_held
-# With -y: rendered files go, the operator's files stay.
 UNINSTALL_UNITS="$V/uninstall-units"
 mkdir -p "$UNINSTALL_UNITS"
 printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$(cd "$V" && pwd -P)" >"$UNINSTALL_UNITS/pithead-control.service"
@@ -129,20 +148,65 @@ cat >"$V/bin/sudo" <<'SUDOEOF'
 exit 0
 SUDOEOF
 chmod +x "$V/bin/systemctl" "$V/bin/sudo"
-out=$(cd "$V" && PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+
+# With -y: the three columns print, the named volumes go with `compose down -v`, every
+# pithead-derived path is removed, and every kept path survives byte-identical.
+: >"$DOCKER_LOG"
+out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+assert_contains "uninstall states the removed column" "$out" "Removed:"
+assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
+assert_contains "uninstall states the left-behind column" "$out" "Left behind"
 assert_contains "uninstall names the kept files" "$out" "config.json"
 assert_contains "uninstall displays the decoded data path" "$out" "$kept_dir"
+assert_contains "uninstall names the three volumes it removes with the containers" "$out" "caddy_data/wallet_data/tari_wallet_data"
+assert_contains "uninstall prints the removal command" "$out" "sudo rm -rf"
+assert_contains "uninstall's removal command quotes a path with a space" "$out" "'$kept_dir'"
+assert_eq "uninstall compose-downs with -v so the named volumes go with the containers" \
+    "$(grep -Fc 'compose down --remove-orphans -v' "$DOCKER_LOG" 2>/dev/null | tr -d '[:space:]')" "1"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
+assert_eq "uninstall removes the rendered Tari config" "$([ -f "$V/build/tari/config.toml" ] || echo gone)" "gone"
+assert_eq "uninstall removes the control spool" "$([ -d "$V/data/control" ] || echo gone)" "gone"
+assert_eq "uninstall removes the clearnet-state dir" "$([ -d "$V/data/clearnet-state" ] || echo gone)" "gone"
+assert_eq "uninstall removes the Caddy access-log dir" "$([ -d "$V/data/caddy-logs" ] || echo gone)" "gone"
+assert_eq "uninstall removes the stratum TLS dir" "$([ -d "$V/data/proxy-tls" ] || echo gone)" "gone"
+assert_eq "uninstall removes the Tari wallet secret file" "$([ -f "$V/data/tari-wallet-secret.env" ] || echo gone)" "gone"
 assert_eq "uninstall keeps config.json" "$([ -f "$V/config.json" ] && echo yes)" "yes"
-assert_eq "uninstall removes its owned control-runner units with CONTROL_DIR restored from .env" \
-    "$(find "$UNINSTALL_UNITS" -type f -print -quit)" ""
+assert_eq "uninstall keeps backups/" "$([ -d "$V/backups" ] && echo yes)" "yes"
+assert_eq "uninstall keeps every *_DATA_DIR byte-identical (hash before == after)" "$(hash_kept)" "$hash_before"
+assert_eq "uninstall removes its owned control-runner units" "$(find "$UNINSTALL_UNITS" -type f -print -quit)" ""
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
 # Re-render the sandbox .env for the sections below — uninstall just deleted it.
 make_stubs "$V/bin"
 rm -f "$V/bin/systemctl"
 unset UNINSTALL_UNITS
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+# A derived key an operator pointed at the data root is refused, never `rm -rf`'d: .env is
+# editable, and no edit may turn uninstall into the removal of the chains under it.
+grep -v '^CONTROL_DIR=\|^CLEARNET_STATE_DIR=' "$V/.env" >"$V/.env.tmp" && mv "$V/.env.tmp" "$V/.env"
+printf 'CONTROL_DIR=%s\nCLEARNET_STATE_DIR=%s\n' "$V/data" "$SANDBOX/elsewhere/clearnet-state" >>"$V/.env"
+mkdir -p "$V/data/tari" "$SANDBOX/elsewhere/clearnet-state" && printf 'marker' >"$V/data/tari/guard.txt"
+printf 'marker' >"$SANDBOX/elsewhere/clearnet-state/guard.txt"
+# The runner drain inside uninstall reads CONTROL_DIR from .env, not the default spelling: a
+# stale claim left under the default spelling must not hold uninstall for the 30-second bound.
+UNINSTALL_UNITS="$V/uninstall-units"
+mkdir -p "$UNINSTALL_UNITS" "$V/data/control"
+printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$(cd "$V" && pwd -P)" >"$UNINSTALL_UNITS/pithead-control.service"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$V/bin/systemctl"
+chmod +x "$V/bin/systemctl"
+: >"$V/data/control/.claim.1"
+SECONDS=0
+out=$(cd "$V" && PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+assert_eq "uninstall drains the runner in the CONTROL_DIR restored from .env" "$([ "$SECONDS" -lt 20 ] && echo prompt || echo "waited ${SECONDS}s")" "prompt"
+rm -rf "$UNINSTALL_UNITS" "$V/bin/systemctl" "$V/data/control/.claim.1"
+unset UNINSTALL_UNITS
+assert_contains "uninstall refuses a derived key that points at the data root" "$out" "Not removing CONTROL_DIR="
+assert_eq "uninstall keeps the data root a derived key points at" "$(cat "$V/data/tari/guard.txt" 2>/dev/null)" "marker"
+assert_eq "uninstall keeps a derived-named dir outside the path setup gives it" \
+    "$(cat "$SANDBOX/elsewhere/clearnet-state/guard.txt" 2>/dev/null)" "marker"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"

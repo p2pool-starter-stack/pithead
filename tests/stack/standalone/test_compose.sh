@@ -49,6 +49,7 @@ MONERO_PREP_THREADS=4
 MONERO_RPC_BIND=127.0.0.1
 MONERO_ZMQ_BIND=127.0.0.1
 MONERO_NODE_HOST=172.28.0.26
+MONERO_RPC_URL=http://monero.example:28081
 MONERO_RPC_PORT=18081
 MONERO_ZMQ_PORT=18083
 TARI_GRPC_ADDRESS=172.28.0.27:18142
@@ -57,7 +58,6 @@ COMPOSE_PROFILES=local_node,local_tari
 DASHBOARD_SECURE=true
 HOST_IP=box.lan
 EOF
-
 echo "Validating docker-compose.yml ..."
 if docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config is valid"
@@ -153,7 +153,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
 expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017"
-expect_present "tari node pinned by digest" "minotari_node:v6.0.0-mainnet@sha256:5e87b15b401dd485710b3efc8f8107ecde26f92c2dfad4c0ad1fab69705b393a"
+expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
 JSON="$(docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config --format json 2>/dev/null)"
@@ -185,12 +185,12 @@ jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
 # The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
-jq_assert "tari healthcheck uses the [m]inotari self-match guard" \
-    '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
-# Memory ceilings (#132): every service carries a mem_limit so a leak/runaway OOM-restarts the
-# offender in its own cgroup instead of the host OOM-killer reaching monerod (the revenue service).
-jq_assert "memory ceiling (mem_limit) on every service (#132)" '[.services[] | select(.mem_limit != null)] | length >= 9'
+# Memory ceilings (#132) OOM-restart a leak in its own cgroup, not monerod via the host OOM-killer.
+# p2pool's holds its 2592 MiB RandomX fallback off short HugePages plus heap: 1g OOM-looped (#2562).
+jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
 # Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
 # scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
 # re-creating the executable staging area read_only exists to remove — must fail CI, not evolve
@@ -280,7 +280,7 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
-
+jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
@@ -327,7 +327,7 @@ jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" \
 # it is not in that render at all. Here it is, for the same reason the healthcheck assertion above
 # is. Whole reference, not the `tag@sha256:` prefix, for the reason given at the other three.
 jq_assert "tari console wallet pinned by digest (#1137)" \
-    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.0.0-mainnet@sha256:f7bfb9edad7ec415ac2e6c8fa0fb28fa2162a9ecab63cb5fd853b00685960800"'
+    '.services["tari-wallet"].image == "ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d"'
 # The two Tari images are one component, bumped together, so a tag that moves on one and not the
 # other is a silent split-brain — the node speaking one protocol version and the wallet another.
 # Nothing compared them, and `scripts/release/release.sh pin tari` reads the NODE only (#1138), so a wallet
