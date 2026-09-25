@@ -64,7 +64,20 @@ _stack_run_integration() { # <label> <extra args...>
     # The DIY gate's own SSH defaults to ssh-agent/default identities (tests/integration/run.sh's
     # IT_SSH_OPTS carries no -i); the KVM guest only trusts the os battery's test key ($KEY,
     # baked in via PITHEAD_TEST_SSH_PUBKEY), so it must be named explicitly with --identity.
-    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
+    # run.sh's own IT_SSH_OPTS default (StrictHostKeyChecking=accept-new) is right for its other
+    # caller, a real bench/rig with a stable host key — wrong here, where $ip is a DHCP lease this
+    # same guest recycles across boots, presenting a different host key each time (#2716). OpenSSH
+    # keeps the FIRST value given for a repeated -o keyword, not the last (verified: `ssh -o
+    # StrictHostKeyChecking=accept-new -o StrictHostKeyChecking=no -G host` still reports
+    # accept-new) — so a --ssh-opt appended after IT_SSH_OPTS cannot itself override
+    # StrictHostKeyChecking, and one is not passed here. Instead, --ssh-opt UserKnownHostsFile=/dev/null
+    # has no earlier default to lose to, so it does apply, and with no known_hosts entry ever
+    # recorded there is no stored key for accept-new to detect a change against — every boot's key
+    # reads as unseen, exactly like the untrusted-by-design os-battery SSH calls this mirrors
+    # (lib/core.sh's _ssh, soak-probe.sh, install-restore.sh), which set the same option.
+    "$SCRIPT_DIR/../integration/run.sh" --host "root@$ip" --identity "$KEY" \
+        --ssh-opt UserKnownHostsFile=/dev/null \
+        --dir /data/pithead --workers 1 "$@" >"$out" 2>&1
     rc=$?
     if [ "$rc" -eq 0 ]; then
         ok "DIY gate vs. appliance channel: $label"
