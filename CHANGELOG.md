@@ -154,7 +154,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `wallet_birthday` works as-is). `auto` was computed from 1970, a day in 2078, so the wallet started
   at the chain tip and missed every earlier payout; a birthday later than today is now refused. The
   wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
-  it had no working base-node setting and fell back to Tari's public node over clearnet.
+  it had no working base-node setting and fell back to Tari's public node over clearnet. A wallet
+  created before this fix began at the tip and keeps its scan position; to backfill, stop the stack,
+  remove the `tari_wallet_data` volume, and start it again.
 
 - **A restore at setup no longer carries the source machine's released miner onto new hardware
   ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard

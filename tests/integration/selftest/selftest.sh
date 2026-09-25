@@ -102,7 +102,7 @@ resolve_overrides "payout_confirm=env"
 rc=$?
 assert_rc "payout confirm ok with both tari env vars too" "$rc" "0"
 assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
-assert_contains "augments tari.spend_public_key" "$RESOLVED" "tari.spend_public_key=tspk"
+assert_contains "augments tari.spend_public_key and a past birthday (#2731)" "$RESOLVED" "tari.spend_public_key=tspk tari.payout_scan_birthday=1425"
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1

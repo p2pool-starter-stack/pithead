@@ -350,8 +350,7 @@ assert_running_state() {
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
-        assert_eq "TARI_PAYOUT_CONFIRM_ENABLED matches config (#462/#942)" "$(env_on_box TARI_PAYOUT_CONFIRM_ENABLED)" "true"
-        assert_eq "dashboard confirms Tari payout tracking is live (#462/#942)" "$(jq_get "$st" '.earnings.tari_confirmed.enabled')" "true"
+        assert_tari_payout_scan "$config" "$st"
     fi
 
     # 9. Caddy scheme matches dashboard.secure — read from the DASHBOARD's site block, which is
