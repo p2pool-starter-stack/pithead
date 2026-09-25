@@ -140,6 +140,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A source checkout starts the whole stack after `uninstall` or on a new host
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
+  and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
+  built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
+  once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
+  have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
+
 - **A restore at setup that fails while writing its files no longer leaves the machine half
   restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
   replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
