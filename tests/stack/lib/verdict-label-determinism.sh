@@ -85,9 +85,8 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
-# The special-parameter class has no live site beyond $@ — no label in tests/stack uses $* or $#.
-# They are seeded below anyway, so all three characters have a control that can fail rather than two
-# branches that pass by construction.
+# No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
+# anyway, so all three have a control that can fail, not two branches that pass by construction.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -114,6 +113,7 @@ test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
+test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label

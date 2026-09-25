@@ -12,7 +12,7 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
 }
 
 expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
-actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_height$' | tr '\n' ' ' | sed 's/ $//')"
+actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_(height|evidence)$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
     exit 1
@@ -226,7 +226,19 @@ grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" |
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
+# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
+# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
+# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
+# height that never reached the disk.
+m10_flush_before_cut() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
+        index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
+        index($0, "_ssh sync || {") && !flush { flush = NR }
+        index($0, "virsh destroy \"$VM\"") && !cut { cut = NR }
+        END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
+}
+m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
 # The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
 # And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking

@@ -102,13 +102,64 @@ remove_deactivated_profile_containers() {
         warn "Could not remove the deactivated container(s): ${gone[*]} — remove them manually with 'docker rm -f ${gone[*]}'."
 }
 
+# PITHEAD_KEEP_RUNNING (#2639) is a test-harness knob, never set by pithead itself: a space-separated
+# list of running services the e2e harness proved identical between its two checkouts of the one
+# pinned project. Their checkout-relative bind mounts resolve to different absolute paths per
+# checkout, so a plain up from the other checkout would recreate them; instead the up names every
+# other service with --no-deps, and Compose neither recreates nor restarts the kept ones. A kept
+# service that is not running is refused rather than left down. The callers pass bare flags and
+# service names only. --remove-orphans is dropped: older Compose v2 counts the services left out of
+# a scoped up as orphans. Sets KEEP_SCOPED_ARGS, empty when nothing is left to bring up.
+scope_keep_running() { # <compose up flags and services...>
+    local a svc services=() opts=()
+    for a in "$@"; do
+        case "$a" in
+        --remove-orphans) ;;
+        -*) opts+=("$a") ;;
+        *) services+=("$a") ;;
+        esac
+    done
+    [ "${#services[@]}" -gt 0 ] || mapfile -t services < <(docker compose config --services 2>/dev/null)
+    [ "${#services[@]}" -gt 0 ] || {
+        warn "Could not list compose services to scope PITHEAD_KEEP_RUNNING."
+        return 1
+    }
+    for svc in $PITHEAD_KEEP_RUNNING; do
+        container_is_running "$svc" || {
+            warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running — refusing to leave it down."
+            return 1
+        }
+    done
+    KEEP_SCOPED_ARGS=()
+    for svc in "${services[@]}"; do
+        case " $PITHEAD_KEEP_RUNNING " in *" $svc "*) ;; *) KEEP_SCOPED_ARGS+=("$svc") ;; esac
+    done
+    log "Keeping $PITHEAD_KEEP_RUNNING running as is (PITHEAD_KEEP_RUNNING)."
+    # Every named service kept: an up with no service list would be the whole stack, never that.
+    [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
+    KEEP_SCOPED_ARGS=("${opts[@]}" --no-deps "${KEEP_SCOPED_ARGS[@]}")
+}
+
 # Run `docker compose up` with live output; on failure, explain a bridge-subnet collision (#180) if
 # that's what Docker rejected. Returns compose's own exit code.
 compose_up_checked() {
     local tmp out rc _attempt
+    if [ -n "${PITHEAD_KEEP_RUNNING:-}" ]; then
+        scope_keep_running "$@" || return 1
+        [ "${#KEEP_SCOPED_ARGS[@]}" -gt 0 ] || return 0
+        set -- "${KEEP_SCOPED_ARGS[@]}"
+    fi
     # Deactivated-profile containers go BEFORE the up (#795): the old local node must stop before
     # p2pool (re)starts against the remote one, not linger beside it.
     remove_deactivated_profile_containers
+    # #2654: a source checkout's `never` policy builds the first-party `:dev` images, but the
+    # digest-pinned third-party ones (tari, caddy, the socket-proxies) have no build context, so
+    # after `uninstall` or on a fresh host `up` fails on them. Fetch only those that are missing;
+    # a pinned digest bump is a new ref, so this also covers `upgrade`. An explicit PITHEAD_PULL wins.
+    if [ -z "${PITHEAD_PULL:-}" ] && is_source_checkout; then
+        docker compose pull --policy missing --ignore-buildable ||
+            warn "Could not pull the missing third-party images — 'compose up' reports which ones below."
+    fi
     # One bounded retry (#2293): a container still mid-transition from its own prior start (p2pool's
     # RandomX/HugePages warm-up is the observed case, seconds after the initial deploy) makes the
     # engine refuse a concurrent start with a state-conflict error — "must be in Created or Stopped
@@ -146,8 +197,8 @@ stack_up() {
     # Install the Tor-only egress firewall BEFORE the containers start (#270). DOCKER-USER is a static
     # chain whose rules reference the fixed subnet/Tor IP, so they can go in before the network exists;
     # Docker preserves DOCKER-USER and (re)adds the FORWARD jump when it creates the network. Doing this
-    # first closes the startup window in which a clearnet app (e.g. Tari) could open a connection that
-    # the ESTABLISHED rule would then grandfather past the DROP.
+    # first closes the startup window in which a clearnet app (e.g. Tari) could dial out unfenced; the
+    # firewall resets such a flow once it is in (#2672), but the packets sent before that have leaked.
     apply_tor_egress_firewall
     # #452: a fresh release install's first `up` pulls the 5 first-party images (pull policy
     # `missing`) — gate that pull on the same cosign check `upgrade` uses, so first install is not
