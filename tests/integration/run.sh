@@ -96,6 +96,8 @@ source "$HERE/lib/run-cli.sh" || exit $?
 source "$HERE/lib/run-matrix.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-wallet.sh
+source "$HERE/lib/run-tari-wallet.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh

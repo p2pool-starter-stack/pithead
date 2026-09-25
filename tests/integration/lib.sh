@@ -193,7 +193,7 @@ resolve_overrides() {
     # the marker "payout_confirm=env" (not a real config path, always stripped below); an
     # operator-supplied IT_MONERO_VIEW_KEY gates the whole row, the same shape as remote mode needing
     # an endpoint. Tari's pair (IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY) is an optional extra
-    # folded in only when BOTH are set; it never gates the row on its own.
+    # folded in only when BOTH are set, with the bench wallet's first payout day (#2731); never a gate.
     if printf '%s' "$overrides" | tr ' ' '\n' | grep -qx 'payout_confirm=env'; then
         out="$(printf '%s' "$out" | tr ' ' '\n' | grep -vx 'payout_confirm=env' | tr '\n' ' ')"
         out="${out% }" # strip the trailing space left by removing the marker token
@@ -204,7 +204,7 @@ resolve_overrides() {
         }
         out="${out:+$out }monero.view_key=$IT_MONERO_VIEW_KEY"
         if [ -n "${IT_TARI_VIEW_KEY:-}" ] && [ -n "${IT_TARI_SPEND_PUBLIC_KEY:-}" ]; then
-            out="$out tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY"
+            out="$out tari.view_key=$IT_TARI_VIEW_KEY tari.spend_public_key=$IT_TARI_SPEND_PUBLIC_KEY tari.payout_scan_birthday=${IT_TARI_BIRTHDAY:-1425}"
         fi
     fi
 

@@ -834,7 +834,8 @@ Monero one — owner-only `.env`, never logged or on a container command line, o
 editor — with one extra safeguard: because Tari has no key-import file, the three wallet secrets are
 delivered to the container through a tmpfs secret mount, so they never appear in `docker inspect`.
 Local Tari node only. Its restore point is a **birthday** (`tari.payout_scan_birthday`, days since
-the Unix epoch), not a block height. Leave `tari.view_key` empty and none of the Tari half runs.
+2022-01-01, as Tari Universe's `wallet_birthday`), not a block height. The wallet scans only through
+the local node's wallet HTTP service on the internal network, never Tari's public fallback node. Leave `tari.view_key` empty and none of the Tari half runs.
 
 #### Exporting your keys
 
