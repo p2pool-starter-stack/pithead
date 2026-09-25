@@ -10,3 +10,8 @@ e55d839eb8bbd47a8a1567031c2269af26f17549:tests/stack/test-worker-config.sh:gener
 # A made-up password in the chain-keep selftest's compose fixture (#2639), there to prove that no config
 # value leaves the box. Replaced by a low-entropy marker on the next commit; this entry covers the first.
 27bfbae2c042c978240df49d2dcf65181ca4377e:tests/integration/selftest/selftest-e2e-chain-keep.sh:generic-api-key:65
+# Synthetic dashboard bcrypt/fingerprint restore fixtures in a superseded #2579 branch commit; the
+# current test derives them at runtime.
+ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:135
+ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:136
+ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:172

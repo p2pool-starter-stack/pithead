@@ -389,11 +389,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on, captured for the same reason and at the same moment as
-    # RESTORE_DIR: deploy_branch is about to rebuild the first-party images, and on a source-checkout
-    # box it rebuilds them under the very tag the baseline resolves to. Nothing downstream can tell
-    # the baseline's images from the branch's once that has happened, so the record has to be taken
-    # here or not at all. Read by verify_restore_proof's check 4.
+    # The images the baseline is on (and whether it has the #2460 egress boot unit), captured before
+    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
+    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
+    # record is taken here or not at all. Read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
