@@ -50,25 +50,51 @@ physical_presence_password_refusal_verdict() { # <control-result-json>
 }
 
 # MONERO_NODE_USERNAME/MONERO_NODE_PASSWORD sit in none of the three dashboard-committable tiers
-# (42-control-policy-and-host-checks.sh) and hard-refuse at preview the instant a reserved-node
-# proposal actually changes one — the security floor working as designed, not the combined
-# approval gate appliance-config-approval-leg.sh's reserved-node row expects for the endpoint
-# fields beside them (#2713: this leg used to expect an approval-gated preview here too, a
-# leftover from before the 2026-09-13 perimeter audit removed the catch-all that swept an
-# unlisted key into the approval tier).
+# (42-control-policy-and-host-checks.sh: "those are secrets, not address identity, and they stay
+# host-only DEST with the rest of the credentials"). Before the 2026-09-13 perimeter audit an
+# unlisted key fell into a catch-all approval tier, so a reserved-node change carrying them cleared
+# the combined gate; the audit removed that catch-all, and the same change now hard-refuses at
+# preview (#2713). That is the security floor working as designed (SECURITY.md: no credential is
+# ever dashboard-committable). The leg therefore proves the refusal, then re-runs the endpoint
+# gates with blank credentials; only the commit, which needs a node that accepts the live
+# credentials, is skipped on a bench whose reserved node requires an RPC login.
 reserved_node_credential_refusal_verdict() { # <preview-json>
     printf '%s' "$1" | jq -e '
         .status == "rejected" and
         ((.error | contains("MONERO_NODE_USERNAME")) or (.error | contains("MONERO_NODE_PASSWORD")))' >/dev/null
 }
 
+# The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
+# endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
+# rendered when the port differs from the live one, so an absent port row is not a miss.
+reserved_node_rendered_endpoints_verdict() { # <preview-json> <mh> <rpc> <zmq> <th> <grpc>
+    printf '%s' "$1" | jq -e --arg mh "$2" --arg rpc "$3" --arg zmq "$4" --arg tg "$5:$6" '
+        def row($k): [.changes[]? | select(.key == $k) | .msg];
+        def to($k; $v): row($k) | any(contains("→ " + $v + " — "));
+        def port($k; $v): (row($k) | length == 0) or to($k; $v);
+        to("MONERO_NODE_HOST"; $mh) and to("TARI_GRPC_ADDRESS"; $tg) and
+        port("MONERO_RPC_PORT"; $rpc) and port("MONERO_ZMQ_PORT"; $zmq)' >/dev/null
+}
+
 _reserved_node_credential_refusal_self_test() {
+    local ok_rows
     reserved_node_credential_refusal_verdict '{"status":"rejected",
         "error":"this change alters a security-sensitive setting (MONERO_NODE_PASSWORD) that is not committable from the dashboard."}' || return 1
     reserved_node_credential_refusal_verdict '{"status":"rejected",
         "error":"this change alters a security-sensitive setting (MONERO_NODE_USERNAME) that is not committable from the dashboard."}' || return 1
     reserved_node_credential_refusal_verdict '{"status":"previewed","destructive":true,"approval_required":true}' && return 1
     reserved_node_credential_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+    ok_rows='{"changes":[{"key":"MONERO_NODE_HOST","msg":"MONERO node endpoint (MONERO_NODE_HOST): monerod → node.fixture — x"},
+        {"key":"TARI_GRPC_ADDRESS","msg":"TARI node endpoint (TARI_GRPC_ADDRESS): tari:18142 → tari.fixture:18142 — x"}]}'
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 18142 || return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" other.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 9999 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        other.fixture 18089 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_ZMQ_PORT",msg:"MONERO node endpoint (MONERO_ZMQ_PORT): 18083 → 18084 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
     return 0
 }
 

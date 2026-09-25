@@ -59,8 +59,8 @@ tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685
-tests/os/appliance-approval-verdict.sh	423
-tests/os/appliance-config-approval-leg.sh	423
+tests/os/appliance-approval-verdict.sh	449
+tests/os/appliance-config-approval-leg.sh	432
 tests/os/appliance-xvb-routing-leg.sh	411
 tests/os/failure-evidence.sh	567
 tests/os/phases/update.sh	413
