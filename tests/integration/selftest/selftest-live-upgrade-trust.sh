@@ -13,6 +13,12 @@ same_registry=$'tor registry.test/pithead-tor:v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaa
 mixed_registry=${same_registry/registry.test\/pithead-dashboard/two.test\/pithead-dashboard}
 [ "$(first_party_registry "$same_registry")" = registry.test ]
 ! first_party_registry "$mixed_registry" >/dev/null || exit 1
+
+echo "== first_party_registry tolerates a container engine reporting tag@digest as a bare digest (job 1142) =="
+digest_only=$'tor registry.test/pithead-tor@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndashboard registry.test/pithead-dashboard@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+[ "$(first_party_registry "$digest_only")" = registry.test ]
+mixed_tagging=$'tor registry.test/pithead-tor@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndashboard registry.test/pithead-dashboard:v2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+[ "$(first_party_registry "$mixed_tagging")" = registry.test ]
 BASELINE_CONFIG='{"monero":{"mode":"remote"}}'
 [ "$(first_party_running_services | tr '\n' ' ')" = "tor p2pool xmrig-proxy dashboard " ]
 UPGRADE_CANDIDATE_ALL_REFS=$'tor registry.test/pithead-tor:v2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nmonerod registry.test/pithead-monero:v2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\np2pool registry.test/pithead-p2pool:v2@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\nxmrig-proxy registry.test/pithead-xmrig-proxy:v2@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\ndashboard registry.test/pithead-dashboard:v2@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
@@ -66,10 +72,13 @@ UPGRADE_CANDIDATE_ALL_REFS=$'tor x\ndashboard y\ncaddy z'
 [ -z "$(upgrade_capture_gaps m 0 "$first" "$first" reg.test c c)" ]
 [ "$(upgrade_capture_gaps "" 1 "$first" "$first" reg.test c c)" = "stateful-mounts(exit=1)" ]
 [ "$(upgrade_capture_gaps m 0 "" "" "" "" "")" = "running-refs first-party-refs" ]
-untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1.20.0@sha256:'"$d64"
-gaps="$(upgrade_capture_gaps m 0 "$untagged" "$untagged" "" c c)"
-[ "$gaps" = "baseline-registry(tor:no-tag)" ]
+untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1.20.0@sha256:'"$d64"
+[ -z "$(upgrade_capture_gaps m 0 "$untagged" "$untagged" reg.test c c)" ]
+mixed_untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1.20.0@sha256:'"$d64"
+gaps="$(upgrade_capture_gaps m 0 "$mixed_untagged" "$mixed_untagged" "" c c)"
+[ "$gaps" = "baseline-registry(dashboard:mixed-registry)" ]
 ! grep -Fq reg.test <<<"$gaps" || exit 1
+! grep -Fq other.test <<<"$gaps" || exit 1
 mixed=$'tor reg.test/pithead-tor:1@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-tor:1'
 [ "$(upgrade_capture_gaps m 0 "$mixed" "$mixed" "" c c)" = "baseline-registry(dashboard:mixed-registry,p2pool:unexpected-image)" ]
 bare=$'tor pithead-tor:1@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-p2pool:1@sha256:'"$d64"

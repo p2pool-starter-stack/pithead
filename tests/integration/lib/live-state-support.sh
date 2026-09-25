@@ -170,14 +170,12 @@ first_party_ref_shapes() { # <service/ref lines> -> service:reason for each ref 
             printf '%s:no-ref\n' "$service"
             continue
         }
-        repo="${ref%@*}" image="${ref%@*}"
-        image="${image##*/}"
+        repo="${ref%@*}"
+        image="${repo##*/}"
         registry="${repo%/*}"
-        case "$image" in *:*) ;; *)
-            printf '%s:no-tag\n' "$service"
-            continue
-            ;;
-        esac
+        # No trailing :tag is not a gap of its own: a container engine reporting a compound
+        # tag@digest reference back as a bare digest is normal (first_party_registry's comment),
+        # so only the base image name is checked here, matching that function.
         case "$service:${image%%:*}" in
         tor:pithead-tor | monerod:pithead-monero | p2pool:pithead-p2pool | xmrig-proxy:pithead-xmrig-proxy | dashboard:pithead-dashboard) ;;
         *)

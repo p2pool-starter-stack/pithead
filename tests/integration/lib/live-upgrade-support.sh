@@ -110,8 +110,8 @@ first_party_registry() { # <service/ref lines>
         [ -n "$service" ] && [ -n "$ref" ] || return 1
         repo="${ref%@*}"
         image="${repo##*/}"
-        case "$service:$image" in
-        tor:pithead-tor:* | monerod:pithead-monero:* | p2pool:pithead-p2pool:* | xmrig-proxy:pithead-xmrig-proxy:* | dashboard:pithead-dashboard:*) ;;
+        case "$service:${image%%:*}" in # inspect drops the tag off tag@digest (job 1142)
+        tor:pithead-tor | monerod:pithead-monero | p2pool:pithead-p2pool | xmrig-proxy:pithead-xmrig-proxy | dashboard:pithead-dashboard) ;;
         *) return 1 ;;
         esac
         registry="${repo%/*}"
