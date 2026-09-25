@@ -205,8 +205,9 @@ control_os_download() { # <claimed-file> <id> <actor> <control-dir>
 }
 
 # os-verify: judge the fully-downloaded LOCAL file before anything touches a slot — signature,
-# compatible, variant posture, version floor and downgrade, and the stamp-vs-tag match. A refused
-# bundle is deleted; there is no override. Read-only otherwise: verifying changes nothing.
+# compatible, variant posture, version floor and downgrade, the stamp-vs-tag match, and the room a
+# Tari migration needs on /data. A bundle refused on its own merits is deleted; there is no
+# override. Read-only otherwise: verifying changes nothing.
 control_os_verify() { # <claimed-file> <id> <actor> <control-dir>
     local file="$1" id="$2" actor="$3" cdir="$4"
     control_os_gate "$cdir" "$id" "$actor" "os-verify" || return 0
@@ -221,8 +222,8 @@ control_os_verify() { # <claimed-file> <id> <actor> <control-dir>
     fi
     reason=$(os_verify_bundle_reason "$bundle" "$tag") || keep=1
     if [ -n "$reason" ]; then
-        # rc 3 = rauc never ran, so no verdict was reached: the download stays staged for the
-        # retry instead of being deleted on a broken tool.
+        # rc 3 = no verdict on the bundle (rauc never ran, or /data lacks the room a Tari
+        # migration needs): the download stays staged for the retry instead of being deleted.
         if [ "$keep" -eq 0 ]; then
             rm -f "$bundle"
             os_state_write "$cdir" '{"step":"idle"}'

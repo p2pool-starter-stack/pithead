@@ -82,7 +82,7 @@ gate_egress() { # <arm> — Tor arm must pass the rigorous multi-poll leak check
         event "arm=tor egress-gate=PASS(after-firewall-retry)"
         return 0
     fi
-    # Last resort: a grandfathered Tari clearnet connection (#271 residue, survives via ESTABLISHED).
+    # Last resort: a Tari clearnet connection the firewall re-apply above did not reset (#271, #2672).
     # Restarting tari makes it re-dial under the firewall + proxy_bypass=false (SOCKS) → clean.
     log "still leaking — restarting tari to clear grandfathered clearnet connections (#271 residue)"
     (cd "$DIR" && docker compose restart tari) >>"$ORCH_LOG" 2>&1 || true

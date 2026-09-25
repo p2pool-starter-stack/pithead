@@ -134,7 +134,7 @@ assert_running_state() {
         zmq_port="18083"
     fi
     if zv=$(zmq_pub_probe "$zmq_host" "$zmq_port" 8); then it_pass "monero ZMQ endpoint is a live ZMTP publisher (#1497)"; else it_fail "monero ZMQ endpoint is a live ZMTP publisher (#1497)" "$zv"; fi
-    if zv=$(zmq_publishes_probe "$zmq_host" "$zmq_port" 8 90); then it_pass "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)"; else it_fail "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)" "$zv"; fi
+    assert_zmq_publishes "$zmq_host" "$zmq_port"
     it_skip_leg "monero ZMQ published frame is a BLOCK notification" "tier C (#1497): the row above proves the publisher is not silent, which is the starving-p2pool failure; proving the frame was chain_main rather than txpool_add needs a new block, a wait of minutes against seconds" missing
     [ "$tmode" != "off" ] && assert_mergemine_roundtrip || it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" "tari.mode=off (#1855) — p2pool renders no merge-mine args, so no client is ever built (#2323)" by-design
     # The dashboard's sync panel must also read "done" for a synced node — not stay stuck at
