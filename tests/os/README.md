@@ -104,8 +104,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
-  The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
-  path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
+  path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
+  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
   the same process before the unsynced controller can return it to P2Pool. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
@@ -253,9 +254,12 @@ skipped: 0 scenarios, 0 phases, 5 legs
 
 The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
 enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
-covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
-drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
-and `--phase rig` prints that row alone.
+covered row. A bench whose reserved Monero node requires an RPC login adds a sixth, the provision
+phase's reserved-node commit (`6 legs`, `4 missing, 1 by-design, 1 covered`; see the remote-node
+row below). Narrower invocations print a subset and nothing else: `--phase update` drops the
+by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+`--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
+and only on a credentialed bench.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer

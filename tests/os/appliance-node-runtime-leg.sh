@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Confirm-gated Monero login edits and reserved-node runtime proof (#2333). Loaded by
-# appliance-config-approval-leg.sh after the shared approval helpers.
+# Confirm-gated Monero login edits and reserved-node runtime proof (#2333). Loaded by appliance-config-approval-leg.sh after the shared approval helpers.
 
 REMOTE_NODE_RUNTIME_REASON="not-run"
 
 remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
-    # Blank credentials preserve their masked sentinels; nonblank ones join the atomic endpoint
-    # proposal behind the same typed confirmation (#2297/#2333).
+    # Blank credentials preserve their masked sentinels; nonblank ones join the atomic endpoint proposal behind the same typed confirmation (#2297/#2333).
     printf '%s\0' "$@" | jq -Rsc 'split("\u0000") as $v | ($v[0] | fromjson) |
         .monero.mode="remote" | .monero.remote={host:$v[1],rpc_port:($v[2]|tonumber),zmq_port:($v[3]|tonumber)} |
         (if $v[4] != "" then .monero.node_username=$v[4] else . end) |
@@ -56,8 +54,7 @@ p2pool_current_startup_merge_lines() {
     started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
     [ -n "$started" ] || return 1
     printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
-    # Uncapped, unlike MM_WINDOW_LINES (mergemine-probe.sh): a first dial to a reserved node can
-    # land its chain_id line past any cap, making "never connected" and "connected late" look alike.
+    # Uncapped, unlike MM_WINDOW_LINES (mergemine-probe.sh): a first dial to a reserved node can land its chain_id line past any cap, making "never connected" and "connected late" look alike.
     # podman's --since refuses StartedAt's own Go form; the refusal went to grep and read "absent".
     since=$(printf '%s\n' "$started" | mm_rfc3339)
     _ssh "podman logs --since '$since' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
@@ -70,16 +67,14 @@ allowlisted_node_readiness() {
 }
 
 guest_node_readiness() { # <monero-host> <rpc-port>
-    # Existing authenticated clients, from the guest network; never emit endpoints, credentials,
-    # exceptions, or raw responses.
+    # Existing authenticated clients, from the guest network; never emit endpoints, credentials, exceptions, or raw responses.
     local monero_url_q
     printf -v monero_url_q %q "http://$1:$2"
     SSH_TIMEOUT=15 _ssh "podman exec -e PROBE_MONERO_URL=$monero_url_q dashboard python -c 'import asyncio,json,os; from mining_dashboard.client.monero.monero_client import MoneroClient; from mining_dashboard.client.tari.tari_client import TariClient; m=MoneroClient(url=os.environ[\"PROBE_MONERO_URL\"]).get_info(); t=asyncio.run(TariClient().get_sync_status()); print(json.dumps({\"monero_rpc\":m is not None,\"monero_synced\":bool(m and m.get(\"synchronized\")),\"monero_height\":int((m or {}).get(\"height\",0) or 0),\"tari_rpc\":bool(t.get(\"reachable\")),\"tari_synced\":bool(t.get(\"reachable\") and not t.get(\"is_syncing\")),\"tari_height\":int(t.get(\"current\",0) or 0)}))'" 2>/dev/null |
         allowlisted_node_readiness
 }
 
-# Input: `podman inspect monerod dashboard p2pool`; $cfg: config.json. Podman's .Name carries no
-# leading slash (Docker's does), so accept both rather than silently match nothing.
+# Input: `podman inspect monerod dashboard p2pool`; $cfg: config.json. Podman's .Name carries no leading slash (Docker's does), so accept both rather than silently match nothing.
 # shellcheck disable=SC2016 # jq program, not shell
 LOCAL_NODE_LOGIN_JQ='($cfg[0].monero.node_username // "") as $u | ($cfg[0].monero.node_password // "") as $p |
     def container($name): map(select((.Name | ltrimstr("/")) == $name))[0];
@@ -119,8 +114,7 @@ local_node_login_edit() { # <config-path> <env-key> <value> <label>
     ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
 }
 
-# p2pool.clearnet (#165) keeps the private reserved Tari endpoint off Tor. It is fixed at setup on an
-# appliance, so the fixture sets it host-side before the dashboard proposal of the node change.
+# p2pool.clearnet (#165) keeps the private reserved Tari endpoint off Tor. It is fixed at setup on an appliance, so the fixture sets it host-side before the dashboard proposal of the node change.
 reserved_node_clearnet_fixture() {
     _control_requests_drained || return 1 # the apply restarts the control runner (#2094)
     _ssh 'set -euo pipefail
@@ -222,10 +216,17 @@ _reserved_node_regressions() {
         bad "reserved-node preview did not warn/expose correctly (status=$status destructive=$destructive approval_required=$approval_required monero_host_shown=$mh_shown tari_host_shown=$th_shown login_warned=$login_warned; $(reserved_node_preview_payload "$preview"))"
         return
     fi
+    reserved_node_rendered_endpoints_verdict "$preview" "$mh" "$rpc" "$zmq" "$th" "$grpc" &&
+        ok "reserved-node preview renders the Monero and Tari endpoints p2pool is started with" ||
+        bad "reserved-node preview did not render p2pool's node endpoints"
     rid=$APPROVAL_REQUEST_ID
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,approve:true,payout_suffixes:{}}')")
     if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("type APPLY"))' >/dev/null; then
         ok "reachable-node commit is refused before probing or approval without typed APPLY"
+        _ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null | jq -se --arg id "$rid" \
+            'any(.[]; .id == $id and .action == "commit" and .status == "rejected" and (.approver // "") == "")' >/dev/null &&
+            ok "the unconfirmed reserved-node commit is audited as rejected without an approver" ||
+            bad "reserved-node audit did not record the unconfirmed commit as rejected without an approver"
     else
         bad "reachable-node commit crossed the typed confirmation gate"
         return
@@ -344,8 +345,7 @@ _startup_since_self_test() (
     [ "$out" = $'PITHEAD_P2POOL_STARTED=2026-09-24 22:06:05.123456789 +0000 UTC\nMergeMiningClientTari ok' ]
 )
 
-# The proposal changes only monero.* and tari.* against the config live at preview (default-deny
-# refused p2pool.clearnet, job 1044); an early failure still restores the snapshot.
+# The proposal changes only monero.* and tari.* against the config live at preview (default-deny refused p2pool.clearnet, job 1044); an early failure still restores the snapshot.
 _reserved_node_proposal_scope_self_test() (
     local out clearnet=false restored=0
     PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2
