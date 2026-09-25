@@ -73,6 +73,17 @@ grpc_server_allow_methods = [
     "list_connected_peers",
 ]
 
+[base_node.lmdb]
+# Map headroom for the v6 JMT migration (#2593). The node grows the LMDB map only between write
+# transactions: when the space left falls to resize_threshold_bytes it adds grow_size_bytes. At the
+# upstream 64 MB threshold and 128 MB grow, dropping the legacy `jmt_node_data` table at the end of
+# the migration failed with MDB_MAP_FULL on a mainnet chain, and only a crash-restart finished it.
+# 2 GiB each keeps at least 2 GiB free before every write transaction. The map is address space, not
+# disk: the node opens LMDB without MDB_WRITEMAP, so data.mdb grows only with what is written.
+# The other lmdb keys keep upstream's defaults.
+grow_size_bytes = 2_147_483_648
+resize_threshold_bytes = 2_147_483_648
+
 [base_node.p2p]
 # Public address advertisement
 # Note: <your_tari_onion_address_no_extension> is replaced during deployment

@@ -374,6 +374,58 @@ else
     it_fail "a closed port does not pay the publish budget" "took ${elapsed}s"
 fi
 
+echo "== chain-activity corroboration: a quiet chain is not a dead publisher (#2705) =="
+
+# The defect: monerod's ZMQ pub fires on a new block, a new mempool tx, or a template update,
+# never on a timer. A "silent" verdict from a chain that provably did not move either is not
+# evidence the publisher is dead — it means nothing happened for ZMQ to report.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800000 2")
+assert_rc "an unmoved chain downgrades silence to a warn (rc 2)" "$?" "2"
+assert_contains "the downgrade is named quiet" "$v" "quiet"
+assert_contains "the downgrade cites #2705" "$v" "#2705"
+
+# The real defect this probe exists to catch: the chain DID move (height rose) and ZMQ still said
+# nothing. That must stay the original silent failure, not be waved through.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800001 2")
+assert_rc "a moved chain leaves silence a failure" "$?" "1"
+assert_contains "the failure keeps its original wording" "$v" "published NOTHING"
+
+# A mempool-only change (height unchanged, tx_pool_size moved) must count as movement too.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800000 3")
+assert_rc "a mempool-only change also leaves silence a failure" "$?" "1"
+
+# An unreadable fingerprint (get_info could not be asked) cannot corroborate anything — the
+# original verdict passes through unchanged rather than being waved through on missing evidence.
+v=$(zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "" "")
+assert_rc "an unreadable fingerprint does not downgrade" "$?" "1"
+
+# Verdicts other than "silent" are untouched regardless of the fingerprints, matching or not.
+v=$(zmq_corroborate_silence "ok 127.0.0.1:18083 speaks ZMTP and advertises Socket-Type XPUB" 0 "800000 2" "800000 2")
+assert_rc "a passing verdict is untouched" "$?" "0"
+assert_eq "a passing verdict's text is untouched" "$v" "ok 127.0.0.1:18083 speaks ZMTP and advertises Socket-Type XPUB"
+v=$(zmq_corroborate_silence "connect-refused no TCP connection to 127.0.0.1:18083" 1 "800000 2" "800000 2")
+assert_rc "a tier-A failure is untouched" "$?" "1"
+assert_contains "a tier-A failure keeps its own reason" "$v" "connect-refused"
+
+# MUTATION PROOF: the equality check is the whole guard. Remove it and EVERY silent verdict
+# downgrades to a warn regardless of the fingerprints — including the moved-chain case above,
+# which is exactly the dead-publisher defect #1497 exists to catch.
+_mutated=$(
+    zmq_corroborate_silence() {
+        local v="$1"
+        case "$v" in silent\ *)
+            echo "quiet ${v#silent }"
+            return 2
+            ;;
+        esac
+        echo "$v"
+        return "$2"
+    }
+    zmq_corroborate_silence "silent 127.0.0.1:18083 published NOTHING within the budget" 1 "800000 2" "800001 2" >/dev/null
+    echo "$?"
+)
+assert_eq "without the equality guard a moved-chain dead publisher is waved through (mutation proof)" "$_mutated" "2"
+
 echo ""
 echo "selftest-zmq-probe: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

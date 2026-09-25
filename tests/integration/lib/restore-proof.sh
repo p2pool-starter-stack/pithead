@@ -109,7 +109,7 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 # Restore proof (#971): after the restore brings the baseline back up, prove the LIVE stack
 # actually runs RESTORE_DIR's on-disk config. A pre-#921 e2e run once left the containers on
 # harness-rendered creds while the on-disk .env kept the real ones — internally consistent, so it
-# mined and looked healthy for a day, while every host-side RPC probe 401ed. Four checks:
+# mined and looked healthy for a day, while every host-side RPC probe 401ed. Five checks:
 #   1. The credential marker baked into the running dashboard container (docker inspect) is the
 #      same line as the on-disk .env's — env_bake_verdict (lib.sh) prints verdict words only,
 #      never values.
@@ -129,7 +129,10 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 #      added the check; anything older classifies as no-check and FAILS rather than passing quietly.
 #   4. The live containers are on the images the baseline ran, or on ones rebuilt from RESTORE_DIR
 #      — never on the ones this run built for the branch. Spelled out at the check itself.
-# Returns 0 when all four hold.
+#   5. monerod and tari are the same containers they were before the deploy, when the branch left
+#      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
+#      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
+# Returns 0 when all five hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
 # shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
 # this file; it is set here because this is where the control-channel verdict is graded.
@@ -277,6 +280,7 @@ PROBE
             ok "restore proof: all $kept service(s) are back on the exact images they ran before this run"
         fi
     fi
+    chain_restore_proof || prc=1
     restore_egress_boot_unit || prc=1
     return "$prc"
 }
