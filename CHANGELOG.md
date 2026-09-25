@@ -148,6 +148,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A restore at setup no longer carries the source machine's released miner onto new hardware
+  ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
+  database records that the source machine's chains had synced and its miner was released. Restored
+  onto a machine whose chains had not synced, the dashboard never held `p2pool`, which ran without
+  its stratum port and stayed unhealthy, so the appliance boot never committed. The wizard and
+  carried restore doors now leave a marker that makes the dashboard hold the miner until this
+  machine's own chains are synced. `./pithead restore`, the same-box recovery command, is
+  unaffected: its box's chains never desynced, so it keeps the backup's gate state as before.
+
 - **A source checkout starts the whole stack after `uninstall` or on a new host
   ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
   and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
