@@ -88,10 +88,10 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_
 _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran test-p2pool-tari-off.sh "$_d0" "$?" || domain_ran test-p2pool-tari-off.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-mode-off.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-enforcement.sh disable=SC2015
