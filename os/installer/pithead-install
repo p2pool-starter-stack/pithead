@@ -199,6 +199,23 @@ main() {
         partition_fresh "$target"
     fi
 
+    # A carried restore replaces the old configuration and role, but keep deliberately retains
+    # /data. Remove the two markers that would otherwise make both boot owners skip its first
+    # restore boot; chain data stays in place for restore_apply's merge.
+    if [ "$state" = "pithead-with-data" ] && [ -f /boot/efi/pithead-restore.enc ]; then
+        local data_part restore_mnt
+        data_part=$(lsblk -lnpo NAME,PARTLABEL "$target" | awk '$2 == "data" {print $1; exit}')
+        [ -b "$data_part" ] || die "no data partition found on $target for the carried restore"
+        restore_mnt=$(mktemp -d)
+        if ! mount "$data_part" "$restore_mnt" ||
+            ! rm -f "$restore_mnt/pithead/config.json" "$restore_mnt/pithead/machine-role" ||
+            ! umount "$restore_mnt" || ! rmdir "$restore_mnt"; then
+            umount "$restore_mnt" 2>/dev/null || true
+            rmdir "$restore_mnt" 2>/dev/null || true
+            die "could not prepare the preserved data for the carried restore"
+        fi
+    fi
+
     local esp slot_a
     esp=$(part_of "$target" 1)
     slot_a=$(part_of "$target" 2)

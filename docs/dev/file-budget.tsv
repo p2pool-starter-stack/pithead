@@ -57,9 +57,9 @@ tests/integration/lib/live-upgrade-support.sh	413
 tests/integration/lib/run-state.sh	403
 tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
-tests/integration/selftest/selftest-rigforge-writable-keys.sh	411
 tests/integration/selftest/selftest.sh	685
 tests/os/failure-evidence.sh	567
+tests/os/phases/install-restore.sh	415
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
 tests/stack/appliance/test-appliance-boot-remint.sh	445
@@ -77,7 +77,6 @@ tests/stack/dashboard/test-dashboard-onion.sh	422
 tests/stack/dashboard/test-dashboard.sh	591
 tests/stack/doctor/test-doctor.sh	470
 tests/stack/lifecycle/recovery.sh	420
-tests/stack/run.sh	407
 tests/stack/secrets/test-secrets.sh	401
 tests/stack/standalone/test_compose.sh	462
 tests/stack/test-backup.sh	476

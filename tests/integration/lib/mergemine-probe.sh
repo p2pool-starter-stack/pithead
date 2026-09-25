@@ -91,6 +91,22 @@ mm_roundtrip_verdict() {
     return 1
 }
 
+# The container's start time as a `--since` bound both engines' `compose logs` accept (#2326).
+# Docker renders `.State.StartedAt` as RFC 3339 (`2026-09-20T05:54:04.957178532Z`) and passes
+# through untouched. podman, the appliance's engine behind the podman-docker shim, renders it as
+# Go's time.String() (`2026-09-20 05:54:04.957178532 +0000 UTC`), which docker-compose's client
+# refuses before it sends any request. That refusal went to the `grep` below with the log, so the
+# capture came back empty and every appliance run read "absent": job 69@90f47ed631's guest journal
+# shows podman's API receiving no `/logs` request at all while the leg ran. Rewritten here to
+# RFC 3339 with its offset, so the bound names the same instant on both engines.
+mm_started() {
+    local started
+    started="$(rx "docker inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')"
+    [ -n "$started" ] || return 1
+    printf '%s\n' "$started" |
+        sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?) ([+-][0-9]{2})([0-9]{2}) .*$/\1T\2\4:\5/'
+}
+
 # Capture the CURRENT container run's merge-mining lines. Both bounds are load-bearing:
 #
 #   --since <StartedAt>  excludes any EARLIER startup epoch. Docker's restart policy can restart
@@ -105,9 +121,42 @@ mm_roundtrip_verdict() {
 # wire, so none of that is transferred here (#1582/#1585/#1586).
 mm_capture_startup() {
     local started
-    started="$(rx "docker inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')"
-    [ -n "$started" ] || return 1
+    started="$(mm_started)" || return 1
     rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -a MergeMiningClientTari || true" 2>/dev/null
+}
+
+# Diagnostic lines from the same window, for a FAIL only (#2326). An empty capture cannot say
+# whether p2pool built no client, the client could not reach Tari, or the log was never read; these
+# lines can: a `compose logs` error, the entrypoint's launch and bridge lines, p2pool's Tari and error
+# lines. The log itself carries both wallets, the RPC credential and the onion, and p2pool's own
+# startup format is not captured anywhere in this repo, so the filter is an ALLOWLIST applied on the
+# target: only matching lines cross the wire. What crosses is then passed through redact(), with this
+# run's remote endpoints and every IPv4 address masked, private ranges included.
+MM_EXCERPT_LINES=80
+MM_EXCERPT_KEEP='error|fail|refus|invalid|unknown|cannot|denied|timed out|timeout|no such|tari|p2pool-entrypoint'
+mm_startup_excerpt() {
+    local started
+    # shellcheck disable=SC2034  # read by redact_remote_output through dynamic scope
+    local REMOTE_NODE_HOSTS=("${REMOTE_MONERO_HOST:-}" "${REMOTE_TARI_HOST:-}")
+    started="$(mm_started)" || return 0
+    rx "docker compose logs --no-color --since $(quote_arg "$started") p2pool 2>&1 | head -n ${MM_WINDOW_LINES} | grep -aiE '${MM_EXCERPT_KEEP}' | head -n ${MM_EXCERPT_LINES} || true" 2>/dev/null |
+        mm_strip_ansi | redact_remote_output | mm_mask_excerpt
+}
+
+# The excerpt's own masks, over redact(), which is keyed on flag and JSON shapes and cannot see a
+# secret written in prose. In order: every IPv4; anything IPv6-shaped (log timestamps match too
+# and are masked with them — the cost of not guessing); a `name:value` or `name=value` token, which is how a
+# credential reads in prose (a `scheme://` URL and a `label: text` pair are left alone), with `=`-padded
+# base64 masked first so its padding is not read as an assignment; and any
+# 40+ character alphanumeric run, since a Tari address's length is not pinned anywhere here. PURE.
+mm_mask_excerpt() {
+    sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g
+        s/[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}/<ip>/g
+        s/[A-Za-z0-9_.-]*[A-Za-z][A-Za-z0-9_.-]*:[^[:space:]\/][^[:space:]]*/<redacted>/g
+        s/[A-Za-z0-9+\/]{16,}={1,2}/<redacted>/g
+        s/([A-Za-z0-9_.-]+)=[^[:space:]]+/\1=<redacted>/g
+        s/[A-Za-z0-9]{40,}/<redacted-address>/g
+        s/^/          /'
 }
 
 # The release-gate leg: PASS, FAIL, or an honest counted SKIP — never a silent green.
@@ -142,7 +191,7 @@ mm_capture_startup() {
 # that previously passed or failed can become a skip. That direction is the safety argument, and
 # the self-test asserts all three moved cases rather than resting on it.
 assert_mergemine_roundtrip() {
-    local lines verdict
+    local lines verdict excerpt=""
     if ! lines="$(mm_capture_startup)"; then
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" "could not read p2pool's container start time"
         return 0
@@ -152,26 +201,18 @@ assert_mergemine_roundtrip() {
             "p2pool built no merge-mining client and monerod could not be confirmed caught up — p2pool constructs the client only after the block-header download succeeds, so the signal cannot exist on this run" by-design
         return 0
     fi
-    verdict="$(mm_roundtrip_verdict "$lines")"
+    verdict="$(mm_roundtrip_verdict "$lines")" || excerpt="
+        diagnostic lines from this run's startup log (allowlisted, at most ${MM_EXCERPT_LINES}, redacted):
+$(mm_startup_excerpt)"
     case "$verdict" in
     roundtrip*) it_pass "p2pool reached the Tari node over gRPC — ${verdict} (#1397)" ;;
     local-only)
         it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
-            "p2pool built its merge-mining client but never read a chain_id — the client is up and Tari is NOT answering"
+            "p2pool built its merge-mining client but never read a chain_id — the client is up and Tari is NOT answering${excerpt}"
         ;;
     *)
-        # A wizard-provisioned appliance guest reproduces this "absent" verdict even with Monero
-        # AND Tari both independently confirmed synced and reachable (#2062, jobs 447/454/457/484/
-        # 497) — p2pool never builds a merge-mining client there at all. Filed as #2326, ruled
-        # blocked on this phase landing before it can be chased further; a real, open,
-        # appliance-specific gap, not something --appliance-channel's own caller can fix blind.
-        if [ "${IT_APPLIANCE_CHANNEL:-0}" = "1" ]; then
-            it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" \
-                "appliance channel (#2326): p2pool never builds a merge-mining client on a wizard-provisioned guest even with Monero and Tari both confirmed synced — open separately, not this run's to fix" by-design
-        else
-            it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
-                "no MergeMiningClientTari line in the first ${MM_WINDOW_LINES} lines after the container started — p2pool built no merge-mining client, or the log could not be read"
-        fi
+        it_fail "p2pool merge-mining gRPC round-trip (#1397)" \
+            "no MergeMiningClientTari line in the first ${MM_WINDOW_LINES} lines after the container started — p2pool built no merge-mining client, or the log could not be read${excerpt}"
         ;;
     esac
 }
