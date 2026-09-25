@@ -232,67 +232,6 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
         printf 'archive contains invalid generated identity or secret state' >"$errf"
         return 1
     fi
-    # Apply only the accepted files/data trees, from wherever the archive's own root staged them
-    # to their fixed destination on THIS box ($PWD). Do not copy staging's ancestor directories
-    # onto /: their metadata is not part of the backup contract.
-    local rel source dest copy_failed=0
-    while IFS= read -r rel; do
-        source="$tree/$root$rel"
-        [ -e "$source" ] || continue
-        case "$rel" in
-        "$CONFIG_FILE")
-            if [ "$dest_root" = "$PWD" ]; then dest=$(restore_setup_config_path); else dest="$dest_root/$CONFIG_FILE"; fi
-            ;;
-        *) dest="$dest_root/$rel" ;;
-        esac
-        if [[ "$dest" = */ ]]; then
-            dest="${dest%/}"
-            case "$rel" in
-            data/monero/ | data/tari/ | data/p2pool/)
-                # Chain data survives this box's own `keep` policy (#2195): a restore must not
-                # force a resync, so the archive's tree is MERGED into whatever already sits here
-                # instead of replacing it — an existing file wins on a name collision, and files
-                # only the archive has are added alongside it. See docs/operations.md's
-                # "Restore collision rules" for why this differs from `pithead restore`.
-                mkdir -p -- "$dest" || {
-                    copy_failed=1
-                    break
-                }
-                cp -a -n -- "$source"/. "$dest"/ || {
-                    copy_failed=1
-                    break
-                }
-                ;;
-            *)
-                rm -rf -- "$dest"
-                # The parent may not exist yet (#2051): prepare_directories runs inside setup(),
-                # which the restore doors call AFTER this, so on a fresh machine `data/` is simply
-                # absent and `mv -T` fails ENOENT on the first tree item. That aborted the whole
-                # apply with config.json and .env already written — a partial restore the caller
-                # then read as a valid pre-seed, with the carried DEPLOYMENT_COMPLETED never
-                # cleared because the clear sits past the failure. Measured on the bench: the
-                # machine refused setup as already provisioned and ran zero containers.
-                mkdir -p -- "$(dirname -- "$dest")" || {
-                    copy_failed=1
-                    break
-                }
-                mv -T -- "$source" "$dest" || {
-                    copy_failed=1
-                    break
-                }
-                ;;
-            esac
-        else
-            restore_setup_publish_file "$source" "$dest" || {
-                copy_failed=1
-                break
-            }
-        fi
-    done < <(restore_setup_relative_items)
-    if [ "$copy_failed" = 1 ]; then
-        printf 'could not apply the backup files' >"$errf"
-        return 1
-    fi
     # #1239 (live KVM guest evidence): the archive's .env is the SOURCE machine's own —
     # DEPLOYMENT_COMPLETED=true there records THAT machine's prior deployment, not this
     # hardware's. Every door that reaches here feeds a headless `setup()` on the restored machine
@@ -302,16 +241,48 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
     # live (#924), and it has no way to tell "restored, never provisioned HERE" apart from
     # "live" — a carried true fires that guard's exact fatal, no-tty refusal, and setup never
     # runs: prepare_directories, render_env, provision_tor never fire, no container starts. A
-    # just-restored box has NOT completed deployment on this hardware — clear the marker so the
-    # caller's setup() actually provisions it. The staged canonicalizer has already retained only
-    # validated generated secrets and Tor identity while deriving host and policy from config;
-    # this path changes its one hardware-specific lifecycle value. Scoped to THIS commit
-    # path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
+    # just-restored box has NOT completed deployment on this hardware — clear the marker in the
+    # staged .env, before the commit, so the caller's setup() actually provisions it and a
+    # failure here leaves the live side untouched (#2689). The staged canonicalizer has already
+    # retained only validated generated secrets and Tor identity while deriving host and policy
+    # from config; this path changes its one hardware-specific lifecycle value. Scoped to THIS
+    # commit path on purpose — stack_restore (the admin `./pithead restore` command, for a box already
     # deployed on its own hardware) has its own separate extraction and never calls restore_apply,
     # so a live box's restore keeps its completion marker exactly as it should.
-    if [ -f "$dest_root/$ENV_FILE" ]; then
-        safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$dest_root/$ENV_FILE"
+    if ! safe_sed 's/^DEPLOYMENT_COMPLETED=.*/DEPLOYMENT_COMPLETED=false/' "$tree/$root$ENV_FILE"; then
+        printf 'could not apply the backup files' >"$errf"
+        return 1
     fi
+    # The dashboard database carries the source machine's #35 sync-gate release (#2626); this
+    # machine's chains may not be synced. Planting the marker in the STAGED tree, beside the
+    # DEPLOYMENT_COMPLETED clear above, makes it land atomically with the rest of the commit — it
+    # either arrives with a genuine dashboard database or not at all, with no separate failure
+    # mode and no extra rollback bookkeeping in restore_commit_items.
+    if [ -d "$tree/${root}data/dashboard" ] && ! : >"$tree/${root}data/dashboard/sync-gate-reset"; then
+        printf 'could not apply the backup files' >"$errf"
+        return 1
+    fi
+    # Apply only the accepted files/data trees, from wherever the archive's own root staged them
+    # to their fixed destination under <destination-root> (this box's $PWD, or the installer's
+    # mounted target), all or nothing (restore_commit_items). Do not copy staging's ancestor
+    # directories onto /: their metadata is not part of the backup contract.
+    local rc=0
+    restore_commit_items "$tree/$root" "$tmp" "$dest_root" || rc=$?
+    case "$rc" in
+    0) ;;
+    2)
+        printf 'could not apply the backup files, and some previous files could not be put back — they are kept beside their original names as .restore-old copies' >"$errf"
+        return 1
+        ;;
+    3)
+        printf 'could not apply the backup files; the previous files are back, but some files the restore added could not be removed — look for .restore copies and new chain files' >"$errf"
+        return 1
+        ;;
+    *)
+        printf 'could not apply the backup files — nothing on this machine was changed' >"$errf"
+        return 1
+        ;;
+    esac
     return 0
 )
 

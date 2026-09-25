@@ -333,6 +333,7 @@ echo "== run_rigforge_pools: #2470 — a pools row on record no longer skips the
 export IT_RIG_POOLS_PROBE=$'[\n  {"url": "probe:1", "pass": "probesecret"}\n]'
 rig_key_mark() { printf '%s\n' "$4" >>"$MARK_LOG"; }
 rig_key_clear() { printf 'clear %s\n' "$3" >>"$MARK_LOG"; }
+STUB_HISTORY='[{"change_id":"c-applied","status":"applied"}]' # c-pools unconfirmed: no retiring (#2407)
 for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{"url":"real:1","pass":"leaked"}]}}'; do
     STUB_DETAIL="$_detail"
     reset_applies
@@ -340,23 +341,22 @@ for _detail in "$STUB_DETAIL" '{"last_applied":{}}' '{"last_applied":{"pools":[{
     quietly run_rigforge_pools rig1 >/dev/null
     assert_eq "the leg applies the compacted probe once, never the record or the rig's read [$_detail]" \
         "$(applies)" '{"pools":[{"url":"probe:1","pass":"probesecret"}]}'
-    assert_eq "the ledger holds the probe on one line, uncleared while the rig says accepted [$_detail]" \
+    assert_eq "the ledger holds the probe on one line, uncleared while no history row confirms it [$_detail]" \
         "$(cat "$MARK_LOG")" '[{"url":"probe:1","pass":"probesecret"}]'
 done
 # The rig's decision retires the entry; the mark must land before the apply goes out (#1379).
 _worker_apply() {
     printf '%s\n' "$2" >>"$APPLY_LOG"
     echo apply >>"$MARK_LOG"
-    printf '{"status":"%s","changed_keys":["pools"]}' "$STUB_STATUS"
+    printf '{"status":"%s","changed_keys":["pools"],"change_id":"c-%s"}' "$STUB_STATUS" "$STUB_STATUS"
 }
-for _case in 'applied 2 apply,clear pools' 'rejected 1 apply,clear pools' 'rolled_back 1 apply,clear pools' 'failed 1 apply'; do
+for _case in 'applied 3 apply,clear pools' 'rejected 1 apply,clear pools' 'rolled_back 1 apply,clear pools' 'failed 1 apply'; do
     read -r STUB_STATUS _passes _want <<<"$_case"
     : >"$MARK_LOG"
     counts="$(quietly run_rigforge_pools rig1)"
     assert_eq "passing rows; marked before the apply, retired only once the rig decides [$STUB_STATUS]" \
         "${counts%,*}|$(sed 1d "$MARK_LOG" | paste -sd, -)" "$_passes|$_want"
 done
-
 # #1546: each shape would restore a borrowed miner to a credential-less config. Refused, never POSTed.
 for _shape in '[{"url":"probe:1"}]' '[{"url":"probe:1","pass":""}]' '[]' '{"p":{"url":"probe:1","pass":"x"}}' null; do
     IT_RIG_POOLS_PROBE="$_shape"

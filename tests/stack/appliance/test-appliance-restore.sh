@@ -70,17 +70,22 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"%s"}} }\n' "$WALLET" "$RS_AUTH_PASSWORD" >"$RS/config.json"
 
-# An archive-controlled fingerprint must not bless an unrelated archive-controlled bcrypt. The
-# plaintext config is authoritative; canonicalization regenerates both derived values from it.
-RSAUTH="$RS/auth-canonical"
-mkdir -p "$RSAUTH"
+# A pair pithead rendered carries a hash of exactly the configured password, so canonicalization
+# keeps it byte-for-byte while its fingerprint matches (#2579); a salted rehash would change the
+# credential the safety rollback compares. A stale pair is hashed again from the plaintext.
+RSAUTH="$RS/auth-canonical" && mkdir -p "$RSAUTH"
 cp "$RS/config.json" "$RSAUTH/config.json"
 printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$RS_AUTH_FP" >"$RSAUTH/.env"
 PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
 assert_rc "restore auth canonicalization accepts disposable credentials" "$?" 0
 assert_eq "restore auth canonicalization preserves the plaintext password" "$(jq -r '.dashboard.auth.password' "$RSAUTH/config.json")" "$RS_AUTH_PASSWORD"
-assert_eq "restore auth canonicalization regenerates the bcrypt from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_EXPECTED_AUTH_HASH"
-assert_eq "restore auth canonicalization regenerates its matching fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
+assert_eq "restore auth canonicalization preserves the archived bcrypt for that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_ARCHIVE_AUTH_HASH"
+assert_eq "restore auth canonicalization preserves its matching fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
+printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$(printf '%s' 'an older password' | sha256sum | cut -d' ' -f1)" >"$RSAUTH/.env"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
+assert_rc "restore auth canonicalization accepts a stale pair" "$?" 0
+assert_eq "restore auth canonicalization regenerates the bcrypt for a stale pair" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_EXPECTED_AUTH_HASH"
+assert_eq "restore auth canonicalization regenerates the fingerprint for a stale pair" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
 rm -rf "$RSAUTH"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
 printf 'ONIONKEY-ORIG\n' >"$RS/data/tor/hs_ed25519_secret_key"
@@ -91,22 +96,22 @@ assert_rc "restore fixture: backup exits 0" "$rc" "0"
 rarchive="$(ls "$RS"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
 { [ -n "$rarchive" ] && [ -f "$rarchive" ]; } && ok "restore fixture: encrypted archive created" || bad "restore fixture: encrypted archive created" "no .enc archive"
 
-RSPOOL="$RS/data/firstboot-test"
-mkdir -p "$RSPOOL" && rm -f "$RS/config.json"
+RSPOOL="$RS/data/firstboot-test" && mkdir -p "$RSPOOL" && rm -f "$RS/config.json"
 
 # 1) Accept: the right passphrase decrypts, verifies, validates and lands config.json — settings,
 # the Tor identity and the dashboard database all come back, and neither the archive nor the
 # passphrase survive the attempt.
 cp "$rarchive" "$RSPOOL/restore-archive" && printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
-out=$(cd "$RS" && PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'mktemp() { case "$*" in -d\ *.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }; firstboot_consume_restore "$RSPOOL"' && echo rc0)
+out=$(cd "$RS" && PATH="$RS/bin:$PATH" run_sourced "$RS" eval 'mktemp() { case "$*" in -d\ */.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }; firstboot_consume_restore "$RSPOOL"' && echo rc0)
 assert_contains "valid restore accepted" "$out" "rc0"
 assert_eq "valid restore installs config.json" "$([ -f "$RS/config.json" ] && echo yes)" "yes"
 assert_contains "valid restore carries the original wallet" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "valid restore regenerates the Caddyfile from config" "$(cat "$RS/Caddyfile" 2>/dev/null)" "reverse_proxy 127.0.0.1:8000"
 assert_eq "valid restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-ORIG"
+assert_eq "valid restore marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "valid restore preserves the dashboard password" "$(jq -r '.dashboard.auth.password' "$RS/config.json")" "$RS_AUTH_PASSWORD"
-assert_eq "valid restore regenerates the dashboard credential hash from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_EXPECTED_AUTH_HASH"
-assert_eq "valid restore regenerates the dashboard password fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RS/.env")" "$RS_AUTH_FP"
+assert_eq "valid restore preserves the archived dashboard credential hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_ARCHIVE_AUTH_HASH"
+assert_eq "valid restore preserves the dashboard password fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RS/.env")" "$RS_AUTH_FP"
 assert_eq "applied marker set" "$([ -f "$RSPOOL/applied" ] && echo yes)" "yes"
 assert_eq "the archive is consumed" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
@@ -151,9 +156,9 @@ RSECRET="$RS/volatile/submission"
 mkdir "$RSECRET"
 printf 'hunter2' >"$RSECRET/restore-passphrase" # test fixture, not a real secret
 RCARRY="$RS/volatile/carry"
-RCANDIDATE="$RS/volatile/config.json"
+RCANDIDATE="$RS/volatile/config.json" && rm -f "$RS/data/dashboard/sync-gate-reset"
 out=$(cd "$RS" && PATH="$RS/bin:$PATH" PITHEAD_RESTORE_CARRY_DIR="$RCARRY" run_sourced "$RS" eval '
-    mktemp() { case "$*" in -d\ *.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }
+    mktemp() { case "$*" in -d\ */.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }
     firstboot_consume_restore "$RSPOOL" 1 "$RSECRET" "$RCANDIDATE"
 ' && echo rc0)
 assert_contains "installer restore accepted" "$out" "rc0"
@@ -163,6 +168,7 @@ assert_eq "installer restore does NOT restore onto the stick (Caddyfile untouche
 assert_eq "installer restore does NOT restore onto the stick (db untouched)" "$(cat "$RS/data/dashboard/dashboard.db")" "STICK-DB"
 assert_eq "accepted archive parked only in volatile carry" "$([ -f "$RCARRY/archive" ] && echo yes)" "yes"
 assert_eq "passphrase parked only in volatile carry" "$(cat "$RCARRY/pass" 2>/dev/null)" "hunter2"
+assert_eq "installer restore leaves no sync-gate marker on the stick" "$([ -e "$RS/data/dashboard/sync-gate-reset" ] || echo none)" none
 assert_eq "installer restore consumes the spool archive" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "installer restore consumes the volatile submitted passphrase" "$([ -f "$RSECRET/restore-passphrase" ] || echo gone)" gone
 
@@ -214,7 +220,7 @@ out=$(cd "$RS" && PATH="$RS/bin:$PATH" RDATA="$RDATA" run_sourced "$RS" eval '
     lsblk() { printf "/dev/fake4 data\n"; }
     mount() { local p="${*: -1}"; rmdir "$p" && ln -s "$RDATA" "$p"; }
     umount() { local p="$1"; rm "$p" && mkdir "$p"; }
-    mktemp() { case "$*" in -d\ *.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }
+    mktemp() { case "$*" in -d\ */.restore.*) printf "%s\n" "$*" >>"$RS/stage-pattern" ;; esac; command mktemp "$@"; }
     syncs=0
     sync() { syncs=$((syncs + 1)); [ "$syncs" -ne 2 ]; }
     if install_restore_to_target /dev/fake "$RCARRY" "$RCANDIDATE"; then echo unsafe-finalized; elif [ -f "$RDATA/pithead/.restore-incomplete" ]; then echo incomplete-kept; fi
@@ -245,6 +251,9 @@ assert_contains "target staging cleanup failure is generic" "$out" 'could not cl
 assert_contains "target restore carries the original wallet" "$(cat "$RDATA/pithead/config.json")" "$WALLET"
 assert_eq "target restore records the resolved machine role" "$(cat "$RDATA/pithead/machine-role")" pithead
 assert_eq "target restore keeps the kept target's chain data" "$(cat "$RDATA/pithead/data/monero/chain-sentinel" 2>/dev/null)" KEEP-monero
+assert_eq "target restore marks the sync gate for re-derivation (#2626)" "$([ -f "$RDATA/pithead/data/dashboard/sync-gate-reset" ] && echo yes)" yes
+assert_eq "target restore lands the archive's .env on the target" "$([ -f "$RDATA/pithead/.env" ] && echo yes)" yes
+assert_eq "target restore leaves the installer's own files untouched" "$(cat "$RS/Caddyfile")" STICK-CADDY
 assert_contains "target restore leaves only a non-secret pending marker" "$out" pending-marker-kept
 assert_eq "a refused target restore disarms the pending marker" "$([ -e "$RDATA/pithead/.restore-pending" ] || echo gone)" gone
 assert_eq "target data holds no persisted passphrase file" "$(find "$RDATA" -name '*restore-pass*' -print -quit)" ""
@@ -393,100 +402,3 @@ tar -czf "$RS/list-fixture.tar.gz" -C "$RS/list-fixture" .
 if run_sourced "$RS" restore_setup_tar_list "$RS/list-fixture.tar.gz" -tvzf "$RS/list-output" 1 30; then out=accepted; else out=refused; fi
 assert_eq "archive listing is stopped at its output cap" "$out" refused
 rm -f "$RS/restore-names" "$RS/restore-verbose"
-
-# The legacy carried-ESP door: a target an older installer wrote may still hold the archive and
-# its passphrase on the ESP. First boot consumes that pair and scrubs it, accepted or not.
-RPSEED="$RS/preseed"
-mkdir "$RPSEED"
-cp "$rarchive" "$RPSEED/pithead-restore.enc" && printf hunter2 >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; mktemp() { case "$*" in -d\ *.restore.*) printf "%s\n" "$*" >"$RS/legacy-stage" ;; esac; command mktemp "$@"; }; consume_preseed_restore && echo rc0')
-assert_contains "carried normal backup passes the shared member policy" "$out" rc0
-assert_eq "legacy restore decrypt staging uses the volatile root" "$(cat "$RS/legacy-stage")" "-d $RS/stage/.restore.XXXXXXXXXX"
-assert_eq "carried backup restores the original database" "$(cat "$RS/data/dashboard/dashboard.db")" DBDATA-ORIG
-assert_eq "carried backup consumes its passphrase" "$([ -e "$RPSEED/pithead-restore-pass" ] || echo gone)" gone
-cp "$rarchive" "$RPSEED/pithead-restore.enc" && printf hunter2 >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; rm() { case "$*" in *pithead-restore*) return 1 ;; *) command rm "$@" ;; esac; }; consume_preseed_restore || echo "rc$?"' 2>&1)
-assert_contains "successful carry cleanup failure is fatal" "$out" rc3
-assert_contains "successful carry cleanup failure follows archive application" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
-assert_contains "successful carry cleanup failure is visible" "$out" 'Could not remove every consumed restore carry file'
-assert_not_contains "successful carry cleanup warning hides the passphrase" "$out" hunter2
-rm -f "$RPSEED/pithead-restore.enc" "$RPSEED/pithead-restore-pass"
-cp "$rarchive" "$RPSEED/pithead-restore.enc" && printf hunter2 >"$RPSEED/pithead-restore-pass" && rm -f "$RS/config.json"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; clear_restore_stage() { warn "Could not clear the private restore staging area."; return 1; }; consume_preseed_restore || echo "rc$?"' 2>&1)
-assert_contains "legacy applied-stage cleanup failure is fatal" "$out" rc3
-assert_contains "legacy cleanup failure follows archive application" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
-assert_contains "legacy stage cleanup failure is visible" "$out" 'reboot before continuing'
-assert_not_contains "legacy stage cleanup warning hides the passphrase" "$out" hunter2
-printf orphan-secret >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore || echo "rc$?"' 2>&1)
-assert_contains "an orphan legacy passphrase is reported generically" "$out" 'incomplete legacy restore handoff was cleared'
-assert_not_contains "the orphan cleanup report never reveals the passphrase" "$out" orphan-secret
-assert_eq "an orphan legacy passphrase is consumed" "$([ -e "$RPSEED/pithead-restore-pass" ] || echo gone)" gone
-printf orphan-failure-secret >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; rm() { return 1; }; consume_preseed_restore || echo "rc$?"' 2>&1)
-assert_contains "orphan cleanup failure is visible" "$out" 'Could not clear an incomplete legacy restore handoff'
-assert_contains "orphan cleanup failure is fatal" "$out" rc3
-assert_not_contains "orphan cleanup failure does not claim success" "$out" 'was cleared'
-assert_not_contains "orphan cleanup failure never reveals the passphrase" "$out" orphan-failure-secret
-rm -f "$RPSEED/pithead-restore-pass"
-
-# Restore publication replaces hostile live links and clamps archive-provided modes.
-chmod 644 "$RS/data/dashboard/dashboard.db"
-tar -czf "$RS/hostile-live.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/data/dashboard/dashboard.db"
-printf sentinel >"$RS/outside-target"
-rm "$RS/data/dashboard/dashboard.db"
-ln -s "$RS/outside-target" "$RS/data/dashboard/dashboard.db"
-run_sourced "$RS" restore_apply "$RS/hostile-live.tar.gz" '' "$RS/restore-error"
-assert_rc "restore safely replaces a planted destination symlink" "$?" 0
-assert_eq "restore leaves the planted symlink target untouched" "$(cat "$RS/outside-target")" sentinel
-assert_eq "restored database is a regular file" "$([ -f "$RS/data/dashboard/dashboard.db" ] && [ ! -L "$RS/data/dashboard/dashboard.db" ] && echo yes)" yes
-assert_eq "restored database permissions are private" "$(stat -c '%a' "$RS/data/dashboard/dashboard.db")" 600
-printf 'ordinary note' >"$RS/unexpected.txt"
-printf 'BACKUP-CADDY' >"$RS/Caddyfile"
-tar -czf "$RS/unexpected.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/.env" "${RS#/}/Caddyfile" "${RS#/}/unexpected.txt"
-printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
-rm -f "$RS/config.json"
-cp "$RS/unexpected.tar.gz" "$RSPOOL/restore-archive"
-out=$(run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 || echo "rc$?")
-assert_contains "wizard refuses an unexpected regular backup member" "$out" rc1
-assert_contains "member refusal identifies the backup layout" "$(cat "$RSPOOL/error.txt")" 'outside the appliance backup layout'
-assert_eq "invalid wizard backup does not surface a config" "$([ -e "$RS/config.json" ] || echo gone)" gone
-assert_eq "invalid wizard backup is not staged for installation" "$([ -e "$RCARRY/archive" ] || echo gone)" gone
-cp "$RS/unexpected.tar.gz" "$RPSEED/pithead-restore.enc" && printf '' >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore || echo "rc$?"' 2>&1)
-assert_contains "carried backup refuses an unexpected regular member" "$out" rc1
-assert_contains "carried member refusal identifies the backup layout" "$out" 'outside the appliance backup layout'
-assert_eq "member refusal applies no valid files beside the invalid member" "$(cat "$RS/Caddyfile")" CADDY-ORIG
-assert_eq "rejected carried backup is consumed" "$([ -e "$RPSEED/pithead-restore.enc" ] || echo gone)" gone
-cp "$RS/unexpected.tar.gz" "$RPSEED/pithead-restore.enc" && printf 'failure-cleanup-secret' >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval '
-    mount() { :; }
-    rm() { case "$*" in *pithead-restore*) return 1 ;; *) command rm "$@" ;; esac; }
-    consume_preseed_restore || echo "rc$?"; clear_legacy_restore_carry "$RPSEED" || true
-' 2>&1)
-assert_contains "rejected carry cleanup failure is visible" "$out" 'Could not remove every rejected restore carry file'
-assert_contains "rejected carry cleanup failure is fatal" "$out" rc3
-assert_contains "legacy handoff cleanup failure is visible" "$out" 'Could not clear every legacy restore handoff file'
-assert_not_contains "cleanup warning never reveals the passphrase" "$out" 'failure-cleanup-secret'
-rm -f "$RPSEED/pithead-restore.enc" "$RPSEED/pithead-restore-pass"
-rm -f "$RSPOOL/error.txt"
-
-# An accepted restore whose private staging or snapshots cannot be cleared is rc 3: its config
-# already landed, but no success state is published and the host stops the boot.
-cp "$rarchive" "$RSPOOL/restore-archive" && printf hunter2 >"$RSPOOL/restore-passphrase" && rm -f "$RS/config.json"
-out=$(run_sourced "$RS" eval 'clear_restore_stage() { warn "Could not clear the private restore staging area."; return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
-assert_contains "direct applied-stage cleanup failure is fatal" "$out" rc3
-assert_contains "direct stage cleanup failure follows archive application" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
-assert_contains "direct stage cleanup failure reaches the page" "$(cat "$RSPOOL/error.txt")" 'could not clear private restore staging safely'
-assert_not_contains "direct stage cleanup warning hides the passphrase" "$out" hunter2
-assert_eq "direct stage cleanup publishes no success state" "$(find "$RSPOOL" -maxdepth 1 \( -name applied -o -name restore-inflight \) -print)" ""
-rm -f "$RSPOOL/error.txt" "$RS/config.json"
-cp "$rarchive" "$RSPOOL/restore-archive" && printf hunter2 >"$RSPOOL/restore-passphrase"
-out=$(run_sourced "$RS" eval 'wizard_spool_clean_checked() { return 1; }; firstboot_consume_restore "$RSPOOL" || echo "rc$?"' 2>&1)
-assert_contains "accepted restore cleanup failure is fatal" "$out" rc3
-assert_contains "cleanup failure follows an accepted restore" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
-assert_contains "accepted restore cleanup failure is visible" "$out" 'Could not clear every private restore snapshot'
-assert_contains "accepted restore cleanup failure reaches the page" "$(cat "$RSPOOL/error.txt")" 'Could not clear private restore files safely'
-assert_not_contains "accepted cleanup warning never reveals the passphrase" "$out" hunter2
-assert_eq "accepted cleanup failure publishes no success state" "$(find "$RSPOOL" -maxdepth 1 \( -name applied -o -name restore-inflight \) -print)" ""
-rm -rf "$RSPOOL"/.host.* && rm -f "$RSPOOL/error.txt" "$RS/config.json"

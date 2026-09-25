@@ -94,7 +94,10 @@ validate_worker_endpoints() {
 # silently picking one leaves the other a stale, unnoticed copy of hosts and tokens. Set to the
 # SAME value they are not a conflict, and the old name is simply dropped. An empty dashboard.workers
 # array is a schema default, never an operator choice (#679) — the dashboard config editor merges
-# config.reference.json UNDER the operator's config — so it can never trip the refusal.
+# config.reference.json UNDER the operator's config — so it can never trip the refusal. For the
+# same reason an xmrig_proxy.* value equal to its v1.x reference default (identical in every 1.x
+# that shipped the block) never conflicts either (#2690): a v1.x editor save carries the whole
+# block at those defaults beside the operator's xvb.*, and 1.x let xvb.* win anyway.
 # Write-back rules follow persist_node_credentials: never on a dry run (#556) — which also covers
 # every control-channel preview, since preview dry-runs a staged copy — atomic temp+mv under
 # umask 077, and best-effort. The pre-migration file is kept as ${CONFIG_FILE}.bak-1x. The
@@ -102,17 +105,18 @@ validate_worker_endpoints() {
 # config.json root-owned — the #480 bug class control_reown_operator_files exists for, handled here
 # because this write happens mid-apply, before that reown runs.
 readonly XVB_ALIAS_KEYS_JQ='["enabled", "url", "donor_id"]'
+readonly XVB_ALIAS_V1_DEFAULTS_JQ='{"enabled": true, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}'
 migrate_legacy_workers() {
     local conflict owner populated tmp="${CONFIG_FILE}.tmp"
     [ -f "$CONFIG_FILE" ] || return 0
     # The refusal is checked on EVERY run, dry or not: a config that sets an old and a new name to
     # different values must fail the apply it was handed to, not just the one that would rewrite it.
-    conflict=$(jq -r --argjson ks "$XVB_ALIAS_KEYS_JQ" '
+    conflict=$(jq -r --argjson ks "$XVB_ALIAS_KEYS_JQ" --argjson v1 "$XVB_ALIAS_V1_DEFAULTS_JQ" '
         [ (select(((.dashboard // {}) | .workers // []) != [] and ((.workers // {}) | .list // []) != []
                   and (.dashboard.workers != .workers.list))
            | "workers.list[] and dashboard.workers[]"),
           ($ks[] as $k | select(((.xmrig_proxy // {}) | has($k)) and ((.xvb // {}) | has($k))
-                                and (.xmrig_proxy[$k] != .xvb[$k]))
+                                and (.xmrig_proxy[$k] != .xvb[$k]) and (.xmrig_proxy[$k] != $v1[$k]))
            | "xvb.\($k) and xmrig_proxy.\($k)") ] | join("; ")' "$CONFIG_FILE" 2>/dev/null)
     if [ -n "$conflict" ]; then
         error "config.json sets both a removed 1.x key and its replacement to different values ($conflict). The 1.x names were removed in 2.0.0; keep the replacement, delete the old key, and re-run."

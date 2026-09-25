@@ -361,6 +361,7 @@ _phase_install_restore() {
             done
             ;;
         esac
+        restore_sync_gate_verdict "$restore_case" # #2626, every case in this loop
         if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
             ok "restore leg: $verdict"
         else
@@ -386,11 +387,8 @@ _phase_install_restore() {
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
-        if [ -n "$target_chain_sentinel" ]; then
-            _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
-                ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
-                bad "restore leg: fixture or pre-restore target chain sentinel is missing after restore"
-        fi
+        [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
+        restore_fixture_chain_verdict "$target_chain_sentinel"
         local new_onion="" tor_hostname=""
         local odeadline
         odeadline=$(($(date +%s) + 600))

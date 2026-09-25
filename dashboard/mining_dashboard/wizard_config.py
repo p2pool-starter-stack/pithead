@@ -4,6 +4,9 @@ import re
 from copy import deepcopy
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
+# Every 1.x reference default for the alias block. A v1.x editor save carries the whole block at
+# these values beside the operator's xvb.*, so they are schema defaults, never a conflict (#2690).
+_XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
 # A missing config means a genuinely new machine. Tari is opt-in there, while the reference
 # remains ``local`` so an older config that never carried the switch keeps merge-mining.
@@ -68,7 +71,16 @@ def _legacy_conflicts(cfg: dict) -> list[str]:
         if "xvb" in cfg and cfg["xmrig_proxy"] != cfg["xvb"]:
             conflicts.append("xvb and xmrig_proxy")
     for key in _XVB_ALIASES:
-        if key in old_xvb and key in new_xvb and old_xvb[key] != new_xvb[key]:
+        if (
+            key in old_xvb
+            and key in new_xvb
+            and old_xvb[key] != new_xvb[key]
+            # type() too: jq's equality is strict, so ``1`` is no v1 ``true`` default on the host.
+            and not (
+                old_xvb[key] == _XVB_ALIAS_V1_DEFAULTS[key]
+                and type(old_xvb[key]) is type(_XVB_ALIAS_V1_DEFAULTS[key])
+            )
+        ):
             conflicts.append(f"xvb.{key} and xmrig_proxy.{key}")
     return conflicts
 
