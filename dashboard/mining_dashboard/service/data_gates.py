@@ -5,9 +5,12 @@ from mining_dashboard.config.config import DISK_PATH
 
 logger = logging.getLogger("DataService")
 
-# Written by every restore (#2626): the snapshot's #35 sync-gate latch came from the machine the
-# backup was taken on, so while this file exists the dashboard ignores the persisted release and
-# re-derives it from this machine's chains. Removed once the gate releases here.
+# Written by the cross-hardware restore doors only — the wizard and carried restores through
+# restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
+# door's chains never desynced, so it keeps whatever gate state the backup carried). The
+# snapshot's #35 sync-gate latch came from the machine the backup was taken on, so while this
+# file exists the dashboard ignores the persisted release and re-derives it from this machine's
+# chains. Removed once the gate releases here.
 SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
