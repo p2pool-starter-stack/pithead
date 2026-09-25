@@ -27,6 +27,7 @@ import ipaddress
 from urllib.parse import urlsplit
 
 from mining_dashboard.config import config
+from mining_dashboard.service.network.egress_status import with_firewall_state
 from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re-exported)
     CLEARNET,
     INACTIVE,
@@ -228,7 +229,8 @@ def compute_egress_posture(
 
 def egress_posture_from_config():
     """Build the posture from the live dashboard config (values pithead rendered into the env)."""
-    return compute_egress_posture(
+    return with_firewall_state(
+        compute_egress_posture,
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
@@ -393,7 +395,8 @@ def compute_topology(
 
 def topology_from_config():
     """Build the topology from the live dashboard config (values pithead rendered into the env)."""
-    return compute_topology(
+    return with_firewall_state(
+        compute_topology,
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,

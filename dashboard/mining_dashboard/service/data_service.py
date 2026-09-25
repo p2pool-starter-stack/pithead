@@ -74,6 +74,7 @@ from mining_dashboard.service.data_xvb_sync import (
     DataXvbSyncMixin,
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
+from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
 
 logger = logging.getLogger("DataService")
@@ -393,6 +394,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         xvb_enabled=ENABLE_XVB,
                         shares_in_window=shares_in_window,
                         clearnet_active=bool(self.clearnet_sync_state.get("active")),
+                        egress_firewall=live_firewall_state(),  # host's live verdict (#2599)
                         xvb_registration_state=(self.state_manager.get_xvb_stats() or {}).get(
                             "registration_state", ""
                         ),
