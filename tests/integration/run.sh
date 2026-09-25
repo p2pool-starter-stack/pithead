@@ -63,6 +63,7 @@ IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
 RUN_MERGEMINE_SUBMIT=0
+RUN_MERGEMINE_LOCALNET=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -80,7 +81,6 @@ REMOTE_MONERO_HOST=""
 REMOTE_MONERO_RPC_PORT=""
 REMOTE_MONERO_ZMQ_PORT=""
 REMOTE_TARI_HOST=""
-IT_APPLIANCE_CHANNEL=0
 PRUNED_DATA_DIR=""
 FULL_DATA_DIR=""
 OUT_DIR="$HERE/results"
@@ -118,6 +118,8 @@ source "$HERE/lib/live-gates.sh" || exit $?
 source "$HERE/lib/run-alert-egress.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-submit.sh
 source "$HERE/lib/run-mergemine-submit.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
+source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -223,6 +225,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario

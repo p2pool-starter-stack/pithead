@@ -91,10 +91,10 @@ Keep local code out of `vendor/`.
 | `tests/integration/lib/` | Sourced helpers and phase functions for `tests/integration/run.sh`. |
 | `tests/integration/selftest/` | Pure harness checks; `make test-integration-selftest` also checks appliance module loading. |
 | `tests/integration/tools/` | Explicitly invoked chain preparation and test-host inspection tools. |
-| `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586). Test-only, built on the bench. |
+| `tests/integration/mergemine/` | Tari validator fixture and recording Tari node for the `--mergemine-submit` leg (#2586); LocalNet read-back probe for the `--mergemine-localnet` leg (#2589). Test-only, built on the bench. |
 | `tests/integration/fakes/`, `mini-stack/` | Fake-daemon contracts and containerized end-to-end checks. |
 | `tests/os/lib/`, `phases/` | Shared appliance harness functions and ordered boot/install/update/fault phases. |
-| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement). Each carries a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh`, so its logic is provable without a KVM. |
+| `tests/os/appliance-*-leg.sh` | Self-contained assertion legs the phases call (hostname, diagnostics, config approval, Tor-egress enforcement, post-commit chain fault). Each carries a `--self-test` driven from tier 1 by `tests/stack/test-harness-tooling.sh` or `tests/os/selftest-row-payloads.sh`, so its logic is provable without a KVM. |
 | `tests/runner/` | The pinned Linux image `make test-container` runs the other tiers inside, so a macOS or Windows host reaches CI's verdict. Built and CVE-scanned by `test-images.yml`; reaches no user. |
 | `scripts/lint/` | Gates invoked by `make lint`; selftests live beside the gate they exercise. |
 | `scripts/watch/` | Scheduled checks invoked by `.github/workflows/`. |
