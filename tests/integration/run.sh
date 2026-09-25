@@ -37,6 +37,8 @@ source "$HERE/lib/borrow-rearm.sh" || exit $?
 source "$HERE/lib/zmq-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
+# shellcheck source=tests/integration/lib/hugepage-probe.sh
+source "$HERE/lib/hugepage-probe.sh" || exit $?
 
 # --- Defaults / globals -----------------------------------------------------
 IT_MODE="ssh"
@@ -61,6 +63,7 @@ IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
 RUN_MERGEMINE_SUBMIT=0
+RUN_MERGEMINE_LOCALNET=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -78,7 +81,6 @@ REMOTE_MONERO_HOST=""
 REMOTE_MONERO_RPC_PORT=""
 REMOTE_MONERO_ZMQ_PORT=""
 REMOTE_TARI_HOST=""
-IT_APPLIANCE_CHANNEL=0
 PRUNED_DATA_DIR=""
 FULL_DATA_DIR=""
 OUT_DIR="$HERE/results"
@@ -116,6 +118,8 @@ source "$HERE/lib/live-gates.sh" || exit $?
 source "$HERE/lib/run-alert-egress.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-submit.sh
 source "$HERE/lib/run-mergemine-submit.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
+source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -164,6 +168,8 @@ main() {
         return
     fi
     [ -z "$SAFETY_ARCHIVE" ] || arm_safety_abort_restore
+    # Sampled for the whole destructive run, restore included; gated before each summary (#2685).
+    hugepages_begin
 
     # Upgrade first: old images are still running when the harness starts, and every later phase
     # then exercises the declared candidate image set. Do not mutate further after a failed
@@ -180,6 +186,7 @@ main() {
             fi
             [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
             safety_cleanup
+            hugepages_finish
             summary
             return
         fi
@@ -218,6 +225,7 @@ main() {
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
@@ -233,6 +241,7 @@ main() {
     fi
     [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
     safety_cleanup
+    hugepages_finish
     summary
 }
 
