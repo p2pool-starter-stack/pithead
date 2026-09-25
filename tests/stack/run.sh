@@ -13,7 +13,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor.sh" && domain_ran test-doctor.sh "$_d0" "$?" || domain_ran test-doctor.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor-onions.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-onions.sh" && domain_ran test-doctor-onions.sh "$_d0" "$?" || domain_ran test-doctor-onions.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/control/test-control-upgrade.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-upgrade.sh" && domain_ran test-control-upgrade.sh "$_d0" "$?" || domain_ran test-control-upgrade.sh "$_d0" "$?"
 
@@ -60,11 +59,11 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-render-quadlet.sh" && domain_ran test
 
 # shellcheck source=tests/stack/doctor/test-doctor-appliance.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain_ran test-doctor-appliance.sh "$_d0" "$?" || domain_ran test-doctor-appliance.sh "$_d0" "$?"
-
 # shellcheck source=tests/stack/appliance/test-appliance-setup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-commit.sh" && domain_ran test-appliance-restore-commit.sh "$_d0" "$?" || domain_ran test-appliance-restore-commit.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup-recovery.sh" && domain_ran test-backup-recovery.sh "$_d0" "$?" || domain_ran test-backup-recovery.sh "$_d0" "$?"
@@ -88,14 +87,18 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_
 _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran test-p2pool-tari-off.sh "$_d0" "$?" || domain_ran test-p2pool-tari-off.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-mode-off.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
-
+# shellcheck source=tests/stack/test-tari-fork-rewind.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-enforcement.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-enforcement.sh" && domain_ran test-tor-egress-enforcement.sh "$_d0" "$?" || domain_ran test-tor-egress-enforcement.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tor-egress-direction.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-direction.sh" && domain_ran test-tor-egress-direction.sh "$_d0" "$?" || domain_ran test-tor-egress-direction.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-egress-boot.sh" && domain_ran test-tor-egress-boot.sh "$_d0" "$?" || domain_ran test-tor-egress-boot.sh "$_d0" "$?"
 

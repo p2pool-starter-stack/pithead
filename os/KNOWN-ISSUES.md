@@ -349,7 +349,7 @@ machine's own — it carries that machine's `DEPLOYMENT_COMPLETED=true`. `setup(
 `is_deployed` guard (#924) read that literally, could not tell "restored, never provisioned on
 THIS hardware" from "already live", and fatally refused with no tty to ask: `podman ps -a` on
 the live guest showed zero containers, ever. `restore_apply` — the one commit point both restore
-doors share — now clears the carried marker right after landing the archive, before its caller's
+doors share — now clears the carried marker in the staged archive before landing it, and before its caller's
 `setup()` runs. Restore retains validated generated secrets and Tor identity, and derives
 `HOST_IP` and runtime policy from the validated configuration. `setup()` renders `.env` again. The guard itself is
 unchanged and still refuses a headless re-run on a genuinely live box (its own #924 test stays
