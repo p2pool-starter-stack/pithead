@@ -210,7 +210,8 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   reflinks under the disposable guest's writable data partition, verify and install the published
   v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
   submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
-  Tari-off mode. The phase replaces only the disposable candidate bundle's image public key with
+  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
+  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
   the tier's debug-registry public key, so submitted images are verified against the key that
   signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
   `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the

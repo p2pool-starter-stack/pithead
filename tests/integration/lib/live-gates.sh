@@ -14,7 +14,7 @@ run_image_upgrade() {
     it_log "── cross-version image upgrade phase ────────────────"
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
-    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs before_mounts_rc capture_gaps
+    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs before_mounts_rc capture_gaps inside_dirs
     # #2057: safety_backup() (run before this) stops and restarts the whole stack around the
     # archive, which resets p2pool's stratum session and the proxy's worker count exactly like an
     # apply does (_pred_stratum_hashes's own comment: "resets to 0 on a p2pool restart, then climbs
@@ -147,6 +147,13 @@ run_image_upgrade() {
         it_fail "versioned baseline layout validated for exact rollback" "the live target must be a current -> pithead-v* layout"
         return 0
     fi
+    inside_dirs="$(data_dirs_inside_install "$UPGRADE_BASELINE_DIR" | tr '\n' ' ')"
+    if [ -n "$inside_dirs" ]; then
+        rm -rf "$UPGRADE_STAGE_DIR"
+        UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
+        it_fail "baseline data lives outside its version dir" "${inside_dirs% } resolve inside it, where a fresh-dir upgrade strands them; upgrade not attempted"
+        return 0
+    fi
     if ! pithead down >/dev/null 2>&1; then
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
@@ -220,8 +227,10 @@ run_image_upgrade() {
         it_fail "upgraded image revision matches the declared new Pithead commit" \
             "image reports [$after_rev], expected exactly $IMAGE_UPGRADE_TO_SHA"
     fi
-    assert_eq "running first-party containers use the signed digest-pinned candidate refs" "$after_refs" "$candidate_refs"
-    assert_eq "every running container uses its signed-bundle digest" "$after_all_refs" "$candidate_all_refs"
+    assert_eq "running first-party containers use the signed digest-pinned candidate refs" \
+        "$(canonical_refs "$after_refs")" "$(canonical_refs "$candidate_refs")"
+    assert_eq "every running container uses its signed-bundle digest" \
+        "$(canonical_refs "$after_all_refs")" "$(canonical_refs "$candidate_all_refs")"
     if [ "$(printf '%s\n' "$after_revisions" | cut -d' ' -f1)" = "$(printf '%s\n' "$before_revisions" | cut -d' ' -f1)" ] &&
         revisions_match_sha "$after_revisions" "$IMAGE_UPGRADE_TO_SHA"; then
         it_pass "every running first-party image matches the declared new Pithead commit"

@@ -141,7 +141,17 @@ tar -xzf "$INPUT/v1.20.0.tar.gz" -C "$MOUNT"
 mv "$MOUNT/pithead" "$MOUNT/pithead-v1.20.0"
 [ "$(tr -d '[:space:]' <"$MOUNT/pithead-v1.20.0/VERSION")" = "1.20.0" ]
 ln -s pithead-v1.20.0 "$MOUNT/current"
-install -m 0600 "$INPUT/config.json" "$MOUNT/pithead-v1.20.0/config.json"
+# Data on a shared root beside the version dirs, never inside one: `pithead upgrade` only deploys a
+# fresh version dir when every data dir resolves outside the running one, and the gate stages
+# exactly that layout. With v1.20.0's `auto` defaults the data sat in pithead-v1.20.0/data and the
+# candidate came up beside it on empty dirs (job 158). Same reflink volume, so snapshots stay CoW.
+(umask 077 && jq --arg root "$MOUNT/data" '
+    .monero.data_dir = ($root + "/monero") | .tari.data_dir = ($root + "/tari") |
+    .p2pool.data_dir = ($root + "/p2pool") | .tor.data_dir = ($root + "/tor") |
+    .dashboard.data_dir = ($root + "/dashboard")
+' "$INPUT/config.json" >"$MOUNT/config.shared-data.json")
+install -m 0600 "$MOUNT/config.shared-data.json" "$MOUNT/pithead-v1.20.0/config.json"
+rm -f "$MOUNT/config.shared-data.json"
 mkdir "$MOUNT/harness"
 tar -xzf "$INPUT/harness.tar.gz" -C "$MOUNT/harness"
 

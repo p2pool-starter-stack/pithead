@@ -232,3 +232,29 @@ upgrade_capture_gaps() { # <mounts> <mounts-rc> <all-refs> <first-refs> <registr
     [ -n "$7" ] || [ -z "$3" ] || gaps+=("candidate-all(missing:$(services_missing_from "$3" "$UPGRADE_CANDIDATE_ALL_REFS" | paste -sd, -))")
     printf '%s\n' "${gaps[*]:-}"
 }
+
+# One canonical form for a "service ref" list, so a signed bundle's pin and what a container engine
+# reports back compare equal when they name the same bytes (job 158 on a832bc1d): inspect drops
+# the tag off a tag@digest ref and expands a short name to docker.io/[library/]. The digest is
+# kept whole; only the tag and that registry prefix are dropped.
+canonical_refs() { # <service/ref lines>
+    local service ref name digest
+    while read -r service ref; do
+        [ -n "$service" ] || continue
+        name="${ref%@*}" digest=""
+        [ "$name" = "$ref" ] || digest="@${ref##*@}"
+        case "${name##*/}" in *:*) name="${name%:*}" ;; esac
+        name="${name#docker.io/}" && name="${name#library/}"
+        printf '%s %s%s\n' "$service" "$name" "$digest"
+    done <<<"$1" | sort
+}
+
+# Which data dir of the baseline resolves inside its own version dir, if any. `pithead upgrade`
+# only deploys to a fresh version dir when none does; otherwise it upgrades in place, because the
+# new release would re-derive its default paths under the new dir and come up beside its own data
+# (44-control-upgrade-and-lifecycle.sh). This gate always stages a fresh dir, so it needs the same
+# precondition, or it measures a layout the product refuses (job 158: chain, Tor and dashboard
+# dirs re-derived empty under the candidate).
+data_dirs_inside_install() { # <install dir> -> the variable names that resolve inside it
+    rx "for v in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do d=\$(grep -m1 \"^\$v=\" .env | cut -d= -f2-); [ -n \"\$d\" ] || continue; d=\$(cd \"\$d\" 2>/dev/null && pwd -P || printf %s \"\$d\"); case \"\$d\" in $(quote_arg "$1") | $(quote_arg "$1")/*) printf '%s\n' \"\$v\" ;; esac; done"
+}
