@@ -318,8 +318,8 @@ apply() {
     migrate_compose_project
     # (Re)assert the Tor-only egress firewall BEFORE compose recreates anything — same ordering as
     # up/upgrade (#276/#291), for the same reason: if it isn't already installed (e.g. `down` then
-    # `apply`), recreating containers first opens a startup window where a clearnet app dials out and
-    # the leading ESTABLISHED rule grandfathers it past the DROP. Idempotent, so the common case
+    # `apply`), recreating containers first opens a startup window where a clearnet app dials out
+    # before the rules go in. Idempotent, so the common case
     # (already installed from `up`) is a cheap re-assert; the .env it reads was committed just above.
     apply_tor_egress_firewall
     # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
