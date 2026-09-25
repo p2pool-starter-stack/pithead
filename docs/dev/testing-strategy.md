@@ -117,6 +117,9 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Both synced → **release** (one-way latch) | gate satisfied | 1 ✅ · 3 ▶ |
 | Network-height UI override doesn't deadlock the gate | p2pool held → height 0 | 1 ✅ |
 | Restart mid-sync / post-release (latch persisted) | snapshot reload | 1 ✅ |
+| Restore onto other hardware → latch re-derived from this machine's chains (#2626) | restore's `sync-gate-reset` marker | 1 ✅ |
+| `./pithead restore` (same-box) → no marker written (#2626 operator ruling, discriminates from the row above) | restore plants no `sync-gate-reset` | 4 ✅ (`lifecycle`) |
+| `./pithead restore` → p2pool not held (smoke check on an already-synced bench, not a proof on its own) | `covered` — see the marker row above | 4 ✅ (`lifecycle`) |
 
 ### C. Node health & failover (#31)
 
