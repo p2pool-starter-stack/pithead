@@ -131,7 +131,7 @@ hg_want() {
 }
 assert_eq "16 GiB machine keeps the full 3072-page pool" "$(hg_want "$HG/meminfo-16g")" "3072"
 assert_eq "exactly the 15 GiB floor keeps the full pool (a real 16 GB box clears it)" "$(hg_want "$HG/meminfo-at-floor")" "3072"
-assert_eq "just under the floor reduces to 2560 pages (both RandomX datasets still fit)" "$(hg_want "$HG/meminfo-under-floor")" "2560"
+assert_eq "just under the floor reduces to 2560 pages (p2pool's dataset and all caches fit)" "$(hg_want "$HG/meminfo-under-floor")" "2560"
 assert_eq "8 GiB machine reduces to 2560 pages" "$(hg_want "$HG/meminfo-8g")" "2560"
 assert_eq "4 GiB machine releases the reservation (0 pages)" "$(hg_want "$HG/meminfo-4g")" "0"
 assert_eq "garbage MemTotal keeps the full baked pool (degrade only on evidence)" "$(hg_want "$HG/meminfo-garbage")" "3072"
