@@ -91,6 +91,24 @@ _xvb_route_is() { # <route-json> <mode> <tor-routed: true|false>
         >/dev/null 2>&1
 }
 
+# #2708 (job 1172): a single-shot restore that hits a transient ConnectTimeout leaves the guest
+# routed to XvB for the rest of the phase — every downstream row that depends on p2pool actually
+# mining then fails the same way. Retry with the same confirmation the XvB switch already gets,
+# instead of trusting (or silently swallowing) the first answer.
+_xvb_restore_p2pool() { # -> pools JSON on stdout once P2POOL is confirmed live, empty + rc 1 on timeout
+    local deadline pools
+    deadline=$(($(date +%s) + ${XVB_RESTORE_TIMEOUT:-30}))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
+        if [ -n "$pools" ] && _xvb_route_is "$pools" P2POOL false; then
+            printf '%s' "$pools"
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
 # Both directions of the transition this issue exists to observe. Every red row returns 1 on the
 # spot; the caller puts the guest back either way, so an early return cannot strand the proxy.
 _xvb_routing_actuation() {
@@ -105,13 +123,9 @@ _xvb_routing_actuation() {
         return 1
     fi
     ok "bounded controller injection moved the live proxy to Tor-routed XvB"
-    pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
+    pools="$(_xvb_restore_p2pool)"
     if [ -z "$pools" ]; then
         bad "controller actuator could not restore the live proxy to P2Pool (guest: $(_xvb_guest_stderr))"
-        return 1
-    fi
-    if ! _xvb_route_is "$pools" P2POOL false; then
-        bad "bounded controller injection did not restore P2Pool as the live proxy route (route: $pools)"
         return 1
     fi
     ok "bounded controller injection restored the live proxy to P2Pool"
@@ -144,8 +158,14 @@ phase_provision_xvb_routing() {
     _xvb_routing_actuation || rc=1
     # Put the guest back the way the fresh appliance holds it (#35): re-assert P2POOL when the
     # actuation bailed mid-transition, so the fourteen rows after this one do not run against a
-    # dashboard still persisting XVB, then stop the proxy again.
-    [ "$rc" -eq 0 ] || _xvb_guest_python "$(_xvb_payload P2POOL)" >/dev/null 2>&1 || true
+    # dashboard still persisting XVB, then stop the proxy again. #2708: the retry+confirm loop
+    # already ran once inside the actuation, so a bare `|| true` here would repeat the very
+    # silent-swallow that issue exists to kill — a fallback restore that also fails is a counted,
+    # named diagnostic instead, so nothing downstream mistakes a still-misrouted guest for a clean one.
+    if [ "$rc" -ne 0 ]; then
+        _xvb_restore_p2pool >/dev/null ||
+            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_RESTORE_TIMEOUT:-30}s (guest: $(_xvb_guest_stderr))"
+    fi
     _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
     return "$rc"
 }
@@ -178,7 +198,7 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_RESTORE_TIMEOUT=1
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -213,6 +233,31 @@ _xvb_self_test() {
 
     XVBT_XVB_JSON="$xvb_ok" XVBT_P2P_JSON="$p2p_ok"
     _xvb_case "a clean transition reports three green rows and rc 0" 3 0 0
+
+    # #2708 (job 1172): a restore that hits one transient ConnectTimeout and then succeeds must NOT
+    # strand the guest on XvB — the call has to retry until it confirms P2Pool, not trust (or
+    # silently swallow) the first answer. A single-shot restore fails this case outright.
+    local p2p_calls
+    p2p_calls="$(mktemp)"
+    _xvb_guest_python() {
+        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
+        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
+        *"switch_miners('P2POOL')"*)
+            printf 'x' >>"$p2p_calls"
+            [ "$(wc -c <"$p2p_calls")" -ge 2 ] && printf '%s' "$p2p_ok"
+            ;;
+        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
+        esac
+    }
+    _xvb_case "a restore that times out once and then succeeds is NOT a red row" 3 0 0
+    rm -f "$p2p_calls"
+    _xvb_guest_python() {
+        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
+        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
+        *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
+        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
+        esac
+    }
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
@@ -252,17 +297,21 @@ _xvb_self_test() {
     _xvb_case "an XvB route whose own pool is disabled is a counted red row" 1 1 1
     XVBT_XVB_JSON="$xvb_ok"
 
+    # fail=2 below: the restore itself fails (counted once inside the actuation), and the phase-level
+    # fallback restore — now also retrying/confirming instead of a silent `|| true` (#2708) — retries
+    # against the SAME broken stub, times out too, and is a second, distinct counted red row: the
+    # guest really is left misrouted, not just the first attempt.
     XVBT_P2P_JSON=""
-    _xvb_case "an actuator that cannot restore P2Pool is a counted red row" 2 1 1
+    _xvb_case "an actuator that cannot restore P2Pool is a counted red row, twice over" 2 2 1
 
     XVBT_P2P_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
-    _xvb_case "a dashboard left persisting XVB after the restore is a counted red row" 2 1 1
+    _xvb_case "a dashboard left persisting XVB after the restore is a counted red row, twice over" 2 2 1
 
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
-    _xvb_case "a P2Pool route left Tor-routed is a counted red row" 2 1 1
+    _xvb_case "a P2Pool route left Tor-routed is a counted red row, twice over" 2 2 1
 
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":false,"tor":false},{"enabled":false,"tor":false}]}'
-    _xvb_case "a restored P2Pool route whose own pool is disabled is a counted red row" 2 1 1
+    _xvb_case "a restored P2Pool route whose own pool is disabled is a counted red row, twice over" 2 2 1
 
     # The wait must RIDE OUT the not-yet-healthy answers rather than read the first one as a
     # verdict — a single-shot check is the #2253 race itself, and it would pass every case above.

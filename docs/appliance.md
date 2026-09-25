@@ -403,7 +403,12 @@ the machine keeps the new version and notes the gap in its boot log and with the
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `pithead apply` on the machine mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. If another operation is changing the stack when you start an
+different hardware, or older than what it runs; there is no override. It also refuses an update
+that migrates the chain data when the data partition lacks room for the Tari migration. That
+migration writes a compacted copy of the Tari database beside the old one, so the machine needs
+free space of the database's current size plus 5 GiB. The refusal names the size needed and the
+size free, and the downloaded image stays on the machine, so you can free space and install it
+again. If another operation is changing the stack when you start an
 install, the install is not started at all: nothing is written to the idle copy and the
 dashboard says so rather than reporting a failed install. Start it again once that
 operation has finished. See
