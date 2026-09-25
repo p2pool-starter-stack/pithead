@@ -882,14 +882,21 @@ peak thread count and the box's. Per daemon, the row fails when:
 
 - it was running but its rollup could never be read;
 - it held no hugetlb page at any reading;
-- one instance of it (pid plus starttime) ran 300 s without one;
-- three or more instances never held one, the restart loop that p2pool fell into in #78 once its
-  RandomX memory left the pool.
+- one instance of it (pid plus starttime) ran 300 s without one — the modern failure mode: since
+  #2562 raised p2pool's container cap to 4g, a shortfall no longer restart-loops it (the #78
+  finding this tier exists to avoid) but leaves it silently running on ordinary memory instead;
+- three or more instances never held one, in case a smaller cap ever restart-loops it again.
 
 A daemon the sampler never found running skips its leg; a box with `HugePages_Total` at 0 skips
 the phase as `missing`. A daemon that keeps part of its memory in the pool while the rest falls
-back is not zero, and this row does not catch it. The appliance's reduced HugePages tier is sized
-from these peaks.
+back is not zero, and this row does not catch it.
+
+The row also carries the check the appliance's reduced HugePages tier is sized and re-sized by
+(`hugepage_assert_reduced_tier_bound`): this run's combined peak (both daemons summed, since they
+draw on one shared pool), plus 256 pages for the two processes' second-seed caches — a seed
+switch is roughly every 2.8 days, so a normal run does not exercise them — must fit inside
+`REDUCED_PAGES` as `os/overlay/pithead-hugepages` on the checked-out branch declares it. The
+constant is read from that file, not duplicated here, so the two cannot drift silently.
 
 The safety-backup recovery gate runs before scenarios, so if its health wait fails it writes
 redacted `compose-ps.txt` and `health-check.txt` to `results/safety-backup-recovery/` before
@@ -1091,8 +1098,10 @@ row green over a path the product no longer carries.
 `selftest-hugepage-probe.sh` drives the HugePages tally and gate from fixture sample files (a
 daemon at zero throughout, a restarted instance that settles at zero under a good peak, a crash
 loop after one healthy instance, a reused pid, an absent daemon, an unreadable one), checks the
-artifact's page arithmetic and the row's place in `run.sh`, and reads a live stand-in process
-through the sample snippet so the `/proc` parsing is exercised on the CI host.
+artifact's page arithmetic and the row's place in `run.sh`, drives the reduced-tier pool bound
+against fixture pin files (fitting exactly, missing by one page, unreadable, empty, absent, and
+against the checked-out repo's own `os/overlay/pithead-hugepages`), and reads a live stand-in
+process through the sample snippet so the `/proc` parsing is exercised on the CI host.
 `selftest-zmq-probe.sh` drives the ZMTP verdicts from captured and hand-built wire fixtures,
 so every failure class — a silent peer, a non-ZMQ listener, a ZMTP peer that is not a publisher, a
 READY frame carrying a decoy `Socket-Type` value — is reachable with no socket and no stack. It

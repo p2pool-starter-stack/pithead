@@ -3,12 +3,16 @@
 # HugePages held by monerod and p2pool across a live run (#2685).
 #
 # The appliance's reduced tier reserves a fixed pool (os/overlay/pithead-hugepages), sized from
-# the pinned sources rather than from a measurement. This samples what each process actually
-# holds, so the value can be set from a peak instead of a derivation, and so a daemon whose
-# RandomX memory fell out of the pool altogether (the #78 crash loop: p2pool in ordinary memory,
-# killed at its mem_limit and restarted) turns the run red instead of passing unnoticed. A daemon
-# that keeps some pages in the pool (p2pool's caches) while the rest falls back is not zero, and
-# this row does not claim it; the peak against the reserved pool is the bound for that.
+# this row's own measured peaks (#2685). This samples what each process actually holds, both to
+# take that measurement and to stand guard afterward: a daemon whose RandomX memory fell out of
+# the pool altogether turns the run red instead of passing unnoticed. Before #2562 raised
+# p2pool's container cap to 4g, that fallback restart-looped it at its 1g mem_limit (the #78
+# spike); the cap now holds the fallback, so the modern failure is silent — p2pool keeps running
+# on ordinary memory instead of hugetlb, unremarked anywhere else — which is exactly what the
+# settle-window check below catches. A daemon that keeps some pages in the pool (p2pool's caches)
+# while the rest falls back is not zero, and this row does not catch it. A separate bound (below)
+# checks THIS run's combined peak, plus the second-seed caches a run this long may never touch,
+# against the appliance's pinned REDUCED_PAGES — the check the resize itself is proved by.
 #
 # Measured per process from /proc/<pid>/smaps_rollup (Private_Hugetlb + Shared_Hugetlb), never
 # from a HugePages_Free delta in /proc/meminfo: the pool is shared with anything else on the box
@@ -32,6 +36,15 @@ HUGEPAGE_ZERO_LOOP=3
 HUGEPAGE_SAMPLES=""
 HUGEPAGE_SAMPLER_PID=""
 HUGEPAGE_HOST_THREADS=""
+
+# The bound against the appliance's pinned reduced-tier pool (#2685): this run's combined peak,
+# plus one second-seed cache per process (a seed switch is roughly every 2.8 days, so a run this
+# long is not guaranteed to see one), must fit REDUCED_PAGES. Read from the checked-out repo's
+# own overlay file — the branch under test's, on the bench as everywhere else — rather than
+# duplicating the constant here, so the two can never drift apart silently. Overridable so the
+# selftest can point it at a fixture.
+HUGEPAGE_REDUCED_TIER_FILE="${HUGEPAGE_REDUCED_TIER_FILE:-${BASH_SOURCE[0]%/*}/../../../os/overlay/pithead-hugepages}"
+HUGEPAGE_SECOND_SEED_PAGES=256
 
 # One reading per daemon, one TSV line each: epoch, name, pid, starttime, hugetlb kB, threads.
 # A daemon not running (or its entrypoint not yet exec'd into it) reads as "-" in every field
@@ -166,6 +179,33 @@ hugepage_assert() { # <tally>
     done <<<"$1"
 }
 
+# Pure: REDUCED_PAGES as the checked-out branch's own overlay file declares it, or empty when the
+# file is missing or the assignment is not there to find.
+hugepage_reduced_pages() {
+    awk -F= '/^REDUCED_PAGES=[0-9]+$/ {print $2; exit}' "$HUGEPAGE_REDUCED_TIER_FILE" 2>/dev/null
+}
+
+# The bound the resize itself is proved by (#2685): this run's combined peak (every daemon that
+# had at least one reading, rounded to pages the same way the artifact is), plus one second-seed
+# cache per process, must fit inside REDUCED_PAGES. Failing this on a run that never exercised a
+# seed switch means the pinned value has no room left for the two caches it was sized to include.
+hugepage_assert_reduced_tier_bound() { # <tally>
+    local name readings unreadable peak_kb rest combined_kb=0 reduced bound_pages combined_pages
+    while IFS=$'\t' read -r name readings unreadable peak_kb rest; do
+        [ -n "$name" ] || continue
+        [ "$readings" -gt 0 ] && combined_kb=$((combined_kb + peak_kb))
+    done <<<"$1"
+    combined_pages=$(((combined_kb + 2047) / 2048))
+    reduced="$(hugepage_reduced_pages)"
+    if ! [[ "$reduced" =~ ^[0-9]+$ ]]; then
+        it_fail "the appliance's REDUCED_PAGES pin is readable" "got [$reduced] from $HUGEPAGE_REDUCED_TIER_FILE"
+        return
+    fi
+    bound_pages=$((combined_pages + HUGEPAGE_SECOND_SEED_PAGES))
+    it_step "combined peak $combined_pages pages + $HUGEPAGE_SECOND_SEED_PAGES second-seed pages = $bound_pages, against REDUCED_PAGES=$reduced"
+    assert_num_ge "REDUCED_PAGES covers this run's combined peak plus the second-seed caches" "$reduced" "$bound_pages"
+}
+
 # Start after the safety backup. A box with no pool reserved cannot be judged: the daemons fall
 # back by design there, so the phase records the absence instead of failing it.
 hugepages_begin() {
@@ -203,4 +243,5 @@ hugepages_finish() {
         it_fail "hugepages: hugepages-peak.json written" "jq could not render the tally"
     fi
     hugepage_assert "$tally"
+    hugepage_assert_reduced_tier_bound "$tally"
 }

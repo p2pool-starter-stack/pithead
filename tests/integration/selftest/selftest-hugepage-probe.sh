@@ -113,6 +113,38 @@ json="$(hugepage_report_json "p2pool${T}1${T}0${T}2049${T}1${T}0${T}0" 10 300 1 
 assert_eq "a partial page rounds up (2049 kB -> 2 pages)" "$(jq -r '.processes.p2pool.peak_pages' <<<"$json")" "2"
 assert_eq "an unread host thread count is null, not 0" "$(jq -r '.host_threads' <<<"$json")" "null"
 
+echo "== bound: this run's combined peak + second-seed caches against the pinned REDUCED_PAGES =="
+bound_gate() { # <tally> -> "pass fail", reading $HUGEPAGE_REDUCED_TIER_FILE as the caller set it
+    local p=$IT_PASS f=$IT_FAIL
+    hugepage_assert_reduced_tier_bound "$1" >/dev/null 2>&1
+    printf '%s %s' "$((IT_PASS - p))" "$((IT_FAIL - f))"
+    IT_PASS=$p IT_FAIL=$f
+}
+tally="$(hugepage_tally "$TMP/steady.tsv" 300)" # combined peak 1592 pages (272 + 1320)
+absent_tally="$(hugepage_tally "$TMP/absent.tsv" 300)"
+printf 'REDUCED_PAGES=1848\n' >"$TMP/pin-exact"
+printf 'REDUCED_PAGES=1847\n' >"$TMP/pin-short"
+printf 'REDUCED_PAGES=banana\n' >"$TMP/pin-garbage"
+: >"$TMP/pin-empty"
+assert_eq "peak 1592 + 256 = 1848 fits the checked-out repo's real pin (2048)" \
+    "$(HUGEPAGE_REDUCED_TIER_FILE="$HERE/../../../os/overlay/pithead-hugepages" bound_gate "$tally")" "1 0"
+assert_eq "1848 fits a pin of exactly 1848" "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/pin-exact" bound_gate "$tally")" "1 0"
+assert_eq "1848 does not fit a pin of 1847 — this is the check the resize is proved by" \
+    "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/pin-short" bound_gate "$tally")" "0 1"
+assert_eq "a daemon with zero readings (monerod, here) adds nothing to the combined peak" \
+    "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/pin-exact" bound_gate "$absent_tally")" "1 0"
+assert_eq "the module's own default path resolves to the same checked-out overlay file" \
+    "$(
+        unset HUGEPAGE_REDUCED_TIER_FILE
+        source "$HERE/../lib/hugepage-probe.sh"
+        echo "$HUGEPAGE_REDUCED_TIER_FILE"
+    )" \
+    "$HERE/../lib/../../../os/overlay/pithead-hugepages"
+assert_eq "an unparseable pin fails rather than silently passing" \
+    "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/pin-garbage" bound_gate "$tally")" "0 1"
+assert_eq "an empty pin file fails" "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/pin-empty" bound_gate "$tally")" "0 1"
+assert_eq "a missing pin file fails" "$(HUGEPAGE_REDUCED_TIER_FILE="$TMP/no-such-pin" bound_gate "$tally")" "0 1"
+
 echo "== run.sh: sampled across the destructive run, gated before each summary after it =="
 body="$(sed -n '/^main() {/,/^}/p' "$HERE/../run.sh")"
 assert_eq "begin sits right after the safety backup's abort-restore is armed" \
@@ -155,15 +187,16 @@ if [ -e "/proc/$sampler/fd/9" ]; then
 else
     it_pass "the sampler does not hold the rig-lock descriptor"
 fi
+printf 'REDUCED_PAGES=2048\n' >"$TMP/reduced-tier-fixture"
 passed=$IT_PASS failed=$IT_FAIL
-hugepages_finish >/dev/null 2>&1
+HUGEPAGE_REDUCED_TIER_FILE="$TMP/reduced-tier-fixture" hugepages_finish >/dev/null 2>&1
 gated="$((IT_PASS - passed)) $((IT_FAIL - failed))"
 if kill -0 "$sampler" 2>/dev/null; then it_fail "finish stops the sampler" "pid $sampler still running"; else it_pass "finish stops the sampler"; fi
 assert_num_ge "the sampler read at least twice plus the final round" "$(grep -c "${T}p2pool${T}" "$OUT_DIR/hugepages-samples.tsv")" 3
 assert_eq "hugepages-peak.json carries both peaks" \
     "$(jq -c '[.processes.monerod.peak_pages, .processes.p2pool.peak_pages, .host_threads]' "$OUT_DIR/hugepages-peak.json")" "[256,1320,16]"
-assert_eq "the gate ran six green rows" "$gated" "6 0"
-IT_PASS=$((IT_PASS - 6))
+assert_eq "the gate ran seven green rows, including the pool bound (272+1320+256=1848 <= 2048)" "$gated" "7 0"
+IT_PASS=$((IT_PASS - 7))
 eval "$real_rx"
 
 echo "== sampler: exits with its parent =="
