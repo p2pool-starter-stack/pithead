@@ -103,6 +103,38 @@ assert_rc "an earlier boot's login prompt does not mask a real brick after the o
 unset -f fault_boot_verdict
 rm -rf "$FBV"
 
+echo "== unit: m10_height_verdict — a readable lower height is chain loss, apart from an unreadable RPC (#2557) =="
+# bench-ci job 840 failed M10.1 with "before: 56540, after: 56040" under one message that also
+# covered an unreadable RPC. The leg now flushes the guest after the pre-cut read, so the verdict
+# can hold the node to that persisted height and name which of the two failures it saw.
+# Mutation run: drop the lower-height branch -> job 840's readable 56040 passes as a recovery.
+mhv() { # <persisted-before> <after> -> "<rc> <verdict-text>"
+    local out rc
+    out=$(
+        # shellcheck disable=SC1091
+        source "$ROOT/tests/os/m10-height-verdict.sh"
+        m10_height_verdict "$1" "$2"
+    )
+    rc=$?
+    printf '%s %s' "$rc" "$out"
+}
+assert_eq "job 840's readable lower height fails as lost persisted blocks" \
+    "$(mhv 56540 56040)" \
+    "1 monerod LOST 500 persisted blocks across the cut (persisted before: 56540, after: 56040)"
+assert_eq "an unreadable post-cut RPC fails as unreadable, not as chain loss" \
+    "$(mhv 56540 "")" \
+    "1 monerod RPC unreadable after the cut (persisted before: 56540, after: unreadable)"
+assert_eq "an unreadable pre-cut height fails before any comparison" \
+    "$(mhv "" 56540)" \
+    "1 could not read a persisted monerod height before the cut (read: unreadable)"
+assert_eq "the same height passes" \
+    "$(mhv 56540 56540)" \
+    "0 monerod reports height 56540, at or past the persisted pre-cut height 56540"
+assert_eq "a higher height passes" \
+    "$(mhv 56540 56600)" \
+    "0 monerod reports height 56600, at or past the persisted pre-cut height 56540"
+unset -f mhv
+
 echo "== structure: the provision phase settles provisioning before its day-two legs (#2648) =="
 # dashboard and caddy run while the wizard's `up` still waits on tor's healthcheck, so the podman ps
 # row alone let job 944's control legs race an unfinished provisioning. Mutation runs: move or drop

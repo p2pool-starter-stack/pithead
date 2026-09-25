@@ -31,11 +31,24 @@ public internet is DROPPED. Only the `tor` container reaches the internet. So if
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
 
+Connection tracking lets replies through, which keeps clients on the published ports working, and
+nothing else. A clearnet connection an app opened while the rules were absent (a host firewall
+reload that flushed them, a `down` followed by a manual container start) does not survive their
+return: the next TCP packet the app sends on it is answered with a reset, and any other packet is
+dropped. What the app sent before the rules went back in has already left the box. A re-install
+never opens such a window itself: `up`, `apply` and `upgrade` replace the rules in one kernel
+transaction (`iptables-restore --noflush` on Docker, one `nft -f` on the appliance), and a load
+the kernel refuses leaves the rules already there in place.
+
 The rules land where the running container engine actually filters forwarded traffic, which differs
 by channel:
 
 - **Docker (DIY channel):** the rules go in Docker's `DOCKER-USER` chain. Docker adds the
   `FORWARD → DOCKER-USER` jump when it creates the network, so the chain is traversed on egress.
+  A reboot empties the chain, and the containers restart on their own when Docker starts, so
+  `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
+  `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
+  so a start that fails halfway blocks more than intended rather than less.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -58,7 +71,8 @@ and everything else the bridge originates is dropped, leaving the host's own IPv
 other interface untouched. If a v6 subnet is present but the bridge interface can't be resolved,
 `pithead` refuses to install a v4-only firewall it would otherwise report as fail-closed.
 
-- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`.
+- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`. The
+  DIY boot unit stays through `down` and is removed by `uninstall` or by opting out.
 - Opt out with `network.tor_egress_firewall: false` (then routing falls back to per-app config only).
 - The accepted destinations are the private ranges only: `10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, and `100.64.0.0/10` (CGNAT, so Tailscale addresses work). A remote Monero or

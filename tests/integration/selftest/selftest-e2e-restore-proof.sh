@@ -162,7 +162,9 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         control_units_verdict() { echo on-target; }
         wait_bench_healthy() { return 0; }
         verify_restore_proof() { return 0; }
+        chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
         on_bench() {
+            echo "$1" >>"${ALL_LOG:-/dev/null}"
             case "$1" in
             # The source-checkout probe: answer as the fixture says, and never record it as the
             # restore command.
@@ -285,9 +287,53 @@ assert_num_ge "M2 (branch image graded 'rebuilt') is killed" \
 assert_num_ge "M3 (unanchored census_get) is killed" \
     "$(mutate_and_count_fails 's|sed -n "s/\^\$2=//p"|sed -n "s/.*$2=//p"|')" 1
 
+# #2639: the restore converges the baseline over the branch and never runs `pithead down`, which
+# stopped and recreated monerod and tari on every deploying run, however unchanged. Every command
+# restore_all gives the box is recorded, for both baseline kinds.
+echo "== the restore never takes the stack down (#2639) =="
+for kind in yes no; do
+    ALL_LOG="$(mktemp)"
+    ALL_LOG="$ALL_LOG" drive_restore "$kind" >/dev/null
+    assert_eq "no 'pithead down' on the restore path (source checkout: $kind)" "$(grep -c 'pithead down' "$ALL_LOG")" "0"
+    assert_eq "the restore prepares the chain record first (source checkout: $kind)" "$(head -n1 "$ALL_LOG")" "chain_restore_prepare"
+    rm -f "$ALL_LOG"
+done
+
 # --check deploys nothing and borrows nothing, so restore_all has nothing to put back — and an
 # outer restore would mutate a bench this mode promised only to read.
 assert_eq "restore_all is a no-op in --check mode" "$(drive_restore no check)" ""
+
+# --- #2460: the egress boot unit goes back the way the run found it ------------------------------
+# A model bench: UNIT is the unit's state; the removal command clears it unless STICKY=1. Prints
+# "<rc> <unit after> <removal commands sent>".
+egress_restore() { # <before> <unit now> [sticky]
+    (
+        EGRESS_UNIT_BEFORE="$1" UNIT="$2" STICKY="${3:-0}" removals=0
+        ok() { :; }
+        warn() { :; }
+        step() { printf 'step:%s\n' "$1" >&2; }
+        on_bench() {
+            case "$1" in
+            *"disable --now"*)
+                removals=$((removals + 1))
+                [ "$STICKY" = 1 ] || UNIT=absent
+                ;;
+            *"systemctl cat"*) echo "$UNIT" ;;
+            *"show -p Wants"*) [ "$UNIT" = absent ] ;;
+            esac
+        }
+        restore_egress_boot_unit
+        echo "$? $UNIT $removals"
+    )
+}
+assert_eq "a unit this run added is removed, and the absence proven" "$(egress_restore absent present)" "0 absent 1"
+assert_eq "a unit the baseline already had is left alone" "$(egress_restore present present)" "0 present 0"
+assert_contains "and the restore says so, so a leftover from a cancelled run is visible" \
+    "$(egress_restore present present 2>&1 >/dev/null)" "already on the bench before this run"
+assert_eq "a unit that survives the removal fails the restore proof" "$(egress_restore absent present 1)" "1 present 1"
+assert_eq "an unrecorded baseline fails closed and removes nothing" "$(egress_restore "" present)" "1 present 0"
+assert_contains "verify_restore_proof runs the egress unit restore" "$(declare -f verify_restore_proof)" "restore_egress_boot_unit"
+assert_contains "e2e.sh records the unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"'
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

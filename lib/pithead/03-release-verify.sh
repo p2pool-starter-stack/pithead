@@ -148,6 +148,10 @@ stack_upgrade() {
     DEPLOYMENT_COMPLETED=true
     render_env "${ENV_FILE}.new"
     mv "${ENV_FILE}.new" "$ENV_FILE"
+    # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
+    # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
+    # nothing is started or recreated first, so the migrating node never starts on a full volume.
+    tari_upgrade_space_precheck
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
     generate_caddyfile
@@ -157,10 +161,10 @@ stack_upgrade() {
     migrate_compose_project
     # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
     # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting
-    # containers first opens a startup window where a clearnet app (Tari, #271) can open a connection
-    # that the leading ESTABLISHED rule then grandfathers past the DROP (#291). In normal operation
-    # it's already installed from `up` and this is a cheap idempotent re-apply. Runs after the .env
-    # render above so the toggle/subnet are current.
+    # containers first opens a startup window where a clearnet app (Tari, #271) can dial out unfenced
+    # before the rules go in (#291). In normal operation it's already installed from `up` and this
+    # is a cheap idempotent re-apply. Runs after the .env render above so the toggle/subnet are
+    # current.
     apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
     # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
     # (a failed move is retried on re-run) and before the recreate mounts the new location.
