@@ -147,10 +147,16 @@ run_image_upgrade() {
         it_fail "versioned baseline layout validated for exact rollback" "the live target must be a current -> pithead-v* layout"
         return 0
     fi
-    if ! pithead down >/dev/null 2>&1 || ! capture_state_snapshots "$before_mounts"; then
+    if ! pithead down >/dev/null 2>&1; then
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
-        it_fail "quiesced writable state captured in private CoW snapshots" "the stack must stop cleanly and every stateful mount must support cp --reflink=always; upgrade not attempted"
+        it_fail "quiesced writable state captured in private CoW snapshots" "pithead down did not stop the stack cleanly; upgrade not attempted"
+        return 0
+    fi
+    if ! capture_state_snapshots "$before_mounts"; then
+        rm -rf "$UPGRADE_STAGE_DIR"
+        UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
+        it_fail "quiesced writable state captured in private CoW snapshots" "${UPGRADE_SNAPSHOT_REASON:-unattributed}; upgrade not attempted"
         return 0
     fi
     arm_upgrade_abort_restore

@@ -6,9 +6,16 @@ capture_state_snapshots() { # <stateful mount TSV>
     nonce="$$-$(date +%s)"
     UPGRADE_STATE_SNAPSHOTS=""
     UPGRADE_STATE_OLD_DIRS=""
+    UPGRADE_SNAPSHOT_REASON=""
     while IFS= read -r source; do
         [ -n "$source" ] || continue
-        [[ "$source" = /* && "$source" != / ]] || return 1
+        # A named label per sub-check (job 1181's tmpfs fix cleared the mounts filter, but the
+        # combined message it fed still hid which of these four steps a NEW failure stops at) —
+        # never the source path itself, only the mount's own basename (e.g. "tor", "p2pool").
+        if [[ "$source" != /* || "$source" = / ]]; then
+            UPGRADE_SNAPSHOT_REASON="not-absolute"
+            return 1
+        fi
         covered=0
         while IFS= read -r prior; do
             [ -z "$prior" ] || case "$source/" in "$prior/"*) covered=1 ;; esac
@@ -16,14 +23,24 @@ capture_state_snapshots() { # <stateful mount TSV>
         [ "$covered" = 0 ] || continue
         parent="$(dirname "$source")" base="$(basename "$source")"
         snap="$parent/.pithead-live-$base-$nonce"
-        rx "test -d $(quote_arg "$source") && test ! -L $(quote_arg "$source") && test ! -e $(quote_arg "$snap") && sudo -n cp -a --reflink=always -- $(quote_arg "$source") $(quote_arg "$snap")" || {
+        if ! rx "test -d $(quote_arg "$source")"; then
+            UPGRADE_SNAPSHOT_REASON="not-a-directory:$base"
+        elif rx "test -L $(quote_arg "$source")"; then
+            UPGRADE_SNAPSHOT_REASON="is-a-symlink:$base"
+        elif rx "test -e $(quote_arg "$snap")"; then
+            UPGRADE_SNAPSHOT_REASON="snapshot-path-exists:$base"
+        elif ! rx "sudo -n cp -a --reflink=always -- $(quote_arg "$source") $(quote_arg "$snap")"; then
+            UPGRADE_SNAPSHOT_REASON="reflink-copy-failed:$base"
+        fi
+        if [ -n "$UPGRADE_SNAPSHOT_REASON" ]; then
             rx "sudo -n rm -rf -- $(quote_arg "$snap")" >/dev/null 2>&1 || true
             cleanup_state_snapshots
             return 1
-        }
+        fi
         kept+="${kept:+$'\n'}$source"
         UPGRADE_STATE_SNAPSHOTS+="${UPGRADE_STATE_SNAPSHOTS:+$'\n'}$source"$'\t'"$snap"
     done < <(printf '%s\n' "$1" | cut -f3 | sort -u)
+    [ -n "$UPGRADE_STATE_SNAPSHOTS" ] || UPGRADE_SNAPSHOT_REASON="${UPGRADE_SNAPSHOT_REASON:-no-stateful-mounts}"
     [ -n "$UPGRADE_STATE_SNAPSHOTS" ]
 }
 
