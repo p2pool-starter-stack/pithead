@@ -40,11 +40,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
-        secret_fingerprint() {
+        secret_fingerprint() { printf fingerprint; }
+        # The round-trip compares every secret category (#2579), not the coarse fingerprint.
+        upgrade_secret_fingerprints() {
             case "$RESTORE_CASE:$RESTORED" in
             secret-before-fails:* | secret-after-fails:yes) return 1 ;;
             esac
-            printf fingerprint
+            printf 'dashboard=fingerprint'
         }
         render_scenario_config() { printf '{}'; }
         push_config() {
