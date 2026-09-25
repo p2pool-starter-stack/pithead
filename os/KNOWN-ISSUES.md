@@ -272,20 +272,25 @@ that never landed.
 **Fixed — the hugepages reservation now fits the machine's RAM (#977).** The baked 6 GiB
 sysctl imposed a silent ≥ 16 GiB floor the harness's 16 GiB VM could never notice.
 `pithead-hugepages.service` now sizes the pool every boot before either boot owner:
-full 3072 pages on a supported machine, 2560 below 15 GiB, zero below 7 GiB where the stack
-cannot run regardless. The reduced pool must hold p2pool's RandomX pages: its 2080 MiB dataset
-falling out of hugetlbfs, with its caches, puts 2592 MiB of ordinary RAM on a machine the
-reservation already squeezes. Under the 1 GiB cgroup cap of the #78 spike that OOM-looped
-p2pool; the 4 GiB cap from #2562 holds it, and the machine pays. Only p2pool builds a dataset.
+full 3072 pages on a supported machine, 2048 below 15 GiB, zero below 7 GiB where the stack
+cannot run regardless. Under the 1 GiB cgroup cap of the #78 spike, a dataset falling out of
+hugetlbfs OOM-looped p2pool; the 4 GiB cap from #2562 holds the ~2.5 GiB fallback instead, and
+the machine pays in ordinary RAM rather than a restart loop. Only p2pool builds a dataset.
 monerod v0.18.5.1 allocates one only when `MONERO_RANDOMX_FULL_MEM` is set or it mines, and the
-stack does neither (#2681). Its large pages are two 128-page caches and a scratchpad page per
-verifying VM. At the pinned versions
-that comes to about 1560 pages: p2pool's dataset, two caches and VM scratchpads (~1305), and
-monerod's caches (256), plus monerod's per-thread pages. Up to ~1000 pages of the 2560, less
-those per-thread pages, are margin no bench run has measured, since none runs a synced stack on a
-reduced-RAM box. #2685 tracks measuring the real peak and resizing the tier to it. Degrades
-are announced on every console, journaled, and repeated by `doctor` as a WARN — never a FAIL,
-so the A/B commit gate still commits a degraded-but-serving slot. Running before the boot
+stack does neither (#2681).
+
+The reduced pool's 2048 pages are MEASURED (#2685), not derived: a tier4-e2e run samples each
+daemon's own `/proc/<pid>/smaps_rollup` every 10 s across a synced local-node scenario, lifecycle
+and auth-fail-closed, and takes the peak — job 1115@701013bb1faaea1a9a337cde16dbe79fbca797d1 measured p2pool at 1305 pages and
+monerod at 129 (an upper bound: its per-thread verification scratchpads scale with the measuring
+bench's own thread count, above a reduced-tier appliance's). Combined peak 1434, +256 for the two
+processes' second-seed caches (a seed switch is roughly every 2.8 days, so a normal run does not
+exercise them), +10% margin, rounded up to the next 512-page step: 2048.
+`tests/integration/lib/hugepage-probe.sh` carries the bound `combined peak + 256 <= REDUCED_PAGES`
+as a standing gate row against this same overlay file, on every tier4-e2e run, and #2486 (p2pool
+`--light-mode` on this tier, which would remove the dataset) reruns the measurement when it lands.
+Degrades are announced on every console, journaled, and repeated by `doctor` as a WARN — never a
+FAIL, so the A/B commit gate still commits a degraded-but-serving slot. Running before the boot
 owners is not what makes the decision hold: pithead's own later writers grow the pool too, so
 the `/run` marker records the chosen page count and both of them honour it — setup's
 kernel optimization caps its grow at the recorded pages, and the local-miner render
@@ -349,7 +354,7 @@ machine's own — it carries that machine's `DEPLOYMENT_COMPLETED=true`. `setup(
 `is_deployed` guard (#924) read that literally, could not tell "restored, never provisioned on
 THIS hardware" from "already live", and fatally refused with no tty to ask: `podman ps -a` on
 the live guest showed zero containers, ever. `restore_apply` — the one commit point both restore
-doors share — now clears the carried marker right after landing the archive, before its caller's
+doors share — now clears the carried marker in the staged archive before landing it, and before its caller's
 `setup()` runs. Restore retains validated generated secrets and Tor identity, and derives
 `HOST_IP` and runtime policy from the validated configuration. `setup()` renders `.env` again. The guard itself is
 unchanged and still refuses a headless re-run on a genuinely live box (its own #924 test stays

@@ -159,7 +159,21 @@ run_rigforge_writable_keys() { # <rig>
     fi
 }
 
-# #1002b: pools, the repoint-your-hashrate key. Still operator-gated for the reason above: the
+# The pools readback is its URLs, and only its URLs: `pass` and `tls-fingerprint` never reach
+# `.rig_config` (#113), so a whole-value compare could never match. The URLs are enough to see which
+# pools the rig is running, and that is all a readback is asked here — it is never written back.
+_pool_urls() { # <pools-json> -> its entries' urls as a compact JSON array, or empty
+    printf '%s' "$1" | jq -c '[.[].url]' 2>/dev/null
+}
+
+_pred_rig_pool_urls() { # <rig> <want-urls-json>
+    local v
+    v="$(_rig_config_key "$(_worker_detail "$1")" pools)"
+    [ -n "$v" ] && [ "$(_pool_urls "$v")" = "$2" ]
+}
+
+# #1002b: pools, the repoint-your-hashrate key. Settled like the #1236 keys since #2407 (it read the
+# dial-time "accepted" as a failure), and still operator-gated for the reason above: the
 # harness cannot read a pools value it could safely write back. pithead treats `pools` as opaque
 # passthrough (WORKER_WRITABLE_KEYS checks the key NAME, never the value shape), so a guessed value
 # risks a real rejected/failed instead of proving the round trip — the same reasoning IT_RIG_ROLLBACK_CHANGES applies to the #517 leg.
@@ -177,7 +191,7 @@ run_rigforge_writable_keys() { # <rig>
 # on the probe. With the restore value equal to the probe, a second "revert" apply would only
 # restart the miner to the same config, so one confirmed apply is the round trip.
 run_rigforge_pools() { # <rig>
-    local rig="$1" probe res status ckeys
+    local rig="$1" probe res status ckeys change_id row
     if [ -z "${IT_RIG_POOLS_PROBE:-}" ]; then
         it_skip_leg "pools write (#1002b)" "no IT_RIG_POOLS_PROBE (the pass-bearing JSON pools value rig '$rig' is to keep running)"
         return 0
@@ -203,16 +217,27 @@ run_rigforge_pools() { # <rig>
     it_step "Worker Inspect edit: pools -> the operator-supplied probe via /api/control/worker-apply…"
     # On the books before the write goes out (#1379), so a run that dies before the rig confirms the
     # probe still ends with the rig on it, and with the value the guard above has PROVEN carries
-    # `pass`. Retired once the rig reports which config it is on: `applied` leaves it on the probe,
-    # which is also the restore value, and `rejected`/`rolled_back` leave it on its own previous
-    # config, which the EXIT unwind must not overwrite with a value the rig just refused. `failed`
-    # (the resulting config varies), `accepted` and no answer stay on the books.
+    # `pass`. Retired once the rig reports which config it is on: `applied`, settled and confirmed
+    # by its history row, leaves it on the probe, which is also the restore value, and
+    # `rejected`/`rolled_back`, at the dial or on the row, leave it on its own previous config,
+    # which the EXIT unwind must not overwrite with a value the rig just refused. `failed` (the
+    # resulting config varies), a change still `accepted` and no answer stay on the books.
     rig_key_mark dash "$rig" pools "$probe"
     res="$(_worker_apply "$rig" "{\"pools\":$probe}")"
-    status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
-    ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"
+    # Settled, never read at dial time (#2407): the rig answers "accepted" and applies async
+    # (RigForge #344, #1309), exactly as it does for the #1236 keys above.
+    IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply pools \
+        "the rig to report the probe's pool URLs applied (RigForge #344 async apply, #1309)" \
+        "$res" _pred_rig_pool_urls "$rig" "$(_pool_urls "$probe")")"
     assert_eq "pools edit applied on the rig (#1002b)" "$status" "applied"
-    assert_contains "the rig's /status confirms pools changed (#1002b)" "$ckeys" "pools"
-    case "$status" in applied | rejected | rolled_back) rig_key_clear dash "$rig" pools ;; esac
+    assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
+    # The readback is blind once a run has left the rig on the probe (every run after the first), so
+    # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
+    row="$(_settle_history_row "$rig" "$change_id")"
+    assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
+    case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
+        rig_key_clear dash "$rig" pools
+        ;;
+    esac
     return 0
 }
