@@ -42,6 +42,7 @@ RENDER="$REPO/lib/pithead/33-render-env.sh"
 # Run the SHIPPED function in a subshell, so sourcing the artifact cannot leak definitions into
 # this harness. `source` reads from /dev/null so it can never consume the payload on stdin.
 bre() { (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     bundle_redact_env
 ); }
@@ -50,6 +51,7 @@ bre() { (
 # Without this, a broken source makes every absence assertion below pass vacuously.
 echo "== unit: support-bundle env redactor is reachable (#1631) =="
 if (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     declare -F bundle_redact_env >/dev/null
 ); then

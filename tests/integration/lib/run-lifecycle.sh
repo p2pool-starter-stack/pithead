@@ -70,14 +70,15 @@ run_lifecycle() {
 
     # backup → restore round-trip (#102): a backup archives config/.env/onions/dashboard; a
     # restore brings them back. We change the pool, restore, and assert the pool reverted and
-    # secrets survived — exercising both CLI verbs end-to-end (not just the rollback net).
+    # every wallet/proxy/dashboard/RPC/onion secret survived exactly — the same per-category check
+    # the rollback net makes (#2579), exercised here on a run that does not fail.
     it_step "backup → restore round-trip…"
     if pithead backup -y --no-encrypt >/dev/null 2>&1; then
         local arch
         arch="$(rx 'ls -t backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1')"
         if [ -n "$arch" ]; then
             local fp_b backed_pool fp_after
-            if ! fp_b="$(secret_fingerprint)" || [ -z "$fp_b" ]; then
+            if ! fp_b="$(upgrade_secret_fingerprints)" || [ -z "$fp_b" ]; then
                 it_fail "backup secrets fingerprint readable" "could not fingerprint backed-up secrets"
                 lifecycle_ok=0
             elif ! backed_pool="$(jq_get "$(api_state)" '.pool.type')" || [ -z "$backed_pool" ]; then
@@ -99,7 +100,7 @@ run_lifecycle() {
                 # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
                 assert_pool_switched "restore reverts the pool to the backed-up value" "$backed_pool"
-                if fp_after="$(secret_fingerprint)" && [ -n "$fp_after" ]; then
+                if fp_after="$(upgrade_secret_fingerprints)" && [ -n "$fp_after" ]; then
                     assert_eq "restore preserves secrets" "$fp_after" "$fp_b"
                 else
                     it_fail "restore preserves secrets" "could not fingerprint restored secrets"
@@ -118,7 +119,179 @@ run_lifecycle() {
         it_fail "pithead backup succeeded" "backup returned non-zero"
         lifecycle_ok=0
     fi
+
+    # Confirmed dashboard.data_dir carry (#2360): DASHBOARD_DATA_DIR is CONFIRM-class both from
+    # the dashboard (typed APPLY) and the host CLI (folded into the disruptive y/N, exercised here
+    # with -y) — same apply()-time carry either way. Without it the recreated dashboard would open
+    # an EMPTY DB at the new path and silently re-seed the payout-wallet tripwire baseline (#375)
+    # on the next observation. Local mode only: remote mode has no local data dir to move.
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node; then
+        local carry_old carry_new carry_epoch rows_before rows_after
+        carry_old="$(env_on_box DASHBOARD_DATA_DIR)"
+        if [ -n "$carry_old" ]; then
+            carry_epoch="$(rx 'date +%s')"
+            carry_new="${carry_old}-carried-$carry_epoch"
+            # kv_store-volatile-shape is left out: the recreated dashboard rewrites those live keys
+            # within seconds, so their shape reflects what the new process has seen, not what was
+            # carried. The kv_store-key lines still require every key to arrive.
+            rows_before="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+            it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
+            push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
+            if pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+                assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
+                rows_after="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+                if telemetry_rows_continue "$rows_before" "$rows_after"; then
+                    it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
+                else
+                    it_fail "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry" "rows diverged after the move ($(telemetry_rows_diff "$rows_before" "$rows_after"))"
+                    lifecycle_ok=0
+                fi
+            else
+                it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy"
+                lifecycle_ok=0
+            fi
+            # The product correctly refuses to overwrite the old, still-complete directory on a
+            # reverse move. Stop first and remove only this test's verified copy, so suite cleanup
+            # can return to its original configuration without discarding the source database.
+            if pithead down >/dev/null 2>&1 && rx "rm -rf -- $(quote_arg "$carry_new")" >/dev/null 2>&1 &&
+                push_config "$BASELINE_CONFIG" && pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
+                it_pass "dashboard carry cleanup restored its baseline safely"
+            else
+                it_fail "dashboard carry cleanup restored its baseline safely" "the stack was not stopped, its test copy was not removed, or the baseline did not return healthy"
+                lifecycle_ok=0
+            fi
+        else
+            it_skip_leg "confirmed dashboard.data_dir carry" "DASHBOARD_DATA_DIR is unset on the box" "by-design"
+        fi
+    else
+        it_skip_leg "confirmed dashboard.data_dir carry" "remote mode: no local data dir to move" "by-design"
+    fi
+    run_uninstall_round_trip || lifecycle_ok=0
     [ "$lifecycle_ok" = 1 ]
+}
+
+# A remote snippet printing one sorted line per entry under the given paths (#2379): a sha256 for
+# every regular file up to 64 MiB, and for a larger one (the chains' LMDB files, hundreds of GiB
+# on a synced box, an hour per hashing pass) its inode, size, mtime and ctime to the nanosecond.
+# Any write to a file moves its mtime and ctime, and ctime cannot be set back from userspace, so
+# an unchanged line proves no byte of that file was written. Directories and links print their
+# type, so a removed or added entry shows too. pipefail makes an unreadable path a failed probe,
+# never an empty snapshot that equals another empty one. -H descends a kept dir that is itself a
+# symlink (a chain on another disk). KEPT_SNAPSHOT_SUDO is the selftest seam.
+kept_data_snapshot_snippet() { # <path>...
+    local p paths=""
+    for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths \\( -type f -size +65536k -printf 'meta %i %s %T@ %C@ %p\\n' \\) -o \\( -type f -exec sha256sum {} + \\) -o -printf '%y %p -> %l\\n' | LC_ALL=C sort"
+}
+
+# The same paths' LMDB files as inode, birth time to the nanosecond and path: a chain that was
+# reused keeps all three, one re-created by a resync gets a new birth time even when the
+# filesystem hands the freed inode number straight back. Only *.mdb: a log rotates into new
+# inodes while the node runs, which says nothing about the chain.
+kept_chain_files_snippet() { # <path>...
+    local p paths=""
+    for p in "$@"; do paths="$paths $(quote_arg "$p")"; done
+    printf '%s' "set -o pipefail; ${KEPT_SNAPSHOT_SUDO-sudo -n} find -H$paths -type f -name '*.mdb' -exec stat -c '%i %.9W %n' {} + | LC_ALL=C sort"
+}
+
+# uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
+# path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
+# re-provisions from what was kept (and the harness's own secrets). The stack is stopped BEFORE the first snapshot: a running
+# monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
+# a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
+# nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
+# is empty. Always ends by bringing a stack back up, so the phases after this one have one.
+run_uninstall_round_trip() {
+    local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
+    it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
+    for key in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
+        p="$(env_on_box "$key")"
+        [ -n "$p" ] && rx "test -e $(quote_arg "$p")" && kept+=("$p")
+    done
+    kept+=(config.json)
+    rx 'test -e backups' && kept+=(backups)
+    for key in CONTROL_DIR CLEARNET_STATE_DIR CADDY_LOG_DIR PROXY_TLS_DIR; do
+        p="$(env_on_box "$key")"
+        [ -n "$p" ] && derived+=("$p")
+    done
+    derived+=(data/tari-wallet-secret.env .env)
+    onion_before="$(env_on_box MONERO_ONION_ADDRESS)"
+    local local_node=""
+    has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_node && local_node=1
+    snippet="$(kept_data_snapshot_snippet "${kept[@]}")"
+    if ! pithead down >/dev/null 2>&1 || ! rx 'cp -p .env .env.itest-round-trip' ||
+        ! before="$(rx "$snippet")" || [ -z "$before" ] ||
+        ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
+        it_fail "stopped stack snapshot readable before uninstall" "pithead down or the kept-data snapshot failed"
+        rx 'rm -f .env.itest-round-trip'
+        pithead up >/dev/null 2>&1
+        wait_status_ok 240 || true
+        return 1
+    fi
+    out="$(pithead uninstall -y 2>&1)"
+    rc=$?
+    assert_rc "pithead uninstall -y succeeded" "$rc" "0"
+    assert_contains "uninstall states the removed column" "$out" "Removed:"
+    assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
+    assert_contains "uninstall states the left-behind column" "$out" "Left behind"
+    assert_contains "uninstall prints the removal command" "$out" "sudo rm -rf"
+    if after="$(rx "$snippet")" && [ "$after" = "$before" ]; then
+        it_pass "uninstall leaves every kept path byte-identical (no allowed writes)"
+    else
+        it_fail "uninstall leaves every kept path byte-identical (no allowed writes)" \
+            "$(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep '^[<>]' | head -n 12)"
+    fi
+    local vols
+    if vols="$(rx "docker volume ls -q")"; then
+        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
+            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+    else
+        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+    fi
+    local left=""
+    for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
+    assert_eq "uninstall removes every derived path and .env" "$left" ""
+
+    # An operator's setup here generates the secrets that lived only in .env anew (docs/operations.md).
+    # The harness puts its own back, minus the completion flag setup refuses to re-run over, because
+    # the phases after this one and the end-of-run restore check the baseline's secrets, and a Tari
+    # wallet volume created under a new password would not open under the restored old one.
+    rx "grep -v '^DEPLOYMENT_COMPLETED=' .env.itest-round-trip >.env && rm -f .env.itest-round-trip"
+    # A source checkout (every bench box) runs `compose up --pull never`, which cannot bring back
+    # the pinned third-party images uninstall just removed; `missing` is what a release install,
+    # the channel uninstall serves, runs anyway (01-lifecycle.sh resolve_pull_policy; #2654).
+    it_step "pithead setup re-provisions from the kept config…"
+    out="$(rx "PITHEAD_PULL=missing $IT_PITHEAD setup --skip-deps --skip-optimize" 2>&1)"
+    rc=$?
+    assert_rc "setup after uninstall succeeded" "$rc" "0"
+    [ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -n 15 | redact | sed 's/^/        /'
+    if wait_status_ok 600; then
+        it_pass "status OK after setup-after-uninstall"
+    else
+        it_fail "status OK after setup-after-uninstall" "pithead status did not recover within 600s"
+    fi
+    # The chains' large files are the same files after setup, and the kept Tor keys give back the
+    # same onion address.
+    if [ -n "$local_node" ]; then
+        big_after="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"
+        if [ -n "$big_before" ] && [ "$big_after" = "$big_before" ]; then
+            it_pass "setup after uninstall reuses the kept chain files"
+        else
+            it_fail "setup after uninstall reuses the kept chain files" "a chain file changed inode or birth time, or none was found"
+        fi
+    else
+        it_skip_leg "setup after uninstall reuses the kept chain files" "remote mode: no local chain" "by-design"
+    fi
+    assert_eq "setup after uninstall keeps the Monero onion address" "$(env_on_box MONERO_ONION_ADDRESS)" "$onion_before"
+    [ "$IT_FAIL" -le "$fails_before" ]
+}
+
+# Table names and counts only (never row values): which families lost rows, and whether either probe
+# came back empty — an empty snapshot is a probe failure, not a divergence.
+telemetry_rows_diff() { # <before-lines> <after-lines>
+    local missing
+    missing="$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
+    printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
 
 _pred_status_down() { ! pithead status >/dev/null 2>&1; }
