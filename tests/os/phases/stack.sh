@@ -90,7 +90,9 @@ _stack_run_integration() { # <label> <extra args...>
             sed 's/\x1b\[[0-9;]*m//g' "$f" | head -n 60
         done
     fi
-    grep -a 'of which:' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
+    # The merge-mining round-trip's row rides along on a pass too: it is the one row whose verdict
+    # (a chain_id read from the Tari node, #1397/#2326) is this channel's evidence on its own.
+    grep -a -e 'of which:' -e '(#1397)' "$out" | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r line; do
         info "  [$label] ${line#*ITEST] }"
     done
     rm -f "$out"
@@ -253,7 +255,7 @@ phase_stack() {
     # guest can only run by starting a local monerod from scratch each time. That cost over two
     # hours and starved xvb-routing-smoke of its own budget the first time this ran for real
     # (#2062); the local matrix is the DIY gate's own job on its own bench, not this phase's.
-    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq" --appliance-channel)
+    local remote_extra=(--remote-monero-host "$mh" --remote-monero-rpc-port "$rpc" --remote-monero-zmq-port "$zmq")
     [ -z "$th" ] || remote_extra+=(--remote-tari-host "$th")
     # --check needs the remote endpoints too, not just the scenario runs: run-state.sh reads
     # $REMOTE_MONERO_HOST with no fallback for the ZMQ probe, so without them it dials an empty
