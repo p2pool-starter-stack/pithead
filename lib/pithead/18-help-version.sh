@@ -98,12 +98,16 @@ Maintenance:
                             fails before touching anything if it's wrong.
                               -y, --yes        restore without the confirmation prompt.
 
-  uninstall [-y|--yes]      DESTRUCTIVE: the clean exit. Stops the stack, removes its
-                            containers and images, deletes the rendered .env and Caddyfile,
-                            this checkout's control-runner units, and the egress firewall
-                            rules. Keeps what is yours: config.json, backups/, and the data
-                            dirs (chains, Tor onion keys, dashboard DB) — the closing message
-                            lists them for manual removal. Type-to-confirm unless -y.
+  uninstall [-y|--yes]      DESTRUCTIVE: the clean exit. Removes everything pithead put on
+                            this host — containers, images, the caddy_data/wallet_data/
+                            tari_wallet_data volumes, this checkout's control-runner units, the
+                            egress firewall rules, .env, Caddyfile, and every other pithead-
+                            derived file and directory — and deletes NO data, on any flag.
+                            Keeps what is yours: config.json, backups/, and the data dirs
+                            (chains, Tor onion keys, dashboard DB). Prints all three columns
+                            (removed / kept / left behind for the machine) and the exact
+                            command to delete the rest, if you want it gone. Type-to-confirm
+                            unless -y.
                             Refuses in a pithead-vX.Y.Z dir that 'current' does not point
                             at: it would stop the live stack. Run it in the live dir.
                               -y, --yes        skip the confirmation prompt.

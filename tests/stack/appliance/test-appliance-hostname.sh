@@ -8,7 +8,7 @@ mkdir -p "$HN"
 hn_run() { # engine-kind, configured host, operation, optional apply state
     (
         cd "$HN" || exit 1
-        # shellcheck source=pithead
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
         printf 'old-name' >kernel-name
@@ -164,7 +164,7 @@ mkdir -p "$MD"
 md_run() { # <operation> [conf-body-mode]
     (
         cd "$MD" || exit 1
-        # shellcheck source=pithead
+        # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
         source "$STACK"
         set -e
         : >calls
