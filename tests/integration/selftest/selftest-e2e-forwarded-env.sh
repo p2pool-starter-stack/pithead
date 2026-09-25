@@ -16,13 +16,14 @@ assert_eq "the extraction is the whole run_harness function" \
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare"
+LAUNCH_FILE="$WORK/launch" STDIN_FILE="$WORK/stdin" PREPARE_FILE="$WORK/prepare" STEP_FILE="$WORK/steps"
 # The payout-confirm keys come from the caller's environment; start from none, whatever CI exports.
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 
 capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globals pass through
     : >"$LAUNCH_FILE"
     : >"$STDIN_FILE"
+    : >"$STEP_FILE"
     rm -f "$PREPARE_FILE"
     (
         # Nothing in here may read the SCRIPT's stdin: the on_bench stub's fall-through `cat` would
@@ -38,7 +39,7 @@ capture_launch() { # <rollback> <pools> [rig-lock-wait]; the IT_*_VIEW_KEY globa
         # shellcheck disable=SC2034 # read by the eval'd real run_harness
         RIG_LOCK_PARENT_ACTOR=actor RIG_LOCK_PARENT_NONCE=0123456789abcdef0123456789abcdef
         log() { :; }
-        step() { :; }
+        step() { printf '%s\n' "$*" >>"$STEP_FILE"; }
         warn() { :; }
         ok() { :; }
         die() { exit 1; }
@@ -108,6 +109,8 @@ assert_contains "the bench lock-wait setting reaches the detached runner" "$(cat
 
 echo "== payout-confirm view keys reach the harness environment, never argv (#2675) =="
 assert_contains "unset view keys arrive empty" "$CAPTURED" $'MONERO_VIEW_KEY=\nTARI_VIEW_KEY=\nTARI_SPEND_PUBLIC_KEY=\n'
+assert_contains "the log names unset view keys" "$(cat "$STEP_FILE")" \
+    "payout-confirm keys forwarded to the harness: IT_MONERO_VIEW_KEY=unset IT_TARI_VIEW_KEY=unset IT_TARI_SPEND_PUBLIC_KEY=unset"
 assert_contains "unset view keys leave the payout-confirm row skipped" "$CAPTURED" "PAYOUT_CONFIRM=skip [needs IT_MONERO_VIEW_KEY"
 MVK=mvk-0123456789abcdef TVK=tvk-fedcba9876543210 TSPK=tspk-00112233445566778899
 IT_MONERO_VIEW_KEY="$MVK" IT_TARI_VIEW_KEY="$TVK" IT_TARI_SPEND_PUBLIC_KEY="$TSPK" capture_launch "$ROLLBACK" "$POOLS"
@@ -118,7 +121,10 @@ assert_contains "the wrapper's view keys reach the runner environment" "$KEYS" \
     "$(printf 'MONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s' "$MVK" "$TVK" "$TSPK")"
 assert_contains "the harness runs the payout-confirm row with all three keys" "$KEYS" \
     "PAYOUT_CONFIRM=run [monero.view_key=$MVK tari.view_key=$TVK tari.spend_public_key=$TSPK]"
+assert_contains "the log names supplied view keys" "$(cat "$STEP_FILE")" \
+    "payout-confirm keys forwarded to the harness: IT_MONERO_VIEW_KEY=set IT_TARI_VIEW_KEY=set IT_TARI_SPEND_PUBLIC_KEY=set"
 for k in "$MVK" "$TVK" "$TSPK"; do
+    assert_eq "view key ${k%%-*} stays out of the log" "$(contains "$(cat "$STEP_FILE")" "$k")" no
     assert_eq "view key ${k%%-*} stays off the remote command line" "$(contains "$(cat "$LAUNCH_FILE")" "$k")" no
 done
 IT_MONERO_VIEW_KEY=$'mvk\nextra' capture_launch "$ROLLBACK" "$POOLS"

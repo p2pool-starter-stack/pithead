@@ -87,6 +87,12 @@ harness_launch_records() {
         [[ "$record" != *$'\n'* ]] || die "A harness launch record contains a newline."
         HARNESS_RECORDS+="$record"$'\n'
     done
+    # Names only, never a value: a payout-confirm SKIP then says whether the wrapper had the keys.
+    local name supplied=""
+    for name in IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY; do
+        supplied+=" $name=$([ -n "${!name:-}" ] && echo set || echo unset)"
+    done
+    step "payout-confirm keys forwarded to the harness:$supplied"
 }
 
 # Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,
