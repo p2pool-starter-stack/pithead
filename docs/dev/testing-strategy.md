@@ -576,7 +576,8 @@ Every scenario, at every tier, holds to the same rules.
   prematurely.
 - Isolated and idempotent. Each scenario starts from a known baseline and restores it. The live
   matrix snapshots `config.json`; real daemons retain read/write chain mounts and may advance them.
-  The image-upgrade gate additionally reflink-snapshots and restores its enumerated persistent mounts. The
+  The image-upgrade gate additionally snapshots (CoW where reflink-capable, a full copy otherwise —
+  #2057) and restores its enumerated persistent mounts. The
   mini-stack tears down with `down -v`.
 - Actionable failures. Per-scenario pass/fail, continue-on-error to collect the whole matrix, and
   artifact capture (redacted logs, `compose ps`, `.env`-minus-secrets, dashboard responses) on

@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Private CoW snapshots for exact rollback of writable live mount sources.
+# Private snapshots for exact rollback of writable live mount sources: a CoW clone where the
+# source's filesystem supports it, a full copy otherwise (a named volume's own storage — #2057).
 
 capture_state_snapshots() { # <stateful mount TSV>
     local source parent base snap nonce prior covered kept=""
@@ -29,8 +30,8 @@ capture_state_snapshots() { # <stateful mount TSV>
             UPGRADE_SNAPSHOT_REASON="is-a-symlink:$base"
         elif rx "test -e $(quote_arg "$snap")"; then
             UPGRADE_SNAPSHOT_REASON="snapshot-path-exists:$base"
-        elif ! rx "sudo -n cp -a --reflink=always -- $(quote_arg "$source") $(quote_arg "$snap")"; then
-            UPGRADE_SNAPSHOT_REASON="reflink-copy-failed:$base"
+        elif ! rx "sudo -n cp -a --reflink=auto -- $(quote_arg "$source") $(quote_arg "$snap")"; then
+            UPGRADE_SNAPSHOT_REASON="copy-failed:$base"
         fi
         if [ -n "$UPGRADE_SNAPSHOT_REASON" ]; then
             rx "sudo -n rm -rf -- $(quote_arg "$snap")" >/dev/null 2>&1 || true
@@ -53,7 +54,7 @@ restore_state_snapshots() {
             return 1
         fi
         replacement="$source.pithead-restore-$nonce" old="$source.pithead-old-$nonce"
-        rx "test -d $(quote_arg "$snap") && test ! -e $(quote_arg "$replacement") && test ! -e $(quote_arg "$old") && sudo -n cp -a --reflink=always -- $(quote_arg "$snap") $(quote_arg "$replacement")" || {
+        rx "test -d $(quote_arg "$snap") && test ! -e $(quote_arg "$replacement") && test ! -e $(quote_arg "$old") && sudo -n cp -a --reflink=auto -- $(quote_arg "$snap") $(quote_arg "$replacement")" || {
             cleanup_restore_replacements "$journal"
             return 1
         }

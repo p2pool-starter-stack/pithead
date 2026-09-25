@@ -50,16 +50,30 @@ unset -f date
 # The failure path's own cleanup already removed $snap (it does on every failure, not knowing
 # this one pre-existed rather than being its own partial copy) — nothing left to tidy up here.
 
-echo "== a filesystem that cannot reflink names the copy step, not a generic failure =="
+echo "== a filesystem that cannot reflink falls back to a full copy instead of refusing =="
 mkdir -p "$td/noreflink"
 printf 'content\n' >"$td/noreflink/f" # cp -a on an empty dir never attempts a reflink clone at all
-! capture_state_snapshots "svc"$'\t'"dst"$'\t'"$td/noreflink"$'\t'"bind" 2>/dev/null
-[ "$UPGRADE_SNAPSHOT_REASON" = "reflink-copy-failed:noreflink" ]
+capture_state_snapshots "svc"$'\t'"dst"$'\t'"$td/noreflink"$'\t'"bind"
+[ -z "$UPGRADE_SNAPSHOT_REASON" ]
+[ "$(cat "$td"/.pithead-live-noreflink-*/f)" = content ]
+
+echo "== a copy that genuinely fails names the copy step, not a generic failure =="
+mkdir -p "$td/nocopy"
+printf 'content\n' >"$td/nocopy/f"
+# capture_state_snapshots's copy runs as `sudo -n cp ...`; shadow sudo as an exported function so
+# the SAME bash -c snippet rx() launches inherits it (export -f propagates through the environment
+# to any child bash, not just this interpreter) and the copy fails deterministically, independent
+# of what this sandbox's real sudo/filesystem would actually do.
+sudo() { return 1; }
+export -f sudo
+! capture_state_snapshots "svc"$'\t'"dst"$'\t'"$td/nocopy"$'\t'"bind" 2>/dev/null
+unset -f sudo
+[ "$UPGRADE_SNAPSHOT_REASON" = "copy-failed:nocopy" ]
 
 echo "== a failure never leaves a stray snapshot directory behind =="
-stray="$(find "$td" -maxdepth 1 -name '.pithead-live-noreflink-*' -print)"
+stray="$(find "$td" -maxdepth 1 -name '.pithead-live-nocopy-*' -print)"
 [ -z "$stray" ] || {
-    echo "expected the failed reflink attempt to clean up its own snapshot dir, found: $stray" >&2
+    echo "expected the failed copy attempt to clean up its own snapshot dir, found: $stray" >&2
     exit 1
 }
 
