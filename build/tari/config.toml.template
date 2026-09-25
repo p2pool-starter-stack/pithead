@@ -73,6 +73,12 @@ grpc_server_allow_methods = [
     "list_connected_peers",
 ]
 
+[base_node.http_wallet_query_service]
+# The HTTP API the view-only payout wallet (tari-wallet, #462) scans through (#2731). It listens on
+# the mining bridge only: no compose port or quadlet PublishPort exposes 9000 on the host.
+port = 9000
+listen_ip = "0.0.0.0"
+
 [base_node.lmdb]
 # Map headroom for the v6 JMT migration (#2593). The node grows the LMDB map only between write
 # transactions: when the space left falls to resize_threshold_bytes it adds grow_size_bytes. At the

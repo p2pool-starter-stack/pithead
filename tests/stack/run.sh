@@ -89,6 +89,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-p2pool-tari-off.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-mode-off.sh" && domain_ran test-tari-mode-off.sh "$_d0" "$?" || domain_ran test-tari-mode-off.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-lmdb.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari-lmdb.sh "$_d0" "$?" || domain_ran test-tari-lmdb.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-tari-wallet.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-fork-rewind.sh disable=SC2015

@@ -148,6 +148,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **Tari payout confirmation now finds payouts
+  ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
+  `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's
+  `wallet_birthday` works as-is). `auto` was computed from 1970, a day in 2078, so the wallet started
+  at the chain tip and missed every earlier payout; a birthday later than today is now refused. The
+  wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
+  it had no working base-node setting and fell back to Tari's public node over clearnet.
+
 - **A restore at setup no longer carries the source machine's released miner onto new hardware
   ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
   database records that the source machine's chains had synced and its miner was released. Restored

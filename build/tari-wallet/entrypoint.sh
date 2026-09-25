@@ -20,15 +20,26 @@ SECRET_FILE="${TARI_WALLET_SECRET_FILE_IN:-/run/secrets/tari_wallet_secret}"
 GRPC_BIND="${TARI_WALLET_GRPC_BIND:-/ip4/0.0.0.0/tcp/18143}"
 BASE_NODE_GRPC="${TARI_BASE_NODE_GRPC_ADDRESS:-127.0.0.1:18142}"
 
+# Days since 2022-01-01, Tari's birthday genesis (BIRTHDAY_GENESIS_FROM_UNIX_EPOCH = 1640995200).
+TARI_BIRTHDAY_GENESIS=1640995200
+
 # Resolve the wallet BIRTHDAY. Unlike #381's Monero restore HEIGHT, a Tari birthday is DAYS SINCE
-# THE UNIX EPOCH (a u16): "auto"/empty means "today", so a fresh wallet scans forward from now
-# instead of rescanning from genesis. An explicit integer is used verbatim.
+# 2022-01-01 (#2731), the unit Tari Universe stores as wallet_birthday: "auto"/empty means "today",
+# so a fresh wallet scans forward from now instead of rescanning from genesis. An explicit integer
+# is used verbatim.
 resolve_birthday() {
     local want="${TARI_WALLET_BIRTHDAY:-auto}"
     case "$want" in
-    '' | auto) printf '%s\n' "$(($(date +%s) / 86400))" ;;
+    '' | auto) printf '%s\n' "$((($(date +%s) - TARI_BIRTHDAY_GENESIS) / 86400))" ;;
     *) printf '%s\n' "$want" ;;
     esac
+}
+
+# The v6 wallet scans through the base node's HTTP wallet query service (port 9000), not gRPC. Point
+# both the primary and the fallback URL at the LOCAL node: the stock fallback is Tari's public
+# rpc.tari.com, which would scan over clearnet (#2731). The host is the one the gRPC address names.
+base_node_http_url() {
+    printf 'http://%s:9000\n' "${BASE_NODE_GRPC%%:*}"
 }
 
 # When sourced by the shell test harness, expose the functions and stop — don't read secrets or exec.
@@ -50,13 +61,8 @@ fi
 
 mkdir -p "$WALLET_DIR"
 birthday="$(resolve_birthday)"
-echo "Starting view-only Tari payout wallet (birthday $birthday, base node $BASE_NODE_GRPC) (#462)..."
-
-# Point the wallet at the LOCAL base node. The exact config-override key for the base-node peer is
-# the one item pinned to tier-4 (the live bench) — confirmed there against a live minotari_console_wallet
-# alongside whether the merge-mine coinbase surfaces via GetCompletedTransactions. Passed via the
-# Tari config env-override convention so it is NON-secret and stays out of argv.
-export MINOTARI_WALLET__BASE_NODE__GRPC_BASE_NODE_ADDRESS="/dns4/${BASE_NODE_GRPC%%:*}/tcp/${BASE_NODE_GRPC##*:}"
+node_url="$(base_node_http_url)"
+echo "Starting view-only Tari payout wallet (birthday $birthday, base node $node_url) (#462)..."
 
 # The three MINOTARI_WALLET_VIEW_PRIVATE_KEY / SPEND_KEY / PASSWORD env vars (sourced above, now
 # exported) supply the view-only wallet material WITHOUT ever landing on the command line. Supplying
@@ -66,4 +72,6 @@ exec minotari_console_wallet \
     --non-interactive-mode \
     --enable-grpc \
     --grpc-address "$GRPC_BIND" \
-    --birthday "$birthday"
+    --birthday "$birthday" \
+    -p "wallet.http_server_url=$node_url" \
+    -p "wallet.fallback_http_server_url=$node_url"
