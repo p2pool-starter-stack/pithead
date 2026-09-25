@@ -30,8 +30,9 @@ _xvb_proxy_ready_payload() {
 }
 
 # xmrig-proxy is held stopped by the sync gate (#35) until this leg starts it, fresh, one line
-# above the actuation call. Its container carries no healthcheck (docker-compose.yml), and
-# algo_service.switch_miners swallows a not-yet-listening API as a silent, logged no-op (its
+# above the actuation call. Its container's own healthcheck (#904, docker-compose.yml) gates
+# nothing and gets there in ~1s once the process is up (job 1141), so it cannot stand in for this
+# wait; algo_service.switch_miners swallows a not-yet-listening API as a silent, logged no-op (its
 # get_config returns falsy, so it never calls update_config and never touches state) — exactly the
 # shape job 629 hit: mode stayed null and pools stayed the single-entry startup config, because the
 # switch never ran. Poll the SAME get_config() call switch_miners depends on, so "ready" means what
@@ -43,10 +44,17 @@ _xvb_proxy_ready_payload() {
 # jobs 701 and 717 both died to it, one before the API ever answered, one a second after it did.
 # Re-issue the start on every poll (a no-op once already running) so the gate's periodic stop is
 # answered within one 2s poll instead of costing the whole wait.
+#
+# 60s was too tight for the gate's own cycle, not for the proxy: job 1141's guest journal shows
+# xmrig-proxy's healthcheck reporting healthy within ~1s of every single start, but the gate-driven
+# stop at 00:52:26.735Z was not followed by a restart until 00:53:25.423Z — a single ~59s outage
+# that alone swallowed nearly the whole bounded wait, because xmrig-proxy's compose entry depends
+# on p2pool's own restart finishing first (com.docker.compose.depends_on=p2pool:service_started).
+# 150s gives one such worst-case gap room to happen and still leave a live window for the poll.
 _xvb_wait_for_proxy_api() { # -> 0 once the proxy answers a real get_config()
     local deadline payload
     payload="$(_xvb_proxy_ready_payload)"
-    deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-60}))
+    deadline=$(($(date +%s) + ${XVB_PROXY_READY_TIMEOUT:-150}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         _ssh "podman start xmrig-proxy >/dev/null 2>&1"
         _xvb_guest_python "$payload" >/dev/null 2>&1 && return 0
@@ -151,7 +159,7 @@ phase_provision_xvb_routing() {
         return 1
     }
     if ! _xvb_wait_for_proxy_api; then
-        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-60}s of starting — the actuator was never attempted"
+        bad "xmrig-proxy API never answered within ${XVB_PROXY_READY_TIMEOUT:-150}s of starting — the actuator was never attempted"
         _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
         return 1
     fi
@@ -172,6 +180,15 @@ phase_provision_xvb_routing() {
 
 _xvb_self_test() {
     local f=0 payload real_guest_python
+    # #2712 (job 1141): a single gate-driven xmrig-proxy outage ran ~59s, so the wait's own default
+    # must stay wide enough to survive one — this is a source check, not a timed run, because a real
+    # 150s wait has no place in a unit self-test. Both defaults (the wait's own and the row message's)
+    # have to move together or the failure message misreports what the leg actually waited for.
+    declare -f _xvb_wait_for_proxy_api | grep -q ':-150' &&
+        declare -f phase_provision_xvb_routing | grep -q ':-150' || {
+        printf 'xvb self-test: proxy-ready default drifted below the #2712 evidence floor (150s)\n' >&2
+        f=$((f + 1))
+    }
     # A function redefined inside this self-test REPLACES the one global definition — there is no
     # lexical scoping to fall back on, and `unset -f` removes it rather than restoring it. Saved
     # here so the dedicated proxy-readiness drill below can run the REAL _xvb_guest_python (through
