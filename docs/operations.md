@@ -28,7 +28,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: stops the stack, removes its containers and images, the rendered `.env` and Caddyfile, this checkout's control-runner units, and the egress firewall rules with their `pithead-egress.service` boot unit. Keeps what's yours — `config.json`, `backups/`, and the data dirs — and lists them for manual removal. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -501,6 +501,44 @@ so confirm yours is a `4…`/95-char address first (see [Configuration](configur
 > apply`. `./pithead up` and `./pithead doctor` now warn when a data directory named in `.env` is missing.
 
 ---
+
+### What `uninstall` removes
+
+`uninstall` tears down and removes everything pithead put on this machine. It deletes **no**
+data, on any flag — then prints where the data is and the exact command that removes it, if you
+want it gone.
+
+**Removed:**
+
+| item | what |
+|---|---|
+| containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
+| images | every ref from `docker compose config --images` |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
+| systemd units | `pithead-control.path` / `.service`, this checkout's only |
+| firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
+| rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
+| derived state dirs | `data/control/` (control spool + audit trail), `data/clearnet-state/`, `data/caddy-logs/`, `data/proxy-tls/` (the stratum TLS keypair), and `data/tari-wallet-secret.env` (the Tari view-key secret) — each removed individually by path, never `rm -rf data/` |
+| version symlink | `<parent>/current`, only when it points at this checkout |
+
+**Kept — yours, never touched:** the Monero, Tari, P2Pool, Tor, and dashboard data dirs;
+`config.json`; `backups/`.
+
+A derived directory is removed only at the path setup gives it. If `.env` names it anywhere else,
+or at, above or inside a kept path, `uninstall` leaves it in place with a warning. After
+`uninstall`, `./pithead setup` re-provisions from the kept `config.json` and data dirs. The chains
+are reused rather than re-synced, and the kept Tor data gives back the same onion addresses.
+Secrets that lived only in `.env` or in a removed directory are generated anew: the proxy token,
+an `auto` stratum password and the stratum TLS keypair. Rigs that use the generated password or
+pin the TLS fingerprint need the new values.
+
+**Left behind — installed by setup, shared with the machine, not removed:**
+
+| item | why it stays | to remove it by hand |
+|---|---|---|
+| apt packages `jq`, `openssl`, `docker.io`, `docker-compose-v2` | other software on the box may use them | `sudo apt-get remove <pkgs>` |
+| GRUB HugePages cmdline | reverting needs `update-grub` and a reboot the verb must not trigger | restore `/etc/default/grub.bak`, `sudo update-grub`, reboot |
+| runtime HugePages pool | resets on reboot anyway | `sudo sysctl -w vm.nr_hugepages=0` |
 
 ## The deploy-box layout
 
