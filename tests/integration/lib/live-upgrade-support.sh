@@ -126,8 +126,8 @@ _pred_worker_set() { [ "$(worker_names)" = "$1" ]; }
 all_running_refs() {
     rx 'docker compose ps --services --status running 2>/dev/null | sort | while read -r s; do c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ] || exit 1; docker inspect --format "$s {{.Config.Image}}" "$c"; done'
 }
-stateful_mounts() {
-    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
+stateful_mounts() { # tmpfs excluded (job 1181): no host Source to snapshot, unlike a bind at the same destination
+    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
 }
 normalized_stateful_mounts() { # <version-dir> <mount TSV>
     awk -F '\t' -v OFS='\t' -v root="$1" '$2 == "/clearnet-state" || $2 == "/control/requests" || $2 == "/var/log/caddy" { prefix=root "/data/"; if (index($3,prefix) != 1) exit 1; $3="@release/data/" substr($3,length(prefix)+1) } { print }' <<<"$2"
