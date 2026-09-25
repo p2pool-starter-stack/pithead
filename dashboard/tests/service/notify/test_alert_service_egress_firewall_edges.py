@@ -50,3 +50,17 @@ class TestEgressFirewallEdges:
         _ev(svc, egress_firewall="missing")
         _ev(svc, egress_firewall="enforced")
         assert svc.drain_incidents() == {EVT: 1}
+
+    async def test_process_reads_the_host_verdict_itself(self, monkeypatch):
+        # The data loop passes no egress_firewall; process() asks the host file, evaluate stays pure.
+        monkeypatch.setattr(alert_mod, "live_firewall_state", lambda: "missing")
+        notifier = _FakeNotifier()
+        await _svc(notifier=notifier).process(
+            monero_down=False,
+            tari_down=False,
+            tari_required=True,
+            miner_released=True,
+            workers=[],
+            workers_expected=False,
+        )
+        assert notifier.sent_events == [EVT]

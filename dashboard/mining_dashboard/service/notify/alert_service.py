@@ -12,6 +12,7 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import ContainerHealthMonitor
+from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
 from mining_dashboard.service.notify.notify_sinks import config_sinks
@@ -392,6 +393,7 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
                 except Exception as exc:  # never let a tracker bug break the data loop
                     logger.debug("Container-health update failed (%s)", type(exc).__name__)
             return []
+        signals.setdefault("egress_firewall", live_firewall_state())  # the host's verdict, #2599
         try:
             alerts = self.evaluate(**signals)
         except Exception as exc:  # never let an alerting bug break the data loop
