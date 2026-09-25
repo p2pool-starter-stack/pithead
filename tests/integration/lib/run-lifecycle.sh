@@ -125,16 +125,23 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
-                # #2626: the restore's marker drops the archive's sync-gate release. `status` passes
-                # with the miner held and /api/state carries no latch, so ask the gate itself: on
-                # these synced chains the restored dashboard must log its own release and retire the
-                # marker. A dashboard that kept the archive's latch never logs a release. `up`
-                # restarted Tari, whose Tor reconnect #2455 measured at >18 min, so this waits as
-                # long as e2e.sh's wait_synced.
-                if wait_for 1500 10 "the sync gate to re-release after restore" _pred_gate_rereleased; then
-                    it_pass "restore re-derives the sync gate: released on synced chains, marker retired (#2626)"
+                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
+                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
+                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
+                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
+                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
+                local ddir
+                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
+                if [ -n "$ddir" ]; then
+                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
+                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                fi
+                if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
+                    _pred_p2pool_running; then
+                    it_pass "restore does not hold p2pool behind the sync gate (#2626)"
                 else
-                    it_fail "restore re-derives the sync gate (#2626)" "no sync-gate release in the restored dashboard's log, or sync-gate-reset still present, 1500s after restore"
+                    it_fail "restore does not hold p2pool behind the sync gate (#2626)" \
+                        "p2pool still not running 60s after restore+up"
                     lifecycle_ok=0
                 fi
                 # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
@@ -352,14 +359,7 @@ _pred_failover_armed() {
     st="$(api_state)"
     [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
-_pred_gate_rereleased() {
-    local ddir started
-    ddir="$(env_on_box DASHBOARD_DATA_DIR)"
-    started="$(rx "docker inspect dashboard --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')"
-    [ -n "$ddir" ] && [ -n "$started" ] &&
-        rx "sudo test -d $(quote_arg "$ddir") && sudo test ! -e $(quote_arg "$ddir/sync-gate-reset") &&
-            docker compose logs --no-color --since $(quote_arg "$started") dashboard 2>&1 | grep -aqF 'Required chain(s) synced'" >/dev/null 2>&1
-}
+_pred_p2pool_running() { [ "$(svc_state_of "$(service_state p2pool)")" = "running" ]; }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }
 _pred_tor_healthy() {
     local s

@@ -118,6 +118,7 @@ The deploy-time axes — each changes a real runtime path. Full table and assert
 | Network-height UI override doesn't deadlock the gate | p2pool held → height 0 | 1 ✅ |
 | Restart mid-sync / post-release (latch persisted) | snapshot reload | 1 ✅ |
 | Restore onto other hardware → latch re-derived from this machine's chains (#2626) | restore's `sync-gate-reset` marker | 1 ✅ |
+| `./pithead restore` (same-box) → latch untouched, no hold (#2626 operator ruling) | no marker written | 4 ✅ (`lifecycle`) |
 
 ### C. Node health & failover (#31)
 

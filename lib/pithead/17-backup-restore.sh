@@ -389,8 +389,6 @@ stack_restore() {
     resolve_dashboard_host
     DEPLOYMENT_COMPLETED=$(env_get DEPLOYMENT_COMPLETED) render_env
     generate_caddyfile
-    # The restored dashboard DB carries the source's #35 sync-gate release; re-derive it here (#2626).
-    [ ! -d "$DASHBOARD_DIR" ] || sudo touch "$DASHBOARD_DIR/sync-gate-reset"
     log "Fixing Tor data ownership (100:101)..."
     sudo chown -R 100:101 "$TOR_DATA_DIR"
     # Return restored data to the uid used by its container.
