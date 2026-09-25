@@ -90,6 +90,27 @@ test("the screen promises it clears itself, so waiting is not mistaken for hangi
   assert.match(headerOf(renderToString(SyncView({ sync: SYNCING }))), /clears itself once the required chains are ready/);
 });
 
+test("a remote node's sync-wait reason (#2353) renders on its own card, not the header", () => {
+  const withReason = {
+    monero: SYNCING.monero,
+    tari: {
+      ...SYNCING.tari,
+      reason:
+        "Waiting for the remote Tari node at 192.168.1.172:18142: HEADER_SYNC, initial sync not yet achieved, 12 min",
+    },
+  };
+  const out = renderToString(SyncView({ sync: withReason }));
+  assert.match(out, /Waiting for the remote Tari node at 192\.168\.1\.172:18142/);
+  assert.doesNotMatch(headerOf(out), /Waiting for the remote Tari node/);
+});
+
+test("no reason line renders when the sync-status model found none", () => {
+  // SYNCING carries no `reason` key at all — the common case (local nodes, or a remote node
+  // that just hasn't been probed as syncing-and-blocking yet) must render nothing extra.
+  const out = renderToString(SyncView({ sync: SYNCING }));
+  assert.doesNotMatch(out, /Waiting for the remote/);
+});
+
 test("the added copy is in the HEADER, not smeared across the chain cards (#1886 narrowness)", () => {
   // The control for every row above: they read the header block only, so this pins that the
   // block is a real subset of the page. If the added text ever moves into a card, the rows above

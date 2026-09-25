@@ -291,7 +291,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # True when Tari is syncing but we're staying in the operational view — the
                     # UI shows a "Tari syncing" indicator rather than the takeover screen.
                     tari_syncing_passive = is_tari_syncing and not global_sync
-
+                    self._apply_remote_wait_reasons(monero_sync, tari_sync)  # #2353
                     if global_sync:
                         if not is_monero_syncing and "percent" not in monero_sync:
                             h = network_stats.get("height", 1)

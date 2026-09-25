@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 from mining_dashboard.client.docker.docker_control import DockerControl
 from mining_dashboard.client.monero.monero_wallet_client import MoneroWalletClient
@@ -12,10 +13,14 @@ from mining_dashboard.config.config import (
     GITHUB_RIGFORGE_RELEASES_API,
     HASHRATE_DROP_MINUTES,
     HASHRATE_DROP_THRESHOLD_PCT,
+    MONERO_RPC_URL,
     NODE_STALE_AFTER_SEC,
+    TARI_GRPC_ADDRESS,
     TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
+    monero_is_local,
+    tari_is_local,
 )
 from mining_dashboard.service.data_helpers import (
     WorkerLifecycle,
@@ -27,6 +32,7 @@ from mining_dashboard.service.health.update_checker import GitHubReleaseClient, 
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
 from mining_dashboard.service.notify.alert_service import AlertService
 from mining_dashboard.service.notify.healthchecks import HealthchecksClient
+from mining_dashboard.service.sync_reason import describe_remote_wait
 from mining_dashboard.service.xvb.price_feed import CoinGeckoClient, PriceFeed
 
 logger = logging.getLogger("DataService")
@@ -149,6 +155,12 @@ class DataSetupMixin:
         # node that WAS in sync and stayed out for NODE_STALE_AFTER_SEC trips `down` (= stale).
         self.monero_sync_stale = NodeHealthMonitor(down_after=NODE_STALE_AFTER_SEC)
 
+        # Remote-sync-wait reason (#2353): when the wait started, per chain (reset once the
+        # node stops being the reason), and the last logged reason's identity, so the line
+        # fires once per change of state rather than once per poll.
+        self._remote_wait_started = {"monero": None, "tari": None}
+        self._last_remote_reason = {"monero": None, "tari": None}
+
         # Healthchecks.io dead-man's switch (Issue #79). Disabled by default — when off this is
         # a no-op. When on, each cycle pings a unique URL; the alert fires externally on the
         # *absence* of a ping, so it survives a host death the in-stack notifier can't report.
@@ -235,3 +247,29 @@ class DataSetupMixin:
             self.latest_data.update(loaded_snapshot)
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
+
+    def _apply_remote_wait_reasons(self, monero_sync, tari_sync):
+        """Stamp each chain's remote-sync-wait reason (#2353) onto its ``*_sync`` dict —
+        see ``_apply_remote_wait_reason``. Split out of ``DataService.run`` only to keep that
+        poll loop under its file-budget ceiling; TARI_REQUIRED-gated global-sync logic stays
+        there since tests patch it at that module's namespace."""
+        self._apply_remote_wait_reason("Monero", monero_sync, monero_is_local(), MONERO_RPC_URL)
+        self._apply_remote_wait_reason("Tari", tari_sync, tari_is_local(), TARI_GRPC_ADDRESS)
+
+    def _apply_remote_wait_reason(self, chain, sync, is_local, address):
+        """Stamp ``sync["reason"]`` with why a remote node is the cause of the sync-page wait
+        (#2353), and log the reason once per change of state — not once per poll."""
+        reason = describe_remote_wait(chain, address, is_local=is_local, sync_status=sync)
+        if reason is None:
+            self._remote_wait_started[chain] = None
+            self._last_remote_reason[chain] = None
+            sync["reason"] = None
+            return
+
+        started = self._remote_wait_started[chain] or time.monotonic()
+        self._remote_wait_started[chain] = started
+        sync["reason"] = reason.render(time.monotonic() - started)
+
+        if reason != self._last_remote_reason[chain]:
+            self._last_remote_reason[chain] = reason
+            logger.warning(sync["reason"])

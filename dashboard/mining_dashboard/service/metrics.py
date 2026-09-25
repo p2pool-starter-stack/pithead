@@ -46,6 +46,7 @@ class SyncMetric:
     has_target: bool  # a real target height is known (vs. still discovering it)
     done: bool  # fully synced
     down: bool  # debounced unreachable (node-health monitor)
+    reason: str | None = None  # why a remote node is the cause of the wait (#2353)
 
 
 @dataclass(frozen=True)
@@ -331,6 +332,7 @@ def _sync_metric(sync):
         done=(sync.get("reachable", False) and not sync.get("is_syncing", True))
         or (has_target and percent >= 100),
         down=bool(sync.get("down", False)),
+        reason=sync.get("reason"),
     )
 
 

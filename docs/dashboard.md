@@ -54,10 +54,18 @@ stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 
-With `tari.mode: remote` the wait is on that node: the dashboard reads sync state from
-`tari.remote.host` over gRPC, so a remote node still catching up holds the miner exactly as a local
-one would. Set `dashboard.tari_required: false` if you'd rather not have someone else's node gate
-your Monero mining.
+With `tari.mode: remote` (or `monero.mode: remote`) the wait is on that node: the dashboard reads
+sync state from `tari.remote.host` over gRPC, so a remote node still catching up holds the miner
+exactly as a local one would. Because that node's own state is the only way to tell "still
+syncing" from "stuck for a reason on your side," the Tari card names the reason under the gauge —
+the node's address, its own state (`base_node_state`/`initial_sync_achieved`, or the last gRPC
+error), and how long the page has been waiting: e.g. *"Waiting for the remote Tari node at
+192.168.1.172:18142: HEADER_SYNC, initial sync not yet achieved, 12 min."* The same line is
+logged once, each time that state changes. A remote monerod's line is thinner — just its address,
+"initial sync not yet achieved," and the wait — because the stack never probes a node it doesn't
+run (see the RAM table above), so there is no RPC state or error to add. Set
+`dashboard.tari_required: false` if you'd rather not have someone else's node gate your Monero
+mining.
 
 > **Want to skip most of the wait?** Point the stack at an existing synced blockchain, or connect
 > to a remote node. See [Configuration › Reusing an existing node](configuration.md#reusing-an-existing-node).
