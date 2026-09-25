@@ -228,6 +228,28 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     }
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
     preview=$APPROVAL_PREVIEW
+
+    # MONERO_NODE_USERNAME/MONERO_NODE_PASSWORD sit in none of the three dashboard-committable
+    # tiers (42-control-policy-and-host-checks.sh: "those are secrets, not address identity, and
+    # they stay host-only DEST with the rest of the credentials"). Before the 2026-09-13 perimeter
+    # audit an unlisted key like these fell into a catch-all approval tier and this leg's supplied
+    # credentials would have cleared the combined gate below; the audit removed that catch-all so
+    # the same change now hard-refuses at preview instead — the security floor working as
+    # designed (SECURITY.md: no credential is ever dashboard-committable), not a gap in this leg.
+    # rig.sh's own wizard-time boot already proves a credentialed reserved node actually connects
+    # (#2063), so this only needs to prove the refusal.
+    if [ -n "$mu" ] || [ -n "$mp" ]; then
+        if reserved_node_credential_refusal_verdict "$preview"; then
+            ok "reserved-node RPC login credentials are refused outright, never routed into the approval gate"
+        else
+            bad "reserved-node preview with RPC login credentials did not hard-refuse ($(reserved_node_preview_payload "$preview"))"
+            return
+        fi
+        it_skip_leg "reserved-node dashboard day-two repoint with RPC login credentials" \
+            "MONERO_NODE_USERNAME/PASSWORD are host-only by design (42-control-policy-and-host-checks.sh); rig.sh's wizard-time boot proves credentialed connectivity (#2063)" covered
+        return
+    fi
+
     if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
         .status == "previewed" and .destructive == true and .approval_required == true and
         any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
@@ -381,6 +403,7 @@ _approval_self_test() {
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _physical_presence_password_refusal_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
+    _reserved_node_credential_refusal_self_test || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     _remote_node_proposal_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))

@@ -49,6 +49,29 @@ physical_presence_password_refusal_verdict() { # <control-result-json>
     printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
 }
 
+# MONERO_NODE_USERNAME/MONERO_NODE_PASSWORD sit in none of the three dashboard-committable tiers
+# (42-control-policy-and-host-checks.sh) and hard-refuse at preview the instant a reserved-node
+# proposal actually changes one — the security floor working as designed, not the combined
+# approval gate appliance-config-approval-leg.sh's reserved-node row expects for the endpoint
+# fields beside them (#2713: this leg used to expect an approval-gated preview here too, a
+# leftover from before the 2026-09-13 perimeter audit removed the catch-all that swept an
+# unlisted key into the approval tier).
+reserved_node_credential_refusal_verdict() { # <preview-json>
+    printf '%s' "$1" | jq -e '
+        .status == "rejected" and
+        ((.error | contains("MONERO_NODE_USERNAME")) or (.error | contains("MONERO_NODE_PASSWORD")))' >/dev/null
+}
+
+_reserved_node_credential_refusal_self_test() {
+    reserved_node_credential_refusal_verdict '{"status":"rejected",
+        "error":"this change alters a security-sensitive setting (MONERO_NODE_PASSWORD) that is not committable from the dashboard."}' || return 1
+    reserved_node_credential_refusal_verdict '{"status":"rejected",
+        "error":"this change alters a security-sensitive setting (MONERO_NODE_USERNAME) that is not committable from the dashboard."}' || return 1
+    reserved_node_credential_refusal_verdict '{"status":"previewed","destructive":true,"approval_required":true}' && return 1
+    reserved_node_credential_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
+    return 0
+}
+
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
 # reads this printed NO response payload on a failure: it could not tell "the preview never
 # returned" from "the flags are wrong" from "an endpoint is missing" — three different defects, one
@@ -395,5 +418,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
     _physical_presence_password_refusal_self_test || f=1
+    _reserved_node_credential_refusal_self_test || f=1
     exit "$f"
 fi

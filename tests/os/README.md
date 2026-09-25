@@ -286,11 +286,16 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and typed
-confirmation to succeed, checks the current p2pool container's narrowly extracted
+root-run battery without overriding `HOME`. With both blank, the row requires the host preflight
+and typed confirmation to succeed, checks the current p2pool container's narrowly extracted
 Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
-configuration. Missing node inputs are a counted failure, never a skipped release gate.
+endpoint (or its documented SOCKS loopback bridge), then restores the original local-node
+configuration. With either supplied, the row instead proves the dashboard's day-two control
+channel hard-refuses the RPC login credentials outright (they sit in none of the three
+dashboard-committable tiers, 42-control-policy-and-host-checks.sh) and skips the
+connectivity proof as `covered`: a credentialed reserved node's actual connectivity is proven by
+the `rig` phase's wizard-time boot instead (#2063). Missing node inputs are a counted failure,
+never a skipped release gate.
 
 ## Static verification
 
