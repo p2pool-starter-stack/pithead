@@ -182,6 +182,14 @@ run_scenario() {
     return 0
 }
 
+# Whether a chain's clearnet_initial_sync flag actually reaches its daemon: render_env ignores it
+# while the egress firewall is on (#2649), so the raw config flag alone overstates the box's real
+# state. Shared by the steady-state battery (assert_running_state) and the restore step below.
+clearnet_flag_effective() { # <config> <chain: monero|tari> -> true|false
+    [ "$(jq_get "$1" ".$2.clearnet_initial_sync")" = "true" ] &&
+        [ "$(jq_get "$1" '.network.tor_egress_firewall')" = "false" ] && echo true || echo false
+}
+
 # The clearnet-sync scenario runs with the egress firewall off, the only way its flags reach the
 # daemons (#2649). Before that scenario ends, turn the firewall back on with the flags left set and
 # prove what the operator then gets: the rules are installed again, render_env zeroes both .env
