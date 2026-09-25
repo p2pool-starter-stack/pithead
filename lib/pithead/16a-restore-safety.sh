@@ -86,13 +86,12 @@ restore_staged_members_safe() {
 
 # An archive may carry generated files for round-trip compatibility, but they are never policy
 # inputs. Keep only the few opaque values that cannot be recovered from config.json or the data
-# trees, including (admin restore only) the stable dashboard-login hash while its archived password
-# fingerprint matches the restored config. Validate them as single-line generated values, then use
-# the normal writers to rebuild .env and Caddyfile from the staged, validated config. This runs
-# before any live path is touched.
-restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy> [keep-dashboard-hash=0]
-    local staged_cfg="$1" staged_env="$2" staged_caddy="$3" keep_dashboard_hash="${4:-0}" seed="${2}.canonical"
-    local key value count kind decoded dash_password fp
+# trees, validate them as single-line generated values, then use the normal writers to rebuild
+# .env and Caddyfile from the staged, validated config. This runs before any live path is touched.
+restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy>
+    local staged_cfg="$1" staged_env="$2" staged_caddy="$3" seed="${2}.canonical"
+    local key value count kind decoded dash_password dash_fp_ok=0
+    dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
     : >"$seed" || return 1
     while read -r key kind; do
         if [ "$key" = PROXY_STRATUM_PASSWORD ] && [ "$(jq -r '.p2pool.stratum_password // ""' "$staged_cfg")" != auto ]; then continue; fi
@@ -104,27 +103,25 @@ restore_canonicalize_derived() { # <staged-config> <staged-env> <staged-caddy> [
         case "$kind" in
         hex24) [[ "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         hex32) [[ "$value" =~ ^[0-9a-f]{32}$ ]] || return 1 ;;
+        dashfp)
+            # Same rule as the render path: a hash is reused only while its fingerprint matches the
+            # configured password. A stale pair is dropped so the render rehashes the password.
+            [ -n "$dash_password" ] && [ "$value" = "$(printf '%s' "$dash_password" | sha256_hex)" ] || continue
+            dash_fp_ok=1
+            ;;
         optional_hex24) [[ -z "$value" || "$value" =~ ^[0-9a-f]{24}$ ]] || return 1 ;;
         onion) [[ "$value" =~ ^(placeholder|[a-z2-7]{56}\.onion)$ ]] || return 1 ;;
         client) [[ "$value" =~ ^(placeholder|[A-Z2-7]{52})$ ]] || return 1 ;;
-        bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         bcrypt)
-            # Only the admin restore keeps it (archive wins); the wizard door re-hashes (#2231).
-            [ "$keep_dashboard_hash" = 1 ] || continue
-            # Auth disabled in the restored config: the archived hash is stale policy, dropped.
-            dash_password=$(jq -r '.dashboard.auth.password // ""' "$staged_cfg") || return 1
-            [ -n "$dash_password" ] || continue
-            # Raw shape first, like every sibling kind: openssl's decoder skips stray bytes.
-            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || return 1
-            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || return 1
-            [[ "$decoded" =~ ^\$2[aby]\$14\$[./A-Za-z0-9]{53}$ ]] || return 1
-            # apply's own rule: keep the hash only while the archived fingerprint is the restored
-            # password's; otherwise drop it and let the writer re-hash. The archive's author already
-            # chooses config.json's password, so the hash grants nothing the config does not.
-            fp=$(printf '%s' "$dash_password" | sha256_hex)
-            [ "$(env_get_file "$staged_env" DASHBOARD_AUTH_PW_FP)" = "$fp" ] || continue
-            printf 'DASHBOARD_AUTH_PW_FP=%s\n' "$fp" >>"$seed" || return 1
+            [ "$dash_fp_ok" -eq 1 ] || continue
+            # A 60-byte bcrypt string is exactly 80 base64 characters; openssl alone ignores junk.
+            # A hash that is not well-formed (an older release's, or a damaged one) is dropped, not
+            # refused, so the render hashes the restored password again and the archive still restores.
+            [[ "$value" =~ ^[A-Za-z0-9+/]{80}$ ]] || continue
+            decoded=$(printf '%s' "$value" | openssl base64 -d -A 2>/dev/null) || continue
+            [[ "$decoded" =~ ^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$ ]] || continue
             ;;
+        bool) [[ "$value" =~ ^(true|false)$ ]] || return 1 ;;
         esac
         printf '%s=%s\n' "$key" "$value" >>"$seed" || return 1
     done <<'EOF'
@@ -138,6 +135,7 @@ P2POOL_ONION_ADDRESS onion
 DASHBOARD_ONION_ADDRESS onion
 DASHBOARD_ONION_CLIENT_PUBKEY client
 DASHBOARD_ONION_CLIENT_PRIVKEY client
+DASHBOARD_AUTH_PW_FP dashfp
 DASHBOARD_AUTH_HASH_B64 bcrypt
 DEPLOYMENT_COMPLETED bool
 EOF
@@ -178,8 +176,10 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
     staged_env="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[1]#/}"
     staged_caddy="$RESTORE_STAGE_DIR/${RESTORE_FIXED_PATHS[2]#/}"
     paths_file="$RESTORE_STAGE_DIR/.validated-data-paths"
+    # Validate against the archive's own .env: the live one belongs to another render, so a dashboard
+    # password that differs from it would force a Caddy rehash that this read-only check must not need.
     if [ ! -f "$staged_cfg" ] || [ ! -f "$staged_env" ] || { [ -e "$staged_caddy" ] && [ ! -f "$staged_caddy" ]; } ||
-        ! err=$(PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" RESTORE_PATH_FILE="$paths_file" bash -c \
+        ! err=$(PITHEAD_CONFIG_SET=1 PITHEAD_CONFIG_FILE="$staged_cfg" PITHEAD_ENV_FILE="$staged_env" RESTORE_PATH_FILE="$paths_file" bash -c \
             "source '${BASH_SOURCE[0]}' && parse_and_validate_config >/dev/null && printf '%s\\0' \"\$MONERO_DIR\" \"\$TARI_DIR\" \"\$P2POOL_DIR\" \"\$TOR_DATA_DIR\" \"\$DASHBOARD_DIR\" >\"\$RESTORE_PATH_FILE\"" 2>&1); then
         restore_discard_stage
         error "Archive does not contain a valid Pithead configuration — nothing was restored. ${err:0:240}"
@@ -205,7 +205,7 @@ restore_stage_archive() { # <archive> <encrypted:0|1> <passphrase>
         restore_discard_stage
         error "Archive contains files or data paths outside this appliance's validated restore set — nothing was restored."
     fi
-    if ! restore_canonicalize_derived "$staged_cfg" "$staged_env" "$staged_caddy" 1; then
+    if ! restore_canonicalize_derived "$staged_cfg" "$staged_env" "$staged_caddy"; then
         restore_discard_stage
         error "Archive contains invalid generated identity or secret state — nothing was restored."
     fi

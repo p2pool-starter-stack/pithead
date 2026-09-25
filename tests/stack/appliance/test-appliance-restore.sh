@@ -68,17 +68,22 @@ COMPOSE_PROFILES=local_node
 EOF
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan","auth":{"username":"admin","password":"%s"}} }\n' "$WALLET" "$RS_AUTH_PASSWORD" >"$RS/config.json"
 
-# An archive-controlled fingerprint must not bless an unrelated archive-controlled bcrypt. The
-# plaintext config is authoritative; canonicalization regenerates both derived values from it.
-RSAUTH="$RS/auth-canonical"
-mkdir -p "$RSAUTH"
+# A pair pithead rendered carries a hash of exactly the configured password, so canonicalization
+# keeps it byte-for-byte while its fingerprint matches (#2579); a salted rehash would change the
+# credential the safety rollback compares. A stale pair is hashed again from the plaintext.
+RSAUTH="$RS/auth-canonical" && mkdir -p "$RSAUTH"
 cp "$RS/config.json" "$RSAUTH/config.json"
 printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$RS_AUTH_FP" >"$RSAUTH/.env"
 PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
 assert_rc "restore auth canonicalization accepts disposable credentials" "$?" 0
 assert_eq "restore auth canonicalization preserves the plaintext password" "$(jq -r '.dashboard.auth.password' "$RSAUTH/config.json")" "$RS_AUTH_PASSWORD"
-assert_eq "restore auth canonicalization regenerates the bcrypt from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_EXPECTED_AUTH_HASH"
-assert_eq "restore auth canonicalization regenerates its matching fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
+assert_eq "restore auth canonicalization preserves the archived bcrypt for that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_ARCHIVE_AUTH_HASH"
+assert_eq "restore auth canonicalization preserves its matching fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
+printf 'DASHBOARD_AUTH_HASH_B64=%s\nDASHBOARD_AUTH_PW_FP=%s\n' "$RS_ARCHIVE_AUTH_HASH" "$(printf '%s' 'an older password' | sha256sum | cut -d' ' -f1)" >"$RSAUTH/.env"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_canonicalize_derived "$RSAUTH/config.json" "$RSAUTH/.env" "$RSAUTH/Caddyfile"
+assert_rc "restore auth canonicalization accepts a stale pair" "$?" 0
+assert_eq "restore auth canonicalization regenerates the bcrypt for a stale pair" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RSAUTH/.env")" "$RS_EXPECTED_AUTH_HASH"
+assert_eq "restore auth canonicalization regenerates the fingerprint for a stale pair" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RSAUTH/.env")" "$RS_AUTH_FP"
 rm -rf "$RSAUTH"
 printf 'CADDY-ORIG\n' >"$RS/Caddyfile"
 printf 'ONIONKEY-ORIG\n' >"$RS/data/tor/hs_ed25519_secret_key"
@@ -89,8 +94,7 @@ assert_rc "restore fixture: backup exits 0" "$rc" "0"
 rarchive="$(ls "$RS"/backups/pithead-backup-*.tar.gz.enc 2>/dev/null | head -1)"
 { [ -n "$rarchive" ] && [ -f "$rarchive" ]; } && ok "restore fixture: encrypted archive created" || bad "restore fixture: encrypted archive created" "no .enc archive"
 
-RSPOOL="$RS/data/firstboot-test"
-mkdir -p "$RSPOOL"
+RSPOOL="$RS/data/firstboot-test" && mkdir -p "$RSPOOL"
 rm -f "$RS/config.json"
 
 # 1) Accept: the right passphrase decrypts, verifies, validates and lands config.json — settings,
@@ -104,9 +108,10 @@ assert_eq "valid restore installs config.json" "$([ -f "$RS/config.json" ] && ec
 assert_contains "valid restore carries the original wallet" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_contains "valid restore regenerates the Caddyfile from config" "$(cat "$RS/Caddyfile" 2>/dev/null)" "reverse_proxy 127.0.0.1:8000"
 assert_eq "valid restore brings back the dashboard db" "$(cat "$RS/data/dashboard/dashboard.db" 2>/dev/null)" "DBDATA-ORIG"
+assert_eq "valid restore marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "valid restore preserves the dashboard password" "$(jq -r '.dashboard.auth.password' "$RS/config.json")" "$RS_AUTH_PASSWORD"
-assert_eq "valid restore regenerates the dashboard credential hash from that password" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_EXPECTED_AUTH_HASH"
-assert_eq "valid restore regenerates the dashboard password fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RS/.env")" "$RS_AUTH_FP"
+assert_eq "valid restore preserves the archived dashboard credential hash" "$(sed -n 's/^DASHBOARD_AUTH_HASH_B64=//p' "$RS/.env")" "$RS_ARCHIVE_AUTH_HASH"
+assert_eq "valid restore preserves the dashboard password fingerprint" "$(sed -n 's/^DASHBOARD_AUTH_PW_FP=//p' "$RS/.env")" "$RS_AUTH_FP"
 assert_eq "applied marker set" "$([ -f "$RSPOOL/applied" ] && echo yes)" "yes"
 assert_eq "the archive is consumed" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
 assert_eq "the passphrase is never retained" "$([ -f "$RSPOOL/restore-passphrase" ] || echo gone)" "gone"
@@ -150,12 +155,13 @@ printf 'STICK-CADDY\n' >"$RS/Caddyfile"
 printf 'STICK-DB\n' >"$RS/data/dashboard/dashboard.db"
 cp "$rarchive" "$RSPOOL/restore-archive"
 printf 'hunter2' >"$RSPOOL/restore-passphrase" # test fixture, not a real secret
-RCARRY="$RS/carry"
+rm -f "$RS/data/dashboard/sync-gate-reset" && RCARRY="$RS/carry"
 out=$(cd "$RS" && PATH="$RS/bin:$PATH" PITHEAD_RESTORE_CARRY_DIR="$RCARRY" run_sourced "$RS" firstboot_consume_restore "$RSPOOL" 1 && echo rc0)
 assert_contains "installer restore accepted" "$out" "rc0"
 assert_contains "installer restore surfaces the config for the card" "$(cat "$RS/config.json" 2>/dev/null)" "$WALLET"
 assert_eq "installer restore does NOT restore onto the stick (Caddyfile untouched)" "$(cat "$RS/Caddyfile")" "STICK-CADDY"
 assert_eq "installer restore does NOT restore onto the stick (db untouched)" "$(cat "$RS/data/dashboard/dashboard.db")" "STICK-DB"
+assert_eq "installer restore leaves no sync-gate marker on the stick" "$([ -e "$RS/data/dashboard/sync-gate-reset" ] || echo none)" none
 assert_eq "accepted archive parked for the ESP carry" "$([ -f "$RCARRY/archive" ] && echo yes)" "yes"
 assert_eq "passphrase parked beside it" "$(cat "$RCARRY/pass" 2>/dev/null)" "hunter2"
 assert_eq "installer restore consumes the spool archive" "$([ -f "$RSPOOL/restore-archive" ] || echo gone)" "gone"
@@ -277,13 +283,13 @@ tar -czf "$RS/list-fixture.tar.gz" -C "$RS/list-fixture" .
 if run_sourced "$RS" restore_setup_tar_list "$RS/list-fixture.tar.gz" -tvzf "$RS/list-output" 1 30; then out=accepted; else out=refused; fi
 assert_eq "archive listing is stopped at its output cap" "$out" refused
 rm -f "$RS/restore-names" "$RS/restore-verbose"
-RPSEED="$RS/preseed"
-mkdir "$RPSEED"
+RPSEED="$RS/preseed" && mkdir "$RPSEED"
 cp "$rarchive" "$RPSEED/pithead-restore.enc"
 printf hunter2 >"$RPSEED/pithead-restore-pass"
-out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore && echo rc0')
+rm -f "$RS/data/dashboard/sync-gate-reset" && out=$(PITHEAD_PRESEED_DIR="$RPSEED" run_sourced "$RS" eval 'mount() { :; }; consume_preseed_restore && echo rc0')
 assert_contains "carried normal backup passes the shared member policy" "$out" rc0
 assert_eq "carried backup restores the original database" "$(cat "$RS/data/dashboard/dashboard.db")" DBDATA-ORIG
+assert_eq "carried backup marks the sync gate for re-derivation (#2626)" "$([ -f "$RS/data/dashboard/sync-gate-reset" ] && echo yes)" yes
 assert_eq "carried backup consumes its passphrase" "$([ -e "$RPSEED/pithead-restore-pass" ] || echo gone)" gone
 # Restore publication replaces hostile live links and clamps archive-provided modes.
 chmod 644 "$RS/data/dashboard/dashboard.db"
@@ -296,6 +302,24 @@ assert_rc "restore safely replaces a planted destination symlink" "$?" 0
 assert_eq "restore leaves the planted symlink target untouched" "$(cat "$RS/outside-target")" sentinel
 assert_eq "restored database is a regular file" "$([ -f "$RS/data/dashboard/dashboard.db" ] && [ ! -L "$RS/data/dashboard/dashboard.db" ] && echo yes)" yes
 assert_eq "restored database permissions are private" "$(stat -c '%a' "$RS/data/dashboard/dashboard.db")" 600
+# A 1.x backup's removed keys migrate while restore stages it (#2001): xmrig_proxy.* moves to xvb.*
+# and telegram.control is dropped, and the staging sweep leaves no .bak-1x on the live side (#1845).
+RL="$RS/legacy-1x"
+mkdir -p "$RL/${RS#/}"
+cp "$RS/config.json" "$RL/live-config.json"
+cp "$RS/.env" "$RL/live.env"
+jq '.xmrig_proxy = {enabled: true, url: "eu.xmrvsbeast.com:4247", donor_id: "legacy-donor"} | .telegram = {control: {enabled: false}} | del(.xvb)' \
+    "$RS/config.json" >"$RL/${RS#/}/config.json"
+tar -czf "$RL/archive.tar.gz" -C "$RL" "${RS#/}/config.json"
+PATH="$RS/bin:$PATH" run_sourced "$RS" restore_apply "$RL/archive.tar.gz" '' "$RS/restore-error"
+assert_rc "restore accepts a backup carrying removed 1.x keys" "$?" 0
+assert_eq "restore moves xmrig_proxy.* to xvb.* unchanged" "$(jq -c '[has("xmrig_proxy"), .xvb.enabled, .xvb.url, .xvb.donor_id]' "$RS/config.json")" '[false,true,"eu.xmrvsbeast.com:4247","legacy-donor"]'
+assert_eq "restore drops the removed telegram.control" "$(jq -c '.telegram | has("control")' "$RS/config.json")" false
+assert_eq "restore renders the migrated XvB settings" "$(grep -E '^XVB_(POOL_URL|DONOR_ID)=' "$RS/.env" | sort | tr '\n' ' ')" "XVB_DONOR_ID=legacy-donor XVB_POOL_URL=eu.xmrvsbeast.com:4247 "
+assert_eq "restore leaves no pre-migration .bak-1x beside the config" "$(find "$RS" -maxdepth 1 -name '*.bak-1x' -print -quit)" ""
+cp "$RL/live-config.json" "$RS/config.json"
+cp "$RL/live.env" "$RS/.env"
+rm -rf "$RL"
 printf 'ordinary note' >"$RS/unexpected.txt"
 printf 'BACKUP-CADDY' >"$RS/Caddyfile"
 tar -czf "$RS/unexpected.tar.gz" -C / "${RS#/}/config.json" "${RS#/}/.env" "${RS#/}/Caddyfile" "${RS#/}/unexpected.txt"

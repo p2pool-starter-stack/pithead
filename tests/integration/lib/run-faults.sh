@@ -89,39 +89,68 @@ fault_db_readonly() {
         "$(jq_get "$(api_state)" '.db_healthy')" "true"
 }
 
-# Live counterpart to the tier-1 stubbed rollback (tests/stack/run.sh #270): force a REAL
-# `iptables -I` to fail mid-apply and prove the box ends fail-closed — the partial ruleset is
-# rolled BACK, not left half-open (a stubbed iptables can't prove the real kernel strips a partial
-# insert). DESTRUCTIVE-then-restored: apply_tor_egress_firewall clears the live rules before
-# re-inserting, so on the sabotaged run the firewall is briefly down until the recover step (and
-# run_fault_injection's belt-and-braces) reinstate it — hence opt-in, local-box only.
+# Live counterpart to the tier-1 stubbed load failure (tests/stack, #270/#2672): force the REAL
+# `iptables-restore` to refuse the swap and prove the box keeps the firewall it had. apply loads
+# the rules in one transaction, so a refused load changes nothing; a stub can't prove the kernel's
+# all-or-nothing commit. Opt-in, local-box only, like every leg here.
 fault_firewall_rollback() {
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_skip_leg "firewall-rollback fault" "network.tor_egress_firewall=false"
         return 0
     fi
-    it_step "fault: force an iptables -I failure during the firewall apply…"
-    # Shadow SUDO (not iptables): apply calls `sudo iptables -I`, and sudo's secure_path ignores a
-    # PATH-shadowed iptables, so the insert would really succeed. sudo itself is still found via PATH,
-    # so a wrapper that fails an `iptables … -I …` insert and execs real sudo for everything else
-    # (remove's -D, -N, iptables-save) makes the insert fail exactly as a real mid-insert error would.
-    # On PATH only for the apply below, deleted on recover. $realsudo baked at write time; \$1/\$a/\$@
-    # stay literal. (Verified live on a real box — the iptables-shadow variant silently no-ops.)
-    rx 'realsudo=$(command -v sudo) && mkdir -p .itest-bin && printf "%s\n" "#!/usr/bin/env bash" "if [ \"\$1\" = iptables ]; then for a; do [ \"\$a\" = -I ] && exit 1; done; fi" "exec $realsudo \"\$@\"" > .itest-bin/sudo && chmod +x .itest-bin/sudo' >/dev/null 2>&1
-    # apply_tor_egress_firewall is a pithead function (main is guarded when sourced), so sourcing +
-    # calling it with the sabotaged iptables hits the exact rollback branch.
-    local rc
+    it_step "fault: force an iptables-restore failure during the firewall apply…"
+    # Shadow SUDO (not iptables-restore): sudo's secure_path ignores a PATH-shadowed binary, so the
+    # load would really succeed. The wrapper fails `iptables-restore` and execs real sudo for all
+    # else. $realsudo baked at write time; \$1/\$@ stay literal. On PATH only for the apply below.
+    rx 'realsudo=$(command -v sudo) && mkdir -p .itest-bin && printf "%s\n" "#!/usr/bin/env bash" "[ \"\$1\" != iptables-restore ] || { cat >/dev/null; exit 1; }" "exec $realsudo \"\$@\"" > .itest-bin/sudo && chmod +x .itest-bin/sudo' >/dev/null 2>&1
+    local rc before
+    before="$(rx 'sudo iptables-save 2>/dev/null | grep pithead-tor-egress')"
     rx 'PATH="$PWD/.itest-bin:$PATH" bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1'
     rc=$?
-    assert_rc "firewall apply degrades gracefully on an insert failure (rc 0)" "$rc" "0"
-    # No pithead-tagged rule may survive a failed insert — the rollback must strip the partial set.
-    assert_eq "insert failure leaves NO half-open firewall (rolled back)" \
-        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
+    assert_rc "firewall apply degrades gracefully on a refused load (rc 0)" "$rc" "0"
+    assert_eq "a refused load leaves the installed firewall exactly as it was (#2672)" \
+        "$(rx 'sudo iptables-save 2>/dev/null | grep pithead-tor-egress')" "$before"
+    rc=0
+    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+    assert_rc "...and still enforced: the subnet was never unfenced (#2672)" "$rc" "0"
     it_step "recover: drop the sabotage and reinstall the real firewall…"
     rx 'rm -rf .itest-bin' >/dev/null 2>&1
     rx 'bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1' || true
     assert_num_gt "firewall reinstated after recovery" \
         "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" 0
+}
+
+# A clearnet flow an app opened while the rules were out must not outlive their return (#2672):
+# the conntrack accept passes replies only, and the app's next packet on it is reset. The peer is
+# a scratch netns on the box at TEST-NET-2 198.51.100.2: public to the firewall, reached only
+# through FORWARD, and ours, so no third party decides how long the control flow lives. monerod's
+# bash writes a byte a second; /proc/net/tcp shows its socket to 198.51.100.2:9001 as 026433C6:2329.
+_gf_flows() { # a count, or "unreadable" so a failed read can never pass as zero
+    local t
+    t=$(rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null) && [ -n "$t" ] || {
+        echo unreadable
+        return
+    }
+    awk '$3 == "026433C6:2329" && $4 == "01"' <<<"$t" | grep -c .
+}
+_gf_down() { rx 'sudo -n ip netns del itest2672; sudo -n ip link del it2672h; rm -f .itest-2672-peer.py; sudo -n pkill -f itest-2672-peer' >/dev/null 2>&1 || true; }
+fault_firewall_grandfathered_flow() {
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
+        it_skip_leg "grandfathered-flow fault" "network.tor_egress_firewall=false"
+        return 0
+    fi
+    it_step "fault: open a direct clearnet flow with the rules out, then re-apply them (#2672)…"
+    _gf_down
+    rx 'printf "%s\n" "import socket" "l = socket.socket()" "l.bind((\"198.51.100.2\", 9001))" "l.listen()" "c, _ = l.accept()" "while c.recv(64):" "    pass" >.itest-2672-peer.py && sudo -n ip netns add itest2672 && sudo -n ip link add it2672h type veth peer name it2672p netns itest2672 && sudo -n ip addr add 198.51.100.1/30 dev it2672h && sudo -n ip link set it2672h up && sudo -n ip netns exec itest2672 sh -c "ip addr add 198.51.100.2/30 dev it2672p && ip link set it2672p up && ip route add default via 198.51.100.1" && { sudo -n setsid timeout 300 ip netns exec itest2672 python3 .itest-2672-peer.py </dev/null >/dev/null 2>&1 & }' >/dev/null 2>&1
+    rx 'bash -c "source ./pithead && remove_tor_egress_firewall"' >/dev/null 2>&1
+    sleep 2
+    rx "docker exec -d monerod bash -c 'exec 3<>/dev/tcp/198.51.100.2/9001 && for i in \$(seq 180); do printf x >&3 || exit; sleep 1; done'" >/dev/null 2>&1
+    sleep 3
+    assert_eq "control: with the rules out, monerod holds a direct flow to the public stand-in peer" "$(_gf_flows)" "1"
+    rx 'bash -c "source ./pithead && apply_tor_egress_firewall"' >/dev/null 2>&1
+    sleep 5
+    assert_eq "the re-applied firewall ends that flow: no ESTABLISHED socket to it left in monerod (#2672)" "$(_gf_flows)" "0"
+    _gf_down
 }
 
 # DIY reboot restore (#2460), without rebooting the bench: a reboot empties DOCKER-USER while the
@@ -336,6 +365,7 @@ run_fault_injection() {
     fault_missing
     fault_db_readonly
     fault_firewall_rollback
+    fault_firewall_grandfathered_flow
     fault_firewall_boot_restore
     fault_tor_down
     fault_clock_drift

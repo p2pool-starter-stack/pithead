@@ -344,6 +344,22 @@ _phase_install_restore() {
             done
             ;;
         esac
+        # #2626: the archive's dashboard DB carries the source's sync-gate latch. The marker must
+        # land in the dashboard's OWN /data mount, and the dashboard must hold the miner on this
+        # guest's unsynced chains instead of inheriting a release — for every case in this loop.
+        local dash_data gtries=0 gate_seen=0
+        dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
+        { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
+            ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
+            bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+        while [ "$gtries" -lt 30 ] && [ "$gate_seen" -eq 0 ]; do
+            _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
+            [ "$gate_seen" -eq 1 ] || { sleep 10 && gtries=$((gtries + 1)); }
+        done
+        [ "$gate_seen" -eq 1 ] &&
+            ok "restore leg ($restore_case): the restored dashboard holds the miner on this machine's unsynced chains (#2626)" ||
+            bad "restore leg ($restore_case): the restored dashboard never held the miner — a carried sync-gate release (#2626)"
+
         if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
             ok "restore leg: $verdict"
         else
@@ -369,6 +385,7 @@ _phase_install_restore() {
             ok "restore leg: restored non-default configuration matches the v1.20.0 fixture" ||
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
+        [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
         if [ -n "$target_chain_sentinel" ]; then
             _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
                 ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
