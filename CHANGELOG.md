@@ -148,6 +148,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **The Monero payout wallet no longer reports unhealthy while it catches up after a restart
+  (#2720).** The scan grace now covers every start, not only the first, and ends when the wallet
+  reaches monerod's tip rather than at the first RPC answer. Its ring database moved into the
+  wallet volume, off the read-only root filesystem.
+
 - **A source checkout starts the whole stack after `uninstall` or on a new host
   ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
   and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
