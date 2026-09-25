@@ -110,7 +110,8 @@ stack_uninstall() {
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
-    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    # stderr kept: the drain's timeout warning is the message for a request still in flight.
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done

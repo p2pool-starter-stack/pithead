@@ -118,11 +118,15 @@ pcl_runner() { # <lock-timeout> <handler-seconds> — drain one diag-doctor requ
         # shellcheck disable=SC1090
         source "$STACK"
         set +e
-        unset PITHEAD_LOCK_HELD
+        unset PITHEAD_LOCK_HELD PITHEAD_CONTROL_RUNNER_PID
         env_get() { [ "$1" = DASHBOARD_CONTROL_ENABLED ] && printf true || printf '%s' "$PCL"; }
         render_masked_config() { :; }
         control_redact_stale_kits() { :; }
-        control_diag_doctor() { : >"$PCL/started" && sleep "$PCL_HOLD"; }
+        control_diag_doctor() {
+            # What a child `apply -y` would inherit: the pid that names this runner's own claim.
+            [ -e "$PCL/.claim.${PITHEAD_CONTROL_RUNNER_PID:-unset}" ] && : >"$PCL/own-claim"
+            : >"$PCL/started" && sleep "$PCL_HOLD"
+        }
         PCL_HOLD="$2" PITHEAD_LOCK_FILE="$PCL/lock" PITHEAD_LOCK_TIMEOUT="$1" control_run_pending 2>&1
     )
 }
@@ -139,6 +143,7 @@ wait_while_alive "$PCL_HOLDER" pcl_held
 out=$(pcl_runner 5 0)
 assert_not_contains "a lock-free verb queued while a shell verb holds the lock does not wait for it" "$out" "waiting up to"
 assert_eq "and it runs" "$([ -f "$PCL/started" ] && echo started)" "started"
+assert_eq "a handler inherits the pid that names its runner's own claim" "$([ -f "$PCL/own-claim" ] && echo own)" "own"
 kill "$PCL_HOLDER" 2>/dev/null || true
 wait "$PCL_HOLDER" 2>/dev/null || true
 # (b) The runner is inside a lock-free verb; a shell apply takes the window at once.

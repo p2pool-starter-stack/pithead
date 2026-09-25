@@ -118,6 +118,11 @@ assert_eq "aborted uninstall keeps .env" "$([ -f "$V/.env" ] && echo yes)" "yes"
 UNINSTALL_LOCK="$V/uninstall-held.lock"
 DOCKER_LOG="$V/docker.log"
 : >"$DOCKER_LOG"
+# The Tor egress teardown is the first destructive step: a logging sudo and an nft on PATH make
+# it visible, so a lock taken after it reads red.
+printf '#!/usr/bin/env bash\necho "sudo $*" >>"%s"\n' "$DOCKER_LOG" >"$V/bin/sudo"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$V/bin/nft"
+chmod +x "$V/bin/sudo" "$V/bin/nft"
 (
     exec 9>>"$UNINSTALL_LOCK"
     flock 9
@@ -132,9 +137,11 @@ out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_LOCK_FILE="$UNINSTALL_LOCK" PI
     PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_contains "uninstall waits on the same mutation window as apply" "$out" "Timed out after 1s"
 assert_not_contains "a contended uninstall never reaches container removal" "$(cat "$DOCKER_LOG" 2>/dev/null)" "compose down"
+assert_not_contains "a contended uninstall never reaches the egress firewall teardown" "$(cat "$DOCKER_LOG" 2>/dev/null)" "sudo nft"
 assert_eq "a contended uninstall changes nothing" "$([ -f "$V/.env" ] && echo yes)" "yes"
 kill "$UNINSTALL_HOLDER" 2>/dev/null || true
 wait "$UNINSTALL_HOLDER" 2>/dev/null || true
+rm -f "$V/bin/nft"
 unset UNINSTALL_LOCK UNINSTALL_HOLDER rc
 unset -f uninstall_lock_held
 UNINSTALL_UNITS="$V/uninstall-units"

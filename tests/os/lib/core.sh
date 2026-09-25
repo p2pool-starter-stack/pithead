@@ -60,8 +60,9 @@ _ssh() {
         -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "root@$ip" "$@" 2>"$SSH_ERR"
 }
 # Wait for the control spool to hold no in-flight request before a host-side `pithead apply` this
-# harness drives. This keeps the battery's phase boundary deterministic; the product serializes a
-# runner with apply (#2363), so an in-flight request completes and writes its result.
+# harness drives. This keeps the battery's phase boundary deterministic. The product no longer
+# kills a request (#2363): a re-provisioning apply waits up to 30 seconds for a claimed request, and
+# none of its systemctl calls stops a running one, so it still completes and writes its result.
 # The runner claims a request by moving it out of requests/ to a .claim.* file and removes that
 # claim only AFTER writing results/<id>.json, so neither present is the proof that every request
 # reached a result. staged/ is deliberately not counted: it holds previewed intents waiting for

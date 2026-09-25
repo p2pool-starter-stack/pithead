@@ -49,7 +49,7 @@ control_runner_wait_idle() {
     [ -n "${PITHEAD_CONTROL_RUNNER_PID:-}" ] && own_claim="$cdir/.claim.$PITHEAD_CONTROL_RUNNER_PID"
     while compgen -G "$cdir/.claim.*" | grep -Fvxq "$own_claim"; do
         if [ "$waited" -ge "$max_wait" ]; then
-            warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish before re-provisioning the runner — its result may be lost."
+            warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish — re-provisioning the runner anyway. The request keeps running and writes its result when it finishes."
             return 0
         fi
         sleep 1

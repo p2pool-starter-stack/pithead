@@ -280,9 +280,13 @@ a missing hardening field) — never on a routine, unchanged apply, however the 
 When re-provisioning is needed, `apply` holds the shared mutation lock while it stops
 `pithead-control.path`, waits up to 30 seconds for a request the runner has already claimed to
 write its result, rewrites the units and enables the path unit again. The runner itself never
-takes the lock, so a dashboard request is never delayed by a `pithead` command running in a shell,
-and never delays one. None of these calls stops a runner that is working a request: on systemd 255
-the running service finishes and writes its result. A request still sitting in `requests/` is
+takes the lock, so a request that changes nothing on the stack (a preview, a diagnostic) is never
+delayed by a `pithead` command running in a shell, and never delays one. A request that changes
+the stack (a commit, a lifecycle verb, an upgrade) takes the lock inside its own handler like any
+shell command. If one is in flight when `apply` re-provisions, it is waiting for the lock `apply`
+holds, so the 30-second wait runs out, `apply` finishes, and the request then runs. None of these
+calls stops a runner that is working a request: on systemd 255 the running service finishes and
+writes its result. A request still sitting in `requests/` is
 untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
 A first install, and the `pithead render` that runs on every appliance boot, have no runner to
 drain and take no lock.
