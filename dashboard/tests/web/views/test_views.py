@@ -24,8 +24,6 @@ from mining_dashboard.config.config import (
     DEFAULT_HASHRATE_WINDOW,
     HASHRATE_WINDOWS,
 )
-from mining_dashboard.service.network import egress_status
-from mining_dashboard.service.network.egress_status import ENFORCED
 from mining_dashboard.web.views.charts import build_chart, canonical_window
 from mining_dashboard.web.views.views import (
     build_pool_network,
@@ -440,9 +438,12 @@ class TestVisibleUpdate:
 
 
 def _set_egress_config(monkeypatch, **over):
-    """Pin the live egress knobs so the #170 panel is deterministic regardless of the test env:
-    the privacy-safe resting config (firewall on and verified live by the host, #2599, everything
-    over Tor, local node); pass overrides to model a leak. Read at call time by ``build_state``."""
+    """Pin the live egress knobs so the #170 panel is deterministic regardless of the test env.
+
+    Defaults are the privacy-safe resting config (firewall on, everything over Tor, local node);
+    pass overrides to model a leak. ``egress_posture_from_config`` / ``topology_from_config`` read
+    these off the config module at call time, so patching them steers ``build_state``'s payload.
+    """
     safe = {
         "TOR_EGRESS_FIREWALL": True,
         "P2POOL_CLEARNET": False,
@@ -455,7 +456,6 @@ def _set_egress_config(monkeypatch, **over):
     }
     for name, value in {**safe, **over}.items():
         monkeypatch.setattr(egress_config, name, value)
-    monkeypatch.setattr(egress_status, "egress_firewall_state", lambda *a, **k: ENFORCED)
 
 
 class TestEgressTopology:

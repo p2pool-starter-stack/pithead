@@ -130,8 +130,10 @@ _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh
 _d0=$((PASS + FAIL)) && source "$HERE/test-worker-config.sh" && domain_ran test-worker-config.sh "$_d0" "$?" || domain_ran test-worker-config.sh "$_d0" "$?"
 
 echo "== black-box: notification secrets masked in the prefill copy (#848) =="
-# ntfy URL/token and each webhook URL are bearer credentials: one LEAK- marker proves every set one is
-# sentineled in the masked copy; a blank webhook and notifications.tor survive for the editor.
+# The ntfy topic URL + token are bearer credentials, and each notifications.webhooks[] entry IS a
+# bearer URL (query strings carry tokens). All must be sentineled in the world-readable masked copy
+# — one LEAK- marker across every set secret proves the whole set at once; a blank webhook entry and
+# the non-secret notifications.tor flag must survive so the editor can still render the form.
 jq '.notifications = {
     webhooks: ["https://hooks.example/LEAK-hookA", "", "https://hooks.example/LEAK-hookB"],
     ntfy: {url: "https://ntfy.example/LEAK-ntfyurl", token: "LEAK-ntfytoken"},
