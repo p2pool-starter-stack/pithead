@@ -135,6 +135,9 @@ run_fingerprint_assertions() {
     assert_ne "a read-only mount inside the checkout is hashed too" "$(files_of "$A" tari)" "$(files_of "$B" tari)"
     checkout "$B" && rm -r "$B/build/tari"
     assert_ne "a missing mount source never matches a present one" "$(files_of "$A" tari)" "$(files_of "$B" tari)"
+    rm -r "$A/build/tari"
+    assert_eq "both missing sources still refuse keep" \
+        "$(chain_keep_verdict "$(fp "$A" tari)" "$(fp "$B" tari)" image image "tor T1" "tor T1" yes)" "recreate definition"
 
     # A writable mount inside the checkout is that checkout's own state (a chain dir left at its
     # default under ./data): the path stays literal, so two checkouts never read as one node.
@@ -369,7 +372,7 @@ mutate_and_count_fails() { # <sed-expr> -> failed assertions under the mutant
     )
     rm -f "$mutant"
 }
-assert_num_ge "M1 (a moved tor ignored) is killed" "$(mutate_and_count_fails 's/{ \[ -n "\$5" \] \&\& \[ "\$5" = "\$6" \]; }/true/')" 1
+assert_num_ge "M1 (a moved tor ignored) is killed" "$(mutate_and_count_fails 's/.*|| why="${why:+$why, }tor"/    true/')" 1
 assert_num_ge "M2 (image ID not compared) is killed" "$(mutate_and_count_fails 's/{ \[ -n "\$3" \] \&\& \[ "\$3" = "\$4" \]; }/true/')" 1
 assert_num_ge "M3 (read-only in-checkout mounts not hashed) is killed" "$(mutate_and_count_fails 's/\.read_only == true or //')" 1
 assert_num_ge "M4 (a broken node graded recreated) is killed" "$(mutate_and_count_fails 's/echo "broken \$svc"/echo "recreated $svc"/')" 1

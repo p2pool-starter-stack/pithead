@@ -72,7 +72,7 @@ files=$(printf '%s' "$norm" | jq -r '.mounts[] | [.src, .rel] | @tsv' | while IF
     elif [ -f "$src" ]; then h=$(sha256sum <"$src" | cut -d' ' -f1) && m=$(stat -L -c %a "$src") && echo "$rel $h $m" || echo "$rel unreadable"
     else echo "$rel missing"; fi
 done)
-case "$files" in *" unreadable"*) files=unreadable ;; *) files=$(printf '%s' "$files" | sha256sum | cut -d' ' -f1) ;; esac
+case "$files" in *" unreadable"*|*" missing"*) files=unreadable ;; *) files=$(printf '%s' "$files" | sha256sum | cut -d' ' -f1) ;; esac
 echo "config=$config files=$files"
 FP
     } | on_bench "cd '$1' && bash -s" 2>/dev/null || true
@@ -85,7 +85,16 @@ chain_image_of() { # <dir> <service>
 
 # One "<service> <container-id> <started-at> <image-id>" line per RUNNING chain service and tor.
 chain_snapshot() {
-    on_bench "for s in $CHAIN_SERVICES tor; do docker ps -q --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=\$s --filter status=running | head -n1 | xargs -r docker inspect --format \"\$s {{.Id}} {{.State.StartedAt}} {{.Image}}\"; done" 2>/dev/null || true
+    {
+        printf 'services=%q\n' "$CHAIN_SERVICES tor"
+        cat <<'SNAP'
+set -e -o pipefail
+for s in $services; do
+    ids=$(docker ps -q --filter label=com.docker.compose.project=pithead --filter "label=com.docker.compose.service=$s" --filter status=running) || exit 1
+    [ -z "$ids" ] || docker inspect --format "$s {{.Id}} {{.State.StartedAt}} {{.Image}}" "${ids%%$'\n'*}" || exit 1
+done
+SNAP
+    } | on_bench 'bash -s' 2>/dev/null
 }
 
 # Field <n> (2 id, 3 started-at, 4 image) of <service>'s line in a snapshot; empty when absent.
@@ -119,7 +128,7 @@ chain_keep_verdict() { # <baseline-fp> <branch-fp> <baseline-image> <branch-imag
     [ "$7" = yes ] || why="baseline"
     { [ -n "$1" ] && [ "$1" = "$2" ] && [ "${1#*files=unreadable}" = "$1" ]; } || why="${why:+$why, }definition"
     { [ -n "$3" ] && [ "$3" = "$4" ]; } || why="${why:+$why, }image"
-    { [ -n "$5" ] && [ "$5" = "$6" ]; } || why="${why:+$why, }tor"
+    { [[ "$5" =~ ^[^[:space:]]+\ [^[:space:]]+$ ]] && [ "$5" = "$6" ]; } || why="${why:+$why, }tor"
     if [ -z "$why" ]; then echo keep; else echo "recreate $why"; fi
 }
 
@@ -127,7 +136,11 @@ chain_keep_verdict() { # <baseline-fp> <branch-fp> <baseline-image> <branch-imag
 # whose definition, mounted files or image differ from the baseline's. Sets CHAIN_KEPT.
 deploy_keeping_chain() {
     local held="" recreate="" svc verdict after
-    CHAIN_BEFORE="$(chain_snapshot)" CHAIN_KEPT=""
+    CHAIN_KEPT=""
+    CHAIN_BEFORE="$(chain_snapshot)" || {
+        warn "chain: cannot read the pre-deploy snapshot; refusing upgrade"
+        return 1
+    }
     for svc in $CHAIN_SERVICES; do [ -z "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2)" ] || held="$held $svc"; done
     held="${held# }"
     [ -n "$held" ] || {
@@ -135,7 +148,10 @@ deploy_keeping_chain() {
         return
     }
     on_bench "cd '$E2E_DIR' && PITHEAD_KEEP_RUNNING='$held' ./pithead upgrade" || return 1
-    after="$(chain_snapshot)"
+    after="$(chain_snapshot)" || {
+        warn "chain: cannot read the post-upgrade snapshot"
+        return 1
+    }
     # The held-out up built nothing for them; build monerod now so its image ID can be compared.
     case " $held " in *" monerod "*) on_bench "cd '$E2E_DIR' && docker compose build monerod >/dev/null 2>&1" || {
         warn "building the branch's monerod image failed in $E2E_DIR"
@@ -172,7 +188,7 @@ deploy_keeping_chain() {
 #     ask for its static addresses on the wrong one. Only then is the baseline's own `down` run.
 chain_restore_prepare() {
     local out line
-    CHAIN_MID="$(chain_snapshot)"
+    CHAIN_MID="$(chain_snapshot)" || CHAIN_MID=unreadable
     out="$(
         on_bench "cd '$RESTORE_DIR' && bash -s" 2>/dev/null <<'PREP' || true
 known=$(docker compose config --services 2>/dev/null)
@@ -227,8 +243,16 @@ grade_chain_restore() { # <kept> <before> <mid> <after>
 
 # A previously running node must survive restore even when the image census was unavailable.
 chain_restore_proof() {
-    local line rc=0
+    local line after rc=0
     [ -n "$CHAIN_BEFORE" ] || return 0
+    [ "$CHAIN_MID" != unreadable ] || {
+        warn "restore proof: pre-restore chain snapshot unreadable"
+        return 1
+    }
+    after="$(chain_snapshot)" || {
+        warn "restore proof: final chain snapshot unreadable"
+        return 1
+    }
     while IFS= read -r line; do
         case "$line" in
         untouched\ *) ok "restore proof: ${line#* } is the same container, never restarted, as before the deploy" ;;
@@ -245,6 +269,6 @@ chain_restore_proof() {
             rc=1
             ;;
         esac
-    done < <(grade_chain_restore "$CHAIN_KEPT" "$CHAIN_BEFORE" "$CHAIN_MID" "$(chain_snapshot)")
+    done < <(grade_chain_restore "$CHAIN_KEPT" "$CHAIN_BEFORE" "$CHAIN_MID" "$after")
     return "$rc"
 }
