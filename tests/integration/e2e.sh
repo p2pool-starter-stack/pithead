@@ -12,7 +12,8 @@
 #      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
 #      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
 #   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
-#      (an EXIT trap). The synced chains are never touched. The restore then PROVES the live stack matches the on-disk
+#      (an EXIT trap), with no `pithead down`: chain nodes the branch left unchanged keep running throughout (#2639),
+#      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
 #      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
 #      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
@@ -31,7 +32,7 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" || exit $?
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
@@ -242,12 +243,11 @@ restore_all() {
         fi
     fi
 
-    # 2. Stack: stop the branch (e2e checkout) and bring the LIVE baseline back up healthy. Restore
-    #    from RESTORE_DIR — the dir the live stack actually ran from (#454), which on a release box is a
-    #    per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir hands the "pithead"
-    #    project locally-built :dev images.
-    step "bringing the baseline stack ($RESTORE_DIR) back up"
-    on_bench "cd '$E2E_DIR' && ./pithead down >/dev/null 2>&1 || true"
+    # 2. Stack: converge the LIVE baseline over the branch with no `pithead down` (#2639), so Compose
+    #    recreates only what differs. Restore from RESTORE_DIR — the dir the live stack ran from (#454),
+    #    on a release box a per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir
+    #    hands the "pithead" project locally-built :dev images.
+    step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
     # Look at the control units BEFORE the apply below converges them. Without this the run can
     # never report that it stranded the box — the post-restore proof runs downstream of its own
     # repair, so on the ordinary #1085 path it is green either way. Observation only: the strand is
@@ -374,13 +374,13 @@ preflight() {
         ok "canonical stack is currently healthy" ||
         warn "canonical stack is NOT healthy right now — continuing, but check the box."
     # Resolve where the LIVE stack actually runs from (#454). The "pithead" Compose project name is
-    # fixed, so exactly one project runs on the box; read its working_dir off a running container's
-    # label. On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
+    # fixed, so exactly one project runs on the box; read its working_dir off the dashboard's label,
+    # which every up recreates (#2639: others a restore left alone can name E2E_DIR or an old dir).
+    # On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
     # CANONICAL_DIR — the restore must target it or it hands the project locally-built :dev images.
-    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR.
-    local live_cid live_dir=""
-    live_cid="$(on_bench "docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null | head -n1" || true)"
-    [ -n "$live_cid" ] && live_dir="$(on_bench "docker inspect --format '{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}' '$live_cid' 2>/dev/null" || true)"
+    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR, which never counts.
+    local live_dir=""
+    live_dir="$(on_bench "docker ps --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=dashboard --format '{{.Label \"com.docker.compose.project.working_dir\"}}' 2>/dev/null | grep -vxF '$E2E_DIR' | head -n1" || true)"
     if [ -n "$live_dir" ] && [ "$live_dir" != "$E2E_DIR" ] && on_bench "test -x '$live_dir/pithead'"; then
         RESTORE_DIR="$live_dir"
         [ "$RESTORE_DIR" = "$CANONICAL_DIR" ] &&
@@ -575,9 +575,9 @@ deploy_branch() {
     # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
     # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
     # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before
-    # recreating — so a Dockerfile/entrypoint change in the branch is actually under test.
+    # recreating — so a Dockerfile/entrypoint change is under test. Unchanged chain nodes stay (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
-    on_bench "cd '$E2E_DIR' && ./pithead upgrade" || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
+    deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
     # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"

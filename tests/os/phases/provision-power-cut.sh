@@ -50,6 +50,7 @@ _phase_provision_power_cut() {
             ok "M10.$cut: $verdict"
         else
             bad "M10.$cut: $verdict"
+            [[ "$height_after" =~ ^[0-9]+$ ]] || _monerod_evidence
             return 1
         fi
         while [ "$mtries" -lt 24 ]; do
@@ -155,4 +156,18 @@ _monerod_height() {
 mu=$(env_get MONERO_NODE_USERNAME); mp=$(env_get MONERO_NODE_PASSWORD); murl=$(env_get MONERO_RPC_URL); [ -n "$murl" ] || murl=http://127.0.0.1:18081
 if [ -n "$mu" ]; then curl -fsS --max-time 8 --digest -u "$mu:$mp" "$murl/get_info" 2>/dev/null; else curl -fsS --max-time 8 "$murl/get_info" 2>/dev/null; fi' |
         jq -r '.height // empty' 2>/dev/null
+}
+
+# An unreadable post-cut RPC (#2452/#2471): the guest journal shows only podman restarting a
+# container that exits about 100 ms after each start, never monerod's reason. Print the
+# container state, its log tail and the tail of bitmonero.log from the data volume into the job
+# log, which the bench keeps as an artifact, before the guest is recycled.
+_monerod_evidence() {
+    printf '     --- monerod evidence (#2471) ---\n'
+    _ssh "podman ps -a --filter name=monerod --format '{{.Names}} {{.Status}}' 2>&1
+          echo '-- podman logs --tail 30 monerod --'; podman logs --tail 30 monerod 2>&1
+          d=\$(podman inspect monerod --format '{{range .Mounts}}{{if eq .Destination \"/home/ubuntu/.bitmonero\"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+          echo \"-- \${d:=/data/pithead/data/monero}/bitmonero.log (last 60 lines) --\"
+          tail -n 60 \"\$d/bitmonero.log\" 2>&1" 2>/dev/null |
+        tr -d '\r' | sed 's/^/     | /'
 }

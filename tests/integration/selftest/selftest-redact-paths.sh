@@ -128,7 +128,7 @@ mkdir -p "$CTL"
 # readonly from it, so there is no second chance. Absolute, because a sourced pithead deliberately
 # skips the cd to its own dir and a relative path would resolve against OUR cwd.
 export PITHEAD_CONFIG_FILE="$BOX/config.json"
-# shellcheck disable=SC1091  # the product script, symlinked into the sandbox above
+# shellcheck source=/dev/null  # the product script, symlinked above; linted as its own root (#2632)
 source "$BOX/pithead" >/dev/null 2>&1
 
 if ! declare -F render_masked_config >/dev/null; then

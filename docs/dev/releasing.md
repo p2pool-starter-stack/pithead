@@ -544,7 +544,9 @@ What exists today:
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image
-  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`; a release install
+  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`, after pulling any
+  missing third-party image that has no build context
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)); a release install
   (the bundle ships no Dockerfiles, just `pithead` + `VERSION` + compose + the config templates + the
   `./build` runtime mounts) resolves `STACK_VERSION` to `vX.Y.Z` and pulls the published images
   (`--pull missing`; `upgrade` forces a re-pull). Override with `PITHEAD_REGISTRY` / `PITHEAD_PULL`. So

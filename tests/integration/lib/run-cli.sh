@@ -89,6 +89,12 @@ MATRIX:
                          pithead-e2e-fault-tari-stranded) cuts tari off from tor; asserts amber,
                          red + doctor non-zero, no restart while gRPC is frozen, then the automatic
                          restart and green. About an hour; opt-in only. DESTRUCTIVE-then-restored.
+  --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
+                         testnet-target build of the pinned release runs LocalNet alone on an
+                         internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
+                         it against the box's monerod, and every block P2Pool reports is read back
+                         from the node's main chain with its parent. Leaves the live stack alone;
+                         needs local Monero.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -267,6 +273,10 @@ parse_args() {
             ;;
         --tari-stranded)
             RUN_TARI_STRANDED=1
+            shift
+            ;;
+        --mergemine-localnet)
+            RUN_MERGEMINE_LOCALNET=1
             shift
             ;;
         --auth-fail-closed)

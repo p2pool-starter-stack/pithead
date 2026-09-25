@@ -40,7 +40,7 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 
 # Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
-# topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
+# topology rather than structure (MONERO_NODE_HOST, MONERO_RPC_URL, TARI_GRPC_ADDRESS, HOST_IP).
 #
 # The allowlist also governs which LINES are read (#2414), and every ambiguity fails closed. A
 # hand-edited .env keeps the previous value commented out above the live one, so an assignment
