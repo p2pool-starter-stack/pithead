@@ -91,6 +91,24 @@ _xvb_route_is() { # <route-json> <mode> <tor-routed: true|false>
         >/dev/null 2>&1
 }
 
+# #2708 (job 1172): a single-shot restore that hits a transient ConnectTimeout leaves the guest
+# routed to XvB for the rest of the phase — every downstream row that depends on p2pool actually
+# mining then fails the same way. Retry with the same confirmation the XvB switch already gets,
+# instead of trusting (or silently swallowing) the first answer.
+_xvb_restore_p2pool() { # -> pools JSON on stdout once P2POOL is confirmed live, empty + rc 1 on timeout
+    local deadline pools
+    deadline=$(($(date +%s) + ${XVB_RESTORE_TIMEOUT:-30}))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
+        if [ -n "$pools" ] && _xvb_route_is "$pools" P2POOL false; then
+            printf '%s' "$pools"
+            return 0
+        fi
+        sleep 2
+    done
+    return 1
+}
+
 # Both directions of the transition this issue exists to observe. Every red row returns 1 on the
 # spot; the caller puts the guest back either way, so an early return cannot strand the proxy.
 _xvb_routing_actuation() {
@@ -105,13 +123,9 @@ _xvb_routing_actuation() {
         return 1
     fi
     ok "bounded controller injection moved the live proxy to Tor-routed XvB"
-    pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
+    pools="$(_xvb_restore_p2pool)"
     if [ -z "$pools" ]; then
         bad "controller actuator could not restore the live proxy to P2Pool (guest: $(_xvb_guest_stderr))"
-        return 1
-    fi
-    if ! _xvb_route_is "$pools" P2POOL false; then
-        bad "bounded controller injection did not restore P2Pool as the live proxy route (route: $pools)"
         return 1
     fi
     ok "bounded controller injection restored the live proxy to P2Pool"
@@ -178,7 +192,7 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_RESTORE_TIMEOUT=1
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -213,6 +227,31 @@ _xvb_self_test() {
 
     XVBT_XVB_JSON="$xvb_ok" XVBT_P2P_JSON="$p2p_ok"
     _xvb_case "a clean transition reports three green rows and rc 0" 3 0 0
+
+    # #2708 (job 1172): a restore that hits one transient ConnectTimeout and then succeeds must NOT
+    # strand the guest on XvB — the call has to retry until it confirms P2Pool, not trust (or
+    # silently swallow) the first answer. A single-shot restore fails this case outright.
+    local p2p_calls
+    p2p_calls="$(mktemp)"
+    _xvb_guest_python() {
+        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
+        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
+        *"switch_miners('P2POOL')"*)
+            printf 'x' >>"$p2p_calls"
+            [ "$(wc -c <"$p2p_calls")" -ge 2 ] && printf '%s' "$p2p_ok"
+            ;;
+        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
+        esac
+    }
+    _xvb_case "a restore that times out once and then succeeds is NOT a red row" 3 0 0
+    rm -f "$p2p_calls"
+    _xvb_guest_python() {
+        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
+        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
+        *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
+        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
+        esac
+    }
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
