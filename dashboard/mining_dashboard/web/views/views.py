@@ -28,7 +28,8 @@ from mining_dashboard.helper.utils import (
 )
 from mining_dashboard.service.health.update_checker import parse_semver
 from mining_dashboard.service.metrics import build_metrics
-from mining_dashboard.service.network.egress import egress_posture_from_config, topology_from_config
+from mining_dashboard.service.network.egress import egress_posture_from_config
+from mining_dashboard.service.network.topology import topology_from_config
 from mining_dashboard.version import resolve_version
 
 # The chart/window hub lives in web/views/charts.py (#1105). views.py stays the facade: the last two
@@ -311,9 +312,7 @@ def build_state(data, state_mgr, range_arg, window=None, avg_window=DEFAULT_HASH
     earnings["xvb_day"] = xvb_tempered_day(earnings["xvb_day"], xvb_realized)
 
     egress = egress_posture_from_config()  # per-component egress route + privacy roll-up (#170)
-    topology = (
-        topology_from_config()
-    )  # full stack wiring for the topology panel (#170); shares summary
+    topology = topology_from_config()  # full stack wiring for the panel (#170); shares summary
     badges = build_badges(
         data, metrics, mode_tok, db_healthy, wallet_change=recent_wallet_change(state_mgr)
     )

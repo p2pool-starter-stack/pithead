@@ -1,4 +1,4 @@
-from mining_dashboard.service.network import egress
+from mining_dashboard.service.network import topology
 
 
 def test_local_miner_node_and_edge_follow_the_live_config(_topo, _edge, monkeypatch):
@@ -13,5 +13,5 @@ def test_local_miner_node_and_edge_follow_the_live_config(_topo, _edge, monkeypa
     assert (local["route"], local["kind"], local["label"]) == ("local", "ingress", "local stratum")
     assert _edge(on, "rigs", "xmrig-proxy")["route"] == "incoming"
 
-    monkeypatch.setattr(egress.config, "local_miner_enabled", lambda: True)
-    assert "local-miner" in {n["id"] for n in egress.topology_from_config()["nodes"]}
+    monkeypatch.setattr(topology.config, "local_miner_enabled", lambda: True)
+    assert "local-miner" in {n["id"] for n in topology.topology_from_config()["nodes"]}
