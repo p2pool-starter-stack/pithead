@@ -85,4 +85,40 @@ echo "== a restored baseline that will not start names the step that stopped it 
     grep -Fq 'failed+=" start:$BASELINE_START_STEP"' "$HERE/lib/live-upgrade-support.sh"
 )
 
+echo "== a pre-control-runner baseline removes the units the upgraded release installed =="
+(
+    IT_MODE=local IT_REMOTE_DIR="$td/base"
+    mkdir -p "$td/base" "$td/cand" "$td/units"
+    # v1.20.0-shaped: errexit on source, no control_unit_dir.
+    printf 'set -Eeuo pipefail\nstack_up() { :; }\n' >"$td/base/pithead"
+    printf 'control_unit_dir() { printf %%s %q; }\n' "$td/units" >"$td/cand/pithead"
+    export SUDO_LOG="$td/sudo.log"
+    sudo() { printf '%s\n' "$*" >>"$SUDO_LOG"; }
+    export -f sudo
+    reset_control_units_for_render "$td/cand"
+    [ "$(head -n1 "$td/sudo.log")" = "-n systemctl disable --now pithead-control.path" ]
+    grep -Fqx -- "-n rm -f $td/units/pithead-control.path $td/units/pithead-control.service" "$td/sudo.log"
+    grep -Fqx -- "-n systemctl daemon-reload" "$td/sudo.log"
+    : >"$td/sudo.log"
+    # A baseline that knows its own dir asks itself, never the candidate.
+    printf 'control_unit_dir() { printf %%s %q; }\n' "$td/own" >"$td/base/pithead"
+    reset_control_units_for_render "$td/cand"
+    grep -Fq "$td/own/pithead-control.path" "$td/sudo.log" && ! grep -Fq "$td/units/" "$td/sudo.log"
+    : >"$td/sudo.log"
+    # Neither knows: nothing was installed by a CLI that could say where, so nothing is removed.
+    printf 'set -Eeuo pipefail\n' >"$td/base/pithead"
+    printf 'set -Eeuo pipefail\n' >"$td/cand/pithead"
+    reset_control_units_for_render "$td/cand"
+    [ ! -s "$td/sudo.log" ]
+    grep -Fq 'reset_control_units_for_render "$UPGRADE_CANDIDATE_DIR"' "$HERE/lib/live-state-support.sh"
+)
+
+echo "== every repo file the harness reads outside its own tree ships in the guest's harness tarball =="
+outside="$(grep -rhoE '(\.\./){3}[A-Za-z0-9_./-]+' "$HERE/lib" "$HERE/run.sh" "$HERE/lib.sh" | sed 's|^\(\.\./\)*||' | sort -u)"
+[ -n "$outside" ]
+tar_line="$(grep -F 'tar --no-xattrs -czf "$stage/harness.tar.gz"' "$HERE/../os/phases/image-upgrade.sh")"
+while IFS= read -r f; do
+    grep -Fq -- " $f" <<<"$tar_line" || { echo "harness tarball misses $f" >&2; exit 1; }
+done <<<"$outside"
+
 echo "selftest-upgrade-layout: PASS"

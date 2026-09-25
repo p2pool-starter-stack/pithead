@@ -142,8 +142,11 @@ _image_upgrade_prepare_inputs() {
     fi
     _image_upgrade_input_run generated-config 'chmod <generated-config>' \
         chmod 0600 "$stage/config.json" || return $?
-    _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration' \
-        tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration || return $?
+    # The harness reads one file outside its own tree by relative path: hugepage-probe.sh's
+    # REDUCED_PAGES pin in os/overlay/pithead-hugepages (#2685). Without it the guest's
+    # harness reported "got []" (job 1229).
+    _image_upgrade_input_run candidate-bundle 'tar --no-xattrs -czf <harness> tests/integration os/overlay/pithead-hugepages' \
+        tar --no-xattrs -czf "$stage/harness.tar.gz" tests/integration os/overlay/pithead-hugepages || return $?
 }
 
 _image_upgrade_sign_wrong_key() { # <private stage>

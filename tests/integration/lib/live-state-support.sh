@@ -131,8 +131,14 @@ derived_state_fingerprint() {
     rx 'set -euo pipefail; source ./pithead; d=""; declare -F control_unit_dir >/dev/null && d=$(control_unit_dir); { for p in .env Caddyfile; do [ -f "$p" ] && sha256sum "$p" || exit 1; done; [ -d build ] || exit 1; find build -type f -exec sha256sum {} +; for p in "$d/pithead-control.path" "$d/pithead-control.service" /run/systemd/system/ssh.service.d/pithead.conf /run/pithead-ssh/authorized_keys; do if [ -f "$p" ]; then sudo -n sha256sum "$p" || exit 1; else echo "absent $p"; fi; done; systemctl show -p UnitFileState --value pithead-control.path; systemctl show -p ActiveState --value pithead-control.path; sudo -n passwd -S root | awk "{print \$2}"; } | sort | sha256sum | cut -d" " -f1'
 }
 
-reset_control_units_for_render() {
-    rx 'source ./pithead; [ "$OS_TYPE" != Linux ] || { d=$(control_unit_dir); sudo -n rm -f "$d/pithead-control.path" "$d/pithead-control.service" && sudo -n systemctl daemon-reload; }'
+# Remove the control-runner units so the restored release's render re-provisions its own. A CLI
+# that predates control_unit_dir (v1.20.0, which also turns on errexit when sourced — job 1229
+# stopped here) never installed any: the units on the box are the ones the upgraded release put
+# there, so ask that release's CLI where, and leave nothing behind that the old one cannot manage.
+# Stop and disable the path unit first, the way the product's own removal does: a running unit
+# stays active after its file is deleted, and v1.20.0's render never re-provisions it.
+reset_control_units_for_render() { # [dir of the release that may have installed them]
+    rx "[ \"\$(uname -s)\" = Linux ] || exit 0; ask() { (cd \"\$1\" 2>/dev/null && bash -c 'source ./pithead >/dev/null 2>&1 </dev/null; declare -F control_unit_dir >/dev/null && control_unit_dir' 2>/dev/null); }; d=\$(ask .) || d=\$(ask $(quote_arg "${1:-.}")) || exit 0; [ -n \"\$d\" ] || exit 0; sudo -n systemctl disable --now pithead-control.path >/dev/null 2>&1 || true; sudo -n rm -f \"\$d/pithead-control.path\" \"\$d/pithead-control.service\" && sudo -n systemctl daemon-reload"
 }
 
 dashboard_durable_rows() { # <fixed capture epoch>
@@ -278,7 +284,7 @@ telemetry_rows_lost() { # <before-lines> <after-lines>
 # counted skip survives.
 start_restored_baseline() {
     BASELINE_START_STEP=reset-units
-    reset_control_units_for_render || return 1
+    reset_control_units_for_render "$UPGRADE_CANDIDATE_DIR" || return 1
     BASELINE_START_STEP=render
     pithead render >/dev/null 2>&1 || return 1
     BASELINE_START_STEP=up
