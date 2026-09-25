@@ -328,7 +328,7 @@ restore_upgrade_baseline() {
         fi
     fi
     if [ "$files_ok" = 1 ] && ! start_restored_baseline; then
-        failed+=" start:$BASELINE_START_STEP"
+        failed+=" start:$BASELINE_START_STEP${BASELINE_START_ERROR:+ [$BASELINE_START_ERROR]}"
     fi
     [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed+=" config"
     [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed+=" secrets"

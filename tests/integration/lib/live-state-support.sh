@@ -279,16 +279,30 @@ telemetry_rows_lost() { # <before-lines> <after-lines>
         awk 'NF { n[$1]++ } END { for (k in n) printf "%s:%d\n", k, n[k] }' | sort | paste -sd, -
 }
 
+# Run one start step in this shell (baseline_up's counted skip must survive), and keep the fixed
+# text of its own [ERROR] line if it fails (job 1247 stopped at "render" with
+# the output discarded).
+start_step() { # <command...>
+    local out rc=0
+    out="$(mktemp)" || return 1
+    "$@" >"$out" 2>&1 || rc=$?
+    # Only the message's fixed text: v1.20.0's errors interpolate paths and hosts after a quote or
+    # a slash ('/home/<user>', "host"), which redact does not mask, so cut there before redacting.
+    [ "$rc" = 0 ] || BASELINE_START_ERROR="$(sed 's/\x1b\[[0-9;]*m//g' "$out" | grep -E '\[ERROR\]|ERROR:' | tail -n1 | sed -E "s#['\"/].*##; s/[[:space:]]+$//" | redact | cut -c1-240)"
+    rm -f "$out"
+    return "$rc"
+}
+
 # Bring the restored baseline back up, one named step at a time; $BASELINE_START_STEP says which
 # stopped it (job 1213 reported only "start"). Runs in this shell, not a subshell, so baseline_up's
 # counted skip survives.
 start_restored_baseline() {
-    BASELINE_START_STEP=reset-units
+    BASELINE_START_STEP=reset-units BASELINE_START_ERROR=""
     reset_control_units_for_render "$UPGRADE_CANDIDATE_DIR" || return 1
     BASELINE_START_STEP=render
-    pithead render >/dev/null 2>&1 || return 1
+    start_step pithead render || return 1
     BASELINE_START_STEP=up
-    baseline_up >/dev/null 2>&1 || return 1
+    start_step baseline_up || return 1
     BASELINE_START_STEP=status
     wait_status_ok 300 || return 1
     BASELINE_START_STEP=worker-set

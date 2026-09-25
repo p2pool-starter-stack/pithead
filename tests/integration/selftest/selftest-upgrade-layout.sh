@@ -82,7 +82,22 @@ echo "== a restored baseline that will not start names the step that stopped it 
     for STOP_AT in up status worker-set; do
         ! start_restored_baseline && [ "$BASELINE_START_STEP" = "$STOP_AT" ] || exit 1
     done
-    grep -Fq 'failed+=" start:$BASELINE_START_STEP"' "$HERE/lib/live-upgrade-support.sh"
+    grep -Fq 'failed+=" start:$BASELINE_START_STEP${BASELINE_START_ERROR:+ [$BASELINE_START_ERROR]}"' "$HERE/lib/live-upgrade-support.sh"
+    # A failing render keeps its own [ERROR] line: colour stripped, secrets redacted.
+    pithead() { printf 'noise\n\033[0;31m[ERROR]\033[0m bad value MONERO_WALLET_ADDRESS=4abc\n'; return 1; }
+    STOP_AT=""
+    ! start_restored_baseline && [ "$BASELINE_START_STEP" = render ] || exit 1
+    [ "$BASELINE_START_ERROR" = "[ERROR] bad value MONERO_WALLET_ADDRESS=<redacted>" ] || exit 1
+    # A path or host the error interpolates never reaches the public verdict.
+    pithead() { printf '[ERROR] Refusing to use %s as a data directory\n' "'/home/alice' — it's a home"; return 1; }
+    ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] Refusing to use" ] || exit 1
+    pithead() { printf '[ERROR] monero.remote.host is not a valid host. Got "node.home.lan:18081"\n'; return 1; }
+    ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] monero.remote.host is not a valid host. Got" ] || exit 1
+    # baseline_up runs in this shell, so its counted skip survives a captured step.
+    pithead() { :; }
+    baseline_up() { UP_RAN_HERE=1; }
+    UP_RAN_HERE=0
+    start_restored_baseline && [ "$UP_RAN_HERE" = 1 ] && [ -z "$BASELINE_START_ERROR" ] || exit 1
 )
 
 echo "== a pre-control-runner baseline removes the units the upgraded release installed =="
