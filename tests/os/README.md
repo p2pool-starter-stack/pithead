@@ -253,9 +253,12 @@ skipped: 0 scenarios, 0 phases, 5 legs
 
 The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
 enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
-covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
-drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
-and `--phase rig` prints that row alone.
+covered row. A bench whose reserved Monero node requires an RPC login adds a sixth, the provision
+phase's reserved-node commit (`6 legs`, `4 missing, 1 by-design, 1 covered`; see the remote-node
+row below). Narrower invocations print a subset and nothing else: `--phase update` drops the
+by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+`--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
+and only on a credentialed bench.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
@@ -286,11 +289,24 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and typed
-confirmation to succeed, checks the current p2pool container's narrowly extracted
-Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
-configuration. Missing node inputs are a counted failure, never a skipped release gate.
+root-run battery without overriding `HOME`.
+
+The gate assertions run on every bench. The row previews the reserved-node change with blank
+credentials, which keeps the live secret sentinel, and requires the combined approval gate to show
+both endpoints, the preview to name no node credential, the rendered Monero and Tari endpoints
+p2pool is started with, an unconfirmed commit to be refused for want of typed APPLY, and that
+refusal's audit row to carry no approver. When credentials are supplied it first previews the
+change with them and requires a hard refusal: `MONERO_NODE_USERNAME` and `MONERO_NODE_PASSWORD` sit
+in none of the dashboard-committable tiers (`42-control-policy-and-host-checks.sh`).
+
+The commit then depends on the node. With both credentials blank, the row requires the host
+preflight and typed confirmation to succeed, checks the current p2pool container's narrowly
+extracted Monero and Tari endpoints, binds the current-startup `uses chain_id` verdict to that Tari
+endpoint (or its documented SOCKS loopback bridge), and restores the original local-node
+configuration. With either supplied, the host preflight would probe the node with the appliance's
+own credentials, which the dashboard cannot change, so the commit, the p2pool consumption check and
+the `chain_id` round trip are a counted `missing` leg: a bench node without RPC auth runs them.
+Missing node inputs are a counted failure, never a skipped release gate.
 
 ## Static verification
 
