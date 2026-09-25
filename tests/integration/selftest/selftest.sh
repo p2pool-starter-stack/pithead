@@ -14,7 +14,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/scenarios.sh
 source "$HERE/../scenarios.sh"
-
 echo "== overrides_to_jq: value typing =="
 assert_contains "boolean stays unquoted" "$(overrides_to_jq monero.prune=false)" '.monero.prune=false'
 assert_contains "string gets quoted" "$(overrides_to_jq monero.mode=remote)" '.monero.mode="remote"'
@@ -225,6 +224,7 @@ echo "== scenarios: lookup helpers =="
 assert_ne "scenario_names is non-empty" "$(scenario_names | head -n1)" ""
 assert_eq "every matrix row has a name and overrides" "$(scenario_names | grep -c .)" "$(scenario_matrix | grep -c $'\t')"
 assert_contains "overrides lookup works" "$(scenario_overrides remote-main-secure-tari)" "monero.mode=remote"
+assert_contains "remote Monero scenario disables local-only payout confirmation" "$(scenario_overrides remote-main-secure-tari)" "monero.view_key="
 # An unknown scenario name must fail (return 1) and print nothing — never silently resolve.
 miss="$(scenario_overrides no-such-scenario)"
 rc=$?

@@ -58,9 +58,17 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   and 6.0.1-pre.0 carries the upstream fix
   ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
-    one-time JMT migration that upstream describes as taking several minutes to much longer on a
-    large database; the node is unavailable while it runs. It writes a compacted copy of the
-    database beside the old one, so both are on the data volume at once. Before it starts or
+    one-time migration in two phases: a JMT v1 → v2 rebuild
+    (`[MIGRATIONS] Blockchain database is at v6`, then `v6: Starting JMT v1 → v2 rebuild`, ending at
+    `JMT rebuild complete`), then a compaction that copies the live data into a new `data.mdb`
+    (`Compacting LMDB env`, `[MIGRATIONS] Pre-compaction data.mdb size`). On a mainnet-sized
+    database the rebuild took about one to one and a half hours and the compaction about 80
+    minutes more, shrinking the database from 161 GB to about 55 GB. The node opens gRPC only after
+    both phases, so the dashboard shows Tari as loading with no progress for the whole time; follow
+    the phases with `docker logs tari`. The node config keeps 2 GiB of LMDB map headroom so that dropping the
+    old tables at the end of the rebuild does not fail with `MDB_MAP_FULL`
+    ([#2593](https://github.com/p2pool-starter-stack/pithead/issues/2593)). The compacted copy sits
+    beside the old database, so both are on the data volume at once. Before it starts or
     recreates any container, `./pithead upgrade` requires free space there of the current
     `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
     size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). On the
