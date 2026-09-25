@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#
+# Self-test for safety_restore_exact naming WHICH check failed (#2062).
+#
+# The function used to fold five independent failure points (restore, up, health, config,
+# secrets) into one boolean via a chained `||`, so every rollback failure reported the same
+# generic "restore/apply/health/config/secret verification failed" — job 510 hit this reading a
+# real appliance-channel rollback failure and there was no way to tell which check actually
+# failed from the log. Fixed by testing each disjunct in order and recording which one fired in
+# SAFETY_RESTORE_FAIL_REASON; this file pins that each failure mode is named distinctly.
+#
+# A separate file because selftest-live-gates.sh, which already exercises
+# safety_restore_exact's stack-recovery behaviour, sits ON its lint-file-budget ceiling (453);
+# the runner globs `selftest*.sh` (Makefile:43), so a new file needs no registration.
+#
+# Run: tests/integration/selftest/selftest-safety-restore-reason.sh
+set -uo pipefail
+
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The modules resolve their own siblings off $HERE, which is the harness root, not selftest/.
+HERE="$SELF/.."
+# shellcheck source=tests/integration/lib.sh
+source "$HERE/lib.sh"
+# run-safety.sh carries the suite guard; this self-test IS a suite consumer of it.
+INTEGRATION_RUN_SUITE=1
+# shellcheck source=tests/integration/lib/run-safety.sh
+source "$HERE/lib/run-safety.sh"
+
+_restore_reason() { # <pithead-restore-rc> <config: match|drift> <secrets: match|drift>
+    (
+        SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
+        BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP='fp'
+        _restore_rc="$1" _config_state="${2:-match}" _secret_state="${3:-match}"
+        pithead() {
+            case "$1" in
+            down) return 0 ;;
+            restore) return "$_restore_rc" ;;
+            up) return 0 ;;
+            esac
+        }
+        strict_pithead() { return 0; }
+        wait_status_ok() { return 0; }
+        rx() { [ "$_config_state" = match ] && printf 'baseline' || printf 'drifted'; }
+        upgrade_secret_fingerprints() { [ "$_secret_state" = match ] && printf fp || printf other; }
+        it_log() { :; }
+        safety_restore_exact >/dev/null 2>&1
+        printf '%s' "$SAFETY_RESTORE_FAIL_REASON"
+    )
+}
+
+echo "== safety_restore_exact names which check failed, not a generic verdict (#2062) =="
+
+assert_eq "restore failure is named" "$(_restore_reason 1 match match)" "pithead restore failed"
+assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 match match)" ""
+assert_eq "a config drift is named, distinctly from restore/secrets" \
+    "$(_restore_reason 0 drift match)" "restored config.json does not match the baseline byte-for-byte"
+assert_eq "a secret drift is named, distinctly from restore/config" \
+    "$(_restore_reason 0 match drift)" "restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
+
+_safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redactor-fail>
+    (
+        local mode="$1" td wait_calls=0 restore_calls=0 cleanup_calls=0 capture_started=0
+        td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+        SAFETY_BACKUP=1 RUN_IMAGE_UPGRADE=0 OUT_DIR="$td/results" IT_PITHEAD=pithead
+        SAFETY_ARCHIVE="$td/archive" SAFETY_RESTORE_FAILED=0
+        command mkdir -p "$OUT_DIR"
+        pithead() { [ "$1" = backup ] && printf 'Backup written to: %s\n' "$SAFETY_ARCHIVE"; }
+        mkdir() {
+            capture_started=1
+            [ "$mode" != mkdir-fail ] && command mkdir "$@"
+        }
+        rx() {
+            printf '%s\n' "$1" >>"$td/rx"
+            case "$1" in
+            'test -f'*) return 0 ;;
+            tar*) printf 'config.json\n.env\n' ;;
+            *'docker compose ps')
+                [ "$mode" = command-fail ] && return 1
+                printf 'tor unhealthy token=secret\n'
+                ;;
+            *status) printf 'status unhealthy token=secret\n' ;;
+            *) return 1 ;;
+            esac
+        }
+        redact() {
+            printf 'redact\n' >>"$td/redactor"
+            [ "$mode" != redactor-fail ] && sed 's/secret/<redacted>/g'
+        }
+        assert_contains() { :; }
+        wait_status_ok() {
+            wait_calls=$((wait_calls + 1))
+            [ "$mode" = healthy ]
+        }
+        it_log() { :; }
+        it_fail() { :; }
+        safety_restore_exact() {
+            restore_calls=$((restore_calls + 1))
+            [ "$capture_started" = 1 ] &&
+                { [ "$mode" = mkdir-fail ] || [ "$(wc -l <"$td/redactor")" -eq 2 ]; }
+        }
+        safety_cleanup() { cleanup_calls=$((cleanup_calls + 1)); }
+        if [ "$mode" = healthy ]; then
+            safety_backup &&
+                [ ! -e "$OUT_DIR/safety-backup-recovery" ] &&
+                [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:0:0 ] &&
+                [ "$(wc -l <"$td/rx")" -eq 2 ]
+        else
+            ! safety_backup &&
+                [ "$wait_calls:$restore_calls:$cleanup_calls" = 1:1:1 ] &&
+                [ "$capture_started" = 1 ] && {
+                [ "$(wc -l <"$td/rx")" -eq "$([ "$mode" = mkdir-fail ] && echo 2 || echo 4)" ] &&
+                    case "$mode" in
+                    mkdir-fail) [ ! -e "$OUT_DIR/safety-backup-recovery" ] ;;
+                    normal)
+                        grep -q '<redacted>' "$OUT_DIR/safety-backup-recovery/compose-ps.txt" &&
+                            grep -q '<redacted>' "$OUT_DIR/safety-backup-recovery/health-check.txt" &&
+                            ! grep -R -q secret "$OUT_DIR/safety-backup-recovery"
+                        ;;
+                    command-fail)
+                        [ ! -s "$OUT_DIR/safety-backup-recovery/compose-ps.txt" ] &&
+                            grep -q '<redacted>' "$OUT_DIR/safety-backup-recovery/health-check.txt" &&
+                            ! grep -R -q secret "$OUT_DIR/safety-backup-recovery"
+                        ;;
+                    redactor-fail)
+                        [ ! -s "$OUT_DIR/safety-backup-recovery/compose-ps.txt" ] &&
+                            [ ! -s "$OUT_DIR/safety-backup-recovery/health-check.txt" ]
+                        ;;
+                    esac
+            }
+        fi
+    )
+}
+
+if _safety_backup_recovery_case healthy &&
+    _safety_backup_recovery_case normal &&
+    _safety_backup_recovery_case mkdir-fail &&
+    _safety_backup_recovery_case command-fail &&
+    _safety_backup_recovery_case redactor-fail; then
+    it_pass "safety-backup recovery diagnostics are failure-only, redacted, and best-effort"
+else
+    it_fail "safety-backup recovery diagnostics are failure-only, redacted, and best-effort"
+fi
+
+echo "selftest-safety-restore-reason: $IT_PASS passed, $IT_FAIL failed"
+[ "$IT_FAIL" -eq 0 ] || exit 1

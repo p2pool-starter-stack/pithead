@@ -313,6 +313,22 @@ case "$(cat "$AUDIT")" in
 *) ok "audit log holds no config or secret values" ;;
 esac
 
+# #2365: the browser sends the whole explicit config (so unchanged credentials survive) but omits
+# untouched reference defaults. A one-field edit must still produce one preview row and audit key.
+jq '.dashboard.energy.cost_per_kwh=0.15' "$C/config.json" |
+    jq -n --arg id "$UUID2" --arg actor admin --slurpfile cfg /dev/stdin \
+        '{id:$id,action:"preview",actor:$actor,config:$cfg[0]}' >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "one-field candidate previews one control diff (#2365)" \
+    "$(jq -r '.changes | map(.key) | join(" ")' "$RESULTS/$UUID2.json")" "dashboard.energy"
+printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID2" >"$REQS/$UUID2.json"
+run_pending >/dev/null
+assert_eq "one-field candidate commits" "$(jq -r '.status' "$RESULTS/$UUID2.json")" "applied"
+assert_eq "one-field commit preserves an explicit credential" \
+    "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
+assert_eq "one-field commit audits only its key (#2365)" \
+    "$(tail -n 1 "$AUDIT" | jq -r '.keys')" "dashboard.energy.cost_per_kwh"
+
 # Expired staged intent (older than the 10-min commit window) → rejected as expired and cleared.
 # Age it ~15 min: past the 10-min expiry the commit enforces, but INSIDE the 60-min stale sweep so
 # the sweep leaves it for control_commit to judge (a 2020 date would be swept first, #33 hardening).

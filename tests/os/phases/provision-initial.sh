@@ -67,7 +67,12 @@ _phase_provision_initial_body() {
         rm -f "$jar"
         return 1
     }
-    provision_node_preflight_retention "$ip" "$jar" || {
+    provision_node_preflight "$ip" "$jar" unreachable.invalid dns \
+        "The node name did not resolve to an address." "the unreachable Tari consumer" || {
+        rm -f "$jar"
+        return 1
+    }
+    provision_node_preflight "$ip" "$jar" 127.0.0.1 address container "a loopback Tari endpoint" || {
         rm -f "$jar"
         return 1
     }
@@ -184,6 +189,7 @@ _phase_provision_initial_body() {
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_xvb_routing
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"

@@ -245,19 +245,24 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    ran from wherever the operator placed it). Backups with custom data paths, or whose members do
    not share one consistent root, need the administrative restore workflow.
 3. Validate the staged `config.json` through the same fresh-process `parse_and_validate_config`
-   call `firstboot_consume_spool` uses.
-4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only
-   validated generated secrets and Tor identity from the archived environment.
+   call `firstboot_consume_spool` uses. A valid restored remote-node configuration is not redialed
+   under a later release's new-configuration preflight policy.
+4. Regenerate `.env` and `Caddyfile` from the validated configuration, retaining only opaque
+   generated secrets and Tor identity from the archived environment. The restored dashboard
+   password remains in `config.json`; its archived bcrypt hash and fingerprint are kept exactly
+   while the fingerprint matches it and the hash is well-formed, and are regenerated from it otherwise.
    Only on success: install the configuration files at mode `0600`, apply the accepted data
    trees, and publish `applied`. `data/tor` and `data/dashboard` (identity and the dashboard
    database) replace whatever is already there outright. `data/{monero,tari,p2pool}` — optional,
    within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
    on this box instead, an existing file winning on a name collision. The [shared restore
    collision rule](../operations.md#restore-collision-rules) explains why this differs from
-   `pithead restore`. The firstboot loop reaches this door unconditionally, before it ever checks
-   whether `config.json` is already present — a `wipe=keep` target keeps its PRIOR `config.json`, and
-   gating on that presence used to skip the carried restore outright; `prepare_directories` (run
-   by the `setup` it feeds) unconditionally re-chowns every data dir, so restore does not need to.
+   `pithead restore`. On a `wipe=keep` reinstall, `pithead-install` clears the target's prior
+   `config.json` and `machine-role` before rebooting when it carries an accepted restore. Those
+   markers would otherwise skip the firstboot service entirely; chain data stays intact for the
+   merge. The firstboot loop then reaches this door unconditionally before checking for a config;
+   `prepare_directories` (run by the `setup` it feeds) unconditionally re-chowns every data dir,
+   so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
 `error.txt` and returns 1 — nothing already on disk is touched, and the
@@ -314,7 +319,7 @@ Four properties, each earned:
    is missing from its SANs, or if it is within 30 days of expiry. With property 3 in place a
    coverage gap should not occur on a healthy render, so this is belt-and-braces there; expiry
    is the check nothing else derives. An unreadable certificate file WARNs instead — `doctor`
-   is the second half of `pithead-boot`'s health gate, and a FAIL there reboots the box, so a
+   is one of `pithead-boot`'s three health-gate signals, and a FAIL there reboots the box, so a
    read failure that doesn't prove the certificate is actually broken must not cause one.
 5. **The remedy is real, and the gate does not punish the update for it (#1265).** `apply`
    reaches the mint even when `config.json` is unchanged: on an appliance the no-change branch
@@ -399,20 +404,32 @@ Five steps, each answering a hardware-validated failure:
    an image behind a constant tag changed identity. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
-4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes two gates.
+4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.
    First the dashboard must answer through caddy on a *listed* vhost (`localhost`; bare
    `127.0.0.1` hits Caddy's empty default site and proves nothing) — the end of the
    derived-config → caddy → dashboard chain. Second `pithead doctor --json` must exit clean: it
-   FAILs on a crashed revenue container (monerod/p2pool/tari), a dead Tor backbone, or a missing
-   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. "The
-   dashboard answers" is a subset of "the stack is alive", and the second gate closes that gap.
+   FAILs on a crashed revenue container (monerod/p2pool/tari, including one an interrupted compose
+   recreate left under its temporary `<id>_<service>` name), a dead Tor backbone, or a missing
+   egress firewall, so a slot that serves a dashboard while mining is dead does not commit. Third
+   `pithead status` must exit 0 — every expected container running and healthy, none restarting;
+   only a miner deliberately created/exited/stopped by the sync gate, or a chain service explicitly
+   withheld by a pending data migration, is exempt. Restarting or unhealthy services still fail.
+   doctor judges only the revenue containers, so before #2383 a *non-revenue* container left
+   `unhealthy` (the dashboard's own healthcheck failing, caddy in a restart loop) passed both
+   earlier gates while the box's own status command already called it broken: manual battery M9
+   committed exactly that slot. Each gate is a subset of the next, and the third closes the last
+   gap. The refusal names the container, carried into the in-flight flag so the fallback boot's
+   rollback verdict says which one held the gate.
    The gate is deliberately sync-tolerant: a node's healthcheck is a liveness probe that passes
    from early in a days-long initial sync, and the sync-held miners (p2pool/xmrig-proxy, stopped
-   by the dashboard until the node catches up) never count as crashed — so a still-syncing box
-   commits while a genuinely broken one does not. A slot that boots but is not healthy stays
-   uncommitted on purpose: that is the state A/B fallback exists for. Unprovisioned machines never
-   commit — GRUB's clear-and-retry keeps them booting, and a bad update before provisioning
-   reverts.
+   by the dashboard until the node catches up) never count as crashed by doctor, nor against
+   `status`'s own exit code — so a still-syncing box commits while a genuinely broken one does
+   not. Certificate coverage the boot-time re-mint could not clear still commits only after
+   `pithead status` passes (#1265): that drift is the machine's address list, not the slot. A slot
+   that boots but is not healthy stays uncommitted on purpose: that is the state A/B fallback exists
+   for.
+   Unprovisioned machines never commit — GRUB's clear-and-retry keeps them booting, and a bad
+   update before provisioning reverts.
 5. **`pithead local-miner`** — converge the built-in RigForge worker to `local_miner.enabled`,
    deliberately LAST: the miner needs the stack's stratum listening, and it must never delay
    or block the slot commit — the stack serving is the product's health, the miner is a
@@ -437,7 +454,7 @@ migration floor — both halves are described in
 **Rule for changes:** anything generated from `config.json` or the program is derived and must
 be rebuilt by `render` — adding one anywhere else recreates the staleness bug. The container
 images are derived in the same sense: functions of the running slot, converged every boot by
-`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, generated secrets)
+`load-images`. Genuine state (`config.json`, wallets, chain data, Tor keys, opaque generated secrets)
 is never regenerated; it gets validation and a safe fallback instead.
 
 The invariant, asserted by the provision phase: **corrupt any derived file, reboot, and the
@@ -458,7 +475,7 @@ had a gap between it and the next one.
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), pulled to the harness, uploaded through `/submit-restore` on a FRESH installer boot instead of the form — the wallet address and the Tor onion identity prove restored, not regenerated |
+| the restore leg | `tests/os/run.sh --phase install` | a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, uploaded through `/submit-restore` instead of the form onto an existing appliance disk — the running wallet, Tor identity and opaque RPC/onion secrets must match the prior-release fixture, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both its chain sentinel and the target's pre-restore sentinel must survive, and its removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.

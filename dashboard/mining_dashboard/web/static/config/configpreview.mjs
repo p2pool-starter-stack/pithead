@@ -62,7 +62,13 @@ export const PreviewModal = ({
                          onInput=${(event) => onConfirmText(event.target.value)} /></label>`
               : null
           }
-          ${busy ? html`<p class="text-muted text-xs">Applying — this can't be interrupted.</p>` : null}
+          ${
+            busy
+              ? html`<p class="text-muted text-xs">Applying — the host recreates the affected
+                containers, including this dashboard, which briefly disconnects while it
+                restarts. This page waits it out and shows the result; leave it open.</p>`
+              : null
+          }
           <div class="config-modal-actions">
               <button class="btn-toggle" onClick=${onCancel} disabled=${busy}>Cancel</button>
               <button class="btn-toggle active" onClick=${onConfirm}

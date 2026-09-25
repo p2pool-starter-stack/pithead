@@ -285,10 +285,10 @@ firstboot_wizard() {
                 rig_worker=$(jq -r '.worker // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_pool=$(jq -r '.pool // ""' "$PWD/rig.json" 2>/dev/null)
                 rig_token=$(rig_access_token) || rig_token="" # empty here = the render leg refuses below
-                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE: a rig serves
-                # no page after this) and this box's address for the adopt form. No login. The same ack still gates the erase.
-                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" \
-                    '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a}' | write_handoff_card "$spool"
+                # The rig's card: worker, pool, the control token (#1836 — minted once, shown ONCE, no login) and
+                # this box's address; an unresolvable pool host (#1867) adds control:"off" and why instead.
+                jq -n --arg w "$rig_worker" --arg s "stratum+tcp://$rig_pool" --arg t "$rig_token" --arg a "$(hostname -I 2>/dev/null | awk '{print $1}')" --arg allow "$(rig_coordinator_ip)" \
+                    --arg reason "the pool host does not resolve to an IPv4 address to pin it to" '{role: "rig", worker: $w, stratum: $s, token: $t, address: $a} + (if $allow == "" then {control: "off", reason: $reason} else {} end)' | write_handoff_card "$spool"
                 local hwait=0
                 while ! wizard_spool_has "$spool" handoff-ack && [ "$hwait" -lt 600 ]; do
                     sleep 2
@@ -356,10 +356,10 @@ firstboot_wizard() {
                 continue
             fi
             if [ "$rec" -eq 0 ] || firstboot_consume_spool "$spool"; then
-                # Reachability before commitment: a remote node that cannot be dialed fails HERE,
-                # on the page, with the attempt kept for editing — not minutes into provisioning.
+                # Every candidate keeps the address safety floor; a restored archive skips only
+                # the later release's live reachability probe (#2230).
                 local pf_err
-                if ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); then
+                if ! pf_err=$(remote_node_addresses_allowed "$PWD/config.json") || { [ "$rec" -ne 0 ] && ! pf_err=$(preflight_remote_nodes "$PWD/config.json"); }; then
                     printf '%s' "$pf_err" | tail -c 300 | wizard_spool_publish "$spool" error.txt cat
                     wizard_spool_publish "$spool" last-attempt.json jq -c . "$PWD/config.json" 2>/dev/null
                     # Same bare-keep hazard as a rejected restore: the config candidate is gone,

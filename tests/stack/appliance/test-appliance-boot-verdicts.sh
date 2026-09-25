@@ -73,3 +73,64 @@ assert_eq "virt-install could not even define the guest: fails, names it unmeasu
     "$(sbv 0 0 2.0.0)" \
     "1 could not even DEFINE a Secure-Boot-enabled guest (no matching OVMF secure-boot firmware on this host?) — Secure Boot is UNMEASURED here, not proven either way; check for a bench firmware gap before reading this as a product defect"
 unset -f sbv
+
+echo "== unit: fault_boot_verdict — BRICKED only when the serial shows no GRUB, kernel or login (#2381) =="
+# bench-ci job 101's fault phase reported A1 as BRICKED (disqualifying) while its own
+# pithead-os-serial.log.failed showed GRUB naming the current slot and "pithead login:" ten
+# seconds later — the SSH probe failed, not the boot. tests/os/fault-boot-verdict.sh reads the
+# serial console from the byte offset the power cycle started at and tells the two apart.
+# Mutation run: drop the offset and let it scan the whole log -> the earlier boot's own GRUB/login
+# lines "prove" a boot that never happened after THIS power cut, silently hiding a real brick.
+FBV="$SANDBOX/fault-boot-verdict"
+mkdir -p "$FBV"
+# shellcheck source=tests/os/fault-boot-verdict.sh
+source "$ROOT/tests/os/fault-boot-verdict.sh"
+printf 'GNU GRUB  version 2.06\nLoading Linux 6.1.0 ...\nDebian GNU/Linux 12 pithead ttyS0\npithead login: ' \
+    >"$FBV/booted"
+verdict=$(fault_boot_verdict "$FBV/booted" 0)
+assert_rc "a serial log naming GRUB, kernel and login is not BRICKED" "$?" "0"
+assert_contains "…and says the probe failed, not the boot" "$verdict" "the PROBE failed to reach it, not the boot"
+printf 'Powering up......\nqemu: no console output\n' >"$FBV/no-boot"
+verdict=$(fault_boot_verdict "$FBV/no-boot" 0)
+assert_rc "a serial log with no GRUB, kernel or login evidence IS BRICKED" "$?" "1"
+assert_contains "…and quotes the serial's last lines" "$verdict" "qemu: no console output"
+# The earlier boot's login line must not leak across the offset: a fresh power cycle appends to
+# the SAME $SERIAL file rather than truncating it, so only bytes written after the mark count.
+cat "$FBV/booted" "$FBV/no-boot" >"$FBV/combined"
+mark=$(wc -c <"$FBV/booted" | tr -d ' ')
+verdict=$(fault_boot_verdict "$FBV/combined" "$mark")
+assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
+unset -f fault_boot_verdict
+rm -rf "$FBV"
+
+echo "== unit: m10_height_verdict — a readable lower height is chain loss, apart from an unreadable RPC (#2557) =="
+# bench-ci job 840 failed M10.1 with "before: 56540, after: 56040" under one message that also
+# covered an unreadable RPC. The leg now flushes the guest after the pre-cut read, so the verdict
+# can hold the node to that persisted height and name which of the two failures it saw.
+# Mutation run: drop the lower-height branch -> job 840's readable 56040 passes as a recovery.
+mhv() { # <persisted-before> <after> -> "<rc> <verdict-text>"
+    local out rc
+    out=$(
+        # shellcheck disable=SC1091
+        source "$ROOT/tests/os/m10-height-verdict.sh"
+        m10_height_verdict "$1" "$2"
+    )
+    rc=$?
+    printf '%s %s' "$rc" "$out"
+}
+assert_eq "job 840's readable lower height fails as lost persisted blocks" \
+    "$(mhv 56540 56040)" \
+    "1 monerod LOST 500 persisted blocks across the cut (persisted before: 56540, after: 56040)"
+assert_eq "an unreadable post-cut RPC fails as unreadable, not as chain loss" \
+    "$(mhv 56540 "")" \
+    "1 monerod RPC unreadable after the cut (persisted before: 56540, after: unreadable)"
+assert_eq "an unreadable pre-cut height fails before any comparison" \
+    "$(mhv "" 56540)" \
+    "1 could not read a persisted monerod height before the cut (read: unreadable)"
+assert_eq "the same height passes" \
+    "$(mhv 56540 56540)" \
+    "0 monerod reports height 56540, at or past the persisted pre-cut height 56540"
+assert_eq "a higher height passes" \
+    "$(mhv 56540 56600)" \
+    "0 monerod reports height 56600, at or past the persisted pre-cut height 56540"
+unset -f mhv

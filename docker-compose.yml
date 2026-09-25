@@ -217,8 +217,8 @@ services:
   # Only starts if "local_tari" profile is active (#103, mirrors monerod's "local_node" above).
   tari:
     profiles: ["local_tari"]
-    # Pinned by digest (#135) so the v5.3.1-mainnet tag can't be silently re-pointed.
-    image: quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:824fd6ec21d618805317d7eede374d6782906eeae17d2fc8aaad4df6205f94e0
+    # Pinned by digest (#135) so the v6.0.1-pre.0-mainnet tag can't be silently re-pointed.
+    image: ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
     container_name: tari
     # Run non-root (#255). Pulled image (not our Dockerfile), so set the uid via compose to match the
     # uid pithead chowns ${TARI_DATA_DIR} to. The wrapper entrypoint reads the canonical config
@@ -226,6 +226,11 @@ services:
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 1m
+    # An init as PID 1 (#2627): it reaps, and forwards the stop signal to the wrapper entrypoint,
+    # which forwards it to the minotari_node it supervises (#2618). Without an init the wrapper is
+    # PID 1 and a zombie child it has not reaped yet delays the stop. The quadlet renderer carries
+    # the same as RunInit=true.
+    init: true
     logging: *default-logging
     # Tari's memory grows unbounded over time (#55, first reported in #14); left uncapped it can
     # pressure or OOM the whole host on small (e.g. 16 GB) machines. Cap it as a SAFETY CEILING so a
@@ -256,9 +261,9 @@ services:
       # tari (a bind-mount content change alone won't trigger a recreate).
       - TARI_CLEARNET_SYNC=${TARI_CLEARNET_SYNC:-false}
     # Immutable root filesystem (#377). The wrapper entrypoint copies the canonical config to
-    # /tmp/tari-runtime-config.toml; the upstream start_tari_app.sh (verified in the pinned image:
-    # APP_NAME=node → TARI_BASE=/var/tari/node, it only mkdir+cd there) then runs minotari_node with
-    # --base-path /var/tari/node — the data bind mount, which holds the DB, logs and peer DB.
+    # /tmp/tari-runtime-config.toml, then runs minotari_node as upstream's start_tari_app.sh would
+    # (APP_NAME=node → TARI_BASE=/var/tari/node) with --base-path /var/tari/node — the data bind
+    # mount, which holds the DB, logs and peer DB.
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -269,7 +274,8 @@ services:
       # dashboard-written "sync complete" marker to decide clearnet-vs-Tor at startup.
       - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
     # Pithead wrapper (#183/#234): renders the runtime config (clearnet-vs-Tor, marker-gated) from
-    # pithead's canonical Tor config, then chains to the upstream start_tari_app.sh unchanged.
+    # pithead's canonical Tor config, then runs and supervises minotari_node, rewinding a database
+    # left on the dead 5.3.1 branch past the 350,000 fork first (#2618).
     entrypoint:
       - /var/tari/config/entrypoint.sh
     command:
@@ -306,7 +312,7 @@ services:
   tari-wallet:
     profiles: ["tari_payout_confirm"]
     # Pinned by digest (#135), same registry/tag as the Tari node so the version-match holds.
-    image: quay.io/tarilabs/minotari_console_wallet:v5.3.1-mainnet@sha256:31b3cd7b2b390da33c279fd1a5cd457eb254aeea17a5a230ff4c7bfea79a47eb
+    image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
     container_name: tari-wallet
     # Run non-root (#255). Pulled image, so set uid via compose to match the uid the wallet named
     # volume is created under; the wrapper only writes the base-path (the volume) and /tmp.
@@ -378,10 +384,12 @@ services:
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-p2pool:${STACK_VERSION:-dev}
     build: ./build/p2pool
     container_name: p2pool
-    # Memory ceiling (#132 — see monerod). RandomX HugePages are separate; this caps p2pool's own
-    # heap (~0.35 GiB observed).
-    mem_limit: 1g
-    memswap_limit: 1g
+    # Memory ceiling (#132 — see monerod). With enough free HugePages the RandomX dataset lives
+    # outside this cgroup and p2pool's own heap is ~0.35 GiB. With too few, p2pool falls back to
+    # 2592 MiB of ordinary memory (dataset + two caches); a 1g ceiling OOM-killed it while it
+    # filled the dataset, a restart loop at exit 137 (#2562). 4g holds that fallback.
+    mem_limit: 4g
+    memswap_limit: 4g
     restart: unless-stopped
     logging: *default-logging
     # Replaces 'privileged: true'. p2pool only needs to lock HugePages for the RandomX dataset
@@ -633,8 +641,8 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads masked config,
-      # results, and the audit log, nothing else (see SECURITY.md).
+      # The raw config.json is never mounted — a fully compromised container reads only masked
+      # config and the bounded non-secret/read-only surfaces documented in SECURITY.md.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the
@@ -647,6 +655,14 @@ services:
       # reads, so the Configuration view's pinned core section is never a second hand-maintained
       # list. No secrets — it's a list of dotted key paths, not values.
       - ./config.core-keys.json:/host-config/config.core-keys.json:ro
+      # The exact advisory-lock inode pithead holds around compose mutations (#2218). Read-only is
+      # enough for flock and keeps the semi-trusted dashboard from altering the holder record.
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:-.pithead.lock}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       - HOST_IP=${HOST_IP:-127.0.0.1}
       # Timezone for dashboard timestamps/charts. Set via `dashboard.timezone` in config.json
@@ -655,8 +671,9 @@ services:
       - TZ=${DASHBOARD_TZ:-Etc/UTC}
       - MONERO_NODE_HOST=${MONERO_NODE_HOST:-172.28.0.26}
       # monerod get_info RPC creds (Issue #29): the dashboard reads sync height/target over
-      # 127.0.0.1:18081 (reachable via network_mode: host) using digest auth, instead of
-      # scraping docker logs. Only used for a local node; harmless for remote-node setups.
+      # the local or remote endpoint rendered from config.json, using digest auth instead of
+      # scraping docker logs.
+      - MONERO_RPC_URL=${MONERO_RPC_URL:-http://127.0.0.1:18081}
       - MONERO_NODE_USERNAME=${MONERO_NODE_USERNAME}
       - MONERO_NODE_PASSWORD=${MONERO_NODE_PASSWORD}
       # Whether the local node prunes — shown as Pruned/Full in the Monero panel (Issue #32).

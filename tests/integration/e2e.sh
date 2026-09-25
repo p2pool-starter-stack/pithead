@@ -12,7 +12,8 @@
 #      images from build/, so a Dockerfile/entrypoint change is actually tested #272) and runs the live
 #      harness (tests/integration/run.sh) DETACHED on the box so an SSH drop can't kill a long matrix.
 #   6. ALWAYS restores: the miner's original pool config, and the canonical baseline stack — even on failure or Ctrl-C
-#      (an EXIT trap). The synced chains are never touched. The restore then PROVES the live stack matches the on-disk
+#      (an EXIT trap), with no `pithead down`: chain nodes the branch left unchanged keep running throughout (#2639),
+#      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
 #      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
 #      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
 #
@@ -31,7 +32,7 @@ source "$HERE/lib/rig-supply.sh" || exit $?
 source "$HERE/lib/borrow-fixture.sh" || exit $?
 # restore-proof.sh: verify_restore_proof + the image-identity check the restore is graded on (#272).
 # shellcheck source=tests/integration/lib/restore-proof.sh
-source "$HERE/lib/restore-proof.sh" || exit $?
+source "$HERE/lib/restore-proof.sh" && source "$HERE/lib/chain-keep.sh" || exit $? # chain-keep: #2639
 # shellcheck source=tests/integration/lib/detached-harness.sh
 source "$HERE/lib/detached-harness.sh" && source "$HERE/lib/harness-args.sh" || exit $?
 # --- Config (override via env or flags) -------------------------------------
@@ -242,12 +243,11 @@ restore_all() {
         fi
     fi
 
-    # 2. Stack: stop the branch (e2e checkout) and bring the LIVE baseline back up healthy. Restore
-    #    from RESTORE_DIR — the dir the live stack actually ran from (#454), which on a release box is a
-    #    per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir hands the "pithead"
-    #    project locally-built :dev images.
-    step "bringing the baseline stack ($RESTORE_DIR) back up"
-    on_bench "cd '$E2E_DIR' && ./pithead down >/dev/null 2>&1 || true"
+    # 2. Stack: converge the LIVE baseline over the branch with no `pithead down` (#2639), so Compose
+    #    recreates only what differs. Restore from RESTORE_DIR — the dir the live stack ran from (#454),
+    #    on a release box a per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir
+    #    hands the "pithead" project locally-built :dev images.
+    step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
     # Look at the control units BEFORE the apply below converges them. Without this the run can
     # never report that it stranded the box — the post-restore proof runs downstream of its own
     # repair, so on the ordinary #1085 path it is green either way. Observation only: the strand is
@@ -319,9 +319,9 @@ wait_bench_healthy() { # <timeout_s>
     done
 }
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip (seconds — NOT a re-sync). Wait for the dashboard to report both back to "done" before running
-# the harness, so the readiness pre-check doesn't flap on the brief post-restart "loading". Doubles as
-# a direct check that the sync-detection logic settles correctly against the reused chains.
+# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
+# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
+# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -331,7 +331,7 @@ wait_synced() { # <timeout_s>
             return 0
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
-            warn "sync panels still '$st' after $((${1:-300}))s — the harness will wait further on real sync signals"
+            warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
             return 1
         }
         sleep 8
@@ -374,13 +374,13 @@ preflight() {
         ok "canonical stack is currently healthy" ||
         warn "canonical stack is NOT healthy right now — continuing, but check the box."
     # Resolve where the LIVE stack actually runs from (#454). The "pithead" Compose project name is
-    # fixed, so exactly one project runs on the box; read its working_dir off a running container's
-    # label. On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
+    # fixed, so exactly one project runs on the box; read its working_dir off the dashboard's label,
+    # which every up recreates (#2639: others a restore left alone can name E2E_DIR or an old dir).
+    # On a release box that's a per-version bundle dir (e.g. /srv/code/pithead-v1.3.1), NOT
     # CANONICAL_DIR — the restore must target it or it hands the project locally-built :dev images.
-    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR.
-    local live_cid live_dir=""
-    live_cid="$(on_bench "docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null | head -n1" || true)"
-    [ -n "$live_cid" ] && live_dir="$(on_bench "docker inspect --format '{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}' '$live_cid' 2>/dev/null" || true)"
+    # Captured NOW, before deploy_branch rewrites the label to E2E_DIR, which never counts.
+    local live_dir=""
+    live_dir="$(on_bench "docker ps --filter label=com.docker.compose.project=pithead --filter label=com.docker.compose.service=dashboard --format '{{.Label \"com.docker.compose.project.working_dir\"}}' 2>/dev/null | grep -vxF '$E2E_DIR' | head -n1" || true)"
     if [ -n "$live_dir" ] && [ "$live_dir" != "$E2E_DIR" ] && on_bench "test -x '$live_dir/pithead'"; then
         RESTORE_DIR="$live_dir"
         [ "$RESTORE_DIR" = "$CANONICAL_DIR" ] &&
@@ -389,11 +389,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on, captured for the same reason and at the same moment as
-    # RESTORE_DIR: deploy_branch is about to rebuild the first-party images, and on a source-checkout
-    # box it rebuilds them under the very tag the baseline resolves to. Nothing downstream can tell
-    # the baseline's images from the branch's once that has happened, so the record has to be taken
-    # here or not at all. Read by verify_restore_proof's check 4.
+    # The images the baseline is on (and whether it has the #2460 egress boot unit), captured before
+    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
+    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
+    # record is taken here or not at all. Read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
@@ -575,9 +575,9 @@ deploy_branch() {
     # #272: `pithead apply` runs `compose up --pull` (never --build), so it would test whatever images
     # were last built on the box, not this branch. `pithead upgrade` re-renders the generated configs
     # (inject_service_configs) AND rebuilds the first-party images from build/ (--build) before
-    # recreating — so a Dockerfile/entrypoint change in the branch is actually under test.
+    # recreating — so a Dockerfile/entrypoint change is under test. Unchanged chain nodes stay (#2639).
     log "Deploying the branch on $BENCH_HOST (pithead upgrade — re-render configs + rebuild first-party images)"
-    on_bench "cd '$E2E_DIR' && ./pithead upgrade" || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
+    deploy_keeping_chain || die "pithead upgrade failed in $E2E_DIR — branch did not deploy."
     # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
@@ -588,7 +588,7 @@ deploy_branch() {
     # only ever weakens the check (a service missing here can never be accused of being the branch's,
     # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
-    wait_synced 300 || true # let the recreated monerod/tari re-confirm their tip before the harness pre-check
+    wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }
 
@@ -633,7 +633,7 @@ run_harness() {
     rollback_b64="$(printf '%s' "${IT_RIG_ROLLBACK_CHANGES:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_ROLLBACK_CHANGES."
     pools_b64="$(printf '%s' "${IT_RIG_POOLS_PROBE:-}" | base64 | tr -d '\n')" || die "Failed to encode IT_RIG_POOLS_PROBE."
     harness_prepare "$rearm_id" || die "Failed to record harness launch intent."
-    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
+    HARNESS_PID="$(printf '%s\n%s\n%s\n%s\n%s\n' "$IT_RIG_TOKEN" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}" "$rollback_b64" "$pools_b64" | on_bench "IFS= read -r t || exit 1; IFS= read -r a || exit 1; IFS= read -r n || exit 1; IFS= read -r rb || exit 1; IFS= read -r pb || exit 1; rollback=\$(printf '%s' \"\$rb\" | base64 -d) || exit 1; pools=\$(printf '%s' \"\$pb\" | base64 -d) || exit 1; rm -f '$E2E_DIR/results/e2e-harness.done' '$rearm_request' '$rearm_ack' || exit 1; cd '$E2E_DIR' || exit 1; IT_RIG_TOKEN=\"\$t\" IT_RIG_ROLLBACK_CHANGES=\"\$rollback\" IT_RIG_POOLS_PROBE=\"\$pools\" RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") nohup setsid ./.e2e-run.sh '$HARNESS_STATE' '$E2E_DIR' '$target_dir' '$WORKERS' '$rearm_request' '$rearm_ack' '$rearm_id' $phases >/dev/null 2>&1 & p=\$!; i=0; until grep -Eq \"^running \$p [0-9]+\$\" '$HARNESS_STATE'; do test \"\$i\" -lt 50 || exit 1; sleep .1; i=\$((i + 1)); done; echo \$p")" || die "Failed to launch the harness."
     [[ "$HARNESS_PID" =~ ^[0-9]+$ ]] || die "Harness launch returned an invalid PID."
 
     # Poll the done-marker, printing a heartbeat tail of the log.

@@ -126,7 +126,17 @@ assert_rc "a carried restore + a pre-existing config.json still runs setup on th
 assert_contains "...the carried-restore door was actually called, not skipped by the config.json guard" "$(cat "$RF_LOG")" "consume_preseed_restore-called"
 assert_eq "...and the restored config.json replaced the pre-existing one" "$(jq -r '.monero.wallet' "$SAWB/config.json")" "4restored"
 rm -f "$SAESP/pithead-restore.enc"
-unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE
+
+echo "== unit: firstboot_wizard restores legacy remote-node settings without a new-node preflight (#2230) =="
+SAW_STUBS_LEGACY='container_engine() { echo true; }; export_build_provenance() { :; }; stage_wizard_spool() { :; }; load_baked_images() { :; }; preseed_token() { return 1; }; wizard_mint_token() { echo token; }; wizard_keep_requested() { return 1; }; firstboot_consume_rig() { return 2; }; firstboot_consume_restore() { printf "{\"monero\":{\"mode\":\"remote\",\"wallet_address\":\"4restored\"},\"tari\":{\"mode\":\"local\"}}" >"$PWD/config.json"; return 0; }; remote_node_addresses_allowed() { return 0; }; preflight_remote_nodes() { echo preflight >>"${RF_LOG:?}"; [ "$(grep -c "^preflight$" "$RF_LOG")" -gt 1 ]; }; ensure_appliance_dashboard_password() { :; }; apply_appliance_defaults() { :; }; bash() { return 0; }; wizard_spool_has() { return 0; }; record_machine_role() { :; }; setup() { echo setup >>"${RF_LOG:?}"; }; control_audit_provisioned() { return 0; }; firstboot_wizard'
+rm -f "$SAWB/config.json"
+mkdir -p "$SAWB/data/firstboot"
+: >"$RF_LOG"
+out=$(PITHEAD_INSTALL_BIN=/nonexistent PITHEAD_REGISTRY=registry STACK_VERSION=dev run_sourced "$SAWB" eval "$SAW_STUBS_LEGACY" 2>&1)
+assert_rc "a restored legacy remote-node config reaches setup" "$?" "0"
+assert_not_contains "the current new-node preflight does not reject the restored archive" "$(cat "$RF_LOG")" "preflight"
+assert_contains "the restored config reaches the credentials-handoff path" "$(cat "$RF_LOG")" "setup"
+unset PITHEAD_PRESEED_DIR PITHEAD_RIGFORGE_DIR RF_LOG SAW_STUBS SAW_STUBS_RESTORE SAW_STUBS_LEGACY
 rm -rf "$SAWB" "$SAESP"
 echo "== unit: write_handoff_card — the credentials card is owner-only from its first byte (#1842) =="
 # The card carries the login or the rig's control token. Both controls remove what a lazy fix would
@@ -154,5 +164,13 @@ assert_eq "no wizard slice redirects into handoff.json directly (text guard)" "$
 assert_eq "...and both card writers call write_handoff_card (the guard's positive control)" "$(grep -c '| write_handoff_card "\$spool"' "$ROOT/lib/pithead/12-firstboot-wizard.sh")" "2"
 rm -rf "$HCSB"
 unset HCSB
+
+# #1867: the KVM rig phase's control-off leg (tests/os/rig-control-off-leg.sh) judges the card this
+# same wizard writes for a pool host with no IPv4. Its rows only mean something if they RED on the
+# card written with that change reverted, so its --self-test drives the predicate against both
+# shapes and renders each note through the page's own module. Driven here, the lowest tier that can.
+echo "== unit: the rig control-off card verdict the KVM leg uses (#1867) =="
+bash "$ROOT/tests/os/rig-control-off-leg.sh" --self-test >/dev/null 2>&1
+assert_rc "green on the control-off card, red on the card written without the field" "$?" "0"
 
 unset SAWB SAESP out

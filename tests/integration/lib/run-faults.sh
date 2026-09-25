@@ -82,39 +82,97 @@ fault_db_readonly() {
         "$(jq_get "$(api_state)" '.db_healthy')" "true"
 }
 
-# Live counterpart to the tier-1 stubbed rollback (tests/stack/run.sh #270): force a REAL
-# `iptables -I` to fail mid-apply and prove the box ends fail-closed — the partial ruleset is
-# rolled BACK, not left half-open (a stubbed iptables can't prove the real kernel strips a partial
-# insert). DESTRUCTIVE-then-restored: apply_tor_egress_firewall clears the live rules before
-# re-inserting, so on the sabotaged run the firewall is briefly down until the recover step (and
-# run_fault_injection's belt-and-braces) reinstate it — hence opt-in, local-box only.
+# Live counterpart to the tier-1 stubbed load failure (tests/stack, #270/#2672): force the REAL
+# `iptables-restore` to refuse the swap and prove the box keeps the firewall it had. apply loads
+# the rules in one transaction, so a refused load changes nothing; a stub can't prove the kernel's
+# all-or-nothing commit. Opt-in, local-box only, like every leg here.
 fault_firewall_rollback() {
     if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
         it_skip_leg "firewall-rollback fault" "network.tor_egress_firewall=false"
         return 0
     fi
-    it_step "fault: force an iptables -I failure during the firewall apply…"
-    # Shadow SUDO (not iptables): apply calls `sudo iptables -I`, and sudo's secure_path ignores a
-    # PATH-shadowed iptables, so the insert would really succeed. sudo itself is still found via PATH,
-    # so a wrapper that fails an `iptables … -I …` insert and execs real sudo for everything else
-    # (remove's -D, -N, iptables-save) makes the insert fail exactly as a real mid-insert error would.
-    # On PATH only for the apply below, deleted on recover. $realsudo baked at write time; \$1/\$a/\$@
-    # stay literal. (Verified live on a real box — the iptables-shadow variant silently no-ops.)
-    rx 'realsudo=$(command -v sudo) && mkdir -p .itest-bin && printf "%s\n" "#!/usr/bin/env bash" "if [ \"\$1\" = iptables ]; then for a; do [ \"\$a\" = -I ] && exit 1; done; fi" "exec $realsudo \"\$@\"" > .itest-bin/sudo && chmod +x .itest-bin/sudo' >/dev/null 2>&1
-    # apply_tor_egress_firewall is a pithead function (main is guarded when sourced), so sourcing +
-    # calling it with the sabotaged iptables hits the exact rollback branch.
-    local rc
+    it_step "fault: force an iptables-restore failure during the firewall apply…"
+    # Shadow SUDO (not iptables-restore): sudo's secure_path ignores a PATH-shadowed binary, so the
+    # load would really succeed. The wrapper fails `iptables-restore` and execs real sudo for all
+    # else. $realsudo baked at write time; \$1/\$@ stay literal. On PATH only for the apply below.
+    rx 'realsudo=$(command -v sudo) && mkdir -p .itest-bin && printf "%s\n" "#!/usr/bin/env bash" "[ \"\$1\" != iptables-restore ] || { cat >/dev/null; exit 1; }" "exec $realsudo \"\$@\"" > .itest-bin/sudo && chmod +x .itest-bin/sudo' >/dev/null 2>&1
+    local rc before
+    before="$(rx 'sudo iptables-save 2>/dev/null | grep pithead-tor-egress')"
     rx 'PATH="$PWD/.itest-bin:$PATH" bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1'
     rc=$?
-    assert_rc "firewall apply degrades gracefully on an insert failure (rc 0)" "$rc" "0"
-    # No pithead-tagged rule may survive a failed insert — the rollback must strip the partial set.
-    assert_eq "insert failure leaves NO half-open firewall (rolled back)" \
-        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
+    assert_rc "firewall apply degrades gracefully on a refused load (rc 0)" "$rc" "0"
+    assert_eq "a refused load leaves the installed firewall exactly as it was (#2672)" \
+        "$(rx 'sudo iptables-save 2>/dev/null | grep pithead-tor-egress')" "$before"
+    rc=0
+    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+    assert_rc "...and still enforced: the subnet was never unfenced (#2672)" "$rc" "0"
     it_step "recover: drop the sabotage and reinstall the real firewall…"
     rx 'rm -rf .itest-bin' >/dev/null 2>&1
     rx 'bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1' || true
     assert_num_gt "firewall reinstated after recovery" \
         "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" 0
+}
+
+# A clearnet flow an app opened while the rules were out must not outlive their return (#2672):
+# the conntrack accept passes replies only, and the app's next packet on it is reset. The peer is
+# a scratch netns on the box at TEST-NET-2 198.51.100.2: public to the firewall, reached only
+# through FORWARD, and ours, so no third party decides how long the control flow lives. monerod's
+# bash writes a byte a second; /proc/net/tcp shows its socket to 198.51.100.2:9001 as 026433C6:2329.
+_gf_flows() { # a count, or "unreadable" so a failed read can never pass as zero
+    local t
+    t=$(rx 'docker exec monerod cat /proc/net/tcp' 2>/dev/null) && [ -n "$t" ] || {
+        echo unreadable
+        return
+    }
+    awk '$3 == "026433C6:2329" && $4 == "01"' <<<"$t" | grep -c .
+}
+_gf_down() { rx 'sudo -n ip netns del itest2672; sudo -n ip link del it2672h; rm -f .itest-2672-peer.py; sudo -n pkill -f itest-2672-peer' >/dev/null 2>&1 || true; }
+fault_firewall_grandfathered_flow() {
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
+        it_skip_leg "grandfathered-flow fault" "network.tor_egress_firewall=false"
+        return 0
+    fi
+    it_step "fault: open a direct clearnet flow with the rules out, then re-apply them (#2672)…"
+    _gf_down
+    rx 'printf "%s\n" "import socket" "l = socket.socket()" "l.bind((\"198.51.100.2\", 9001))" "l.listen()" "c, _ = l.accept()" "while c.recv(64):" "    pass" >.itest-2672-peer.py && sudo -n ip netns add itest2672 && sudo -n ip link add it2672h type veth peer name it2672p netns itest2672 && sudo -n ip addr add 198.51.100.1/30 dev it2672h && sudo -n ip link set it2672h up && sudo -n ip netns exec itest2672 sh -c "ip addr add 198.51.100.2/30 dev it2672p && ip link set it2672p up && ip route add default via 198.51.100.1" && { sudo -n setsid timeout 300 ip netns exec itest2672 python3 .itest-2672-peer.py </dev/null >/dev/null 2>&1 & }' >/dev/null 2>&1
+    rx 'bash -c "source ./pithead && remove_tor_egress_firewall"' >/dev/null 2>&1
+    sleep 2
+    rx "docker exec -d monerod bash -c 'exec 3<>/dev/tcp/198.51.100.2/9001 && for i in \$(seq 180); do printf x >&3 || exit; sleep 1; done'" >/dev/null 2>&1
+    sleep 3
+    assert_eq "control: with the rules out, monerod holds a direct flow to the public stand-in peer" "$(_gf_flows)" "1"
+    rx 'bash -c "source ./pithead && apply_tor_egress_firewall"' >/dev/null 2>&1
+    sleep 5
+    assert_eq "the re-applied firewall ends that flow: no ESTABLISHED socket to it left in monerod (#2672)" "$(_gf_flows)" "0"
+    _gf_down
+}
+
+# DIY reboot restore (#2460), without rebooting the bench: a reboot empties DOCKER-USER while the
+# containers restart, and pithead-egress.service is what refills it. Check docker.service pulls the
+# unit in and waits for it, strip the rules exactly as a reboot does, run the installed unit
+# itself against the real kernel, and prove the result is LIVE (the direct dial dropped, the Tor
+# one through), not merely present. DESTRUCTIVE-then-restored, like the rollback fault above.
+fault_firewall_boot_restore() {
+    if [ "$(env_on_box TOR_EGRESS_FIREWALL)" = "false" ]; then
+        it_skip_leg "firewall boot-restore fault" "network.tor_egress_firewall=false"
+        return 0
+    fi
+    it_step "fault: strip the Tor-egress rules as a reboot does, then run the boot unit…"
+    assert_eq "up installed and enabled the boot unit (#2460)" \
+        "$(rx 'systemctl is-enabled pithead-egress.service 2>/dev/null')" "enabled"
+    assert_contains "docker.service pulls the boot unit in (#2460)" \
+        "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-egress.service"
+    assert_contains "docker.service starts only after it (#2460)" \
+        "$(rx 'systemctl show -p After --value docker.service')" "pithead-egress.service"
+    rx 'bash -c "source ./pithead && remove_tor_egress_firewall" >/dev/null 2>&1' || true
+    assert_eq "the rules are gone, as after a reboot" \
+        "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-tor-egress')" "0"
+    local rc=0
+    rx 'sudo systemctl restart pithead-egress.service' >/dev/null 2>&1 || rc=$?
+    assert_rc "the boot unit starts cleanly on the real kernel (#2460)" "$rc" "0"
+    rc=0
+    rx 'bash -c "source ./pithead && tor_egress_enforced"' >/dev/null 2>&1 || rc=$?
+    assert_rc "the rules it restored read as enforced: DROP reachable, nothing foreign above it (#2460)" "$rc" "0"
+    assert_egress_dial_pair
 }
 
 # TOP PRIVACY PRIORITY (#563): stop the tor container — the SOCKS proxy every app dials through
@@ -213,6 +271,77 @@ fault_disk_enospc() {
         "$(jq_get "$(api_state)" '.db_healthy')" "true"
 }
 
+# P2Pool seed-node DNS with a cold peer cache (#2496). --socks5 does not stop p2pool's seed loader:
+# only --no-dns does, so the Tor default must carry it. The leg empties both saved peer lists (the
+# cold cache a first boot has), restarts p2pool under a host-network tcpdump on port 53 (the netwatch
+# image, built from the checkout like tor-client), and proves: the running argv carries --no-dns iff
+# p2pool.clearnet is off; p2pool reaches peers again and mining resumes; and no seed-node query left
+# the host. A unique host-side canary lookup is the capture's positive control, so a blind capture
+# fails instead of passing as "no leak". A second canary from inside the p2pool container records
+# whether Docker's resolver forwards container lookups out of the host at all (#2496's inference).
+P2POOL_SEED_RE='(seeds(-mini|-nano)?\.p2pool\.io|(main|mini|nano)\.p2poolpeers\.net)\.'
+_pred_p2pool_peers() { [ "$(rx "sudo -n cat $(quote_arg "$1/stats/local/p2p") 2>/dev/null | jq -r '.connections // 0'")" -gt 0 ] 2>/dev/null; }
+_pred_dnswatch_listening() { rx "docker logs itest-dnswatch 2>&1 | grep -q 'listening on'"; }
+fault_p2pool_cold_cache_dns() {
+    local pdir clearnet argv cap t0 secs canary="pithead-dns-canary-$$-$RANDOM.example.com" ctr_canary="pithead-dns-ctr-$$-$RANDOM.example.com"
+    pdir="$(env_on_box P2POOL_DATA_DIR)"
+    clearnet="$(env_on_box P2POOL_CLEARNET)"
+    if [ -z "$pdir" ]; then
+        it_fail "p2pool cold-cache DNS leg has a data dir (#2496)" "no P2POOL_DATA_DIR in .env"
+        return
+    fi
+    it_step "fault: p2pool restart with a cold peer cache under a port-53 capture (#2496)…"
+    if ! rx "docker build -q -t pithead-netwatch:test tests/netwatch/ >/dev/null 2>&1 && { docker rm -f itest-dnswatch >/dev/null 2>&1; docker run -d --name itest-dnswatch --network host --cap-add NET_RAW --cap-add NET_ADMIN --entrypoint tcpdump pithead-netwatch:test -i any -nn -l -U port 53 >/dev/null; }"; then
+        it_fail "port-53 capture started (#2496)" "could not build or run the netwatch tcpdump container"
+        return
+    fi
+    wait_for 60 2 "port-53 capture listening" _pred_dnswatch_listening || true
+    rx "docker compose stop p2pool" >/dev/null 2>&1
+    rx "for f in p2pool_peers.txt p2pool_onion_peers.txt; do sudo -n test -e $(quote_arg "$pdir")/\$f && sudo -n mv -f $(quote_arg "$pdir")/\$f $(quote_arg "$pdir")/\$f.itest-2496; done; sudo -n rm -f $(quote_arg "$pdir/stats/local/p2p")" >/dev/null 2>&1
+    t0="$(now_s)"
+    rx "docker compose start p2pool" >/dev/null 2>&1
+    rx "getent hosts $canary" >/dev/null 2>&1
+    if wait_for 900 10 "p2pool peers from a cold cache" _pred_p2pool_peers "$pdir"; then
+        secs=$(($(now_s) - t0))
+        it_pass "p2pool bootstraps peers from a cold cache (clearnet=$clearnet, ${secs}s) (#2496)"
+    else
+        it_fail "p2pool bootstraps peers from a cold cache (clearnet=$clearnet) (#2496)" "no p2pool connections within 900s of a restart with both peer lists removed"
+    fi
+    if [ "$SKIP_MINING_ASSERTS" = "1" ]; then
+        it_skip_leg "mining resumes after the cold-cache restart (#2496)" "no miner attached to this box (--no-mining-asserts)" by-design
+    elif wait_for 600 10 "hashes flowing after the cold-cache restart" _pred_hashes_flowing; then
+        it_pass "mining resumes after the cold-cache restart (#2496)"
+    else
+        it_fail "mining resumes after the cold-cache restart (#2496)" "stratum total_hashes stayed 0 for 600s"
+    fi
+    # After the waits: until the entrypoint execs p2pool, PID 1 is the shell and carries no flags.
+    # Both are redacted before any assertion can print them: argv carries the wallet, the capture
+    # carries bench addresses. Flag names and DNS query names survive redaction.
+    argv="$(rx "docker exec p2pool cat /proc/1/cmdline 2>/dev/null | tr '\\0' ' '" | redact)"
+    rx "docker exec p2pool getent hosts $ctr_canary" >/dev/null 2>&1
+    cap="$(rx "docker logs itest-dnswatch 2>/dev/null; docker rm -f itest-dnswatch >/dev/null 2>&1" | redact)"
+    assert_contains "port-53 capture saw the host canary lookup, so it is not blind (#2496)" "$cap" "$canary"
+    case "$cap" in
+    *"$ctr_canary"*) it_log "observed: Docker's resolver forwards a p2pool-container lookup out of the host (#2496)" ;;
+    *) it_log "observed: no p2pool-container lookup reached the host capture (#2496)" ;;
+    esac
+    if [ "$clearnet" = "true" ]; then
+        case " $argv" in
+        *" --no-dns "*) it_fail "clearnet p2pool keeps seed DNS: no --no-dns in argv (#2496)" "--no-dns present" ;;
+        *) it_pass "clearnet p2pool keeps seed DNS: no --no-dns in argv (#2496)" ;;
+        esac
+    else
+        assert_contains "Tor-default p2pool runs with --no-dns (#2496)" " $argv" " --no-dns "
+        assert_eq "no P2Pool seed-node DNS query left the host during a cold-cache start (#2496)" \
+            "$(printf '%s\n' "$cap" | grep -cE "$P2POOL_SEED_RE")" "0"
+    fi
+    _restore_p2pool_peer_lists "$pdir"
+}
+# Put a saved list back only where p2pool has not written a fresh one; drop the set-aside copy either way.
+_restore_p2pool_peer_lists() {
+    [ -n "$1" ] || return 0
+    rx "for f in p2pool_peers.txt p2pool_onion_peers.txt; do b=$(quote_arg "$1")/\$f.itest-2496; sudo -n test -e \"\$b\" || continue; if sudo -n test -e $(quote_arg "$1")/\$f; then sudo -n rm -f \"\$b\"; else sudo -n mv \"\$b\" $(quote_arg "$1")/\$f; fi; done" >/dev/null 2>&1 || true
+}
 run_fault_injection() {
     # shellcheck disable=SC2034  # read by lib.sh:it_fail to label captured failures
     IT_CURRENT_SCENARIO="fault-injection"
@@ -229,9 +358,12 @@ run_fault_injection() {
     fault_missing
     fault_db_readonly
     fault_firewall_rollback
+    fault_firewall_grandfathered_flow
+    fault_firewall_boot_restore
     fault_tor_down
     fault_clock_drift
     fault_disk_enospc
+    fault_p2pool_cold_cache_dns
     [ "$IT_FAIL" -gt "$fails_before" ] && capture_artifacts "fault-injection" "$OUT_DIR"
 
     # Belt-and-braces: whatever happened above, leave monerod + tor up, the dashboard data dir
@@ -245,6 +377,9 @@ run_fault_injection() {
     rx "docker compose restart dashboard" >/dev/null 2>&1 || true
     rx 'bash -c "source ./pithead && apply_tor_egress_firewall" >/dev/null 2>&1' || true
     rx 'rm -rf .itest-bin' >/dev/null 2>&1 || true
+    rx 'docker rm -f itest-dnswatch' >/dev/null 2>&1 || true
+    _restore_p2pool_peer_lists "$(env_on_box P2POOL_DATA_DIR)"
+    rx "docker compose up -d p2pool" >/dev/null 2>&1 || true
     wait_for 240 5 "monerod healthy after fault phase" _pred_monerod_healthy || true
     wait_for 240 5 "tor healthy after fault phase" _pred_tor_healthy || true
     wait_status_ok 240 || true

@@ -95,7 +95,15 @@ verify_release_images() {
     cosign_available ||
         error "cosign.pub is present but docker is not available to run the verifier — refusing an unverified pull. Install Docker ($DOCS_URL/docs/getting-started.md#1-prerequisites) and re-run '$0'."
     # The 5 first-party images, verified by the exact digest compose pins them to (#451/#461).
-    local suffix repo sha image out
+    local suffix repo sha image out cosign_registry_args=()
+    # A debug build's private-registry CA is program material beside cosign.pub, so the install-dir
+    # mount already carries it into the container — a relative name, like --key on the same command.
+    if [ -f cosign.registry-ca.crt ]; then
+        cosign_registry_args=(--registry-cacert cosign.registry-ca.crt)
+    elif [ -n "${PITHEAD_REGISTRY:-}" ] && [ "$PITHEAD_REGISTRY" != "ghcr.io/p2pool-starter-stack" ] &&
+        [ "$(tr -d ' \t\r\n' <"${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" 2>/dev/null || true)" = debug ]; then
+        cosign_registry_args=(--allow-http-registry)
+    fi
     for suffix in tor monero p2pool xmrig-proxy dashboard; do
         repo="${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-${suffix}"
         # #557: plain `sha="$(...)"` aborts under errexit on a no-match grep BEFORE this error()
@@ -104,7 +112,7 @@ verify_release_images() {
             error "cosign.pub is present but pithead-${suffix} is not digest-pinned in docker-compose.yml — cannot bind verification to the bytes compose pulls; refusing. A signed release bundle pins every first-party image by @sha256."
         fi
         image="${repo}@${sha}"
-        if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "$image" 2>&1); then
+        if ! out=$(cosign_run verify --key cosign.pub --private-infrastructure "${cosign_registry_args[@]}" "$image" 2>&1); then
             # Strip control chars: cosign's stderr echoes registry-supplied bytes, and error()
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
             # inject ANSI escapes into the operator's terminal (#376 review).
@@ -140,6 +148,10 @@ stack_upgrade() {
     DEPLOYMENT_COMPLETED=true
     render_env "${ENV_FILE}.new"
     mv "${ENV_FILE}.new" "$ENV_FILE"
+    # #2636: a Tari major that migrates chain data needs room for the old database again. Refuse
+    # on the freshly rendered .env and before provision_node_onions, whose onion step can start tor:
+    # nothing is started or recreated first, so the migrating node never starts on a full volume.
+    tari_upgrade_space_precheck
     provision_node_onions # #103: as in apply — a node switched to local needs its onion first
     inject_service_configs
     generate_caddyfile
@@ -149,10 +161,10 @@ stack_upgrade() {
     migrate_compose_project
     # (Re)assert the Tor-only egress firewall BEFORE compose — same ordering as stack_up (#276), for
     # the same reason: if the firewall isn't already installed (e.g. `down` then `upgrade`), starting
-    # containers first opens a startup window where a clearnet app (Tari, #271) can open a connection
-    # that the leading ESTABLISHED rule then grandfathers past the DROP (#291). In normal operation
-    # it's already installed from `up` and this is a cheap idempotent re-apply. Runs after the .env
-    # render above so the toggle/subnet are current.
+    # containers first opens a startup window where a clearnet app (Tari, #271) can dial out unfenced
+    # before the rules go in (#291). In normal operation it's already installed from `up` and this
+    # is a cheap idempotent re-apply. Runs after the .env render above so the toggle/subnet are
+    # current.
     apply_tor_egress_firewall # Tor-only egress (#270), consistent with up/apply
     # One-time move of the dashboard data out of the install dir (#455) — after the .env commit
     # (a failed move is retried on re-run) and before the recreate mounts the new location.
@@ -160,12 +172,8 @@ stack_upgrade() {
     # Source checkout: rebuild the images from build/. Release install: pull the new published images
     # instead — force a re-pull so a moved tag is refreshed (#44).
     if is_source_checkout; then
-        # Source checkouts build the first-party images locally (--build) and use --pull never so up
-        # never tries to pull an unpublished :dev tag. But the THIRD-PARTY images (caddy, tari, the
-        # socket-proxies) are pinned by digest and CAN change between releases — under --pull never a
-        # bumped digest fails with "No such image". Pull just the non-buildable images first so a new
-        # digest is fetched; best-effort (older compose without --ignore-buildable falls through).
-        docker compose pull --ignore-buildable 2>/dev/null || true
+        # Source checkouts build the first-party images locally (--build); compose_up_checked pulls
+        # a bumped third-party digest, a missing image, before its `--pull never` up (#2654).
         compose_up_checked -d --build || error "Upgrade failed during 'docker compose up' — see the error above."
     else
         verify_release_images # #376: fail closed BEFORE the pull when a release key is on disk

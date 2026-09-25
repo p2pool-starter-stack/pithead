@@ -17,6 +17,41 @@
 # that MOVED, so the tag cannot be the instrument. Empty means "not captured" — a skip, never a pass.
 BASELINE_IMAGES=""
 BRANCH_IMAGES=""
+# Was pithead-egress.service (#2460) on the bench before this run? `up`/`upgrade` install it on any
+# DIY host, the bench included, so a run that found none must leave none: the bench is shared, and
+# an unrecorded unit is drift. present | absent; empty = never read, which the restore refuses.
+EGRESS_UNIT_BEFORE=""
+
+egress_boot_unit_state() { # -> present | absent | "" (the bench could not be asked)
+    on_bench "if systemctl cat pithead-egress.service >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
+}
+
+# Put the boot unit back the way the run found it and prove it. A unit that predates the run is the
+# baseline's own and stays. The live DOCKER-USER rules are left alone either way: they are the
+# baseline stack's own firewall, which the restore's apply has just reinstalled.
+restore_egress_boot_unit() {
+    case "$EGRESS_UNIT_BEFORE" in
+    present)
+        # Said out loud: a unit a cancelled run left behind also reads as "present", and a silent
+        # pass here would bury that drift.
+        step "restore proof: pithead-egress.service was already on the bench before this run — left in place, not removed (#2460)"
+        return 0
+        ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-egress.service predates this run was never recorded, so the restore cannot say it left the bench as found (#2460)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-egress.service >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state)" = absent ] &&
+        on_bench "! systemctl show -p Wants --value docker.service | grep -q pithead-egress" >/dev/null 2>&1; then
+        ok "restore proof: pithead-egress.service removed — no trace of this run's boot unit on the bench (#2460)"
+        return 0
+    fi
+    warn "restore proof: pithead-egress.service is still on the bench after the restore, and it was not there before this run (#2460)."
+    return 1
+}
 
 # The image OBJECT each running service is on. `docker ps` scopes it to the one pinned Compose
 # project, so this reads the live stack whichever checkout last drove it. A re-tag does not move an
@@ -74,7 +109,7 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 # Restore proof (#971): after the restore brings the baseline back up, prove the LIVE stack
 # actually runs RESTORE_DIR's on-disk config. A pre-#921 e2e run once left the containers on
 # harness-rendered creds while the on-disk .env kept the real ones — internally consistent, so it
-# mined and looked healthy for a day, while every host-side RPC probe 401ed. Four checks:
+# mined and looked healthy for a day, while every host-side RPC probe 401ed. Five checks:
 #   1. The credential marker baked into the running dashboard container (docker inspect) is the
 #      same line as the on-disk .env's — env_bake_verdict (lib.sh) prints verdict words only,
 #      never values.
@@ -94,7 +129,10 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
 #      added the check; anything older classifies as no-check and FAILS rather than passing quietly.
 #   4. The live containers are on the images the baseline ran, or on ones rebuilt from RESTORE_DIR
 #      — never on the ones this run built for the branch. Spelled out at the check itself.
-# Returns 0 when all four hold.
+#   5. monerod and tari are the same containers they were before the deploy, when the branch left
+#      them unchanged (#2639, chain-keep.sh). Recorded per node; red only when the restore itself
+#      recreated or restarted a node that the deploy kept and the harness left as the baseline's.
+# Returns 0 when all five hold.
 RESTORE_PROOF_VAR="MONERO_NODE_PASSWORD"
 # shellcheck disable=SC2034  # CONTROL_PROOF_FAILED is declared and read by e2e.sh, which sources
 # this file; it is set here because this is where the control-channel verdict is graded.
@@ -242,5 +280,7 @@ PROBE
             ok "restore proof: all $kept service(s) are back on the exact images they ran before this run"
         fi
     fi
+    chain_restore_proof || prc=1
+    restore_egress_boot_unit || prc=1
     return "$prc"
 }

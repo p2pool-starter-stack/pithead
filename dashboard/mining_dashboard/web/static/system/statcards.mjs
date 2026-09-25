@@ -7,9 +7,12 @@
 import { loadPref, savePref } from "../app/logic.mjs";
 import { Component, html } from "../app/preact.mjs";
 
+// A tile label, not a document section (#1859): every call site sits directly under its card's
+// own heading with nothing in between, so a heading tag here always skips a level. A <p> carries
+// the same visual weight via CSS without joining the heading outline.
 export const StatCard = ({ label, value, cls, span, title }) => html`
     <div class=${"stat-card" + (span ? " col-span-2" : "")} title=${title || ""}>
-        <h5>${label}</h5>
+        <p class="stat-label">${label}</p>
         <p class=${cls || ""}>${value}</p>
     </div>`;
 

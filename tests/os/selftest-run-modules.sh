@@ -2,8 +2,8 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
-function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh)
+modules=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
+function_files=(lib/core.sh phases/boot.sh phases/update.sh phases/update-dashboard.sh phases/update-healthgate-leg.sh phases/install-initial.sh phases/install-reinstall.sh phases/install-restore.sh phases/install.sh phases/provision-initial.sh phases/provision-reboot.sh phases/provision-power-cut.sh phases/provision-migration.sh phases/provision.sh phases/media.sh phases/rig.sh phases/rigmedia.sh phases/fault.sh phases/reset-config.sh phases/reset.sh phases/crossupdate.sh phases/stack.sh)
 expected_modules="${modules[*]}"
 actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HERE/run.sh" | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_modules" = "$expected_modules" ] || {
@@ -11,8 +11,8 @@ actual_modules="$(sed -n 's|^source "$SCRIPT_DIR/\([a-z/-]*\.sh\)".*|\1|p' "$HER
     exit 1
 }
 
-expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault phase_reset phase_crossupdate'
-actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_height$' | tr '\n' ' ' | sed 's/ $//')"
+expected_functions='ok bad info it_warn it_err have _ssh _control_requests_drained _wait_ssh _boot_id _wait_new_boot _reboot_wait _ssh_unreachable_reason _marker _dash_marker_served _wait_dhcp_ip _wait_setup_page _build_image _build_bundle _stage_bundle _install_cmd _commit_cmd _boot_spare_cmd _install_and_boot_cmd _rollback_cmd require_host require_probe_key_matches_image require_clean_bench cleanup wait_serial phase_boot _secure_boot_guest_leg _vm_boot_disk phase_update _wizard_provision_capture _os_step _serve_update_dir _leg4_srv_stop phase_update_dashboard phase_update_healthgate_leg phase_install phase_provision _make_media_stick _attach_media_stick _detach_media_stick _media_stick_has_config phase_media _rig_mining_up phase_rig _rigmedia_remove_target _rigmedia_stage_image _rigmedia_hash _rigmedia_containers _rigmedia_journal _rigmedia_before_hash_or_cleanup _rigmedia_after_hash_or_cleanup _rigmedia_containers_or_cleanup _rigmedia_journal_or_cleanup _rigmedia_quiesce _rigmedia_quiesce_or_cleanup _rigmedia_fail_cleanup phase_rigmedia phase_fault _phase_reset_config phase_reset phase_crossupdate stack_browser_config _stack_run_integration _provision_remote_node_coordinator phase_stack'
+actual_functions="$(for module in "${function_files[@]}"; do sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)() {.*/\1/p' "$HERE/$module"; done | grep -vE '^_phase_(install|provision)_|^_monerod_(height|evidence)$' | tr '\n' ' ' | sed 's/ $//')"
 [ "$actual_functions" = "$expected_functions" ] || {
     echo "os function order or completeness mismatch" >&2
     exit 1
@@ -48,6 +48,8 @@ source "$HERE/phases/boot.sh" || exit $?
 source "$HERE/phases/update.sh" || exit $?
 # shellcheck source=tests/os/phases/update-dashboard.sh
 source "$HERE/phases/update-dashboard.sh" || exit $?
+# shellcheck source=tests/os/phases/update-healthgate-leg.sh
+source "$HERE/phases/update-healthgate-leg.sh" || exit $?
 # shellcheck source=tests/os/phases/install.sh
 source "$HERE/phases/install.sh" || exit $?
 # shellcheck source=tests/os/phases/provision.sh
@@ -64,6 +66,21 @@ source "$HERE/phases/fault.sh" || exit $?
 source "$HERE/phases/reset.sh" || exit $?
 # shellcheck source=tests/os/phases/crossupdate.sh
 source "$HERE/phases/crossupdate.sh" || exit $?
+# shellcheck source=tests/os/phases/stack.sh
+source "$HERE/phases/stack.sh" || exit $?
+# #2254: stack.sh is sourced into the runner's scope, so SCRIPT_DIR is the runner's own
+# directory (tests/os), never stack.sh's (tests/os/phases). _stack_run_integration must resolve
+# the DIY gate as "$SCRIPT_DIR/../integration/run.sh"; a stray extra ".." would send it above the
+# repo and fail with exit 127 on every bench run instead of here. Assert both the resolved path
+# exists AND the source line itself, so neither a path drift nor a same-string coincidence hides.
+grep -Fq '"$SCRIPT_DIR/../integration/run.sh" --host' "$HERE/phases/stack.sh" || {
+    echo "stack phase's DIY gate invocation no longer resolves via \$SCRIPT_DIR/../integration/run.sh" >&2
+    exit 1
+}
+[ -x "$SCRIPT_DIR/../integration/run.sh" ] || {
+    echo "stack phase's DIY gate path does not resolve to an executable tests/integration/run.sh" >&2
+    exit 1
+}
 trap - EXIT
 for fn in $expected_functions; do type "$fn" >/dev/null 2>&1 || exit 1; done
 for fn in _phase_install_initial _phase_install_reinstall _phase_install_restore _phase_provision_initial _phase_provision_reboot _phase_provision_power_cut _phase_provision_migration; do type "$fn" >/dev/null 2>&1 || exit 1; done
@@ -74,7 +91,7 @@ grep -Fq 'could not create the blank internal target disk' <<<"$target_create" |
 for evidence in 'could not hash the blank internal target disk' 'could not list containers after stick-run rig handoff' 'could not inspect journald after stick-run rig handoff' 'could not hash the internal target disk after the rig run'; do
     grep -Fq "$evidence" "$HERE/phases/rigmedia.sh" || exit 1
 done
-expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset'
+expected_all='phase_boot phase_update phase_install phase_provision phase_rig phase_rigmedia phase_media phase_fault phase_reset phase_stack'
 # #2356: every phase call in the `all` arm now runs through _run_phase (the wrapper that counts a
 # phase which recorded nothing as a missing skip instead of a silent pass), so the phase function
 # is the SECOND word on the line, not the whole line.
@@ -209,7 +226,19 @@ grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" |
 grep -qF "legible='The container image store is damaged|Could not load the baked image archive'" "$HERE/phases/fault.sh" || exit 1
 ! grep -qE '(grep -qE|wait_serial) "\[Ee\]rror' "$HERE/phases/fault.sh" || exit 1
 grep -qF 'while [ "$htries_before" -lt 18 ]; do' "$HERE/phases/provision-power-cut.sh" || exit 1
-grep -qF 'height_before=$(_monerod_height)' "$HERE/phases/provision-power-cut.sh" || exit 1
+# Only a flushed height is owed back after a cut: monerod does not fsync each block (batched
+# flushes) (#2557). So inside the three-cut loop the height read must precede the guest sync, and
+# the sync must precede the cut; a sync hoisted above the read or out of the loop owes back a
+# height that never reached the disk.
+m10_flush_before_cut() { # <phase file>
+    sed -n '/^    for i in 1 2 3; do$/,/^    done$/p' "$1" | awk '
+        index($0, "height_before=$(_monerod_height)") && !poll { poll = NR }
+        index($0, "_ssh sync || {") && !flush { flush = NR }
+        index($0, "virsh destroy \"$VM\"") && !cut { cut = NR }
+        END { exit !(poll && flush && cut && poll < flush && flush < cut) }'
+}
+m10_flush_before_cut "$HERE/phases/provision-power-cut.sh" || exit 1
+grep -qF 'verdict=$(m10_height_verdict "$height_before" "$height_after")' "$HERE/phases/provision-power-cut.sh" || exit 1
 # The DEFINITION line, not the comment that trails it: a reworded comment is not a moved function.
 grep -qE '^ +m10_recovered\(\) \{' "$HERE/phases/provision-power-cut.sh" || exit 1
 # And the recovery call must sit INSIDE the three-cut loop — the property the row claims. Checking
@@ -235,5 +264,24 @@ bash "$HERE/reserved-node-by-name-leg.sh" --self-test >/dev/null || {
     echo "reserved-node-by-name guard self-test failed" >&2
     exit 1
 }
+healthgate_install=$(sed -n '/_stage_bundle "$fbundle"/,/# No mark-good here/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: could not stage or install the fault bundle"' <<<"$healthgate_install" || exit 1
+grep -Fxq '        return' <<<"$healthgate_install" || exit 1
+healthgate_reboot=$(sed -n '/_reboot_wait reboot 300/,/marker=$(SSH_TIMEOUT/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: guest never returned after booting the fault slot"' <<<"$healthgate_reboot" || exit 1
+grep -Fxq '        return' <<<"$healthgate_reboot" || exit 1
+healthgate_marker=$(sed -n '/marker=$(SSH_TIMEOUT/,/# The gate loops/p' "$HERE/phases/update-healthgate-leg.sh")
+grep -Fq 'bad "leg 5: expected v3fault booted after install' <<<"$healthgate_marker" || exit 1
+grep -Fxq '        return' <<<"$healthgate_marker" || exit 1
 rm -f "$SERIAL" "$SERIAL.failed" "$SSH_ERR" "$m10_mutant"
+
+# #1998's routing leg drives its own assertions against a stubbed guest. Driven from here rather
+# than tests/stack/test-harness-tooling.sh (where the other appliance-lane self-tests live) only
+# because that file sits exactly on its 406-line budget ceiling, which ceilings-only-go-down will
+# not let this add to; this runner is already the os lane's own self-test entry point and is
+# reached from the same tier-1 row.
+bash "$HERE/appliance-xvb-routing-leg.sh" --self-test >/dev/null 2>&1 || {
+    echo "#1998 appliance XvB routing leg self-test failed" >&2
+    exit 1
+}
 echo "os-run-modules: PASS"

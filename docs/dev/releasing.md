@@ -11,7 +11,7 @@ Pithead is versioned and released as a single product, not as individual compone
 
 The components are upstream projects pinned and integrated, not authored here: `p2pool`
 (`ARG P2POOL_VERSION`), `xmrig-proxy` (`ARG XMRIG_PROXY_VERSION`), `monerod`
-(`ARG MONERO_VERSION`), and `tari` (`quay.io/tarilabs/minotari_node:v5.3.1-mainnet`,
+(`ARG MONERO_VERSION`), and `tari` (`ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet`,
 pinned by digest in `docker-compose.yml`). The first-party code is the dashboard plus the
 orchestration (`pithead`, `docker-compose.yml`, configs). The integration matrix validates the
 composed set. A release is one artifact with one version, one changelog, one upgrade path, and
@@ -544,7 +544,9 @@ What exists today:
 - ✅ Pull-based install: `${STACK_VERSION}` wired through `docker-compose.yml`. Each first-party
   service now carries an `image: ${PITHEAD_REGISTRY:-…}/pithead-<svc>:${STACK_VERSION:-dev}` ref
   alongside its `build:`. pithead picks build-vs-pull automatically: a source checkout (the image
-  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`; a release install
+  Dockerfiles are present) builds locally and tags `:dev` with `--pull never`, after pulling any
+  missing third-party image that has no build context
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)); a release install
   (the bundle ships no Dockerfiles, just `pithead` + `VERSION` + compose + the config templates + the
   `./build` runtime mounts) resolves `STACK_VERSION` to `vX.Y.Z` and pulls the published images
   (`--pull missing`; `upgrade` forces a re-pull). Override with `PITHEAD_REGISTRY` / `PITHEAD_PULL`. So
