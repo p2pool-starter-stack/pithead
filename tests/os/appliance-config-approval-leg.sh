@@ -191,7 +191,7 @@ _restore_waits_for_control_drain_self_test() (
 _remote_node_regressions_run_last_self_test() {
     local here="$1" gate_line call_line
     gate_line=$(grep -n 'no sync-gate hold in the dashboard log' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
-    call_line=$(grep -n 'phase_provision_remote_node_regressions ||' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
+    call_line=$(grep -n 'phase_provision_remote_node_regressions "' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
     [ -n "$gate_line" ] && [ -n "$call_line" ] && [ "$call_line" -gt "$gate_line" ]
 }
 
@@ -216,7 +216,7 @@ _approval_self_test() {
     # A caller here (not just present-and-guarded) would silently reintroduce jobs 1044/1113/1172/
     # 1173's cascade: the round trip's own wall-clock cost would again run BEFORE the checks that
     # need chains still fresh.
-    grep -Fq 'phase_provision_remote_node_regressions || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
+    grep -Fq 'phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     _remote_node_regressions_run_last_self_test "$here" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"

@@ -281,5 +281,5 @@ _phase_provision_initial_body() {
     # the sync-gate-hold checks above run, so they'd stop finding the "still syncing" hold they
     # exist to prove (job 1044/1113/1172/1173: the checks above went red only once this leg's own
     # round trip completed and consumed several extra minutes before them).
-    phase_provision_remote_node_regressions || bad "reserved-node regression phase aborted before completing required checks"
+    phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
 }

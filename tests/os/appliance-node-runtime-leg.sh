@@ -56,12 +56,8 @@ p2pool_current_startup_merge_lines() {
     started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
     [ -n "$started" ] || return 1
     printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
-    # #2333: MM_WINDOW_LINES (tests/integration/lib/mergemine-probe.sh) is sized against a fast
-    # first connection — the chain_id line lands within the first ~70 lines there. A remote node
-    # p2pool has never dialed before can take far longer, and every retry's capped read then
-    # identically misses a line that eventually lands past the cap: "never connected" and
-    # "connected too late for the window" become indistinguishable. Uncapped here, unlike that
-    # shared helper's own callers, since this leg's own reserved node is exactly that slow case.
+    # Uncapped, unlike MM_WINDOW_LINES (mergemine-probe.sh): a first dial to a reserved node can
+    # land its chain_id line past any cap, making "never connected" and "connected late" look alike.
     # podman's --since refuses StartedAt's own Go form; the refusal went to grep and read "absent".
     since=$(printf '%s\n' "$started" | mm_rfc3339)
     _ssh "podman logs --since '$since' p2pool 2>&1 | grep -a MergeMiningClientTari || true" 2>/dev/null
@@ -138,11 +134,13 @@ mv config.json.os2333-clearnet config.json
 jq -e ".p2pool.clearnet == true" config.json >/dev/null'
 }
 
-phase_provision_remote_node_regressions() {
-    local rc=0
+# SC2034: dashboard_curl reads DASH_USER/DASH_PASS from this frame (dynamic scope; job 1182).
+# shellcheck disable=SC2034
+phase_provision_remote_node_regressions() { # <dashboard-user> <dashboard-password>
+    local DASH_USER="$1" DASH_PASS="$2" rc=0
     _reserved_node_regressions || rc=$?
     # Every exit, early or not, hands the later legs the original config, not the edited login.
-    [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return "$rc"
+    [ -n "${APPROVAL_RESTORE_SNAPSHOT:-}" ] || return "$rc"
     if approval_restore_pending; then
         ok "approved-node fixture restored the original local-node configuration"
     else
@@ -170,7 +168,7 @@ _reserved_node_regressions() {
             return
         fi
     done
-    live=$(sensitive_live_config) || return
+    live=$(sensitive_live_config) || { bad "reserved-node leg NOT exercised: the dashboard never served /api/config"; return 1; }
     approval_capture_restore_snapshot || {
         bad "could not preserve the original raw configuration for guaranteed restore"
         return
@@ -351,7 +349,7 @@ _reserved_node_proposal_scope_self_test() (
     PITHEAD_OS_MONERO_NODE_HOST=mh PITHEAD_OS_MONERO_RPC_PORT=1 PITHEAD_OS_MONERO_ZMQ_PORT=2
     PITHEAD_OS_TARI_NODE_HOST=th PITHEAD_OS_TARI_GRPC_PORT=3
     PITHEAD_OS_MONERO_NODE_USERNAME="" PITHEAD_OS_MONERO_NODE_PASSWORD=""
-    sensitive_live_config() { printf '{"p2pool":{"clearnet":%s},"monero":{"mode":"local"},"tari":{"mode":"local"}}' "$clearnet"; }
+    sensitive_live_config() { [ -n "${DASH_USER:-}" ] && printf '{"p2pool":{"clearnet":%s},"monero":{"mode":"local"},"tari":{"mode":"local"}}' "$clearnet"; }
     approval_capture_restore_snapshot() { APPROVAL_RESTORE_SNAPSHOT=snap; }
     approval_restore_pending() { restored=1; }
     local_node_login_edit() { return 0; }
@@ -364,7 +362,7 @@ _reserved_node_proposal_scope_self_test() (
     }
     ok() { :; }
     bad() { :; }
-    phase_provision_remote_node_regressions
+    phase_provision_remote_node_regressions fixture-user fixture-pass
     [ "${out:-}" = scoped ] && [ "$restored" -eq 1 ]
 )
 
