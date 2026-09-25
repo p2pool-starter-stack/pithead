@@ -197,7 +197,7 @@ _reserved_node_regressions() {
         bad "reserved-node proposal could not be constructed"
         return
     }
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return
+    sensitive_preview "$(dashboard_config_body "$proposed")" || { bad "reserved-node preview never returned a result"; return 1; }
     preview=$APPROVAL_PREVIEW
     status=$(printf '%s' "$preview" | jq -r '.status // "unreadable"')
     destructive=$(printf '%s' "$preview" | jq -r '.destructive // false')
@@ -226,7 +226,7 @@ _reserved_node_regressions() {
         bad "reachable-node commit crossed the typed confirmation gate"
         return
     fi
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return
+    sensitive_preview "$(dashboard_config_body "$proposed")" || { bad "reserved-node preview never returned a result"; return 1; }
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
