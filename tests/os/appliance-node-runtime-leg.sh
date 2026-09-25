@@ -119,10 +119,8 @@ local_node_login_edit() { # <config-path> <env-key> <value> <label>
     ok "standalone local $4 preserves the coupled node login and authenticated dashboard access"
 }
 
-# p2pool.clearnet (#165) keeps the reserved private Tari endpoint out of P2Pool's Tor SOCKS path,
-# which cannot reach a LAN address. On an appliance it is fixed at setup and never committable from
-# the dashboard, so the fixture sets it host-side, the way "Set up again" would, before the
-# dashboard proposal that carries only the node change.
+# p2pool.clearnet (#165) keeps the private reserved Tari endpoint off Tor. It is fixed at setup on an
+# appliance, so the fixture sets it host-side before the dashboard proposal of the node change.
 reserved_node_clearnet_fixture() {
     _control_requests_drained || return 1 # the apply restarts the control runner (#2094)
     _ssh 'set -euo pipefail
@@ -168,7 +166,10 @@ _reserved_node_regressions() {
             return
         fi
     done
-    live=$(sensitive_live_config) || { bad "reserved-node leg NOT exercised: the dashboard never served /api/config"; return 1; }
+    live=$(sensitive_live_config) || {
+        bad "reserved-node leg NOT exercised: the dashboard never served /api/config"
+        return 1
+    }
     approval_capture_restore_snapshot || {
         bad "could not preserve the original raw configuration for guaranteed restore"
         return
@@ -197,7 +198,10 @@ _reserved_node_regressions() {
         bad "reserved-node proposal could not be constructed"
         return
     }
-    sensitive_preview "$(dashboard_config_body "$proposed")" || { bad "reserved-node preview never returned a result"; return 1; }
+    sensitive_preview "$(dashboard_config_body "$proposed")" || {
+        bad "reserved-node preview never returned a result"
+        return 1
+    }
     preview=$APPROVAL_PREVIEW
     status=$(printf '%s' "$preview" | jq -r '.status // "unreadable"')
     destructive=$(printf '%s' "$preview" | jq -r '.destructive // false')
@@ -226,7 +230,10 @@ _reserved_node_regressions() {
         bad "reachable-node commit crossed the typed confirmation gate"
         return
     fi
-    sensitive_preview "$(dashboard_config_body "$proposed")" || { bad "reserved-node preview never returned a result"; return 1; }
+    sensitive_preview "$(dashboard_config_body "$proposed")" || {
+        bad "reserved-node preview never returned a result"
+        return 1
+    }
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
@@ -271,11 +278,7 @@ _reserved_node_regressions() {
     [ "$node_ok" -eq 1 ] || return 1
 }
 
-# #2297: a blank monero-node-username/password arg must leave monero.node_username/node_password
-# UNTOUCHED, so a live {"__secret__":true} sentinel survives to control_preview's restore — see the
-# comment on remote_node_proposal itself for why an overwrite to "" defeats that restore and trips
-# the credential perimeter. A NON-blank arg must still land (an operator-supplied real credential
-# for a node that DOES need auth is exactly what this path exists to carry).
+# #2297: blank login args keep the masked {"__secret__":true} sentinels; nonblank ones land.
 _remote_node_proposal_self_test() {
     local f=0 live out
     live='{"monero":{"node_username":{"__secret__":true},"node_password":{"__secret__":true}}}'
@@ -310,8 +313,7 @@ _remote_node_runtime_reason_self_test() (
     [ "$REMOTE_NODE_RUNTIME_REASON" = startup-epoch-missing ]
 )
 
-# Drives the real verdict through a guest-shaped shell: a fake `podman` printing podman-shaped
-# inspect JSON (.Name without Docker's leading slash) and a fixture config in place of the guest's.
+# The real verdict against a fake podman's inspect JSON (.Name without Docker's leading slash).
 _local_node_login_self_test() (
     local tmp login
     tmp=$(mktemp -d) || return 1
