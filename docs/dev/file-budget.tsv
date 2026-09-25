@@ -61,6 +61,7 @@ tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685
 tests/os/appliance-xvb-routing-leg.sh	411
 tests/os/failure-evidence.sh	567
+tests/os/phases/install-restore.sh	416
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
 tests/os/selftest-run-modules.sh	469

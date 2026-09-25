@@ -125,6 +125,25 @@ run_lifecycle() {
                     it_fail "status OK after restore" "pithead status did not recover after backup restore"
                     lifecycle_ok=0
                 fi
+                # Operator ruling on #2626: `./pithead restore` is same-box recovery, not the
+                # cross-hardware carry restore_apply() handles, so it must NOT hold the miner behind
+                # the sync gate — this bench's chains never desynced. No marker, and p2pool comes
+                # back up on `up`'s own schedule rather than sitting stopped behind a hold `status`
+                # wouldn't flag (it treats a gate-stopped p2pool as intentional).
+                local ddir
+                ddir="$(env_on_box DASHBOARD_DATA_DIR)"
+                if [ -n "$ddir" ]; then
+                    assert_eq "restore plants no sync-gate marker (#2626, same-box recovery)" \
+                        "$(rx "sudo test -e $(quote_arg "$ddir/sync-gate-reset")" 2>/dev/null && echo present || echo none)" none
+                fi
+                if wait_for 60 5 "p2pool running after restore, not held (#2626)" \
+                    _pred_p2pool_running; then
+                    it_pass "restore does not hold p2pool behind the sync gate (#2626)"
+                else
+                    it_fail "restore does not hold p2pool behind the sync gate (#2626)" \
+                        "p2pool still not running 60s after restore+up"
+                    lifecycle_ok=0
+                fi
                 # pool.type lags peer reconnect after restore+up — wait + three-way verdict, don't assert
                 # cold on a peer-timing state (#54, #687).
                 local failures_before="$IT_FAIL"
@@ -338,6 +357,7 @@ _pred_failover_armed() {
     st="$(api_state)"
     [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
+_pred_p2pool_running() { [ "$(svc_state_of "$(service_state p2pool)")" = "running" ]; }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }
 _pred_tor_healthy() {
     local s
