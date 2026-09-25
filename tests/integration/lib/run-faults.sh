@@ -21,13 +21,7 @@ fault_node_down() {
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
-    # `pithead status` OK only means the required containers are up — worker readmission is a
-    # SEPARATE, debounced decision (NodeHealthMonitor.recovery_after, default 60s) that
-    # `_apply_worker_rejection` applies on its own poll cycle (#31). Wait for it explicitly so a
-    # fault leg run right after this one (e.g. the tor-down egress check) doesn't observe a
-    # proxy that "status OK" already called healthy but the dashboard hasn't restarted yet.
-    wait_for 120 5 "xmrig-proxy readmitted after the node-health recovery debounce (#31)" _pred_failover_armed || true
-    assert_eq "xmrig-proxy running again after node-down recovery" "$(svc_state_of "$(service_state xmrig-proxy)")" "running"
+    wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
 }
 
 fault_unhealthy() {
