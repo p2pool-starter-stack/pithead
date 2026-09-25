@@ -10,8 +10,9 @@
 # restore-leg source machine this failure mode occurs on.
 #
 # Job 1194 (#2725) printed this header and nothing under it: the guest was rebooting, and a dump
-# that reads nothing looked the same as one that was never asked. A failed ask now says so. The
-# bootstrap and warn lines come from the whole log, since `--tail` drops tor's first minutes.
+# that reads nothing looked the same as one that was never asked. An ssh that fails (255) or hangs
+# into _ssh's timeout (124) now says so; any other code is a remote command's own. The bootstrap
+# and warn lines come from the whole log, since `--tail` drops tor's first minutes.
 tor_health_evidence() {
     printf '     --- guest evidence (#2359) ---\n'
     _ssh "echo '-- tor container state --'; podman ps -a --filter name=tor --format '{{.Names}} {{.Status}}' 2>&1
@@ -19,7 +20,10 @@ tor_health_evidence() {
           echo '-- tor bootstrap and warnings --'; podman logs tor 2>&1 | grep -E 'Bootstrapped|\[warn\]|\[err\]' | tail -40
           echo '-- tor container log --'; podman logs --tail 100 tor 2>&1" |
         tr -d '\r' | sed 's/^/     | /'
-    [ "${PIPESTATUS[0]}" -eq 0 ] || printf '     | (the guest did not answer: %s)\n' "$(tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | tail -1)"
+    case "${PIPESTATUS[0]}" in 124 | 255)
+        printf '     | (the guest did not answer: %s)\n' "$(tr -d '\r' <"${SSH_ERR:-/dev/null}" 2>/dev/null | tail -1)"
+        ;;
+    esac
 }
 
 # --- self-test (#2359): no guest, no network ----------------------------------------------------
@@ -57,7 +61,7 @@ _th_self_test() {
         _th_rc=1
     fi
     # #2725: a guest that does not answer must say so, not print a bare header.
-    _ssh() { return 255; }
+    _ssh() { return 255; } # ssh's own failure
     printf 'ssh: connect to host port 22: Connection refused\n' >"$_th_ask"
     SSH_ERR="$_th_ask" tor_health_evidence >"$out"
     if grep -q '^     | (the guest did not answer: ssh: connect to host port 22: Connection refused)' "$out"; then
@@ -65,6 +69,14 @@ _th_self_test() {
     else
         printf 'FAIL: an unanswered #2359 dump did not say so, got: %s\n' "$(cat "$out")"
         _th_rc=1
+    fi
+    _ssh() { return 125; } # the guest answered; a missing tor container is podman's error, not ssh's
+    SSH_ERR="$_th_ask" tor_health_evidence >"$out"
+    if grep -q 'did not answer' "$out"; then
+        printf 'FAIL: a remote podman failure was reported as an unanswered guest\n'
+        _th_rc=1
+    else
+        printf 'ok: a remote command failure is not called an unanswered guest\n'
     fi
     rm -f "$_th_ask" "$out"
     if [ "$_th_rc" -ne 0 ]; then
