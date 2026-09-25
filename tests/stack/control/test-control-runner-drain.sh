@@ -2,8 +2,8 @@
 : "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Control-runner drain domain (#2363): a re-provision stops the trigger, waits (bounded) for a
 # request the runner already claimed, and only then rewrites or removes the units; the runner
-# itself takes no mutation lock. Moved out of test-control-provisioning.sh unchanged; it runs
-# straight after it in tests/stack/run.sh, so execution order is the same.
+# itself takes no mutation lock, and neither does a fresh install. Split out of
+# test-control-provisioning.sh; it runs straight after it in tests/stack/run.sh.
 # Standalone-sourceable: every fixture ($PCD, $PCL) is built here under $SANDBOX, and nothing
 # else in the suite reads them. $SANDBOX and $STACK come from lib.sh.
 
@@ -68,8 +68,44 @@ assert_eq "enabled re-provision drains before rewriting and re-enabling the runn
 out="$(pcd_run yes no true true)"
 assert_not_contains "a child apply does not spend 30 seconds waiting on its parent runner's claim" "$out" "Timed out"
 assert_contains "ignoring the parent claim still converges the enabled runner" "$out" "systemctl enable --now pithead-control.path"
+
+# Only a re-provision has a runner to drain, so only it takes the window: a fresh install (and
+# every appliance boot's `pithead render`) must not wait behind a verb that holds it.
+pcd_held() { # <seed-units: yes|no> — converge an enabled runner while another process holds the lock
+    rm -f "$PCD/units/"* "$PCD/calls"
+    [ "$1" = yes ] && printf '[Service]\nExecStart=%s/pithead control-run-pending\n' "$PCD/mine" >"$PCD/units/pithead-control.service"
+    (
+        exec 9>>"$PCD/lock"
+        flock 9
+        exec sleep 30
+    ) &
+    local holder=$!
+    pcd_lock_held() { ! flock -n "$PCD/lock" true 2>/dev/null; }
+    wait_while_alive "$holder" pcd_lock_held
+    (
+        cd "$PCD/mine" || exit
+        PATH="$PCD/bin:$PATH"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        log() { :; }
+        sudo() { echo "sudo:$*" >>"$PCD/calls"; }
+        unset PITHEAD_LOCK_HELD PITHEAD_CONTROL_RUNNER_PID
+        PITHEAD_LOCK_FILE="$PCD/lock" PITHEAD_LOCK_TIMEOUT=1 PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCD/units" \
+            DASHBOARD_CONTROL_ENABLED=true CONTROL_DIR="$PCD/mine/data/control" provision_control_runner 2>&1
+        cat "$PCD/calls" 2>/dev/null
+    )
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
+}
+out="$(pcd_held no)"
+assert_not_contains "a fresh install does not touch the mutation lock" "$out" "Timed out"
+assert_contains "and it installs the runner while another verb holds the window" "$out" "systemctl enable --now pithead-control.path"
+out="$(pcd_held yes)"
+assert_contains "a re-provision still waits on the mutation window before it drains" "$out" "Timed out after 1s"
+assert_not_contains "and a contended re-provision never stops the running trigger" "$out" "systemctl stop pithead-control.path"
 unset PCD out order
-unset -f pcd_run
+unset -f pcd_run pcd_held pcd_lock_held
 
 echo "== unit: the runner takes no mutation lock; only a re-provision does (#2363) =="
 # A lock-free verb (preview, diag-*, os-*, worker-*) neither waits behind a shell verb's window nor

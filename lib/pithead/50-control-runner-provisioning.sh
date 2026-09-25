@@ -162,12 +162,15 @@ provision_control_runner() {
             return 0
         fi
     fi
-    # A fresh install has nothing running to drain. A re-provision (drifted unit, adoption, steal)
-    # does: stop the trigger BEFORE the rewrite below so no new claim can start, then wait for one
+    # A fresh install has nothing running to drain and takes no lock (every appliance boot's
+    # `pithead render` comes through here). A re-provision (drifted unit, adoption, steal) does:
+    # stop the trigger BEFORE the rewrite below so no new claim can start, then wait for one
     # already in flight to finish and write its result (#2363) — same ordering as the removal
     # branch above, under the same mutation window (released after enable below).
-    mutation_lock_acquire apply
+    local drained=0
     if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
+        mutation_lock_acquire apply
+        drained=1
         sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
         control_runner_wait_idle
     fi
@@ -225,5 +228,5 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl "${enable_args[@]}" pithead-control.path >/dev/null 2>&1 ||
         warn "Could not enable pithead-control.path — dashboard config changes will not be applied until it is enabled."
-    mutation_lock_release
+    [ "$drained" -eq 0 ] || mutation_lock_release
 }

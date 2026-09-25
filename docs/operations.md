@@ -98,9 +98,9 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. `uninstall` joins that window before its first destructive step. Without it a `backup` — which stops the
-stack to take a consistent archive — could remove a container out from under a `setup` or an
-`apply` that was still using it.
+the first. `uninstall` joins that window before its first destructive step. Without it a
+`backup` — which stops the stack to take a consistent archive — could remove a container out from
+under a `setup` or an `apply` that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -284,6 +284,8 @@ takes the lock, so a dashboard request is never delayed by a `pithead` command r
 and never delays one. None of these calls stops a runner that is working a request: on systemd 255
 the running service finishes and writes its result. A request still sitting in `requests/` is
 untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
+A first install, and the `pithead render` that runs on every appliance boot, have no runner to
+drain and take no lock.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a
