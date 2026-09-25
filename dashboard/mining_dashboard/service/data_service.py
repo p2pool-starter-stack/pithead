@@ -74,7 +74,6 @@ from mining_dashboard.service.data_xvb_sync import (
     DataXvbSyncMixin,
 )
 from mining_dashboard.service.metrics import build_metrics, share_reject_pct
-from mining_dashboard.service.network.egress_status import live_firewall_state
 from mining_dashboard.service.notify.telegram_commands import format_daily_summary
 
 logger = logging.getLogger("DataService")
@@ -362,10 +361,12 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         if self.alert_service.enabled
                         else None
                     )
-                    # Per-container restart/health snapshot for the crash-loop alert (#337): 9
-                    # inspect calls to the read-only docker-proxy, skipped while Telegram AND
-                    # dashboard.fail_closed are off. fail_closed needs it even with Telegram off:
-                    # the only source for "is the dashboard container itself crash-looping" (#490).
+                    # Per-container restart/health snapshot for the crash-loop/unhealthy alert
+                    # (#337) — 9 inspect calls against the read-only docker-proxy, skipped
+                    # entirely while Telegram is off AND dashboard.fail_closed is off (same cost
+                    # discipline as alert_metrics). fail_closed needs it even with Telegram off:
+                    # it's the only source for "is the dashboard container itself crash-looping"
+                    # (#490).
                     container_states = (
                         await get_container_health()
                         if (self.alert_service.enabled or DASHBOARD_FAIL_CLOSED)
@@ -392,7 +393,6 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                         xvb_enabled=ENABLE_XVB,
                         shares_in_window=shares_in_window,
                         clearnet_active=bool(self.clearnet_sync_state.get("active")),
-                        egress_firewall=live_firewall_state(),  # host's live verdict (#2599)
                         xvb_registration_state=(self.state_manager.get_xvb_stats() or {}).get(
                             "registration_state", ""
                         ),

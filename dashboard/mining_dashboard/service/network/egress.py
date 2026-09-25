@@ -6,25 +6,27 @@ lie after a regression — the #160 audit's lesson (``--onion-address`` *looked*
 
 Two backstops matter for whether a clearnet route is actually an IP leak:
 
-* The **#270 egress firewall** (fail-closed) DROPs non-Tor egress from the *container* subnet — so a
-  container's clearnet route can't leave while the host reports it live (``egress_status``, #2599).
-* It does **not** cover the **host-networked dashboard**, whose own egress (XvB stats, update check,
-  Healthchecks, Telegram, price feed, webhook/ntfy sinks, #249 standby pull) relies solely on its
-  SOCKS config — a clearnet route there is a real leak regardless of the firewall (all default Tor).
+* The **#270 egress firewall** (``DOCKER-USER``, fail-closed) DROPs non-Tor egress from the *container*
+  subnet — so a container's clearnet route can't actually leave while it's on.
+* It does **not** cover the **host-networked dashboard** (``network_mode: host``), whose own egress
+  (XvB stats fetch, update check, Healthchecks ping, Telegram bot, price feed, webhook/ntfy alert
+  sinks, #249 XvB standby pull) bypasses ``DOCKER-USER`` entirely. Those rely solely on their SOCKS config — a clearnet
+  route there is a real leak regardless of the firewall. (All are Tor-routed by default, so none
+  leak.)
 
 The alert sinks (#380) have one more wrinkle: ``notifications.tor: false`` is a LAN carve-out for
 self-hosted endpoints Tor exits can't reach. A POST to a private/loopback IP never leaves your
 network, so it routes as *local*, not a clearnet leak. Only IP literals can prove that without a
 DNS lookup. A hop to a relocatable node takes the same rule via ``topology_graph.node_route``
-(#1350), but keeps *LAN* and *unknown* apart instead of collapsing both into clearnet. So a
-connection is a *leak* only when its route is clearnet AND it isn't neutralised by a backstop.
+(#1350), but keeps *LAN* and *unknown* apart instead of collapsing both into clearnet.
+
+So a connection is a *leak* only when its route is clearnet AND it isn't neutralised by a backstop.
 """
 
 import ipaddress
 from urllib.parse import urlsplit
 
 from mining_dashboard.config import config
-from mining_dashboard.service.network.egress_status import with_firewall_state
 from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re-exported)
     CLEARNET,
     INACTIVE,
@@ -33,25 +35,13 @@ from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re
     TOPOLOGY_NODES,
     TOR,
     UNKNOWN,
+    _notify_route,
+    _xvb_route,
     edge,
     ext_node,
     node_route,
     topology_nodes,
 )
-
-
-def _xvb_route(xvb_enabled, xvb_tor):
-    if not xvb_enabled:
-        return INACTIVE
-    return TOR if xvb_tor else CLEARNET
-
-
-def _notify_route(enabled, tor, private):
-    if not enabled:
-        return INACTIVE
-    if tor:
-        return TOR
-    return LOCAL if private else CLEARNET
 
 
 def _xvb_standby_route(source):
@@ -238,8 +228,7 @@ def compute_egress_posture(
 
 def egress_posture_from_config():
     """Build the posture from the live dashboard config (values pithead rendered into the env)."""
-    return with_firewall_state(
-        compute_egress_posture,
+    return compute_egress_posture(
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
@@ -404,8 +393,7 @@ def compute_topology(
 
 def topology_from_config():
     """Build the topology from the live dashboard config (values pithead rendered into the env)."""
-    return with_firewall_state(
-        compute_topology,
+    return compute_topology(
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,

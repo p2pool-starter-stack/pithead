@@ -12,8 +12,7 @@ from mining_dashboard.config.config import (
 )
 from mining_dashboard.helper.utils import format_hashrate
 from mining_dashboard.service.health.container_health import ContainerHealthMonitor
-from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin
-from mining_dashboard.service.notify.egress_firewall_edges import EgressFirewallEdgesMixin
+from mining_dashboard.service.notify.alert_edges import AlertEdgesMixin, _parse_hhmm
 from mining_dashboard.service.notify.notify_sinks import config_sinks
 from mining_dashboard.service.notify.telegram_notifier import TelegramNotifier
 from mining_dashboard.service.workers.worker_presence import WorkerPresenceMonitor
@@ -36,20 +35,7 @@ def build_default_notifier():
     )
 
 
-def _parse_hhmm(value):
-    """Parse a 'HH:MM' 24-hour string to minutes-since-midnight, or None if malformed (which
-    disables the daily digest rather than guessing a time)."""
-    try:
-        hh, mm = (value or "").strip().split(":")
-        h, m = int(hh), int(mm)
-        if 0 <= h < 24 and 0 <= m < 60:
-            return h * 60 + m
-    except (ValueError, AttributeError):
-        pass
-    return None
-
-
-class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
+class AlertService(AlertEdgesMixin):
     """
     Turns the data loop's per-cycle signals into a small set of debounced operator alerts and
     fans them out to the configured sinks: Telegram (Issue #121) plus any webhook/ntfy sinks
@@ -74,8 +60,9 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
       corrupts monerod's DB mid-write.
     - **DB write failing** — ``StateManager.is_db_healthy`` flipping false (#131): the dashboard
       keeps serving but history/shares/stats stop persisting.
-    - **high reject rate** — the trailing-1h reject rate (persisted share deltas, #116) crossing
-      ``REJECT_ALERT_PCT``: rejects waste hashrate (overclock, clock drift). Recovers below it.
+    - **high reject rate** — the trailing-1h reject rate (from the persisted per-poll share
+      deltas, #116) crossing ``REJECT_ALERT_PCT``: sustained rejects waste hashrate (bad
+      overclock, clock drift, flaky network). Recovers when the rate drops back below.
     - **payout wallet changed** — the wallet p2pool actually mines to differing from the
       kv_store baseline (#375): the highest-value tamper against the stack. Fires on every
       change, including a legitimate ``pithead apply`` — a confirmation, not only an intrusion
@@ -83,17 +70,19 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
     - **block found / payout incoming** — p2pool's cumulative ``totalBlocksFound`` counter
       advancing (#336): the sidechain found a Monero block (pool-wide good news), plus a second
       alert when this node held a PPLNS share at that poll — PPLNS pays every miner with a share
-      in the window, so that block pays *you*. Good news, never tallied as incidents.
+      in the window, so that block pays *you*. Good news, not incidents — never tallied in the
+      daily incident log.
     - **container crash-loop / unhealthy / recovered** — a debounced
       :class:`ContainerHealthMonitor` over the per-container inspect snapshots from the
-      read-only docker-proxy (#337): a container restart-looping (OOM, bad config) or stuck
-      unhealthy. Keys ONLY off restart deltas / ``restarting`` / ``health=="unhealthy"`` — never
-      off "exited", because the stack stops p2pool and xmrig-proxy on purpose (#35/#31).
+      read-only docker-proxy (#337): a stack container restarting repeatedly (OOM, bad config)
+      or stuck failing its healthcheck. Keys ONLY off restart deltas / ``restarting`` /
+      ``health=="unhealthy"`` — never off "exited", because the stack stops p2pool and
+      xmrig-proxy on purpose (#35/#31).
 
     Edge state is seeded silently on the first observation (``None`` baselines), so a dashboard
-    restart can't replay a stale transition as a fresh alert. The exceptions are stable bad states
-    that never "transition": the host-perf advisories (HugePages, low RAM — #104) and a missing
-    egress firewall (#2599, :class:`EgressFirewallEdgesMixin`) fire on first observation.
+    restart can't replay a stale transition as a fresh alert. The exception is the persistent
+    host-perf advisories (HugePages not reserved, low RAM — #104): a stable bad state never
+    "transitions", so those fire on first observation instead of seeding silently.
 
     :meth:`evaluate` is pure (folds signals into the alert list, no I/O) so it's fully
     unit-testable; :meth:`process` calls it and dispatches each message off-thread so a slow or
@@ -247,7 +236,6 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         xvb_enabled=False,
         shares_in_window=0,
         clearnet_active=False,
-        egress_firewall=None,
         xvb_registration_state="",
         update_available=False,
         low_hr_warning=False,
@@ -329,10 +317,9 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         # --- Payout-wallet tamper tripwire (#375) — kv-backed, so it survives container recreate ---
         alerts += self._wallet_edges(observed_wallet)
 
-        # --- Revenue / privacy: XvB PPLNS-share gate, clearnet exposure (sync; firewall, #2599) ---
+        # --- Revenue / privacy: XvB PPLNS-share gate, clearnet-sync exposure ---
         alerts += self._xvb_share_edges(xvb_enabled, shares_in_window)
         alerts += self._clearnet_edges(clearnet_active)
-        alerts += self._egress_firewall_edges(egress_firewall)
 
         # --- XvB auto-registration health, and a new Pithead release being available ---
         alerts += self._registration_edges(xvb_enabled, xvb_registration_state)
