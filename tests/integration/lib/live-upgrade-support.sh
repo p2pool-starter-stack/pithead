@@ -301,29 +301,29 @@ restore_upgrade_baseline() {
     [ "$_UPGRADE_RESTORE_ARMED" = "1" ] || return 0
     _UPGRADE_RESTORE_ARMED=0
     it_warn "restoring the exact pre-upgrade release, state, and image set"
-    local failed=0 files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local failed="" files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
     local PITHEAD_REGISTRY="$UPGRADE_BASELINE_REGISTRY"
     export PITHEAD_REGISTRY
     pithead down >/dev/null 2>&1 || {
-        failed=1
+        failed+=" stop"
         files_ok=0
     }
     IT_REMOTE_DIR="$UPGRADE_BASELINE_DIR"
     [ "$files_ok" = 0 ] || repoint_baseline_install || {
-        failed=1
+        failed+=" repoint"
         files_ok=0
     }
     if [ "$files_ok" = 1 ]; then
         pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1 || {
-            failed=1
+            failed+=" archive-restore"
             files_ok=0
         }
         pithead down >/dev/null 2>&1 || {
-            failed=1
+            failed+=" stop-after-restore"
             files_ok=0
         }
         if [ "$files_ok" = 1 ] && ! restore_state_snapshots; then
-            failed=1
+            failed+=" state-snapshots"
             files_ok=0
         fi
     fi
@@ -331,37 +331,37 @@ restore_upgrade_baseline() {
         if ! reset_control_units_for_render || ! pithead render >/dev/null 2>&1 ||
             ! baseline_up >/dev/null 2>&1 || ! wait_status_ok 300 ||
             ! wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS"; then
-            failed=1
+            failed+=" start"
         fi
     fi
-    [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed=1
-    [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed=1
-    [ "$(derived_state_fingerprint)" = "$UPGRADE_BEFORE_DERIVED" ] || failed=1
-    [ "$(all_running_refs)" = "$UPGRADE_BEFORE_REFS" ] || failed=1
-    [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed=1
+    [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed+=" config"
+    [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed+=" secrets"
+    [ "$(derived_state_fingerprint)" = "$UPGRADE_BEFORE_DERIVED" ] || failed+=" derived-state"
+    [ "$(all_running_refs)" = "$UPGRADE_BEFORE_REFS" ] || failed+=" running-refs"
+    [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed+=" revisions"
     state="$(api_state)"
-    [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed=1
-    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
+    [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed+=" monero-sync"
+    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed+=" tari-sync"
     monero_tip="$(monero_chain_tip)"
     monero_height="${monero_tip%% *}"
-    chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed=1
-    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
-    [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed=1
-    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
-    [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed=1
+    chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed+=" monero-height"
+    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed+=" tari-height"
+    [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed+=" monero-identity"
+    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed+=" tari-identity"
+    [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed+=" mounts"
     restored_workers="$(worker_names)"
-    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed=1
-    [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed=1
-    [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed=1
+    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
+    [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
+    [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
     restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"
-    telemetry_rows_continue "$UPGRADE_BEFORE_TELEMETRY" "$restored_telemetry" || failed=1
-    if [ "$failed" != 0 ]; then
+    telemetry_rows_continue "$UPGRADE_BEFORE_TELEMETRY" "$restored_telemetry" || failed+=" dashboard-rows"
+    if [ -n "$failed" ]; then
         pithead down >/dev/null 2>&1 || true
         # shellcheck disable=SC2034 # consumed by run.sh:safety_cleanup after this sourced file returns
         SAFETY_RESTORE_FAILED=1
         _SAFETY_RESTORE_ARMED=0
         it_fail "exact pre-upgrade release baseline restored" \
-            "code, state, health, config, secrets, images, chains, mounts, workers, or mining differ; recovery trees retained at $UPGRADE_ROLLBACK_DIR and $SAFETY_ARCHIVE"
+            "differs:$failed; recovery trees retained at $UPGRADE_ROLLBACK_DIR and $SAFETY_ARCHIVE"
         return 1
     fi
     it_pass "exact pre-upgrade release baseline restored"

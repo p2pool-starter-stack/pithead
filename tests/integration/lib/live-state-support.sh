@@ -258,3 +258,11 @@ canonical_refs() { # <service/ref lines>
 data_dirs_inside_install() { # <install dir> -> the variable names that resolve inside it
     rx "for v in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR; do d=\$(grep -m1 \"^\$v=\" .env | cut -d= -f2-); [ -n \"\$d\" ] || continue; d=\$(cd \"\$d\" 2>/dev/null && pwd -P || printf %s \"\$d\"); case \"\$d\" in $(quote_arg "$1") | $(quote_arg "$1")/*) printf '%s\n' \"\$v\" ;; esac; done"
 }
+
+# Which durable-row categories lost lines across the upgrade, as "<category>:<count>" — the probe's
+# first field is a table or kv_store class name (migration-state-probe.py), never a value, so it is
+# safe to print where the row hashes are not worth printing (job 1206 said only "one or more").
+telemetry_rows_lost() { # <before-lines> <after-lines>
+    comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) |
+        awk 'NF { n[$1]++ } END { for (k in n) printf "%s:%d\n", k, n[k] }' | sort | paste -sd, -
+}

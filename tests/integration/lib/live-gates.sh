@@ -284,7 +284,8 @@ run_image_upgrade() {
     if telemetry_rows_continue "$before_telemetry" "$after_telemetry"; then
         it_pass "durable dashboard rows survived the image migration"
     else
-        it_fail "durable dashboard rows survived the image migration" "one or more pre-upgrade rows or fixed-window aggregates changed"
+        it_fail "durable dashboard rows survived the image migration" \
+            "lost:$(telemetry_rows_lost "$before_telemetry" "$after_telemetry")$([ "$after_telemetry" != UNREADABLE ] || printf ' (after-upgrade rows unreadable)')"
     fi
     assert_telemetry_tables_present
     [ "$IT_FAIL" -le "$fails_before" ] || capture_artifacts "image-upgrade" "$OUT_DIR"

@@ -50,4 +50,16 @@ mkdir -p "$td/pithead-v1.20.0-data"
 printf 'MONERO_DATA_DIR=%s\nDASHBOARD_DATA_DIR=%s\n' "$td/data/monero" "$td/pithead-v1.20.0-data" >"$IT_REMOTE_DIR/.env"
 [ -z "$(data_dirs_inside_install "$IT_REMOTE_DIR")" ]
 
+echo "== lost durable rows are named by category and count, never by row hash =="
+before=$'blocks -\nblocks aaa\nblocks bbb\nhistory ccc\nkv_store-stable ddd\npayouts -'
+after=$'blocks -\nblocks aaa\nhistory zzz\nkv_store-stable ddd\npayouts -\nblocks new'
+[ "$(telemetry_rows_lost "$before" "$after")" = "blocks:1,history:1" ]
+[ -z "$(telemetry_rows_lost "$before" "$before"$'\nextra eee')" ]
+! telemetry_rows_lost "$before" "$after" | grep -q 'bbb\|ccc' || exit 1
+
+echo "== a failed exact restore names every check that differed =="
+grep -Fq '"differs:$failed; recovery' "$HERE/lib/live-upgrade-support.sh"
+! grep -q 'failed=1' <(sed -n '/^restore_upgrade_baseline()/,/^}/p' "$HERE/lib/live-upgrade-support.sh") || exit 1
+[ "$(sed -n '/^restore_upgrade_baseline()/,/^}/p' "$HERE/lib/live-upgrade-support.sh" | grep -c 'failed+=" ')" = 22 ]
+
 echo "selftest-upgrade-layout: PASS"
