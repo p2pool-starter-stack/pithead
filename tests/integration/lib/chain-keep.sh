@@ -148,6 +148,11 @@ deploy_keeping_chain() {
             "$(chain_snap_get "$CHAIN_BEFORE" tor 2) $(chain_snap_get "$CHAIN_BEFORE" tor 3)" \
             "$(chain_snap_get "$after" tor 2) $(chain_snap_get "$after" tor 3)" "$(chain_baseline_current "$svc")")"
         if [ "$verdict" = keep ]; then
+            if [ "$(chain_snap_get "$CHAIN_BEFORE" "$svc" 2) $(chain_snap_get "$CHAIN_BEFORE" "$svc" 3)" != \
+                "$(chain_snap_get "$after" "$svc" 2) $(chain_snap_get "$after" "$svc" 3)" ]; then
+                warn "chain: $svc restarted or disappeared during the scoped upgrade instead of staying running"
+                return 1
+            fi
             CHAIN_KEPT="${CHAIN_KEPT:+$CHAIN_KEPT }$svc"
             ok "chain: $svc unchanged by the branch — left running (container $(chain_snap_get "$CHAIN_BEFORE" "$svc" 2 | cut -c1-12))"
         else
@@ -220,7 +225,7 @@ grade_chain_restore() { # <kept> <before> <mid> <after>
     done
 }
 
-# The restore proof's chain record. Returns 1 only on 'broken'; 'gone' is check 4's to fail.
+# A previously running node must survive restore even when the image census was unavailable.
 chain_restore_proof() {
     local line rc=0
     [ -n "$CHAIN_BEFORE" ] || return 0
@@ -235,7 +240,10 @@ chain_restore_proof() {
             warn "  clearnet supervisor restarting the node in the restore window reads the same; check its logs first."
             rc=1
             ;;
-        gone\ *) warn "restore proof: ${line#* } ran before the deploy and is not running now." ;;
+        gone\ *)
+            warn "restore proof: ${line#* } ran before the deploy and is not running now."
+            rc=1
+            ;;
         esac
     done < <(grade_chain_restore "$CHAIN_KEPT" "$CHAIN_BEFORE" "$CHAIN_MID" "$(chain_snapshot)")
     return "$rc"

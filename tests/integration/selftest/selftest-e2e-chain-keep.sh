@@ -210,6 +210,9 @@ tor o1 T1 sha256:o"
     chain_snapshot() { printf 'monerod m1 T1 sha256:m\ntor o1 T1 sha256:o\ntari t9 T3 sha256:t\n'; }
     chain_restore_proof
     assert_rc "the restore proof fails on a broken node" "$?" "1"
+    chain_snapshot() { printf 'tari t1 T1 sha256:t\n'; }
+    chain_restore_proof
+    assert_rc "the restore proof fails when a previously running node is gone" "$?" "1"
     chain_snapshot() { printf '%s\n' "$before"; }
     chain_restore_proof
     assert_rc "the restore proof passes when the nodes are untouched" "$?" "0"
@@ -250,6 +253,12 @@ tor o1 T1 sha256:o" out
     assert_contains "the branch's monerod is built so its image ID can be compared" "$out" "compose build monerod"
     assert_eq "both unchanged: no second up" "$(printf '%s\n' "$out" | grep -c 'pithead up$')" "0"
     assert_eq "both unchanged: both kept" "$(printf '%s\n' "$out" | tail -n1)" "KEPT=monerod tari"
+    for moved in "monerod m1 T2 sha256:m" "monerod m2 T1 sha256:m"; do
+        out="$(drive_deploy "$snap" "$moved
+tari t1 T1 sha256:t
+tor o1 T1 sha256:o" "config=c files=f")"
+        assert_contains "a held node moved during the scoped upgrade: deploy fails" "$out" "rc=1"
+    done
     out="$(drive_deploy "$snap" "$snap" "config=c files=f2")"
     assert_contains "a changed tari is recreated with monerod still held" "$out" "cd '/e2e' && PITHEAD_KEEP_RUNNING='monerod' ./pithead up"
     assert_eq "a changed tari is not kept" "$(printf '%s\n' "$out" | tail -n1)" "KEPT=monerod"
