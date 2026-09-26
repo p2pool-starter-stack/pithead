@@ -61,7 +61,7 @@ run_rigforge_reverse() { # <rig-name> <orig-max_temp_c-or-empty>
         if wait_for 90 5 "dashboard feed to reflect the rig-side max_temp_c=$reflect (#516)" _pred_feed_maxt "$rig" "$reflect"; then
             it_pass "rig-side edit reflected in the dashboard's enriched feed (#516)"
         else
-            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "feed never showed max_temp_c=$reflect"
+            it_fail "rig-side edit reflected in the dashboard's enriched feed (#516)" "feed never showed max_temp_c=$reflect; last poll: ${_FEED_MAXT_SEEN:-}"
         fi
         # Revert the rig to its original ceiling.
         change_id="$(_rig_control_apply "{\"max_temp_c\":$orig_maxt}")"
@@ -92,10 +92,14 @@ _rig_control_await() { # <change_id> <want-status> [timeout-s=30]
 }
 
 # Predicate: the dashboard feed's watchdog Temp/max stat shows <want> as the ceiling for <rig>.
+# _FEED_MAXT_SEEN keeps the rig's last stats rows so a timeout names what the feed showed instead:
+# a stale report, a missing temperature, or the old ceiling (#2741).
 _pred_feed_maxt() { # <rig-name> <want-max_temp_c>
     local s v
+    _FEED_MAXT_SEEN="no response from /api/state"
     s="$(api_state)"
     [ -n "$s" ] || return 1
+    _FEED_MAXT_SEEN="$(printf '%s' "$s" | jq -r --arg n "$1" '[.workers[]? | select(.name==$n)][0] | if . == null then "rig not in the feed" else "status=\(.status // "?"), stats: " + ([.rigforge.stats[]? | "\(.label)=\(.value)"] | join("; ")) end' 2>/dev/null)"
     v="$(printf '%s' "$s" | jq -r --arg n "$1" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
     [ "$v" = "$2" ]
 }
