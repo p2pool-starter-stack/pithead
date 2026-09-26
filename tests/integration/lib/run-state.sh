@@ -160,8 +160,8 @@ assert_running_state() {
     assert_pool_type "pool type" "$(jq_get "$st" '.pool.type')" "$(pool_label "$pool")"
 
     # 6. End-to-end mining: workers online + hashes accumulating (#28). proxy_workers is the
-    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). The
-    #    hashes figure gets a bounded wait first (#831): between scenarios the bench stratum
+    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). Both
+    #    figures get a bounded wait first (#831, #2750): between scenarios the bench stratum
     #    bounces, a REAL rig fails over to its secondary pool and returns on xmrig's own retry
     #    clock (~60-90s) — a single early sample reads 0 while the rig is genuinely mining a
     #    minute later, and which scenario loses that race moves run to run. The re-fetched
