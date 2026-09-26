@@ -104,6 +104,7 @@ stack_uninstall() {
     fi
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
+    remove_lan_guard
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
