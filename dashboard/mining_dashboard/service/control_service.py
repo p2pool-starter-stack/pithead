@@ -177,8 +177,8 @@ EDITABLE_ENV_KEY_PATHS = {
 # dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
 # straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
 # it (#504). Fold it in as the map's one special-case addition. Worker descriptors (workers.list[],
-# #506) are the OTHER config.json-only case but are REFUSED outright (per-rig hosts/tokens), so they
-# never get an editable path — and buildSections never renders an array as a field anyway (#172).
+# #506) are the OTHER config.json-only case: only Worker Inspect's adopt form appends one (#2641),
+# so they never get an editable path — and buildSections never renders an array as a field (#172).
 _ENERGY_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",

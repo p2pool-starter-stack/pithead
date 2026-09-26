@@ -45,7 +45,6 @@ lib/pithead/17-backup-restore.sh	404
 lib/pithead/28-parse-and-validate-config.sh	465
 lib/pithead/33-render-env.sh	483
 lib/pithead/36-quadlet-units.sh	406
-lib/pithead/43-control-approval-and-preview.sh	413
 os/overlay/pithead-boot	407
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429

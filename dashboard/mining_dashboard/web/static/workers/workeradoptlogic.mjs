@@ -1,8 +1,9 @@
 // Pure logic for the click-to-adopt form (issue #893), kept DOM-free so node --test covers it.
 // workeradopt.mjs binds these to the form; tests call them directly.
 //
-// The security authority for the write itself is host-side (pithead's control_approval_gate add-
-// only exception, re-checked by the dashboard's own handle_control_preview guard). What lives here
+// The security authority for the write itself is host-side (pithead's control_worker_append: an
+// append-only change behind the typed APPLY, #2641; the dashboard's own handle_control_preview
+// guard pre-checks the same shape). What lives here
 // is UX-layer, defense-in-depth validation — mirroring the same host/port/token shape pithead's
 // validate_worker_endpoints enforces — so an obviously malformed value is refused before a round
 // trip, not because this is where the trust decision is made.
@@ -116,7 +117,7 @@ export function hostIsInternal(host, subnet) {
 /**
  * The proposed config a successful adopt submits: ``liveConfig`` (as fetched from /api/config)
  * with one new descriptor appended to ``workers.list[]``. Every other key rides through untouched
- * — the host's add-only gate requires every already-live entry to reappear byte-for-byte, so this
+ * — the host's append-only check requires every already-live entry to reappear byte-for-byte, so this
  * never touches an existing element, only pushes a new one onto the end.
  */
 export function buildAdoptedConfig(liveConfig, workerName, host, apiPort, controlPort, token) {
