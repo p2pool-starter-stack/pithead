@@ -319,9 +319,10 @@ wait_bench_healthy() { # <timeout_s>
     done
 }
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
-# tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
-# measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
+# tip: seconds for monerod (NOT a re-sync), but tari rebuilds its Tor circuits first (>18min, #2455).
+# Wait for both "done" so the harness's one-shot readiness check doesn't judge a reconnecting tari.
+# Giving up on a Tari still loading or syncing is the bench's, and says so (lib/e2e-env.sh); a
+# dashboard that never answered is the branch's.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -332,6 +333,7 @@ wait_synced() { # <timeout_s>
         }
         [ "$(date +%s)" -ge "$deadline" ] && {
             warn "sync panels still '$st' after $((${1:-300}))s — destructive phases refused"
+            case "$st" in */loading | */syncing) e2e_env tari-not-done ;; esac
             return 1
         }
         sleep 8
@@ -400,9 +402,8 @@ preflight() {
     else
         warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
     fi
-    # Chains at tip BEFORE anything is locked or borrowed (#914): a bench that starts hours
-    # behind fails the required-sync assertions as environment noise — not a regression — and
-    # burns the borrowed-rig hour finding out. Same dashboard sync signal wait_synced polls.
+    # Chains at tip BEFORE anything is locked or borrowed (#914): a bench hours behind fails the
+    # required-sync assertions on the environment and burns the borrowed-rig hour; say so to bench-ci.
     if [ "$SKIP_PREFLIGHT" = "1" ]; then
         warn "--skip-preflight: not checking the bench chains are synced."
     else
@@ -415,6 +416,7 @@ preflight() {
         else
             warn "monero: $mst (current/target $mheights)"
             warn "tari:   $tst (current/target $theights)"
+            e2e_env chains-behind
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."
         fi
     fi
@@ -581,12 +583,10 @@ deploy_branch() {
     # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
-    # What the branch's build produced, by service — read by verify_restore_proof's check 4, so that
-    # "the branch's image came back up as the baseline" is a distinguishable outcome and not an
-    # invisible one. Taken AFTER the health wait rather than straight after the upgrade: the census
-    # reads running containers, and one still being recreated would simply be absent. That direction
-    # only ever weakens the check (a service missing here can never be accused of being the branch's,
-    # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
+    # What the branch's build produced, by service: verify_restore_proof's check 4 reads it to tell
+    # "the branch's image came back up as the baseline" apart. Taken AFTER the health wait: the census
+    # reads running containers, and one still being recreated would be absent. That only weakens the
+    # check (a missing service is never accused of being the branch's), but a settled stack is free.
     BRANCH_IMAGES="$(stack_image_census)"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
@@ -653,7 +653,7 @@ run_harness() {
         sleep 20
         waited=$((waited + 20))
         step "harness running… ${waited}s — latest:"
-        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed 's/^/      /' || true
+        on_bench "tail -n 2 '$E2E_DIR/results/e2e-harness.log' 2>/dev/null" | redact_remote_output | sed '/e2e-env:/d; s/^/      /' || true
     done
 
     echo ""

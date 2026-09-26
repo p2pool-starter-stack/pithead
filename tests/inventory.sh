@@ -181,13 +181,14 @@ stack_expected=$(printf '%s\n' "$stack_expected" | sort)
 check_source_set tests/stack/run.sh "$stack_expected" 50
 
 # live-*-support.sh are excluded for the skip-accounting.sh reason: run.sh sources live-gates.sh,
-# which sources them, so run.sh reaches them transitively and never names them itself.
+# which sources them, so run.sh reaches them transitively and never names them itself. e2e-env.sh
+# is lib.sh's, beside skip-accounting.sh.
 integration_expected=$(
     printf '%s\n' lib.sh scenarios.sh
     find tests/integration/lib -maxdepth 1 -type f -name '*.sh' \
         ! -name rig-supply.sh ! -name restore-proof.sh ! -name chain-keep.sh ! -name skip-accounting.sh \
         ! -name borrow-fixture.sh ! -name detached-harness.sh ! -name parent-lock.sh \
-        ! -name harness-args.sh \
+        ! -name harness-args.sh ! -name e2e-env.sh \
         ! -name redact-it-password.sh \
         ! -name remote-endpoints.sh \
         ! -name live-upgrade-support.sh ! -name live-state-support.sh ! -name live-xvb-support.sh -print |

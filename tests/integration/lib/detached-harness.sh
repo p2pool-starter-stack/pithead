@@ -53,8 +53,12 @@ harness_finished() {
 # then the current-state battery. Both are read-only and cheap, and BOTH are binding — a run that
 # warned and carried on graded the branch against a bench that was already broken, so a failure
 # here refuses the destructive phases rather than reporting their fallout as a branch regression.
+# A readiness refusal is the bench's, and is said to bench-ci as `readiness` (lib/e2e-env.sh) unless
+# the phase already named Tari itself: a busy rig lock or a lost SSH refuses there too. A check
+# refusal says nothing: that phase reads the deployed branch. The phase's stdout is teed to find
+# that line; tee reads to EOF, so #2457's SIGPIPE cannot return, and the verdict is on_bench's own.
 harness_pregate() { # <workers> <no_mining flags>
-    local phase lock_pair
+    local phase lock_pair said
     # Fed as a here-string rather than a pipe (#2457). The sub-phase does read both lines, so a pipe
     # carried the bytes correctly — but a pipeline whose reader can return before the write lands
     # leaves this writing into a closed pipe, and `set -o pipefail` then promotes that SIGPIPE to the
@@ -65,12 +69,16 @@ harness_pregate() { # <workers> <no_mining flags>
     # rather than reading an empty line. Nothing consumes that rc — the remote command joins its
     # reads with `;`, not `&&`, and sets no `-e` — so the values, and the phase's verdict, are unchanged.
     lock_pair="$(printf '%s\n%s' "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}")"
+    said="$(mktemp)" || return 1
     for phase in readiness check; do
-        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" || {
-            warn "$phase reported issues (see above) — destructive phases refused"
-            return 1
-        }
+        on_bench "IFS= read -r a; IFS= read -r n; cd '$E2E_DIR' && RIG_LOCK_PARENT_ACTOR=\"\$a\" RIG_LOCK_PARENT_NONCE=\"\$n\" RIG_LOCK_WAIT=$(quote_arg "${RIG_LOCK_WAIT:-0}") bash tests/integration/run.sh --local --dir '$E2E_DIR' --$phase --workers '$1' $2" <<<"$lock_pair" | tee "$said"
+        [ "${PIPESTATUS[0]}" = 0 ] && continue
+        warn "$phase reported issues (see above) — destructive phases refused"
+        [ "$phase" = check ] || grep -Eq '^[[:space:]]*e2e-env: ' "$said" || e2e_env readiness
+        rm -f "$said"
+        return 1
     done
+    rm -f "$said"
 }
 
 # Install the on-bench runner: it records `running <pid> <starttime>` BEFORE exec'ing the harness,

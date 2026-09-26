@@ -211,11 +211,16 @@ assert_release_readiness() {
     # 1. The whole point of a release server: chains already synced, reused in minutes.
     if monero_caught_up; then it_pass "Monero is synced (chain reusable by the matrix)"; elif [ $? = 1 ]; then it_fail "Monero is synced" "monerod answered: not caught up — the matrix would have to re-sync"; else it_fail "Monero is synced" "monerod could not be asked — unreachable, refused, timed out or rejected; sync state unknown"; fi
     # Tari is the other chain the matrix reuses; a readiness verdict that only looked at Monero
-    # passed boxes whose merge-mining scenarios would start from an incomplete chain.
-    if [ "$(jq_get "$(api_state)" '.sync.tari.state')" = "done" ]; then
+    # passed boxes whose merge-mining scenarios would start from an incomplete chain. A refusal on
+    # a Tari still loading or syncing names Tari to bench-ci, so its one Tari retry applies
+    # (lib/e2e-env.sh; harness_pregate then prints no `readiness` line of its own).
+    local tari_state
+    tari_state="$(jq_get "$(api_state)" '.sync.tari.state')"
+    if [ "$tari_state" = "done" ]; then
         it_pass "Tari is synced (chain reusable by the matrix)"
     else
         it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
+        case "$tari_state" in loading | syncing) e2e_env tari-not-done ;; esac
     fi
     pithead status >/dev/null 2>&1
     assert_rc "stack is healthy (pithead status)" "$?" "0"
