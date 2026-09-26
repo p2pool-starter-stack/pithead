@@ -8,7 +8,7 @@
 //
 // The third choice, restore (#1923), is a door onto machinery that already exists: restore at
 // setup shipped under #909, and a restore submitted from a set-up-again boot lands today —
-// `12-firstboot-wizard.sh:129` skips the wizard only when `! setup_again_mode`, and
+// `12-firstboot-wizard.sh:77` skips the wizard only when `! setup_again_mode`, and
 // `restore_apply` refuses on size, magic, passphrase, integrity, unsafe paths and an unusable
 // config, never on the machine already having a configuration. So this adds no host behaviour.
 // It is deliberately NOT confirm-gated: the restore form is itself a file, usually a passphrase
@@ -67,7 +67,13 @@ export const SavedRoleScreen = ({
             )}
             <${Err}>${error}<//>
             <button type="button" class="btn-toggle active" onClick=${onKeep}>Keep it</button>
-            <button type="button" class="btn-toggle" onClick=${onRestore}>Restore from a backup</button>
+            ${
+              onRestore
+                ? html`<button type="button" class="btn-toggle" onClick=${onRestore}>
+                    Restore from a backup</button>`
+                : html`<p>Restore from a backup requires HTTPS. Reboot after setup TLS is
+                    available.</p>`
+            }
             <button type="button" class="wizard-link" onClick=${onSetUpAgain}>Set up again</button>
             <${Note}>Setting it up again asks the same questions as a first boot, with this
             machine's answers already filled in. Its login and other secrets are never filled
@@ -100,11 +106,9 @@ export function savedRoleOrSetup(app) {
   return html`<${SavedRoleScreen} summary=${summary} kept=${app.state.keptRole}
     error=${app.state.keepError} onKeep=${keep}
     onSetUpAgain=${() => app.setState({ setUpAgain: true })}
-    onRestore=${() =>
-      // `keepError` is cleared too, and only this exit needs to: restore is the first choice
-      // with a way BACK to this screen (the restore form's own Back clears `restoreMode`), so a
-      // failed Keep would otherwise be waiting here still, reporting an action the operator has
-      // since abandoned. `error` is the wizard's own field, cleared the way the setup form's
-      // restore link clears it.
-      app.setState({ restoreMode: true, error: "", keepError: "" })} />`;
+    onRestore=${
+      app.state.restoreEnabled
+        ? () => app.setState({ restoreMode: true, error: "", keepError: "" })
+        : null
+    } />`;
 }
