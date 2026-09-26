@@ -141,10 +141,13 @@ reset_control_units_for_render() { # [dir of the release that may have installed
     rx "[ \"\$(uname -s)\" = Linux ] || exit 0; ask() { (cd \"\$1\" 2>/dev/null && bash -c 'source ./pithead >/dev/null 2>&1 </dev/null; declare -F control_unit_dir >/dev/null && control_unit_dir' 2>/dev/null); }; d=\$(ask .) || d=\$(ask $(quote_arg "${1:-.}")) || exit 0; [ -n \"\$d\" ] || exit 0; sudo -n systemctl disable --now pithead-control.path >/dev/null 2>&1 || true; sudo -n rm -f \"\$d/pithead-control.path\" \"\$d/pithead-control.service\" && sudo -n systemctl daemon-reload"
 }
 
-dashboard_durable_rows() { # <fixed capture epoch>
-    local payload
+# --baseline-schema reads a restored older release's DB, which lacks the candidate-only tables the
+# post-upgrade read requires (job 1257: the restore's read of v1.20.0's DB came back empty).
+dashboard_durable_rows() { # <fixed capture epoch> [--baseline-schema]
+    local payload require=--require-current-schema
+    [ "${2:-}" != --baseline-schema ] || require=""
     payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
-    rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 - --require-current-schema $(quote_arg "$1")" 2>/dev/null
+    rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 - $require $(quote_arg "$1")" 2>/dev/null
 }
 
 archived_dashboard_durable_rows() { # <archive> <fixed capture epoch>
@@ -318,5 +321,10 @@ start_restored_baseline() {
     wait_status_ok 300 || return 1
     BASELINE_START_STEP=worker-set
     wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS" || return 1
+    # Stratum hashes reset on a p2pool restart and climb once the proxy reconnects; resettle
+    # before the restore samples state, as the pre-upgrade capture does (job 1257 read a cold 0).
+    BASELINE_START_STEP=mining
+    wait_miner_running || return 1
+    wait_stratum_hashes || return 1
     BASELINE_START_STEP=""
 }

@@ -79,8 +79,10 @@ echo "== a restored baseline that will not start names the step that stopped it 
     baseline_up() { [ "${STOP_AT:-}" != up ]; }
     wait_status_ok() { [ "${STOP_AT:-}" != status ]; }
     wait_for() { [ "${STOP_AT:-}" != worker-set ]; }
+    wait_miner_running() { [ "${STOP_AT:-}" != mining ]; }
+    wait_stratum_hashes() { :; }
     start_restored_baseline && [ -z "$BASELINE_START_STEP" ]
-    for STOP_AT in up status worker-set; do
+    for STOP_AT in up status worker-set mining; do
         ! start_restored_baseline && [ "$BASELINE_START_STEP" = "$STOP_AT" ] || exit 1
     done
     grep -Fq 'failed+=" start:$BASELINE_START_STEP${BASELINE_START_ERROR:+ [$BASELINE_START_ERROR]}"' "$HERE/lib/live-upgrade-support.sh"
@@ -149,6 +151,8 @@ echo "== a CLI without render (v1.20.0) skips the step; one with it still runs i
     baseline_up() { :; }
     wait_status_ok() { :; }
     wait_for() { :; }
+    wait_miner_running() { :; }
+    wait_stratum_hashes() { :; }
     RENDERED=0
     pithead() { [ "$1" = render ] && RENDERED=1; return 0; }
     start_restored_baseline && [ "$RENDERED" = 1 ] || exit 1
@@ -156,6 +160,18 @@ echo "== a CLI without render (v1.20.0) skips the step; one with it still runs i
     RENDERED=0
     pithead() { [ "$1" = render ] && { RENDERED=1; return 1; }; return 0; }
     start_restored_baseline && [ "$RENDERED" = 0 ] && [ -z "$BASELINE_START_STEP" ] || exit 1
+)
+
+echo "== the restore reads the restored release's rows without the candidate-only schema =="
+(
+    rx() { printf '%s\n' "$1"; }
+    snippet="$(dashboard_durable_rows 1700000000)"
+    grep -Fq -- '- --require-current-schema 1700000000' <<<"$snippet"
+    snippet="$(dashboard_durable_rows 1700000000 --baseline-schema)"
+    ! grep -Fq -- '--require-current-schema' <<<"$snippet" || exit 1
+    grep -Fq -- 'python3 -  1700000000' <<<"$snippet"
+    grep -Fq 'dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH" --baseline-schema' "$HERE/lib/live-upgrade-support.sh"
+    grep -Fq 'after_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"' "$HERE/lib/live-gates.sh"
 )
 
 echo "selftest-upgrade-layout: PASS"

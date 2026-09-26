@@ -349,7 +349,7 @@ restore_upgrade_baseline() {
     [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
     [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
     [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
-    restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"
+    restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH" --baseline-schema)"
     telemetry_rows_continue "$UPGRADE_BEFORE_TELEMETRY" "$restored_telemetry" || failed+=" dashboard-rows"
     if [ -n "$failed" ]; then
         pithead down >/dev/null 2>&1 || true
