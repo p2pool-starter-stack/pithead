@@ -156,11 +156,12 @@ if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the sc
 mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
 printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
-for wf in create reopen; do # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
-    rm -f "$HCDIR/.payout-scanning" && [ "$wf" = reopen ] && : >"$HCDIR/payout-wallet"
-    PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1
-    if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on $wf"; else bad "wallet-entrypoint marks the scan on $wf" "no marker"; fi
-done
+# Every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756).
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; }
+run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
+: >"$HCDIR/payout-wallet" && run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
