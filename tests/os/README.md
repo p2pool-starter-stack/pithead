@@ -119,9 +119,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   run ([#2321](https://github.com/p2pool-starter-stack/pithead/issues/2321)). The leg restores P2Pool and
   stops the proxy again on every path, including the ones that bail mid-transition.
   Before the successful attempt, an
-  unreachable remote node must be refused by preflight with its safe form values retained; a
-  separate injected post-validation setup fault must open a recoverable failed page and retry
-  with those values. The successful wizard submission names the appliance `fixture-box`; the
+  unreachable remote node must be refused by preflight with its safe form values retained, and
+  a name resolving only to the bench's reserved node's private address must be accepted and
+  pinned to that resolved address, not the name (#2351; skipped, missing, without a reserved
+  node configured). A separate injected post-validation setup fault must open a recoverable
+  failed page and retry with those values. The successful wizard submission names the appliance `fixture-box`; the
   running kernel, rendered dashboard address, served certificate and active mDNS service must all
   agree on that identity. The guest carries an unrouted documentation-range global IPv6 address
   and a ULA before submit; after provisioning, the pinned site, LAN v4 and ULA binds/listeners,

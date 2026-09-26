@@ -257,6 +257,13 @@ awk 'index($0, "m10_recovered \"$i\" || return 1") { held = $0; next }
     "$HERE/phases/provision-power-cut.sh" >"$m10_mutant"
 grep -qF 'm10_recovered "$i" || return 1' "$m10_mutant" || exit 1
 ! m10_call_in_cut_loop "$m10_mutant" || exit 1
+# The #2351 by-name leg's run/skip guard (its own --self-test). That guard decides whether the
+# leg runs at all, so a wrong answer is silent in the battery: a dotted glob shipped first and
+# swallowed genuine names (`10.0.0.5.nip.io`), which would skip the by-name proof forever.
+bash "$HERE/reserved-node-by-name-leg.sh" --self-test >/dev/null || {
+    echo "reserved-node-by-name guard self-test failed" >&2
+    exit 1
+}
 healthgate_install=$(sed -n '/_stage_bundle "$fbundle"/,/# No mark-good here/p' "$HERE/phases/update-healthgate-leg.sh")
 grep -Fq 'bad "leg 5: could not stage or install the fault bundle"' <<<"$healthgate_install" || exit 1
 grep -Fxq '        return' <<<"$healthgate_install" || exit 1
