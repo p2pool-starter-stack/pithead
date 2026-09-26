@@ -85,15 +85,10 @@ check_control_units() {
     # stranded install: the units SHOULD name the live dir, and the dashboard writes there, not
     # here. Verdicts about the control channel belong to the live install, so say what this dir
     # is and stop. Same pattern update_current_symlink uses to recognise the layout (#455).
-    local _name _parent _live
-    _name=$(basename "$here")
-    _parent=$(dirname "$here")
-    if [[ "$_name" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -L "$_parent/current" ]; then
-        _live=$(cd "$_parent/current" 2>/dev/null && pwd -P)
-        if [ -n "$_live" ] && [ "$_live" != "$here" ]; then
-            dr_info "This is not the live install — '$_parent/current' points at $_live. Run doctor there to check its control channel." # appliance-unreachable: the DIY versioned layout only -- the guard above needs basename pithead-vX.Y.Z AND a sibling `current` symlink, and the appliance's /opt/pithead install creates neither
-            return 0
-        fi
+    local _live
+    if _live=$(superseded_by_live_install "$here"); then
+        dr_info "This is not the live install — '$(dirname "$here")/current' points at $_live. Run doctor there to check its control channel." # appliance-unreachable: the DIY versioned layout only -- the guard above needs basename pithead-vX.Y.Z AND a sibling `current` symlink, and the appliance's /opt/pithead install creates neither
+        return 0
     fi
     if [ -z "$owner" ]; then
         dr_fail_surface "The control channel is enabled but no runner units are installed — the dashboard's config changes and one-click upgrades will never run, with no error shown. Fix: run './pithead apply' from this directory." "The control channel is enabled but no runner units are installed — config changes and one-click upgrades made here will never run, with no error shown. The installed system provides these units, so this system copy is faulty."
