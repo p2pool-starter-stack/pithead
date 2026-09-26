@@ -39,7 +39,10 @@ phase_fault() {
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        mark=$(fault_serial_mark "$SERIAL")
+        mark=$(fault_serial_mark "$SERIAL") || {
+            bad "A$i: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
+            return
+        }
         virsh destroy "$VM" >/dev/null 2>&1 || true
         sleep 3
         virsh start "$VM" >/dev/null 2>&1 || true
@@ -54,6 +57,9 @@ phase_fault() {
         elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
             bad "A$i: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
             return
+        elif [ $? -eq 2 ]; then
+            bad "A$i: $verdict"
+            return
         else
             bad "A$i: BRICKED — $verdict (disqualifying)"
             return
@@ -65,7 +71,10 @@ phase_fault() {
     # refusal — refusing to install is correct, crashing is not, and bricking is disqualifying.
     info "fault C — install a deliberately corrupted bundle"
     _ssh "dd if=/dev/urandom of=/data/update.bundle bs=1M seek=8 count=2 conv=notrunc" >/dev/null 2>&1 || true
-    mark=$(fault_serial_mark "$SERIAL")
+    mark=$(fault_serial_mark "$SERIAL") || {
+        bad "C: could not snapshot the serial console before the corrupt install — a failed boot after it could not be judged, so the leg stops here"
+        return
+    }
     local corrupt_rc=0
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1") || corrupt_rc=$?
     if printf '%s' "$out" | grep -qi "panic"; then
@@ -82,6 +91,9 @@ phase_fault() {
         ok "C: still boots after being handed a corrupt bundle (marker '$(_marker)')"
     elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
         bad "C: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        return
+    elif [ $? -eq 2 ]; then
+        bad "C: $verdict"
         return
     else
         bad "C: BRICKED — $verdict (disqualifying)"
@@ -114,7 +126,10 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    mark=$(fault_serial_mark "$SERIAL")
+    mark=$(fault_serial_mark "$SERIAL") || {
+        bad "B: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
+        return
+    }
     virsh destroy "$VM" >/dev/null 2>&1 || true
     sleep 3
     virsh start "$VM" >/dev/null 2>&1 || true
@@ -123,6 +138,9 @@ phase_fault() {
         ok "B: survived a mid-commit power cut — booted slot marker '$(_marker)'"
     elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
         bad "B: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        return
+    elif [ $? -eq 2 ]; then
+        bad "B: $verdict"
         return
     else
         bad "B: BRICKED — $verdict (disqualifying)"
@@ -202,7 +220,10 @@ phase_fault() {
         return
     fi
     local serial_before
-    serial_before=$(fault_serial_mark "$SERIAL")
+    serial_before=$(fault_serial_mark "$SERIAL") || {
+        bad "D: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
+        return
+    }
     virsh destroy "$VM" >/dev/null 2>&1 || {
         bad "D: could not cut power during the image load"
         return
@@ -228,7 +249,7 @@ phase_fault() {
         local refusal deadline=$(($(date +%s) + 60)) verdict
         local legible='The container image store is damaged|Could not load the baked image archive'
         while [ "$(date +%s)" -lt "$deadline" ]; do
-            refusal=$(fault_serial_since "$SERIAL" "$serial_before")
+            refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break
             grep -qE "$legible" <<<"$refusal" && break
             sleep 3
         done
@@ -236,6 +257,8 @@ phase_fault() {
             ok "D: refused to continue after the interrupted load, with a legible console message"
         elif verdict=$(fault_boot_verdict "$SERIAL" "$serial_before"); then
             bad "D: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        elif [ $? -eq 2 ]; then
+            bad "D: $verdict"
         else
             # Narrowing the match makes a red actionable only if it says what the console DID say.
             bad "D: BRICKED — $verdict (disqualifying)"

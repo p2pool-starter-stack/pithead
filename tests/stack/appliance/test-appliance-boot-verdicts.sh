@@ -138,6 +138,32 @@ mark=$(fault_serial_mark "$FBV/serial")
 printf 'GNU GRUB\n' >"$FBV/serial"
 verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
 assert_rc "a log truncated on start and still shorter than the mark is read from byte 0" "$?" "0"
+# #2746 (review): a snapshot that cannot be taken must stop the leg, never fall back to an empty
+# or zero boundary. The old boot's GRUB and login are in the log, the copy is forced to fail, and
+# the new boot writes nothing a boot would. Mutation run: fall back to offset 0 on a failed copy
+# -> the old boot's lines read as this boot's and a silent guest is called "booted".
+cp "$FBV/booted" "$FBV/serial"
+mark=$(
+    cp() { return 1; } # the copy fails, whoever runs it
+    fault_serial_mark "$FBV/serial"
+)
+assert_rc "a console that exists but cannot be snapshotted fails the mark" "$?" "1"
+assert_eq "…and prints no offset to cut against" "$mark" ""
+cat "$FBV/no-boot" >>"$FBV/serial"
+verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
+assert_rc "an unproven boundary is not judged, never read from byte 0 as booted" "$?" "2"
+assert_contains "…and says why" "$verdict" "this boot cannot be judged"
+# A non-zero offset whose snapshot is gone is just as unproven.
+rm -f "$FBV/serial.mark"
+fault_boot_verdict "$FBV/serial" 5 >/dev/null
+assert_rc "a non-zero offset without its snapshot is not judged" "$?" "2"
+# A console that does not exist yet is a proven boundary: everything after the cut is new.
+rm -f "$FBV/fresh"
+mark=$(fault_serial_mark "$FBV/fresh")
+assert_eq "a log absent before the cut marks offset 0" "$mark" "0"
+cp "$FBV/booted" "$FBV/fresh"
+fault_boot_verdict "$FBV/fresh" "$mark" >/dev/null
+assert_rc "…and the new boot's console is judged from byte 0" "$?" "0"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
 # Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
