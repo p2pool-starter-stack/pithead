@@ -171,6 +171,9 @@ mk_tmpdir _sbx
 # shellcheck disable=SC2154
 SANDBOX="$(cd "$_sbx" && pwd -P)"
 trap 'rm -rf "$SANDBOX"' EXIT
+# The restore handoff roots default to root-only /run paths; a non-root suite must never reach them.
+export PITHEAD_RESTORE_SUBMISSION_DIR="$SANDBOX/.run/restore-submit" PITHEAD_RESTORE_STAGE_ROOT="$SANDBOX/.run/restore-stage" \
+    PITHEAD_RESTORE_CARRY_DIR="$SANDBOX/.run/restore-carry"
 
 # A fake docker that records calls and answers the few queries setup/apply make.
 make_stubs() {

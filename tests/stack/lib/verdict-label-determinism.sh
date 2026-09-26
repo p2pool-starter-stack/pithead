@@ -97,7 +97,6 @@ test-appliance-identity-boot.sh|cli_pages
 test-appliance-identity-boot.sh|u
 test-appliance-identity.sh|1
 test-appliance-identity.sh|f
-test-appliance-install-restore.sh|_c
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-config.sh|2
@@ -113,6 +112,7 @@ test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
+test-control-secret-and-dial-guards.sh|EDIT
 test-control-ssrf-host-local.sh|2
 test-doctor-surface.sh|_s
 test-doctor.sh|ip
