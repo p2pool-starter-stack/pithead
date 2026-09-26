@@ -225,7 +225,9 @@ _xvb_self_test() {
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
     local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_ACTUATE_TIMEOUT=1
+    # Deadlines are whole seconds of `date +%s`: a 1s one computed at x.999 expires before the
+    # poll runs once, so every short deadline here is 2 — at least one full second of polling (#2739).
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=2 XVB_ACTUATE_TIMEOUT=2
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
@@ -278,7 +280,7 @@ _xvb_self_test() {
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
-    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=1
+    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=2
     _xvb_case "a Tor that never bootstraps is a counted red row before any request is made" 0 1 1
     XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
     # #2726 (job 1194): one Tor read timeout then an answer is green; three misses stay red.
@@ -343,7 +345,7 @@ _xvb_self_test() {
     # arrives, that string is the entire diagnostic.
     local last_status
     _ssh() { printf 'starting\n'; }
-    if last_status="$(XVB_TOR_READY_TIMEOUT=1 _xvb_wait_for_tor)"; then
+    if last_status="$(XVB_TOR_READY_TIMEOUT=2 _xvb_wait_for_tor)"; then
         printf 'xvb self-test: the Tor wait reported ready for a guest that never bootstrapped\n' >&2
         f=$((f + 1))
     elif [ "$last_status" != starting ]; then
@@ -370,7 +372,7 @@ _xvb_self_test() {
     fi
     rm -f "$proxy_answers"
     _ssh() { return 1; }
-    if XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api; then
+    if XVB_PROXY_READY_TIMEOUT=2 _xvb_wait_for_proxy_api; then
         printf 'xvb self-test: the proxy-API wait reported ready for a guest that never answered\n' >&2
         f=$((f + 1))
     fi
@@ -386,7 +388,7 @@ _xvb_self_test() {
         esac
         return 1
     }
-    XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api
+    XVB_PROXY_READY_TIMEOUT=2 _xvb_wait_for_proxy_api
     if [ "$start_calls" -lt 2 ]; then
         printf 'xvb self-test: the proxy-API wait does not re-assert the start against the sync gate (#1998), only asserted %s time(s)\n' \
             "$start_calls" >&2
