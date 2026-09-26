@@ -36,6 +36,7 @@ Docs for working on Pithead itself live in [`dev/`](dev/). Operators don't need 
 | [Testing Guide](dev/testing-guide.md) | How to write and run tests, per-change recipes, conventions, and real-hardware gotchas. |
 | Test Inventory | An exhaustive list of every test/scenario across all suites — generated on demand by `make test-inventory` (not committed). |
 | [Integration Testing](dev/integration-testing.md) | The end-to-end config-matrix suite that validates the stack against real Monero + Tari nodes: the blocking pre-release gate. |
+| [2.0.0 release plan](dev/release-2.0.0-plan.md) | A dated snapshot of the 2.0.0 cut: its scope, what the frozen SHA must contain, the merge order, the operator lane after the cut, the applied milestone triage, and the road after GA. |
 | [Releasing](dev/releasing.md) | How Pithead is versioned and released: one product, one version, the `VERSION` source of truth, and the GHCR stage→promote pipeline. |
 | [Release / Validation Server](dev/release-server.md) | Why end-to-end validation needs a dedicated server, what GitHub Actions runs on every PR, and how bench-ci reserves and validates the release SHA. |
 | [Test Server Architecture](dev/test-server-architecture.md) | How the reference test/build box is structured and how to recreate it. |
