@@ -217,7 +217,17 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    local lifecycle_ok=1
+    local lifecycle_ok=1 _gated
+    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
+    # name every requested one in the summary instead of dropping it silently (#2755).
+    if [ "$rig_control_ok" != 1 ]; then
+        for _gated in LIFECYCLE:lifecycle FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            local _flag="RUN_${_gated%%:*}"
+            [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
+        done
+    fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
         run_lifecycle || lifecycle_ok=0
     fi
