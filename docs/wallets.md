@@ -67,15 +67,19 @@ curl --digest -u "$MONERO_NODE_USERNAME:$MONERO_NODE_PASSWORD" \
 
 A working node returns a JSON body with `"status":"OK"`. Wrong credentials return `401`; no
 response at all (connection refused/timeout) means the port isn't reachable — check
-`rpc_lan_access`, that `apply` ran, and any firewall between the wallet and the host.
+`rpc_lan_access`, that `apply` ran, that the wallet's address is a LAN address (see
+[Security](#security)), `./pithead doctor` for a port held on `127.0.0.1`, and any firewall
+between the wallet and the host.
 
 ## Security
 
 The RPC is digest-auth'd, but that auth rides plaintext HTTP — no TLS. Treat it as LAN-only:
 
-- Trusted network only. Don't port-forward `18081` to the internet; use
-  [WireGuard](https://www.wireguard.com/) or [Tailscale](https://tailscale.com/) to reach it
-  from outside your LAN instead.
+- LAN sources only. The stack drops connections to `18081` from any address outside loopback,
+  `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10`, so a port-forward from the
+  internet does not work. Use [WireGuard](https://www.wireguard.com/) or
+  [Tailscale](https://tailscale.com/) to reach it from outside your LAN. See
+  [LAN-only sources](configuration.md#lan-only-sources).
 - Docker publishes container ports with its own `iptables` rules, ahead of the `INPUT` chain a host
   firewall (`ufw`, plain `iptables`) usually configures. A rule that looks like it blocks `18081`
   may not — see [Connecting Miners › Firewall](workers.md#firewall) for the same caveat on the
