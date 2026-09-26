@@ -83,9 +83,10 @@ Check the box is fit at any time, non-destructively:
 tests/integration/run.sh --host you@server --dir pithead --readiness
 ```
 
-It asserts: chains synced (reusable), the prune axis is exercisable (the live chain FS is
-snapshot-capable **or** a pre-built variant chain is supplied), disk headroom, `.env` is
-owner-only, the dashboard is bound to localhost, and the backup/rollback net is usable.
+It asserts: chains synced (reusable), `pithead status` healthy within 240 s (a failure lists each
+service's last verdict), the prune axis is exercisable (the live chain FS is snapshot-capable
+**or** a pre-built variant chain is supplied), disk headroom, `.env` is owner-only, the dashboard
+is bound to localhost, and the backup/rollback net is usable.
 
 ### The lint/release toolchain
 

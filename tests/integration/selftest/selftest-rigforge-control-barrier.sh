@@ -71,7 +71,8 @@ late_rc=$?
 assert_eq "a late RigForge assertion returns nonzero to main" "$late_rc" "1"
 
 MAIN_SRC="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../run.sh")"
-assert_contains "main gates later fault injection on successful RigForge control and lifecycle" "$MAIN_SRC" '[ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]'
+assert_contains "main gates later fault injection on successful RigForge control" "$MAIN_SRC" 'if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then'
+assert_contains "main gates later fault injection on a successful lifecycle" "$MAIN_SRC" 'if [ "$lifecycle_ok" = 1 ]; then'
 printf '\nselftest-rigforge-control-barrier: PASS\n'
 # The forced failures above are product-counter stimuli, not selftest failures.
 [ "$early_ok" = 1 ] && [ "$late_rc" -eq 1 ] && [ "$IT_FAIL" -eq 1 ]
