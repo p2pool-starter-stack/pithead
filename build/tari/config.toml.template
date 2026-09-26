@@ -94,8 +94,11 @@ max_concurrent_inbound_tasks = 40
 max_concurrent_outbound_tasks = 100
 
 [base_node.p2p.transport]
-# Enforce Tor transport for privacy
-type = "tor"
+# Tor hidden service; dial onion peers first, then /ip4 and /ip6 peers, all through Tor's SOCKS proxy
+# (proxy_bypass_for_outbound_tcp = false below). Tari 6.0.0 narrowed "tor" to onion addresses only;
+# "tor_tcp" is what "tor" meant up to 5.3.1. Onion-only dialing leaves the node OFFLINE most of the
+# day, because most onion peers it learns have no reachable descriptor (#2508).
+type = "tor_tcp"
 
 [base_node.p2p.transport.tcp]
 # Bind to all interfaces inside the container
