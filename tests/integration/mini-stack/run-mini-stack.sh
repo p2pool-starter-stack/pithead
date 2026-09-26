@@ -81,16 +81,10 @@ assert_stays() { # assert_stays <label> <container> <state> <seconds>
     fi
 }
 
-# POST a new mode to a fake's /control endpoint with a clear failure label. Host ports are
-# 28081/28152 (namespaced away from a real monerod/dashboard on the same host).
-#
-# The fakes publish to the DOCKER HOST, so the address depends on where this script runs. Directly
-# on the host that is 127.0.0.1; from inside the test-runner container (#2078) the container's own
-# loopback is a different machine, and every POST here fails with a connection refused that reads
-# like a broken fake. PITHEAD_TEST_HOST is how a caller outside the host namespace says where the
-# host actually is — scripts/test-container.sh sets it, and the same knob points these at a daemon
-# running anywhere else.
+# The fakes publish control ports to the Docker host. scripts/test-container.sh supplies the host alias because its loopback is the outer runner, not the daemon host (#2078); native runs use local.
 HOST_ADDR="${PITHEAD_TEST_HOST:-127.0.0.1}"
+# shellcheck source=tests/integration/mini-stack/control-roundtrip.sh
+source "$HERE/control-roundtrip.sh"
 set_monerod() { ctl "http://$HOST_ADDR:28081/control" "{\"mode\":\"$1\"}" || c_bad "set monerod $1" "control POST failed"; }
 set_tari() { ctl "http://$HOST_ADDR:28152/control" "{\"mode\":\"$1\"}" || c_bad "set tari $1" "control POST failed"; }
 
@@ -159,12 +153,16 @@ wait_dashboard_api() { # wait_dashboard_api [tries]
 teardown() {
     log "tearing down"
     compose down -v --remove-orphans >/dev/null 2>&1 || true
+    control_roundtrip_cleanup
     rm -f "$LOCK_FILE"
 }
 trap teardown EXIT
 
+if ! control_roundtrip_setup; then
+    c_bad "control fixture" "host-side sandbox setup failed"
+    exit 1
+fi
 source "$HERE/run-payout-scenario.sh"
-
 log "building images"
 if ! compose build >/dev/null 2>&1; then
     c_bad "build" "docker compose build failed"
@@ -176,6 +174,7 @@ compose up -d >/dev/null 2>&1
 
 log "waiting for the dashboard API"
 wait_dashboard_api && c_ok "dashboard API is up" || c_bad "dashboard API is up" "no /api/state after ~60s"
+assert_payout_control_roundtrip # 0a. payout address approval crosses the dashboard/host boundary (#1959)
 
 # 0. The /api/state payload must carry the #170 Stack Topology & Egress contract, derived live
 #    from config by the REAL dashboard. The pure derivation is unit-tested (tests/service/

@@ -14,34 +14,21 @@
 # trusting this one.
 # Outcomes land in results/ and an audit line in audit/, both mounted read-only in the container —
 # as is masked/, the pre-masked config copy the editor form prefills from (#440); the raw
-# config.json is never mounted, so the container holds no secret it wasn't given.
+# config.json is never mounted, so the editor/browser receives no existing secret from that path.
+# Runtime credentials the dashboard consumes still enter its process environment.
 # No string from the container is ever executed or interpolated into a command; the candidate
 # config crosses the boundary only as a FILE handed to `apply` via PITHEAD_CONFIG_FILE.
 
-# Approval gate for a commit (#33). The client-side typed-APPLY modal is NOT a security control:
-# a compromised/XSS'd container writes the request spool directly and never renders that modal, so
-# the only trustworthy gate is here, host-side. FAIL CLOSED.
+# Approval gate for a commit (#33). Dashboard authentication is the access-control perimeter.
+# The client-side APPLY and payout-suffix prompts are typo protection: a compromised dashboard
+# process writes the request spool and can supply them itself. Named low-risk keys use the tiers
+# below; every other schema-backed env change is promoted to confirmation by the host preview and
+# gate. Physical-presence paths remain refused before that classification.
 #
-#   TRUE DEFAULT-DENY: a commit that changes ANY env key not named in one of the THREE lists below
-#   — CONTROL_DASHBOARD_EDITABLE_KEYS, CONTROL_DASHBOARD_CONFIRM_KEYS,
-#   CONTROL_DASHBOARD_APPROVAL_KEYS — is REFUSED, in EITHER direction (enable, change, or DISABLE).
-#   An allowlist, not a blocklist: a key added to render_env tomorrow is un-committable from the
-#   dashboard until someone deliberately lists it. Deliberately decoupled from describe_change's
-#   cosmetic INFO/DEST flag: that flag labels only the disruptive direction (enabling auth is DEST,
-#   disabling is INFO), so a compromised container could otherwise switch security controls OFF
-#   with zero DEST rows. The three lists are the whole committable universe and nothing else.
-#
-# WHY THE THIRD LIST IS NAMED RATHER THAN "EVERYTHING ELSE" (2026-09-13 perimeter audit). #1978 replaced this refusal
-# with approval_required=1 so that every reference-configuration leaf had SOME route; at the time
-# that route was #338's Telegram tap, a second identity. #2076 removed the tap and left the typed
-# envelope alone in that tier, which the container writes itself — so "everything else" had become
-# self-approvable, wallets included, against what SECURITY.md and docs/appliance.md promise
-# operators. The tier is now a SHORT NAMED LIST and a key nobody enumerated fails closed again.
-# READ THIS BEFORE ADDING TO IT: the envelope is typo protection, NOT a second identity
-# (42-control-approval-helpers.sh says so in its own words), so a key here is committable by a
-# compromised dashboard container. Admit only what the confirm tier's criterion admits —
-# expensive-but-recoverable, not a breach — and never a credential, a payout destination, or a
-# switch that turns a security control off.
+# #1959 deliberately restores confirmation as the fallback for schema-backed values. This accepts
+# that a compromised dashboard can supply its own actor, APPLY token, envelope and payout suffix;
+# the prompts prevent operator mistakes, not hostile requests. The physical-presence paths below
+# and the schema/SSRF/data-root/reachability validators remain host-enforced boundaries.
 #
 # The checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
 # runs — nothing is trusted from the container's request or its (host-written but container-visible)
@@ -51,23 +38,10 @@
 # media-only set below remains outside all of it: no browser approval makes one of those changes
 # committable. Echoes a reason on refusal.
 
-# The env keys committable from the dashboard: operational tuning only, and only keys whose value
-# is derived from a validated enum, boolean, or number — never a free-form string that reaches a
-# command line, URL, or credential. Everything else — wallets, auth, onion exposure, the control
-# channel itself, Tor egress/clearnet toggles, binds, node RPC credentials, the XvB pool URL
-# and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
-# WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
-# TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
-# TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
-# TARI_WALLET_BIRTHDAY moved to the confirm-gated set below (2026-08 audit reclassification):
-# they're wallet-creation metadata, not a secret, and a wrong value only re-scans from a different
-# height on the wallet's NEXT creation — recoverable, not destructive.
-# Each view key reveals every incoming payout amount/time, so it is never dashboard-committable
-# (default-deny already refuses it; named here deliberately). The WALLET_CHANGED and
-# CLEARNET_EXPOSED alert toggles are excluded on purpose: they are the tamper-evidence alarms on
-# the Telegram channel, so the dashboard must not silence them. That reason SURVIVED #2076: the bot
-# lost its write surface, not its job of telling the operator their payout wallet just changed.
-# Space-separated exact env-key names.
+# The direct-commit env keys: bounded operational tuning that needs neither APPLY nor the approval
+# envelope. Every other schema-backed value falls through to confirmation. WALLET_CHANGED and
+# CLEARNET_EXPOSED remain physical-presence-only because they are the detection controls for the
+# sensitive changes that #1959 now permits. Space-separated exact env-key names.
 #
 # NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
 # event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
@@ -91,66 +65,12 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     TELEGRAM_EVENT_PAYOUT_FOUND TELEGRAM_EVENT_PAYOUT_CONFIRMED TELEGRAM_EVENT_CONTAINER_UNHEALTHY
     TELEGRAM_EVENT_RAFFLE_WIN'
 
-# The confirm-gated editable set (#719): operationally-disruptive env keys the dashboard MAY commit
-# behind a type-to-confirm — NOT the security perimeter (wallets, keys, credentials, onion,
-# tor_egress_firewall, dashboard.control.enabled, stratum password, per-rig hosts/tokens all stay
-# host-only DEST). Type-to-confirm is UX FRICTION, not a security control: a compromised dashboard
-# that can set a field can also fill the confirm box, so this set is strictly the "expensive but
-# recoverable, not a breach" class — a data-dir move (re-sync), a stratum-port repoint (rigs
-# reconnect), a clearnet-sync enable (host IP exposed during IBD, auto-reverts), a prune enable
-# (reclaims disk), or a Tor-load repoint (MONERO_OUT_PEERS: bounded 8-1024 at validation and
-# instantly reversible, but the biggest steady-state knob on the shared Tor daemon's CPU — 2026-08
-# security review placed it here, not free-commit). The same review REVERTED three keys the
-# configurability audit had proposed: PROXY_DONATE_LEVEL (docs/privacy.md's own words — donate
-# traffic bypasses the Tor socks5, and a self-approving container could divert up to 99% of
-# revenue silently), and PAYOUT_SCAN_HEIGHT / TARI_WALLET_BIRTHDAY (a future-dated value lands at
-# the NEXT wallet creation and silently defeats the payout-confirmation tamper evidence — not the
-# recoverable class this tier is for). All three stay host-only. describe_change flags
-# each CONFIRM only in its in-scope DIRECTION — the flag carries the direction (prune DISABLE, TOR
-# data-dir move, etc. still emit DEST and stay refused); this list is the static allowlist the
-# gate's default-deny pass consults and the UI mirrors (control_service.CONFIRM_ENV_KEY_PATHS,
-# drift-guarded like CONTROL_DASHBOARD_EDITABLE_KEYS).
-# The four node-endpoint keys (#1888) are the 2026-09 addition, on the operator's ruling, and they
-# are the reason to read this tier's boundary carefully rather than by analogy. They are NOT a
-# data-dir move: repointing monerod's or the Tari base node's address moves TRUST, not disk — the
-# stack believes the chain data, block templates and share heights whatever answers there. They are
-# not free-commit either, for exactly that reason. They sit here because the change is INSTANTLY
-# REVERSIBLE by the same route (type APPLY, put the old address back) and because it is the one
-# perimeter entry an appliance operator must be able to make: there is no host shell on an
-# appliance, so "edit config.json and run apply" is not a remedy, it is a dead end (#786/#1821).
-# The compensating control is not the typed token — that is friction, as this comment says above —
-# it is the host-side REACHABILITY PROBE the approval gate runs on the STAGED endpoint before it
-# accepts one (43-control-approval-and-preview.sh, #1889's preflight_remote_nodes): a dashboard
-# cannot silently park a chain on a node that is not there. The RPC LOGIN CREDENTIALS for a remote
-# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) are deliberately NOT here — those are secrets,
-# not address identity, and they stay host-only DEST with the rest of the credentials above.
-# TARI_MODE (#1929) joins on the same reasoning as the endpoints, one step further: it decides
-# WHETHER this host merge-mines at all and whether the bundled Tari node runs. It is the expensive-
-# but-recoverable class this tier is for — the container stops, its chain data on disk is KEPT
-# (remove_deactivated_profile_containers removes the container, never the data dir), and the same
-# route reverses it. It is NOT a payout change and NOT a credential: declining to merge-mine cannot
-# redirect a reward, only stop earning one, and the Tari payout ADDRESS stays where it was, outside
-# this tier. Turning Tari ON toward a remote node still drags TARI_GRPC_ADDRESS in with it, so the
-# reachability probe below fires on exactly the direction that parks a chain on a third-party node.
-# MONERO_MODE is deliberately NOT here: Monero is the chain this stack exists to mine, and stopping
-# monerod is not "expensive but recoverable", it is the stack ceasing to do its job.
-#
-# COMPOSE_PROFILES rides in WITH it, and that pairing is the part to read carefully, because this
-# var is NOT tari's alone — it also carries local_node (monero's node switch) and the two
-# payout_confirm tokens. Listing it is unavoidable: tari.mode moves the local_tari token, so every
-# mode switch renders a COMPOSE_PROFILES diff, and while it was unlisted the default-deny pass
-# counted it and sent the switch to the Telegram tier — the exact dead end #1929 exists to remove
-# for an appliance with no Telegram channel. What keeps that from widening monero's door is that
-# this allowlist is only the FIRST of two gates: describe_change still flags a local_node flip DEST
-# (39-describe-change.sh), and a DEST row sets approval_required whatever the allowlist says, so a
-# monero node switch still needs the second identity. The view-key toggles that move the
-# payout_confirm tokens are likewise held by their own unlisted keys AND their own DEST rows.
-# So the pair below is, today, exactly the tari.mode switch and nothing else.
-# THE STANDING RISK IS A NEW TOKEN. A profile added later whose drivers are all allowlisted and
-# whose rows are all INFO would become confirm-committable for free, silently. That is why
-# tests/stack/control/test-control-editable-allowlist.sh pins the EXACT token set render_env can
-# emit: adding one reddens there and forces this comment to be re-read rather than inherited.
-CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR
+# Explicit confirm keys (#719) tell the form which existing operational fields need APPLY and retain
+# their direction-specific preview copy. Unlisted schema-backed values receive the same treatment
+# dynamically at preview and commit. Node endpoints also run the host-side reachability probe; data
+# directories keep the tighter destination allowlist. COMPOSE_PROFILES rides with tari.mode and the
+# exact rendered token set stays pinned by test-control-editable-allowlist.sh.
+CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
     MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
@@ -195,12 +115,17 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # Space-separated exact env-key names.
 CONTROL_DASHBOARD_APPROVAL_KEYS='TELEGRAM_ENABLED TELEGRAM_COMMANDS_ENABLED HOST_IP'
 
-# The committable universe as one alternation: the three lists above and nothing else. Defined
-# ONCE because the commit gate and the preview MUST classify identically — while they did not
-# (2026-09-13 perimeter audit), the preview told the operator a change was approval-tier that the gate then refused
-# outright, which is the edit-then-reject experience #613 exists to remove. Leading/trailing
-# separators are stripped: an EMPTY list would otherwise leave a bare alternation branch, and
-# `grep -vxE 'A|B|'` does not count a blank KEY column as a violation.
+# Config-path distinctions hidden inside a direct env row. P2POOL_FLAGS also carries p2pool.pool,
+# which remains ordinary, so the host checks p2pool.clearnet separately. Inactive remote-node
+# fields produce no env row, but keep the same CONFIRM-only contract as active node endpoints.
+CONTROL_DASHBOARD_APPROVAL_PATHS='p2pool.clearnet'
+CONTROL_DASHBOARD_CONFIRM_PATHS='monero.remote.host
+monero.remote.rpc_port
+monero.remote.zmq_port
+tari.remote.host
+tari.remote.grpc_port'
+
+# One alternation for the named tiers; preview and gate treat every non-match as confirmed.
 control_committable_re() {
     printf '%s %s %s' "$CONTROL_DASHBOARD_EDITABLE_KEYS" "$CONTROL_DASHBOARD_CONFIRM_KEYS" \
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
@@ -304,9 +229,19 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
-# resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
-# already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
+# True when the kernel routes an address back to this machine itself. RFC1918 addresses normally
+# identify distinct LAN rigs and remain valid, but this host's own LAN address must not turn the
+# root control runner into a loopback-by-another-name HTTP client.
+_control_ip_is_local() {
+    local route
+    command -v ip >/dev/null 2>&1 || return 0 # no classifier -> fail closed
+    route=$(ip route get "$1" 2>/dev/null) || return 0
+    printf '%s\n' "$route" | grep -qE '^local[[:space:]]'
+}
+
+# Resolve a worker host to one validated numeric address. Mirrors the READ-path SSRF guard a
+# miner-claimed IP already gets (_safe_probe_host,
+# dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
 # the actual HTTP request is built and sent by the — possibly compromised — dashboard container),
 # so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
@@ -331,21 +266,18 @@ _resolve_host_ips() {
 # resolver, which normalizes any of those the same way glibc's own numeric-address parsing would.
 # EVERY returned address must clear the check — an attacker's own DNS answer can mix one public IP
 # with one loopback IP in the same response, so checking only the first would miss it.
-# DNS-rebinding (the resolved-at-commit
-# address differing from the address at a later dial) is an accepted residual risk, same as
-# before resolve-and-check existed: it requires a SEPARATE capability (DNS control) beyond a
-# compromised dashboard, and the operator-confirmed write boundary this whole check lives behind
-# is why that's acceptable without also adding a dial-time re-check (see the PR's "Dial-time
-# re-check" note).
-_control_host_is_internal() {
-    local host resolved ip
+# Worker control operations pin curl to the returned address; a check followed by a fresh hostname
+# lookup would leave a DNS-rebinding window.
+_control_resolve_external_ip() {
+    local host resolved ip first=""
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host"
-        return
+        { _ipv4_is_sensitive "$host" || _control_ip_is_local "$host"; } && return 1
+        printf '%s\n' "$host"
+        return 0
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
     # spellings ("::1" and "0:0:0:0:0:0:0:1" are the identical address; a hand-rolled
@@ -356,17 +288,85 @@ _control_host_is_internal() {
     # into canonical addresses using the SAME parsing glibc's getaddrinfo (and therefore curl)
     # uses, including a bare literal (no network round trip needed for one), so this is correct
     # for a typed literal and a real hostname alike.
-    resolved=$(_resolve_host_ips "$host") || return 0 # resolution failed/timed out -> FAIL CLOSED
-    [ -n "$resolved" ] || return 0                    # an empty answer -> FAIL CLOSED
+    resolved=$(_resolve_host_ips "$host") || return 1 # resolution failed/timed out -> FAIL CLOSED
+    [ -n "$resolved" ] || return 1                    # an empty answer -> FAIL CLOSED
     while IFS= read -r ip; do
         [ -n "$ip" ] || continue
         if _is_canonical_ipv4 "$ip"; then
-            _ipv4_is_sensitive "$ip" && return 0
+            { _ipv4_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 1
         elif _is_ipv6_literal "$ip"; then
-            _ipv6_is_sensitive "$ip" && return 0
+            { _ipv6_is_sensitive "$ip" || _control_ip_is_local "$ip"; } && return 1
         else
-            return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
+            return 1 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
+        [ -n "$first" ] || first="$ip"
     done <<<"$resolved"
-    return 1
+    [ -n "$first" ] || return 1
+    printf '%s\n' "$first"
+}
+
+# Boolean compatibility wrapper for commit-time target validation.
+_control_host_is_internal() {
+    ! _control_resolve_external_ip "$1" >/dev/null
+}
+
+# A curl --resolve value whose numeric address has passed the local-target floor. IPv6 addresses
+# need brackets in the comma/colon-delimited option value.
+_control_worker_curl_pin() { # <host> <port>
+    local ip
+    ip=$(_control_resolve_external_ip "$1") || return 1
+    case "$ip" in *:*) ip="[$ip]" ;; esac
+    printf '%s:%s:%s\n' "$1" "$2" "$ip"
+}
+
+# Dashboard-confirmed data moves stay inside roots the host already uses. Canonicalize symlinks,
+# and reject internal or dashboard-writable ancestors even when their current target is safe: the
+# container could otherwise swap one before root-owned mkdir/chown.
+control_validate_data_dir_destinations() { # <staged-file>
+    local staged="$1" shared_root
+    local monero_dir tari_dir p2pool_dir tor_dir
+    local -a allowed_roots=("$PWD/data")
+    # A single service under /var/lib/monero must not authorize sibling /var/lib trees. Only the
+    # co-located root used by all four host services (#455) can extend the dashboard allowlist, and
+    # never when that parent is itself one of assert_safe_dir's broad roots.
+    monero_dir=$(env_get MONERO_DATA_DIR)
+    tari_dir=$(env_get TARI_DATA_DIR)
+    p2pool_dir=$(env_get P2POOL_DATA_DIR)
+    tor_dir=$(env_get TOR_DATA_DIR)
+    if [ -n "$monero_dir" ] && [ -n "$tari_dir" ] && [ -n "$p2pool_dir" ] && [ -n "$tor_dir" ]; then
+        shared_root=$(dirname "$monero_dir")
+    else
+        shared_root=""
+    fi
+    if [ -n "$shared_root" ] && [ "$(dirname "$tari_dir")" = "$shared_root" ] &&
+        [ "$(dirname "$p2pool_dir")" = "$shared_root" ] &&
+        [ "$(dirname "$tor_dir")" = "$shared_root" ]; then
+        shared_root=$(realpath -m -- "$shared_root" 2>/dev/null) || shared_root=""
+        [ -n "$shared_root" ] && ! _data_dir_is_broad_root "$shared_root" && allowed_roots+=("$shared_root")
+    fi
+    local ddpath dest dest_real root root_real ok_root changed_paths
+    control_validate_data_dir_overlaps "$staged" || return 1
+    changed_paths=$(control_changed_config_paths "$staged")
+    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir tor.data_dir dashboard.data_dir; do
+        printf '%s\n' "$changed_paths" | grep -qxF "$ddpath" || continue
+        dest=$(jq -r --arg p "$ddpath" 'getpath($p/".") // empty' "$staged" 2>/dev/null)
+        # These exact values resolve to stack-owned defaults. apply's assert_safe_dir has already
+        # rejected relative paths and traversal during the dry-run that precedes this helper.
+        case "$dest" in "" | auto | DYNAMIC_DATA | DYNAMIC_HOST | DYNAMIC_ID) continue ;; esac
+        dest_real=$(realpath -m -- "$dest" 2>/dev/null) || dest_real=""
+        if [ -z "$dest_real" ]; then
+            printf 'this move sends %s to a path the host cannot resolve safely. %s' "$ddpath" "$(_control_host_remedy)"
+            return 1
+        fi
+        ok_root=0
+        for root in "${allowed_roots[@]}"; do
+            root_real=$(realpath -m -- "$root" 2>/dev/null) || continue
+            case "$dest_real/" in "$root_real"/*) ok_root=1 && break ;; esac
+        done
+        if [ "$ok_root" -eq 0 ]; then
+            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or the dedicated parent shared by Monero, Tari, P2Pool, and Tor. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
+            return 1
+        fi
+    done
+    return 0
 }

@@ -41,6 +41,12 @@ resolve_worker_target() { # <worker-name> <verb-for-the-host-missing-message, e.
         RESOLVE_WORKER_ERR="worker '$worker' has no token in workers.list[] — the rig's control API is bearer-mandatory."
         return 1
     fi
+    # Re-resolve at the point of use. A target that became local after its descriptor was approved
+    # must not receive a root-runner request or the masked bearer.
+    if _control_host_is_internal "$host"; then
+        RESOLVE_WORKER_ERR="worker '$worker' resolves inside this host's own network — its control address must be a distinct rig."
+        return 1
+    fi
     RESOLVED_HOST="$host" RESOLVED_CPORT="$cport" RESOLVED_TOKEN="$token"
     return 0
 }
@@ -107,10 +113,14 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
     # POST the change to the rig's control API. Direct LAN dial (like the read path) — NOT Tor: the rig
     # is an operator-set host on the mining LAN, not clearnet. The token rides one header, never the
     # URL, process argv, the result, or the audit log.
-    local url="http://$host:$cport/apply" bodyf="$cdir/staged/.$id.body" code
+    local url="http://$host:$cport/apply" bodyf="$cdir/staged/.$id.body" code curl_pin
+    if ! curl_pin=$(_control_worker_curl_pin "$host" "$cport"); then
+        _wa_reject "worker '$worker' no longer resolves to a distinct rig address — nothing was dialed."
+        return 0
+    fi
     if ! code=$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "$token" | jq -Rs .)" |
         curl -sS -o "$bodyf" -w '%{http_code}' --max-time 15 --max-filesize "$CURL_CAP_SMALL" \
-            --config - -H "Content-Type: application/json" --data "$changes" "$url" 2>/dev/null); then
+            --resolve "$curl_pin" --config - -H "Content-Type: application/json" --data "$changes" "$url" 2>/dev/null); then
         rm -f "$bodyf"
         _wa_fail "could not reach worker '$worker' control API at $host:$cport — nothing was applied."
         return 0
@@ -138,9 +148,13 @@ control_worker_apply() { # <claimed-file> <id> <actor> <control-dir>
     while [ "$SECONDS" -lt "$deadline" ]; do
         sleep 2
         sbody="$cdir/staged/.$id.status"
+        if ! curl_pin=$(_control_worker_curl_pin "$host" "$cport"); then
+            _wa_fail "worker '$worker' changed to a local address while its change was pending — status was not fetched."
+            return 0
+        fi
         if ! scode=$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "$token" | jq -Rs .)" |
             curl -sS -o "$sbody" -w '%{http_code}' --max-time 10 --max-filesize "$CURL_CAP_SMALL" \
-                --config - "http://$host:$cport/status" 2>/dev/null); then
+                --resolve "$curl_pin" --config - "http://$host:$cport/status" 2>/dev/null); then
             rm -f "$sbody"
             continue
         fi
@@ -256,10 +270,14 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
     # POST the upgrade to the rig's control API — direct LAN dial like worker-apply, NOT Tor. The
     # body carries the HOST-derived tag only; the token rides one stdin-fed header, never argv,
     # the URL, or the result.
-    local url="http://$host:$cport/upgrade" bodyf="$cdir/staged/.$id.body" code
+    local url="http://$host:$cport/upgrade" bodyf="$cdir/staged/.$id.body" code curl_pin
+    if ! curl_pin=$(_control_worker_curl_pin "$host" "$cport"); then
+        _wu_reject "worker '$worker' no longer resolves to a distinct rig address — nothing was dialed."
+        return 0
+    fi
     if ! code=$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "$token" | jq -Rs .)" |
         curl -sS -o "$bodyf" -w '%{http_code}' --max-time 15 --max-filesize "$CURL_CAP_SMALL" \
-            --config - -H "Content-Type: application/json" \
+            --resolve "$curl_pin" --config - -H "Content-Type: application/json" \
             --data "$(jq -n --arg v "$tag" '{version:$v}')" "$url" 2>/dev/null); then
         rm -f "$bodyf"
         _wu_fail "could not reach worker '$worker' control API at $host:$cport — nothing was changed."
@@ -291,9 +309,13 @@ control_worker_upgrade() { # <claimed-file> <id> <actor> <control-dir>
     while [ "$SECONDS" -lt "$deadline" ]; do
         sleep 5
         sbody="$cdir/staged/.$id.status"
+        if ! curl_pin=$(_control_worker_curl_pin "$host" "$cport"); then
+            _wu_fail "worker '$worker' changed to a local address while its upgrade was pending — status was not fetched."
+            return 0
+        fi
         if ! scode=$(printf 'header = %s\n' "$(printf 'Authorization: Bearer %s' "$token" | jq -Rs .)" |
             curl -sS -o "$sbody" -w '%{http_code}' --max-time 10 --max-filesize "$CURL_CAP_SMALL" \
-                --config - "http://$host:$cport/status" 2>/dev/null); then
+                --resolve "$curl_pin" --config - "http://$host:$cport/status" 2>/dev/null); then
             rm -f "$sbody"
             continue
         fi

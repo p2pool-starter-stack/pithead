@@ -84,34 +84,24 @@ The stack's defaults:
   inside the window, a compromised container that can write the spool can time the reboot
   itself — the TTL bounds that exposure rather than removing it. Enabling the
   channel without a dashboard password is a validation error, on a published onion it additionally
-  requires Tor client authorization, and every mutation is audited host-side. Commits are default-denied against an explicit allowlist. Low-risk
-  operational settings commit directly; a small set of operationally-disruptive ones — data-directory
-  moves, the stratum port, enabling clearnet initial sync, enabling pruning, and the remote Monero
-  and Tari **node endpoints** (#1888) — commit only behind a typed confirmation in the dashboard,
-  and only in that direction. A node-endpoint change carries a second, non-cosmetic gate: the host
+  requires Tor client authorization, and every mutation is audited host-side. Low-risk operational
+  settings commit directly; every other reference setting commits behind a typed confirmation in
+  the dashboard. Dashboard authentication is the access-control perimeter. Typed `APPLY` and payout
+  suffixes protect against mistakes, not a compromised dashboard process, which can write both its
+  request and its confirmation. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. The endpoints are address identity, not secrets — the remote node's RPC
-  username and password stay in the never-committable set below. A dashboard-confirmed
-  data-directory move is further held to an **allowlist** (#728): the new location must sit under the
+  a node that is not there. A dashboard-confirmed data-directory move is further held to an
+  **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI
   only. The host CLI keeps its wider blocklist check — a shell operator already has filesystem-wide
-  reach. Everything else is refused in
-  every direction, as is anything the change preview flags destructive (including the heavy direction
-  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The security
-  perimeter — wallets and view keys, dashboard auth and onion exposure, the control channel itself,
-  the Tor egress firewall, binds, and every credential —
-  is never dashboard-committable, with or without the typed confirmation. A key added in the
-  future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
-  edits must be applied from the host CLI, or on an appliance from a configuration stick.
-  **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
-  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
-  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
-  confirmation rather than a second identity — the same self-approval shape this perimeter exists
-  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
-  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
-  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
-  second identity that a future approval tier could rejoin once one exists.
+  reach. An authenticated dashboard session can repoint payouts, credentials, onion exposure, the
+  control channel, and the Tor egress firewall. The operator owns that exposure, including password
+  strength and how the dashboard is exposed over Tor.
+  Per-rig worker descriptors use the JSON editor and the same confirmation path after the host's
+  SSRF checks. The configuration-stick-only paths remain `dashboard.auth.password` and the
+  `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms; `ssh.*` is
+  absent from release images.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the
@@ -192,38 +182,20 @@ more, and `telegram.control` is no longer a config key — `apply` drops it from
 upgrade.
 
 **What this costs.** The Telegram tap was the only second identity on a sensitive config commit.
-A sensitive change is still gated by the never-set perimeter below, by the default-deny env
-allowlist, and by a typed `APPLY` for a disruptive change. The payout-suffix retype is no longer
-part of that list: since the 2026-09-13 perimeter audit, a payout address is refused by the
-allowlist outright, so the suffix comparison is never reached on a commit and the field is not
-offered in the editor. The
-helper stays, and stays tested, for a future tier with a real second identity behind it. What
-remains are typo protection and deliberate friction, **not** a second identity: a compromised
-dashboard session
-that can set a field can also fill the confirm box. A second factor may return later through a
-channel designed for it; Telegram was not that channel. The likeliest such channel is the phone
-client sketched in
-[p2pool-starter-stack/.github#6](https://github.com/p2pool-starter-stack/.github/issues/6), whose
-open question — whether the app carries the dashboard's own onion client-auth key or a scoped,
-revocable token minted for the device — is the same question a second identity here has to answer.
-Until something answers it, treat every tier below the physical-presence boundary as reachable by a
-compromised dashboard container, and keep the tiers small on that basis.
+Issue #1959 deliberately does not replace it: dashboard authentication is the access-control perimeter,
+and every reference value below the physical-presence boundary is reachable through the dashboard.
+Typed `APPLY`, the approval envelope and payout-suffix checks are typo protection, not proof of who
+asked; a compromised dashboard can write every one of them into its own request. The audit records
+the signed-in actor but cannot prove that actor approved a request created after compromise.
 
-**Removing it opened a hole, and how it was closed.** The paragraph above names the default-deny
-env allowlist as a gate on a sensitive change. For one day — between #2076 merging on 2026-09-11
-and the 2026-09-13 perimeter audit closing it — it was not one. #1978 had replaced the allowlist's
-outright refusal of an unlisted env key with "this needs
-the approval tier", so that every configuration leaf had *some* dashboard route; at the time that
-tier was the Telegram tap. #2076 removed the tap and left the typed envelope alone in the tier —
-and the dashboard container writes its own request spool, so it could supply its own `actor`, its
-own `APPLY`, and its own payout suffix. Measured on the released code, a request written straight
-into the spool applied a Monero payout-wallet swap, landing in `config.json` and `.env`. The
-approval tier is now a **short named list** (`CONTROL_DASHBOARD_APPROVAL_KEYS`, mirrored by
-`control_service.APPROVAL_ENV_KEY_PATHS`) rather than "every leaf not otherwise classified", so a
-key nobody enumerated fails closed again and the perimeter below is true as written. What remains
-true, and is the reason that tier is kept deliberately small: **anything reachable through the
-approval envelope is reachable by a compromised dashboard container**, because the envelope is a
-typed confirmation, not proof of who asked.
+The host still validates the staged configuration, address checksums, worker targets, data-root
+destinations and node reachability. Payout changes also retain detection: the wallet-change event
+and clearnet-exposure event cannot be disabled from the dashboard, and a payout-address change
+cannot share a commit with `dashboard.data_dir`, so a new database cannot silently seed a changed
+wallet as its baseline through the supported commit path. This is not an
+RCE-proof tripwire: a process that fully controls the dashboard can also rewrite its writable
+database or suppress a notifier that runs in that process. The physical-presence alarm toggles and
+preserved baseline protect normal configuration commits; they do not create an independent monitor.
 
 ### Secret trust boundary for dashboard config editing
 
@@ -232,15 +204,21 @@ on, the host renders a **pre-masked copy** of the config into the control spool 
 secret leaf (node credentials, the stratum and dashboard passwords, the Telegram token, the
 Healthchecks ping URL) already replaced by a sentinel — and the editor form prefills from that
 copy, mounted read-only. An untouched secret rides back to the host as the same sentinel, and the
-host swaps it for the live value when it stages the intent, so the container never holds a secret
-the operator didn't just type into the form. A full backend compromise of the dashboard container
-can therefore read masked config, results, and the audit log, and *ask* to change an allowlisted
-key. It also sees the read-only mutation-lock inode and its non-secret holder record so its
-container start/stop requests can serialize with host CLI mutations. Read-only prevents it from
-rewriting the record, not from holding the advisory lock: a compromised dashboard can make host
-mutations time out, an availability impact. Host-side staged copies, which do carry the merged
-secrets, live outside every mount and are written mode 600. Still treat the container as semi-trusted
-and keep the onion behind Tor client authorization: the request spool remains a mutation-request
-surface.
+host swaps it for the live value when it stages the intent, so the editor and browser never receive
+the existing value from this path. Endpoint-coupled sentinels are restored only while their worker,
+Monero RPC, or ntfy destination is unchanged; a repoint requires an explicit credential. Host-side
+staged copies, which do carry merged secrets, live outside every mount and are written mode 600.
+
+This masking is not a process-isolation claim. The running dashboard necessarily receives the
+runtime credentials it consumes — node authentication, the fleet worker bearer, notification
+tokens and capability URLs — through its environment, plus derived per-worker read credentials.
+A full backend compromise can read those values, rewrite the dashboard database, suppress its
+notifiers, and ask to replace any configuration value below the physical-presence boundary. It
+also sees the read-only mutation-lock inode and its non-secret holder record so its container
+start/stop requests can serialize with host CLI mutations. Read-only prevents it from rewriting
+the record, not from holding the advisory lock: a compromised dashboard can make host mutations
+time out, an availability impact. Treat the container as semi-trusted and keep the onion behind
+Tor client authorization: the request spool is a mutation-request surface, while masking protects
+the editor/browser and raw-config mount boundary.
 
 Report any gap in these.

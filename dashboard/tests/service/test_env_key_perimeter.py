@@ -1,28 +1,13 @@
-"""The dashboard-committability security perimeter (#1094 / #1069 W9): checks pithead's
-editable/confirm allowlists and the dashboard's EDITABLE/CONFIRM_ENV_KEY_PATHS independently
-against the keys that must never be dashboard-committable at all."""
+"""Sensitive env keys must never enter the direct-commit dashboard tier."""
 
 import pytest
 
 from mining_dashboard.service import config_operations, control_service
 
-# The security perimeter (#1094, #1069 W9): env keys that must never be dashboard-committable at
-# all. SECURITY.md:99-100 is the authority for what belongs here — "wallets and view keys,
-# dashboard auth and onion exposure, the control channel itself, the Tor egress firewall, node
-# endpoints, binds, every credential, and the per-rig hosts and tokens" (the last category is
-# enforced elsewhere: worker descriptors are refused outright, per control_service.py's
-# EDITABLE_ENV_KEY_PATHS docstring, so they never reach this env-key-path list at all). The two
-# drift tests above only catch the editable/confirm allowlists' two hand-kept copies disagreeing
-# with EACH OTHER; a key added to BOTH copies at once (#1094's mutation proof: DASHBOARD_AUTH_HASH_B64,
-# or DASHBOARD_HOST, added to pithead's list and EDITABLE_ENV_KEY_PATHS together) leaves them in
-# perfect agreement and both drift tests stay green. This list is the claim those tests can't make:
-# not "do the two copies match" but "is this key committable at all".
-#
-# THIS LIST AND SECURITY.md:99-100 MUST STAY IN SYNC: a perimeter category added to the doc without
-# a matching entry here is a silent gap; an entry here with no textual basis in SECURITY.md is
-# scope creep on a security-critical list. SECURITY.md's enumeration is prose, not a machine-
-# readable key list, so the sync is manual — re-read both on any change to either.
-NEVER_COMMITTABLE_ENV_KEYS = frozenset(
+# Security-sensitive rendered keys that may confirm under #1959 but must never slip into the
+# direct-commit tier. Derived password/address rows remain here even when their source path is
+# physical-presence-only or provisioned rather than independently editable.
+SENSITIVE_ENV_KEYS = frozenset(
     {
         "DASHBOARD_AUTH_USER",
         "DASHBOARD_AUTH_HASH_B64",
@@ -39,17 +24,6 @@ NEVER_COMMITTABLE_ENV_KEYS = frozenset(
         "MONERO_NODE_PASSWORD",
         "WALLET_RPC_PASSWORD",
         "TARI_VIEW_KEY",
-        # NODE ENDPOINTS LEFT THIS LIST ON 2026-09-06 (#1888, operator ruling) — MONERO_NODE_HOST,
-        # MONERO_RPC_PORT, MONERO_ZMQ_PORT and TARI_GRPC_ADDRESS. The threat they were listed for is
-        # unchanged and still real: "where the stack points its Monero/Tari RPC clients —
-        # dashboard-committable, this repoints mining traffic to an attacker's node." What changed
-        # is that refusing them outright was not a defence on an appliance, it was a dead end: there
-        # is no host shell there, so the setting became unchangeable for the life of the machine
-        # (#786/#1821). They are now the confirm-gated tier, behind the control channel's own auth
-        # plus a host-side reachability probe on the staged endpoint (43-control-approval-and-
-        # preview.sh). Their RPC LOGIN CREDENTIALS — MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD,
-        # still above — did NOT move, and neither did the binds below: address identity is not a
-        # secret, and a listen address is not an endpoint.
         # Binds (SECURITY.md's "binds"): the RPC/gRPC listen addresses. DASHBOARD_HOST (above)
         # covers the dashboard's own bind; these are the merge-mined services' local listeners.
         "MONERO_RPC_BIND",
@@ -138,11 +112,8 @@ def test_confirm_paths_offers_a_node_endpoint_only_while_that_chain_is_remote():
     assert "monero.remote.host" not in control_service._confirm_paths({})
 
 
-def test_perimeter_env_keys_never_committable_from_either_copy():
-    """#1094 / #1069 W9: names the security perimeter directly (SECURITY.md:99-100) and checks each
-    of the four allowlists (pithead's editable + confirm sets, EDITABLE_ENV_KEY_PATHS +
-    CONFIRM_ENV_KEY_PATHS) against it independently, so a key added to every copy at once still
-    fails — unlike the drift tests above, which compare the copies only to each other."""
+def test_perimeter_env_keys_are_never_direct_commit():
+    """Sensitive settings may confirm, but never bypass review as ordinary edits (#1959)."""
     import re
     from pathlib import Path
 
@@ -152,19 +123,11 @@ def test_perimeter_env_keys_never_committable_from_either_copy():
         pytest.skip("pithead CLI not present in this test context (dashboard-only image)")
     pithead = pithead_path.read_text()
     editable_m = re.search(r"CONTROL_DASHBOARD_EDITABLE_KEYS='([^']*)'", pithead)
-    confirm_m = re.search(r"CONTROL_DASHBOARD_CONFIRM_KEYS='([^']*)'", pithead)
-    approval_m = re.search(r"CONTROL_DASHBOARD_APPROVAL_KEYS='([^']*)'", pithead)
-    assert editable_m and confirm_m and approval_m, (
-        "could not find pithead's editable/confirm/approval allowlists"
-    )
+    assert editable_m, "could not find pithead's editable allowlist"
     pithead_editable = set(editable_m.group(1).split())
-    pithead_confirm = set(confirm_m.group(1).split())
-    pithead_approval = set(approval_m.group(1).split())
     py_editable = set(control_service.EDITABLE_ENV_KEY_PATHS.keys())
-    py_confirm = set(control_service.CONFIRM_ENV_KEY_PATHS.keys())
-    py_approval = set(config_operations.APPROVAL_ENV_KEY_PATHS.keys())
 
-    for key in NEVER_COMMITTABLE_ENV_KEYS:
+    for key in SENSITIVE_ENV_KEYS:
         # A perimeter entry whose spelling no longer exists in the codebase guards nothing: the
         # real (renamed) key could be added to every allowlist while this list stays green. Anchor
         # each entry to the pithead text so a rename kills the test, not the protection.
@@ -172,11 +135,4 @@ def test_perimeter_env_keys_never_committable_from_either_copy():
             f"{key} appears nowhere in pithead — dead perimeter entry (key renamed?)"
         )
         assert key not in pithead_editable, f"{key} in pithead's CONTROL_DASHBOARD_EDITABLE_KEYS"
-        assert key not in pithead_confirm, f"{key} in pithead's CONTROL_DASHBOARD_CONFIRM_KEYS"
-        # The third tier (2026-09-13 perimeter audit). Until it became a NAMED list this assertion could not be made at
-        # all: the tier was "everything not otherwise classified", so every key below was in it and
-        # the perimeter this file names was self-approvable from the dashboard's own request spool.
-        assert key not in pithead_approval, f"{key} in pithead's CONTROL_DASHBOARD_APPROVAL_KEYS"
         assert key not in py_editable, f"{key} in control_service.EDITABLE_ENV_KEY_PATHS"
-        assert key not in py_confirm, f"{key} in control_service.CONFIRM_ENV_KEY_PATHS"
-        assert key not in py_approval, f"{key} in config_operations.APPROVAL_ENV_KEY_PATHS"
