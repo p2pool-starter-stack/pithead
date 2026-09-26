@@ -199,8 +199,8 @@ appliance whose compose was rendered ahead of its pinned images), the check repo
 dialing the API — a caveat, not a bug, since it only trades a permanent false ✗ for a rare false ✓
 on a release you're already about to update past. A service whose check hasn't passed yet shows as
 starting, which is normal for a minute after a start or upgrade. The Monero payout wallet stays
-healthy for its first scan while its RPC is busy, but only while its scan marker is less than 24
-hours old. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
+healthy while it scans after a start (the first scan, or the catch-up of a reopened wallet) and its
+RPC is busy, but only while its scan marker, written at each start, is less than 24 hours old. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
 seconds in the wallet-rpc environment. The Tari payout wallet remains process-
 liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
 detects a crashed wallet, not scan progress.

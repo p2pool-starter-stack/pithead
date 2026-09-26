@@ -155,6 +155,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **The Monero payout wallet stays healthy while a restarted wallet catches up
+  ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
+  only to a newly created wallet. A reopened wallet that had to catch up, for example after the
+  Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
+  reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
+  grace.
+
 - **An unreachable image registry is no longer reported as a bad signature
   ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
   reach the registry, for example `no route to host`, the start and upgrade paths still refuse to
