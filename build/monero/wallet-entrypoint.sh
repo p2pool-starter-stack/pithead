@@ -12,7 +12,7 @@ set -eu
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
 WALLET_FILE="$WALLET_DIR/payout-wallet"
 # Marker (#718): touched when a wallet is created or reopened (#2767), cleared by the healthcheck on
-# the first successful RPC. While it exists, an unreachable RPC means "still on the initial scan" — which for
+# the first successful RPC. While it exists, an unreachable RPC means "still scanning" — which for
 # the genesis default is HOURS, during which monero-wallet-rpc is single-threaded and won't answer.
 # It lives in the volume so it persists across container recreates until the scan actually finishes.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"

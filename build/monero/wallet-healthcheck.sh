@@ -9,8 +9,8 @@
 # plain RPC check flaps unhealthy after the 2m start_period and spams stack-health alerts for the
 # whole first scan. So: a marker file (`.payout-scanning`, written by the entrypoint on wallet
 # creation and on a reopen's catch-up scan (#2767), living in the volume so it survives recreates)
-# means "still scanning" — but only for PAYOUT_SCAN_GRACE_SEC (24h by default). The first time the RPC answers, the scan has
-# caught up, so we clear the marker and are strict from then on. A marker that outlives the grace,
+# means "still scanning" — but only for PAYOUT_SCAN_GRACE_SEC (24h by default). The first time
+# the RPC answers, the scan has caught up, so we clear the marker and are strict from then on. A marker that outlives the grace,
 # or a later RPC failure, is a real fault rather than scan tolerance.
 set -u
 
