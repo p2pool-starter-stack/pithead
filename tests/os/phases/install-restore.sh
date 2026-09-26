@@ -8,7 +8,10 @@ _phase_install_restore() {
     # disaster-recovery loop #908 (export) opens and this closes. Real archive, real upload
     # over curl -F, real decrypt+extract on the guest, and the identity (wallet, Tor onion)
     # must survive — proof the "restored config drives provisioning as if pre-seeded" promise
-    # actually holds, which nothing below tier 4 can prove.
+    # actually holds, which nothing below tier 4 can prove. Since #1854 the installer applies the
+    # restore to the target's data before it ever boots, so the verdicts in
+    # install-restore-preboot.sh inspect both powered-off disks: no restore secret on the target
+    # ESP or data, none left on the installer medium.
     #
     # The keep-reinstalled machine above sits at the WIZARD — a reinstall always returns
     # there (keep preserves /data, not provisioned-ness), and `pithead backup` rightly
@@ -216,8 +219,14 @@ _phase_install_restore() {
             rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
             return 1
         }
+        _ssh "mount -o remount,rw /boot/efi 2>/dev/null || true; printf '%s' '{\"fixture\":\"fleet-config-secret\"}' >/boot/efi/pithead-config.json; printf '%s' 'pit-FLEET1' >/boot/efi/pithead-token.txt; printf '%s' '{\"access_token\":\"0123456789abcdef0123456789abcdef\",\"stratum_password\":\"fleet-rig-secret\"}' >/boot/efi/pithead-rig.json; chmod 600 /boot/efi/pithead-config.json /boot/efi/pithead-token.txt /boot/efi/pithead-rig.json" || {
+            bad "restore leg: could not seed unrelated installer credentials"
+            rm -f "$jar" "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
         # The combined leg: ONE upload carries the archive, its passphrase, AND the disk choice —
-        # the same _gate_install_request every other installer submission takes.
+        # the same _gate_install_request every other installer submission takes. The fleet
+        # pre-seeds seeded just above must stay on the installer and never reach the restored target.
         scode=$(curl -sSk -b "$jar" \
             -F "archive=@$restore_archive" -F "passphrase=$restore_pass" \
             -F "disk=vda" -F "confirm=vda" -F "wipe=keep" \
@@ -265,6 +274,14 @@ _phase_install_restore() {
             return 1
         fi
         vm_destroy_or_refuse || return
+        _restore_target_preboot_verdict "$restore_target" || {
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
+        _restore_installer_preboot_verdict "$DISK" || {
+            rm -f "$target_disk" "$restore_archive" "$restore_target"
+            return 1
+        }
         : >"$SERIAL"
         kvm_preflight || exit 1 # #1059: never boot a 16 GiB guest the host cannot back
         virt-install --name "$VM" --memory 16384 --vcpus 4 --cpu host-passthrough \
@@ -286,8 +303,8 @@ _phase_install_restore() {
             return 1
         }
         ok "restore leg: the restored machine boots from the fresh disk"
-        # The carried restore lands during firstboot and .env only exists once render has run —
-        # wait for provisioning, don't race it.
+        # The restore finishes on the target's first boot (pithead-boot's restore-pending step) and
+        # .env only exists once render has run — wait for provisioning, don't race it.
         if _ssh "for i in \$(seq 90); do [ -f /data/pithead/config.json ] && exit 0; sleep 2; done; exit 1"; then
             ok "restore leg: the carried archive provisioned the machine — config.json is back"
         else
@@ -344,22 +361,7 @@ _phase_install_restore() {
             done
             ;;
         esac
-        # #2626: the archive's dashboard DB carries the source's sync-gate latch. The marker must
-        # land in the dashboard's OWN /data mount, and the dashboard must hold the miner on this
-        # guest's unsynced chains instead of inheriting a release — for every case in this loop.
-        local dash_data gtries=0 gate_seen=0
-        dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
-        { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
-            ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
-            bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
-        while [ "$gtries" -lt 30 ] && [ "$gate_seen" -eq 0 ]; do
-            _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
-            [ "$gate_seen" -eq 1 ] || { sleep 10 && gtries=$((gtries + 1)); }
-        done
-        [ "$gate_seen" -eq 1 ] &&
-            ok "restore leg ($restore_case): the restored dashboard holds the miner on this machine's unsynced chains (#2626)" ||
-            bad "restore leg ($restore_case): the restored dashboard never held the miner — a carried sync-gate release (#2626)"
-
+        restore_sync_gate_verdict "$restore_case" # #2626, every case in this loop
         if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
             ok "restore leg: $verdict"
         else
@@ -386,11 +388,7 @@ _phase_install_restore() {
             bad "restore leg: restored non-default configuration differs from the v1.20.0 fixture"
         restore_fixture_secret_verdict "$restore_case" "$expected_secrets"
         [ "$restore_case" != n1 ] || restore_fixture_migration_verdict
-        if [ -n "$target_chain_sentinel" ]; then
-            _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
-                ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
-                bad "restore leg: fixture or pre-restore target chain sentinel is missing after restore"
-        fi
+        restore_fixture_chain_verdict "$target_chain_sentinel"
         local new_onion="" tor_hostname=""
         local odeadline
         odeadline=$(($(date +%s) + 600))

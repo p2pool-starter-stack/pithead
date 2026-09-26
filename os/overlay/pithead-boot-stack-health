@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# pithead-boot's stack-health signal (#2383), split from pithead-boot at its file-budget ceiling.
+# pithead-boot's stack-health signal (#2383), split from pithead-boot at its file-budget ceiling,
+# and the URL helpers gate_url builds the dashboard probe with (#1140), split the same way.
 # `status` prints credentials and the remote-access address, so its transient record is 0600.
 BOOT_STATUS_LOG=/run/pithead-boot-status.log
 boot_status_blocking() { # unhealthy/restarting rows as "container NAME: reason" (sync-held #31/#35 excluded)
@@ -33,3 +34,26 @@ gate_ready() { # <http_code> <size_download>
 }
 
 gate_cert_advisory_ready() { gate_cert_advisory && boot_status_ready; }
+
+# dashboard.host is validated as "a hostname or IP address — letters, digits, dots, hyphens, and
+# colons", so HOST_IP can be an IPv6 literal, and these two exist because of what curl does with one:
+#   - a URL needs it bracketed, or the port reads as part of the address;
+#   - `--resolve` cannot take one at all — curl rejects the whole option with "Couldn't parse
+#     CURLOPT_RESOLVE entry", which fails the request, which on this gate means a healthy box never
+#     commits and #1065 reboots it. Measured against curl 8.7, bracketed and unbracketed alike.
+# A literal needs no resolution anyway: the box owns the address. So --resolve is for NAMES, where
+# it is what keeps the dial on loopback instead of depending on the machine resolving its own mDNS
+# name — the one lookup a boot-time health probe must not be hostage to.
+gate_target_url() { # <scheme> <host> <port>
+    case "$2" in
+    *:*) printf '%s://[%s]:%s/' "$1" "$2" "$3" ;;
+    *) printf '%s://%s:%s/' "$1" "$2" "$3" ;;
+    esac
+}
+gate_resolve_spec() { # <host> <port> -> a --resolve spec, or empty when the host needs no lookup
+    case "$1" in
+    *:*) ;;                                          # IPv6 literal
+    *[!0-9.]*) printf '%s:%s:127.0.0.1' "$1" "$2" ;; # a name
+    *) ;;                                            # IPv4 literal
+    esac
+}

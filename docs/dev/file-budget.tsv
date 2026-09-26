@@ -46,7 +46,6 @@ lib/pithead/28-parse-and-validate-config.sh	465
 lib/pithead/33-render-env.sh	483
 lib/pithead/36-quadlet-units.sh	406
 lib/pithead/43-control-approval-and-preview.sh	413
-os/overlay/pithead-boot	407
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
 scripts/watch/trivyignore-watch.sh	599
@@ -63,7 +62,7 @@ tests/os/appliance-approval-verdict.sh	449
 tests/os/appliance-config-approval-leg.sh	432
 tests/os/appliance-xvb-routing-leg.sh	411
 tests/os/failure-evidence.sh	567
-tests/os/phases/install-restore.sh	416
+tests/os/phases/install-restore.sh	414
 tests/os/phases/update.sh	413
 tests/os/provision-browser-submit.sh	407
 tests/stack/appliance/test-appliance-boot-remint.sh	445
@@ -74,7 +73,7 @@ tests/stack/appliance/test-appliance-install.sh	449
 tests/stack/appliance/test-appliance-media.sh	407
 tests/stack/appliance/test-appliance-os-update-verbs.sh	454
 tests/stack/appliance/test-appliance-os-update.sh	457
-tests/stack/appliance/test-appliance-restore.sh	405
+tests/stack/appliance/test-appliance-restore.sh	404
 tests/stack/appliance/test-appliance-rig-miner.sh	466
 tests/stack/control/test-control-add-only-ssrf.sh	447
 tests/stack/control/test-control-upgrade.sh	795

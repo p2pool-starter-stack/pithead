@@ -88,34 +88,50 @@ publish_data_wipe_note() { # <spool-dir>
     wizard_spool_publish "$1" data-wiped.json printf '%s' "$note"
 }
 
-# The restore pre-seed (#909): an installer boot that accepted a backup archive stages it —
-# still encrypted, passphrase beside it — on the target's ESP, and the installed machine's
-# first boot lands here to restore ITSELF: config, Tor onion keys, dashboard database, the
-# whole identity the docs promise survives. Spent on use, accepted or not — the passphrase
-# beside the archive makes the pair plaintext-equivalent and it must not outlive this boot.
-# rc: 0 restored, 1 present but rejected, 2 none.
+# Legacy restore pre-seed (#909): targets written by an older installer may still carry an
+# encrypted archive beside its passphrase on the ESP. Consume and scrub that pair for upgrade
+# compatibility; current installers apply from volatile memory before the target's first boot.
+# rc: 0 restored, 1 present but rejected, 2 none, 3 cleanup unsafe.
 consume_preseed_restore() {
-    local a="$PRESEED_DIR/pithead-restore.enc" pf="$PRESEED_DIR/pithead-restore-pass" pass errf
-    [ -f "$a" ] || return 2
+    local a="$PRESEED_DIR/pithead-restore.enc" pf="$PRESEED_DIR/pithead-restore-pass" pass errf rc=0
+    if [ ! -f "$a" ] || [ ! -f "$pf" ]; then
+        [ -e "$a" ] || [ -L "$a" ] || [ -e "$pf" ] || [ -L "$pf" ] || return 2
+        mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+        if rm -f "$a" "$pf" 2>/dev/null; then
+            warn "An incomplete legacy restore handoff was cleared — submit the backup again."
+            return 1
+        fi
+        warn "Could not clear an incomplete legacy restore handoff — reboot before continuing."
+        return 3
+    fi
     { set +x; } 2>/dev/null # xtrace would print the passphrase below
     pass=$(cat "$pf" 2>/dev/null || true)
     errf=$(mktemp)
-    if restore_apply "$a" "$pass" "$errf"; then
+    restore_apply "$a" "$pass" "$errf" || rc=$?
+    if [ "$rc" = 0 ]; then
         pass=""
         log "Restored this machine from the carried backup archive."
         mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-        rm -f "$a" "$pf" 2>/dev/null ||
-            warn "Could not remove the consumed restore archive from $PRESEED_DIR — it sits beside its passphrase; delete both."
+        rm -f "$a" "$pf" 2>/dev/null || rc=3
+        [ "$rc" = 0 ] || warn "Could not remove every consumed restore carry file — reboot before continuing."
         rm -f "$errf"
-        return 0
+        return "$rc"
     fi
     pass=""
+    if [ "$rc" = 3 ]; then
+        warn "Could not clear temporary restore files safely — reboot before continuing."
+        rm -f "$errf"
+        mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
+        rm -f "$a" "$pf" 2>/dev/null || warn "Could not remove every consumed restore carry file — remove both before leaving the machine unattended."
+        return 3
+    fi
     warn "The carried restore archive was rejected — falling back to the setup page."
     warn "  $(tail -c 200 "$errf" 2>/dev/null | tr -d '[:cntrl:]')"
     rm -f "$errf"
     mount -o remount,rw "$PRESEED_DIR" 2>/dev/null || true
-    rm -f "$a" "$pf" 2>/dev/null || true
-    return 1
+    rm -f "$a" "$pf" 2>/dev/null || rc=3
+    [ "$rc" = 1 ] || warn "Could not remove every rejected restore carry file — reboot before continuing."
+    return "$rc"
 }
 
 # rc: 0 a valid pre-seeded config was installed, 1 one was present but rejected, 2 none.
@@ -275,9 +291,9 @@ prefill_from_previous_install() { # <spool-dir>
 # the wizard's combined submit; both fields are re-validated HERE because they arrive through
 # a web form — the disk against the inventory this host published, the wipe mode against the
 # fixed set. The container asks, the host decides.
-consume_install_request() ( # <spool-dir> [required-wipe]
-    local spool="$1" req="$1/install-request" target wipe err
-    local snap rc=0
+consume_install_request() ( # <spool-dir> [required-wipe] [volatile-restore-carry] [resolved-config]
+    local spool="$1" req="$1/install-request" target wipe err carry="${3:-}" resolved="${4:-$PWD/config.json}"
+    local snap rc=0 install_args
     snap=$(wizard_spool_request "$spool" install-request) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'wizard_spool_clean "${snap%/*}"' EXIT
@@ -297,7 +313,15 @@ consume_install_request() ( # <spool-dir> [required-wipe]
         return 1
     fi
     log "Installing to /dev/$target (data: $wipe) ..."
-    if err=$("$(install_bin)" --target "/dev/$target" --wipe "$wipe" --yes 2>&1); then
+    install_args=(--target "/dev/$target" --wipe "$wipe" --yes)
+    [ -z "$carry" ] || [ ! -f "$carry/archive" ] || install_args+=(--no-preseeds)
+    if err=$("$(install_bin)" "${install_args[@]}" 2>&1); then
+        if [ -n "$carry" ] && [ -f "$carry/archive" ] &&
+            ! err=$(install_restore_to_target "/dev/$target" "$carry" "$resolved" 2>&1); then
+            printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 | wizard_spool_publish "$spool" error.txt cat
+            warn "Install to /dev/$target completed, but its restore failed."
+            return 1
+        fi
         wizard_spool_publish "$spool" installed true
         log "Installed to /dev/$target."
         return 0

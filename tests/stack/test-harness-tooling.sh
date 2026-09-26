@@ -338,7 +338,6 @@ test-appliance-identity-boot.sh|cli_pages
 test-appliance-identity-boot.sh|u
 test-appliance-identity.sh|1
 test-appliance-identity.sh|f
-test-appliance-install-restore.sh|_c
 test-appliance-os-update.sh|RIJ
 test-appliance-os-update.sh|RIS
 test-config.sh|2

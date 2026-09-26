@@ -7,9 +7,9 @@
 # working while Healthchecks, Telegram and XvB all go dark at once. Production once sat that way
 # for six hours. The heal is probe-driven, rate-limited and bounded, so the risk it guards
 # against does not apply the way it does interactively.
-apply_appliance_defaults() {
-    [ -f "$CONFIG_FILE" ] || return 0
-    local tmp
+apply_appliance_defaults() { # [config, default $CONFIG_FILE]
+    local config="${1:-$CONFIG_FILE}" tmp
+    [ -f "$config" ] || return 0
     tmp=$(mktemp) || return 1
     # dashboard.control.enabled: on DIY the operator has a shell, so the config editor is a
     # convenience and stays off. An appliance has NO other way in — no shell, ssh disabled — so
@@ -28,7 +28,7 @@ apply_appliance_defaults() {
         | if .dashboard.control.enabled == null and ((.dashboard.auth.password // "") != "")
           then (.dashboard //= {}) | (.dashboard.control //= {}) | .dashboard.control.enabled = true
           else . end' \
-        "$CONFIG_FILE" >"$tmp" && mv "$tmp" "$CONFIG_FILE"; then
+        "$config" >"$tmp" && mv "$tmp" "$config"; then
         return 0
     fi
     rm -f "$tmp"

@@ -45,9 +45,10 @@ releases the ERASE, so the same ack lands on `installing` and the switch-off ste
 The installation medium runs the whole flow on one page (config + disk + wipe mode in one
 submission, gated server-side), publishes the credentials card BEFORE anything touches the
 disk — the machine powers off after installing, so the page cannot deliver anything after —
-and stages the accepted config onto the target's ESP. The first boot from disk provisions
-headlessly through the pre-seed path; there is no second wizard. A missing ack installs
-nothing: the erase waits for a human, and a timeout hands the form back intact.
+and stages an ordinary accepted config onto the target's ESP. A restore instead remains in
+root-owned volatile storage while the installer applies it directly to target data; first boot
+finishes either path headlessly, with no second wizard. A missing ack installs nothing: the erase
+waits for a human, and a timeout hands the form back intact.
 
 On a reinstall the form opens with the previous machine's answers. When the inventory holds
 exactly one disk that already carries an install, the host mounts its data partition
@@ -223,19 +224,25 @@ it is operator data, and the factory reset is the erase.
 
 ## Restore-at-setup
 
-A third spool channel, beside the config candidate and the rig request: an uploaded encrypted
-backup (`pithead backup`'s own archive format) plus its passphrase, as an alternative to the
-config form. `POST /submit-restore` writes `restore-archive` (binary) and `restore-passphrase`
-(plain, read once) — on the installation medium the disk/wipe fields ride beside them through
-the same side-effect-free disk validation a typed submission takes.
+A third spool channel, beside the config candidate and the rig request: a Pithead backup as an
+alternative to the config form. The established archive formats remain accepted: an encrypted
+`.tar.gz.enc` requires the passphrase shown when the backup was made; a plaintext `.tar.gz`
+requires none. `POST /submit-restore` writes `restore-archive` and the optional, read-once
+`restore-passphrase`. On the installation medium the disk/wipe fields ride beside them through
+the same side-effect-free disk validation a typed submission takes. When setup TLS is
+unavailable, `/api/wizard-state` marks restore unavailable, the page offers no upload control,
+and the restore endpoint refuses a crafted request; reboot after setup TLS is available before
+restoring.
 
 `firstboot_consume_restore` (host-side) does the whole job in one call, staged through a COPY —
 the same "validate before mutating real state" idiom `consume_preseed_config` already uses:
 
-1. Magic-byte format check, then a full-stream integrity verify (decrypt + `tar -tzf`) —
-   identical to `stack_restore`'s own pre-flight — BEFORE anything is extracted.
-2. Reject links, special files and members outside the appliance backup layout before
-   extracting to a private staging tree. The accepted items are `config.json`, `.env`,
+1. Magic-byte format check, then a full-stream integrity verify (decrypt when needed, followed
+   by `tar -tzf`) — identical to `stack_restore`'s own pre-flight — BEFORE anything is
+   extracted.
+2. Read a numeric-owner listing, enforce member and expanded-byte caps, and reject links,
+   special files and members outside the appliance backup layout before extracting to a private
+   staging tree. The accepted items are `config.json`, `.env`,
    `Caddyfile`, and the `data/{tor,dashboard,monero,tari,p2pool}` trees, all rooted at a single
    directory found from where `config.json` sits in the archive — the box that made the backup's
    own working directory, not necessarily this one (a supported prior release's Compose bundle
@@ -254,17 +261,47 @@ the same "validate before mutating real state" idiom `consume_preseed_config` al
    within the upload cap; normal backups exclude it — MERGE into whatever chain data is already
    on this box instead, an existing file winning on a name collision. The [shared restore
    collision rule](../operations.md#restore-collision-rules) explains why this differs from
-   `pithead restore`. On a `wipe=keep` reinstall, `pithead-install` clears the target's prior
-   `config.json` and `machine-role` before rebooting when it carries an accepted restore. Those
-   markers would otherwise skip the firstboot service entirely; chain data stays intact for the
-   merge. The firstboot loop then reaches this door unconditionally before checking for a config;
+   `pithead restore`. On a `wipe=keep` reinstall, the installer's restore replaces the target's
+   prior `config.json` and `machine-role` on its data partition, and chain data stays intact for
+   the merge. The firstboot loop reaches this door unconditionally before checking for a config;
    `prepare_directories` (run by the `setup` it feeds) unconditionally re-chowns every data dir,
    so restore does not need to.
 
 A rejected archive (bad passphrase, wrong format, failed integrity, unparseable config) writes
-`error.txt` and returns 1 — nothing already on disk is touched, and the
-page falls back to the form exactly like a rejected typed config. The passphrase file is deleted
-at the top of the call, accepted or not; it never outlives the attempt.
+`error.txt` and returns 1 — nothing already on disk is touched, and the page falls back to the
+form exactly like a rejected typed config. Only encrypted archive bytes may occupy the ordinary
+spool while the request is pending. A plaintext archive, its optional passphrase, page write
+temporaries, decrypted stages, validated installer candidate and credentials card remain in
+root-owned volatile storage. The ready marker is published last, so the host ignores a partial
+generation; another upload is refused while that request or the host's `restore-inflight`
+acknowledgement exists. Server restart removes crash-left page temporaries, and firstboot restart
+removes private snapshots, named submissions, stages, candidates, cards and handoff files before
+any early exit. A cleanup failure publishes no success marker, stops first boot until reboot,
+and reports only the class of file that could not be cleared.
+
+For an install-to-disk restore, the validated config used to render the credentials card, the
+card itself, the passphrase, a plaintext upload, and decrypted staging remain in root-owned
+tmpfs. An encrypted upload stays in the private ordinary spool while it is pending, then moves
+to the volatile handoff after acceptance. The installer creates the target's normal data
+partition and applies the restore there; no archive or passphrase is copied to the public ESP.
+Restore installs leave unrelated config, token, and rig pre-seeds on the installer medium and pass
+`--no-preseeds` so the generic installer does not copy them to the target. The installed system
+carries only a non-secret `.restore-pending` marker, which makes its first boot finish setup
+before the ordinary render. An interrupted write retains a non-secret `.restore-incomplete`
+marker and first boot fails closed until the restore is submitted again.
+Success and rejection both scrub legacy ESP carry files; a failed scrub stops first boot rather
+than provisioning with credentials still on the ESP. If an accepted restore returns to the form,
+its in-flight marker and volatile carry are cleared, and only the existing secret-stripped retry
+fields reach persistent `last-attempt.json`; credentials must be entered again. Publication or
+cleanup failure is shown without echoing credentials, and the installer stops instead of repeating
+an install after a credential cleanup failure.
+
+A RigForge-only rig (#1836) has no `config.json` and no dashboard — `record_machine_role` removes
+`rig.json` on any non-rig role and a rig never gets a `config.json` in the first place, so
+`stack_backup` has nothing to archive there (`backup_require_items` refuses without one). Restore
+does not cover that role: the credentials card preserves the rig's control access token, while an
+optional Stratum password is separate and must be retained or entered again. Getting a rig role
+back is Set up again, not a restore upload.
 
 Deliberately reuses `stack_backup`'s archive format (#786 sub-issue A) rather than inventing a
 second one, and deliberately does NOT reuse `stack_restore` directly — that CLI command mutates
@@ -468,11 +505,11 @@ had a gap between it and the next one.
 | pure logic | `tests/frontend/config/configsync.test.mjs` | path access, typed coercion, address/pair guidance |
 | view rendering | `tests/frontend/wizard/wizard.test.mjs` (probes) | each view given its props |
 | **app orchestration** | `tests/frontend/wizard/wizard-{state,install,submit}.test.mjs` (stubbed server) | **stage mapping, the handoff arriving through the poll, refresh-mid-provision, rejection round-trip, request bodies** |
-| host logic | `tests/stack/run.sh` | cert minting + idempotence, remote-node preflight, pre-seed, install requests, the digest-keyed image loader, reinstall pre-fill (secret strip + fail-open), the local-miner legs (derived config, sync seeding, boot-leg wiring), the rig-role legs (pool discovery publisher, rig request consumption, the role marker, the rig boot leg's derived config + prebuilt-first + volatile journal + refusals, and both unit conditions), restore-at-setup (`firstboot_consume_restore`: accept against a genuine backup archive, wrong passphrase, missing passphrase, oversize, malformed archive, empty spool), the data-wipe note (`data_wipe_note` reads the ESP's dated log and its one-shot `.pending` marker, consumed on read, and caches the result in a tmpfs file for the rest of the boot — a shell variable would not survive the `$(...)` subshell every caller reads it through — so a wipe surfaces once per boot, never forever after; `publish_data_wipe_note` carries it to the spool, `check_data_wipe_note` is the `doctor` line) |
+| host logic | `tests/stack/run.sh` | cert minting + idempotence, remote-node preflight, pre-seed, install requests, the digest-keyed image loader, reinstall pre-fill (secret strip + fail-open), the local-miner legs (derived config, sync seeding, boot-leg wiring), the rig-role legs (pool discovery publisher, rig request consumption, the role marker, the rig boot leg's derived config + prebuilt-first + volatile journal + refusals, and both unit conditions), restore-at-setup (`firstboot_consume_restore`: accept against a genuine backup archive, wrong passphrase, missing passphrase, oversize, malformed archive, empty spool; installer restore applies from volatile carry to target data and reports cleanup failure without exposing the passphrase), the data-wipe note (`data_wipe_note` reads the ESP's dated log and its one-shot `.pending` marker, consumed on read, and caches the result in a tmpfs file for the rest of the boot — a shell variable would not survive the `$(...)` subshell every caller reads it through — so a wipe surfaces once per boot, never forever after; `publish_data_wipe_note` carries it to the spool, `check_data_wipe_note` is the `doctor` line) |
 | the artifact | `tests/os/verify-image.sh` | both role paths present in the shipped image: the boot script's fork, the unit conditions that admit each role, the baked prebuilt, no swap anywhere |
 | the real thing | `tests/os/run.sh --phase provision` | token from the console → submit → handoff → ack → running stack → built-in miner up and its shares accepted → reboot through a corrupted Caddyfile → no failed units → slot self-commit → miner back |
 | the other real thing | `tests/os/run.sh --phase rig` | the same page answered `RigForge` → rig card with no login → mining from the byte-identical baked binary → **no containers at all** → reboot owned by `pithead-boot`, wizard closed → slot self-commit on an unanswered pool → A/B install, uncommitted rollback, self-commit, persistence |
-| the restore leg | `tests/os/run.sh --phase install` | a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, uploaded through `/submit-restore` instead of the form onto an existing appliance disk — the running wallet, Tor identity and opaque RPC/onion secrets must match the prior-release fixture, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both its chain sentinel and the target's pre-restore sentinel must survive, and its removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
+| the restore leg | `tests/os/run.sh --phase install` | a real encrypted backup taken off a live machine after its provisioning units have finished (the wizard's `up` holds the mutation lock through its tor-health wait for minutes after `podman ps` looks live, #1945), then a checked-in encrypted v1.20.0 fixture generated from the signed compose bundle, each uploaded through `/submit-restore` on a FRESH installer boot instead of the form, the second onto the first's kept disk; the powered-off installer medium is inspected for leftover restore credentials, and the powered-off target is inspected before first boot to prove its ESP has no restore secret and its data partition has the validated state plus only a non-secret handoff marker. The running wallet, Tor identity and opaque RPC/onion secrets must match each archive, the dashboard hash and fingerprint follow the rule in step 4 of the restore flow (kept while the fingerprint matches the preserved password), both the fixture's chain sentinel and the target's pre-restore sentinel must survive, and the fixture's removed 1.x keys (`xmrig_proxy.*`, `telegram.control`) must migrate or drop as documented without leaving a `config.json.bak-1x` on `/data` |
 
 The orchestration row is the one that was missing. pytest proved the endpoint published the
 credentials; a render probe proved the card renders given them; nothing proved the app *asked*.
@@ -488,16 +525,23 @@ schema, inventories, saved role and the credentials card remain `root:1000` at
 mode `0640`. The page can read these files but cannot replace them.
 
 `error.txt`, `last-attempt.json` and `installing` belong to UID/GID 1000 at mode
-`0600` after publication. The page removes or replaces them during retry. Full
-configuration snapshots can contain credentials; they receive the same private
-creation as the credentials card. No host writer opens these published paths for
-writing or changes their ownership after publication.
+`0600` after publication. The page removes or replaces them during retry. On an
+installed system, a full retry snapshot can contain credentials and receives the
+same private creation as the credentials card. On installation media, retry
+snapshots derived from a restore pass through `strip_config_secrets`; those restored
+credentials stay volatile and must be entered again. An operator-provided fleet pre-seed remains
+the operator's original private file. No host writer opens published paths for writing or changes
+their ownership after publication. The page's atomic writers also remove failed temporary files;
+a failed removal is reported generically.
 
 Host consumers pin a request without following links, reject nonregular files
 and existing hard links, and copy accepted bytes into a private inode before
-validation. Parsing and application use that copy. The page can still replace its
+validation. Each request publishes `submission-staging` first and `submission-active` last; host
+consumers ignore a generation until the final marker exists, and startup removes an interrupted
+partial generation. Parsing and application use the pinned copy. The page can still replace its
 request or hold its original inode open; neither changes the validated copy.
-The shared helpers live in `lib/pithead/11a-wizard-spool.sh`. The shell boundary
+The shared helpers live in `lib/pithead/11a-wizard-spool.sh`; the install window and the
+restore and installer-credential cleanup live in `lib/pithead/12b-wizard-install-window.sh`. The shell boundary
 suite exercises hostile entries, replacement, private creation and the real root
 and page permissions. The integrated KVM battery checks boot and browser setup.
 
