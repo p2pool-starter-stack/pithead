@@ -211,6 +211,25 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   seeded dirs back, and a FRESH host identity (SSH host-key fingerprint, machine-id) — the deep
   tier keeps nothing of the old owner's. Leg 2 corrupts the data partition's ext4 magic and
   asserts the wedged-`/data` recovery reformats it rather than bricking.
+- **image-upgrade** — boot the submitted appliance image, create a sparse loop-mounted XFS with
+  reflinks under the disposable guest's writable data partition, verify and install the published
+  v1.20.0 bundle without modifying it, then invoke the existing image-upgrade harness against the
+  submitted images. The baseline uses remote Monero and remote Tari because v1.20.0 predates
+  Tari-off mode, and keeps its five data dirs on a shared root beside the version dirs on the same
+  reflink volume, the layout `pithead upgrade` needs before it deploys a fresh version dir. The phase replaces only the disposable candidate bundle's image public key with
+  the tier's debug-registry public key, so submitted images are verified against the key that
+  signed them. When `PITHEAD_REGISTRY_CA` is set, the signed candidate also carries that CA as
+  `cosign.registry-ca.crt`, where `verify_release_images` and the harness read it. It runs the release-shaped stack under the CLI's existing test override inside the
+  otherwise appliance-shaped guest. Its private volatile script is invoked through `bash`, so a
+  noexec mount cannot prevent the gate from starting. It proves bundle trust (including a wrong-key
+  refusal), exact old/new OCI revisions, upgrade and rollback, secrets, telemetry, worker return,
+  and resumed hashes. The v1.20.0 rollback starts without the strict Tor-egress check, because that
+  release cannot install the podman ruleset; the run records it as a counted by-design row that
+  [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696) removes. Release-input preparation failures name only the failed sub-step, a redacted
+  command, and its exit status. Downstream guest failures name only a fixed stage (including the
+  mountpoint or loop-mount half of reflink setup) and integer exit status; command output, tokens,
+  keys, signature material, and topology stay hidden. Its EXIT trap stops the stack, unmounts the
+  XFS, and removes the sparse file.
 - **stack** — one stack suite, two channel harnesses (#2062, `docs/dev/testing-strategy.md` § J):
   provisions a guest in remote-node mode from the first wizard submit (`monero.mode=remote` at an
   already-synced bench node; `tari.mode=remote`, or `off` per #1855 when no reserved Tari node is
@@ -229,11 +248,11 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   (#2443, needs a seeded chain) and `--xvb-routing-smoke` (#2444, its probe discards its own
   diagnostics, so the red is unreadable).
 
-`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|crossupdate|stack|all`
+`--keep` leaves the VM and disks for inspection; `--phase boot|update|install|provision|rig|rigmedia|media|fault|reset|image-upgrade|crossupdate|stack|all`
 scopes the run. A failed assertion is recorded and the run carries on, so one bench boot collects
 the whole battery; the run exits non-zero if anything failed. `all` means every phase except
-crossupdate, including fault, reset and stack, and the full run is required once for every RC
-candidate.
+crossupdate, including image-upgrade, fault, reset and stack, and the full run is required once for
+every RC candidate.
 
 Every phase is called through `_run_phase` (#2356), the one place `run.sh` invokes them from: if a
 phase call adds nothing to the pass/fail count or any skip bucket — the shape a required input
@@ -242,6 +261,18 @@ counts it as a `missing` phase skip. And a run where every requested phase skipp
 a clean pass: `0 passed, 0 failed` now prints "no requested phase ran" and exits non-zero, instead
 of reading as an empty success. A run that executed at least one row, pass or fail, keeps today's
 exit code.
+
+The image-upgrade phase fails closed unless `PITHEAD_OS_MONERO_NODE_HOST`,
+`PITHEAD_OS_MONERO_RPC_PORT`, `PITHEAD_OS_MONERO_ZMQ_PORT`, and `PITHEAD_OS_TARI_NODE_HOST` are
+set, the same inputs the stack phase reads. These are endpoint names, never values committed to
+the repository. The harness resolves each node host on the bench host with `getent ahostsv4` and
+gives the guest only the first IPv4 address; a host with no IPv4 address fails as a
+`monero-node-address` or `tari-node-address` input failure that does not print the host. The guest
+script prints `stage=<name> passed` or `stage=<name> failed` (with `primitive=tcp zmq` or
+`primitive=rpc http` for the remote-node probe) to its serial console and the harness log. These
+lines never include a host or port. Local-chain directory
+continuity is outside this lean-storage gate and tracked by
+[#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
 
 The final summary carries the same missing/by-design/covered skip vocabulary as the integration
 harness (`tests/integration/lib/skip-accounting.sh`, #1083/#1444), sourced rather than

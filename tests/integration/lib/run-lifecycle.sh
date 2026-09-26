@@ -179,15 +179,13 @@ run_lifecycle() {
         if [ -n "$carry_old" ]; then
             carry_epoch="$(rx 'date +%s')"
             carry_new="${carry_old}-carried-$carry_epoch"
-            # kv_store-volatile-shape is left out: the recreated dashboard rewrites those live keys
-            # within seconds, so their shape reflects what the new process has seen, not what was
-            # carried. The kv_store-key lines still require every key to arrive.
-            rows_before="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+            # telemetry_rows_continue leaves the volatile kv_store shapes out (live-state-support.sh).
+            rows_before="$(dashboard_durable_rows "$carry_epoch")"
             it_step "confirmed dashboard.data_dir move: $carry_old -> ${carry_new}…"
             push_config "$(render_scenario_config "$BASELINE_CONFIG" "dashboard.data_dir=$carry_new")"
             if pithead apply -y >/dev/null 2>&1 && wait_status_ok 180; then
                 assert_eq "DASHBOARD_DATA_DIR points at the new path" "$(env_on_box DASHBOARD_DATA_DIR)" "$carry_new"
-                rows_after="$(dashboard_durable_rows "$carry_epoch" | grep -v '^kv_store-volatile-shape ')"
+                rows_after="$(dashboard_durable_rows "$carry_epoch")"
                 if telemetry_rows_continue "$rows_before" "$rows_after"; then
                     it_pass "durable rows (incl. the kv_store payout-wallet baseline, #375) survived the carry"
                 else
@@ -338,7 +336,7 @@ run_uninstall_round_trip() {
 # came back empty — an empty snapshot is a probe failure, not a divergence.
 telemetry_rows_diff() { # <before-lines> <after-lines>
     local missing
-    missing="$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
+    missing="$(comm -23 <(printf '%s\n' "$1" | carried_rows | sort) <(printf '%s\n' "$2" | carried_rows | sort) | awk 'NF {print $1}' | sort | uniq -c | awk '{printf " %s x%s", $2, $1}')"
     printf 'before=%s after=%s missing:%s' "$(printf '%s' "$1" | grep -c .)" "$(printf '%s' "$2" | grep -c .)" "${missing:- none}"
 }
 

@@ -275,9 +275,10 @@ assert_release_readiness() {
     fi
 
     # The prune axis infers CoW from the fstype above, which is a proxy. --image-upgrade does not
-    # get to infer: it takes `cp --reflink=always` snapshots of every writable mount, so the only
-    # honest check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine
-    # release server for everything except that one gate, and saying so here is what stops someone
+    # get to infer: it clones every data-dir bind mount with `cp --reflink=always` (named volumes,
+    # small and on the engine's own root, are the only full copies — #2057), so the only honest
+    # check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine release
+    # server for everything except that one gate, and saying so here is what stops someone
     # scheduling a destructive upgrade run that cannot reach its own rollback net.
     if [ -n "$mdir" ]; then
         local probe rc
@@ -286,7 +287,7 @@ assert_release_readiness() {
         rc=$?
         rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1 || true
         if [ "$rc" = 0 ]; then
-            it_pass "writable-mount filesystem supports cp --reflink=always (--image-upgrade can snapshot)"
+            it_pass "the chain data dir's filesystem supports cp --reflink=always (every other bind source and its parent must too)"
         else
             it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade cannot take its rollback snapshots and will refuse; every other phase is unaffected"
         fi

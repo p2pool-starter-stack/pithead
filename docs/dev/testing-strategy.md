@@ -580,7 +580,9 @@ Every scenario, at every tier, holds to the same rules.
   prematurely.
 - Isolated and idempotent. Each scenario starts from a known baseline and restores it. The live
   matrix snapshots `config.json`; real daemons retain read/write chain mounts and may advance them.
-  The image-upgrade gate additionally reflink-snapshots and restores its enumerated persistent mounts. The
+  The image-upgrade gate additionally snapshots and restores its enumerated persistent mounts:
+  `cp --reflink=always` for data-dir bind mounts, refusing on a filesystem that cannot clone them,
+  and a plain copy only for the small named volumes (#2057). The
   mini-stack tears down with `down -v`.
 - Actionable failures. Per-scenario pass/fail, continue-on-error to collect the whole matrix, and
   artifact capture (redacted logs, `compose ps`, `.env`-minus-secrets, dashboard responses) on
@@ -624,7 +626,7 @@ Not yet covered. The road to full production confidence.
   `--safety-backup` and by a `--lifecycle` backup→restore round-trip (assert the pool reverts and
   secrets survive). The opt-in `--image-upgrade` gate now exercises `upgrade` across declared image
   revisions and checks authenticated digest manifests, Pithead-image signatures, exact mounts, both
-  captured chain anchors, stable durable row payloads plus volatile-state identity/schema, secrets,
+  captured chain anchors, stable durable row payloads plus the presence of every volatile key, secrets,
   workers, mining, and exact old-baseline restoration; its first recorded
   combined hardware run remains pending. The per-verb breadth of the gap — which verbs have no
   tier-4 run at all, and why — is now the [CLI verb ledger](#cli-verb-ledger-2348) (#2348) rather

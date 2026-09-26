@@ -14,7 +14,17 @@ run_image_upgrade() {
     it_log "── cross-version image upgrade phase ────────────────"
 
     local before_state before_rev before_images before_revisions before_secrets before_workers before_telemetry candidate_refs fails_before="$IT_FAIL"
-    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs candidate_all_refs
+    local before_monero before_monero_tip before_tari before_monero_dir before_tari_dir before_monero_id before_tari_id before_mounts before_all_refs before_first_refs candidate_all_refs before_mounts_rc capture_gaps inside_dirs
+    # #2057: safety_backup() (run before this) stops and restarts the whole stack around the
+    # archive, which resets p2pool's stratum session and the proxy's worker count exactly like an
+    # apply does (_pred_stratum_hashes's own comment: "resets to 0 on a p2pool restart, then climbs
+    # once the proxy's upstream reconnects"). A one-shot api_state() right after that restart reads
+    # the reset, not the mining that was genuinely active before the backup — wait for it to
+    # resettle with the same predicates every other caller already polls for, instead of a cold read.
+    wait_monero_synced || true
+    wait_tari_synced || true
+    wait_miner_running || true
+    wait_stratum_hashes || true
     before_state="$(api_state)"
     before_rev="$(dashboard_image_revision)"
     before_images="$(compose_image_ids)"
@@ -36,8 +46,12 @@ run_image_upgrade() {
     before_tari="$(jq_get "$before_state" '.sync.tari.current')"
     before_monero_dir="$(env_on_box MONERO_DATA_DIR)"
     before_tari_dir="$(env_on_box TARI_DATA_DIR)"
-    before_mounts="$(stateful_mounts)" || before_mounts=""
+    before_mounts_rc=0
+    before_mounts="$(stateful_mounts)" || before_mounts_rc=$?
+    [ "$before_mounts_rc" = 0 ] || before_mounts=""
     before_all_refs="$(all_running_refs)" || before_all_refs=""
+    before_first_refs="$(first_party_running_refs)" || before_first_refs=""
+    UPGRADE_BASELINE_REGISTRY="$(first_party_registry "$before_first_refs")" || UPGRADE_BASELINE_REGISTRY=""
 
     if [ "$(jq_get "$before_state" '.sync.monero.state')" != "done" ] ||
         [ "$(jq_get "$before_state" '.sync.tari.state')" != "done" ] ||
@@ -73,16 +87,19 @@ run_image_upgrade() {
     if ! prepare_candidate_bundle; then
         [ -z "$UPGRADE_STAGE_DIR" ] || rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
-        it_fail "candidate bundle and images verify against the external trust root" \
-            "bundle signature, key continuity, pinned refs, or an image signature failed; upgrade not attempted"
+        it_fail "candidate bundle and images verify against their external trust roots" \
+            "stopped at ${UPGRADE_TRUST_STEP:-unattributed}; upgrade not attempted"
         return 0
     fi
-    candidate_refs="$UPGRADE_CANDIDATE_REFS"
+    candidate_refs="$(candidate_refs_for_running_set "$before_first_refs")" || candidate_refs=""
     candidate_all_refs="$(candidate_refs_for_running_set "$before_all_refs")" || candidate_all_refs=""
-    if [ -z "$before_mounts" ] || [ -z "$before_all_refs" ] || [ -z "$candidate_all_refs" ]; then
+    if [ -z "$before_mounts" ] || [ -z "$before_all_refs" ] || [ -z "$before_first_refs" ] ||
+        [ -z "$UPGRADE_BASELINE_REGISTRY" ] || [ -z "$candidate_refs" ] || [ -z "$candidate_all_refs" ]; then
+        capture_gaps="$(upgrade_capture_gaps "$before_mounts" "$before_mounts_rc" "$before_all_refs" "$before_first_refs" \
+            "$UPGRADE_BASELINE_REGISTRY" "$candidate_refs" "$candidate_all_refs")"
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR=""
-        it_fail "pre-upgrade mounts and full running image set captured" "stateful mounts or candidate refs are incomplete; upgrade not attempted"
+        it_fail "pre-upgrade mounts and full running image set captured" "incomplete: $capture_gaps; upgrade not attempted"
         return 0
     fi
     it_pass "candidate bundle, every compose digest, first-party signatures, and exact revisions verify externally"
@@ -94,7 +111,8 @@ run_image_upgrade() {
         printf 'candidate_commit: %s\n' "$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
         printf 'candidate_bundle_sha256: %s\n' "$(sha256_file "$UPGRADE_BUNDLE_SNAPSHOT")"
         printf 'candidate_signature_sha256: %s\n' "$(sha256_file "$UPGRADE_SIGNATURE_SNAPSHOT")"
-        printf 'trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_TRUSTED_KEY")"
+        printf 'bundle_trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_TRUSTED_KEY")"
+        printf 'image_trusted_key_sha256: %s\n' "$(sha256_file "$UPGRADE_IMAGE_TRUSTED_KEY")"
         printf 'monero_anchor: %s %s\n' "$before_monero" "$before_monero_id"
         printf 'tari_anchor: %s\n' "$before_tari_id"
         printf '%s\n' "$before_revisions"
@@ -129,10 +147,23 @@ run_image_upgrade() {
         it_fail "versioned baseline layout validated for exact rollback" "the live target must be a current -> pithead-v* layout"
         return 0
     fi
-    if ! pithead down >/dev/null 2>&1 || ! capture_state_snapshots "$before_mounts"; then
+    inside_dirs="$(data_dirs_inside_install "$UPGRADE_BASELINE_DIR" | tr '\n' ' ')"
+    if [ -n "$inside_dirs" ]; then
         rm -rf "$UPGRADE_STAGE_DIR"
         UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
-        it_fail "quiesced writable state captured in private CoW snapshots" "the stack must stop cleanly and every stateful mount must support cp --reflink=always; upgrade not attempted"
+        it_fail "baseline data lives outside its version dir" "${inside_dirs% } resolve inside it, where a fresh-dir upgrade strands them; upgrade not attempted"
+        return 0
+    fi
+    if ! pithead down >/dev/null 2>&1; then
+        rm -rf "$UPGRADE_STAGE_DIR"
+        UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
+        it_fail "quiesced writable state captured in private CoW snapshots" "pithead down did not stop the stack cleanly; upgrade not attempted"
+        return 0
+    fi
+    if ! capture_state_snapshots "$before_mounts"; then
+        rm -rf "$UPGRADE_STAGE_DIR"
+        UPGRADE_STAGE_DIR="" UPGRADE_ROLLBACK_DIR=""
+        it_fail "quiesced writable state captured in private CoW snapshots" "${UPGRADE_SNAPSHOT_REASON:-unattributed}; upgrade not attempted"
         return 0
     fi
     arm_upgrade_abort_restore
@@ -144,11 +175,12 @@ run_image_upgrade() {
     it_pass "verified candidate staged in a fresh version directory with exact rollback armed"
 
     it_step "running the candidate's supported pithead upgrade path…"
-    if ! strict_pithead upgrade 2>&1 | redact >"$OUT_DIR/image-upgrade.log"; then
+    if ! PITHEAD_APPLIANCE=0 PITHEAD_REGISTRY="$UPGRADE_CANDIDATE_REGISTRY" strict_pithead upgrade 2>&1 | redact >"$OUT_DIR/image-upgrade.log"; then
         it_fail "pithead upgrade succeeded" "see $OUT_DIR/image-upgrade.log"
         capture_artifacts "image-upgrade" "$OUT_DIR"
         return 0
     fi
+    export PITHEAD_REGISTRY="$UPGRADE_CANDIDATE_REGISTRY"
     wait_status_ok 300 || it_fail "stack recovered after image upgrade" "pithead status did not become healthy"
     wait_monero_synced 300 || it_fail "Monero resynchronized after image upgrade" "sync did not reach done"
     # 1500s, not 300s: this is the same `pithead upgrade` recreate #2455 measured a tari Tor
@@ -195,8 +227,10 @@ run_image_upgrade() {
         it_fail "upgraded image revision matches the declared new Pithead commit" \
             "image reports [$after_rev], expected exactly $IMAGE_UPGRADE_TO_SHA"
     fi
-    assert_eq "running first-party containers use the signed digest-pinned candidate refs" "$after_refs" "$candidate_refs"
-    assert_eq "every running container uses its signed-bundle digest" "$after_all_refs" "$candidate_all_refs"
+    assert_eq "running first-party containers use the signed digest-pinned candidate refs" \
+        "$(canonical_refs "$after_refs")" "$(canonical_refs "$candidate_refs")"
+    assert_eq "every running container uses its signed-bundle digest" \
+        "$(canonical_refs "$after_all_refs")" "$(canonical_refs "$candidate_all_refs")"
     if [ "$(printf '%s\n' "$after_revisions" | cut -d' ' -f1)" = "$(printf '%s\n' "$before_revisions" | cut -d' ' -f1)" ] &&
         revisions_match_sha "$after_revisions" "$IMAGE_UPGRADE_TO_SHA"; then
         it_pass "every running first-party image matches the declared new Pithead commit"
@@ -250,7 +284,8 @@ run_image_upgrade() {
     if telemetry_rows_continue "$before_telemetry" "$after_telemetry"; then
         it_pass "durable dashboard rows survived the image migration"
     else
-        it_fail "durable dashboard rows survived the image migration" "one or more pre-upgrade rows or fixed-window aggregates changed"
+        it_fail "durable dashboard rows survived the image migration" \
+            "lost:$(telemetry_rows_lost "$before_telemetry" "$after_telemetry")$([ "$after_telemetry" != UNREADABLE ] || printf ' (after-upgrade rows unreadable)')"
     fi
     assert_telemetry_tables_present
     [ "$IT_FAIL" -le "$fails_before" ] || capture_artifacts "image-upgrade" "$OUT_DIR"

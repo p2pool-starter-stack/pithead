@@ -284,10 +284,15 @@ wizard_setup_failed() { # <exit status of setup>
 
 # The marker, read back. Anything unrecognised (or absent) is a coordinator: every machine
 # provisioned before this contract existed had no marker and was one.
+#
+# PITHEAD_MACHINE_ROLE_FILE overrides $PWD/machine-role, mirroring PITHEAD_CONFIG_FILE and
+# PITHEAD_ENV_FILE (#2057): the script itself always `cd`s to its own SCRIPT_DIR at startup
+# (00-prelude.sh), so a caller cannot point one invocation at a DIFFERENT stack directory's
+# marker by `cd`ing there first — the same reason those two already take an override.
 machine_role() { # echoes pithead|both|rig
-    local r=""
-    if [ -f "$PWD/machine-role" ]; then
-        r=$(tr -d '[:space:]' <"$PWD/machine-role" 2>/dev/null) || r=""
+    local r="" f="${PITHEAD_MACHINE_ROLE_FILE:-$PWD/machine-role}"
+    if [ -f "$f" ]; then
+        r=$(tr -d '[:space:]' <"$f" 2>/dev/null) || r=""
     fi
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
