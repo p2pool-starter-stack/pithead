@@ -54,6 +54,20 @@ function withFetchSequence(responses, fn) {
   });
 }
 
+// The first vnode in a render tree matching pred (the renderer runs no handlers, so a test that
+// clicks one reaches it here).
+function findVnode(v, pred) {
+  if (Array.isArray(v)) {
+    for (const c of v) {
+      const hit = findVnode(c, pred);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!v || typeof v !== "object") return null;
+  return pred(v) ? v : findVnode(v.props?.children, pred);
+}
+
 // poll() sleeps between attempts; fire timers synchronously so a polling test doesn't wait on them.
 function withInstantSleep(fn) {
   const realTimeout = globalThis.setTimeout;
@@ -106,49 +120,85 @@ test("AdoptRigForm: a host resolving inside the stack's own network is refused a
   assert.match(inst.state.result.error, /own network/);
 });
 
-// --- The full preview -> commit round trip -----------------------------------------------------
+// --- The full preview -> typed APPLY -> commit round trip (#2641) ------------------------------
 
-test("AdoptRigForm: a well-formed submission previews then commits through the control path", async () => {
+// What the host previews for an append-only adopt: one CONFIRM row, so the preview is destructive.
+const ADOPT_PREVIEW = {
+  id: "req-1",
+  status: "previewed",
+  destructive: true,
+  changes: [
+    {
+      flag: "CONFIRM",
+      key: "workers.list",
+      msg: "Adopting a rig: rig1 at 10.0.0.9. The dashboard will send this rig's control token to that address.",
+    },
+  ],
+};
+
+test("AdoptRigForm: a well-formed submission previews, shows the host's warning, and waits for APPLY", async () => {
   const inst = adoptForm();
   inst.state.apiPort = "18081";
   inst.state.token = TOKEN;
-  const liveConfig = { workers: { list: [] } };
-  await withFetchSequence(
-    [
-      { body: liveConfig }, // GET /api/config
-      { body: { id: "req-1", status: "previewed", destructive: false } }, // preview
-      { body: { id: "req-1", status: "applied" } }, // commit
-    ],
-    async (calls) => {
-      await inst.adopt();
-      assert.equal(calls[0].url, "/api/config");
-      assert.equal(calls[1].url, "/api/control/preview");
-      assert.deepEqual(calls[1].body.config.workers.list, [
-        { name: "rig1", host: "10.0.0.9", port: 18081, control_port: 8082, token: TOKEN },
-      ]);
-      assert.equal(calls[2].url, "/api/control/commit");
-      assert.equal(calls[2].body.id, "req-1");
-    },
-  );
+  await withFetchSequence([{ body: { workers: { list: [] } } }, { body: ADOPT_PREVIEW }], async (calls) => {
+    await inst.adopt();
+    assert.equal(calls.length, 2); // config read and preview only: nothing commits unconfirmed
+    assert.equal(calls[0].url, "/api/config");
+    assert.equal(calls[1].url, "/api/control/preview");
+    assert.deepEqual(calls[1].body.config.workers.list, [
+      { name: "rig1", host: "10.0.0.9", port: 18081, control_port: 8082, token: TOKEN },
+    ]);
+  });
+  assert.equal(inst.state.preview.id, "req-1");
+  assert.equal(inst.state.result, null);
+  const out = renderToString(inst.render());
+  assert.match(out, /Adopting a rig: rig1 at 10\.0\.0\.9/);
+  assert.match(out, /Type <code>APPLY<\/code> to adopt this rig/);
+  assert.match(out, /<button[^>]*disabled[^>]*>Confirm<\/button>/); // armed only by the typed word
+  assert.match(out, /<input type="password" disabled/); // the previewed fields are locked
+});
+
+test("AdoptRigForm: the typed APPLY rides the commit and an applied result notifies", async () => {
+  const inst = adoptForm();
+  inst.state.preview = ADOPT_PREVIEW;
+  inst.state.confirmText = "APPLY";
+  let notified = 0;
+  inst.props.onAdopted = () => notified++;
+  assert.doesNotMatch(renderToString(inst.render()), /<button[^>]*disabled[^>]*>Confirm<\/button>/);
+  await withFetchSequence([{ body: { id: "req-1", status: "applied" } }], async (calls) => {
+    await inst.confirm();
+    assert.equal(calls[0].url, "/api/control/commit");
+    assert.deepEqual(calls[0].body, { id: "req-1", confirm: "APPLY" });
+  });
   assert.equal(inst.state.result.status, "applied");
-  assert.equal(inst.state.busy, false);
+  assert.equal(inst.state.preview, null);
+  assert.equal(notified, 1);
   assert.match(renderToString(inst.render()), /next worker poll/);
+});
+
+test("AdoptRigForm: Cancel drops the preview without committing", async () => {
+  const inst = adoptForm();
+  inst.state.preview = ADOPT_PREVIEW;
+  inst.state.confirmText = "APP";
+  const confirmStep = findVnode(inst.render(), (v) => typeof v.props?.onCancel === "function");
+  await withFetchSequence([], async (calls) => {
+    confirmStep.props.onCancel();
+    assert.equal(calls.length, 0);
+  });
+  assert.equal(inst.state.preview, null);
+  assert.match(renderToString(inst.render()), /Adopt this rig/);
 });
 
 test("AdoptRigForm: an empty successful commit response polls the retained preview id", async () => {
   const inst = adoptForm();
-  inst.state.token = TOKEN;
+  inst.state.preview = ADOPT_PREVIEW;
+  inst.state.confirmText = "APPLY";
   await withInstantSleep(() =>
     withFetchSequence(
-      [
-        { body: { workers: { list: [] } } },
-        { body: { id: "req-1", status: "previewed", destructive: false } },
-        { text: "" },
-        { body: { id: "req-1", status: "applied" } },
-      ],
+      [{ text: "" }, { body: { id: "req-1", status: "applied" } }],
       async (calls) => {
-        await inst.adopt();
-        assert.equal(calls[3].url, "/api/control/result?id=req-1");
+        await inst.confirm();
+        assert.equal(calls[1].url, "/api/control/result?id=req-1");
       },
     ),
   );
@@ -161,7 +211,7 @@ test("AdoptRigForm: a rejected preview surfaces the host's reason and never comm
   await withFetchSequence(
     [
       { body: {} },
-      { body: { id: "req-1", status: "rejected", error: "alters an existing per-worker descriptor" } },
+      { body: { id: "req-1", status: "rejected", error: "edits or removes a rig the dashboard already controls" } },
     ],
     async (calls) => {
       await inst.adopt();
@@ -169,38 +219,38 @@ test("AdoptRigForm: a rejected preview surfaces the host's reason and never comm
     },
   );
   assert.equal(inst.state.result.status, "rejected");
-  assert.match(inst.state.result.error, /existing per-worker descriptor/);
+  assert.equal(inst.state.preview, null);
+  assert.match(inst.state.result.error, /already controls/);
 });
 
-test("AdoptRigForm: an unexpected destructive preview is refused, not blindly committed", async () => {
-  // A pure add should never come back destructive; if it somehow does, adopt() must refuse rather
-  // than auto-confirming a change no one reviewed.
+test("AdoptRigForm: a disruptive row beyond the adopt is refused, never offered for APPLY", async () => {
+  // The operator reviews only the adopt row here; a proposal that also flags another key as
+  // disruptive carried more than the new descriptor and must not reach the typed confirmation.
   const inst = adoptForm();
   inst.state.token = TOKEN;
+  const extra = { flag: "CONFIRM", key: "MONERO_PRUNE", msg: "pruning off" };
   await withFetchSequence(
-    [{ body: {} }, { body: { id: "req-1", status: "previewed", destructive: true } }],
+    [{ body: {} }, { body: { ...ADOPT_PREVIEW, changes: [...ADOPT_PREVIEW.changes, extra] } }],
     async (calls) => {
       await inst.adopt();
       assert.equal(calls.length, 2); // never reached commit
     },
   );
   assert.equal(inst.state.result.status, "error");
+  assert.equal(inst.state.preview, null);
 });
 
 test("AdoptRigForm: calls onAdopted only once the commit actually applied", async () => {
   const inst = adoptForm();
-  inst.state.token = TOKEN;
+  inst.state.preview = ADOPT_PREVIEW;
+  inst.state.confirmText = "APPLY";
   let notified = 0;
   inst.props.onAdopted = () => notified++;
-  await withFetchSequence(
-    [
-      { body: {} },
-      { body: { id: "req-1", status: "previewed", destructive: false } },
-      { body: { id: "req-1", status: "failed", error: "apply failed" } },
-    ],
-    async () => inst.adopt(),
+  await withFetchSequence([{ body: { id: "req-1", status: "failed", error: "apply failed" } }], async () =>
+    inst.confirm(),
   );
   assert.equal(notified, 0); // a failed commit must not claim success
+  assert.equal(inst.state.result.status, "failed");
 });
 
 // --- Routed from Worker Inspect (#893 item 2: explain the gated state) ------------------------
