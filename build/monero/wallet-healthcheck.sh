@@ -7,8 +7,8 @@
 # But during the INITIAL payout scan (#718) monero-wallet-rpc is single-threaded and heads-down for
 # the whole scan — with the genesis default it is HOURS, and it refuses the RPC the entire time. A
 # plain RPC check flaps unhealthy after the 2m start_period and spams stack-health alerts for the
-# whole first scan. So: a marker file (`.payout-scanning`, written by the entrypoint on wallet
-# creation, living in the volume so it survives recreates) means "still on the first scan" — but
+# whole first scan. So: a marker file (`.payout-scanning`, written by the entrypoint on every start,
+# since a reopened wallet's catch-up blocks the RPC too, #2756) means "still scanning" — but
 # only for PAYOUT_SCAN_GRACE_SEC (24h by default). The first time the RPC answers, the scan has
 # caught up, so we clear the marker and are strict from then on. A marker that outlives the grace,
 # or a later RPC failure, is a real fault rather than scan tolerance.

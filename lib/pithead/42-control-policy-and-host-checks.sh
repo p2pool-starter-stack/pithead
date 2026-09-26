@@ -183,11 +183,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
 # config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
 # round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
-# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
-# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
-# the "documented exception" this file used to carve out for it contradicted that promise instead
-# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
+# documented dashboard-editable toggle, docs/workers.md). workers.list[] is classified by
+# control_worker_append (42-control-approval-helpers.sh): adopting a new rig is an append behind the
+# typed APPLY and the SSRF floor below (#2641); repointing or removing one is refused (#912).
+# Treat "every OTHER path renders to .env" as false in general: a schema leaf
 # that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
@@ -240,7 +239,9 @@ _is_canonical_ipv4() {
 # docker-bridge /24 (network.subnet, read from the LIVE config — a same-commit network.subnet
 # change is refused elsewhere, on neither editable allowlist, so the live value is the honest
 # baseline either way). RFC1918 LAN ranges (10/8, 172.16/12, 192.168/16) are deliberately NOT on
-# this list — dialing a LAN rig is this feature's whole purpose.
+# this list — dialing a LAN rig is this feature's whole purpose. This machine's OWN LAN address and
+# its other bridges vary per box, so the worker floor checks them separately (42b-, #2671); the
+# remote-node probe (10-node-probe.sh) shares this classifier and does not.
 _ipv4_is_sensitive() {
     local a b prefix
     IFS=. read -r a b _ _ <<<"$1"
@@ -304,7 +305,7 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
+# True if $1 — a workers.list[] host an adopt (append-only) commit is about to introduce —
 # resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
 # already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
@@ -312,7 +313,9 @@ _resolve_host_ips() {
 # so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
 # its own host's loopback services or a sibling container, then immediately dial it (with an
 # attacker-chosen bearer) via the pre-existing worker-apply/worker-upgrade path, which resolves and
-# dials strictly from the HOST's own config. An ordinary LAN or public rig address is unaffected.
+# dials strictly from the HOST's own config. That reach includes this machine's own interface
+# addresses and every bridge subnet on it (42b-, #2671), not only the fixed classes above. An
+# ordinary LAN or public rig address is unaffected.
 #
 # #893 round 5: an earlier version of this function classified by STRING SHAPE alone — a denylist
 # of "localhost" and its known /etc/hosts aliases. An independent review found that a spelling
@@ -338,13 +341,16 @@ _resolve_host_ips() {
 # is why that's acceptable without also adding a dial-time re-check (see the PR's "Dial-time
 # re-check" note).
 _control_host_is_internal() {
-    local host resolved ip
+    local host resolved ip own
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
+    # This machine's own interface addresses and bridge subnets (#2671, 42b-). An unreadable
+    # interface list -> FAIL CLOSED, as for an unresolvable name.
+    own=$(_host_local_networks) || return 0
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host"
+        _ipv4_is_sensitive "$host" || _ip_in_host_networks "$host" "$own"
         return
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
@@ -367,6 +373,7 @@ _control_host_is_internal() {
         else
             return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
+        _ip_in_host_networks "$ip" "$own" && return 0
     done <<<"$resolved"
     return 1
 }
