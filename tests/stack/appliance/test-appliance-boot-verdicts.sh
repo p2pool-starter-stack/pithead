@@ -164,6 +164,13 @@ assert_eq "a log absent before the cut marks offset 0" "$mark" "0"
 cp "$FBV/booted" "$FBV/fresh"
 fault_boot_verdict "$FBV/fresh" "$mark" >/dev/null
 assert_rc "…and the new boot's console is judged from byte 0" "$?" "0"
+# The phase itself (tests/os/phases/fault.sh) needs a KVM guest, so its wiring is pinned here:
+# every leg (A, C, B, D) stops before its cut on a failed snapshot, and reads exit 2 as neither
+# booted nor BRICKED. Mutation run: drop any one leg's `|| {` or `elif [ $? -eq 2 ]` -> a count drops.
+assert_eq "all four legs stop on a failed snapshot" \
+    "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "4"
+assert_eq "all four legs report an unjudgeable boot as such" \
+    "$(grep -cF 'elif [ $? -eq 2 ]; then' "$ROOT/tests/os/phases/fault.sh")" "4"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
 # Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
