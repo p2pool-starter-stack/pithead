@@ -175,9 +175,19 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   default `fast:async` database mode, which opens LMDB with `MDB_NOSYNC`, so a commit could return
   before it reached the disk. The bundled node now runs with `db-sync-mode=safe`, which syncs every
   commit, so a power cut can no longer take the chain back below a height it had already committed.
-  In the appliance power-cut test, early-mainnet sync (heights 29,000 to 79,000) ran at 14 to 71
-  blocks/s under `safe` and 8 to 37 blocks/s under the old mode, with no slowdown measurable at that
-  scale. Later blocks are larger, and their cost was not measured.
+  At the chain tip in the same targeted end-to-end scenario, monerod went from started to healthy
+  in 5.5 s under `safe` and 5.5 s under the old mode. The cost over a full initial sync was not
+  measured.
+
+- **A slow first Tor bootstrap no longer fails provisioning
+  ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
+  for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
+  started. A cold bootstrap on a fresh Tor data directory has taken 5 minutes. When it ran that
+  long, `docker compose up` stopped with `dependency tor failed to start` and never started the
+  nodes. On the appliance, the setup wizard reopened with the configuration marked as failed. Tor
+  now has 10 minutes to bootstrap before failed checks count against it. A Tor that bootstraps
+  sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
+  now fails `up` after about 12.5 minutes instead of 3.5.
 
 - **The Monero payout wallet stays healthy while a restarted wallet catches up
   ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
