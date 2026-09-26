@@ -6,9 +6,9 @@
 # and P2Pool's merge-mine channel all stay up while its peers vanish and its tip freezes: the #2465
 # shape. Asserts, on the real clocks (tari_health.py): amber within OFFLINE (10 min) + one poll; red
 # and doctor non-zero within TIP_STALE (30 min) + one poll; the automatic restart withheld while the
-# node's gRPC does not answer (a paused container stands in for a migration, #2593); then, with the rule gone, the
-# restart fires and the verdict returns to green after catch-up. Opt-in, about an hour: never part of
-# a preset.
+# node's gRPC does not answer (a paused container stands in for a migration, #2593); then, unpaused
+# and still stranded, the restart fires, takes the rule with the old namespace, and the verdict returns
+# to green after catch-up. Opt-in, about an hour: never part of a preset.
 #
 # Why tari's namespace and not the host's DOCKER-USER chain: tari and tor share one Docker bridge, and
 # same-bridge traffic only traverses the host's FORWARD/DOCKER-USER when br_netfilter is on. Job 1315
@@ -22,8 +22,6 @@ TARI_POLL_SLACK=120 # one dashboard poll plus the harness's own 10 s sampling, w
 # The node reports its dead peers only once their connections time out: job 1324 measured the 0-peer
 # clock starting about 171 s after the rule went in. The 10-minute threshold counts from then.
 TARI_DISCONNECT_GRACE=180
-
-tari_ip_of() { rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $1" 2>/dev/null | head -n1; }
 
 # iptables inside the running tari container's network namespace; prints nothing when tari has no pid.
 tari_ns_ipt() { # <iptables args...>
@@ -72,7 +70,7 @@ run_tari_stranded() {
         return 0
     fi
     local tor t0 fails_before="$IT_FAIL"
-    tor="$(tari_ip_of tor)"
+    tor="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tor" 2>/dev/null | head -n1)"
     if [ -z "$tor" ]; then
         it_fail "tari-stranded: tor address" "empty — fault not injected"
         return

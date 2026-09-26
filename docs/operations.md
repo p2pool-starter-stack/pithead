@@ -855,8 +855,8 @@ affected either way. Recover in this order:
 2. **Three restarts without green** switch the advice to "likely a chain fork or an upgrade
    required". A node on the wrong side of a hard fork rejoins the same dead branch after every
    restart. Check the Tari release notes for a required upgrade first. A node that followed a dead
-   branch past a fork height has to be rewound below it before it can sync. The procedure is tracked
-   in #2593.
+   branch past a fork height has to be rewound below it before it can sync; #2618 covers that
+   rewind for the 350,000 fork.
 3. **Resync from scratch** as the last resort: stop the node, move its chain data away (`tari.data_dir`,
    `./data/tari` by default) and start it again. Over Tor this takes days. `tari.clearnet_initial_sync:
    true` cuts it to hours at the cost of exposing the host's IP to Tari peers while it runs (see
