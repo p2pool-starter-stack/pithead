@@ -68,6 +68,9 @@ timeout to the root-run battery even when the guest is healthy.
 Every guest boot is preceded by a host pre-flight (`tests/os/kvm-preflight.sh`): under 20 GiB of
 `MemAvailable` the battery refuses to boot the 16 GiB guest rather than risk hanging the host that
 runs it (`PITHEAD_KVM_MIN_AVAIL_MB` sets the bar; the reading is printed at every boot either way).
+Guest teardown bounds each `virsh` call at `PITHEAD_VM_TEARDOWN_TIMEOUT` seconds (default 180)
+and prints how long each took; a call that times out also prints the guest's qemu processes and
+the runner's remaining children, and the surviving domain fails the run.
 
 The harness builds its own update bundles from the same tarball (`os/rauc/mkbundle.sh --dev`),
 signed with a throwaway development key. A release build names its key instead — see the custody
