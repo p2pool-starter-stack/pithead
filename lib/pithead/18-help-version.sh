@@ -108,6 +108,8 @@ Maintenance:
                             (removed / kept / left behind for the machine) and the exact
                             command to delete the rest, if you want it gone. Type-to-confirm
                             unless -y.
+                            Refuses in a pithead-vX.Y.Z dir that 'current' does not point
+                            at: it would stop the live stack. Run it in the live dir.
                               -y, --yes        skip the confirmation prompt.
 
   firstboot-wizard [--cli]  Browser-first setup for an unconfigured checkout: serves a
