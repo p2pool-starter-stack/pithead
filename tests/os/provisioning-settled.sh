@@ -59,6 +59,15 @@ provisioning_settled() { # $1 seconds -> 0 once no provisioning unit is activati
     done
     return 1
 }
+# Settled is not succeeded (#2725). A wizard whose `(setup)` died on an unhealthy tor ends with
+# pithead-firstboot `failed`, which provisioning_settled accepts as terminal; job 1194's restore
+# leg then took its backup anyway. That backup restarts the stack through pithead-boot, which
+# reboots the guest on the same unhealthy tor, so the failure dump that followed read nothing.
+# The caller reds the row here instead, while the failed stack is still there to read.
+provisioning_setup_failed() { # 0 when either provisioning unit ended `failed` this boot
+    case " $(provisioning_units) " in *" failed "*) return 0 ;; esac
+    return 1
+}
 
 provisioning_state() { # one line for a verdict: unit states + whether one ran, plus the wizard's error if it failed
     local r st

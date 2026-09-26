@@ -1,6 +1,17 @@
 import logging
+import os
+
+from mining_dashboard.config.config import DISK_PATH
 
 logger = logging.getLogger("DataService")
+
+# Written by the cross-hardware restore doors only — the wizard and carried restores through
+# restore_apply(), never `./pithead restore`'s same-box recovery (#2626 operator ruling: that
+# door's chains never desynced, so it keeps whatever gate state the backup carried). The
+# snapshot's #35 sync-gate latch came from the machine the backup was taken on, so while this
+# file exists the dashboard ignores the persisted release and re-derives it from this machine's
+# chains. Removed once the gate releases here.
+SYNC_GATE_RESET_PATH = os.path.join(DISK_PATH, "sync-gate-reset")
 
 
 def _runtime():
@@ -103,6 +114,13 @@ class DataGateMixin:
         if gate_satisfied:
             if await self._start_gate_containers():
                 self.miner_released = True
+                # The release is now this machine's own; a restore's marker has done its job.
+                try:
+                    os.remove(_runtime().SYNC_GATE_RESET_PATH)
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    logger.warning(f"Could not remove the restore's sync-gate marker: {e}")
                 self.miner_held = False
                 logger.info(
                     f"Required chain(s) synced — starting {', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can begin."

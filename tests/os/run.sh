@@ -97,8 +97,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/appliance-tari-mode-leg.sh"
 # shellcheck source=tests/os/appliance-egress-leg.sh
 . "$SCRIPT_DIR/appliance-egress-leg.sh"
+# shellcheck source=tests/os/appliance-xvb-routing-leg.sh
+. "$SCRIPT_DIR/appliance-xvb-routing-leg.sh"
 # shellcheck source=tests/os/appliance-dashboard-exposure-leg.sh
 . "$SCRIPT_DIR/appliance-dashboard-exposure-leg.sh"
+# shellcheck source=tests/os/appliance-chain-fault-leg.sh
+. "$SCRIPT_DIR/appliance-chain-fault-leg.sh"
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 . "$SCRIPT_DIR/../integration/lib/mergemine-probe.sh"
 # ONLY the it_skip_* vocabulary is wanted from this file (#2064): the missing/by-design/covered
@@ -124,6 +128,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$SCRIPT_DIR/boot-label-serial-verdict.sh"
 # shellcheck source=tests/os/fault-boot-verdict.sh
 . "$SCRIPT_DIR/fault-boot-verdict.sh"
+# shellcheck source=tests/os/m10-height-verdict.sh
+. "$SCRIPT_DIR/m10-height-verdict.sh"
 IMAGE=""
 KEEP=0
 PHASE="all"
