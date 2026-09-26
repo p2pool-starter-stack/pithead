@@ -82,7 +82,10 @@ compose_up() {
     apply_lan_guard
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
-    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@"
+    local rc=0
+    PITHEAD_LOCK_FILE="$(mutation_lock_path)" docker compose up "${build_args[@]}" "$@" || rc=$?
+    restore_recreate_names
+    return "$rc"
 }
 
 # #795: `compose up --remove-orphans` never removes the container of a service whose profile just
@@ -103,6 +106,27 @@ remove_deactivated_profile_containers() {
     [ "${#gone[@]}" -eq 0 ] && return 0
     docker compose rm -sf "${gone[@]}" >/dev/null 2>&1 ||
         warn "Could not remove the deactivated container(s): ${gone[*]} — remove them manually with 'docker rm -f ${gone[*]}'."
+}
+
+# #2595: compose recreates a container by creating its replacement as "<old id[:12]>_<name>",
+# removing the old one, then renaming the replacement. A pass that aborts in between (another
+# service's start failing cancels the rest) leaves the replacement beside the old container, and a
+# later pass removes the old one as surplus but never renames: compose finds the service by label.
+# Bench job 840 ran monerod as "4556c4f42f1d_monerod" from then on, so everything that addresses it
+# by name (exec, stop, the dashboard's control calls) missed it. Rename such a leftover once its
+# name is free; while the old container still holds it, the next pass decides which one survives.
+restore_recreate_names() {
+    local names name
+    names=$(docker ps -a --filter label=com.docker.compose.project=pithead --format '{{.Names}}' 2>/dev/null) || return 0
+    while IFS= read -r name; do
+        [[ "$name" =~ ^[0-9a-f]{12}_(.+)$ ]] || continue
+        grep -qxF -- "${BASH_REMATCH[1]}" <<<"$names" && continue
+        if docker rename "$name" "${BASH_REMATCH[1]}" >/dev/null 2>&1; then
+            log "Renamed $name to ${BASH_REMATCH[1]}, the name an interrupted recreate left unset."
+        else
+            warn "Container $name should be named ${BASH_REMATCH[1]}; rename it with 'docker rename $name ${BASH_REMATCH[1]}'."
+        fi
+    done <<<"$names"
 }
 
 # PITHEAD_KEEP_RUNNING (#2639) is a test-harness knob, never set by pithead itself: a space-separated

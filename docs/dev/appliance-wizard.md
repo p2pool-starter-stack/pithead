@@ -398,7 +398,9 @@ Five steps, each answering a hardware-validated failure:
    On the read-only root, host units render into `/run/systemd/system` (`--runtime`
    enablement) and are recreated here each boot.
 3. **`pithead up`** — compose owns the containers' lifecycle, and recreates containers when
-   an image behind a constant tag changed identity. Its predecessor, `podman-restart`,
+   an image behind a constant tag changed identity. After each compose pass it renames a
+   container that an interrupted recreate left under its temporary `<id>_<service>` name,
+   once the old container no longer holds the name. Its predecessor, `podman-restart`,
    started the stack into its own oneshot cgroup, and systemd SIGKILLed the containers it
    had just spawned.
 4. **Health-gated slot commit** — `rauc status mark-good` only once the slot passes three gates.

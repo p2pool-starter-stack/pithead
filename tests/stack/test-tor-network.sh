@@ -735,8 +735,7 @@ assert_eq "provision_tor skips a remote node's onion and leaves it a placeholder
 assert_eq "provision_tor waits for the local node only in a mixed setup (#103)" \
     "$(prov_probe local remote)" "p2pool,monero,|monero.onion|placeholder|p2pool.onion"
 
-# provision_node_onions: recreate tor and capture a newly local node's onion before it starts.
-node_onion_probe() { # <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
+node_onion_probe() { # provision_node_onions recreates tor and captures a newly local node's onion before it starts. <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> "<docker calls>|<asked>|<MONERO_ONION>|<TARI_ONION>|<renders>"
     (
         cd "$ONP" || exit
         [ "${5:-}" != source ] || { mkdir -p dashboard && : >dashboard/Dockerfile; }
@@ -747,6 +746,7 @@ node_onion_probe() { # <MONERO_MODE> <MONERO_ONION> <TARI_MODE> <TARI_ONION> -> 
         : >dockerlog
         : >renders
         log() { :; }
+        restore_recreate_names() { :; } # its own test is tests/stack/lifecycle/recreate-names.sh
         docker() { printf '%s ' "$*" >>dockerlog; }
         render_env() { printf 'x' >>renders; }
         wait_for_onion() {
