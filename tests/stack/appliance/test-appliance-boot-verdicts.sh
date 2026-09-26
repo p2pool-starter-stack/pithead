@@ -119,6 +119,16 @@ cat "$FBV/booted" "$FBV/no-boot" >"$FBV/combined"
 mark=$(wc -c <"$FBV/booted" | tr -d ' ')
 verdict=$(fault_boot_verdict "$FBV/combined" "$mark")
 assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
+# #2746: `virsh start` truncated $SERIAL, so the pre-cut mark lies past EOF. The new boot's
+# console is the whole file. Mutation run: drop the EOF clamp -> tail reads nothing and a booted
+# guest is BRICKED with empty "last lines" (job 1262's A1).
+verdict=$(fault_boot_verdict "$FBV/booted" 999999)
+assert_rc "a mark past EOF (truncated on start) reads the new boot from byte 0" "$?" "0"
+# #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
+# Mutation run: drop the copy -> no .failed file.
+rm -f "$FBV/no-boot.failed"
+fault_boot_verdict "$FBV/no-boot" 0 >/dev/null
+assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.failed" 2>/dev/null)" "$(cat "$FBV/no-boot")"
 unset -f fault_boot_verdict
 rm -rf "$FBV"
 
