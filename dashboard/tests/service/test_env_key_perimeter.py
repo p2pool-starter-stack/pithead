@@ -10,8 +10,8 @@ from mining_dashboard.service import config_operations, control_service
 # all. SECURITY.md:99-100 is the authority for what belongs here — "wallets and view keys,
 # dashboard auth and onion exposure, the control channel itself, the Tor egress firewall, node
 # endpoints, binds, every credential, and the per-rig hosts and tokens" (the last category is
-# enforced elsewhere: worker descriptors are refused outright, per control_service.py's
-# EDITABLE_ENV_KEY_PATHS docstring, so they never reach this env-key-path list at all). The two
+# enforced elsewhere: worker descriptors are append-only behind the typed APPLY, per
+# control_service.py's EDITABLE_ENV_KEY_PATHS comment, so they never reach this list at all). The two
 # drift tests above only catch the editable/confirm allowlists' two hand-kept copies disagreeing
 # with EACH OTHER; a key added to BOTH copies at once (#1094's mutation proof: DASHBOARD_AUTH_HASH_B64,
 # or DASHBOARD_HOST, added to pithead's list and EDITABLE_ENV_KEY_PATHS together) leaves them in

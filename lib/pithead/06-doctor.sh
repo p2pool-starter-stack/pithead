@@ -148,6 +148,7 @@ doctor() {
     check_stratum_listening
     check_tor_running
     check_egress_firewall_installed
+    check_lan_guard
     check_tor_clearnet_egress
     # Clearnet initial sync (#183): a deliberate, privacy-relevant opt-in. Warn whenever it's on so
     # an operator who forgot to switch back after syncing is reminded their node IP is exposed.
