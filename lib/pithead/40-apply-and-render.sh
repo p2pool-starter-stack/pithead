@@ -175,11 +175,13 @@ apply() {
     # committed (#125): the stack then runs OLD containers against NEW config files, and because a
     # re-apply diffs the (already-committed) .env it would see no change and silently no-op. While
     # the marker is present, re-apply re-attempts the recreate even when the rendered config matches.
-    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0
+    local apply_marker="${ENV_FILE}.apply-incomplete" incomplete=0 rearm_sync_gate=0
     [ -f "$apply_marker" ] && incomplete=1
+    # A retried recreate keeps the sync-gate re-arm its first attempt decided on (#2763).
+    grep -qx rearm-sync-gate "$apply_marker" 2>/dev/null && rearm_sync_gate=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
-    local dashboard_data_dir_old="" rearm_sync_gate=0
+    local dashboard_data_dir_old=""
     if [ "${#changed[@]}" -gt 0 ]; then
         echo ""
         log "The following changes will be applied:"
@@ -261,15 +263,6 @@ apply() {
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
         fi
-        # Re-arm the sync gate with the restore's marker (#2626). Each key above reaches the
-        # dashboard's environment (the port via MONERO_RPC_URL), so compose recreates it and it
-        # reads the marker at start. It holds the miner until the new node syncs (or releases on the first cycle if it already has).
-        # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
-        # operator's is another; the dashboard removes the file through its directory either way.
-        if [ "$rearm_sync_gate" -eq 1 ] && ! { : >"$DASHBOARD_DIR/sync-gate-reset" 2>/dev/null ||
-            sudo touch "$DASHBOARD_DIR/sync-gate-reset"; }; then
-            error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset)."
-        fi
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
         inject_service_configs
@@ -334,11 +327,21 @@ apply() {
     # Mark the recreate in-flight: cleared only after a SUCCESSFUL `up`, so a failure here (image
     # build error, a port already bound, a failed health/dependency gate, daemon hiccup) leaves the
     # marker for the next apply to retry instead of no-opping on the already-committed config (#125).
-    : >"$apply_marker"
+    if [ "$rearm_sync_gate" -eq 1 ]; then echo rearm-sync-gate >"$apply_marker"; else : >"$apply_marker"; fi
     # One-time move of the dashboard data out of the install dir (#455) — after the confirmed
     # commit above (never before the operator said yes) and under the marker, so a failed move is
     # retried; the recreate below then mounts the migrated directory.
     migrate_dashboard_data
+    # Re-arm the sync gate with the restore's marker (#2626), after the move above so its target
+    # is still empty. Each key that sets rearm_sync_gate reaches the dashboard's environment (the
+    # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
+    # holds the miner until the new node syncs (or releases on the first cycle if it already has).
+    # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
+    # operator's is another; the dashboard removes the file through its directory either way.
+    if [ "$rearm_sync_gate" -eq 1 ] && ! { : >"$DASHBOARD_DIR/sync-gate-reset" 2>/dev/null ||
+        sudo touch "$DASHBOARD_DIR/sync-gate-reset"; }; then
+        error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
+    fi
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan
     # to compose, so compose_up_checked removes those containers itself before the up (#795).

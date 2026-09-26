@@ -39,3 +39,13 @@ rm -f "$RG_MARK"
 rg_apply '"mode":"local"' '' mini
 assert_eq "tari remote -> local re-arms the gate" "$(rg_marked)" marked
 rm -f "$RG_MARK"
+# A recreate that failed after the commit is retried on an unchanged .env: the retry marker carries
+# the re-arm, so the retry still plants it; a retry with nothing to re-arm plants nothing.
+printf 'rearm-sync-gate\n' >"$V/.env.apply-incomplete"
+rg_apply '"mode":"local"' '' mini
+assert_eq "a retried recreate keeps the re-arm" "$(rg_marked)" marked
+assert_eq "the successful retry clears its retry marker" "$([ -e "$V/.env.apply-incomplete" ] && echo kept || echo none)" none
+rm -f "$RG_MARK"
+: >"$V/.env.apply-incomplete"
+rg_apply '"mode":"local"' '' mini
+assert_eq "a retry with no node change leaves the gate alone" "$(rg_marked)" none
