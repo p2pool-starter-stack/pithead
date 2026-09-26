@@ -136,7 +136,8 @@ private ranges; the host-networked dashboard, which polls a remote Tari node for
 outside those rules.
 
 > The one exception is **optional clearnet initial sync** (`monero.clearnet_initial_sync` /
-> `tari.clearnet_initial_sync`, default **off**): while active, that node's P2P leaves Tor to sync
+> `tari.clearnet_initial_sync`, default **off**, effective only with the egress firewall off): while
+> active, that node's P2P leaves Tor to sync
 > faster and its IP is exposed until it finishes, after which it reverts to Tor automatically (#234).
 > The Telegram bot alerts you the whole time it's exposed. See [Privacy](privacy.md).
 
