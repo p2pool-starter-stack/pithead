@@ -12,6 +12,7 @@ export INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-tari-wallet.sh
 source "$HERE/../lib/run-tari-wallet.sh"
 
+echo "== selftest: Tari payout-scan leg (#2731) =="
 # /proc/net/tcp remotes: loopback and bridge peers are local, a public address is not.
 PT='  sl  local_address rem_address   st
    0: 1F00A8C0:C350 1B001CAC:2328 01

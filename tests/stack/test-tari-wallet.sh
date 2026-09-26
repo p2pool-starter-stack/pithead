@@ -18,13 +18,16 @@ out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "non-integer birthday rejected" "$?" "1"
 assert_contains "non-integer birthday message names the field" "$out" "tari.payout_scan_birthday"
 # (2) A day after today is refused: Tari counts from 2022-01-01, so a 1970-based 20000 is 2076 (#2731).
-for bd in 20000 99999999999999999999; do
-    seed_env
-    printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"'"$bd"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-    assert_rc "future birthday $bd rejected" "$?" "1"
-    assert_contains "future birthday $bd message names the unit" "$out" "days since 2022-01-01"
-done
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"20000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "1970-based birthday rejected" "$?" "1"
+assert_contains "1970-based birthday message names the unit" "$out" "days since 2022-01-01"
+seed_env
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"99999999999999999999"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
+out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_rc "overflowing birthday rejected" "$?" "1"
+assert_contains "overflowing birthday message names the unit" "$out" "days since 2022-01-01"
 # (3) A valid past birthday applies and reflects verbatim into .env.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
