@@ -157,11 +157,12 @@ _phase_provision_initial_body() {
     # dashboard and caddy start before monerod and tari, which wait for tor's healthcheck. The
     # wizard's `up` holds the mutation lock until tor is healthy (#1945). In job 944 the control
     # legs below began while that `up` was still waiting, then read the wizard it reopened when
-    # tor went unhealthy (#2648). Nothing below runs until provisioning has finished.
-    if provisioning_settled 900; then
+    # tor went unhealthy (#2648). Nothing below runs until provisioning has finished, and a
+    # `failed` unit counts as settled but not as provisioned (#2725).
+    if provisioning_settled 900 && ! provisioning_setup_failed; then
         ok "provisioning finished before the day-two legs ($(provisioning_state))"
     else
-        bad "provisioning never finished; the day-two legs cannot run ($(provisioning_state))"
+        bad "provisioning never finished, or its setup failed; the day-two legs cannot run ($(provisioning_state))"
         stack_never_up_evidence # the unit states alone do not name the dependency `up` waits on
         info "  setup journal tail: $(_ssh "journalctl -u pithead-firstboot -n 5 --no-pager -o cat" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"
         return 1

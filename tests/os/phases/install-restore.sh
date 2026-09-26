@@ -64,8 +64,8 @@ _phase_install_restore() {
         # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
         # mutation lock through its tor-health wait for minutes after the stack looks live, and a
         # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
-        if ! provisioning_settled 900; then
-            bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
+        if ! provisioning_settled 900 || provisioning_setup_failed; then # #2725: settled is not succeeded
+            bad "restore leg: provisioning did not finish clean on the machine ($(provisioning_state))"
             backup_failure_evidence
             rm -f "$target_disk"
             return
@@ -306,12 +306,12 @@ _phase_install_restore() {
         # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
         # #2043 dump below carries ConditionResult for that half.
         local rswait=900
-        if provisioning_settled 900; then
+        if provisioning_settled 900 && [[ " $(provisioning_units) " != *" failed "* ]]; then # #2735: settled is not succeeded
             ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
         else
-            bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
-            # Still activating after 900 s means containers are not coming, and a second 900 s here
-            # would spend half an hour re-measuring a symptom whose cause the row above just named.
+            bad "restore leg: provisioning did not finish clean on the restored machine ($(provisioning_state))"
+            # Unsettled or failed after 900 s means containers are not coming, and a second 900 s
+            # here would spend half an hour re-measuring a symptom the row above just named.
             rswait=0
         fi
         # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
@@ -344,6 +344,22 @@ _phase_install_restore() {
             done
             ;;
         esac
+        # #2626: the archive's dashboard DB carries the source's sync-gate latch. The marker must
+        # land in the dashboard's OWN /data mount, and the dashboard must hold the miner on this
+        # guest's unsynced chains instead of inheriting a release — for every case in this loop.
+        local dash_data gtries=0 gate_seen=0
+        dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
+        { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
+            ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
+            bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+        while [ "$gtries" -lt 30 ] && [ "$gate_seen" -eq 0 ]; do
+            _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
+            [ "$gate_seen" -eq 1 ] || { sleep 10 && gtries=$((gtries + 1)); }
+        done
+        [ "$gate_seen" -eq 1 ] &&
+            ok "restore leg ($restore_case): the restored dashboard holds the miner on this machine's unsynced chains (#2626)" ||
+            bad "restore leg ($restore_case): the restored dashboard never held the miner — a carried sync-gate release (#2626)"
+
         if verdict=$(restore_live_state_verdict "$rsnames" "$live_wallet" "$expected_wallet"); then
             ok "restore leg: $verdict"
         else

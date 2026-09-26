@@ -41,6 +41,25 @@ assert_eq "unreadable ConditionResult: fails, names it unreadable" \
     "1 neither provisioning unit ran this boot (firstboot ConditionResult: unreadable, boot: unreadable) — is-active alone cannot tell a correctly-skipped unit from one that never got the chance"
 unset -f prv
 
+echo "== unit: provisioning_setup_failed — a settled provisioning is not a succeeded one (#2725) =="
+# Job 1194: firstboot ended `failed` (tor unhealthy), provisioning_settled accepted that as
+# terminal, and the restore leg backed up a failed stack. Mutation run: return 1 unconditionally
+# -> the first case flips and the leg goes back to taking its backup over a dead setup.
+psf() { # <four provisioning_units fields> -> 0 when the restore leg must stop
+    (
+        # shellcheck disable=SC1091
+        source "$ROOT/tests/os/provisioning-settled.sh"
+        fields=("$@")
+        _ssh() { printf '%s\n' "${fields[@]}"; } # the guest's four systemctl answers, one per line
+        provisioning_setup_failed && echo stop || echo go
+    )
+}
+assert_eq "firstboot ran and failed (job 1194): stop" "$(psf failed inactive yes no)" "stop"
+assert_eq "boot ran and failed: stop" "$(psf inactive failed no yes)" "stop"
+assert_eq "firstboot ran and finished: go" "$(psf inactive inactive yes no)" "go"
+assert_eq "boot ran and is active: go" "$(psf inactive active no yes)" "go"
+unset -f psf
+
 echo "== unit: secure_boot_boot_verdict — Secure Boot ON is measured, not left an unread flag (#2055 G2) =="
 # tests/os/run.sh's phase_boot second guest cannot be driven from here (it needs real KVM +
 # OVMF secure-boot firmware), but the verdict is pure text-matching over two already-observed
@@ -138,10 +157,11 @@ unset -f mhv
 echo "== structure: the provision phase settles provisioning before its day-two legs (#2648) =="
 # dashboard and caddy run while the wizard's `up` still waits on tor's healthcheck, so the podman ps
 # row alone let job 944's control legs race an unfinished provisioning. Mutation runs: move or drop
-# the provisioning_settled call, negate it, or move the `return 1` out of its else branch -> red.
+# the provisioning_settled call, negate it, drop the #2725 failed-setup guard, or move the `return 1`
+# out of its else branch -> red.
 PI_ORDER=$(awk '
     /ok "stack containers are running/ { up = NR }
-    up && !settled && /^ *if provisioning_settled [0-9]+; then/ { settled = NR }
+    up && !settled && /^ *if provisioning_settled [0-9]+ && ! provisioning_setup_failed; then/ { settled = NR }
     settled && !closed && /^ *else$/ { otherwise = NR }
     otherwise && !aborts && !closed && /^ *return 1$/ { aborts = NR }
     settled && !closed && /^ *fi$/ { closed = NR }
