@@ -63,6 +63,12 @@ _d0=$((PASS + FAIL)) && source "$HERE/doctor/test-doctor-appliance.sh" && domain
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-setup.sh" && domain_ran test-appliance-setup.sh "$_d0" "$?" || domain_ran test-appliance-setup.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-restore.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore.sh" && domain_ran test-appliance-restore.sh "$_d0" "$?" || domain_ran test-appliance-restore.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore-legacy.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-legacy.sh" && domain_ran test-appliance-restore-legacy.sh "$_d0" "$?" || domain_ran test-appliance-restore-legacy.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore-publish.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-publish.sh" && domain_ran test-appliance-restore-publish.sh "$_d0" "$?" || domain_ran test-appliance-restore-publish.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-restore-reject.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-reject.sh" && domain_ran test-appliance-restore-reject.sh "$_d0" "$?" || domain_ran test-appliance-restore-reject.sh "$_d0" "$?"
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-restore-commit.sh" && domain_ran test-appliance-restore-commit.sh "$_d0" "$?" || domain_ran test-appliance-restore-commit.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-backup.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-backup.sh" && domain_ran test-backup.sh "$_d0" "$?" || domain_ran test-backup.sh "$_d0" "$?"
@@ -173,6 +179,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-w
 _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-runner-drain.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-runner-drain.sh" && domain_ran test-control-runner-drain.sh "$_d0" "$?" || domain_ran test-control-runner-drain.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-identity.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity.sh" && domain_ran test-appliance-identity.sh "$_d0" "$?" || domain_ran test-appliance-identity.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-hostname.sh disable=SC2015
@@ -181,8 +189,6 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-hostname.sh" && d
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-defaults.sh" && domain_ran test-appliance-defaults.sh "$_d0" "$?" || domain_ran test-appliance-defaults.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-install.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install.sh" && domain_ran test-appliance-install.sh "$_d0" "$?" || domain_ran test-appliance-install.sh "$_d0" "$?"
-# shellcheck source=tests/stack/appliance/test-appliance-install-restore.sh disable=SC2015
-_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-install-restore.sh" && domain_ran test-appliance-install-restore.sh "$_d0" "$?" || domain_ran test-appliance-install-restore.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-rig-miner.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rig-miner.sh" && domain_ran test-appliance-rig-miner.sh "$_d0" "$?" || domain_ran test-appliance-rig-miner.sh "$_d0" "$?"
 
