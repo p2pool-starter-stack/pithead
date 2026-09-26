@@ -218,8 +218,8 @@ actual_all="$(sed -n '/^all)/,/^    ;;/p' "$HERE/run.sh" | sed -n 's/^    _run_p
 ) || exit 1
 grep -qF "pgrep -f '[p]odman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
 ! grep -qF "pgrep -f 'podman.*load' >/dev/null" "$HERE/phases/fault.sh" || exit 1
-grep -qF 'serial_before=$(wc -c <"$SERIAL")' "$HERE/phases/fault.sh" || exit 1
-grep -qF 'tail -c "+$((serial_before + 1))" "$SERIAL"' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'serial_before=$(fault_serial_mark "$SERIAL")' "$HERE/phases/fault.sh" || exit 1
+grep -qF 'refusal=$(fault_serial_since "$SERIAL" "$serial_before")' "$HERE/phases/fault.sh" || exit 1
 ! grep -qF 'if wait_serial "[Ee]rror|[Ff]ail|[Cc]ould not|[Cc]orrupt" 60; then' "$HERE/phases/fault.sh" || exit 1
 # Fault D's refusal arm must key on the product's own damage narration, never on any word a
 # failing boot happens to print: the generic alternation greens a brick (#2067c).
