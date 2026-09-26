@@ -25,6 +25,7 @@ case_() { # name want(0=true,1=false) fixture
     fi
 }
 
+echo "== _pred_stratum_hashes waits for the proxy's workers, not only p2pool's hashes (#2750) =="
 EXPECTED_WORKERS=2
 case_ "workers and hashes present -> ready" 0 '{"proxy_workers":2,"stratum":{"total_hashes":12345}}'
 case_ "rig still on failover: hashes survive, workers 0 -> wait" 1 '{"proxy_workers":0,"stratum":{"total_hashes":12345}}'
