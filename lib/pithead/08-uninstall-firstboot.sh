@@ -82,6 +82,11 @@ stack_uninstall() {
             warn "Not removing $dkey=$d: setup puts it at $want, and it must not overlap data uninstall keeps. Remove it by hand if it is pithead's."
         fi
     done
+    # The control runner's units are rendered from CONTROL_DIR; provision_control_runner below
+    # needs the deployed value to find and remove them once .env is gone.
+    local control_dir
+    control_dir=$(env_get_file .env CONTROL_DIR)
+    [ -n "$control_dir" ] || control_dir="$checkout_dir/data/control"
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
@@ -102,6 +107,7 @@ stack_uninstall() {
             return 1
         }
     fi
+    mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     remove_egress_check_units
@@ -113,7 +119,8 @@ stack_uninstall() {
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
-    DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    # stderr kept: the drain's timeout warning is the message for a request still in flight.
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
@@ -135,6 +142,7 @@ stack_uninstall() {
         name=$(basename "$checkout_dir")
         [ -L "$parent/current" ] && [ "$(readlink "$parent/current")" = "$name" ] && rm -f "$parent/current"
     fi
+    mutation_lock_release
 
     log "Uninstalled."
     log "Every data directory is still here. To delete pithead's data, run:"
@@ -177,9 +185,10 @@ wizard_mint_token() {
 # Consume one wizard submission: validate the candidate with the same parser setup/apply use; on
 # success install it as ./config.json and mark the spool applied (the wizard page polls for it).
 # On failure surface a short error into the spool for the form. rc: 0 applied, 1 rejected, 2 none.
-firstboot_consume_spool() ( # <spool-dir>
-    local spool="$1" cand="$1/config.json" err
+firstboot_consume_spool() ( # <spool-dir> [<config-dest>]
+    local spool="$1" dest="${2:-$PWD/config.json}" cand="$1/config.json" err
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" config.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap}.bak-1x"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -187,13 +196,17 @@ firstboot_consume_spool() ( # <spool-dir>
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
     if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
-        install -m 600 "$cand" "$PWD/config.json" || return 1
+        install -m 600 "$cand" "$dest" || {
+            wizard_clear_submission_transaction "$spool" || true
+            return 1
+        }
         rm -f "$spool/config.json"
-        wizard_spool_publish "$spool" applied true
+        wizard_spool_publish "$spool" applied true || return 1
         return 0
     fi
     printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 | wizard_spool_publish "$spool" error.txt cat
     rm -f "$spool/config.json"
+    wizard_clear_submission_transaction "$spool" || return 1
     return 1
 )
 
@@ -328,6 +341,7 @@ publish_rig_defaults() { # <spool-dir>
 firstboot_consume_rig() ( # <spool-dir>
     local spool="$1" req="$1/rig-request.json" pool worker host port
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" rig-request.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap%/*}/rig.json"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -341,11 +355,13 @@ firstboot_consume_rig() ( # <spool-dir>
     if [ "$host" = "$pool" ] || ! is_valid_host "$host" || ! is_valid_port "$port"; then
         printf 'the pool address must look like host:port — a Pithead answers on port 3333' | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
         printf 'cannot reach a pool at %s:%s — check the address, and that the Pithead is up' "$host" "$port" | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     # The control token (#1836) survives a "Set up again" that keeps the role AND the worker name
@@ -362,6 +378,7 @@ firstboot_consume_rig() ( # <spool-dir>
     ); then
         rm -f "$spool/rig-request.json" "$PWD/rig.json"
         printf 'could not record the rig settings — submit again' | wizard_spool_publish "$spool" error.txt cat
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     chmod 600 "$PWD/rig.json" 2>/dev/null || true

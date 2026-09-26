@@ -298,16 +298,16 @@ for edge in "monerod=tor" "tari=tor" "wallet-rpc=monerod" "tari-wallet=tari"; do
     jq_assert "$svc waits for $dep to be service_healthy (#565)" \
         ".services[\"$svc\"].depends_on[\"$dep\"].condition == \"service_healthy\""
 done
-jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" \
-    '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+# Both service_healthy edges on tor fail the whole `up` once tor reads unhealthy, and a cold Tor
+# bootstrap has taken 5 minutes (#2648). Compose renders durations as Go strings: "10m", "1m30s".
+jq_assert "tor's start_period covers a slow cold bootstrap: 10 minutes or more (#2648)" 'def secs: capture("^((?<h>[0-9]+)h)?((?<m>[0-9]+)m)?((?<s>[0-9]+)s)?$") | ((.h // "0" | tonumber) * 3600 + (.m // "0" | tonumber) * 60 + (.s // "0" | tonumber)); (.services.tor.healthcheck.start_period | secs) >= 600'
 # Peer-loss coupling (#972): a tor restart/recreate kills monerod's SOCKS peers and monerod does
 # NOT re-dial on its own (bench: 0 in / 0 out peers for ~6h, healthcheck green). restart: true
 # makes every compose operation that restarts/recreates tor restart monerod right after — and it
 # is deliberately the ONLY such coupling: p2pool re-peers on its own.
-jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" \
-    '.services["monerod"].depends_on["tor"].restart == true'
-jq_assert "the tor restart coupling stays monerod-only (#972)" \
-    '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
+jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" '.services["monerod"].depends_on["tor"].restart == true'
+jq_assert "the tor restart coupling stays monerod-only (#972)" '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
 jq_assert "p2pool has no depends_on — both monerod and tari can be profiled off (#103/#565)" \
     '(.services["p2pool"].depends_on // {}) == {}'
 # Count guard: a NEW depends_on edge (health-gated or not) added anywhere in the file must show up
