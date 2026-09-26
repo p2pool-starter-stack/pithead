@@ -13,7 +13,7 @@ set -e
 # drops that marker and restarts the container, so this start (and every later one) uses the
 # untouched Tor config — the node returns to Tor on its own and stays there.
 #
-# Clearnet transform: flip the transport tor → tcp, re-enable the seeds.tari.com DNS seed (the
+# Clearnet transform: flip the transport socks5 → tcp, re-enable the seeds.tari.com DNS seed (the
 # bundled onion peer_seeds are unreachable without Tor), and stop advertising the onion. The host's
 # IP is briefly visible to the Tari P2P network during the sync window.
 #
@@ -35,7 +35,7 @@ CLEARNET_MARKER="${CLEARNET_MARKER:-/clearnet-state/tari.synced}"
 # (no in-place -e) so the shell test suite can exercise it directly.
 apply_clearnet_initial_sync() {
     local cfg="$1" tmp="$1.tmp"
-    sed -e 's/^type = "tor"/type = "tcp"/' \
+    sed -e 's/^type = "socks5"/type = "tcp"/' \
         -e 's/^dns_seeds = \[\]/dns_seeds = ["seeds.tari.com"]/' \
         -e 's#^public_addresses = .*#public_addresses = []#' \
         "$cfg" >"$tmp" && mv "$tmp" "$cfg"
