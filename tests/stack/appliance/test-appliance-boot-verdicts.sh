@@ -113,22 +113,42 @@ printf 'Powering up......\nqemu: no console output\n' >"$FBV/no-boot"
 verdict=$(fault_boot_verdict "$FBV/no-boot" 0)
 assert_rc "a serial log with no GRUB, kernel or login evidence IS BRICKED" "$?" "1"
 assert_contains "…and quotes the serial's last lines" "$verdict" "qemu: no console output"
-# The earlier boot's login line must not leak across the offset: a fresh power cycle appends to
-# the SAME $SERIAL file rather than truncating it, so only bytes written after the mark count.
-cat "$FBV/booted" "$FBV/no-boot" >"$FBV/combined"
-mark=$(wc -c <"$FBV/booted" | tr -d ' ')
-verdict=$(fault_boot_verdict "$FBV/combined" "$mark")
+# The earlier boot's login line must not leak across the offset: when a power cycle appends to the
+# SAME $SERIAL file, only bytes written after the mark count.
+cp "$FBV/booted" "$FBV/serial"
+mark=$(fault_serial_mark "$FBV/serial")
+cat "$FBV/no-boot" >>"$FBV/serial"
+verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
 assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
-# #2746: `virsh start` truncated $SERIAL, so the pre-cut mark lies past EOF. The new boot's
-# console is the whole file. Mutation run: drop the EOF clamp -> tail reads nothing and a booted
-# guest is BRICKED with empty "last lines" (job 1262's A1).
-verdict=$(fault_boot_verdict "$FBV/booted" 999999)
-assert_rc "a mark past EOF (truncated on start) reads the new boot from byte 0" "$?" "0"
+# #2746: `virsh start` may restart $SERIAL at byte 0, and the new boot's console soon grows past
+# the old mark. Its GRUB and kernel lines sit before that mark, so an offset kept by size alone
+# skips them and calls a booted guest BRICKED. Mutation run: drop the cmp against <log>.mark ->
+# this row reads from the stale offset and fails.
+cat "$FBV/booted" "$FBV/no-boot" >"$FBV/serial"
+mark=$(fault_serial_mark "$FBV/serial")
+{
+    printf 'GNU GRUB  version 2.06\n'
+    printf 'systemd[1]: a unit line that pushes the log well past the old mark %s\n' 1 2 3 4
+} >"$FBV/serial"
+verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
+assert_rc "a log truncated on start and regrown past the mark is read from byte 0" "$?" "0"
+# The same restart with the log still shorter than the mark (job 1262's empty "last lines").
+cp "$FBV/booted" "$FBV/serial"
+mark=$(fault_serial_mark "$FBV/serial")
+printf 'GNU GRUB\n' >"$FBV/serial"
+verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
+assert_rc "a log truncated on start and still shorter than the mark is read from byte 0" "$?" "0"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
 # Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"
 fault_boot_verdict "$FBV/no-boot" 0 >/dev/null
 assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.failed" 2>/dev/null)" "$(cat "$FBV/no-boot")"
+# A copy that fails says so in the verdict instead of leaving the evidence silently missing.
+mkdir -p "$FBV/ro" && cp "$FBV/no-boot" "$FBV/ro/serial" && chmod a-w "$FBV/ro"
+verdict=$(fault_boot_verdict "$FBV/ro/serial" 0)
+chmod u+w "$FBV/ro"
+assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/ro/serial.failed"
+unset -f fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict
 rm -rf "$FBV"
 

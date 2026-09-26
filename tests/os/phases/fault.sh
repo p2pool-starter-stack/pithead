@@ -39,7 +39,7 @@ phase_fault() {
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
+        mark=$(fault_serial_mark "$SERIAL")
         virsh destroy "$VM" >/dev/null 2>&1 || true
         sleep 3
         virsh start "$VM" >/dev/null 2>&1 || true
@@ -65,7 +65,7 @@ phase_fault() {
     # refusal — refusing to install is correct, crashing is not, and bricking is disqualifying.
     info "fault C — install a deliberately corrupted bundle"
     _ssh "dd if=/dev/urandom of=/data/update.bundle bs=1M seek=8 count=2 conv=notrunc" >/dev/null 2>&1 || true
-    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
+    mark=$(fault_serial_mark "$SERIAL")
     local corrupt_rc=0
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1") || corrupt_rc=$?
     if printf '%s' "$out" | grep -qi "panic"; then
@@ -114,7 +114,7 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
+    mark=$(fault_serial_mark "$SERIAL")
     virsh destroy "$VM" >/dev/null 2>&1 || true
     sleep 3
     virsh start "$VM" >/dev/null 2>&1 || true
@@ -201,8 +201,8 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
-    local serial_before=0
-    [ -f "$SERIAL" ] && serial_before=$(wc -c <"$SERIAL")
+    local serial_before
+    serial_before=$(fault_serial_mark "$SERIAL")
     virsh destroy "$VM" >/dev/null 2>&1 || {
         bad "D: could not cut power during the image load"
         return
@@ -228,7 +228,7 @@ phase_fault() {
         local refusal deadline=$(($(date +%s) + 60)) verdict
         local legible='The container image store is damaged|Could not load the baked image archive'
         while [ "$(date +%s)" -lt "$deadline" ]; do
-            refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
+            refusal=$(fault_serial_since "$SERIAL" "$serial_before")
             grep -qE "$legible" <<<"$refusal" && break
             sleep 3
         done
