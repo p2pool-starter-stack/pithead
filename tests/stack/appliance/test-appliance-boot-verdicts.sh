@@ -144,10 +144,9 @@ rm -f "$FBV/no-boot.failed"
 fault_boot_verdict "$FBV/no-boot" 0 >/dev/null
 assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.failed" 2>/dev/null)" "$(cat "$FBV/no-boot")"
 # A copy that fails says so in the verdict instead of leaving the evidence silently missing.
-mkdir -p "$FBV/ro" && cp "$FBV/no-boot" "$FBV/ro/serial" && chmod a-w "$FBV/ro"
-verdict=$(fault_boot_verdict "$FBV/ro/serial" 0)
-chmod u+w "$FBV/ro"
-assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/ro/serial.failed"
+# (A missing log fails the copy for root too, where a read-only directory would not.)
+verdict=$(fault_boot_verdict "$FBV/absent" 0)
+assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/absent.failed"
 unset -f fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict
 rm -rf "$FBV"
