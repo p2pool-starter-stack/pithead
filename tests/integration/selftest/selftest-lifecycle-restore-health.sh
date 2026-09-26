@@ -103,9 +103,12 @@ SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
 rm -f "$LIFECYCLE_OUT"
 
+eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
 assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"
 assert_eq "telemetry diff reports an empty probe" "$(telemetry_rows_diff "" "")" "before=0 after=0 missing: none"
+assert_eq "telemetry diff never blames a volatile kv_store shape the recreated dashboard rewrote (#2421)" \
+    "$(telemetry_rows_diff $'blocks -\nkv_store-volatile-shape:xvb_day aaa' $'blocks -\nkv_store-volatile-shape:xvb_day bbb')" "before=2 after=2 missing: none"
 
 # The real fingerprint must fail closed: an unreadable or secret-less .env is not a fingerprint.
 FP_SRC="$(sed -n '/^secret_fingerprint() {$/,/^}$/p' "$HERE/../lib/run-matrix.sh")"
