@@ -87,14 +87,23 @@ echo "== a restored baseline that will not start names the step that stopped it 
     done
     grep -Fq 'failed+=" start:$BASELINE_START_STEP${BASELINE_START_ERROR:+ [$BASELINE_START_ERROR]}"' "$HERE/lib/live-upgrade-support.sh"
     # A failing render keeps its own [ERROR] line: colour stripped, secrets redacted.
-    pithead() { printf 'noise\n\033[0;31m[ERROR]\033[0m bad value MONERO_WALLET_ADDRESS=4abc\n'; return 1; }
+    pithead() {
+        printf 'noise\n\033[0;31m[ERROR]\033[0m bad value MONERO_WALLET_ADDRESS=4abc\n'
+        return 1
+    }
     STOP_AT=""
     ! start_restored_baseline && [ "$BASELINE_START_STEP" = render ] || exit 1
     [ "$BASELINE_START_ERROR" = "[ERROR] bad value MONERO_WALLET_ADDRESS=<redacted>" ] || exit 1
     # A path or host the error interpolates never reaches the public verdict.
-    pithead() { printf '[ERROR] Refusing to use %s as a data directory\n' "'/srv/pithead-data' — it's a system"; return 1; }
+    pithead() {
+        printf '[ERROR] Refusing to use %s as a data directory\n' "'/srv/pithead-data' — it's a system"
+        return 1
+    }
     ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] Refusing to use" ] || exit 1
-    pithead() { printf '[ERROR] monero.remote.host is not a valid host. Got "node.home.lan:18081"\n'; return 1; }
+    pithead() {
+        printf '[ERROR] monero.remote.host is not a valid host. Got "node.home.lan:18081"\n'
+        return 1
+    }
     ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] monero.remote.host is not a valid host. Got" ] || exit 1
     # baseline_up runs in this shell, so its counted skip survives a captured step.
     pithead() { :; }
@@ -136,7 +145,10 @@ outside="$(grep -rhoE '(\.\./){3}[A-Za-z0-9_./-]+' "$HERE/lib" "$HERE/run.sh" "$
 [ -n "$outside" ]
 tar_line="$(grep -F 'tar --no-xattrs -czf "$stage/harness.tar.gz"' "$HERE/../os/phases/image-upgrade.sh")"
 while IFS= read -r f; do
-    grep -Fq -- " $f" <<<"$tar_line" || { echo "harness tarball misses $f" >&2; exit 1; }
+    grep -Fq -- " $f" <<<"$tar_line" || {
+        echo "harness tarball misses $f" >&2
+        exit 1
+    }
 done <<<"$outside"
 
 echo "== a CLI without render (v1.20.0) skips the step; one with it still runs it =="
@@ -154,11 +166,20 @@ echo "== a CLI without render (v1.20.0) skips the step; one with it still runs i
     wait_miner_running() { :; }
     wait_stratum_hashes() { :; }
     RENDERED=0
-    pithead() { [ "$1" = render ] && RENDERED=1; return 0; }
+    pithead() {
+        [ "$1" = render ] && RENDERED=1
+        return 0
+    }
     start_restored_baseline && [ "$RENDERED" = 1 ] || exit 1
     printf 'set -Eeuo pipefail\n' >"$IT_REMOTE_DIR/pithead"
     RENDERED=0
-    pithead() { [ "$1" = render ] && { RENDERED=1; return 1; }; return 0; }
+    pithead() {
+        [ "$1" = render ] && {
+            RENDERED=1
+            return 1
+        }
+        return 0
+    }
     start_restored_baseline && [ "$RENDERED" = 0 ] && [ -z "$BASELINE_START_STEP" ] || exit 1
 )
 
