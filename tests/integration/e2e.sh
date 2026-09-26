@@ -496,9 +496,9 @@ provision() {
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
     log "Taking a safety backup of the live stack (the rollback anchor)"
-    # ponytail: --no-encrypt because v1.4 refuses to write a plaintext archive unattended without
-    # PITHEAD_BACKUP_PASSPHRASE; this rollback anchor never leaves the bench, so plaintext is fine here.
-    on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt >/dev/null 2>&1" || die "pithead backup failed."
+    # --no-encrypt: this anchor never leaves the bench. Output kept (#2757): bench fault vs branch fault.
+    local out rc=0 && out="$(on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt 2>&1")" || rc=$?
+    [ "$rc" -eq 0 ] || { printf '%s\n' "$out" | tail -n 20 | redact_remote_output | sed 's/^/      /' >&2; die "pithead backup failed (exit $rc); its last lines are above."; }
     SAFETY_ARCHIVE="$(on_bench "ls -t '$CANONICAL_DIR'/backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1")"
     [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
     ok "safety backup: $SAFETY_ARCHIVE"
