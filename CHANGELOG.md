@@ -148,6 +148,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **An unreachable image registry is no longer reported as a bad signature
+  ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
+  reach the registry, for example `no route to host`, the start and upgrade paths still refuse to
+  pull, and now say the image is unverified because of a network error. Before, they said the published image did not
+  match the release key, which sent operators looking for a tampered image.
+
 - **A restore at setup no longer carries the source machine's released miner onto new hardware
   ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
   database records that the source machine's chains had synced and its miner was released. Restored
