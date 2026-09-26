@@ -1,51 +1,20 @@
 #!/usr/bin/env bash
-# Host-mediated configuration approval and remote-node consumption (#1959/#1966). Sourced by
-# tests/os/run.sh; --self-test covers the pure consumer verdict without a guest or network.
+# Host-mediated configuration approval (#1959/#1966). Sourced by tests/os/run.sh; --self-test
+# covers the pure approval verdicts without a guest or network.
 # shellcheck source=tests/os/appliance-approval-verdict.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-approval-verdict.sh"
 
 APPROVAL_RESTORE_SNAPSHOT=""
-# #2076 deleted the guest-side fake Telegram provider this leg used to install (a fake `curl` on
-# the control unit's PATH, an owner lock, a bind/quiesce/disarm dance, and a prompt sidecar). A
-# sensitive commit no longer contacts Telegram at all, so the leg drives the ordinary authenticated
-# control route and needs no privileged loopback identity. What is kept is the restore discipline:
-# this phase repoints the appliance at reserved nodes and MUST put the original config back.
+# Sensitive commits use the authenticated dashboard route. This phase repoints the appliance at
+# reserved nodes and must restore the original config afterward.
 
-# The max-time is not arbitrary and must stay above the dashboard's own answer window (#2060):
-# handle_control_* holds the request open until the runner answers or CONTROL_WAIT_S (30s) elapses,
-# and only THEN returns 202 with the request id. That id is the only way into the polling loop in
-# dashboard_control_request, so a POST that gives up first loses the request entirely — the caller
-# gets nothing back and the row reports "no result" for an operation that was merely slow. At 8s
-# that was every control operation which does real work: a commit that runs an apply, and doctor on
-# an unhealthy box. Their fast siblings (preview, doctor on a healthy box) answered inside 8s and
-# passed, which is what made the failures read as the runner losing results.
+# Keep this above the dashboard's 30-second answer window so a 202 response still carries the id.
 dashboard_control_post() { # <route> <json-body>; keeps secrets out of curl's argv
     printf '%s' "$2" | dashboard_curl -sSk -m 45 -H 'Content-Type: application/json' \
         -H 'X-Pithead-Control: 1' --data-binary @- -w '\n%{http_code}' \
         "https://$ip/api/control/$1" 2>/dev/null
 }
 dashboard_config_body() { printf '%s' "$1" | jq -c '{config:.}'; }
-
-remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> <tari-host> <grpc>
-    # <user>/<password> are OFTEN blank (#2297): a reserved bench node commonly needs no RPC auth
-    # (config.example.toml's provision env lists only host/port for it), and $live's own
-    # monero.node_username/node_password already carry a {"__secret__":true} sentinel — /api/config
-    # masks every CONTROL_SECRET_PATHS leaf, and that pair is on it. A blank arg must leave those two
-    # fields ALONE so the sentinel survives to staging: control_preview's restore (43-control-
-    # approval-and-preview.sh) swaps a sentinel for the live value, but only recognizes the sentinel
-    # SHAPE — overwriting it with a literal "" here defeats that restore before it runs, and an empty
-    # string then reads as a REAL change against the live host-generated local-node creds (23-setup-
-    # and-credentials.sh), which MONERO_NODE_USERNAME/PASSWORD's perimeter (42-control-policy-and-
-    # host-checks.sh: credentials stay host-CLI-only, no allowlist tier) refuses outright — the whole
-    # preview never reaches "previewed", so destructive/approval_required/preview_values are never
-    # populated either. A real operator repointing only host/port through the dashboard form never
-    # touches these fields, so this must not, when they are blank.
-    printf '%s\0' "$@" | jq -Rsc 'split("\u0000") as $v | ($v[0] | fromjson) |
-        .monero.mode="remote" | .monero.remote={host:$v[1],rpc_port:($v[2]|tonumber),zmq_port:($v[3]|tonumber)} |
-        (if $v[4] != "" then .monero.node_username=$v[4] else . end) |
-        (if $v[5] != "" then .monero.node_password=$v[5] else . end) |
-        .tari.mode="remote" | .tari.remote={host:$v[6],grpc_port:($v[7]|tonumber)}'
-}
 
 approval_commit() { # <preview-id>; the confirmation envelope a sensitive commit now carries
     local id="$1"
@@ -95,36 +64,6 @@ approval_fixture_cleanup() {
     }
 }
 
-remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <p2pool-startup-log>
-    local mh="$1" rpc="$2" zmq="$3" th="$4" grpc="$5" snapshot="$6" env cmd flags tari_endpoint started now
-    started=$(printf '%s\n' "$snapshot" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')
-    logs=$(printf '%s\n' "$snapshot" | sed '1d')
-    [ -n "$started" ] || return 1
-    now=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r') || return 1
-    [ "$now" = "$started" ] || return 1
-    env=$(_ssh "sed -n '/^MONERO_NODE_HOST=/p; /^MONERO_RPC_PORT=/p; /^MONERO_ZMQ_PORT=/p; /^TARI_GRPC_ADDRESS=/p' /data/pithead/.env" 2>/dev/null | tr -d '\r') || return 1
-    printf '%s\n' "$env" | grep -qxF "MONERO_NODE_HOST=$mh" || return 1
-    printf '%s\n' "$env" | grep -qxF "MONERO_RPC_PORT=$rpc" || return 1
-    printf '%s\n' "$env" | grep -qxF "MONERO_ZMQ_PORT=$zmq" || return 1
-    printf '%s\n' "$env" | grep -qxF "TARI_GRPC_ADDRESS=$th:$grpc" || return 1
-    cmd=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'def val(\$name): index(\$name) as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end; [val(\"--host\"),val(\"--rpc-port\"),val(\"--zmq-port\"),val(\"--merge-mine\")] | @tsv'" 2>/dev/null | tr -d '\r') || return 1
-    [ "$cmd" = "$(printf '%s\t%s\t%s\ttari://%s:%s' "$mh" "$rpc" "$zmq" "$th" "$grpc")" ] || return 1
-    flags=$(_ssh "podman inspect p2pool --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^P2POOL_FLAGS=//p'" 2>/dev/null | tr -d '\r') || return 1
-    tari_endpoint="$th:$grpc"
-    case " $flags " in *" --socks5 "* | *" --socks5="*) tari_endpoint="127.0.0.1:$grpc" ;; esac
-    tari_endpoint_roundtrip_verdict "$logs" "$tari_endpoint" || return 1
-    now=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r') || return 1
-    [ "$now" = "$started" ]
-}
-
-p2pool_current_startup_merge_lines() {
-    local started
-    started=$(_ssh "podman inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')
-    [ -n "$started" ] || return 1
-    printf 'PITHEAD_P2POOL_STARTED=%s\n' "$started"
-    _ssh "podman logs --since '$started' p2pool 2>&1 | head -n $MM_WINDOW_LINES | grep -a MergeMiningClientTari || true" 2>/dev/null
-}
-
 # The leg ahead of this one recreates the dashboard container, so a single curl the instant it
 # returns is a race, not a measurement (#2059's contract, applied here after the #1929 leg was bitten
 # by the same shape). Bounded retry, and the CALLER decides what an exhausted read means.
@@ -143,14 +82,8 @@ sensitive_live_config() { # prints the live config, or nothing
 
 phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid before after audit
-    local mh="${PITHEAD_OS_MONERO_NODE_HOST:-}" rpc="${PITHEAD_OS_MONERO_RPC_PORT:-}" zmq="${PITHEAD_OS_MONERO_ZMQ_PORT:-}"
-    local mu="${PITHEAD_OS_MONERO_NODE_USERNAME:-}" mp="${PITHEAD_OS_MONERO_NODE_PASSWORD:-}"
-    local th="${PITHEAD_OS_TARI_NODE_HOST:-}" grpc="${PITHEAD_OS_TARI_GRPC_PORT:-}" logs tries node_ok
 
-    # An unreadable dashboard is an UPSTREAM condition, not a verdict on this leg. #2060's
-    # host-mediated-hostname row leaves the dashboard unreadable, and a leg that reports
-    # "sensitive config failed" there hangs a Telegram-shaped label on a hostname-shaped defect —
-    # exactly what happened to the #1929 tari leg on 2026-09-11. Say what was actually observed.
+    # Attribute an unreadable dashboard to the earlier leg that left this precondition false.
     live=$(sensitive_live_config) || {
         bad "sensitive config NOT exercised: the dashboard never served /api/config (20 tries over ~60s) — an earlier leg left it unreadable; this is not a verdict on the sensitive-commit path"
         return
@@ -175,9 +108,7 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
     preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
     result=$(approval_commit "$rid")
     audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
-    # A restart can lose the runner result after the hostname was already applied. Probe the
-    # authoritative identity once without capturing it: command substitution runs `bad` in a
-    # subshell and loses its contribution to the harness failure tally.
+    # Probe identity directly: subshell capture loses the harness failure tally.
     local identity_landed=unknown
     if [ -z "$result" ]; then
         if assert_appliance_hostname_identity fixture-next "confirmed day-two hostname" "$DASH_USER" "$DASH_PASS"; then
@@ -209,125 +140,6 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     fi
     ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
-
-    if [ -z "$mh" ] || [ -z "$rpc" ] || [ -z "$zmq" ] || [ -z "$th" ] || [ -z "$grpc" ]; then
-        bad "reserved-node inputs are missing — set PITHEAD_OS_MONERO_NODE_HOST/RPC_PORT/ZMQ_PORT and PITHEAD_OS_TARI_NODE_HOST/GRPC_PORT for the required consumer proof"
-        return
-    fi
-    for port in "$rpc" "$zmq" "$grpc"; do
-        case "$port" in *[!0-9]* | "") port=0 ;; esac
-        if [ "$port" -lt 1 ] 2>/dev/null || [ "$port" -gt 65535 ] 2>/dev/null; then
-            bad "reserved-node ports must be decimal integers from 1 through 65535"
-            return
-        fi
-    done
-    live=$(sensitive_live_config) || return
-    local gate_only=0
-    if [ -n "$mu" ] || [ -n "$mp" ]; then # see reserved_node_credential_refusal_verdict
-        proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || return
-        sensitive_preview "$(dashboard_config_body "$proposed")" || {
-            bad "reserved-node preview with RPC login credentials never returned"
-            return
-        }
-        if reserved_node_credential_refusal_verdict "$APPROVAL_PREVIEW"; then
-            ok "reserved-node RPC login credentials are refused outright, never routed into the approval gate"
-        else
-            bad "reserved-node preview with RPC login credentials did not hard-refuse ($(reserved_node_preview_payload "$APPROVAL_PREVIEW"))"
-            return
-        fi
-        gate_only=1
-    fi
-    # Blank credentials keep the live secret sentinel (remote_node_proposal), so every gate below
-    # runs on every bench; only the commit needs a node that accepts the live credentials.
-    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "" "$th" "$grpc") || {
-        bad "reserved-node proposal could not be constructed"
-        return
-    }
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return
-    preview=$APPROVAL_PREVIEW
-    if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
-        .status == "previewed" and .destructive == true and .approval_required == true and
-        any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
-        any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
-        bad "reserved-node preview did not expose endpoints behind the combined approval gate ($(reserved_node_preview_payload "$preview"))"
-        return
-    fi
-    ok "reserved-node preview exposes both endpoints behind the combined approval gate"
-    node_ok=1
-    # The preview is the only place these endpoints are shown before they are committed, so it
-    # carries the disclosure duty the removed Telegram prompt used to: never the node credentials.
-    if { [ -n "$mu" ] && case "$preview" in *"$mu"*) true ;; *) false ;; esac } ||
-        { [ -n "$mp" ] && case "$preview" in *"$mp"*) true ;; *) false ;; esac } then
-        bad "reserved-node preview exposed a Monero node credential"
-        node_ok=0
-    else
-        ok "reserved-node preview exposes node endpoints without node credentials"
-    fi
-    if reserved_node_rendered_endpoints_verdict "$preview" "$mh" "$rpc" "$zmq" "$th" "$grpc"; then
-        ok "reserved-node preview renders the Monero and Tari endpoints p2pool is started with"
-    else
-        bad "reserved-node preview did not render p2pool's node endpoints ($(printf '%s' "$preview" | jq -c '[.changes[]? | select(.key | test("^(MONERO_NODE_HOST|MONERO_RPC_PORT|MONERO_ZMQ_PORT|TARI_GRPC_ADDRESS)$")) | .key]' 2>/dev/null))"
-        node_ok=0
-    fi
-    rid=$APPROVAL_REQUEST_ID
-    result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,approve:true,payout_suffixes:{}}')")
-    if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("type APPLY"))' >/dev/null; then
-        ok "reachable-node commit is refused before probing or approval without typed APPLY"
-    else
-        bad "reachable-node commit crossed the typed confirmation gate"
-        return
-    fi
-    audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
-    if printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[];
-        .id == $id and .action == "commit" and .status == "rejected" and (.approver // "") == "")' >/dev/null; then
-        ok "the unconfirmed reserved-node commit is audited as rejected without an approver"
-    else
-        bad "reserved-node audit did not record the unconfirmed commit as rejected without an approver"
-        node_ok=0
-    fi
-    if [ "$gate_only" -eq 1 ]; then
-        it_skip_leg "reserved-node commit, p2pool endpoint consumption and Tari chain_id round trip" \
-            "this bench's reserved Monero node requires an RPC login, and MONERO_NODE_USERNAME/PASSWORD are not dashboard-committable — a bench node without RPC auth runs it" missing
-        [ "$node_ok" -eq 1 ] || return 1
-        return
-    fi
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return
-    preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
-    approval_capture_restore_snapshot || {
-        bad "could not preserve the original raw configuration for guaranteed restore"
-        return
-    }
-    result=$(approval_commit "$rid")
-    if ! printf '%s' "$result" | jq -e '.status == "applied"' >/dev/null; then
-        bad "host preflight refused the reserved nodes"
-        return
-    fi
-    audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
-    printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[];
-        .id == $id and .status == "applied" and (.approver // "") == "")' >/dev/null || {
-        bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
-        node_ok=0
-    }
-    tries=0 logs=""
-    while [ "$tries" -lt 60 ]; do
-        logs=$(p2pool_current_startup_merge_lines)
-        remote_node_runtime_verdict "$mh" "$rpc" "$zmq" "$th" "$grpc" "$logs" && break
-        tries=$((tries + 1))
-        sleep 10
-    done
-    if [ "$tries" -lt 60 ]; then
-        ok "approved endpoints passed host preflight and p2pool consumed Tari chain_id from the current startup"
-    else
-        bad "approved endpoints landed but current p2pool never proved the Tari chain_id round trip ($(mm_roundtrip_verdict "$logs"))"
-        node_ok=0
-    fi
-
-    if approval_restore_pending; then
-        ok "approved-node fixture restored the original local-node configuration"
-    else
-        bad "approved-node fixture could not restore the original node configuration"
-    fi
-    [ "$node_ok" -eq 1 ] || return 1
 }
 
 _hostname_landed_fallback_self_test() (
@@ -372,34 +184,20 @@ _restore_waits_for_control_drain_self_test() (
     [ "$applied" -eq 1 ]
 )
 
-# #2297: a blank monero-node-username/password arg must leave monero.node_username/node_password
-# UNTOUCHED, so a live {"__secret__":true} sentinel survives to control_preview's restore — see the
-# comment on remote_node_proposal itself for why an overwrite to "" defeats that restore and trips
-# the credential perimeter. A NON-blank arg must still land (an operator-supplied real credential
-# for a node that DOES need auth is exactly what this path exists to carry).
-_remote_node_proposal_self_test() {
-    local f=0 live out
-    live='{"monero":{"node_username":{"__secret__":true},"node_password":{"__secret__":true}}}'
-    out=$(remote_node_proposal "$live" mh 1 2 "" "" th 3)
-    case "$out" in *'"__secret__":true'*'"__secret__":true'*) ;; *) f=$((f + 1)) ;; esac
-    out=$(printf '%s' "$out" | jq -r '.monero.node_username.__secret__, .monero.node_password.__secret__' 2>/dev/null | tr '\n' ' ')
-    [ "$out" = "true true " ] || f=$((f + 1))
-    out=$(remote_node_proposal "$live" mh 1 2 realuser realpass th 3 | jq -r '.monero.node_username, .monero.node_password' 2>/dev/null | tr '\n' ' ')
-    [ "$out" = "realuser realpass " ] || f=$((f + 1))
-    [ "$f" -eq 0 ] || {
-        printf 'remote-node-proposal self-test FAILED: %s checks\n' "$f"
-        return 1
-    }
-    printf 'remote-node-proposal self-test passed\n'
+# #2333: a fresh-chain sync-gate-hold row must be checked before the reserved-node round trip
+# reorders local chains and burns wall-clock time (jobs 1044/1113/1172/1173). Line-number order is
+# the only invariant a static self-test can hold on shell source; a regression here reintroduces
+# that cascade instead of failing loudly.
+_remote_node_regressions_run_last_self_test() {
+    local here="$1" gate_line call_line
+    gate_line=$(grep -n 'no sync-gate hold in the dashboard log' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
+    call_line=$(grep -n 'phase_provision_remote_node_regressions "' "$here/phases/provision-initial.sh" | cut -d: -f1 | head -1)
+    [ -n "$gate_line" ] && [ -n "$call_line" ] && [ "$call_line" -gt "$gate_line" ]
 }
 
 _approval_self_test() {
     local f=0 here
     here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-    mm_roundtrip_verdict 'MergeMiningClientTari tari://127.0.0.1:18142 uses chain_id 0123456789abcdef' >/dev/null || f=$((f + 1))
-    mm_roundtrip_verdict 'MergeMiningClientTari worker thread ready' >/dev/null && f=$((f + 1))
-    tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://node.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' || f=$((f + 1))
-    tari_endpoint_roundtrip_verdict 'MergeMiningClientTari tari://old.fixture:18142 uses chain_id 0123456789abcdef' 'node.fixture:18142' && f=$((f + 1))
     _control_request_transport_self_test || f=$((f + 1))
     # Called from HERE, not from _approval_bind_payload_self_test: that one is also driven
     # standalone by tests/os/selftest-row-payloads.sh, which sources this verdict file WITHOUT
@@ -412,21 +210,27 @@ _approval_self_test() {
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _physical_presence_password_refusal_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
-    _reserved_node_credential_refusal_self_test || f=$((f + 1))
-    _runtime_epoch_self_test || f=$((f + 1))
-    _remote_node_proposal_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
+    # #2333: the reserved-node round trip must stay AFTER the sync-gate-hold checks, not folded
+    # back into phase_provision_sensitive_regressions above — see provision-initial.sh's comment.
+    # A caller here (not just present-and-guarded) would silently reintroduce jobs 1044/1113/1172/
+    # 1173's cascade: the round trip's own wall-clock cost would again run BEFORE the checks that
+    # need chains still fresh.
+    grep -Fq 'phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
+    _remote_node_regressions_run_last_self_test "$here" || f=$((f + 1))
     [ "$f" -eq 0 ] || {
         printf 'appliance-config-approval-leg self-test FAILED: %s checks\n' "$f"
         return 1
     }
     printf 'appliance-config-approval-leg self-test passed\n'
 }
+# shellcheck source=tests/os/appliance-node-runtime-leg.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/appliance-node-runtime-leg.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = --self-test ]; then
     set -uo pipefail
     # shellcheck source=tests/os/provision-browser-submit.sh
     . "$(cd "$(dirname "$0")" && pwd)/provision-browser-submit.sh"
     # shellcheck source=tests/integration/lib/mergemine-probe.sh
     . "$(cd "$(dirname "$0")/../integration/lib" && pwd)/mergemine-probe.sh"
-    _approval_self_test
+    _approval_self_test && _remote_node_self_test
 fi

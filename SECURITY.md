@@ -90,17 +90,21 @@ The stack's defaults:
   and Tari **node endpoints** (#1888) — commit only behind a typed confirmation in the dashboard,
   and only in that direction. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. The endpoints are address identity, not secrets — the remote node's RPC
-  username and password stay in the never-committable set below. A dashboard-confirmed
+  a node that is not there. The node RPC username and password commit the same way,
+  behind the same typed confirmation, on the owner's #2367 ruling (2026-09-19): every config field
+  is editable from the dashboard, and a security-sensitive one warns rather than refuses. The
+  preview names the field changing and never echoes the credential's value; masked like every
+  other secret in the editor prefill (`control_service.SECRET_PATHS`). A dashboard-confirmed
   data-directory move is further held to an **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI
   only. The host CLI keeps its wider blocklist check — a shell operator already has filesystem-wide
   reach. Everything else is refused in
   every direction, as is anything the change preview flags destructive (including the heavy direction
-  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The security
-  perimeter — wallets and view keys, dashboard auth and onion exposure, the control channel itself,
-  the Tor egress firewall, binds, and every credential —
+  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The rest of the
+  security perimeter — wallets and view keys, dashboard auth and onion exposure, the control
+  channel itself, the Tor egress firewall, binds, and every credential except the confirm-gated
+  node RPC username and password —
   is never dashboard-committable, with or without the typed confirmation. A key added in the
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.

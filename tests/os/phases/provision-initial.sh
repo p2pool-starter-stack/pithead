@@ -274,4 +274,12 @@ _phase_provision_initial_body() {
         bad "the built-in miner's config does not dial the machine's own stratum (pools: $(_ssh "jq -c '.pools' /data/rigforge/config.json 2>/dev/null" | cut -c1-100))"
     fi
 
+    # Runs LAST, after the fresh-chain sync-gate checks above (#2333): its own local-node login
+    # edits are quick, but its remote-node round trip recreates monerod/tari and can poll up to 10
+    # minutes for the Tari chain_id proof. Placed any earlier, that wall-clock cost — not a bug in
+    # the round trip itself — risks the local chain (KVM's pruned scenario data) catching up before
+    # the sync-gate-hold checks above run, so they'd stop finding the "still syncing" hold they
+    # exist to prove (job 1044/1113/1172/1173: the checks above went red only once this leg's own
+    # round trip completed and consumed several extra minutes before them).
+    phase_provision_remote_node_regressions "$pv_user" "$pv_pass" || bad "reserved-node regression phase aborted before completing required checks"
 }

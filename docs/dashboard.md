@@ -1070,9 +1070,9 @@ alarms cannot be changed from the dashboard at all. The machine refuses them ahe
 check and directs the operator to use a configuration stick. This prevents the configuration
 page from weakening the evidence its own later changes would be judged by.
 
-A node-endpoint change is the one confirm-gated setting with a second gate behind the typed
-`APPLY`: before the commit is accepted, the host dials the endpoint you staged and refuses one it
-cannot reach, reporting which check failed
+A node-endpoint or RPC-login change has a second gate behind the typed `APPLY`: before a remote-node
+commit is accepted, the host dials the endpoint with the staged login and refuses a pair it cannot
+use, reporting which check failed
 ([#1889](https://github.com/p2pool-starter-stack/pithead/issues/1889)). The host resolves once and
 requires every answer to satisfy `network.tor_egress_firewall`, then reuses one address for each
 check — so the two Monero checks can never disagree about one host. A name that resolves to nothing
@@ -1080,15 +1080,15 @@ is reported as a name that did not resolve, not as an address the firewall refus
 ([#1913](https://github.com/p2pool-starter-stack/pithead/issues/1913)). Monero RPC must return a bounded, usable `get_info` response with the configured Digest
 login; ZMQ must complete a ZMTP READY exchange and advertise PUB or XPUB. Tari gets a bounded TCP
 connect because the host CLI ships no gRPC client. The probe runs on the staged config, host-side,
-and only when an endpoint key actually changed, so an unrelated commit is never held up by a node
-that happens to be down. It is what makes the endpoints committable at all: the typed token is
-friction, but the probe means a dashboard cannot park a chain on a node that is not there. Remote
-node credentials can also be changed through approval, but their secret values stay masked in the
-browser, preview, result, and audit trail.
+and only when an endpoint or login key actually changed, so an unrelated commit is never held up by
+a node that happens to be down. It is what makes the pair committable at all: the typed token is
+friction, but the probe means a dashboard cannot park a chain on a node that is not there. Node
+credentials can also be changed through typed confirmation in local-node mode; the untouched masked partner
+is preserved and the pair is applied to monerod, P2Pool, and the dashboard together. Secret values
+stay masked in the browser, preview, result, and audit trail.
 
-On an appliance a refusal never tells you to open a shell you do not have: where a DIY host is
-told to edit `config.json` and run `./pithead apply`, the appliance is told the setting is fixed at
-setup and pointed at **Set up again**.
+On an appliance a refusal never tells you to open a shell you do not have: where a DIY host is told
+to edit `config.json` and run `./pithead apply`, the appliance is pointed at **Set up again**.
 
 A dashboard-confirmed data-directory move
 ([#728](https://github.com/p2pool-starter-stack/pithead/issues/728)) is held to a tighter rule than

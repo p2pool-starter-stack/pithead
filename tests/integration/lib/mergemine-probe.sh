@@ -103,8 +103,13 @@ mm_started() {
     local started
     started="$(rx "docker inspect p2pool --format '{{.State.StartedAt}}'" 2>/dev/null | tr -d '\r')"
     [ -n "$started" ] || return 1
-    printf '%s\n' "$started" |
-        sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?) ([+-][0-9]{2})([0-9]{2}) .*$/\1T\2\4:\5/'
+    printf '%s\n' "$started" | mm_rfc3339
+}
+
+# stdin: a `.State.StartedAt`; stdout: the same instant as RFC 3339 (podman's form rewritten, Docker's
+# passed through). podman's own `logs --since` refuses the Go form too (tests/os, #2333). PURE.
+mm_rfc3339() {
+    sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?) ([+-][0-9]{2})([0-9]{2}) .*$/\1T\2\4:\5/'
 }
 
 # Capture the CURRENT container run's merge-mining lines. Both bounds are load-bearing:

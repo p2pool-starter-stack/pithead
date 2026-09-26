@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
-# Verdicts and pure self-tests for appliance-config-approval-leg.sh.
+# Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
 # used to carry: approval_fixture_arm/bind/quiesce/disarm, approval_fixture_post/preview, the
@@ -49,21 +49,6 @@ physical_presence_password_refusal_verdict() { # <control-result-json>
     printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
 }
 
-# MONERO_NODE_USERNAME/MONERO_NODE_PASSWORD sit in none of the three dashboard-committable tiers
-# (42-control-policy-and-host-checks.sh: "those are secrets, not address identity, and they stay
-# host-only DEST with the rest of the credentials"). Before the 2026-09-13 perimeter audit an
-# unlisted key fell into a catch-all approval tier, so a reserved-node change carrying them cleared
-# the combined gate; the audit removed that catch-all, and the same change now hard-refuses at
-# preview (#2713). That is the security floor working as designed (SECURITY.md: no credential is
-# ever dashboard-committable). The leg therefore proves the refusal, then re-runs the endpoint
-# gates with blank credentials; only the commit, which needs a node that accepts the live
-# credentials, is skipped on a bench whose reserved node requires an RPC login.
-reserved_node_credential_refusal_verdict() { # <preview-json>
-    printf '%s' "$1" | jq -e '
-        .status == "rejected" and
-        ((.error | contains("MONERO_NODE_USERNAME")) or (.error | contains("MONERO_NODE_PASSWORD")))' >/dev/null
-}
-
 # The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
 # endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
 # rendered when the port differs from the live one, so an absent port row is not a miss.
@@ -76,14 +61,8 @@ reserved_node_rendered_endpoints_verdict() { # <preview-json> <mh> <rpc> <zmq> <
         port("MONERO_RPC_PORT"; $rpc) and port("MONERO_ZMQ_PORT"; $zmq)' >/dev/null
 }
 
-_reserved_node_credential_refusal_self_test() {
+_reserved_node_rendered_endpoints_self_test() {
     local ok_rows
-    reserved_node_credential_refusal_verdict '{"status":"rejected",
-        "error":"this change alters a security-sensitive setting (MONERO_NODE_PASSWORD) that is not committable from the dashboard."}' || return 1
-    reserved_node_credential_refusal_verdict '{"status":"rejected",
-        "error":"this change alters a security-sensitive setting (MONERO_NODE_USERNAME) that is not committable from the dashboard."}' || return 1
-    reserved_node_credential_refusal_verdict '{"status":"previewed","destructive":true,"approval_required":true}' && return 1
-    reserved_node_credential_refusal_verdict '{"status":"rejected","error":"typed APPLY"}' && return 1
     ok_rows='{"changes":[{"key":"MONERO_NODE_HOST","msg":"MONERO node endpoint (MONERO_NODE_HOST): monerod → node.fixture — x"},
         {"key":"TARI_GRPC_ADDRESS","msg":"TARI node endpoint (TARI_GRPC_ADDRESS): tari:18142 → tari.fixture:18142 — x"}]}'
     reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 18142 || return 1
@@ -387,8 +366,8 @@ _control_post_timeout_self_test() (
 
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
-# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
-# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+# Driven by tests/stack/test-harness-tooling.sh. The payload controls stay beside the verdicts they
+# exercise rather than the live guest paths.
 #
 # What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
 # different defects, so a payload that printed one sentence for all four would leave it exactly
@@ -444,6 +423,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
     _physical_presence_password_refusal_self_test || f=1
-    _reserved_node_credential_refusal_self_test || f=1
+    _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi

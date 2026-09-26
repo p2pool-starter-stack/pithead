@@ -54,8 +54,8 @@
 # The env keys committable from the dashboard: operational tuning only, and only keys whose value
 # is derived from a validated enum, boolean, or number — never a free-form string that reaches a
 # command line, URL, or credential. Everything else — wallets, auth, onion exposure, the control
-# channel itself, Tor egress/clearnet toggles, binds, node RPC credentials, the XvB pool URL
-# and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
+# channel itself, Tor egress/clearnet toggles, binds, the XvB pool URL and donor id, and every
+# token and password other than the confirm-gated node RPC credentials — including the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
 # WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
 # TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
 # TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
@@ -92,9 +92,13 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     TELEGRAM_EVENT_RAFFLE_WIN'
 
 # The confirm-gated editable set (#719): operationally-disruptive env keys the dashboard MAY commit
-# behind a type-to-confirm — NOT the security perimeter (wallets, keys, credentials, onion,
+# behind a type-to-confirm — NOT the rest of the security perimeter (wallets, onion,
 # tor_egress_firewall, dashboard.control.enabled, stratum password, per-rig hosts/tokens all stay
-# host-only DEST). Type-to-confirm is UX FRICTION, not a security control: a compromised dashboard
+# host-only DEST). The owner's ruling on #2367/#2333 (2026-09-19) moved the reserved-node RPC
+# credentials (MONERO_NODE_USERNAME/PASSWORD) into this tier too: every config field is editable
+# from the dashboard, and a security-sensitive one warns and asks for the typed confirmation
+# instead of being refused — see the credential-specific note further down. Type-to-confirm is UX
+# FRICTION, not a security control: a compromised dashboard
 # that can set a field can also fill the confirm box, so this set is strictly the "expensive but
 # recoverable, not a breach" class — a data-dir move (re-sync), a stratum-port repoint (rigs
 # reconnect), a clearnet-sync enable (host IP exposed during IBD, auto-reverts), a prune enable
@@ -122,8 +126,12 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 # it is the host-side REACHABILITY PROBE the approval gate runs on the STAGED endpoint before it
 # accepts one (43-control-approval-and-preview.sh, #1889's preflight_remote_nodes): a dashboard
 # cannot silently park a chain on a node that is not there. The RPC LOGIN CREDENTIALS for a remote
-# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) are deliberately NOT here — those are secrets,
-# not address identity, and they stay host-only DEST with the rest of the credentials above.
+# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) join the endpoints here (#2333, on the
+# owner's #2367 ruling that overruled the earlier host-CLI-only stance for exactly these two keys):
+# they are a secret, not address identity, but the ruling's answer to that is a WARNING and the
+# same typed confirmation the endpoints already use, never a refusal — the operator has no host
+# shell to fall back on here either. describe_change (39-) never echoes the old or new value in
+# the warning text; CONTROL_SECRET_PATHS keeps the preview's own JSON from doing so.
 # TARI_MODE (#1929) joins on the same reasoning as the endpoints, one step further: it decides
 # WHETHER this host merge-mines at all and whether the bundled Tari node runs. It is the expensive-
 # but-recoverable class this tier is for — the container stops, its chain data on disk is KEPT
@@ -153,7 +161,8 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
-    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD'
 
 # The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
 # approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
@@ -206,11 +215,11 @@ control_committable_re() {
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
 }
 
-# The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
-# trigger is not a fourth hand-kept copy of these key names. Every key here must also be in
-# CONTROL_DASHBOARD_CONFIRM_KEYS above — a key here but not there is unreachable; a node key there
-# but not here would be committable with NO reachability probe, which is the failure that matters.
-CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+# The node changes that require a staged reachability/authentication preflight, named once so the
+# approval gate cannot forget the login when only a credential changes. Every key here must also be
+# confirm-gated; the probe itself no-ops for a local chain.
+CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
 # SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space

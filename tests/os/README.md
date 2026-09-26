@@ -294,24 +294,23 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`.
+root-run battery without overriding `HOME`. The login is a Monero-node credential, not endpoint
+identity, but the dashboard carries it with the endpoint under the typed confirmation: the preview
+warns without echoing either credential, then the confirmed commit stages mode, endpoint and login
+together for the host-side reachability preflight. This never leaves local mode with a foreign
+login attached to the still-running local monerod/wallet-rpc containers, or remote mode short the
+login its own preflight needs. The same edit sets `p2pool.clearnet=true`: p2pool otherwise routes its
+Tari merge-mining connection through Tor, and Tor's exit policy refuses a private address — which
+the reserved test nodes always are. The row checks the current p2pool container's narrowly extracted
+Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
+endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
+configuration. Missing node inputs are a counted failure, never a skipped release gate.
 
-The gate assertions run on every bench. The row previews the reserved-node change with blank
-credentials, which keeps the live secret sentinel, and requires the combined approval gate to show
-both endpoints, the preview to name no node credential, the rendered Monero and Tari endpoints
-p2pool is started with, an unconfirmed commit to be refused for want of typed APPLY, and that
-refusal's audit row to carry no approver. When credentials are supplied it first previews the
-change with them and requires a hard refusal: `MONERO_NODE_USERNAME` and `MONERO_NODE_PASSWORD` sit
-in none of the dashboard-committable tiers (`42-control-policy-and-host-checks.sh`).
-
-The commit then depends on the node. With both credentials blank, the row requires the host
-preflight and typed confirmation to succeed, checks the current p2pool container's narrowly
-extracted Monero and Tari endpoints, binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge), and restores the original local-node
-configuration. With either supplied, the host preflight would probe the node with the appliance's
-own credentials, which the dashboard cannot change, so the commit, the p2pool consumption check and
-the `chain_id` round trip are a counted `missing` leg: a bench node without RPC auth runs them.
-Missing node inputs are a counted failure, never a skipped release gate.
+On a failed current-startup Tari round trip, the row first searches the full current P2Pool log
+(not a retained tail), then records the opaque runner-selected provider ID, the first failed
+runtime predicate as a bounded reason, and allowlisted Monero/Tari RPC and sync fields from the
+guest's existing authenticated dashboard clients. Those readiness fields are diagnostic only: the
+current-process `uses chain_id` handshake remains the pass assertion.
 
 ## Static verification
 
