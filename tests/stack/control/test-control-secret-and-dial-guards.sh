@@ -138,19 +138,20 @@ assert_eq "APPLY does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/
 assert_eq "worker repoint leaves the host and bearer as they were" \
     "$(jq -r '.workers.list[0] | .host + "|" + .token' "$C/config.json")" "192.168.1.50|rig-token"
 
-# Same-host field edits of an adopted rig are edits too: an explicit new token or control port is
-# refused with APPLY, so a host-only equality check could not pass them (#2641/#912).
+# Same-host field edits of an adopted rig are edits too, even riding with a valid adopt: an explicit
+# new token or control port is refused with APPLY, so a host-only prefix check could not pass them.
 for EDIT in '.workers.list[0].token="edited-token"' '.workers.list[0].control_port=9082'; do
     jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
-        '{id:$id,action:"preview",actor:"admin",config:($live[0] | '"$EDIT"')}' >"$REQS/$GUARD_UUID.json"
+        '{id:$id,action:"preview",actor:"admin",config:($live[0] | '"$EDIT"'
+          | .workers.list += [{name:"rig-9",host:"192.168.1.60",control_port:8082,token:"t9"}])}' >"$REQS/$GUARD_UUID.json"
     run_pending >/dev/null
     jq -n --arg id "$GUARD_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$GUARD_UUID.json"
     run_pending >/dev/null
     assert_eq "a same-host edit of an adopted rig is refused with APPLY (${EDIT%%=*})" \
         "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
 done
-assert_eq "same-host edits leave the adopted rig as it was" \
-    "$(jq -r '.workers.list[0] | "\(.token)|\(.control_port)"' "$C/config.json")" "rig-token|8082"
+assert_eq "same-host edits leave the adopted rig as it was and adopt nothing" \
+    "$(jq -r '"\(.workers.list[0].token)|\(.workers.list[0].control_port)|\(.workers.list | length)"' "$C/config.json")" "rig-token|8082|1"
 
 # Webhook URLs are positional masked capabilities. An unrelated change restores the live value.
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
