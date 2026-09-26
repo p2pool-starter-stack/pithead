@@ -92,7 +92,7 @@ echo "== a restored baseline that will not start names the step that stopped it 
     ! start_restored_baseline && [ "$BASELINE_START_STEP" = render ] || exit 1
     [ "$BASELINE_START_ERROR" = "[ERROR] bad value MONERO_WALLET_ADDRESS=<redacted>" ] || exit 1
     # A path or host the error interpolates never reaches the public verdict.
-    pithead() { printf '[ERROR] Refusing to use %s as a data directory\n' "'/home/alice' — it's a home"; return 1; }
+    pithead() { printf '[ERROR] Refusing to use %s as a data directory\n' "'/srv/pithead-data' — it's a system"; return 1; }
     ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] Refusing to use" ] || exit 1
     pithead() { printf '[ERROR] monero.remote.host is not a valid host. Got "node.home.lan:18081"\n'; return 1; }
     ! start_restored_baseline && [ "$BASELINE_START_ERROR" = "[ERROR] monero.remote.host is not a valid host. Got" ] || exit 1

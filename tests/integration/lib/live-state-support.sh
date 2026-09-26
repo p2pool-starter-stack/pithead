@@ -306,6 +306,7 @@ start_step() { # <command...>
 # stopped it (job 1213 reported only "start"). Runs in this shell, not a subshell, so baseline_up's
 # counted skip survives.
 start_restored_baseline() {
+    # shellcheck disable=SC2034 # both read by live-upgrade-support.sh:restore_upgrade_baseline
     BASELINE_START_STEP=reset-units BASELINE_START_ERROR=""
     reset_control_units_for_render "$UPGRADE_CANDIDATE_DIR" || return 1
     BASELINE_START_STEP=render
@@ -326,5 +327,6 @@ start_restored_baseline() {
     BASELINE_START_STEP=mining
     wait_miner_running || return 1
     wait_stratum_hashes || return 1
+    # shellcheck disable=SC2034 # read by live-upgrade-support.sh:restore_upgrade_baseline
     BASELINE_START_STEP=""
 }

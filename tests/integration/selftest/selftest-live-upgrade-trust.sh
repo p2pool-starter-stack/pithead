@@ -75,10 +75,10 @@ UPGRADE_CANDIDATE_ALL_REFS=$'tor x\ndashboard y\ncaddy z'
 untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1.20.0@sha256:'"$d64"
 [ -z "$(upgrade_capture_gaps m 0 "$untagged" "$untagged" reg.test c c)" ]
 mixed_untagged=$'tor reg.test/pithead-tor@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1.20.0@sha256:'"$d64"
-gaps="$(upgrade_capture_gaps m 0 "$mixed_untagged" "$mixed_untagged" "" c c)"
-[ "$gaps" = "baseline-registry(dashboard:mixed-registry)" ]
-! grep -Fq reg.test <<<"$gaps" || exit 1
-! grep -Fq other.test <<<"$gaps" || exit 1
+verdict="$(upgrade_capture_gaps m 0 "$mixed_untagged" "$mixed_untagged" "" c c)"
+[ "$verdict" = "baseline-registry(dashboard:mixed-registry)" ]
+! grep -Fq reg.test <<<"$verdict" || exit 1
+! grep -Fq other.test <<<"$verdict" || exit 1
 mixed=$'tor reg.test/pithead-tor:1@sha256:'"$d64"$'\ndashboard other.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-tor:1'
 [ "$(upgrade_capture_gaps m 0 "$mixed" "$mixed" "" c c)" = "baseline-registry(dashboard:mixed-registry,p2pool:unexpected-image)" ]
 bare=$'tor pithead-tor:1@sha256:'"$d64"$'\ndashboard reg.test/pithead-dashboard:1@sha256:'"$d64"$'\np2pool reg.test/pithead-p2pool:1@sha256:'"$d64"
