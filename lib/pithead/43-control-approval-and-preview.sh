@@ -1,6 +1,6 @@
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
-    local approval_required=0 worker_sensitive=0 needs_confirm=0
+    local approval_required=0 needs_confirm=0
     control_policy_gate "$staged" || return 1
     # Fail closed if we cannot re-derive the change set (the staged config was validated at
     # preview, so a dry-run failure here means something changed — refuse).
@@ -10,37 +10,20 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'could not re-validate the staged change host-side — refusing to commit'
         return 1
     fi
-    # A config.json block that never renders to .env emits ZERO porcelain rows, so each is handled
-    # HERE by name. Worker descriptors confirm after their SSRF guard; dashboard.energy and
-    # local_miner.enabled are ordinary, bar dashboard.energy.price_feed. A NEW one MUST add a line.
+    # A config.json block that never renders to .env emits ZERO porcelain rows, so the default-deny
+    # pass can neither see nor refuse it: each is handled HERE by name (worker descriptors below;
+    # dashboard.energy and local_miner.enabled are ordinary, #504/2026-09-13 perimeter audit round
+    # 2, bar dashboard.energy.price_feed). A NEW one MUST add its own line.
     #
-    # The per-worker descriptors — workers.list[] (#506) — carry per-rig hosts and API tokens
-    # (exactly the "free-form string that reaches a URL or credential" class the allowlist exists to
-    # keep host-CLI-only). The deprecated dashboard.workers[] alias (#172) used to be refused here
-    # outright; 2.0.0 removed it (#1832), so a staged config carrying it is now refused one step
-    # later by the closed-schema check below, as an unknown key like any other typo.
-    #
-    # Every descriptor change is sensitive: an append introduces a new remote host and token;
-    # repointing or reordering changes an existing trust relationship. #1959 moves it behind the
-    # same typed confirmation as the other sensitive settings, after the SSRF floor below.
-    if ! jq -e --slurpfile live "$CONFIG_FILE" '
-        (.workers.list // []) == ($live[0].workers.list // [])
-        ' "$staged" >/dev/null 2>&1; then
-        worker_sensitive=1
+    # workers.list[] (#506) carries per-rig hosts and API tokens; the removed dashboard.workers[]
+    # alias (#1832) is refused by the closed-schema check below. control_worker_append (42-) allows
+    # only an adopt (append) behind the typed APPLY and the #122 SSRF floor; a repoint, reorder or
+    # removal is refused (#912 owns descriptor editing; #1959's confirm tier does not widen it).
+    local worker_new
+    if ! worker_new=$(control_worker_append "$staged"); then
+        printf '%s' "$worker_new"
+        return 1
     fi
-    # SSRF floor on worker hosts (see _control_host_is_internal). For an unchanged list there is
-    # nothing to inspect. For any changed list, validate every staged host so modification and append
-    # cannot smuggle a host inside this machine's own network.
-    local live_n new_host
-    live_n=$(jq -r --slurpfile live "$CONFIG_FILE" '($live[0].workers.list // []) | length' "$staged" 2>/dev/null) || live_n=0
-    [ "$worker_sensitive" -eq 1 ] && live_n=0
-    while IFS= read -r new_host; do
-        [ -n "$new_host" ] || continue
-        if _control_host_is_internal "$new_host"; then
-            printf 'a new worker descriptor points at %s, which resolves inside this host'"'"'s own network — a rig'"'"'s control address must be a distinct machine on your LAN, not this host or one of its own containers.' "$new_host"
-            return 1
-        fi
-    done < <(jq -r --argjson n "${live_n:-0}" '(.workers.list // [])[$n:] | .[] | select(has("host")) | .host' "$staged" 2>/dev/null)
     # Closed-schema guard (#33 hardening). A config.json key the stack doesn't recognize renders to
     # NO env var, so it emits zero porcelain rows and slips past the allowlist below — yet the
     # commit's `cp "$staged" "$CONFIG_FILE"` would still persist it. So refuse any staged path that
@@ -87,10 +70,6 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     fi
     if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=1; fi
     if control_changed_config_paths "$staged" | grep -qxF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then needs_confirm=1; fi
-    if [ "$worker_sensitive" -eq 1 ]; then
-        approval_required=1
-        needs_confirm=1
-    fi
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
@@ -108,10 +87,13 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
     # control (the perimeter above is the boundary). control_commit records a confirmed change
     # distinctly in the audit log via the marker file touched here.
+    # An adopted rig (#2641) is confirmed the same way: the dashboard will send it a write token.
     printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' && needs_confirm=1
+    [ -z "$worker_new" ] || needs_confirm=1
     if [ "$needs_confirm" -eq 1 ]; then
         if [ "$confirm" != "APPLY" ]; then
             hit=$(printf '%s\n' "$porcelain" | grep -m1 -E $'^CONFIRM\t' | cut -f3-)
+            [ -n "$hit" ] || [ -z "$worker_new" ] || hit="adopting a rig: $(printf '%s' "$worker_new" | paste -sd, -)"
             printf 'this change is disruptive (%s) — type APPLY in the dashboard to confirm.' "${hit:-disruptive change}"
             return 1
         fi
@@ -148,7 +130,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # round-trips the reference-merged form, and materialized defaults are not a change.
     {
         control_changed_config_paths "$staged"
-        [ "$worker_sensitive" -eq 1 ] && printf '%s\n' 'workers.list'
+        [ -z "$worker_new" ] || printf '%s\n' 'workers.list'
     } | sort -u | tr '\n' ' ' | sed 's/ $//'
     return 0
 }
@@ -251,17 +233,23 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Unlisted reference values confirm; worker descriptor arrays join after their SSRF guard
-        # (#1959 supersedes #613's outright preview-time refusal for these rows: the gate now
-        # confirms them instead of unconditionally refusing, so preview must offer the same path).
-        local approval_required=false committable_re approval_re bad worker_changed=0 config_paths
+        # Unlisted reference values confirm (#1959). Worker descriptors use the gate's classifier: an
+        # adopt previews as a CONFIRM row below; a repoint, reorder, removal or SSRF-floor host
+        # refuses here, before the operator is asked to type anything.
+        local approval_required=false committable_re approval_re bad worker_new worker_err="" config_paths
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
-        if ! jq -e --slurpfile live "$CONFIG_FILE" '(.workers.list // []) == ($live[0].workers.list // [])' "$staged" >/dev/null 2>&1; then
-            worker_changed=1
-        fi
+        worker_new=$(control_worker_append "$staged") || { worker_err="${worker_new:-could not classify the worker descriptors — refusing}" && worker_new=""; }
         if control_never_path_changed "$staged"; then
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(control_physical_presence_error)" '{status:"rejected",error:$e,ts:(now|floor)}')"
+            rm -f "$errf"
+            control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+            return 0
+        fi
+        if [ -n "$worker_err" ]; then
+            control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$worker_err" '{status:"rejected",error:$e,ts:(now|floor)}')"
+            # The staged intent STAYS (unlike a validation failure) so a commit attempt still
+            # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
             rm -f "$errf"
             control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
             return 0
@@ -277,10 +265,6 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         if [ -n "$config_paths" ]; then
             out=$(control_mark_config_confirm_rows "$config_paths" "$out")
             if printf '%s\n' "$config_paths" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=true; fi
-        fi
-        if [ "$worker_changed" -eq 1 ]; then
-            approval_required=true
-            out+="${out:+$'\n'}"$'CONFIRM\tworkers.list\tWorker descriptors (host, ports, credentials or membership) are changing.'
         fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
         if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
@@ -333,6 +317,11 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"APPROVAL",key:"dashboard.energy.price_feed",msg:"Electricity price feed endpoint changed — the host will contact this remote source for operating-cost data."}] | .approval_required = true')
         fi
+        # An adopted rig (#2641): a CONFIRM row, so the preview is destructive and the commit needs
+        # the typed APPLY. The warning names what is trusted; never the token.
+        if [ -n "$worker_new" ]; then
+            result=$(printf '%s' "$result" | jq --arg rigs "$(printf '%s' "$worker_new" | paste -sd, - | sed 's/,/, /g')" '.changes += [{flag:"CONFIRM",key:"workers.list",msg:"Adopting a rig: \($rigs). The dashboard will send this rig'"'"'s control token to that address and can change its pools and its thermal limits from then on, so check the address is the rig itself. Changing or removing an adopted rig is not possible from the dashboard."}] | .destructive = true')
+        fi
         # local_miner.enabled (2026-09-13 perimeter audit round 2): also config.json-only, no
         # porcelain row. Ordinary like dashboard.energy — a documented dashboard toggle
         # (docs/workers.md), not a security control — but named explicitly rather than left
@@ -341,7 +330,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             result=$(printf '%s' "$result" | jq '.changes += [{flag:"INFO",key:"local_miner.enabled",msg:"The co-located local miner toggle changed."}]')
         fi
         control_write_result "$cdir/results" "$id" "$result"
-        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "previewed" "$(porcelain_keys "$out")"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "previewed" "$(porcelain_keys "$out${worker_new:+$'\nINFO\tworkers.list'}")"
     else
         # Validation failed — reject with pithead's own error tail; nothing stays staged.
         control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$errf")" '{status:"rejected",log:$e,ts:(now|floor)}')"

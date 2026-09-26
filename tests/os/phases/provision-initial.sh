@@ -18,6 +18,8 @@ _phase_provision_initial() {
     # failure as if day-two tari switching were broken. Out here it runs on every path and, when
     # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
     phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
+    # Last, and on every path like the two above: it recreates the node containers (#2616).
+    phase_provision_lan_guard "$rc"
     return "$rc"
 }
 

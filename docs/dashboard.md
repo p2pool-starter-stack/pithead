@@ -416,11 +416,14 @@ proxy observed, `control_port` defaulted to `8082`, and a blank token field. The
 is a suggestion, not a fact — confirm or correct it before submitting; the rig's own name is not
 enough proof of who is actually listening there. Submitting writes the descriptor through the same
 control channel [the Configuration view uses](#configuration-view) (preview, then commit) — no
-separate write path, and it can only ADD a new descriptor: it can never change the host or token of
-a rig that already has one, so adopting rig #4 can't be used to repoint rig #1. The address also
-can't resolve inside the stack's own network — loopback, link-local, or its own docker-bridge
-subnet are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
-host yet, or the control channel off, still gets a plain explanation instead of the form.
+separate write path. The preview names the rig and the address the dashboard will send its control
+token to; type `APPLY` to confirm, or **Cancel**. It can only ADD a new descriptor: it can never
+change the host or token of a rig that already has one, so adopting rig #4 can't be used to repoint
+rig #1. The address also can't resolve to this machine: loopback, link-local, any address on its own
+network interfaces (its LAN address included), and every container bridge on it (the stack's own,
+`docker0`, and any other) are refused, so an adopted rig has to be a real, distinct machine on your
+LAN. A rig with no host yet, or the control channel off, still gets a plain explanation instead of
+the form.
 
 The write is durable immediately, but a rig descriptor renders to no `.env` key, so adopting alone
 never recreates any container — the dashboard reads its worker list once at process start, so this
@@ -985,8 +988,8 @@ wizard's pattern — the first page and the config tab now behave identically.) 
   have an intentional named group, so a new key cannot silently vanish or drift into an **Other**
   bucket. `workers.list[]` (the per-rig descriptors) isn't a form field
   here — a variable-length list has no single form control for it; edit the complete list in the
-  Advanced JSON pane. Changes to rig hosts and tokens require confirmation and pass the host's
-  worker-target checks.
+  Advanced JSON pane. Only an appended rig commits, behind the typed `APPLY` and the host's
+  worker-target checks; repointing, reordering or removing an existing descriptor is refused.
   [Worker Inspect](#worker-inspect) is a different thing:
   it retunes the *rig's own* settings (pools, donation, autotune, watchdog, temperature cap)
   through that rig's control API, never the stack's descriptor list.

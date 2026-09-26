@@ -113,6 +113,7 @@ test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
 test-control-perimeter-tier3.sh|label
+test-control-ssrf-host-local.sh|2
 test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v

@@ -308,8 +308,9 @@ Reference settings stay editable from the dashboard afterwards — see
 require the signed-in operator to review full non-secret values and complete the confirmation step.
 Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
 mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
-toggles remain configuration-stick-only. Per-rig worker descriptors use the Configuration view's
-JSON editor and the same confirmation step, after host-side target checks. See
+toggles remain configuration-stick-only. Rigs are narrower: the dashboard can adopt a new rig
+(Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
+remove a rig it already controls. See
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
 
 The USB-stick route stays available for everything the dashboard can set and for what it cannot:

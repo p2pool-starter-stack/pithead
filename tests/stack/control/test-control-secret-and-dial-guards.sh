@@ -33,6 +33,11 @@ exec /usr/bin/getent "$@"
 EOF
 cat >"$C/bin/ip" <<'EOF'
 #!/usr/bin/env bash
+# #2671's interface list sees nothing of this host's here, so the refusal below is the route check's.
+case "$*" in
+"-o addr show") echo "1: lo    inet 127.0.0.1/8 scope host lo" && exit 0 ;;
+"-o link show type bridge" | "-4 route show default" | "-6 route show default") exit 0 ;;
+esac
 [ "$1" = "route" ] && [ "$2" = "get" ] || exit 2
 if [ "$3" = "192.168.1.88" ]; then
     printf 'local %s dev lo src %s\n' "$3" "$3"
@@ -119,18 +124,19 @@ jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
       | .workers.list[0].host="192.168.1.51"
       | .workers.list[0].token="replacement-token")}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
-assert_eq "worker repoint is previewed with its full old host" \
-    "$(jq -r '.preview_values[] | select(.key=="workers.list.0.host") | .old' "$RESULTS/$GUARD_UUID.json")" "192.168.1.50"
-assert_eq "worker repoint is previewed with its full new host" \
-    "$(jq -r '.preview_values[] | select(.key=="workers.list.0.host") | .new' "$RESULTS/$GUARD_UUID.json")" "192.168.1.51"
-assert_eq "worker bearer stays absent from preview values" \
-    "$(jq -r 'any(.preview_values[]?; .key=="workers.list.0.token")' "$RESULTS/$GUARD_UUID.json")" "false"
+# Even with an explicit replacement bearer, a repoint edits an adopted rig: refused (#2641/#912).
+assert_eq "worker repoint with an explicit bearer is refused at preview" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "worker repoint refusal names the adopted-rig boundary" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "already controls"
+assert_not_contains "worker repoint refusal never echoes the bearer" \
+    "$(cat "$RESULTS/$GUARD_UUID.json")" "replacement-token"
 jq -n --arg id "$GUARD_UUID" \
     '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$GUARD_UUID.json"
 run_pending >/dev/null
-assert_eq "confirmed worker repoint applies" "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "applied"
-assert_eq "worker repoint stores only the explicit replacement bearer" \
-    "$(jq -r '.workers.list[0].token' "$C/config.json")" "replacement-token"
+assert_eq "APPLY does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_eq "worker repoint leaves the host and bearer as they were" \
+    "$(jq -r '.workers.list[0] | .host + "|" + .token' "$C/config.json")" "192.168.1.50|rig-token"
 
 # Webhook URLs are positional masked capabilities. An unrelated change restores the live value.
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
@@ -161,7 +167,16 @@ else
     printf '127.0.0.1 STREAM rebind-rig\n'
 fi
 EOF
-printf '#!/usr/bin/env bash\nprintf "%%s via 192.168.1.1 dev eth0\\n" "$3"\n' >"$REBIND_DIR/bin/ip"
+cat >"$REBIND_DIR/bin/ip" <<'EOF'
+#!/usr/bin/env bash
+[ ! -e "${IP_FAILS:-/nonexistent}" ] || exit 1
+case "$*" in
+"-o addr show") echo "1: lo    inet 127.0.0.1/8 scope host lo" ;;
+"-o link show type bridge" | "-4 route show default" | "-6 route show default") ;;
+"route get "*) printf '%s via 192.168.1.1 dev eth0\n' "$3" ;;
+*) exit 1 ;;
+esac
+EOF
 cat >"$REBIND_DIR/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >"${DIAL_LOG:?}"
@@ -183,3 +198,16 @@ assert_eq "worker target is resolved only for validation and pinning" \
 assert_contains "worker curl uses a pinned address" "$(cat "$REBIND_DIR/.curl-args")" "--resolve"
 assert_contains "worker curl pins the validated address" "$(cat "$REBIND_DIR/.curl-args")" \
     "rebind-rig:8082:192.168.1.77"
+
+# Interface discovery that fails at dial time refuses the dial instead of sending the bearer
+# (#2671's fail-closed floor, applied on the pinning path).
+rm -f "$REBIND_DIR/.resolved-count" "$REBIND_DIR/.curl-args" "$REBIND_DIR/results/$REBIND_UUID.json"
+: >"$REBIND_DIR/.ip-fails"
+PATH="$REBIND_DIR/bin:$PATH" REBIND_COUNTER="$REBIND_DIR/.resolved-count" IP_FAILS="$REBIND_DIR/.ip-fails" \
+    DIAL_LOG="$REBIND_DIR/.curl-args" \
+    CONTROL_WA_BUDGET=1 PITHEAD_CONFIG_FILE="$REBIND_DIR/config.json" \
+    run_sourced_e "$SANDBOX" control_process_request "$REBIND_DIR/req.json" "$REBIND_DIR" >/dev/null 2>&1
+assert_eq "an unreadable interface list refuses the worker dial" \
+    "$(jq -r '.status' "$REBIND_DIR/results/$REBIND_UUID.json" 2>/dev/null)" "rejected"
+[ ! -e "$REBIND_DIR/.curl-args" ] && ok "no curl runs while interface discovery fails" ||
+    bad "no curl runs while interface discovery fails" "curl ran: $(cat "$REBIND_DIR/.curl-args")"

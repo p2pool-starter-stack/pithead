@@ -11,10 +11,7 @@ set -eu
 
 WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallets}"
 WALLET_FILE="$WALLET_DIR/payout-wallet"
-# Marker (#718): touched when a wallet is first created, cleared by the healthcheck on the first
-# successful RPC. While it exists, an unreachable RPC means "still on the initial scan" — which for
-# the genesis default is HOURS, during which monero-wallet-rpc is single-threaded and won't answer.
-# It lives in the volume so it persists across container recreates until the scan actually finishes.
+# Scan marker (#718, #2756): written at every start (see the touch below). It lives in the volume.
 SCAN_MARKER="$WALLET_DIR/.payout-scanning"
 GEN_JSON="${GEN_JSON:-/tmp/gen.json}" # tmpfs; holds the view key for the create-from-keys step only
 DAEMON_ADDRESS="${MONERO_NODE_HOST:-127.0.0.1}:${MONERO_RPC_PORT:-18081}"
@@ -77,14 +74,17 @@ set -- \
     --log-level 0 \
     --non-interactive
 
+# Mark a scan on EVERY start (#718, #2756): a first creation scans from the restore height (genesis
+# is hours); a reopen catches up from the height the wallet last stored, which after a long stop, a
+# remote-node spell or an unsaved scan is just as long. monero-wallet-rpc does not answer while it
+# scans. The healthcheck tolerates an unreachable RPC while this marker exists, within a 24h grace
+# by default, and clears it on the first successful RPC.
+touch "$SCAN_MARKER" 2>/dev/null || true
+
 if [ ! -f "$WALLET_FILE" ]; then
     height="$(resolve_scan_height)"
     [ -n "$height" ] || height=0
     echo "Creating view-only payout wallet at restore height $height (#381)..."
-    # Mark the initial scan (#718): the healthcheck tolerates an unreachable RPC while this exists
-    # (genesis scan is hours) and clears it on the first successful RPC. The healthcheck also limits
-    # this grace to 24h by default, so a wallet that never answers becomes unhealthy.
-    touch "$SCAN_MARKER" 2>/dev/null || true
     # The view key lives ONLY in this tmpfs file, never on argv.
     write_gen_json "$height"
     # --generate-from-json creates + opens the wallet, then keeps serving the RPC.

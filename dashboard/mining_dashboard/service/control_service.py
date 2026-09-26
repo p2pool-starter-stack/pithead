@@ -175,8 +175,9 @@ EDITABLE_ENV_KEY_PATHS = {
 }
 
 # These paths are config.json-only, so they never appear in the env-var map above, but the host
-# classifies them as ordinary changes. Worker descriptors use the JSON surface because
-# buildSections does not render arrays as individual fields (#172).
+# classifies them as ordinary changes. Worker descriptors (workers.list[], #506) are the other
+# config.json-only case: only an adopt (append) commits, behind the typed APPLY (#2641), so they
+# never get an editable path — and buildSections never renders an array as a field (#172).
 _CONFIG_ONLY_EDITABLE_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
