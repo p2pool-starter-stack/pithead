@@ -61,6 +61,7 @@ pcr_run() { # <owner-dir|-> <run-dir> — seed units owned by owner-dir ('-' = n
         set +e
         log() { :; }
         sudo() { echo "sudo:$*"; } # record instead of executing; the disable call's output is redirected in-function
+        unset CONTROL_DIR
         PITHEAD_UNIT_DIR="$PCR/units" DASHBOARD_CONTROL_ENABLED=false provision_control_runner
     )
 }
@@ -253,3 +254,32 @@ assert_eq "an already-pinned unit is still skipped (idempotence not simply remov
     "$(cmp -s "$PCE/units/.before" "$PCE/units/pithead-control.service" && echo same || echo rewritten)" "same"
 unset PCE
 unset -f pce_run pce_seed_matching_path
+
+echo "== unit: the idempotence check compares the PHYSICAL checkout dir, not the literal \$PWD (#2363) =="
+# A boot-driven call gets $PWD from getcwd(2), already physical; an interactive `cd /data/pithead`
+# keeps the symlink text. Both spellings of one checkout must pass the idempotence check.
+PCP="$SANDBOX/pcp"
+mkdir -p "$PCP/units" "$PCP/bin" "$PCP/versions/pithead-v1.9.3/data/control"
+ln -s "$PCP/versions/pithead-v1.9.3" "$PCP/current"
+printf '#!/usr/bin/env bash\n[ "$1" = "-s" ] && { echo Linux; exit 0; }\nexec uname "$@"\n' >"$PCP/bin/uname"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$PCP/bin/systemctl"
+chmod +x "$PCP/bin/uname" "$PCP/bin/systemctl"
+# Seed a unit already written in the PHYSICAL spelling (what this fix always writes), then run
+# from the `current` symlink — one checkout, its two spellings.
+printf '[Path]\nPathExistsGlob=%s/data/control/requests/*.json\n' "$PCP/versions/pithead-v1.9.3" >"$PCP/units/pithead-control.path"
+printf '[Service]\nType=oneshot\nUser=root\nWorkingDirectory=%s\nRestart=on-failure\nRestartSec=15\nStartLimitIntervalSec=0\nEnvironment=PITHEAD_ENGINE=podman\nExecStart=%s/pithead control-run-pending\n' \
+    "$PCP/versions/pithead-v1.9.3" "$PCP/versions/pithead-v1.9.3" >"$PCP/units/pithead-control.service"
+out="$(
+    cd "$PCP/current" || exit
+    PATH="$PCP/bin:$PATH"
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    log() { :; }
+    sudo() { echo "sudo:$*" >>"$PCP/calls"; } # side file: the function redirects sudo output
+    PITHEAD_ENGINE=podman PITHEAD_UNIT_DIR="$PCP/units" DASHBOARD_CONTROL_ENABLED=true \
+        CONTROL_DIR="$PCP/current/data/control" provision_control_runner 2>&1
+    cat "$PCP/calls" 2>/dev/null
+)"
+assert_not_contains "unit run via the symlink spelling, already correct in the physical spelling -> no sudo call, runner untouched" "$out" "sudo:"
+unset PCP out

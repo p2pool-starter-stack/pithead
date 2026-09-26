@@ -98,8 +98,9 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. Without it a `backup` — which stops the stack to take a consistent archive — could
-remove a container out from under a `setup` or an `apply` that was still using it.
+the first. `uninstall` joins that window before its first destructive step. Without it a
+`backup` — which stops the stack to take a consistent archive — could remove a container out from
+under a `setup` or an `apply` that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -270,7 +271,25 @@ The unit names are global to the host, so removal is ownership-checked: a checko
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the
 `current` symlink and the versioned directory it targets count as the same checkout. Another
 checkout on the same box (an e2e harness, a bundle smoke test) therefore cannot delete the live
-stack's runner and strand its queued requests.
+stack's runner and strand its queued requests. That physical-path comparison also decides whether
+`apply` needs to touch the runner at all: an `apply` whose config did not change re-provisions
+only when the installed units genuinely differ (a stale checkout path, a container-engine change,
+a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
+(`current` symlink or its versioned directory).
+
+When re-provisioning is needed, `apply` holds the shared mutation lock while it stops
+`pithead-control.path`, waits up to 30 seconds for a request the runner has already claimed to
+write its result, rewrites the units and enables the path unit again. The runner itself never
+takes the lock, so a request that changes nothing on the stack (a preview, a diagnostic) is never
+delayed by a `pithead` command running in a shell, and never delays one. A request that changes
+the stack (a commit, a lifecycle verb, an upgrade) takes the lock inside its own handler like any
+shell command. If one is in flight when `apply` re-provisions, it is waiting for the lock `apply`
+holds, so the 30-second wait runs out, `apply` finishes, and the request then runs. None of these
+calls stops a runner that is working a request: on systemd 255 the running service finishes and
+writes its result. A request still sitting in `requests/` is
+untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
+A first install, and the `pithead render` that runs on every appliance boot, have no runner to
+drain and take no lock.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a

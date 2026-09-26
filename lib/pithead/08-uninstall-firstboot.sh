@@ -75,6 +75,11 @@ stack_uninstall() {
             warn "Not removing $dkey=$d: setup puts it at $want, and it must not overlap data uninstall keeps. Remove it by hand if it is pithead's."
         fi
     done
+    # The control runner's units are rendered from CONTROL_DIR; provision_control_runner below
+    # needs the deployed value to find and remove them once .env is gone.
+    local control_dir
+    control_dir=$(env_get_file .env CONTROL_DIR)
+    [ -n "$control_dir" ] || control_dir="$checkout_dir/data/control"
     # #2379 §1: the Tari view-key secret file — chmod 600, holds MINOTARI_WALLET_PASSWORD in the
     # clear — is fixed under ./data (33-render-env.sh), not a *_DIR key in .env.
     local secret_file="$checkout_dir/data/tari-wallet-secret.env"
@@ -95,6 +100,7 @@ stack_uninstall() {
             return 1
         }
     fi
+    mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     docker compose down --remove-orphans -v 2>/dev/null ||
@@ -104,7 +110,8 @@ stack_uninstall() {
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
     done
     # Removes only THIS checkout's pithead-control units (the ownership check inside).
-    DASHBOARD_CONTROL_ENABLED=false provision_control_runner 2>/dev/null || true
+    # stderr kept: the drain's timeout warning is the message for a request still in flight.
+    CONTROL_DIR="$control_dir" DASHBOARD_CONTROL_ENABLED=false provision_control_runner || true
     # The view-key secret goes first: nothing after it may leave a 0600 key behind.
     rm -f "$secret_file"
     rm -f .env Caddyfile build/tari/config.toml .pithead-first-run-done
@@ -126,6 +133,7 @@ stack_uninstall() {
         name=$(basename "$checkout_dir")
         [ -L "$parent/current" ] && [ "$(readlink "$parent/current")" = "$name" ] && rm -f "$parent/current"
     fi
+    mutation_lock_release
 
     log "Uninstalled."
     log "Every data directory is still here. To delete pithead's data, run:"

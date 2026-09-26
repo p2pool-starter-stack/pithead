@@ -177,6 +177,9 @@ control_prune_results() { # <control-dir>
 # of requests/) before a byte of it is parsed, so the container can never mutate or replay a
 # request the runner is working on. Fired by the pithead-control systemd path unit.
 control_run_pending() {
+    # Claims below are `.claim.$$`. A child `apply -y` a handler runs inherits this, so its runner
+    # drain (control_runner_wait_idle) does not wait on its own parent's claim (#2363).
+    export PITHEAD_CONTROL_RUNNER_PID=$$
     [ "$(env_get DASHBOARD_CONTROL_ENABLED)" == "true" ] ||
         error "The dashboard control channel is not enabled (dashboard.control.enabled)."
     local cdir
