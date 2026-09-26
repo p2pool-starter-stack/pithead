@@ -266,6 +266,9 @@ while :; do
 done
 
 stage upgrade-gate
+# The harness writes its warnings, its "did NOT run" list (#1365) and its failure names to
+# stderr, and the phase's _ssh sends a guest's stderr to its private SSH_ERR file: merge them, or
+# a passing gate's log cannot say which legs it skipped (job 1258 counted 3, named none).
 monero_host="$(jq -r '.monero.remote.host' "$INPUT/config.json")"
 monero_rpc="$(jq -r '.monero.remote.rpc_port' "$INPUT/config.json")"
 monero_zmq="$(jq -r '.monero.remote.zmq_port' "$INPUT/config.json")"
@@ -277,5 +280,5 @@ PITHEAD_APPLIANCE=0 env -u PITHEAD_REGISTRY -u PITHEAD_REGISTRY_CA \
     --scenario remote-main-secure-tari --safety-backup \
     --image-upgrade "$OLD_SHA" "$NEW_SHA" \
     --candidate-bundle "$INPUT/candidate.tar.gz" "$INPUT/candidate.tar.gz.sig" "$INPUT/bundle.pub" \
-    --candidate-image-key "$INPUT/image.pub" --out "$MOUNT/results"
+    --candidate-image-key "$INPUT/image.pub" --out "$MOUNT/results" 2>&1
 console "stage=$GUEST_STAGE passed"

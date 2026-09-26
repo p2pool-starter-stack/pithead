@@ -174,4 +174,8 @@ echo "== the restore reads the restored release's rows without the candidate-onl
     grep -Fq 'after_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"' "$HERE/lib/live-gates.sh"
 )
 
+echo "== the guest's harness stderr (skip names, failures) reaches the job log =="
+grep -Fq -- '--out "$MOUNT/results" 2>&1' "$HERE/../os/image-upgrade-guest.sh"
+grep -Fq '2>"$SSH_ERR"' "$HERE/../os/lib/core.sh"
+
 echo "selftest-upgrade-layout: PASS"
