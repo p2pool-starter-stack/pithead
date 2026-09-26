@@ -60,8 +60,12 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             [ "$RESTORE_CASE:$1" != "secret-fails:restore preserves secrets" ] || it_fail
         }
         quote_arg() { printf '%s' "$1"; }
+        service_state() { printf 'running healthy'; }
         rx() {
             case "$1" in
+            "test -f dashboard/Dockerfile") [ "${SRC_CHECKOUT:-no}" = yes ] ;;
+            *"config --images") [ "$RESTORE_CASE" != no-proxy-image ] && printf 'tecnativa/docker-socket-proxy@sha256:x\n' ;;
+            *"image inspect --format"*) printf 'sha256:id' ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
@@ -90,6 +94,9 @@ assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_r
 assert_eq "a failed dashboard carry apply fails lifecycle (#2360)" "$(drive_restore yes carry-apply-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
+assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
+assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
+assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
 assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"

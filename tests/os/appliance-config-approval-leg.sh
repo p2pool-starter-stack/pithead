@@ -222,7 +222,24 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         fi
     done
     live=$(sensitive_live_config) || return
-    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || {
+    local gate_only=0
+    if [ -n "$mu" ] || [ -n "$mp" ]; then # see reserved_node_credential_refusal_verdict
+        proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "$mu" "$mp" "$th" "$grpc") || return
+        sensitive_preview "$(dashboard_config_body "$proposed")" || {
+            bad "reserved-node preview with RPC login credentials never returned"
+            return
+        }
+        if reserved_node_credential_refusal_verdict "$APPROVAL_PREVIEW"; then
+            ok "reserved-node RPC login credentials are refused outright, never routed into the approval gate"
+        else
+            bad "reserved-node preview with RPC login credentials did not hard-refuse ($(reserved_node_preview_payload "$APPROVAL_PREVIEW"))"
+            return
+        fi
+        gate_only=1
+    fi
+    # Blank credentials keep the live secret sentinel (remote_node_proposal), so every gate below
+    # runs on every bench; only the commit needs a node that accepts the live credentials.
+    proposed=$(remote_node_proposal "$live" "$mh" "$rpc" "$zmq" "" "" "$th" "$grpc") || {
         bad "reserved-node proposal could not be constructed"
         return
     }
@@ -235,12 +252,43 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         bad "reserved-node preview did not expose endpoints behind the combined approval gate ($(reserved_node_preview_payload "$preview"))"
         return
     fi
+    ok "reserved-node preview exposes both endpoints behind the combined approval gate"
+    node_ok=1
+    # The preview is the only place these endpoints are shown before they are committed, so it
+    # carries the disclosure duty the removed Telegram prompt used to: never the node credentials.
+    if { [ -n "$mu" ] && case "$preview" in *"$mu"*) true ;; *) false ;; esac } ||
+        { [ -n "$mp" ] && case "$preview" in *"$mp"*) true ;; *) false ;; esac } then
+        bad "reserved-node preview exposed a Monero node credential"
+        node_ok=0
+    else
+        ok "reserved-node preview exposes node endpoints without node credentials"
+    fi
+    if reserved_node_rendered_endpoints_verdict "$preview" "$mh" "$rpc" "$zmq" "$th" "$grpc"; then
+        ok "reserved-node preview renders the Monero and Tari endpoints p2pool is started with"
+    else
+        bad "reserved-node preview did not render p2pool's node endpoints ($(printf '%s' "$preview" | jq -c '[.changes[]? | select(.key | test("^(MONERO_NODE_HOST|MONERO_RPC_PORT|MONERO_ZMQ_PORT|TARI_GRPC_ADDRESS)$")) | .key]' 2>/dev/null))"
+        node_ok=0
+    fi
     rid=$APPROVAL_REQUEST_ID
     result=$(dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,approve:true,payout_suffixes:{}}')")
     if printf '%s' "$result" | jq -e '.status == "rejected" and (.error | contains("type APPLY"))' >/dev/null; then
         ok "reachable-node commit is refused before probing or approval without typed APPLY"
     else
         bad "reachable-node commit crossed the typed confirmation gate"
+        return
+    fi
+    audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
+    if printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[];
+        .id == $id and .action == "commit" and .status == "rejected" and (.approver // "") == "")' >/dev/null; then
+        ok "the unconfirmed reserved-node commit is audited as rejected without an approver"
+    else
+        bad "reserved-node audit did not record the unconfirmed commit as rejected without an approver"
+        node_ok=0
+    fi
+    if [ "$gate_only" -eq 1 ]; then
+        it_skip_leg "reserved-node commit, p2pool endpoint consumption and Tari chain_id round trip" \
+            "this bench's reserved Monero node requires an RPC login, and MONERO_NODE_USERNAME/PASSWORD are not dashboard-committable — a bench node without RPC auth runs it" missing
+        [ "$node_ok" -eq 1 ] || return 1
         return
     fi
     sensitive_preview "$(dashboard_config_body "$proposed")" || return
@@ -254,29 +302,12 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         bad "host preflight refused the reserved nodes"
         return
     fi
-    node_ok=1
     audit=$(_ssh "tail -n 20 /data/pithead/data/control/audit/control.log" 2>/dev/null)
     printf '%s\n' "$audit" | jq -se --arg id "$rid" 'any(.[];
         .id == $id and .status == "applied" and (.approver // "") == "")' >/dev/null || {
         bad "reserved-node audit did not bind the current request and applied status, or carried an approver"
         node_ok=0
     }
-    # The preview the operator reads is now the only place these endpoints are shown before they
-    # are committed, so it carries the disclosure duty the removed Telegram prompt used to: name
-    # both endpoints in full, and never the node credentials that travel in the same change.
-    if ! printf '%s' "$preview" | jq -e --arg mh "$mh" --arg th "$th" '
-        any(.preview_values[]; .key == "monero.remote.host" and .new == $mh) and
-        any(.preview_values[]; .key == "tari.remote.host" and .new == $th)' >/dev/null; then
-        bad "reserved-node preview omitted an endpoint the operator must see before confirming ($(reserved_node_preview_payload "$preview"))"
-        node_ok=0
-    fi
-    if { [ -n "$mu" ] && case "$preview" in *"$mu"*) true ;; *) false ;; esac } ||
-        { [ -n "$mp" ] && case "$preview" in *"$mp"*) true ;; *) false ;; esac } then
-        bad "reserved-node preview exposed a Monero node credential"
-        node_ok=0
-    else
-        ok "reserved-node preview exposes node endpoints without node credentials"
-    fi
     tries=0 logs=""
     while [ "$tries" -lt 60 ]; do
         logs=$(p2pool_current_startup_merge_lines)
@@ -380,6 +411,7 @@ _approval_self_test() {
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
     _physical_presence_password_refusal_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
+    _reserved_node_credential_refusal_self_test || f=$((f + 1))
     _runtime_epoch_self_test || f=$((f + 1))
     _remote_node_proposal_self_test || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))

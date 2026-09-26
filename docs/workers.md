@@ -261,8 +261,9 @@ multi-homed), or carries its own token — override just that rig with
 `dashboard.workers` was a deprecated alias for `workers.list` (#506) and was removed in 2.0.0
 (#1832): it is no longer read. A config from before the move still works, because the first
 command to read it migrates it in place — the entries move to `workers.list`, the old key is
-deleted, and the pre-migration file is kept beside the config as `config.json.bak-1x`. The same
-pass renames a `xmrig_proxy.*` block to `xvb.*`. Setting an old and a new key to *different*
+deleted, and the pre-migration file is kept beside the config as `config.json.bak-1x`. A restored
+1.x backup is migrated while it is staged and leaves no `.bak-1x`: the archive is the
+pre-migration copy. The same pass renames a `xmrig_proxy.*` block to `xvb.*`. Setting an old and a new key to *different*
 values is refused, so the migration never has to guess which one you meant; set to the same value,
 the old key is dropped. Schema defaults never refuse either: an empty array carries no descriptors
 (#679), and a `xmrig_proxy.*` value at its 1.x default (`enabled: true`,

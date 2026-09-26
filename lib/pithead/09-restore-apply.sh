@@ -266,6 +266,15 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>]
         printf 'could not apply the backup files' >"$errf"
         return 1
     fi
+    # The dashboard database carries the source machine's #35 sync-gate release (#2626); this
+    # machine's chains may not be synced. Planting the marker in the STAGED tree, beside the
+    # DEPLOYMENT_COMPLETED clear above, makes it land atomically with the rest of the commit — it
+    # either arrives with a genuine dashboard database or not at all, with no separate failure
+    # mode and no extra rollback bookkeeping in restore_commit_items.
+    if [ -d "$tree/${root}data/dashboard" ] && ! : >"$tree/${root}data/dashboard/sync-gate-reset"; then
+        printf 'could not apply the backup files' >"$errf"
+        return 1
+    fi
     # Apply only the accepted files/data trees, from wherever the archive's own root staged them
     # to their fixed destination on THIS box ($PWD), all or nothing (restore_commit_items). Do
     # not copy staging's ancestor directories onto /: their metadata is not part of the backup

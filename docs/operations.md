@@ -449,7 +449,9 @@ curl -fsSL https://github.com/p2pool-starter-stack/pithead/releases/latest/downl
 ./pithead upgrade
 ```
 
-**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the images locally:
+**Source checkout:** pull the latest code, then upgrade. `upgrade` **rebuilds** the first-party
+images locally and pulls only the pinned third-party images (Tari, Caddy, the socket proxies) that
+are not on the host. `setup` and `up` fetch those images the same way:
 
 ```bash
 git pull
@@ -691,7 +693,9 @@ them while the fingerprint matches `dashboard.auth.password` and the hash is wel
 otherwise restore hashes the configured password again. An archive is trusted as far as its own
 `config.json`: whoever can edit it can change the login, so keep backups private and encrypted.
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
-onion address returns unchanged, and restores hashrate history and dashboard settings.
+onion address returns unchanged, and restores hashrate history and dashboard settings — including
+the sync gate's own released/held state, since this is the same-box recovery door: the machine's
+chains have not gone anywhere.
 
 #### Restore collision rules
 
