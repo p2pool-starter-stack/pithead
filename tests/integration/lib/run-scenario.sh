@@ -8,6 +8,9 @@ assert_scenario() {
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
 }
 
+# wallet-rpc's restart count, or nothing when the payout_confirm profile did not deploy it (#2769).
+wallet_rpc_restarts() { rx "docker inspect wallet-rpc --format '{{.RestartCount}}'" 2>/dev/null | tr -d '\r'; }
+
 # Runtime egress observation (#274), beyond config: poll each bridge app container's LIVE IPv4 TCP
 # connections and FAIL if any holds a PERSISTENT direct public connection (i.e. it isn't dialing
 # through the Tor SOCKS). It observes IPv4 TCP from the bridge networks only — it does NOT capture
