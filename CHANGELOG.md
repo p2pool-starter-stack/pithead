@@ -186,6 +186,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
   reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
   grace.
+- **The Monero payout wallet's scan grace ends at monerod's tip, and a crash loop no longer renews
+  it ([#2720](https://github.com/p2pool-starter-stack/pithead/issues/2720)).** The RPC answers
+  between refresh passes, so the first answer no longer retires the grace mid-scan; the healthcheck
+  clears it once the wallet height reaches monerod's block count. A restart keeps an existing
+  marker's age, so a wallet that never catches up still turns unhealthy after 24 hours. Its ring
+  database moved into the wallet volume, off the read-only root filesystem.
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
