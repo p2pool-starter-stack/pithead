@@ -142,6 +142,29 @@ assert_eq "a pools original is restored intact, credential and all (#1002b/#1379
 assert_eq "the pools credential is not printed in the abort log" \
     "$(grep -c 'pass.*secret' "$SCEN_OUT")" "0"
 
+echo "== a pretty-printed original is one ledger entry, not one per line (#2668) =="
+# The shape an operator pastes into IT_RIG_POOLS_PROBE, which run_rigforge_pools seeds verbatim:
+# newlines AND tab indentation, both of them the ledger's own delimiters. Stored raw, it split into
+# five entries, restored nothing, and warned "restoring  on rig '"tabsecret"'".
+scenario 'v=$'"'"'[\n\t{\n\t\t"url":\t"real:1",\n\t\t"pass":\t"tabsecret"\n\t}\n]'"'" \
+    'rig_key_mark dash rig1 pools "$v"' 'echo "OUT=$(rig_key_outstanding)"' 'exit 1' >/dev/null
+assert_eq "it is recorded as exactly one outstanding write (#2668)" "$(grep -c '^OUT=1$' "$SCEN_OUT")" "1"
+assert_eq "and restored intact, compacted, credential and all (#2668)" \
+    "$(restores)" 'dash|{"pools":[{"url":"real:1","pass":"tabsecret"}]}'
+assert_eq "the unwind warns once, naming the pools key and the rig (#2668)" \
+    "$(grep -c "restoring pools on rig 'rig1' via the dash route" "$SCEN_OUT")" "1"
+assert_eq "and its pass is nowhere in the output (#2668)" "$(grep -c 'tabsecret' "$SCEN_OUT")" "0"
+
+echo "== an original that is not one JSON value is refused at mark time, value unprinted (#2668) =="
+scenario 'rig_key_mark dash rig1 pools "not-json-marksecret"; echo "MARK=$?"' \
+    'rig_key_mark dash rig1 DONATION "5 6"; echo "MARK=$?"' 'echo "OUT=$(rig_key_outstanding)"' 'exit 1' >/dev/null
+assert_eq "both marks return non-zero (#2668)" "$(grep -c '^MARK=1$' "$SCEN_OUT")" "2"
+assert_eq "neither goes on the ledger (#2668)" "$(grep -c '^OUT=0$' "$SCEN_OUT")" "1"
+assert_eq "each says, by key, that an abort will not restore it (#2668)" \
+    "$(grep -c 'cannot record the original .* an abort will NOT restore it' "$SCEN_OUT")" "2"
+assert_eq "the refused value is not printed (#2668)" "$(grep -c 'marksecret' "$SCEN_OUT")" "0"
+assert_eq "and nothing is POSTed for it (#2668)" "$(n_restores)" "0"
+
 echo "== COMPOSITION: our trap replaces rig_lock's, so it must do rig_lock's job too =="
 # Drives lib.sh's REAL rig_lock against sandboxed paths. This is the assertion that catches the
 # hazard the whole design is shaped around: `trap … EXIT` replaces rather than stacks, so arming

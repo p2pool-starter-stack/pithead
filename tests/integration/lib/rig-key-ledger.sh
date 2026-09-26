@@ -144,9 +144,22 @@ _rig_key_arm() {
 
 # Record an outstanding write. Call this BEFORE the apply goes out, not after — the window this
 # exists to cover includes the apply itself.
+#
+# The value is compacted HERE, once, rather than trusted from each caller (#2668). A ledger line is
+# split on tab and newline, and an operator's pretty-printed IT_RIG_POOLS_PROBE carries both: stored
+# verbatim it became several entries, the pools original was never restored, and the unwind's warning
+# printed fragments of it — the stratum `pass` among them — as a rig or route name. `jq -c` escapes
+# every tab and newline inside a string, so its output is one line with no raw tab in it. The value
+# goes in on stdin (printf is a builtin, so no process carries it on argv, #2663), and anything that
+# is not exactly one JSON value is refused with a warning that names the key and never the value.
 rig_key_mark() { # <route: dash|rig> <rig> <key> <original-value-as-json>
+    local v
     _rig_key_arm
-    _RIG_LEDGER="${_RIG_LEDGER}$1	$2	$3	$4
+    if ! v="$(printf '%s' "$4" | jq -cs 'if length == 1 then .[0] else error end' 2>/dev/null)" || [ -z "$v" ]; then
+        it_warn "cannot record the original $3 on rig '$2': not one JSON value — an abort will NOT restore it (#2668)"
+        return 1
+    fi
+    _RIG_LEDGER="${_RIG_LEDGER}$1	$2	$3	$v
 "
     return 0
 }
