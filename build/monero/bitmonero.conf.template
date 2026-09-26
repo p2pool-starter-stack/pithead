@@ -3,6 +3,10 @@
 data-dir=/home/ubuntu/.bitmonero
 log-file=/home/ubuntu/.bitmonero/bitmonero.log
 log-level=0
+# Power-loss safety (#2471). monerod's default, fast:async, opens LMDB with MDB_NOSYNC only, so a
+# commit can return before it reaches the disk. safe opens it with no sync-relaxing flags, so every
+# LMDB commit is on disk when it returns, at the cost of a slower initial sync.
+db-sync-mode=safe
 
 # --- Blockchain Pruning ---
 prune-blockchain=${MONERO_PRUNE}

@@ -507,12 +507,10 @@ case "$(cat "$MONC")" in
 *xmrvsbeast.com:18080* | *nodes.hashvault.pro*) bad "monerod: priority-node hostnames dropped (#161)" "still present" ;;
 *) ok "monerod: priority-node hostnames dropped (#161)" ;;
 esac
-case "$(grep -E '^enforce-dns-checkpointing' "$MONC" || true)" in
-"") ok "monerod: enforce-dns-checkpointing removed (#161)" ;;
-*) bad "monerod: enforce-dns-checkpointing removed (#161)" "still present" ;;
-esac
+assert_eq "monerod: enforce-dns-checkpointing removed (#161)" "$(grep -E '^enforce-dns-checkpointing' "$MONC" || true)" ""
 assert_contains "monerod: DNS checkpoints disabled (#161)" "$(cat "$MONC")" "disable-dns-checkpoints=1"
 assert_contains "monerod: update check disabled (#161)" "$(cat "$MONC")" "check-updates=disabled"
+assert_eq "monerod: every LMDB commit is synced, db-sync-mode=safe (#2471)" "$(grep -E '^db-sync-mode=' "$MONC" || true)" "db-sync-mode=safe"
 # tari (#162): no DNS seeds; peer_seeds onion-only; the inert check_for_updates gRPC method dropped.
 assert_contains "tari: DNS seeds disabled (#162)" "$(cat "$TARC")" "dns_seeds = []"
 # #271: minotari defaults proxy_bypass_for_outbound_tcp=true → it direct-dials peers advertising a bare

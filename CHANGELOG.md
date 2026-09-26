@@ -155,6 +155,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **monerod flushes every chain-database commit to disk
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod ran with its
+  default `fast:async` database mode, which opens LMDB with `MDB_NOSYNC`, so a commit could return
+  before it reached the disk. The bundled node now runs with `db-sync-mode=safe`, which syncs every
+  commit. Initial sync is slower as a result.
+
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
