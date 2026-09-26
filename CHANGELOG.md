@@ -114,6 +114,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   container starts; `doctor` warns when it is not enabled
   ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 
+- **The LAN switches now enforce LAN sources**
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
+  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
+  source that could route to the host. See
+  [LAN-only sources](docs/configuration.md#lan-only-sources).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
@@ -136,9 +143,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
   Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
   Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
-  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
-  API token is a credential change, closed in the same round-2 pass after an initial review found
-  it still routed through the self-written approval envelope.
+  repointing or removing a per-rig worker descriptor (`workers.list[]`). Adopting a new rig was
+  closed in the same round-2 pass and reopened, behind the typed confirmation, by
+  [#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641) (see Fixed).
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
@@ -147,6 +154,24 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **Worker Inspect can adopt a rig again
+  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
+  pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
+  form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
+  no way to be adopted short of a configuration stick. The host now lets an append through: every
+  existing descriptor must come back unchanged, a new rig may not reuse an existing rig's name,
+  its host must not resolve to loopback, link-local or the stack's own docker-bridge subnet, and
+  the commit needs the typed `APPLY`. The preview names the rig and the
+  address the dashboard will send its control token to, and the audit log records the commit as
+  confirmed with `workers.list` as its key. Repointing or removing a rig the dashboard already
+  controls is still refused.
+
+- **An unreachable image registry is no longer reported as a bad signature
+  ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
+  reach the registry, for example `no route to host`, the start and upgrade paths still refuse to
+  pull, and now say the image is unverified because of a network error. Before, they said the published image did not
+  match the release key, which sent operators looking for a tampered image.
 
 - **A restore at setup no longer carries the source machine's released miner onto new hardware
   ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard

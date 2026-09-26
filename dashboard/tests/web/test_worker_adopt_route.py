@@ -2,8 +2,8 @@
 other config edit uses, no new write route — pre-validates a proposal's newly-appended
 ``workers.list[]`` entries before it ever spools to the host-side runner.
 
-This is the dashboard's own defense-in-depth mirror of pithead's ``control_approval_gate`` add-only
-exception (the actual security authority, exercised at commit); these tests prove the mirror is
+This is the dashboard's own defense-in-depth mirror of pithead's ``control_worker_append`` append-only
+check (the actual security authority, run at preview and at commit); these tests prove the mirror is
 WIRED IN to the real request handler, not just correct in isolation (that's
 ``tests/service/workers/test_worker_adopt.py``). Each rejection test would pass right through (200/202,
 request spooled) if the guard call in ``handle_control_preview`` were removed or its condition
@@ -188,7 +188,7 @@ class TestAdoptGuardOnPreview:
     ):
         # The adopt guard only pre-validates NEW entries — repointing an EXISTING one isn't "new"
         # (test_worker_adopt.py proves that at the unit level), so it must sail past this guard
-        # and reach the spool. The host's own add-only gate is the one that refuses it, at commit
+        # and reach the spool. The host's own add-only gate is the one that refuses it, at preview
         # (bash-side, not exercised here) — this test only pins that this guard doesn't double up
         # on that job and accidentally block something it was never meant to police.
         proposed = _proposed([{**LIVE_RIG1, "host": "ATTACKER"}])

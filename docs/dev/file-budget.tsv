@@ -45,7 +45,6 @@ lib/pithead/17-backup-restore.sh	404
 lib/pithead/28-parse-and-validate-config.sh	465
 lib/pithead/33-render-env.sh	483
 lib/pithead/36-quadlet-units.sh	406
-lib/pithead/43-control-approval-and-preview.sh	413
 os/overlay/pithead-boot	407
 os/rootfs/Dockerfile	405
 scripts/watch/shipped-image-sweep-report.sh	429
@@ -59,6 +58,8 @@ tests/integration/selftest/selftest-e2e-phases.sh	501
 tests/integration/selftest/selftest-live-gates.sh	453
 tests/integration/selftest/selftest-zmq-probe.sh	431
 tests/integration/selftest/selftest.sh	685
+tests/os/appliance-approval-verdict.sh	449
+tests/os/appliance-config-approval-leg.sh	432
 tests/os/appliance-xvb-routing-leg.sh	411
 tests/os/failure-evidence.sh	567
 tests/os/phases/install-restore.sh	416

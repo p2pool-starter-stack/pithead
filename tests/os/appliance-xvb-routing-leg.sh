@@ -69,6 +69,12 @@ _xvb_real_tor_fetch() {
     _xvb_guest_python "$payload"
 }
 
+# #2726 (job 1194): a Tor circuit read-timing out against a third-party host says nothing about the
+# stack, so retry. Each attempt runs the whole audit-hook probe: a retry never passes non-Tor egress.
+_xvb_real_tor_fetch_retry() {
+    _xvb_real_tor_fetch || { sleep 15 && _xvb_real_tor_fetch; } || { sleep 15 && _xvb_real_tor_fetch; }
+}
+
 # The last guest-side stderr _ssh captured, folded onto one line for a verdict message. Throwing
 # this away is why #2321 was filed off job 442 with no diagnostic: the row said the actuator failed
 # and the guest's own traceback — the only thing that says whether the leg or the product is at
@@ -99,21 +105,26 @@ _xvb_route_is() { # <route-json> <mode> <tor-routed: true|false>
         >/dev/null 2>&1
 }
 
-# #2708 (job 1172): a single-shot restore that hits a transient ConnectTimeout leaves the guest
-# routed to XvB for the rest of the phase — every downstream row that depends on p2pool actually
-# mining then fails the same way. Retry with the same confirmation the XvB switch already gets,
-# instead of trusting (or silently swallowing) the first answer.
-_xvb_restore_p2pool() { # -> pools JSON on stdout once P2POOL is confirmed live, empty + rc 1 on timeout
-    local deadline pools
-    deadline=$(($(date +%s) + ${XVB_RESTORE_TIMEOUT:-30}))
+# #2708 (job 1172), #2737 (job 1208): the sync gate (#35) re-stops xmrig-proxy every cycle on this
+# unsynced appliance, and one such outage ran ~59s (job 1141), so the proxy the readiness wait saw
+# can be gone by the next call: a switch then dies to a guest-side ConnectTimeout, and a restore
+# that neither restarted the proxy nor outlasted that outage (30s) left the guest routed to XvB for
+# the rest of the phase. Every attempt re-asserts the start, as the readiness wait does, and the
+# route must confirm before the call counts. Prints the last route it read either way.
+_xvb_actuate() { # <mode> <tor-routed: true|false> -> 0 once confirmed, 1 on timeout
+    local deadline pools="" payload
+    payload="$(_xvb_payload "$1")"
+    deadline=$(($(date +%s) + ${XVB_ACTUATE_TIMEOUT:-150}))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        pools="$(_xvb_guest_python "$(_xvb_payload P2POOL)")"
-        if [ -n "$pools" ] && _xvb_route_is "$pools" P2POOL false; then
+        _ssh "podman start xmrig-proxy >/dev/null 2>&1"
+        pools="$(_xvb_guest_python "$payload")"
+        if [ -n "$pools" ] && _xvb_route_is "$pools" "$1" "$2"; then
             printf '%s' "$pools"
             return 0
         fi
         sleep 2
     done
+    printf '%s' "$pools"
     return 1
 }
 
@@ -121,19 +132,17 @@ _xvb_restore_p2pool() { # -> pools JSON on stdout once P2POOL is confirmed live,
 # spot; the caller puts the guest back either way, so an early return cannot strand the proxy.
 _xvb_routing_actuation() {
     local pools
-    pools="$(_xvb_guest_python "$(_xvb_payload XVB)")"
-    if [ -z "$pools" ]; then
-        bad "controller actuator could not switch the live proxy to XvB (guest: $(_xvb_guest_stderr))"
-        return 1
-    fi
-    if ! _xvb_route_is "$pools" XVB true; then
-        bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $pools)"
+    if ! pools="$(_xvb_actuate XVB true)"; then
+        if [ -z "$pools" ]; then
+            bad "controller actuator could not switch the live proxy to XvB within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
+        else
+            bad "bounded controller injection did not leave XvB as the live Tor-routed proxy route (route: $pools)"
+        fi
         return 1
     fi
     ok "bounded controller injection moved the live proxy to Tor-routed XvB"
-    pools="$(_xvb_restore_p2pool)"
-    if [ -z "$pools" ]; then
-        bad "controller actuator could not restore the live proxy to P2Pool (guest: $(_xvb_guest_stderr))"
+    if ! _xvb_actuate P2POOL false >/dev/null; then
+        bad "controller actuator could not restore the live proxy to P2Pool within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
         return 1
     fi
     ok "bounded controller injection restored the live proxy to P2Pool"
@@ -148,7 +157,7 @@ phase_provision_xvb_routing() {
         bad "guest Tor never reported bootstrapped within ${XVB_TOR_READY_TIMEOUT:-300}s (last health: $tor_status) — the real XvB stats request was never made"
         return 1
     fi
-    if _xvb_real_tor_fetch; then
+    if _xvb_real_tor_fetch_retry; then
         ok "XvB stats request reached the real endpoint through the guest Tor SOCKS only"
     else
         bad "XvB stats request did not complete through the guest Tor SOCKS only (guest: $(_xvb_guest_stderr))"
@@ -171,8 +180,8 @@ phase_provision_xvb_routing() {
     # silent-swallow that issue exists to kill — a fallback restore that also fails is a counted,
     # named diagnostic instead, so nothing downstream mistakes a still-misrouted guest for a clean one.
     if [ "$rc" -ne 0 ]; then
-        _xvb_restore_p2pool >/dev/null ||
-            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_RESTORE_TIMEOUT:-30}s (guest: $(_xvb_guest_stderr))"
+        _xvb_actuate P2POOL false >/dev/null ||
+            bad "guest left routed to XvB after the leg failed — P2POOL restore did not confirm within ${XVB_ACTUATE_TIMEOUT:-150}s (guest: $(_xvb_guest_stderr))"
     fi
     _ssh "podman stop -t 5 xmrig-proxy >/dev/null 2>&1" || true
     return "$rc"
@@ -185,6 +194,7 @@ _xvb_self_test() {
     # 150s wait has no place in a unit self-test. Both defaults (the wait's own and the row message's)
     # have to move together or the failure message misreports what the leg actually waited for.
     declare -f _xvb_wait_for_proxy_api | grep -q ':-150' &&
+        declare -f _xvb_actuate | grep -q ':-150' &&
         declare -f phase_provision_xvb_routing | grep -q ':-150' || {
         printf 'xvb self-test: proxy-ready default drifted below the #2712 evidence floor (150s)\n' >&2
         f=$((f + 1))
@@ -213,25 +223,30 @@ _xvb_self_test() {
     # Drive the REAL leg, one inverted assertion at a time. A source grep would pass on a leg whose
     # rows never reach the harness's counters, which is exactly the defect this replaced: the rows
     # must be counted HERE, in the caller's own PASS/FAIL, and the leg must return non-zero.
-    local PASS=0 FAIL=0 XVBT_FETCH_RC=0 XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
+    local PASS=0 FAIL=0 XVBT_FETCH_FAILS=0 XVBT_FETCH_CALLS XVBT_START_RC=0 XVBT_XVB_JSON="" XVBT_P2P_JSON=""
     local XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=1 XVB_RESTORE_TIMEOUT=1
+    # Deadlines are whole seconds of `date +%s`: a 1s one computed at x.999 expires before the
+    # poll runs once, so every short deadline here is 2 — at least one full second of polling (#2739).
+    local XVBT_PROXY_READY_RC=0 XVB_PROXY_READY_TIMEOUT=2 XVB_ACTUATE_TIMEOUT=2
     local xvb_ok='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     local p2p_ok='{"mode":"P2POOL","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     ok() { PASS=$((PASS + 1)); }
     bad() { FAIL=$((FAIL + 1)); }
     info() { :; }
     sleep() { command sleep 0.05; } # the polls' own pacing, shortened so the self-test does not idle
+    XVBT_STARTS="$(mktemp)" XVBT_CALLS="$(mktemp)"
     _ssh() {
         case "$1" in
         *"podman inspect"*" tor") printf '%s\n' "$XVBT_TOR_HEALTH" ;;
-        *"podman start"*) return "$XVBT_START_RC" ;;
+        *"podman start"*) printf x >>"$XVBT_STARTS" && return "$XVBT_START_RC" ;;
         esac
         return 0
     }
-    _xvb_real_tor_fetch() { return "$XVBT_FETCH_RC"; }
-    _xvb_guest_python() { # answers the mode the leg actually asked the guest to switch to
+    XVBT_FETCH_CALLS="$(mktemp)"
+    _xvb_real_tor_fetch() { printf x >>"$XVBT_FETCH_CALLS" && [ "$(wc -c <"$XVBT_FETCH_CALLS")" -gt "$XVBT_FETCH_FAILS" ]; }
+    _xvb_guest_python() { # answers the mode asked for, after XVBT_MISSES silent (timed-out) calls
         case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
+        *switch_miners*) printf x >>"$XVBT_CALLS" && [ "$(wc -c <"$XVBT_CALLS")" -gt "${XVBT_MISSES:-0}" ] || return 1 ;;&
         *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
         *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
         *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
@@ -239,7 +254,7 @@ _xvb_self_test() {
     }
     _xvb_case() { # <label> <want-pass> <want-fail> <want-rc>
         local rc=0
-        PASS=0 FAIL=0
+        PASS=0 FAIL=0 && : >"$XVBT_CALLS"
         phase_provision_xvb_routing >/dev/null 2>&1 || rc=$?
         [ "$PASS" = "$2" ] && [ "$FAIL" = "$3" ] && [ "$rc" = "$4" ] || {
             printf 'xvb self-test: %s — pass=%s want %s, fail=%s want %s, rc=%s want %s\n' \
@@ -251,65 +266,48 @@ _xvb_self_test() {
     XVBT_XVB_JSON="$xvb_ok" XVBT_P2P_JSON="$p2p_ok"
     _xvb_case "a clean transition reports three green rows and rc 0" 3 0 0
 
-    # #2708 (job 1172): a restore that hits one transient ConnectTimeout and then succeeds must NOT
-    # strand the guest on XvB — the call has to retry until it confirms P2Pool, not trust (or
-    # silently swallow) the first answer. A single-shot restore fails this case outright.
-    local p2p_calls
-    p2p_calls="$(mktemp)"
-    _xvb_guest_python() {
-        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
-        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
-        *"switch_miners('P2POOL')"*)
-            printf 'x' >>"$p2p_calls"
-            [ "$(wc -c <"$p2p_calls")" -ge 2 ] && printf '%s' "$p2p_ok"
-            ;;
-        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
-        esac
+    # #2708 (job 1172), #2737 (job 1208): a switch that hits a transient ConnectTimeout (the gate
+    # re-stopped the proxy) must retry until its route confirms, re-asserting the proxy start
+    # between attempts, not strand the guest on XvB.
+    : >"$XVBT_STARTS" && XVBT_MISSES=1
+    _xvb_case "a switch that times out once and then succeeds is NOT a red row" 3 0 0
+    # 2 from the phase and readiness wait, then one per actuation attempt: 2 for XvB, 1 for P2Pool.
+    [ "$(wc -c <"$XVBT_STARTS")" -ge 5 ] || {
+        printf 'xvb self-test: the actuator does not re-assert the proxy start between attempts\n' >&2
+        f=$((f + 1))
     }
-    _xvb_case "a restore that times out once and then succeeds is NOT a red row" 3 0 0
-    rm -f "$p2p_calls"
-    _xvb_guest_python() {
-        case "$(printf '%s' "$1" | base64 -d 2>/dev/null)" in
-        *"switch_miners('XVB')"*) printf '%s' "$XVBT_XVB_JSON" ;;
-        *"switch_miners('P2POOL')"*) printf '%s' "$XVBT_P2P_JSON" ;;
-        *"get_config()"*) return "$XVBT_PROXY_READY_RC" ;;
-        esac
-    }
+    XVBT_MISSES=0
 
     # #2253: the leg must WAIT for Tor rather than race it, and must say so when it never arrives.
     # The REAL wait runs in every case here; only the guest's answer and the deadline are stubbed.
-    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=1
+    XVBT_TOR_HEALTH=starting XVB_TOR_READY_TIMEOUT=2
     _xvb_case "a Tor that never bootstraps is a counted red row before any request is made" 0 1 1
     XVBT_TOR_HEALTH=healthy XVB_TOR_READY_TIMEOUT=300
-
-    XVBT_FETCH_RC=1
+    # #2726 (job 1194): one Tor read timeout then an answer is green; three misses stay red.
+    : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=1
+    _xvb_case "a real XvB request that times out once and then answers is NOT a red row" 3 0 0
+    : >"$XVBT_FETCH_CALLS" && XVBT_FETCH_FAILS=99
     _xvb_case "an unreachable real XvB request over guest Tor is a counted red row" 0 1 1
-    XVBT_FETCH_RC=0
-
+    [ "$(wc -c <"$XVBT_FETCH_CALLS")" = 3 ] || { echo "xvb self-test: fetch not tried 3 times" >&2 && f=$((f + 1)); }
+    XVBT_FETCH_FAILS=0
     XVBT_START_RC=1
     _xvb_case "a held xmrig-proxy that will not start is a counted red row" 1 1 1
     XVBT_START_RC=0
-
     # Job 629's own cause: xmrig-proxy started but its API never answered before the actuator was
     # tried, so the switch silently no-opped. That must be a counted red row on its own, before the
     # actuator ever runs — not the actuator's "could not switch" row, which would misname the cause.
     XVBT_PROXY_READY_RC=1
     _xvb_case "an xmrig-proxy API that never answers after starting is a counted red row" 1 1 1
     XVBT_PROXY_READY_RC=0
-
     # #2321's own row: the actuator answering nothing must be RED and must reach the summary.
     XVBT_XVB_JSON=""
     _xvb_case "an actuator that cannot switch the live proxy to XvB is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting P2POOL after the XvB switch is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "an XvB route that is not Tor-routed is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":true},{"enabled":true,"tor":false}]}'
     _xvb_case "a second pool left enabled beside XvB is a counted red row" 1 1 1
-
     XVBT_XVB_JSON='{"mode":"XVB","pools":[{"enabled":false,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "an XvB route whose own pool is disabled is a counted red row" 1 1 1
     XVBT_XVB_JSON="$xvb_ok"
@@ -320,13 +318,10 @@ _xvb_self_test() {
     # guest really is left misrouted, not just the first attempt.
     XVBT_P2P_JSON=""
     _xvb_case "an actuator that cannot restore P2Pool is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"XVB","pools":[{"enabled":true,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a dashboard left persisting XVB after the restore is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":true,"tor":true},{"enabled":false,"tor":false}]}'
     _xvb_case "a P2Pool route left Tor-routed is a counted red row, twice over" 2 2 1
-
     XVBT_P2P_JSON='{"mode":"P2POOL","pools":[{"enabled":false,"tor":false},{"enabled":false,"tor":false}]}'
     _xvb_case "a restored P2Pool route whose own pool is disabled is a counted red row, twice over" 2 2 1
 
@@ -350,7 +345,7 @@ _xvb_self_test() {
     # arrives, that string is the entire diagnostic.
     local last_status
     _ssh() { printf 'starting\n'; }
-    if last_status="$(XVB_TOR_READY_TIMEOUT=1 _xvb_wait_for_tor)"; then
+    if last_status="$(XVB_TOR_READY_TIMEOUT=2 _xvb_wait_for_tor)"; then
         printf 'xvb self-test: the Tor wait reported ready for a guest that never bootstrapped\n' >&2
         f=$((f + 1))
     elif [ "$last_status" != starting ]; then
@@ -377,7 +372,7 @@ _xvb_self_test() {
     fi
     rm -f "$proxy_answers"
     _ssh() { return 1; }
-    if XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api; then
+    if XVB_PROXY_READY_TIMEOUT=2 _xvb_wait_for_proxy_api; then
         printf 'xvb self-test: the proxy-API wait reported ready for a guest that never answered\n' >&2
         f=$((f + 1))
     fi
@@ -393,7 +388,7 @@ _xvb_self_test() {
         esac
         return 1
     }
-    XVB_PROXY_READY_TIMEOUT=1 _xvb_wait_for_proxy_api
+    XVB_PROXY_READY_TIMEOUT=2 _xvb_wait_for_proxy_api
     if [ "$start_calls" -lt 2 ]; then
         printf 'xvb self-test: the proxy-API wait does not re-assert the start against the sync gate (#1998), only asserted %s time(s)\n' \
             "$start_calls" >&2
@@ -401,7 +396,7 @@ _xvb_self_test() {
     fi
     unset -f sleep
 
-    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case
+    unset -f ok bad info _ssh _xvb_real_tor_fetch _xvb_guest_python _xvb_case && rm -f "$XVBT_FETCH_CALLS" "$XVBT_STARTS" "$XVBT_CALLS"
     [ "$f" -eq 0 ]
 }
 
