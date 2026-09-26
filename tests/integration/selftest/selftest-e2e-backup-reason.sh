@@ -10,6 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/integration/lib.sh
 source "$HERE/../lib.sh"
 
+echo "== backup_stack names why the safety backup failed =="
 SRC="$(sed -n '/^backup_stack() {$/,/^}$/p' "$HERE/../e2e.sh")"
 assert_eq "the extraction is the whole function (opens and closes)" \
     "$(printf '%s\n' "$SRC" | sed -n '1p;$p' | tr '\n' ' ')" "backup_stack() { } "
@@ -35,7 +36,7 @@ out="$(
     } 2>&1
 )"
 
-assert_contains "the failure names the exit status" "$out" "DIE pithead backup failed (exit 3)"
+assert_contains "the failure names the exit status" "$out" "DIE pithead backup failed (exit 3): step one|Error: disk full writing archive"
 assert_contains "the failure shows the backup's own error line" "$out" "Error: disk full writing archive"
 
 echo ""
