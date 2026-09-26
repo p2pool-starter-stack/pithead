@@ -143,22 +143,29 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
 6. Cross-version upgrade: leave the old signed release running at `--dir`. Supply an independently
    prepared private `pithead.tar.gz` and detached signature without a public release or `latest` tag,
    and keep the trusted `cosign.pub` outside that candidate. The signed archive must contain
-   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. `make_bundle` writes it from
-   preflight's approved `GIT_COMMIT`. There is no standalone candidate producer, but
-   `release.sh`'s `publish` stage already builds and signs exactly these artifacts (`make_bundle`
-   then `sign_bundle`) BEFORE its confirmation prompt and before any tag, push or GitHub release.
-   That is the natural place to run this gate: at that point the promoted images carry their real
+   `pithead/PITHEAD_COMMIT` with the exact 40-hex candidate commit. `make_bundle` writes that anchor;
+   the appliance gate's [`image-upgrade-bundle.sh`](../../tests/os/image-upgrade-bundle.sh) reuses
+   its release file list, resolves and digest-pins the candidate image references, and signs the
+   result with the phase's test key. The normal release path builds and signs the same artifact
+   shape before its confirmation prompt and before any tag, push, or GitHub release. At that point
+   the promoted images carry their real
    `org.opencontainers.image.revision`, the bundle is digest-pinned, and nothing has shipped. The harness snapshots all three inputs,
    rejects unsafe archive members, authenticates the whole digest-pinned Compose manifest through
-   the signed bundle, and additionally verifies the five unique Pithead-built image signatures
-   and exact OCI revisions against the external key before staging a byte. Third-party images are
+   the signed bundle, and additionally verifies every Pithead-built image selected by the active
+   service profile against the external key and exact OCI revision before staging a byte. Third-party images are
    digest-pinned by the authenticated manifest; they are not claimed as Pithead-signed. The harness
    captures the old release files and derived-host fingerprint, stops the stack, and takes private
-   `cp --reflink=always` snapshots of the enumerated persistent mounts before staging. It restores those
+   snapshots of the enumerated persistent mounts before staging. Every bind mount (the chain and
+   data dirs, and the version dir's own `data/` subdirectories) is cloned beside its source with
+   `cp --reflink=always`; on a filesystem that cannot do a CoW clone the gate refuses before
+   staging and never starts a full copy of a chain with the stack stopped. Only named volumes (the
+   small wallet databases and Caddy's data, which a container engine keeps on its own root whatever
+   the stack directory — #2057) are copied with `cp --reflink=auto`. It restores those
    snapshots, old files, rendered state, image refs, and revisions afterward. This deliberately
    rewinds the reserved bench to the quiesced pre-run point; do not use it on production or
    reward-bearing state. Use
-   `--safety-backup`. Every mount must be on a reflink-capable filesystem; the target account must
+   `--safety-backup`. Every bind source and its parent directory, the install dir included, must be
+   on one reflink-capable filesystem; the target account must
    have passwordless sudo for the snapshot/restore, firewall inspection, and owner-only Tor-key
    fingerprint reads. The workflow's destructive command runs as a bounded systemd transient service;
    a runner heartbeat stops a cancelled payload and waits for its EXIT rollback. Systemd and passwordless `systemd-run` are hard
@@ -217,20 +224,21 @@ Useful flags (full list in `run.sh --help`):
 | `--dir <path>` | The Pithead stack directory on the box, relative to the SSH login dir or absolute (default `pithead`). Avoid a literal `~`; your local shell expands it before the box sees it. |
 | `--pithead <cmd>` | How to invoke pithead there (e.g. `"sudo ./pithead"`). |
 | `--check` | Non-destructive: assert the box's current live state only. No config change, apply, or restore. It runs #274's sustained IPv4 TCP observation for active bridge apps and #206's XvB Tor configuration assertion, plus `pithead doctor`, `/metrics` through Caddy, and share-health checks. The host-network dashboard is not process-attributed and UDP is not captured; the focused smoke separately proves the candidate client with a kernel-isolated wallet-bearing real fetch. This does not prove the already-running dashboard process cannot bypass its configured proxy. The egress observation is a counted by-design skip during explicit clearnet initial sync; XvB wiring is a counted by-design skip when XvB is disabled. `/metrics` through Caddy needs `IT_DASHBOARD_PASSWORD` (env; never a flag — the box's real dashboard login plaintext, only the bcrypt hash of which the box itself can produce) when the box has a dashboard login set; without it the leg is a counted `missing` skip ([#2058](https://github.com/p2pool-starter-stack/pithead/issues/2058)). This is a bench operator input, not a dev-checkout default: on the bench-ci-run boxes it is supplied via the runner's own per-tier knob, `[tiers."pithead/tier4-e2e"] env = { IT_DASHBOARD_PASSWORD = "…" }` in bench-ci's config, the same mechanism RigForge's `tier4-e2e` already uses for `stratum_pass`/`dash_auth` — never through this repo or a request body. |
-| `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (synced chains reusable, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). See [Release Server](release-server.md). |
+| `--readiness` | Non-destructive: assess whether the box is fit to be a release/validation server (synced chains reusable, `pithead status` healthy within 240 s, snapshot-capable FS, disk headroom, secrets owner-only, dashboard localhost-only). See [Release Server](release-server.md). |
 | `--scenario <name>` | Run just one scenario. |
 | `--workers <n>` | Miners expected online while mining (default `2`). |
 | `--no-mining-asserts` | Skip the two mining assertions — workers online ≥ `--workers` and stratum total hashes > 0 — with a logged notice, for a box that has no miner connected. Every other assertion stays binding. `e2e.sh --no-miner` passes this automatically ([#905](https://github.com/p2pool-starter-stack/pithead/issues/905)). |
 | `--remote-monero-host <h>` | Bare host or IP for the external Monero node used by the `remote` scenario. Pair it with `--remote-monero-rpc-port` or `--remote-monero-zmq-port` when the node does not use ports 18081 and 18083. `e2e.sh` accepts the same flags and carries them through its read-only pregate and detached harness run. |
 | `--remote-tari-host <h>` | Bare host or IPv4 address for the external Tari node used by the `tari.mode=remote` scenario ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)). Pithead renders `tari.remote.grpc_port` separately; `e2e.sh` accepts and forwards the host. |
 | `--pruned-data-dir` / `--full-data-dir` | Synced alt DB to enable the opposite prune mode. |
-| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation, backup→restore, which must keep every wallet, proxy, dashboard, RPC, and onion secret category exact (the onion key reads need passwordless sudo), then uninstall→setup). Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection; peer-timing pool warnings remain non-fatal. |
+| `--lifecycle` | Also run the lifecycle phase (restart, apply secret-preservation, backup→restore, which must keep every wallet, proxy, dashboard, RPC, and onion secret category exact (the onion key reads need passwordless sudo), then uninstall→setup). Restore command, health, unreadable verification input, or failed restored pool/secrets assertion prevents later fault injection, which the summary then lists under "did NOT run"; peer-timing pool warnings remain non-fatal. |
 | `--fault-injection` | Also break monerod (stop / SIGSTOP / remove) and assert `status`' down/unhealthy/missing verdicts and the failover→recovery cycle, plus a dashboard DB-write fault (data dir made read-only → `/api/state` reports `db_healthy:false` → write access restored, [#202](https://github.com/p2pool-starter-stack/pithead/issues/202)). Destructive-then-restored; SSH or local; slow. The implementation uses the shared target wrapper, but a recorded SSH fault run is still tracked by [#2000](https://github.com/p2pool-starter-stack/pithead/issues/2000). |
-| `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, and successful private reflink snapshots of every enumerated persistent mount while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
-| `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and externally anchored public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature and key continuity, requires every Compose image to be digest-pinned, and verifies the five unique Pithead-built images' signatures and exact OCI revisions. Candidate-provided trust roots are rejected. |
+| `--image-upgrade <old-sha> <new-sha>` | Run the supported `pithead upgrade` path and prove old/new image identities, exact persistent mount sources, Monero/Tari captured-prefix anchors and non-regressing heights, durable dashboard table continuity, categorized secrets, returning workers, and resumed hashes. Remote-node installs omit the absent local daemon from the running-image comparison and candidate verification. Prefix continuity does not claim that no same-chain bytes were re-downloaded. Requires exact lowercase 40-hex commits, `--candidate-bundle`, `--safety-backup`, every data dir outside the running version dir (the same precondition `pithead upgrade` has for a fresh version dir; otherwise it refuses before stopping the stack), and a successful private snapshot of every enumerated persistent mount (a `cp --reflink=always` clone of each data-dir bind mount, a copy of each named volume) while writers are stopped; no upgrade starts if any trust, backup, derived-state fingerprint, or snapshot check fails. |
+| `--candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>` | Name the private candidate, detached signature, and its externally anchored bundle public key. All are absolute local paths; the signed archive's `PITHEAD_COMMIT` must equal `<new-sha>`. Before staging, the harness uses private snapshots to verify the bundle signature, requires every Compose image to be digest-pinned, and verifies the active service profile's Pithead-built image signatures and exact OCI revisions against `--candidate-image-key` when provided (otherwise the bundle key). The public key inside the candidate must match that external image trust root before the candidate CLI may use it. Registry trust follows `verify_release_images`: a `cosign.registry-ca.crt` inside the signed candidate is passed to cosign, otherwise a debug variant verifies from a non-ghcr registry over HTTP. A refusal names the trust sub-step it stopped at. |
+| `--candidate-image-key <trusted-cosign.pub>` | Name the separate externally anchored image-signing public key. This permits an ephemeral test key for the candidate bundle while retaining the project image trust root. |
 | `--xvb-routing-smoke` | From a known live `xvb.enabled=true`, `xvb.tor=true` baseline with hooked kernel DROP rules, prove the candidate wallet-bearing client in a temporary Tor-only Docker network, then use a strict apply that refuses to start containers unless those rules are installed. Observe the real proxy/dashboard move from P2Pool to XvB and naturally return, then restore exact enabled config, route, worker identities, hashes, and secrets. The isolated fetch proves the candidate client/network leg, not process attribution for the host-network dashboard. Requires `--safety-backup`; no recent PPLNS share is a failure. Every poll is bounded; worst case is about 45 minutes. |
 | `--auth-fail-closed` | Also empty `PROXY_AUTH_TOKEN` in `.env` and assert `pithead up` refuses to start (the live counterpart to the tier-1 compose-config check, [#153](https://github.com/p2pool-starter-stack/pithead/issues/153)/[#203](https://github.com/p2pool-starter-stack/pithead/issues/203)), then restore the exact token and recover. Destructive-then-restored; ssh or local mode. |
-| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). |
+| `--rigforge-control` | Also drive the RigForge WRITE paths against a real rig with `dashboard.control` on and the rig pinned in `workers.list[]` (#506; the deprecated `dashboard.workers[]` fallback was removed in 2.0.0 (#1832), so a baseline still carrying that key is migrated to `workers.list[]` before the legs run): the enriched read survives a populated masked-token descriptor ([#514](https://github.com/p2pool-starter-stack/pithead/issues/514)), the rig is editable and a reversible Worker Inspect edit lands on it on four of the six writable keys — `max_temp_c` ([#508](https://github.com/p2pool-starter-stack/pithead/issues/508)/[#513](https://github.com/p2pool-starter-stack/pithead/issues/513)), `DONATION` and `watchdog_interval_min` ([#1236](https://github.com/p2pool-starter-stack/pithead/issues/1236)), and `pools` (needs `IT_RIG_POOLS_PROBE`, and leaves the rig on it); `autotune` and `watchdog` are refused on purpose — a rig-side edit reflects back in the feed + masked prefill ([#516](https://github.com/p2pool-starter-stack/pithead/issues/516)), and an auto-rollback is recorded end-to-end ([#517](https://github.com/p2pool-starter-stack/pithead/issues/517)). Destructive-then-restored; local mode only; each leg self-skips without its prerequisites (see below). A failed phase stops every later requested phase, and the summary lists each of them under "did NOT run". |
 | `--rig-host <h>` / `--rig-control-port <p>` | The borrowed rig's LAN host and writable control API port (default `8082`), used to inject a `workers.list[]` descriptor when the box's baseline lacks one ([#185](https://github.com/p2pool-starter-stack/pithead/issues/185)/#506). Pair with `IT_RIG_TOKEN` (env; never a flag). |
 | `--subnet` | Also bring the stack down then up on a non-default `network.subnet` (`10.84.0.0/24`) and assert the moved prefix reached `.env`, the docker bridge, Tor's render-at-start IP, monerod's proxy IP, the dashboard SSRF CIDR, and the [#344](https://github.com/p2pool-starter-stack/pithead/issues/344) onion vhost, then run the standard battery ([#201](https://github.com/p2pool-starter-stack/pithead/issues/201)/[#180](https://github.com/p2pool-starter-stack/pithead/issues/180)). Destructive-then-restored; local mode only. |
 | `--safety-backup` | Take a `pithead backup` before the destructive scenarios and auto-roll-back (down → restore → up) if anything fails; the archive is removed on success. Restore retains a valid dashboard-login bcrypt hash when its archived password fingerprint matches the restored configuration. A failed rollback names whether restore, startup, health, exact configuration, or secret verification failed; secret verification names only the mismatched category, never values or hashes. Recommended for the destructive matrix on a precious box; also exercises backup/restore end-to-end. |
@@ -240,15 +248,32 @@ Useful flags (full list in `run.sh --help`):
 
 The runner exits non-zero if any assertion failed.
 
+The appliance-owned `tests/os/run.sh --phase image-upgrade` supplies the release-shaped machine
+that this gate needs. It creates its reflink XFS as a sparse loop-mounted file inside the disposable
+KVM guest, verifies the unchanged signed v1.20.0 bundle, and uses the tier-4 remote Monero and Tari
+endpoints. The gate's success signal is real mining, so it reserves no rig: the guest mines against
+its own stack with the appliance's built-in miner, started through `pithead local-miner` — the same
+invocation a provisioned coordinator uses, pointed at `127.0.0.1`'s stratum port. The baseline
+predates that subcommand, so the appliance's own CLI runs it against the baseline stack directory.
+The phase reports the seconds the miner took to reach the four states the gate reads, and bounds
+that wait so a miner that never mines fails the gate instead of hanging it. The candidate's
+`pithead upgrade` and every restored baseline whose CLI defines `container_engine` start under the
+strict Tor-egress check. v1.20.0 predates that function and the podman nft ruleset, so on the
+appliance its restore starts with a plain `pithead up` and records the counted by-design row
+`baseline Tor-egress ruleset (#2696)`; [#2696](https://github.com/p2pool-starter-stack/pithead/issues/2696)
+removes it once 2.0.0 is the baseline. It does not prove that a local chain directory survives without a resync; that larger
+copy-on-write gate is tracked by [#2176](https://github.com/p2pool-starter-stack/pithead/issues/2176).
+
 Upgrade provenance is written to `image-upgrade-provenance.txt`, including candidate version,
-bundle/signature/key digests, before/after chain anchors, revisions, and image refs; the secret-continuity artifact
-contains only an unchanged/mismatch verdict, never credential-derived hashes. Apply logs and failure
+bundle, signature and both trust-root digests, before/after chain anchors, revisions, and image refs;
+the secret-continuity artifact contains only an unchanged/mismatch verdict, never credential-derived hashes. Apply logs and failure
 captures pass through the existing redaction path before restoration. The gate retains the pre-upgrade release files
 and safety archive until it has restored the old code, configuration, `.env`, onion material,
 every durable dashboard table (retention-aware at the safety archive's fixed capture epoch), exact
-stable row payloads, stable security `kv_store` values, and the identities/schema of volatile
-XvB/snapshot and observation-time cells; it does not claim byte equality for values expected to
-advance while the stack runs. It also checks exact container mounts,
+stable row payloads, stable security `kv_store` values, and the presence of every volatile
+XvB/snapshot key. A recreated dashboard rewrites those volatile values within seconds, so neither
+their values nor their shape are compared across the upgrade or the restore (#2421); the gate does
+not claim byte equality for values expected to advance while the stack runs. It also checks exact container mounts,
 chain anchors, workers, mining, image refs, revisions, and health. A failed verification retains both
 recovery trees and private CoW snapshots until verification; any mismatch makes the gate red.
 
@@ -433,8 +458,8 @@ node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-co
 borrowed. No full config sweep, and never a re-sync. Container restarts reload the existing chain;
 monerod re-confirms the tip in seconds, but a recreated tari also has to rebuild its Tor circuits
 first, which can take upward of 20 minutes ([#2455](https://github.com/p2pool-starter-stack/pithead/issues/2455)) —
-`deploy_branch` waits on that before running the harness, since its own readiness check does not
-retry. `check` is pure reads only. `matrix` is the opt-in full destructive
+`deploy_branch` waits on that before running the harness, since the harness reads the Tari panel
+once. `check` is pure reads only. `matrix` is the opt-in full destructive
 config sweep (lifecycle + fault-injection + auth-fail-closed + hardening + `--subnet`, plus the same
 two rig phases, all under `--safety-backup` auto-rollback) for a pre-release tier-4 gate.
 The rig phases are gated on a borrowed miner rather than on the mode: the release runbook mandates

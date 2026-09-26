@@ -113,6 +113,21 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `pithead-egress.service`, ordered before `docker.service`, which restores the rules before any
   container starts; `doctor` warns when it is not enabled
   ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
+- **The Tari node no longer runs its own Tor
+  ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)).** The upstream
+  `minotari_node` image is built with Tari's `libtor` feature, and `use_libtor` defaults to on.
+  Under the `tor` transport the node therefore started an in-process Tor, gave it its control port
+  and hidden service, and let it dial Tor relays straight from the tari container rather than
+  through the stack's `tor` container. Tari's source shows the same default in the released 5.3.1
+  pin. The egress firewall drops those dials. A tier-4 run found one still open after a fault test
+  briefly removed and reinstalled the rules; the firewall's established-flow accept kept it
+  ([#2672](https://github.com/p2pool-starter-stack/pithead/issues/2672)). With the firewall off,
+  nothing stopped them. Tari now uses the `socks5` transport through the stack's Tor SOCKS port
+  with `use_libtor = false`. Onion and `/ip4` peers are both dialled through Tor, and inbound peers
+  reach the node through the stack Tor's Tari onion, which now has a listener behind it. A node
+  upgraded from the `tor` transport keeps its old onion in `config/base_node_id.json` under the
+  Tari data dir, next to the stack's one. Nothing serves the old onion any more. That is harmless:
+  peers still reach the node through the stack's onion.
 
 - **The LAN switches now enforce LAN sources**
   ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
@@ -155,6 +170,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **The Monero payout wallet stays healthy while a restarted wallet catches up
+  ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
+  only to a newly created wallet. A reopened wallet that had to catch up, for example after the
+  Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
+  reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
+  grace.
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
