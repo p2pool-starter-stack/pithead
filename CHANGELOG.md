@@ -155,6 +155,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **The Monero payout wallet stays healthy while a restarted wallet catches up
+  ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
+  only to a newly created wallet. A reopened wallet that had to catch up, for example after the
+  Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
+  reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
+  grace.
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
