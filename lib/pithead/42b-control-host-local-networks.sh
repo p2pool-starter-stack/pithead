@@ -4,9 +4,9 @@
 # bridge. It could not see the addresses that are this host on THIS machine only: its LAN address,
 # the engine's default bridge (docker0/podman0) and every other bridge network on the box. A
 # workers.list[] host pointed at one of those passed the floor, and worker-apply/worker-upgrade then
-# dialed it from the host with a bearer the request writer chose. Once #2641 lets a dashboard adopt
-# commit behind the typed APPLY, this floor is the only host-side check left between a compromised
-# dashboard container and that dial.
+# dialed it from the host with a bearer the request writer chose. Since #2641 a dashboard adopt
+# commits behind the typed APPLY, so this floor is the only host-side check left between a
+# compromised dashboard container and that dial.
 #
 # Two rules, because the two kinds of interface mean different things:
 #   - every address on every interface is refused EXACTLY: the LAN address is this host, but its

@@ -57,7 +57,18 @@ safety_backup() {
 # Restore the box to the exact pre-test baseline and VERIFY it landed: config byte-identical and
 # every wallet/proxy/dashboard/RPC/onion secret category unchanged. A rollback that is not
 # verified is not a rollback — on any failure the archive is retained for manual recovery.
+safety_secret_drift_categories() { # <baseline category=hash lines> <actual category=hash lines>
+    local category baseline actual drift=""
+    while IFS='=' read -r category baseline; do
+        [ -n "$category" ] || continue
+        actual="$(sed -n "s/^${category}=//p" <<<"$2")"
+        [ "$actual" = "$baseline" ] || drift="${drift:+$drift,}$category"
+    done <<<"$1"
+    printf '%s' "$drift"
+}
+
 safety_restore_exact() {
+    local restored_secrets
     pithead down >/dev/null 2>&1 || true
     SAFETY_RESTORE_FAIL_REASON=""
     if ! pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1; then
@@ -68,8 +79,10 @@ safety_restore_exact() {
         SAFETY_RESTORE_FAIL_REASON="pithead status did not become healthy within 240s"
     elif [ "$(rx 'cat config.json' 2>/dev/null)" != "$BASELINE_CONFIG" ]; then
         SAFETY_RESTORE_FAIL_REASON="restored config.json does not match the baseline byte-for-byte"
-    elif [ "$(upgrade_secret_fingerprints)" != "$BASELINE_EXACT_SECRET_FP" ]; then
-        SAFETY_RESTORE_FAIL_REASON="restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
+    elif ! restored_secrets="$(upgrade_secret_fingerprints)"; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories are unreadable"
+    elif [ "$restored_secrets" != "$BASELINE_EXACT_SECRET_FP" ]; then
+        SAFETY_RESTORE_FAIL_REASON="restored secret categories do not match the baseline: $(safety_secret_drift_categories "$BASELINE_EXACT_SECRET_FP" "$restored_secrets")"
     fi
     if [ -n "$SAFETY_RESTORE_FAIL_REASON" ]; then
         SAFETY_RESTORE_FAILED=1

@@ -160,8 +160,8 @@ assert_running_state() {
     assert_pool_type "pool type" "$(jq_get "$st" '.pool.type')" "$(pool_label "$pool")"
 
     # 6. End-to-end mining: workers online + hashes accumulating (#28). proxy_workers is the
-    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). The
-    #    hashes figure gets a bounded wait first (#831): between scenarios the bench stratum
+    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). Both
+    #    figures get a bounded wait first (#831, #2750): between scenarios the bench stratum
     #    bounces, a REAL rig fails over to its secondary pool and returns on xmrig's own retry
     #    clock (~60-90s) — a single early sample reads 0 while the rig is genuinely mining a
     #    minute later, and which scenario loses that race moves run to run. The re-fetched
@@ -205,9 +205,9 @@ assert_running_state() {
         "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
-    local want_bind
-    [ "$rpc_lan" = "true" ] && want_bind="0.0.0.0" || want_bind="127.0.0.1"
-    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" "$want_bind"
+    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
+        "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
+    assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
     # empty (the scheme-default path); a scenario that sets dash_port would assert the custom value.

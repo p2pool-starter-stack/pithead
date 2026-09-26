@@ -186,6 +186,15 @@ PITHEAD_EX_LOCK_TIMEOUT=75
 is_versioned_install_dir() { # <dir> — the `pithead-vX.Y.Z` shape control_upgrade's #629 deploy creates
     [[ "$(basename "$1")" =~ ^pithead-v[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
+# Prints the live install when <dir> is a superseded version dir: `current` beside it resolves to
+# another directory. rc 1 for the live dir itself, any other layout, or a dangling `current`.
+superseded_by_live_install() { # <dir, physical path>
+    local live
+    is_versioned_install_dir "$1" && [ -L "$(dirname "$1")/current" ] || return 1
+    live=$(cd "$(dirname "$1")/current" 2>/dev/null && pwd -P) || return 1
+    [ -n "$live" ] && [ "$live" != "$1" ] || return 1
+    printf '%s\n' "$live"
+}
 mutation_lock_path() {
     if [ -n "${PITHEAD_LOCK_FILE:-}" ]; then
         printf '%s' "$PITHEAD_LOCK_FILE"

@@ -4,7 +4,7 @@
 # half (test-control-add-only-ssrf.sh) refuses the fixed classes — loopback, link-local, the stack's
 # own bridge. This battery proves the gate also refuses every address on this host's interfaces and
 # every address behind one of its container bridges, and still lets a LAN neighbour through to the
-# ordinary descriptor refusal.
+# typed-APPLY adopt tier (#2641).
 #
 # SHARED FIXTURES. gate_try(), $UUID5, $REQS and $RESULTS come from test-control-add-only-ssrf.sh,
 # which run.sh sources before this file and which leaves them defined on purpose (its own header).
@@ -67,12 +67,12 @@ GETENT_STUB
 chmod +x "$C/bin/ip" "$C/bin/getent"
 hl_rigs=$(jq -c '.workers.list // []' "$C/config.json")
 
-hl_try() { # <host>
+hl_try() { # <host> [confirm-token]
     jq --arg h "$1" '.workers.list += [{name:"evil-local",host:$h,control_port:8000,token:"attacker"}]' "$C/config.json" >"$C/cand.json"
-    gate_try "$C/cand.json"
+    gate_try "$C/cand.json" "${2:-}"
 }
-assert_host_local_refused() { # <host> <label>
-    hl_try "$1"
+assert_host_local_refused() { # <host> <label> — sent WITH the typed APPLY (#2641): the floor holds past it
+    hl_try "$1" APPLY
     assert_eq "new-rig append pointed at $2 is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
     assert_contains "new-rig append pointed at $2 names the host boundary" \
         "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "resolves inside this host"
@@ -81,8 +81,8 @@ assert_lan_neighbour_passes_floor() { # <host> <label>
     hl_try "$1"
     assert_not_contains "new-rig append pointed at $2 clears the host floor" \
         "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "resolves inside this host"
-    assert_contains "new-rig append pointed at $2 still meets the descriptor refusal" \
-        "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "worker descriptor"
+    assert_contains "new-rig append pointed at $2 reaches the typed-APPLY adopt tier" \
+        "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 }
 assert_host_local_refused "192.168.1.20" "this host's own LAN address"
 assert_host_local_refused "172.17.0.1" "the docker0 gateway"
