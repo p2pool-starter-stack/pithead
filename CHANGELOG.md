@@ -155,6 +155,11 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **The Monero payout wallet keeps its ring database in the wallets volume
+  ([#2769](https://github.com/p2pool-starter-stack/pithead/issues/2769)).** `monero-wallet-rpc`
+  defaulted to `~/.shared-ringdb`, on the container's read-only root filesystem, and logged
+  `Failed to initialize ringdb` on every start. It now uses `.shared-ringdb` beside the wallet file.
+
 - **The Monero payout wallet stays healthy while a restarted wallet catches up
   ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
   only to a newly created wallet. A reopened wallet that had to catch up, for example after the

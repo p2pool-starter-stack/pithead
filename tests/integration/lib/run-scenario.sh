@@ -53,7 +53,8 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     case "$(egress_verdict "$out")" in
     ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
     leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
-    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
+    # The `!` lines name each app the verifier could not sample (#2769); tail alone cut them off.
+    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s\n' "$out" | grep -E '^ *!|\[verify-egress\]' || printf '%s' "$out" | tail -4)" ;;
     esac
 }
 
