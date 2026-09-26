@@ -164,7 +164,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   blocks/s under `safe` and 8 to 37 blocks/s under the old mode, with no slowdown measurable at that
   scale. Later blocks are larger, and their cost was not measured.
 
-
 - **The Monero payout wallet stays healthy while a restarted wallet catches up
   ([#2756](https://github.com/p2pool-starter-stack/pithead/issues/2756)).** The scan grace applied
   only to a newly created wallet. A reopened wallet that had to catch up, for example after the
