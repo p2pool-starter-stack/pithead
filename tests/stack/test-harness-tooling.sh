@@ -368,7 +368,6 @@ test-secrets.sh|host_ram_mb
 test-secrets.sh|mem
 test-spool-audit.sh|audit_lines
 test-spool-audit.sh|audit_size
-test-sync-gate-rearm.sh|2
 test-tor-network.sh|v
 test-unit-helpers.sh|t_human
 test-unit-helpers.sh|t_name
