@@ -87,7 +87,7 @@ MATRIX:
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
   --tari-stranded        also run the stranded-Tari leg (#2464): a DROP rule in tari's own network
                          namespace (comment pithead-e2e-fault-tari-stranded) cuts it off from tor;
-                         asserts amber, red + doctor non-zero, no restart while gRPC is frozen, then
+                         asserts amber, red + doctor non-zero, restart withheld while tari is paused, then
                          the automatic restart and green. About an hour; opt-in only.
                          DESTRUCTIVE-then-restored.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's

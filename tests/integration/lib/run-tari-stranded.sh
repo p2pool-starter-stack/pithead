@@ -6,7 +6,7 @@
 # and P2Pool's merge-mine channel all stay up while its peers vanish and its tip freezes: the #2465
 # shape. Asserts, on the real clocks (tari_health.py): amber within OFFLINE (10 min) + one poll; red
 # and doctor non-zero within TIP_STALE (30 min) + one poll; the automatic restart withheld while the
-# node's gRPC does not answer (SIGSTOP stands in for a migration, #2593); then, with the rule gone, the
+# node's gRPC does not answer (a paused container stands in for a migration, #2593); then, with the rule gone, the
 # restart fires and the verdict returns to green after catch-up. Opt-in, about an hour: never part of
 # a preset.
 #
@@ -19,6 +19,9 @@
 
 TARI_STRAND_TAG="pithead-e2e-fault-tari-stranded"
 TARI_POLL_SLACK=120 # one dashboard poll plus the harness's own 10 s sampling, with margin
+# The node reports its dead peers only once their connections time out: job 1324 measured the 0-peer
+# clock starting about 171 s after the rule went in. The 10-minute threshold counts from then.
+TARI_DISCONNECT_GRACE=180
 
 tari_ip_of() { rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $1" 2>/dev/null | head -n1; }
 
@@ -43,7 +46,7 @@ tari_strand_remove_all() {
         [ -n "$r" ] || break
         tari_ns_ipt "-D $r" >/dev/null
     done
-    rx "docker compose kill -s SIGCONT tari" >/dev/null 2>&1 || true
+    rx "docker compose unpause tari" >/dev/null 2>&1 || true # a no-op error when not paused
 }
 
 tari_strand_abort() {
@@ -56,6 +59,7 @@ tari_strand_abort() {
 tari_health_field() { jq_get "$(api_state)" ".tari.health.$1"; }
 _pred_tari_level() { [ "$(tari_health_field level)" = "$1" ]; }
 _pred_tari_restarted() { [ "$(tari_health_field restarts)" -ge 1 ] 2>/dev/null; }
+_pred_tari_withheld() { [ "$(tari_health_field action)" = withheld ]; }
 tari_strand_state() { echo "verdict '$(tari_health_field level)', height $(tari_health_field height), $(tari_strand_drops) packets dropped by the fault"; }
 
 run_tari_stranded() {
@@ -97,10 +101,10 @@ run_tari_stranded() {
         tari_strand_remove_all
         return
     fi
-    if wait_for $((600 + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_level amber; then
+    if wait_for $((600 + TARI_DISCONNECT_GRACE + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_level amber; then
         it_pass "tari-stranded: amber after $(($(now_s) - t0)) s: $(tari_health_field reasons)"
     else
-        it_fail "tari-stranded: amber within 10 min + one poll" "$(tari_strand_state)"
+        it_fail "tari-stranded: amber within 10 min of 0 peers (+ disconnect grace + one poll)" "$(tari_strand_state)"
     fi
     if wait_for $((1800 + TARI_POLL_SLACK - ($(now_s) - t0))) 10 "Tari verdict red" _pred_tari_level red; then
         it_pass "tari-stranded: red after $(($(now_s) - t0)) s: $(tari_health_field reasons)"
@@ -111,13 +115,21 @@ run_tari_stranded() {
     assert_ne "tari-stranded: doctor exits non-zero on red" "$?" "0"
     assert_contains "tari-stranded: status prints the red verdict" "$(pithead status 2>&1)" "NOT following the chain"
 
-    it_step "sub-case: freeze tari (gRPC silent, as during a migration) — the restart must be withheld…"
-    rx "docker compose kill -s SIGSTOP tari" >/dev/null 2>&1
-    sleep 420 # past RED_SUSTAIN (5 min) + one poll
+    # Pause, not SIGSTOP: tari runs under an init (#2627), and SIGSTOP stops only PID 1 while the node
+    # keeps answering gRPC (job 1324 restarted it). A pause freezes every process in the container.
+    # restarts == 0 alone would not prove the guard, because a restart attempt on a paused container
+    # fails and refunds its slot, so the verdict must also show the attempt was withheld.
+    it_step "sub-case: pause tari (gRPC silent, as during a migration) — the restart must be withheld…"
+    rx "docker compose pause tari" >/dev/null 2>&1
+    if wait_for 480 10 "restart withheld while tari's gRPC is silent" _pred_tari_withheld; then
+        it_pass "tari-stranded: restart withheld while the node's gRPC is silent"
+    else
+        it_fail "tari-stranded: restart withheld while the node's gRPC is silent" "action '$(tari_health_field action)', restarts $(tari_health_field restarts)"
+    fi
     assert_eq "tari-stranded: no restart while the node's gRPC is silent" "$(tari_health_field restarts)" "0"
 
     it_step "recover: remove the rule, then thaw; the automatic restart and catch-up must bring green…"
-    tari_strand_remove_all # rule first, SIGCONT second: a thawed node must not be restarted still stranded
+    tari_strand_remove_all # rule first, unpause second: a thawed node must not be restarted still stranded
     t0=$(now_s)
     if wait_for $((600 + TARI_POLL_SLACK)) 10 "automatic Tari restart" _pred_tari_restarted; then
         it_pass "tari-stranded: automatic restart fired after $(($(now_s) - t0)) s"
