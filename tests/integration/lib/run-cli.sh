@@ -85,10 +85,11 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
-  --tari-stranded        also run the stranded-Tari leg (#2464): a DOCKER-USER rule (comment
-                         pithead-e2e-fault-tari-stranded) cuts tari off from tor; asserts amber,
-                         red + doctor non-zero, no restart while gRPC is frozen, then the automatic
-                         restart and green. About an hour; opt-in only. DESTRUCTIVE-then-restored.
+  --tari-stranded        also run the stranded-Tari leg (#2464): a DROP rule in tari's own network
+                         namespace (comment pithead-e2e-fault-tari-stranded) cuts it off from tor;
+                         asserts amber, red + doctor non-zero, no restart while gRPC is frozen, then
+                         the automatic restart and green. About an hour; opt-in only.
+                         DESTRUCTIVE-then-restored.
   --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
                          testnet-target build of the pinned release runs LocalNet alone on an
                          internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
