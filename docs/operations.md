@@ -28,7 +28,7 @@ separately, [below](#appliance-only-commands).
 | `./pithead render` | Regenerate every derived file (`.env`, the Caddyfile, service configs, host units) from `config.json` without touching containers. The appliance runs this every boot; run it by hand after replacing the program under an existing config. |
 | `./pithead support-bundle` | Collect a `chmod 600` diagnostics tarball for a bug report: host facts, `doctor` in prose and JSON, a masked config, a redacted `.env`, and the last 200 log lines per container with launch-line credentials, wallet addresses and the service onion scrubbed — as is any Monero address or onion written anywhere else in the log text. Read-only, and nothing leaves the box — review it, then share it. |
 | `./pithead config-reset` | **DESTRUCTIVE**. Clear the configuration and reopen the setup wizard, keeping every data directory — chains, wallets, Tor onion keys and dashboard history all stay, so reconfiguring costs no resync. Type-to-confirm unless `-y` / `--yes`. |
-| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Type-to-confirm unless `-y` / `--yes`. |
+| `./pithead uninstall` | **DESTRUCTIVE**. The clean exit: removes everything pithead put on this host and deletes NO data, on any flag. Prints the three-column inventory below, resolved for this box, and the exact command to delete the rest. Refuses in a `pithead-vX.Y.Z` directory that `current` does not point at, because every version directory drives the same live stack: run it in the live directory, and delete an old version directory by hand. Type-to-confirm unless `-y` / `--yes`. |
 | `./pithead version` | Print the installed stack version on one line (also `-V` / `--version`). Offline; no update check. `doctor` repeats it in its header. |
 | `./pithead help` | Show all commands. |
 
@@ -565,7 +565,8 @@ data root:
   paths in `.env` — but it makes the live install discoverable without `docker inspect`. Any
   other directory name (a source checkout, a plain `pithead/` extract) leaves the symlink alone.
 - **Version dirs** — keep `current`'s target plus one older dir for rollback; delete anything
-  older. Each release lands in a fresh dir: extract the bundle, copy `config.json` and `.env`
+  older by hand. `./pithead uninstall` refuses in a version dir that `current` does not name,
+  because it would stop the live stack. Each release lands in a fresh dir: extract the bundle, copy `config.json` and `.env`
   from the previous dir, run `./pithead upgrade`. Rollback is the same two steps from the older
   dir. The single-directory overlay under [Updating the stack](#updating-the-stack) also works;
   the per-version layout is what a long-lived box converges to. The dashboard's one-click

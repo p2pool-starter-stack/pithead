@@ -114,6 +114,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   container starts; `doctor` warns when it is not enabled
   ([#2460](https://github.com/p2pool-starter-stack/pithead/issues/2460)).
 
+- **The LAN switches now enforce LAN sources**
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
+  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
+  source that could route to the host. See
+  [LAN-only sources](docs/configuration.md#lan-only-sources).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
@@ -147,6 +154,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **An unreachable image registry is no longer reported as a bad signature
+  ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
+  reach the registry, for example `no route to host`, the start and upgrade paths still refuse to
+  pull, and now say the image is unverified because of a network error. Before, they said the published image did not
+  match the release key, which sent operators looking for a tampered image.
 
 - **A restore at setup no longer carries the source machine's released miner onto new hardware
   ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
