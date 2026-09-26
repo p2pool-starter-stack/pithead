@@ -3,8 +3,9 @@
 # LAN-only sources for the node ports the *_lan_access switches publish (#2616): the rule is rendered
 # with the LAN set only, compose never publishes on 0.0.0.0 unless the rule is live (the loopback
 # fallback), doctor tells exposed from held, and every publish of the three ports stays an explicit
-# IPv4 bind, so the IPv4-only rule covers it. The live half, a non-private source refused on the
-# bench, is tests/integration/lib/run-state.sh.
+# IPv4 bind, so the IPv4-only rule covers it, and the boot unit that restores the rule before
+# docker.service restarts the containers (#2749). The live half, a non-private source refused on the
+# bench before and after the rule is stripped and the unit re-run, is tests/integration/lib/run-lan-guard.sh.
 # Sourced by tests/stack/run.sh.
 
 LGD="$SANDBOX/lan-guard"
@@ -61,10 +62,21 @@ case "$1 ${2:-}" in
 esac
 exit 0
 DOCKER
+printf '#!/usr/bin/env bash\necho Linux\n' >"$LGD/bin/uname" # OS_TYPE is read when pithead is sourced
+# systemctl logs every call; `is-enabled` answers from LG_ENABLED (default: not enabled).
+cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
+[ "$1" = is-enabled ] && exit "${LG_ENABLED:-1}"
+exit 0
+SYSTEMCTL
 chmod +x "$LGD/bin/"*
-export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log"
+mkdir -p "$LGD/units"
+export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log"
+export PITHEAD_UNIT_DIR="$LGD/units"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
-lg() { (cd "$LGD" && PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
+lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
+LG_UNIT="$LGD/units/pithead-lan-guard.service"
 
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
 lg_out="$(printf '%s\n' '-A DOCKER-USER -p tcp -m tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN' |
@@ -108,6 +120,68 @@ lg_out="$(lg apply_lan_guard)"
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out" ""
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
+
+echo "== the rule survives a DIY host reboot: pithead-lan-guard.service, ahead of docker (#2749) =="
+lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables 18081 18142)"
+assert_contains "runs before docker.service restarts the containers" "$lg_bu" "Before=docker.service"
+assert_contains "every docker start pulls it in (boot and socket activation)" "$lg_bu" "WantedBy=docker.service"
+assert_contains "a oneshot that stays active" "$lg_bu" "RemainAfterExit=yes"
+assert_contains "runs after the host firewall loaders and the egress unit, so its jumps land on top as after up" "$lg_bu" \
+    "After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service"
+assert_eq "an insert failure fails the unit (no '-' prefix on any insert or append)" \
+    "$(grep -cE '^ExecStart=-.* -[IA] ' <<<"$lg_bu")" "0"
+assert_eq "every ExecStart runs iptables and nothing else (no checkout path, no docker call)" \
+    "$(grep '^ExecStart=' <<<"$lg_bu" | grep -vc '^ExecStart=-\{0,1\}/usr/sbin/iptables ')" "0"
+# The chain edits in unit order: the DROP is live before any jump reaches the chain, so a start that
+# stops halfway over-blocks, and the finished chain matches what apply installs.
+lg_first="$(grep -nE ' -A PITHEAD-LAN | -I PITHEAD-LAN | -I DOCKER-USER ' <<<"$lg_bu" | head -n 1)"
+assert_contains "the chain's DROP is the first rule the unit puts in" "$lg_first" " -A PITHEAD-LAN -j DROP"
+assert_eq "the jumps come last, after every RETURN" \
+    "$(grep -E ' -I (PITHEAD-LAN|DOCKER-USER) ' <<<"$lg_bu" | awk '{print $3}' | uniq | tr '\n' ' ')" "PITHEAD-LAN DOCKER-USER "
+lg_chain=""
+while read -r lg_s; do lg_chain="-A PITHEAD-LAN -s $lg_s -j RETURN|$lg_chain"; done \
+    < <(grep ' -I PITHEAD-LAN 1 ' <<<"$lg_bu" | awk '{print $6}')
+assert_eq "the restored chain is apply's: the LAN set RETURNed in order, then DROP" "$lg_chain-A PITHEAD-LAN -j DROP|" \
+    "$(run_sourced "$LGD" render_lan_guard_iptables 18142 </dev/null | grep -- '-A PITHEAD-LAN' | tr '\n' '|')"
+for p in 18081 18142; do
+    assert_contains "port $p gets apply's own jump" "$lg_bu" \
+        "ExecStart=/usr/sbin/iptables -I DOCKER-USER 1 -p tcp -m tcp --dport $p -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN"
+    assert_contains "port $p's old jump is deleted first, so a restart does not stack them" "$lg_bu" \
+        "ExecStart=-/usr/sbin/iptables -D DOCKER-USER -p tcp -m tcp --dport $p "
+done
+
+rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+assert_eq "a live apply writes the unit for the published ports" "$(cat "$LG_UNIT" 2>/dev/null)" \
+    "$(run_sourced "$LGD" render_lan_guard_boot_unit "$LGD/bin/iptables" 18142)"
+assert_contains "...and enables it for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable pithead-lan-guard.service"
+assert_not_contains "...without starting it (apply's rule is already live)" "$(cat "$LG_SYSTEMCTL")" "start pithead-lan-guard"
+rm -f "$LG_SYSTEMCTL"
+LG_LIVE=1 LG_ENABLED=0 lg apply_lan_guard >/dev/null
+assert_not_contains "a re-apply with the same unit, already enabled, does not reload systemd" "$(cat "$LG_SYSTEMCTL" 2>/dev/null)" "daemon-reload"
+rm -f "$LG_UNIT"
+LG_LIVE=0 lg apply_lan_guard >/dev/null
+assert_eq "a port held on loopback gets no unit" "$(test -e "$LG_UNIT" && echo present)" ""
+LG_LIVE=1 LG_APPLIANCE=1 lg apply_lan_guard >/dev/null
+assert_eq "the appliance gets no unit (pithead-boot runs up, which installs the rule first)" "$(test -e "$LG_UNIT" && echo present)" ""
+PITHEAD_ENGINE=podman LG_LIVE=1 lg apply_lan_guard >/dev/null
+assert_eq "a podman host gets no DOCKER-USER unit" "$(test -e "$LG_UNIT" && echo present)" ""
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+printf '[Unit]\n' >"$LGD/units/other-firewall.service"
+cp "$LGD/.env" "$LGD/.env.on"
+printf 'TARI_GRPC_BIND=127.0.0.1\n' >"$LGD/.env"
+rm -f "$LG_SYSTEMCTL"
+lg apply_lan_guard >/dev/null
+mv "$LGD/.env.on" "$LGD/.env"
+assert_eq "every switch off removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
+assert_contains "...and disables it" "$(cat "$LG_SYSTEMCTL")" "disable pithead-lan-guard.service"
+assert_eq "...leaving another service's unit alone" "$(test -e "$LGD/units/other-firewall.service" && echo present)" "present"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+cp "$LGD/.env" "$LGD/.env.keep"
+lg_out="$(lg 'set +e; detect_os() { :; }; docker() { :; }; provision_control_runner() { :; }; stack_uninstall -y')"
+assert_contains "uninstall completes" "$lg_out" "Uninstalled."
+assert_eq "uninstall removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
+mv "$LGD/.env.keep" "$LGD/.env" # uninstall removes .env too
 
 echo "== doctor tells a port held on loopback from one exposed without the rule (#2616) =="
 lg_out="$(LG_LIVE=1 lg check_lan_guard)"

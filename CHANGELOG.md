@@ -121,6 +121,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   source that could route to the host. See
   [LAN-only sources](docs/configuration.md#lan-only-sources).
 
+- **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
+  Docker restarted the node containers still published on every interface, so `18081`, `18083`
+  and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
+  `docker.service`, now restores the rule before any container starts
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
