@@ -187,6 +187,8 @@ fault_firewall_boot_restore() {
 # (needs a local tor container to break).
 fault_tor_down() {
     it_step "fault: stop the tor container — SOCKS unreachable (#563)…"
+    local doc rc wr0
+    wr0="$(wallet_rpc_restarts)" # empty when wallet-rpc is not deployed
     rx "docker compose stop tor" >/dev/null 2>&1
     wait_for 30 3 "tor to be stopped" _pred_tor_stopped || true
     assert_eq "tor reported stopped" "$(svc_state_of "$(service_state tor)")" "exited"
@@ -195,9 +197,7 @@ fault_tor_down() {
     # here, so its own relay-count positive control cannot hold — waive it explicitly, or the
     # verifier reports INCONCLUSIVE and this privacy check reads as tooling breakage forever.
     assert_egress_posture tor-down
-
     # (b) doctor must FLAG the outage loudly, not pass silently.
-    local doc rc
     doc="$(pithead doctor 2>&1)"
     rc=$?
     assert_ne "doctor exits non-zero while the tor container is down — loud failure, not silence (#563)" "$rc" "0"
@@ -208,7 +208,6 @@ fault_tor_down() {
         ;;
     *) it_pass "doctor does not silently report all-clear with tor down (#563)" ;;
     esac
-
     it_step "recover: start tor…"
     rx "docker compose start tor" >/dev/null 2>&1
     wait_for 180 5 "tor healthy" _pred_tor_healthy || true
@@ -218,6 +217,7 @@ fault_tor_down() {
     # Recovery isn't just "container up" — a flapping SOCKS during reconnect is exactly when a
     # leak would show, so re-run the same egress proof once Tor is back.
     assert_egress_posture
+    [ -z "$wr0" ] || assert_eq "wallet-rpc did not restart through the tor outage and recovery (#2769)" "$(wallet_rpc_restarts)" "$wr0"
 }
 
 # Clock-drift verdict (#383): doctor's NTP check (clock_sync_status, reading `timedatectl show -p

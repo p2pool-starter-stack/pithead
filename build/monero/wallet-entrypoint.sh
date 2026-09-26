@@ -63,6 +63,8 @@ mkdir -p "$WALLET_DIR"
 # even a mining-net peer that reaches the bridge IP can't read payout history; --daemon-login is the
 # monerod RPC cred (same value p2pool already passes on its command line). Bind 0.0.0.0 so the
 # 127.0.0.1:18082 host publish works; the rpc-login + loopback-only publish is the access control.
+# The ring database defaults to ~/.shared-ringdb, on the read-only root filesystem (#377), so keep it
+# in the wallets volume (#2769).
 set -- \
     --daemon-address "$DAEMON_ADDRESS" \
     --daemon-login "${MONERO_NODE_USERNAME:-}:${MONERO_NODE_PASSWORD:-}" \
@@ -71,6 +73,7 @@ set -- \
     --rpc-bind-port 18082 \
     --rpc-login "${WALLET_RPC_USERNAME:-wallet}:${WALLET_RPC_PASSWORD:-}" \
     --password "" \
+    --shared-ringdb-dir "$WALLET_DIR/.shared-ringdb" \
     --log-level 0 \
     --non-interactive
 

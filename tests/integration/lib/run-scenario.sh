@@ -8,6 +8,9 @@ assert_scenario() {
     assert_contains "re-apply is a no-op" "$again" "No configuration changes detected"
 }
 
+# wallet-rpc's restart count, or nothing when the payout_confirm profile did not deploy it (#2769).
+wallet_rpc_restarts() { rx "docker inspect wallet-rpc --format '{{.RestartCount}}'" 2>/dev/null | tr -d '\r'; }
+
 # Runtime egress observation (#274), beyond config: poll each bridge app container's LIVE IPv4 TCP
 # connections and FAIL if any holds a PERSISTENT direct public connection (i.e. it isn't dialing
 # through the Tor SOCKS). It observes IPv4 TCP from the bridge networks only — it does NOT capture
@@ -53,7 +56,8 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     case "$(egress_verdict "$out")" in
     ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
     leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
-    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
+    # The `!` lines name each app the verifier could not sample (#2769); tail alone cut them off.
+    *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s\n' "$out" | grep -E '^ *!|\[verify-egress\]' || printf '%s' "$out" | tail -4)" ;;
     esac
 }
 

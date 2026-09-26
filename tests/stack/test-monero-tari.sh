@@ -143,8 +143,7 @@ run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
 ); }
-mk_curl 7
-: >"$HCDIR/.payout-scanning"
+mk_curl 7 && : >"$HCDIR/.payout-scanning"
 assert_eq "healthcheck: RPC down with fresh scan marker -> healthy (#718)" "$(run_hc)" "0"
 assert_eq "healthcheck: zero scan grace expires immediately (#2268)" "$(PAYOUT_SCAN_GRACE_SEC=0 run_hc)" "1"
 touch -t 200001010000.00 "$HCDIR/.payout-scanning"
@@ -155,12 +154,13 @@ assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
 mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
+printf '#!/bin/sh\necho "$*" >"%s"\n' "$SANDBOX/wallet-rpc.args" >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
 run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
 run_wep
 if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
 : >"$HCDIR/payout-wallet" && run_wep
 if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
+assert_contains "wallet-entrypoint keeps the ring database off the read-only root, in the wallets volume (#2769)" "$(cat "$SANDBOX/wallet-rpc.args")" "--shared-ringdb-dir $HCDIR/.shared-ringdb"
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
