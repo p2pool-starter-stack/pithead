@@ -62,4 +62,20 @@ if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the sc
 # RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
 mk_curl 7
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
+# The real entrypoint, with monero-wallet-rpc stubbed on PATH: create and reopen both arm the grace.
+printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc"
+chmod +x "$HCBIN/monero-wallet-rpc"
+run_ep() { PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/ep-gen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; }
+rm -f "$HCDIR/payout-wallet" "$HCDIR/.payout-scanning"
+run_ep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint arms the scan grace on create (#718)"; else bad "wallet-entrypoint arms the scan grace on create (#718)" "no marker"; fi
+# Reopen after a finished scan (#2767): the catch-up refresh after downtime (a remote-node spell)
+# holds the RPC too, so the reopen re-arms the grace instead of reading unhealthy.
+: >"$HCDIR/payout-wallet"
+rm -f "$HCDIR/.payout-scanning"
+run_ep
+assert_eq "healthcheck: RPC down while a reopened wallet catches up -> healthy (#2767)" "$(run_hc)" "0"
+# Reopen mid-scan: an existing marker keeps its age, so restarts cannot extend the grace.
+touch -t 200001010000.00 "$HCDIR/.payout-scanning"
+run_ep
+assert_eq "healthcheck: a reopen keeps an expired scan grace expired (#2767)" "$(run_hc)" "1"
