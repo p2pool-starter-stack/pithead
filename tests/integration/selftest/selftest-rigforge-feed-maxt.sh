@@ -9,6 +9,7 @@ PRED_SRC="$(sed -n '/^_pred_feed_maxt() {/,/^}$/p' "$HERE/../lib/run-rig-reverse
 assert_contains "feed predicate is extractable" "$PRED_SRC" "_pred_feed_maxt()"
 eval "$PRED_SRC"
 
+echo "== #516 feed predicate keeps what the feed last showed (#2741) =="
 FEED=""
 api_state() { printf '%s' "$FEED"; }
 
