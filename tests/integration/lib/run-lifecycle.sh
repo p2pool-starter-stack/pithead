@@ -24,8 +24,12 @@ run_lifecycle() {
         it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
         if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
             rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
-            pithead up >/dev/null 2>&1
-            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$?" "0"
+            local up_out up_rc
+            up_out="$(pithead up 2>&1)"
+            up_rc=$?
+            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
+            # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
+            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
             assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
