@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[project]
+name = "tari-health-contract"
+version = "0.1.0"
+requires-python = ">=3.11"
+
