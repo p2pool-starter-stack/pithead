@@ -128,8 +128,12 @@ run_tari_stranded() {
     fi
     assert_eq "tari-stranded: no restart while the node's gRPC is silent" "$(tari_health_field restarts)" "0"
 
-    it_step "recover: remove the rule, then thaw; the automatic restart and catch-up must bring green…"
-    tari_strand_remove_all # rule first, unpause second: a thawed node must not be restarted still stranded
+    # Unpause with the rule still in place: the node is reachable again but still stranded and red, so
+    # the restart must fire now. The restart is also the recovery: a new container gets a new network
+    # namespace, without the rule. Removing the rule first would let the node heal itself and go green
+    # with no restart at all (job 1348), which is right for the product but proves nothing here.
+    it_step "recover: unpause tari still stranded; the automatic restart and catch-up must bring green…"
+    rx "docker compose unpause tari" >/dev/null 2>&1
     t0=$(now_s)
     if wait_for $((600 + TARI_POLL_SLACK)) 10 "automatic Tari restart" _pred_tari_restarted; then
         it_pass "tari-stranded: automatic restart fired after $(($(now_s) - t0)) s"
@@ -137,11 +141,13 @@ run_tari_stranded() {
         it_fail "tari-stranded: automatic restart" "restarts=$(tari_health_field restarts)"
     fi
     if wait_for 2400 15 "Tari verdict green after catch-up" _pred_tari_level green; then
-        it_pass "tari-stranded: green $(($(now_s) - t0)) s after the rule was removed"
+        it_pass "tari-stranded: green $(($(now_s) - t0)) s after the unpause"
     else
         it_fail "tari-stranded: green after restart and catch-up" "verdict '$(tari_health_field level)': $(tari_health_field reasons)"
     fi
 
+    assert_eq "tari-stranded: the restart took the fault with it (fresh namespace, no rule)" "$(tari_strand_count)" "0"
+    tari_strand_remove_all # a no-op after a restart; the safety net when it never came
     trap - EXIT
     # shellcheck disable=SC2064  # restore the saved trap text as it was, expanded now on purpose
     [ -n "${_TARI_STRAND_FOREIGN_TRAP:-}" ] && trap "$_TARI_STRAND_FOREIGN_TRAP" EXIT
