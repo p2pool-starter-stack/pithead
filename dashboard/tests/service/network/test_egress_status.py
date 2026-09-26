@@ -51,6 +51,25 @@ def test_anything_but_a_fresh_verdict_is_unverified(tmp_path, body):
     assert egress_firewall_state(path, now=NOW) == UNVERIFIED
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        # json.loads accepts these, and each once slipped through as a fresh verdict.
+        '{"rc": 0, "checked_at": NaN}',  # NaN compares False against the staleness bound
+        '{"rc": 0, "checked_at": Infinity}',
+        '{"rc": 0, "checked_at": -Infinity}',
+        {"rc": False, "checked_at": NOW},  # a bool is an int to Python: False read as enforced
+        {"rc": True, "checked_at": NOW},
+        {"rc": "0", "checked_at": NOW},  # the host writes numbers; a string is not its file
+        {"rc": 0.0, "checked_at": NOW},
+        {"rc": 0, "checked_at": True},
+        {"rc": 0, "checked_at": str(NOW)},
+    ],
+)
+def test_a_malformed_field_is_unverified_never_enforced(tmp_path, body):
+    assert egress_firewall_state(_write(tmp_path, body), now=NOW) == UNVERIFIED
+
+
 def test_a_check_within_three_intervals_is_fresh(tmp_path):
     path = _write(tmp_path, {"rc": 0, "checked_at": NOW - 3 * 120})
     assert egress_firewall_state(path, now=NOW) == ENFORCED
@@ -113,11 +132,15 @@ def test_the_topology_summary_follows_the_same_state():
     assert not any(e.get("blocked_by_firewall") for e in t["edges"])
 
 
+def test_the_status_path_is_the_fixed_read_only_mount():
+    # No env override: the dashboard reads only what the host wrote into its read-only mount.
+    assert egress_status.STATUS_PATH == "/control/results/egress-status.json"
+    assert not hasattr(egress_status, "EGRESS_STATUS_PATH")
+
+
 def test_the_live_builders_read_the_host_file(tmp_path, monkeypatch):
     monkeypatch.setattr(egress.config, "TOR_EGRESS_FIREWALL", True)
-    monkeypatch.setattr(
-        egress_status, "EGRESS_STATUS_PATH", _write(tmp_path, {"rc": 1, "checked_at": 0})
-    )
+    monkeypatch.setattr(egress_status, "STATUS_PATH", _write(tmp_path, {"rc": 1, "checked_at": 0}))
     monkeypatch.setattr(egress_status.time, "time", lambda: 60)
     assert egress.egress_posture_from_config()["summary"]["firewall_state"] == MISSING
     assert egress.topology_from_config()["summary"]["firewall_state"] == MISSING
