@@ -18,6 +18,8 @@ _phase_provision_initial() {
     # failure as if day-two tari switching were broken. Out here it runs on every path and, when
     # the phase is already red, says it was NOT EXERCISED instead of blaming the wrong subject.
     phase_provision_tari_mode_switch "$pv_user" "$pv_pass" "$rc"
+    # Last, and on every path like the two above: it recreates the node containers (#2616).
+    phase_provision_lan_guard "$rc"
     return "$rc"
 }
 
@@ -185,6 +187,7 @@ _phase_provision_initial_body() {
 
     pv_user=$(printf '%s' "$handoff_body" | jq -r '.username // "admin"' 2>/dev/null)
     pv_pass=$(printf '%s' "$handoff_body" | jq -r '.password // ""' 2>/dev/null)
+    phase_provision_xvb_routing
     if [ -n "$pv_pass" ] && curl -sSk -u "$pv_user:$pv_pass" "https://$ip/api/state" 2>/dev/null |
         jq -e '.os_update.step' >/dev/null 2>&1; then
         ok "appliance state carries os_update — the dashboard OS-update control renders"

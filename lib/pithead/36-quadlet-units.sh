@@ -1,8 +1,7 @@
 # Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
 # second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
 # architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
-# drift needs a bench re-proof. Spike-proven rules baked in:
-# Notify=healthy services carry
+# drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
 # TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
 # start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
 # tmpfs options use mode= (podman rejects uid=/gid=).
@@ -127,7 +126,7 @@ After=tor.service
 Requires=tor.service
 [Container]
 ContainerName=tari
-Image=ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:5e87b15b401dd485710b3efc8f8107ecde26f92c2dfad4c0ad1fab69705b393a
+Image=ghcr.io/tari-project/minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec
 Network=mining.network
 IP=$prefix.27
 User=1000:1000
@@ -142,6 +141,7 @@ Tmpfs=/tmp:size=64m,mode=1777
 PublishPort=$(_qenv TARI_GRPC_BIND):18142:18142
 ReadOnly=true
 NoNewPrivileges=true
+RunInit=true
 StopTimeout=60
 PodmanArgs=--memory $(_qenv TARI_MEM_LIMIT) --memory-swap $(_qenv TARI_MEM_LIMIT)
 HealthCmd=ps | grep '[m]inotari_node' || exit 1
@@ -203,7 +203,7 @@ After=tari.service
 Requires=tari.service
 [Container]
 ContainerName=tari-wallet
-Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.0-mainnet@sha256:b59eab5f5e8da76a26991d2371bee84df12f8610cc73320a39ce136a73921a21
+Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
 Network=mining.network
 IP=$prefix.31
 User=1000:1000
@@ -253,7 +253,7 @@ DropCapability=all
 AddCapability=IPC_LOCK SYS_NICE
 NoNewPrivileges=true
 Ulimit=memlock=-1:-1
-PodmanArgs=--memory 1g --memory-swap 1g
+PodmanArgs=--memory 4g --memory-swap 4g
 HealthCmd=/usr/local/bin/p2pool-healthcheck.sh
 HealthInterval=30s
 HealthTimeout=5s
@@ -379,7 +379,7 @@ Description=pithead dashboard
 ContainerName=dashboard
 Image=$reg/pithead-dashboard:$ver
 Network=host
-Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
+Environment=$(_qenvq HOST_IP) $(_qenvq TZ DASHBOARD_TZ) $(_qenvq MONERO_NODE_HOST) $(_qenvq MONERO_RPC_URL) $(_qenvq MONERO_NODE_USERNAME) $(_qenvq MONERO_NODE_PASSWORD) $(_qenvq MONERO_PRUNE) $(_qenvq MONERO_CLEARNET_SYNC) $(_qenvq TARI_CLEARNET_SYNC) CLEARNET_STATE_DIR=/clearnet-state $(_qenvq TOR_EGRESS_FIREWALL) $(_qenvq TOR_AUTO_HEAL) $(_qenvq P2POOL_CLEARNET) $(_qenvq P2POOL_URL) $(_qenvq MONERO_WALLET_ADDRESS) $(_qenvq STRATUM_PORT) $(_qenvq TARI_REQUIRED) $(_qenvq TARI_GRPC_ADDRESS) $(_qenvq XVB_ENABLED) $(_qenvq XVB_TOR_ENABLED) $(_qenvq XVB_DONATION_LEVEL) PROXY_HOST=$prefix.29 $(_qenvq PROXY_API_PORT) $(_qenvq PROXY_AUTH_TOKEN) DOCKER_PROXY_URL=tcp://127.0.0.1:12375 DOCKER_CONTROL_URL=tcp://127.0.0.1:12376 LOCAL_MONERO_HOST=$prefix.26 MINING_NET_CIDR=$subnet TOR_SOCKS_PROXY=socks5h://$prefix.25:9050${payout_env} $(_qenvq DASHBOARD_CHECK_UPDATES) $(_qenvq DASHBOARD_CONTROL_ENABLED) $(_qenvq DASHBOARD_FAIL_CLOSED) $(_qenvq DASHBOARD_ONION_ENABLED) $(_qenvq DASHBOARD_ONION_ADDRESS) $(_qenvq DASHBOARD_ONION_CLIENT_AUTH) $(_qenvq TELEGRAM_ENABLED)
 Environment=$(_qenvq TARI_MODE)
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/app/stats:ro
 Volume=$(_qenv DASHBOARD_DATA_DIR):/data

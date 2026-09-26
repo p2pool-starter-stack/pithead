@@ -305,11 +305,12 @@ it on. An install that had already reported success is safe on the disk.)
 Most of the configuration stays editable from the dashboard afterwards — see
 [configuration](configuration.md) for everything you can tune. Be aware of one honest limit
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+password) can be set **here, at install**, but not changed from the dashboard later — that
+restriction is deliberate, so a compromised browser session can never redirect your payouts. Rigs
+are half-way: the dashboard can adopt a new rig after install (Worker Inspect's adopt form,
+confirmed by typing `APPLY`), but it cannot repoint or remove a rig it already controls, so a
+compromised browser session cannot move an adopted rig's control address and token to one it
+controls. Changing any of these later does not mean reinstalling: write the new settings
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
@@ -403,7 +404,12 @@ the machine keeps the new version and notes the gap in its boot log and with the
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `pithead apply` on the machine mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. If another operation is changing the stack when you start an
+different hardware, or older than what it runs; there is no override. It also refuses an update
+that migrates the chain data when the data partition lacks room for the Tari migration. That
+migration writes a compacted copy of the Tari database beside the old one, so the machine needs
+free space of the database's current size plus 5 GiB. The refusal names the size needed and the
+size free, and the downloaded image stays on the machine, so you can free space and install it
+again. If another operation is changing the stack when you start an
 install, the install is not started at all: nothing is written to the idle copy and the
 dashboard says so rather than reporting a failed install. Start it again once that
 operation has finished. See
@@ -568,6 +574,11 @@ This works on the installation medium's combined page too.
 
 A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
 form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+A restore that fails while writing its files puts back the machine's previous configuration, Tor
+keys, and dashboard database, and removes any chain files it added. If one of them cannot be put
+back, the error says so, and the previous copy stays beside it under a `.restore-old` name. If a
+file the restore added cannot be removed, the error says that too, and the file stays under its
+`.restore` name or in the chain data directory.
 Restore is available at first setup and from the saved-setup screen. In both cases it runs through
 setup again; the day-two `restore` command is the separate path for restoring a running stack in
 place.

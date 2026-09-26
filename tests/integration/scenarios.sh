@@ -60,11 +60,11 @@ local-pruned-main-secure-tari	monero.mode=local monero.prune=true monero.rpc_lan
 local-full-main-secure-tari	monero.mode=local monero.prune=false p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-mini-secure-tari	monero.mode=local monero.prune=true p2pool.pool=mini xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-nano-insecure	monero.mode=local monero.prune=true p2pool.pool=nano xvb.enabled=true dashboard.secure=false dashboard.tari_required=true
-local-pruned-main-rpclan	monero.mode=local monero.prune=true monero.rpc_lan_access=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
+local-pruned-main-rpclan	monero.mode=local monero.prune=true monero.rpc_lan_access=true monero.zmq_lan_access=true tari.grpc_lan_access=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-xvb-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=false dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-tari-optional	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=false
 local-pruned-main-clearnet-sync	monero.mode=local monero.prune=true monero.clearnet_initial_sync=true tari.clearnet_initial_sync=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
-remote-main-secure-tari	monero.mode=remote p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
+remote-main-secure-tari	monero.mode=remote monero.view_key= p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-subnet	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.subnet=10.84.0.0/24
 remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true tari.mode=remote
 tari-off-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true tari.mode=off

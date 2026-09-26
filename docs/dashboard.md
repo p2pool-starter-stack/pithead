@@ -49,8 +49,11 @@ While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a
 badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
 ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
 yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
-with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. By default the
-stack waits for both Monero and Tari. With
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. A restore at
+setup is the exception: the release belongs to the machine the backup was taken on, so after such a
+restore the dashboard holds the miner again until this machine's chains are ready. `./pithead
+restore`, the same-box recovery command, is not this door — its box's chains never desynced, so it
+keeps whatever gate state the backup carried. By default the stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 
@@ -413,8 +416,10 @@ proxy observed, `control_port` defaulted to `8082`, and a blank token field. The
 is a suggestion, not a fact — confirm or correct it before submitting; the rig's own name is not
 enough proof of who is actually listening there. Submitting writes the descriptor through the same
 control channel [the Configuration view uses](#configuration-view) (preview, then commit) — no
-separate write path, and it can only ADD a new descriptor: it can never change the host or token of
-a rig that already has one, so adopting rig #4 can't be used to repoint rig #1. The address also
+separate write path. The preview names the rig and the address the dashboard will send its control
+token to; type `APPLY` to confirm, or **Cancel**. It can only ADD a new descriptor: it can never
+change the host or token of a rig that already has one, so adopting rig #4 can't be used to repoint
+rig #1. The address also
 can't resolve inside the stack's own network — loopback, link-local, or its own docker-bridge
 subnet are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
 host yet, or the control channel off, still gets a plain explanation instead of the form.
@@ -1421,7 +1426,11 @@ re-derives and re-verifies every step itself.
    locally: the RAUC signature against the machine's baked release keys, the machine-class
    `compatible` stamp, and the version — an older release, or one below the
    [`/data` migration floor](appliance.md#updates), is refused even with a valid signature. A
-   file that fails any check is deleted; there is no override in the dashboard.
+   file that fails any check is deleted; there is no override in the dashboard. An update that
+   migrates the chain data is also refused when the data partition lacks room for the Tari
+   migration's copy of the database (its current size plus 5 GiB). That refusal names the size
+   needed and the size free, and keeps the file: free space, then verify and install again. The
+   install step runs the same check again.
 4. **Install.** The verified bundle is written to the idle system slot, with progress shown.
    Mining keeps running; nothing about the running system changes yet.
 5. **Reboot.** Nothing reboots on its own. The reboot is its own confirmed action (type

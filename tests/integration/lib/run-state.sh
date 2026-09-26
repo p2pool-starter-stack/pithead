@@ -93,11 +93,9 @@ assert_running_state() {
     else
         assert_num_ge "Tari inbound onion published in local mode (#103)" "${hs_tari:-0}" 1
     fi
-
     # 2. pithead status is green for a healthy config.
     pithead status >/dev/null 2>&1
     assert_rc "status exit code is 0 (healthy)" "$?" "0"
-
     # 3+4. Dashboard live, then monerod caught up; local mode settles the panel first (#180/#54).
     #    Both waits 150s/5s, not 60s/3s (#2062): a Tor-relayed block fetch held "not synced" past 60s.
     [ "$mode" = "local" ] && wait_for 150 5 "monero sync panel to settle (dashboard)" _pred_monero_panel_done || true
@@ -134,7 +132,7 @@ assert_running_state() {
         zmq_port="18083"
     fi
     if zv=$(zmq_pub_probe "$zmq_host" "$zmq_port" 8); then it_pass "monero ZMQ endpoint is a live ZMTP publisher (#1497)"; else it_fail "monero ZMQ endpoint is a live ZMTP publisher (#1497)" "$zv"; fi
-    if zv=$(zmq_publishes_probe "$zmq_host" "$zmq_port" 8 90); then it_pass "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)"; else it_fail "monero ZMQ endpoint actually publishes, not merely a live socket (#1497)" "$zv"; fi
+    assert_zmq_publishes "$zmq_host" "$zmq_port"
     it_skip_leg "monero ZMQ published frame is a BLOCK notification" "tier C (#1497): the row above proves the publisher is not silent, which is the starving-p2pool failure; proving the frame was chain_main rather than txpool_add needs a new block, a wait of minutes against seconds" missing
     [ "$tmode" != "off" ] && assert_mergemine_roundtrip || it_skip_leg "p2pool merge-mining gRPC round-trip (#1397)" "tari.mode=off (#1855) — p2pool renders no merge-mine args, so no client is ever built (#2323)" by-design
     # The dashboard's sync panel must also read "done" for a synced node — not stay stuck at
@@ -162,8 +160,8 @@ assert_running_state() {
     assert_pool_type "pool type" "$(jq_get "$st" '.pool.type')" "$(pool_label "$pool")"
 
     # 6. End-to-end mining: workers online + hashes accumulating (#28). proxy_workers is the
-    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). The
-    #    hashes figure gets a bounded wait first (#831): between scenarios the bench stratum
+    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). Both
+    #    figures get a bounded wait first (#831, #2750): between scenarios the bench stratum
     #    bounces, a REAL rig fails over to its secondary pool and returns on xmrig's own retry
     #    clock (~60-90s) — a single early sample reads 0 while the rig is genuinely mining a
     #    minute later, and which scenario loses that race moves run to run. The re-fetched
@@ -207,9 +205,9 @@ assert_running_state() {
         "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
-    local want_bind
-    [ "$rpc_lan" = "true" ] && want_bind="0.0.0.0" || want_bind="127.0.0.1"
-    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" "$want_bind"
+    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
+        "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
+    assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
     # empty (the scheme-default path); a scenario that sets dash_port would assert the custom value.
@@ -268,6 +266,8 @@ assert_running_state() {
         *127.0.0.1*) it_pass "tari DNS sinkholed — no clearnet resolver (#162)" ;;
         *) it_fail "tari DNS sinkholed — no clearnet resolver (#162)" "unexpected HostConfig.Dns" ;;
         esac } || it_skip_leg "tari DNS sinkholed — no clearnet resolver (#162)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        # The entrypoint's fork check (#2618) reads the header at 350,000 once gRPC answers; a bench on the canonical chain must log its hash.
+        [ "$tmode" = "local" ] && assert_eq "tari fork-check: header 350000 is canonical (#2618)" "$(rx "for _ in \$(seq 60); do docker logs tari 2>&1 | grep -qF '[pithead fork-check] header 350000 is canonical (663b7254df69989b33cec8325815631e2b455f7252c230976f1b50dc8daced47)' && { echo 1; exit 0; }; sleep 5; done; echo 0")" "1" || it_skip_leg "tari fork-check: header 350000 is canonical (#2618)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         # The xmrig-proxy config knobs must reach the RUNNING proxy's argv, not just the compose
         # render. donate-level is rendered explicitly so it's always visible (#173). The matrix
         # deploys the default config (no p2pool.stratum_password) → stratum auth OFF, which must

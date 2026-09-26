@@ -4,9 +4,10 @@
 #
 # These helpers have no other tier-1 driver: the approval one because the leg that consumes it
 # (tests/os/appliance-config-approval-leg.sh) is at its recorded file budget, the bundle one because
-# it is a separate evidence helper, and the Tari-mode one because its live verdict needs KVM. The
-# hostname, control-runner and doctor payloads are driven by their own legs' --self-test, already
-# wired in tests/stack/test-harness-tooling.sh.
+# it is a separate evidence helper, and the Tari-mode and post-commit chain-fault (#2588) ones because
+# their live verdicts need KVM. The hostname, control-runner and doctor payloads are driven by their
+# own legs' --self-test, already wired in tests/stack/test-harness-tooling.sh.
+# The tor-health one (#2725): failure-evidence.sh sources it for the wiring but never runs its cases.
 #
 # Enumerated by name rather than by glob: a glob that stops matching and a suite with nothing to
 # run print the same nothing, and this file exists because a row that says nothing is the defect.
@@ -14,7 +15,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 rc=0
-for t in appliance-approval-verdict.sh bundle-build-evidence.sh appliance-tari-mode-leg.sh; do
+for t in appliance-approval-verdict.sh bundle-build-evidence.sh appliance-tari-mode-leg.sh appliance-chain-fault-leg.sh tor-health-evidence.sh; do
     bash "$HERE/$t" --self-test || rc=1
 done
 [ "$rc" -eq 0 ] && echo "selftest-row-payloads: PASS"

@@ -30,7 +30,7 @@ DOCKER_LOG="$V/docker.log"
 
 echo "== unit: tor_egress_rules — fail-closed Tor-only egress ruleset (#270) =="
 TER=$(run_sourced "$SANDBOX" tor_egress_rules 172.28.0.0/24 172.28.0.25)
-assert_contains "ESTABLISHED/RELATED accepted (published-port replies, ongoing flows)" "$TER" "conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
+assert_eq "the conntrack ACCEPT comes first and passes REPLIES only (#2672)" "$(printf '%s\n' "$TER" | head -1)" "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT"
 assert_contains "only Tor (.25) may egress to the internet" "$TER" "-s 172.28.0.25 -j ACCEPT"
 assert_contains "inter-container + 172.16/12 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT"
 assert_contains "10/8 LAN allowed" "$TER" "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT"
@@ -46,7 +46,7 @@ echo "== unit: render_tor_egress_nft — same allow-set as nftables for the neta
 NFTR=$(run_sourced "$SANDBOX" render_tor_egress_nft 172.28.0.0/24 172.28.0.25)
 assert_contains "hooks the chain at forward so packets actually traverse it" "$NFTR" "hook forward"
 assert_contains "priority -5 runs ahead of netavark's priority-0 blanket accept" "$NFTR" "priority -5"
-assert_contains "ESTABLISHED/RELATED accepted (return + ongoing flows)" "$NFTR" "ct state established,related accept"
+assert_eq "the ct accept comes first and passes REPLIES only (#2672)" "$(printf '%s\n' "$NFTR" | grep -E ' (accept|drop)$' | head -1)" "    ct direction reply ct state established,related accept"
 assert_contains "only Tor (.25) may egress to the internet" "$NFTR" "ip saddr 172.28.0.25 accept"
 assert_contains "inter-container + 172.16/12 LAN allowed" "$NFTR" "ip saddr 172.28.0.0/24 ip daddr 172.16.0.0/12 accept"
 assert_contains "100.64/10 CGNAT LAN allowed" "$NFTR" "ip saddr 172.28.0.0/24 ip daddr 100.64.0.0/10 accept"
@@ -165,16 +165,18 @@ mkdir -p "$FW/bin"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$FW/bin/sudo"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/ipt.log"\n' "$FW" >"$FW/bin/iptables"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$FW/bin/iptables-save" # no pre-existing rules
+printf '#!/usr/bin/env bash\n{ echo "restore $*"; cat; } >> "%s/ipt.log"\n' "$FW" >"$FW/bin/iptables-restore"
 # remove_tor_egress_firewall probes nft on every path (it clears BOTH backends); stub it inert so the
 # Docker-path black-box stays hermetic and never touches the host's real nftables.
 printf '#!/usr/bin/env bash\nexit 0\n' >"$FW/bin/nft"
-chmod +x "$FW/bin/sudo" "$FW/bin/iptables" "$FW/bin/iptables-save" "$FW/bin/nft"
+chmod +x "$FW"/bin/*
 printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWALL=true\n' >"$FW/.env"
 : >"$FW/ipt.log"
 PITHEAD_ENGINE=docker PATH="$FW/bin:$PATH" run_sourced "$FW" apply_tor_egress_firewall >/dev/null 2>&1
 iptlog="$(cat "$FW/ipt.log" 2>/dev/null)"
-assert_contains "installs the fail-closed clearnet DROP, tagged" "$iptlog" "-I DOCKER-USER 7 -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"
+assert_contains "installs the fail-closed clearnet DROP, tagged" "$iptlog" "-I DOCKER-USER 8 -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"
 assert_contains "exempts the Tor container" "$iptlog" "-m comment --comment pithead-tor-egress -s 172.28.0.25 -j ACCEPT"
+assert_contains "loads them as one --noflush transaction (#2672)" "$iptlog" "restore -w --noflush"
 # Pre-creates DOCKER-USER so the BEFORE-compose install at `up` can't miss on a first-ever start where
 # Docker hasn't created the chain yet — closes the startup window that grandfathered leaks (#276).
 assert_contains "pre-creates the DOCKER-USER chain (idempotently)" "$iptlog" "-N DOCKER-USER"
@@ -183,30 +185,24 @@ printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWA
 : >"$FW/ipt.log"
 PITHEAD_ENGINE=docker PATH="$FW/bin:$PATH" run_sourced "$FW" apply_tor_egress_firewall >/dev/null 2>&1
 assert_eq "opt-out (network.tor_egress_firewall=false) installs no DROP" "$(grep -c 'DROP' "$FW/ipt.log" 2>/dev/null)" "0"
-# install-failure rollback (#270): if an `iptables -I` insert fails partway, apply must NOT leave a
-# half-open firewall it believes is fail-closed — it warns and rolls back via remove_tor_egress_firewall.
-# Stub: -N/-D succeed but every -I insert fails (rc 1). remove runs once up-front (idempotent clear)
-# and again on rollback, so iptables-save fires TWICE — that second call is the proof the rollback ran.
+# load failure (#270, #2672): the transaction is refused whole, so apply must warn and must NOT touch
+# the rules already there — no `-D` outside the transaction, which would open the subnet.
 FF="$SANDBOX/fwfail"
 mkdir -p "$FF/bin"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$FF/bin/sudo"
-cat >"$FF/bin/iptables" <<'IPT'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"$IPT_LOG"
-case "$1" in -I) exit 1 ;; esac # every insert fails midway
-exit 0
-IPT
-printf '#!/usr/bin/env bash\nprintf "save\\n" >>"$IPT_LOG"\nexit 0\n' >"$FF/bin/iptables-save"
-printf '#!/usr/bin/env bash\nexit 0\n' >"$FF/bin/nft" # inert: remove probes nft on the Docker path too
-chmod +x "$FF/bin/sudo" "$FF/bin/iptables" "$FF/bin/iptables-save" "$FF/bin/nft"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$IPT_LOG"\n' >"$FF/bin/iptables"
+printf '#!/usr/bin/env bash\necho "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"\n' >"$FF/bin/iptables-save"
+printf '#!/usr/bin/env bash\ncat >/dev/null; exit 1\n' >"$FF/bin/iptables-restore"
+printf '#!/usr/bin/env bash\nprintf "nft %%s\\n" "$*" >>"$IPT_LOG"\n' >"$FF/bin/nft"
+chmod +x "$FF"/bin/*
 printf 'NETWORK_SUBNET=172.28.0.0/24\nNETWORK_PREFIX=172.28.0\nTOR_EGRESS_FIREWALL=true\n' >"$FF/.env"
 : >"$FF/ipt.log"
 fwfail_out="$(PITHEAD_ENGINE=docker PATH="$FF/bin:$PATH" IPT_LOG="$FF/ipt.log" run_sourced "$FF" apply_tor_egress_firewall 2>&1)"
 fwfail_rc=$?
-assert_rc "insert failure degrades gracefully (stack still runs, rc 0)" "$fwfail_rc" "0"
-assert_contains "insert failure warns clearnet is NOT fail-closed" "$fwfail_out" "NOT fail-closed"
-assert_eq "insert failure rolls back the partial firewall (remove reruns -> save x2)" "$(grep -c '^save$' "$FF/ipt.log")" "2"
-# remove: `down` (and every re-apply) strips ONLY our tagged rules — this removal is the precondition
+assert_rc "load failure degrades gracefully (stack still runs, rc 0)" "$fwfail_rc" "0"
+assert_contains "load failure warns clearnet is NOT provably fail-closed" "$fwfail_out" "egress-apply:iptables-insert-failed"
+assert_eq "load failure leaves the installed rules alone: no -D, no nft delete (#2672)" "$(grep -cE -- '-D |delete' "$FF/ipt.log")" "0"
+# remove: `down` strips ONLY our tagged rules — this removal is the precondition
 # for the #291 down->upgrade/apply window, so prove it deletes the tags and spares foreign DOCKER-USER
 # rules. iptables-save replays two tagged rules + one foreign rule; remove must -D the tagged pair only.
 RM="$SANDBOX/rm"
@@ -237,7 +233,7 @@ assert_contains "down also drops the nft egress table (netavark backend)" "$(cat
 echo "== regression: every command installs the Tor-egress firewall BEFORE compose (#291) =="
 # The firewall must go in BEFORE any clearnet-capable container starts, on EVERY path that brings one
 # up (#276 closed the window for stack_up; #291 + this change close it for upgrade/apply/reset). If a
-# container starts first, the leading ESTABLISHED rule grandfathers its clearnet dial past the DROP.
+# container starts first, its clearnet dial goes out unfenced until the rules land.
 # Each case neutralises the command's preamble and records the order of the two load-bearing ops; the
 # firewall sentinel MUST precede the compose sentinel. fw_then_compose() extracts just those two from
 # whatever else the function prints (warnings, banners) so the assert is exact.
@@ -499,7 +495,7 @@ assert_contains "tari entrypoint marker→Tor: transport Tor SOCKS (#234)" "$(ca
 assert_contains "tari entrypoint marker→Tor: DNS seeds empty (#234)" "$(cat "$SANDBOX/tari-rt2.toml")" "dns_seeds = []"
 assert_contains "tari entrypoint never mutates the canonical config (#234)" "$(cat "$TARISRC")" 'type = "socks5"'
 # Compose wires the shared marker dir into all three: dashboard rw, monerod + tari ro, + the tari
-# wrapper entrypoint that chains to the upstream start_tari_app.sh.
+# wrapper entrypoint that runs minotari_node.
 assert_contains "compose mounts clearnet-state into monerod (#234)" "$(cat "$ROOT/docker-compose.yml")" ':/clearnet-state:ro'
 assert_contains "compose wires the tari wrapper entrypoint (#234)" "$(cat "$ROOT/docker-compose.yml")" '/var/tari/config/entrypoint.sh'
 

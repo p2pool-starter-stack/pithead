@@ -58,13 +58,37 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   and 6.0.1-pre.0 carries the upstream fix
   ([#2604](https://github.com/p2pool-starter-stack/pithead/issues/2604)).
   - **The first start migrates the Tari database, and there is no way back.** The node runs a
-    one-time JMT migration that upstream describes as taking several minutes to much longer on a
-    large database; the node is unavailable while it runs. Have free disk space for it, and do not
+    one-time migration in two phases: a JMT v1 → v2 rebuild
+    (`[MIGRATIONS] Blockchain database is at v6`, then `v6: Starting JMT v1 → v2 rebuild`, ending at
+    `JMT rebuild complete`), then a compaction that copies the live data into a new `data.mdb`
+    (`Compacting LMDB env`, `[MIGRATIONS] Pre-compaction data.mdb size`). On a mainnet-sized
+    database the rebuild took about one to one and a half hours and the compaction about 80
+    minutes more, shrinking the database from 161 GB to about 55 GB. The node opens gRPC only after
+    both phases, so the dashboard shows Tari as loading with no progress for the whole time; follow
+    the phases with `docker logs tari`. The node config keeps 2 GiB of LMDB map headroom so that dropping the
+    old tables at the end of the rebuild does not fail with `MDB_MAP_FULL`
+    ([#2593](https://github.com/p2pool-starter-stack/pithead/issues/2593)). The compacted copy sits
+    beside the old database, so both are on the data volume at once. Before it starts or
+    recreates any container, `./pithead upgrade` requires free space there of the current
+    `data.mdb`'s size plus 5 GiB, and otherwise refuses, naming the volume, the size needed and the
+    size free ([#2636](https://github.com/p2pool-starter-stack/pithead/issues/2636)). On the
+    appliance, `pithead os-update` and the dashboard's OS-update verify and install steps refuse a
+    bundle that declares a data migration against the same bound, before anything is installed
+    ([#2645](https://github.com/p2pool-starter-stack/pithead/issues/2645)). The bound is
+    conservative: the copy is smaller than the original. Do not
     stop, restart or `apply` the stack until the node reports progress again: the container is
     killed one minute after a stop, and upstream says not to interrupt the migration. The payout
     wallet (`tari.view_key`) migrates its database on its first start too. Tari 5.3.1 cannot open
     either database afterwards, so returning to an older Pithead release does not return Tari to
     a working state. Take a backup first (`./pithead backup --with-chains`).
+  - **A node that followed the dead 5.3.1 branch past 350,000 is rewound on its own
+    ([#2618](https://github.com/p2pool-starter-stack/pithead/issues/2618)).** Such a node bans
+    every canonical peer for `Invalid Proof of work` after the migration and never syncs. The Tari
+    entrypoint waits while the node's gRPC is closed or answers `UNAVAILABLE` (it does for the
+    whole database migration), then compares the node's block header at 350,000 with the canonical
+    hash. On a mismatch it rewinds the chain to 349,900, deletes the peer database (the bans) and starts
+    the node again. A node below 350,000 or on the canonical chain is left as it is. Each step is
+    logged in `docker logs tari` with the prefix `[pithead fork-check]`.
   - **Remote Tari (`tari.mode: remote`): upgrade the serving node to 6.0.1-pre.0 first.** P2Pool
     4.18.1 cannot merge-mine against a node older than 6.0.0, and a 6.0.0 node stops at 350,008.
   - The payout-confirmation scan counts Tari 6.0.0's new `*_CONFIRMED_LOCKED` transaction statuses
@@ -104,6 +128,14 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   upgraded from the `tor` transport keeps its old onion in `config/base_node_id.json` under the
   Tari data dir, next to the stack's one. Nothing serves the old onion any more. That is harmless:
   peers still reach the node through the stack's onion.
+
+- **The LAN switches now enforce LAN sources**
+  ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)).
+  `monero.rpc_lan_access`, `monero.zmq_lan_access` and `tari.grpc_lan_access` accept connections
+  only from loopback, private and CGNAT (`100.64.0.0/10`) addresses; before, their ports took any
+  source that could route to the host. See
+  [LAN-only sources](docs/configuration.md#lan-only-sources).
+
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).
   Between
   [#1978](https://github.com/p2pool-starter-stack/pithead/issues/1978) and this change, a
@@ -126,9 +158,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   stratum password, the Telegram bot token and chat id, the XvB pool URL and donor id, the
   Healthchecks ping URL, the ntfy URL and token, `notifications.webhooks`, the onion toggles, the
   Tor egress firewall, the RPC/gRPC LAN-access and bind settings, `dashboard.control.enabled`, and
-  the per-rig worker descriptors (`workers.list[]`) — an added, repointed, or removed rig host and
-  API token is a credential change, closed in the same round-2 pass after an initial review found
-  it still routed through the self-written approval envelope.
+  repointing or removing a per-rig worker descriptor (`workers.list[]`). Adopting a new rig was
+  closed in the same round-2 pass and reopened, behind the typed confirmation, by
+  [#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641) (see Fixed).
 - The Telegram tap was the only second identity on a sensitive configuration commit, and nothing
   replaces it in this release. What still gates such a change is the signed-in dashboard operator,
   the default-deny env allowlist, the typed `APPLY`, and the payout-suffix check — deliberate
@@ -137,6 +169,64 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   from the dashboard at all. See [`SECURITY.md`](SECURITY.md).
 
 ### Fixed
+
+- **Worker Inspect can adopt a rig again
+  ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
+  pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
+  form sends, so the form always failed at the preview. An appliance rig set up by the wizard had
+  no way to be adopted short of a configuration stick. The host now lets an append through: every
+  existing descriptor must come back unchanged, a new rig may not reuse an existing rig's name,
+  its host must not resolve to loopback, link-local or the stack's own docker-bridge subnet, and
+  the commit needs the typed `APPLY`. The preview names the rig and the
+  address the dashboard will send its control token to, and the audit log records the commit as
+  confirmed with `workers.list` as its key. Repointing or removing a rig the dashboard already
+  controls is still refused.
+
+- **An unreachable image registry is no longer reported as a bad signature
+  ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
+  reach the registry, for example `no route to host`, the start and upgrade paths still refuse to
+  pull, and now say the image is unverified because of a network error. Before, they said the published image did not
+  match the release key, which sent operators looking for a tampered image.
+
+- **A restore at setup no longer carries the source machine's released miner onto new hardware
+  ([#2626](https://github.com/p2pool-starter-stack/pithead/issues/2626)).** The backup's dashboard
+  database records that the source machine's chains had synced and its miner was released. Restored
+  onto a machine whose chains had not synced, the dashboard never held `p2pool`, which ran without
+  its stratum port and stayed unhealthy, so the appliance boot never committed. The wizard and
+  carried restore doors now leave a marker that makes the dashboard hold the miner until this
+  machine's own chains are synced. `./pithead restore`, the same-box recovery command, is
+  unaffected: its box's chains never desynced, so it keeps the backup's gate state as before.
+
+- **A source checkout starts the whole stack after `uninstall` or on a new host
+  ([#2654](https://github.com/p2pool-starter-stack/pithead/issues/2654)).** `setup`, `up`, `apply`
+  and `upgrade` on a source checkout run Compose with `--pull never` so the local `:dev` images are
+  built, not pulled. The digest-pinned Tari, Caddy and socket-proxy images have no build context, so
+  once `uninstall` had removed them only `tor` started. `pithead` now pulls the missing images that
+  have no build context before it starts the stack. An explicit `PITHEAD_PULL` still overrides this.
+
+- **A restore at setup that fails while writing its files no longer leaves the machine half
+  restored ([#2689](https://github.com/p2pool-starter-stack/pithead/issues/2689)).** It used to
+  replace `config.json` and `.env` first and could then fail on the Tor keys or the dashboard
+  database, leaving the archive's configuration beside this machine's own keys. Every item is now
+  staged beside its destination and swapped in only when all are ready; any failure puts back
+  the previous configuration, Tor keys and database, and removes the chain files the restore
+  added.
+
+- **`pithead doctor` no longer reports HugePages OK for a pool too small to use
+  ([#2610](https://github.com/p2pool-starter-stack/pithead/issues/2610)).** Any non-zero
+  `HugePages_Total` read OK, so a box with 186 pages passed while P2Pool's RandomX dataset and caches
+  need 1296. doctor now holds the pool to this machine's budget (3072 pages, or the appliance's
+  reduced pool, never below 1296) and warns when it is short. The warning gives the shortfall and
+  the memory P2Pool uses outside the pool instead. It stays a warning, never a failure, because the
+  appliance's update commit gate takes doctor's exit code.
+
+- **P2Pool no longer restart-loops with exit 137 when the HugePages reservation is short
+  ([#2562](https://github.com/p2pool-starter-stack/pithead/issues/2562)).** Without enough free
+  HugePages, P2Pool puts its 2592 MiB RandomX dataset and caches in ordinary memory. Its 1 GB
+  container ceiling OOM-killed it while it filled the dataset, on every start. That happened on a
+  host where `setup` skipped the persistent GRUB change and was then rebooted, and on a pool other
+  processes had used up. The ceiling is now 4 GB, both in Compose and in the appliance's units.
+  When the reservation holds the dataset, which is still the fast path, nothing changes.
 
 - **Mining no longer starts on a Monero chain that has not synced
   ([#2472](https://github.com/p2pool-starter-stack/pithead/issues/2472)).** A local monerod that has

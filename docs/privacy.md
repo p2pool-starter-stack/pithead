@@ -31,6 +31,15 @@ public internet is DROPPED. Only the `tor` container reaches the internet. So if
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
 
+Connection tracking lets replies through, which keeps clients on the published ports working, and
+nothing else. A clearnet connection an app opened while the rules were absent (a host firewall
+reload that flushed them, a `down` followed by a manual container start) does not survive their
+return: the next TCP packet the app sends on it is answered with a reset, and any other packet is
+dropped. What the app sent before the rules went back in has already left the box. A re-install
+never opens such a window itself: `up`, `apply` and `upgrade` replace the rules in one kernel
+transaction (`iptables-restore --noflush` on Docker, one `nft -f` on the appliance), and a load
+the kernel refuses leaves the rules already there in place.
+
 The rules land where the running container engine actually filters forwarded traffic, which differs
 by channel:
 
