@@ -11,12 +11,15 @@ mkdir -p "$EC/bin" "$EC/units" "$EC/ctl"
 printf '#!/usr/bin/env bash\nexec "$@"\n' >"$EC/bin/sudo"
 printf '#!/usr/bin/env bash\necho Linux\n' >"$EC/bin/uname"
 # systemctl logs every call; `is-active` answers from SYSTEMCTL_ACTIVE (default: not active).
+# SYSTEMCTL_FAIL=disable|daemon-reload makes that verb fail; RM_FAIL=1 makes rm fail (sudo execs it).
 cat >"$EC/bin/systemctl" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"$EC/systemctl.log"
 [ "\$1" = is-active ] && exit "\${SYSTEMCTL_ACTIVE:-1}"
+[ "\$1" = "\${SYSTEMCTL_FAIL:-}" ] && exit 1
 exit 0
 EOF
+printf '#!/usr/bin/env bash\n[ "${RM_FAIL:-0}" = 1 ] && exit 1\nexec /bin/rm "$@"\n' >"$EC/bin/rm"
 chmod +x "$EC"/bin/*
 ec_env() { printf 'CONTROL_DIR=%s\nTOR_EGRESS_FIREWALL=%s\n' "$EC/ctl" "${1:-true}" >"$EC/.env"; }
 ec_env
@@ -118,3 +121,63 @@ un_out=$(
 assert_contains "uninstall completes" "$un_out" "Uninstalled."
 assert_eq "uninstall removes the check service" "$(ec_has "$EC_SVC")" ""
 assert_eq "and the timer" "$(ec_has "$EC_TIMER")" ""
+
+echo "== removal: a failed step is named, and no caller reports the pair removed (#2599) =="
+ec_uninstall() {
+    (
+        cd "$EC" || exit
+        export PITHEAD_ENGINE=docker PITHEAD_APPLIANCE=0 PITHEAD_UNIT_DIR="$EC/units" PATH="$EC/bin:$PATH"
+        # shellcheck disable=SC1090
+        source "$STACK"
+        set +e
+        detect_os() { :; }
+        docker() { :; }
+        provision_control_runner() { :; }
+        remove_tor_egress_firewall() { :; }
+        remove_lan_guard() { :; }
+        stack_uninstall -y 2>&1
+    )
+    printf 'rc=%s\n' "$?" # outside the subshell: error() exits it
+}
+ec_optout() { # fresh pair, then opt out; the fault comes from the caller's environment
+    ec_env true
+    SYSTEMCTL_FAIL="" RM_FAIL=0 ec_run provision_egress_check_units >/dev/null 2>&1
+    ec_env false
+    ec_run provision_egress_check_units 2>&1
+    ec_env true
+}
+ec_fresh_uninstall() { # fresh pair and .env, then uninstall with the caller's fault
+    ec_env true
+    SYSTEMCTL_FAIL="" RM_FAIL=0 ec_run provision_egress_check_units >/dev/null 2>&1
+    ec_uninstall
+}
+out=$(ec_optout)
+assert_contains "a clean opt-out says the timer was removed" "$out" "Removed pithead-egress.timer"
+out=$(SYSTEMCTL_FAIL=disable ec_optout)
+assert_contains "opt-out: a failed disable is named" "$out" "egress-check:disable-failed"
+assert_contains "opt-out: a failed disable leaves the removal incomplete" "$out" "egress-check:removal-incomplete"
+assert_not_contains "opt-out: a failed disable is never reported as removed" "$out" "Removed pithead-egress.timer"
+out=$(RM_FAIL=1 ec_optout)
+assert_contains "opt-out: a failed delete is named" "$out" "egress-check:delete-failed"
+assert_not_contains "opt-out: a failed delete is never reported as removed" "$out" "Removed pithead-egress.timer"
+assert_eq "opt-out: after a failed delete the unit files are still there, as reported" "$(ec_has "$EC_TIMER")" "present"
+RM_FAIL=0 ec_run remove_egress_check_units >/dev/null 2>&1
+out=$(SYSTEMCTL_FAIL=daemon-reload ec_optout)
+assert_contains "opt-out: a failed daemon-reload is named" "$out" "egress-check:reload-failed"
+assert_not_contains "opt-out: a failed daemon-reload is never reported as removed" "$out" "Removed pithead-egress.timer"
+out=$(SYSTEMCTL_FAIL=disable ec_fresh_uninstall)
+assert_contains "uninstall: a failed disable is named" "$out" "egress-check:disable-failed"
+assert_not_contains "uninstall: a failed disable never prints Uninstalled." "$out" "Uninstalled."
+assert_contains "uninstall: a failed disable exits non-zero" "$out" "rc=1"
+out=$(RM_FAIL=1 ec_fresh_uninstall)
+assert_contains "uninstall: a failed delete is named" "$out" "egress-check:delete-failed"
+assert_not_contains "uninstall: a failed delete never prints Uninstalled." "$out" "Uninstalled."
+assert_contains "uninstall: a failed delete exits non-zero" "$out" "rc=1"
+RM_FAIL=0 ec_run remove_egress_check_units >/dev/null 2>&1
+out=$(SYSTEMCTL_FAIL=daemon-reload ec_fresh_uninstall)
+assert_contains "uninstall: a failed daemon-reload is named" "$out" "egress-check:reload-failed"
+assert_not_contains "uninstall: a failed daemon-reload never prints Uninstalled." "$out" "Uninstalled."
+assert_contains "uninstall: a failed daemon-reload exits non-zero" "$out" "rc=1"
+out=$(ec_fresh_uninstall)
+assert_contains "uninstall: a clean removal prints Uninstalled." "$out" "Uninstalled."
+assert_contains "uninstall: a clean removal exits zero" "$out" "rc=0"

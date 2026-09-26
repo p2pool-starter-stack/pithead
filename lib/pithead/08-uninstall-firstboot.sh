@@ -110,7 +110,8 @@ stack_uninstall() {
     mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
-    remove_egress_check_units
+    local units_left=0
+    remove_egress_check_units || units_left=1
     remove_lan_guard
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
@@ -144,7 +145,11 @@ stack_uninstall() {
     fi
     mutation_lock_release
 
-    log "Uninstalled."
+    if [ "$units_left" -eq 0 ]; then
+        log "Uninstalled."
+    else
+        warn "Uninstall incomplete: pithead-egress.timer or its check service is still on this host (see the egress-check warning above)."
+    fi
     log "Every data directory is still here. To delete pithead's data, run:"
     if [ "${#kept_dirs[@]}" -gt 0 ]; then
         local q quoted_kept=""
@@ -163,6 +168,7 @@ stack_uninstall() {
     log "Then, to remove the program itself:${inside}"
     printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
     # error, not a bare non-zero return: that would also print the ERR trap's "aborted unexpectedly".
+    [ "$units_left" -eq 0 ] || error "Uninstall finished, but pithead-egress.timer or its check service could not be fully removed: run the command in the egress-check warning above."
     [ "$failed" -eq 0 ] || error "Uninstall finished, but a derived directory could not be removed: run the command in the warning above."
 }
 

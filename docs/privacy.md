@@ -75,10 +75,15 @@ to `data/control/results/egress-status.json`. The dashboard reads that file:
   missing, nothing is shown as blocked, and one `clearnet_exposed` alert goes out. A second alert
   goes out when the check reads enforced again. Run `./pithead up` to reinstall the rules. The
   check never reinstalls them itself, so a flush stays visible until you act on it.
-- **Unverified** (no status file yet, an unreadable ruleset, or no check for six minutes): the panel
-  and badge warn that the state is unverified, and no alert goes out.
+- **Unverified** (no status file yet, an unreadable ruleset, no check for six minutes, or a file
+  whose fields are not a JSON integer `rc` and a finite JSON number `checked_at`): the panel and
+  badge warn that the state is unverified, and no alert goes out. A malformed file never reads as
+  enforced.
 
-Opting out with `network.tor_egress_firewall: false` removes the timer.
+Opting out with `network.tor_egress_firewall: false` removes the timer. If a removal step fails
+(stopping the timer, deleting its unit files, or reloading systemd), `apply` names the step and
+does not report the timer removed, and `uninstall` exits non-zero instead of printing
+`Uninstalled.`
 
 The allow-set matches on IPv4 addresses because the mining bridge is IPv4-only by design. On the
 appliance path the firewall also fences IPv6: if the mining network ever gains an IPv6 subnet, an
