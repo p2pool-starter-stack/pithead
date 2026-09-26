@@ -33,8 +33,9 @@
 # The checks re-derive the changed keys from the staged config via the SAME dry-run path a preview
 # runs — nothing is trusted from the container's request or its (host-written but container-visible)
 # result file — so a forged "destructive:false" cannot slip a wallet swap or an auth-disable
-# through. Past that pass, a DEST row or a worker-descriptor change additionally demands the typed
-# envelope, and a payout destination demands the final characters of the exact new address. The
+# through. Past that pass, a CONFIRM/DEST row or a worker adopt demands the typed APPLY, a DEST row
+# also demands the envelope, and a payout destination demands the final characters of the exact
+# new address. The
 # media-only set below remains outside all of it: no browser approval makes one of those changes
 # committable. Echoes a reason on refusal.
 
@@ -236,7 +237,9 @@ _resolve_host_ips() {
 _control_ip_is_local() {
     local route
     command -v ip >/dev/null 2>&1 || return 0 # no classifier -> fail closed
-    route=$(ip route get "$1" 2>/dev/null) || return 0
+    # No route (an AAAA record on a host without IPv6 routing) cannot loop back to this machine; the
+    # interface-list check (42b-) still fails closed when discovery itself fails.
+    route=$(ip route get "$1" 2>/dev/null) || return 1
     printf '%s\n' "$route" | grep -qE '^local[[:space:]]'
 }
 
@@ -272,7 +275,7 @@ _control_ip_is_local() {
 # Worker control operations pin curl to the returned address; a check followed by a fresh hostname
 # lookup would leave a DNS-rebinding window.
 _control_resolve_external_ip() {
-    local host resolved ip first="" own
+    local host resolved ip first="" first_v4="" own
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
     # This machine's own interface addresses and bridge subnets (#2671, 42b-). An unreadable
@@ -307,9 +310,11 @@ _control_resolve_external_ip() {
         fi
         _ip_in_host_networks "$ip" "$own" && return 1
         [ -n "$first" ] || first="$ip"
+        [ -n "$first_v4" ] || ! _is_canonical_ipv4 "$ip" || first_v4="$ip"
     done <<<"$resolved"
     [ -n "$first" ] || return 1
-    printf '%s\n' "$first"
+    # Pin IPv4 when there is one: a dual-stack rig on a host without IPv6 routing stays reachable.
+    printf '%s\n' "${first_v4:-$first}"
 }
 
 # Boolean compatibility wrapper for commit-time target validation.

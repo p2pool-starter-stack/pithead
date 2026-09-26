@@ -158,7 +158,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               and ($live_workers[.name] | type) == "object"
               and endpoint($candidate_api_port) == ($live_workers[.name] | endpoint($live_api_port))
             else true end)' "$file" >/dev/null 2>&1; then
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a worker endpoint changed while its token was masked — enter the token for the new endpoint explicitly",ts:(now|floor)}')"
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a masked worker token can only stay with its own unchanged descriptor — adopt a new rig with its real token; change an existing rig address on the host (workers.list)",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi

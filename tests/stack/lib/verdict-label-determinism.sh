@@ -72,7 +72,7 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # extracted by a shell-grammar parser rather than by eye: 87 calls, 86 passing a bare string
 # literal, and one passing `${ev}` from test-control-editable-allowlist.sh's loop over 25
 # spelled-out event names. That one is a loop variable over a fixed list, so the whole class is
-# run-invariant today.
+# run-invariant today. #2671 later added two wrappers with 15 calls, all bare literals.
 #   * COUNT THE WRAPPERS, NOT THE ROWS. The first pass said "eight wrappers, 55 calls" because it
 #     counted ROWS: a row is <file>|<index>, so test-config.sh|2 collapses three wrappers and
 #     test-rig-worker.sh|3 three more. Twelve and 87 are the numbers the imperative below is about;

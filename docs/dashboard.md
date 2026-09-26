@@ -1017,8 +1017,9 @@ The flow mirrors the CLI's `apply`:
    Leaving one untouched sends a sentinel back (the Advanced pane shows it as a `__secret__` marker
    and carries it verbatim), blanking a previously-edited secret field restores the sentinel rather
    than setting an empty value, and the host swaps in the live value when it stages the change. That
-   reuse is bound to the existing destination: repointing a worker, the Monero RPC endpoint, or an
-   ntfy URL requires entering its associated credential for the new destination. The running
+   reuse is bound to the existing destination: repointing the Monero RPC endpoint or an ntfy URL
+   requires entering its associated credential for the new destination, and a worker descriptor
+   cannot be repointed from the dashboard at all (only a new rig can be adopted). The running
    dashboard still receives the runtime credentials it needs for node probes, worker reads, and
    notifications, so a full backend compromise can read those environment values; masking is the
    editor/browser and raw-config boundary, not process isolation.

@@ -105,8 +105,9 @@ The stack's defaults:
   it, and the operator types `APPLY`. The audit log records the commit as confirmed and names
   `workers.list`. Repointing, reordering or removing a rig the dashboard already controls is
   refused even with `APPLY` and stays host-CLI-only (a configuration stick on an appliance); #912
-  owns any broader descriptor editing. Every bearer-bearing request to a rig is pinned to the
-  numeric address that passed that check, so a later DNS answer cannot redirect it. The typed
+  owns any broader descriptor editing. Every host-side control request to a rig is pinned to the
+  numeric address that passed that check, so a later DNS answer cannot redirect it; the
+  dashboard container's own read probes and adopt request are not host-pinned. The typed
   `APPLY` is friction, not a second identity: the dashboard container writes its own request, so a
   compromised dashboard can adopt a rig at a LAN address of its choosing and send that address a
   token it chose. It cannot take over a rig already adopted.
