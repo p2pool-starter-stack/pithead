@@ -254,10 +254,10 @@ assert_running_state() {
         # ALWAYS renders the canonical Tor config (the clearnet transform is applied per-start
         # in-container, gated on the flag AND the dashboard's marker). The dashboard switches a
         # clearnet node back to Tor once it's synced — so in the synced steady state asserted here,
-        # monerod always carries the Tor P2P proxy and Tari's canonical config stays `type = "tor"`.
+        # monerod always carries the Tor P2P proxy and Tari's canonical config stays `type = "socks5"`.
         assert_eq "MONERO_CLEARNET_SYNC matches config (#183)" "$(env_on_box MONERO_CLEARNET_SYNC)" "$monero_clearnet"
         assert_eq "TARI_CLEARNET_SYNC matches config (#183)" "$(env_on_box TARI_CLEARNET_SYNC)" "$tari_clearnet"
-        [ "$tmode" = "local" ] && assert_num_ge "tari canonical config is always Tor (#234)" "$(rx "docker exec tari grep -c '^type = \"tor\"' /var/tari/config/config.toml 2>/dev/null")" 1 || it_skip_leg "tari canonical config is always Tor (#234)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        [ "$tmode" = "local" ] && assert_num_ge "tari canonical config is always Tor (#234)" "$(rx "docker exec tari grep -c '^type = \"socks5\"' /var/tari/config/config.toml 2>/dev/null")" 1 || it_skip_leg "tari canonical config is always Tor (#234)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         assert_num_ge "monerod runs Tor-only in steady state — proxy present (#183/#234)" "$(rx "docker exec monerod grep -cE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null")" 1
         # (The clearnet→Tor auto-transition was already awaited + asserted at the top of this function,
         # before the steady-state battery, so the assertions above see the settled post-flip state.)
