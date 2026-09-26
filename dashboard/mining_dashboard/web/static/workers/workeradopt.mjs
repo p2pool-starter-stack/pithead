@@ -3,9 +3,10 @@
 // so it's a PREFILL only; the operator confirms or edits it before anything is sent), a default
 // control port, and a token the operator must type. Submitting rides the SAME control-channel
 // config path (GET /api/config -> POST preview -> POST commit) the Configuration view uses for any
-// other edit — no new write endpoint. The host's own add-only gate (pithead's control_approval_gate)
-// is what actually authorizes appending a brand-new workers.list[] descriptor; this only builds and
-// sends the proposal.
+// other edit — no new write endpoint. The host (pithead's control_worker_append) is what actually
+// authorizes the write: an append-only change past its SSRF floor, previewed with a warning and
+// committed only with the typed APPLY (#2641). This builds the proposal, shows the host's warning,
+// and sends the operator's confirmation.
 //
 // The worker reader reopens the directory-mounted config and credential map on every probe, so an
 // applied append becomes visible on the next worker poll without restarting the dashboard.
@@ -33,6 +34,8 @@ export class AdoptRigForm extends Component {
       token: "",
       busy: false,
       result: null,
+      preview: null, // the host's previewed verdict, awaiting the typed APPLY
+      confirmText: "",
     };
   }
 
@@ -43,7 +46,7 @@ export class AdoptRigForm extends Component {
       this.setState({ result: { status: "error", error: validation } });
       return;
     }
-    this.setState({ busy: true, result: null });
+    this.setState({ busy: true, result: null, preview: null, confirmText: "" });
     try {
       const cfgRes = await fetch("/api/config");
       if (!cfgRes.ok) throw new Error(`HTTP ${cfgRes.status}`);
@@ -79,67 +82,105 @@ export class AdoptRigForm extends Component {
         this.setState({ busy: false, result: out });
         return;
       }
-      if (out.destructive) {
-        // An add-only descriptor never produces a DEST/CONFIRM row; a destructive verdict here
-        // means the proposal carried more than the new descriptor — refuse rather than committing
-        // something no one reviewed.
+      // The adopt row is the only change the operator reviews here. Anything else flagged
+      // disruptive means the proposal carried more than the new descriptor: refuse rather than
+      // asking for APPLY on a change no one sees.
+      const reviewed = (out.changes || []).filter((c) => c.flag === "DEST" || c.flag === "CONFIRM");
+      if (reviewed.some((c) => c.key !== "workers.list")) {
         this.setState({
           busy: false,
           result: { status: "error", error: "Unexpected change — nothing was applied." },
         });
         return;
       }
-      res = await fetch("/api/control/commit", {
-        method: "POST",
-        headers: CONTROL_HEADERS,
-        body: JSON.stringify({ id: out.id }),
-      });
-      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
-      const committed = await controlCommitResult(res, out.id, pollResult);
-      this.setState({ busy: false, result: committed });
-      if (committed.status === "applied" && this.props.onAdopted) this.props.onAdopted();
+      this.setState({ busy: false, preview: out });
     } catch (e) {
       this.setState({ busy: false, result: { status: "error", error: String(e) } });
     }
   }
 
+  async confirm() {
+    const { preview, confirmText } = this.state;
+    this.setState({ busy: true });
+    try {
+      // The host gate re-checks the typed word; it is friction against a mistaken address, not a
+      // second identity (the #1959 ruling).
+      const res = await fetch("/api/control/commit", {
+        method: "POST",
+        headers: CONTROL_HEADERS,
+        body: JSON.stringify({ id: preview.id, confirm: confirmText }),
+      });
+      if (!res.ok && res.status !== 202) throw new Error(`HTTP ${res.status}`);
+      const committed = await controlCommitResult(res, preview.id, pollResult);
+      this.setState({ busy: false, preview: null, confirmText: "", result: committed });
+      if (committed.status === "applied" && this.props.onAdopted) this.props.onAdopted();
+    } catch (e) {
+      this.setState({ busy: false, preview: null, result: { status: "error", error: String(e) } });
+    }
+  }
+
   render() {
-    const { host, apiPort, controlPort, token, busy, result } = this.state;
+    const { host, apiPort, controlPort, token, busy, result, preview, confirmText } = this.state;
     return html`
       <div class="adopt-rig">
         <p class="text-muted text-xs">
           Set up remote control for this rig: confirm its control address (prefilled from what the
           proxy observed — verify it before sending), then add its control token. This writes
-          workers.list[] through the same control channel the Configuration view uses.
+          workers.list[] through the same control channel the Configuration view uses; you confirm
+          it by typing APPLY.
         </p>
         <label class="config-field">
           <span class="config-field-name">host</span>
-          <input type="text" disabled=${busy} value=${host} placeholder="e.g. 192.168.1.10"
+          <input type="text" disabled=${busy || !!preview} value=${host} placeholder="e.g. 192.168.1.10"
               onInput=${(e) => this.setState({ host: e.target.value })} />
         </label>
         <label class="config-field">
           <span class="config-field-name">api_port</span>
-          <input type="number" disabled=${busy} value=${apiPort}
+          <input type="number" disabled=${busy || !!preview} value=${apiPort}
               onInput=${(e) => this.setState({ apiPort: e.target.value })} />
         </label>
         <label class="config-field">
           <span class="config-field-name">control_port</span>
-          <input type="number" disabled=${busy} value=${controlPort}
+          <input type="number" disabled=${busy || !!preview} value=${controlPort}
               onInput=${(e) => this.setState({ controlPort: e.target.value })} />
         </label>
         <label class="config-field">
           <span class="config-field-name">token</span>
-          <input type="password" disabled=${busy} value=${token} placeholder="the rig's control token"
+          <input type="password" disabled=${busy || !!preview} value=${token} placeholder="the rig's control token"
               onInput=${(e) => this.setState({ token: e.target.value })} />
         </label>
-        <div class="mt-1">
-          <button class="btn-toggle" disabled=${busy} onClick=${() => this.adopt()}>${
-            busy ? "Adopting…" : "Adopt this rig"
-          }</button>
-        </div>
+        ${
+          preview
+            ? html`<${AdoptConfirm} preview=${preview} confirmText=${confirmText} busy=${busy}
+                  onConfirmText=${(t) => this.setState({ confirmText: t })}
+                  onConfirm=${() => this.confirm()}
+                  onCancel=${() => this.setState({ preview: null, confirmText: "" })} />`
+            : html`<div class="mt-1">
+                <button class="btn-toggle" disabled=${busy} onClick=${() => this.adopt()}>${
+                  busy ? "Adopting…" : "Adopt this rig"
+                }</button>
+              </div>`
+        }
         ${result ? html`<${AdoptStatus} result=${result} />` : null}
       </div>`;
   }
+}
+
+// The host's own warning for the adopt row (what the dashboard will trust, and what it cannot undo
+// from here), then the typed APPLY the gate requires.
+function AdoptConfirm({ preview, confirmText, busy, onConfirmText, onConfirm, onCancel }) {
+  return html`<div class="mt-1">
+    ${(preview.changes || []).map((c) => html`<p class="text-small status-bad">${c.msg}</p>`)}
+    <label class="config-confirm-type">Type <code>APPLY</code> to adopt this rig:
+        <input type="text" disabled=${busy} value=${confirmText}
+            onInput=${(e) => onConfirmText(e.target.value)} /></label>
+    <div class="mt-1">
+      <button class="btn-toggle active" disabled=${busy || confirmText !== "APPLY"} onClick=${onConfirm}>${
+        busy ? "Adopting…" : "Confirm"
+      }</button>
+      <button class="btn-toggle" disabled=${busy} onClick=${onCancel}>Cancel</button>
+    </div>
+  </div>`;
 }
 
 function AdoptStatus({ result }) {

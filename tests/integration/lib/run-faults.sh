@@ -21,6 +21,7 @@ fault_node_down() {
     wait_status_ok 240 || true
     pithead status >/dev/null 2>&1
     assert_rc "status OK after monerod recovery" "$?" "0"
+    wait_for 120 5 "readmission after the 60s node-health debounce (#31)" _pred_failover_armed && it_pass "xmrig-proxy readmitted after node-down recovery (#31)" || it_fail "xmrig-proxy readmitted after node-down recovery (#31)" "not readmitted within 120s"
 }
 
 fault_unhealthy() {

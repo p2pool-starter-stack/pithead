@@ -183,11 +183,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
 # config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
 # round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
-# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
-# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
-# the "documented exception" this file used to carve out for it contradicted that promise instead
-# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
+# documented dashboard-editable toggle, docs/workers.md). workers.list[] is classified by
+# control_worker_append (42-control-approval-helpers.sh): adopting a new rig is an append behind the
+# typed APPLY and the SSRF floor below (#2641); repointing or removing one is refused (#912).
+# Treat "every OTHER path renders to .env" as false in general: a schema leaf
 # that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
@@ -304,7 +303,7 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
+# True if $1 — a workers.list[] host an adopt (append-only) commit is about to introduce —
 # resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
 # already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
