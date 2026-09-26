@@ -101,14 +101,32 @@ _pred_history_row_terminal() { # <rig> <change_id>
 # the caller reds immediately instead of burning the bound on a verdict already known; a row that
 # never settles stays "accepted" and reds too. The one answer it must never invent is "applied"
 # for a row nobody has confirmed — which is what reading the row unwaited did, across a window of
-# up to ~90s (_wait_miner_live + one UPDATE_INTERVAL), and why the bound here is that same 90s.
+# a window as long as the rig's apply plus one dashboard poll, which is what the bound below covers.
 #
 # The `>&2` is this module's #1454 discipline, for the same reason: stdout is the return value and
 # wait_for opens with an it_step banner on stdout. The wait's rc is deliberately NOT guarded: the
 # read below runs either way (run.sh:20 — "NOT -e: we deliberately continue-on-error"), and on a
 # timeout reporting the status the row is STUCK at is what lets the caller's assert_eq name it.
-_settle_history_row() { # <rig> <change_id> -> the row's terminal status, or what it is stuck at
-    wait_for 90 5 "the #185 history row for $2 to reach a terminal status (#1471)" \
+#
+# The bound depends on which RigForge apply path the change takes (#2761). Only the keys in
+# RigForge's CONTROL_FAST_PATH_KEYS apply with xmrig untouched; any other key runs the full apply,
+# restarts xmrig and publishes "applied" only after _wait_miner_live sees a hashrate again (up to
+# 20 tries 3s apart, after the restart itself). Add one dashboard poll to that and the 90s that
+# covers the fast path is too short: job 1313 read DONATION and pools still "accepted" at 90s while
+# the rig had already confirmed both configs.
+_history_settle_bound() { # <keys-csv> -> seconds to wait for the change's row
+    local k IFS=','
+    for k in $1; do
+        case "$k" in
+        max_temp_c | watchdog_interval_min) ;;
+        *) echo 240 && return 0 ;;
+        esac
+    done
+    echo 90
+}
+
+_settle_history_row() { # <rig> <change_id> <keys-csv> -> the row's terminal status, or what it is stuck at
+    wait_for "$(_history_settle_bound "$3")" 5 "the #185 history row for $2 to reach a terminal status (#1471)" \
         _pred_history_row_terminal "$1" "$2" >&2
     _history_row_status "$1" "$2"
 }

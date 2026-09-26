@@ -83,7 +83,7 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     # and waited to terminal first, because the settle above returns before the rig has published
     # its outcome (#1471). Read unwaited, this raced a window of up to ~90s.
     assert_eq "$key worker-apply recorded in the per-worker history (#185/#1236/#1471)" \
-        "$(_settle_history_row "$rig" "$change_id")" "applied"
+        "$(_settle_history_row "$rig" "$change_id" "$key")" "applied"
     it_step "reverting $key $probe -> ${orig}…"
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$orig" '{($k): $v}')")"
     IFS='|' read -r status _ _ <<<"$(_settle_worker_apply_key "$rig" "$key" "$orig" "$res")"
@@ -233,7 +233,7 @@ run_rigforge_pools() { # <rig>
     assert_contains "the rig's own config reports the probe's pools (#1002b)" "$ckeys" "pools"
     # The readback is blind once a run has left the rig on the probe (every run after the first), so
     # the change's own #185 history row is the verdict that it landed, and the ledger retires on it.
-    row="$(_settle_history_row "$rig" "$change_id")"
+    row="$(_settle_history_row "$rig" "$change_id" pools)"
     assert_eq "pools worker-apply recorded in the per-worker history (#185/#1471/#2407)" "$row" "applied"
     case "$status|$row" in applied\|applied | rejected\|* | rolled_back\|* | *\|rejected | *\|rolled_back)
         rig_key_clear dash "$rig" pools
