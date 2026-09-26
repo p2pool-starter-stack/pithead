@@ -250,6 +250,7 @@ run)
         esac
     done
     echo "[cosign] $*" >>"${COSIGN_LOG:-/dev/null}"
+    [ -z "${COSIGN_STDERR:-}" ] || printf '%s\n' "$COSIGN_STDERR" >&2
     exit "${COSIGN_RC:-0}"
     ;;
 esac

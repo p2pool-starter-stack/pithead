@@ -24,8 +24,12 @@ run_lifecycle() {
         it_step "removing the pinned socket-proxy image, then pithead up (#2654)…"
         if [ -n "$proxy_ref" ] && [ -n "$proxy_id" ] && pithead down >/dev/null 2>&1 &&
             rx "docker image rm -f $(quote_arg "$proxy_id")" >/dev/null 2>&1; then
-            pithead up >/dev/null 2>&1
-            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$?" "0"
+            local up_out up_rc
+            up_out="$(pithead up 2>&1)"
+            up_rc=$?
+            assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
+            # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
+            [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
             assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
@@ -353,9 +357,18 @@ _pred_monerod_unhealthy() { _monerod_is running unhealthy; }
 _pred_monerod_healthy() { _monerod_is running healthy; }
 _pred_proxy_stopped() { [ "$(svc_state_of "$(service_state xmrig-proxy)")" != "running" ]; }
 _pred_failover_armed() {
-    local st
+    # `/api/state` never carried the raw monero_sync/miner_released/workers_rejected fields
+    # (docs/dev/testing-strategy.md §F: this class of internal state is surfaced through
+    # `sync.monero.state` and the badges list, never as its own machine-queryable booleans) —
+    # so read the same contract the dashboard's own client reads, not internal names that were
+    # never part of the response.
+    local st badges
     st="$(api_state)"
-    [ "$(jq_get "$st" '.monero_sync.reachable')" = "true" ] && [ "$(jq_get "$st" '.miner_released')" = "true" ] && [ "$(jq_get "$st" '.workers_rejected')" = "false" ] && [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
+    badges="$(jq_get "$st" '.badges | map(.text) | join("")')"
+    [ "$(jq_get "$st" '.sync.monero.state')" = "done" ] &&
+        [[ "$badges" != *"Miner held"* ]] &&
+        [[ "$badges" != *"Workers rejected"* ]] &&
+        [ "$(svc_state_of "$(service_state xmrig-proxy)")" = "running" ]
 }
 _pred_p2pool_running() { [ "$(svc_state_of "$(service_state p2pool)")" = "running" ]; }
 _pred_tor_stopped() { [ "$(svc_state_of "$(service_state tor)")" != "running" ]; }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Self-test (#2455): deploy_branch's post-recreate settle must actually outlast a recreated
-# tari's real reconnect time, or the one-shot readiness check right after it (which never
+# tari's real reconnect time, or the one-shot Tari readiness row right after it (which never
 # retries) fails on a tari that is merely still reconnecting, not unsynced. Standalone (not
 # folded into selftest-e2e-phases.sh) so it never pushes that file past its
 # docs/dev/file-budget.tsv ceiling — same reasoning as selftest-harness-pregate.sh.
