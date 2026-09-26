@@ -49,8 +49,11 @@ While the chains sync, the dashboard keeps `p2pool` and `xmrig-proxy` stopped (a
 badge shows next to the hostname) and starts them once the chains are ready. A local Monero node is
 ready when monerod itself reports `synchronized`, so a node that has just restarted and has no peers
 yet keeps the miner held. Running p2pool against an unsynced node does nothing and floods Tari's logs
-with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. By default the
-stack waits for both Monero and Tari. With
+with merge-mining chatter. Releasing the miner is one-way: once it starts it stays up. A restore at
+setup is the exception: the release belongs to the machine the backup was taken on, so after such a
+restore the dashboard holds the miner again until this machine's chains are ready. `./pithead
+restore`, the same-box recovery command, is not this door — its box's chains never desynced, so it
+keeps whatever gate state the backup carried. By default the stack waits for both Monero and Tari. With
 [`dashboard.tari_required: false`](configuration.md) it waits only for Monero and mines while Tari
 finishes syncing in the background.
 
@@ -413,11 +416,14 @@ proxy observed, `control_port` defaulted to `8082`, and a blank token field. The
 is a suggestion, not a fact — confirm or correct it before submitting; the rig's own name is not
 enough proof of who is actually listening there. Submitting writes the descriptor through the same
 control channel [the Configuration view uses](#configuration-view) (preview, then commit) — no
-separate write path, and it can only ADD a new descriptor: it can never change the host or token of
-a rig that already has one, so adopting rig #4 can't be used to repoint rig #1. The address also
-can't resolve inside the stack's own network — loopback, link-local, or its own docker-bridge
-subnet are refused, so an adopted rig has to be a real, distinct machine on your LAN. A rig with no
-host yet, or the control channel off, still gets a plain explanation instead of the form.
+separate write path. The preview names the rig and the address the dashboard will send its control
+token to; type `APPLY` to confirm, or **Cancel**. It can only ADD a new descriptor: it can never
+change the host or token of a rig that already has one, so adopting rig #4 can't be used to repoint
+rig #1. The address also can't resolve to this machine: loopback, link-local, any address on its own
+network interfaces (its LAN address included), and every container bridge on it (the stack's own,
+`docker0`, and any other) are refused, so an adopted rig has to be a real, distinct machine on your
+LAN. A rig with no host yet, or the control channel off, still gets a plain explanation instead of
+the form.
 
 The write is durable immediately, but a rig descriptor renders to no `.env` key, so adopting alone
 never recreates any container — the dashboard reads its worker list once at process start, so this

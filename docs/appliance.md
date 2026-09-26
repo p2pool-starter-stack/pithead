@@ -305,11 +305,12 @@ it on. An install that had already reported success is safe on the disk.)
 Most of the configuration stays editable from the dashboard afterwards — see
 [configuration](configuration.md) for everything you can tune. Be aware of one honest limit
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+password) can be set **here, at install**, but not changed from the dashboard later — that
+restriction is deliberate, so a compromised browser session can never redirect your payouts. Rigs
+are half-way: the dashboard can adopt a new rig after install (Worker Inspect's adopt form,
+confirmed by typing `APPLY`), but it cannot repoint or remove a rig it already controls, so a
+compromised browser session cannot move an adopted rig's control address and token to one it
+controls. Changing any of these later does not mean reinstalling: write the new settings
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert

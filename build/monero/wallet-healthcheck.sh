@@ -8,7 +8,7 @@
 # the whole scan — with the genesis default it is HOURS, and it refuses the RPC the entire time. A
 # plain RPC check flaps unhealthy after the 2m start_period and spams stack-health alerts for the
 # whole first scan. So: a marker file (`.payout-scanning`, written by the entrypoint on every start,
-# since a reopened wallet also scans the blocks it missed (#2720), living in the volume so it
+# since a reopened wallet also scans the blocks it missed (#2756), living in the volume so it
 # survives recreates) means "still scanning" — but only for PAYOUT_SCAN_GRACE_SEC (24h by default).
 # The RPC answers between refresh passes, so an answer alone does not mean caught up: the marker is
 # cleared only once the wallet height reaches monerod's block count (or monerod's count is

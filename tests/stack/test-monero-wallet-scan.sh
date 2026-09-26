@@ -45,7 +45,7 @@ ws_curl 0 1000
 ws_hc >/dev/null
 assert_eq "wallet healthcheck: unreadable monerod count clears the marker, strict by default (#2720)" "$(ws_marker)" "cleared"
 
-# ws_start create|reopen: run the real entrypoint with monero-wallet-rpc stubbed; is the marker armed?
+# ws_start reopen: run the real entrypoint on an existing wallet with monero-wallet-rpc stubbed.
 printf '#!/bin/sh\nexit 0\n' >"$WS_BIN/monero-wallet-rpc"
 chmod +x "$WS_BIN/monero-wallet-rpc"
 ws_start() { (
@@ -55,9 +55,9 @@ ws_start() { (
     PATH="$WS_BIN:$PATH" WALLET_DIR="$d" GEN_JSON="$d/gen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1
     if [ -f "$d/.payout-scanning" ]; then echo armed; else echo missing; fi
 ); }
-assert_eq "wallet entrypoint arms the scan marker on create (#718)" "$(ws_start create)" "armed"
-assert_eq "wallet entrypoint arms the scan marker on reopen (#2720)" "$(ws_start reopen)" "armed"
-# A restart must not re-arm an existing marker: a crash loop would otherwise never leave the grace.
+# test-monero-tari.sh covers arming on create and reopen (#2756). A restart must not re-arm an
+# existing marker: a crash loop would otherwise never leave the grace.
+ws_start reopen >/dev/null
 touch -t 200001010000.00 "$SANDBOX/ws-start-reopen/.payout-scanning"
 ws_start reopen >/dev/null
 ws_curl 7 0
