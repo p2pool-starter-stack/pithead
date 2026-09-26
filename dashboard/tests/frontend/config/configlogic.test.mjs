@@ -92,12 +92,12 @@ test("classifyGroup: no tari.* key renders under the Monero node group (#1887)",
     .flatMap((s) => s.fields)
     .map((f) => f.key)
     .filter((k) => k.startsWith("tari."));
-  // 11, counted from the reference, not from the four the issue named: a floor of 4 would still be
+  // 13 (#2464 added tari.auto_restart and tari.explorer_url), counted from the reference, not from the four the issue named: a floor of 4 would still be
   // satisfied by a regression that stopped 7 of them rendering, and the class sweep below would
   // narrow to a spot check while staying green. Adding a tari.* key is meant to fail here.
   assert.equal(
     tariKeys.length,
-    11,
+    13,
     `the reference's tari.* leaf count changed (got ${tariKeys.length}) — update this floor and check the new key's group`,
   );
   assert.deepEqual(
@@ -106,6 +106,7 @@ test("classifyGroup: no tari.* key renders under the Monero node group (#1887)",
   );
   assert.equal(classifyGroup("tari.mode"), "Tari node");
   assert.equal(classifyGroup("tari.remote.host"), "Tari node");
+  assert.equal(classifyGroup("tari.auto_restart"), "Tari node");
   // Narrowness: a fix that swept every tari.* into the new group would fail these two.
   assert.equal(classifyGroup("tari.data_dir"), "Advanced");
   assert.equal(classifyGroup("tari.wallet_address"), "Payouts");

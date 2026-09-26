@@ -427,6 +427,7 @@
     "active": false,
     "connected": false,
     "diff": "0",
+    "health": null,
     "height": "0",
     "reward": "0.00 TARI",
     "status": "Waiting...",

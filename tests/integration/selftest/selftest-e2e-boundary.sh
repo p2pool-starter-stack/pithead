@@ -69,6 +69,19 @@ rejected_before_ssh_args "a --scenario name with metacharacters never reaches SS
     --harness-arg --scenario --harness-arg 'name;touch'
 rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
     --harness-arg '--lifecycle' --mode check
+# #2464: the stranded-Tari leg is selectable by bench-ci's one-phase request, and forwarded as-is.
+harness_phase_args_of() ( # <args...> -> HARNESS_PHASE_ARGS, or the refusal
+    # shellcheck source=tests/integration/lib/harness-args.sh
+    source "$HERE/../lib/harness-args.sh"
+    die() {
+        echo "refused: $*"
+        exit 1
+    }
+    MODE=targeted HARNESS_ARGS=("$@")
+    validate_harness_args && echo "$HARNESS_PHASE_ARGS"
+)
+assert_eq "--tari-stranded is on the allowlist and forwarded unchanged (#2464)" \
+    "$(harness_phase_args_of --tari-stranded)" " --tari-stranded"
 
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
