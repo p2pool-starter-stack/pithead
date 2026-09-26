@@ -5,17 +5,21 @@ LIVE_COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign@sha256:4bedb8de1c5c1abd8dea60d
 CANDIDATE_BUNDLE=""
 CANDIDATE_SIGNATURE=""
 TRUSTED_COSIGN_PUB=""
+TRUSTED_IMAGE_COSIGN_PUB=""
 UPGRADE_STAGE_DIR=""
 UPGRADE_BUNDLE_SNAPSHOT=""
 UPGRADE_SIGNATURE_SNAPSHOT=""
 UPGRADE_TRUSTED_KEY=""
+UPGRADE_IMAGE_TRUSTED_KEY=""
 UPGRADE_ROLLBACK_DIR=""
 UPGRADE_BASELINE_DIR=""
 UPGRADE_CANDIDATE_DIR=""
 UPGRADE_CURRENT_LINK=""
 UPGRADE_CANDIDATE_REFS=""
 UPGRADE_CANDIDATE_ALL_REFS=""
+UPGRADE_CANDIDATE_REGISTRY=""
 UPGRADE_BEFORE_REFS=""
+UPGRADE_BASELINE_REGISTRY=""
 UPGRADE_BEFORE_REVISIONS=""
 UPGRADE_BEFORE_SECRETS=""
 UPGRADE_BEFORE_TELEMETRY=""
@@ -26,6 +30,7 @@ UPGRADE_BEFORE_MONERO=""
 UPGRADE_BEFORE_TARI=""
 UPGRADE_BEFORE_MONERO_ID=""
 UPGRADE_BEFORE_TARI_ID=""
+UPGRADE_TRUST_STEP="" # the check prepare_candidate_bundle refused at (job 1046); fixed words only
 _UPGRADE_RESTORE_ARMED=0
 _UPGRADE_FOREIGN_TRAP=""
 
@@ -42,9 +47,9 @@ validate_live_gate_args() {
             exit 2
         }
         local file
-        for file in "$CANDIDATE_BUNDLE" "$CANDIDATE_SIGNATURE" "$TRUSTED_COSIGN_PUB"; do
+        for file in "$CANDIDATE_BUNDLE" "$CANDIDATE_SIGNATURE" "$TRUSTED_COSIGN_PUB" "${TRUSTED_IMAGE_COSIGN_PUB:-$TRUSTED_COSIGN_PUB}"; do
             case "$file" in /*) ;; *)
-                it_err "--image-upgrade requires --candidate-bundle with three absolute paths."
+                it_err "--image-upgrade requires absolute candidate bundle and trust-root paths."
                 exit 2
                 ;;
             esac
@@ -79,24 +84,50 @@ revisions_match_sha() { # <service/revision lines> <full-sha>
     case "$seen" in *" tor"*" p2pool"*" xmrig-proxy"*" dashboard"*) return 0 ;; esac
     return 1
 }
-first_party_running_refs() {
-    rx 'for s in tor monerod p2pool xmrig-proxy dashboard; do c=$(docker compose ps -q "$s" 2>/dev/null | head -n1); [ -n "$c" ] || exit 1; docker inspect --format "$s {{.Config.Image}}" "$c"; done'
+first_party_running_services() {
+    printf '%s\n' tor
+    [ "$(jq_get "$BASELINE_CONFIG" '.monero.mode')" = remote ] || printf '%s\n' monerod
+    printf '%s\n' p2pool xmrig-proxy dashboard
 }
-pinned_refs_valid() {
-    local name ref seen=""
+first_party_running_refs() {
+    local services
+    services="$(first_party_running_services | tr '\n' ' ')"
+    rx "for s in $services; do c=\$(docker compose ps -q \"\$s\" 2>/dev/null | head -n1); [ -n \"\$c\" ] || exit 1; docker inspect --format \"\$s {{.Config.Image}}\" \"\$c\"; done"
+}
+pinned_refs_valid() { # <service/ref lines> [required service lines]
+    local name ref seen="" required="${2:-tor monerod p2pool xmrig-proxy dashboard}"
+    required="$(tr '\n' ' ' <<<"$required")"
+    required="${required% }"
     while read -r name ref; do
         [[ "$ref" =~ @sha256:[0-9a-f]{64}$ ]] || return 1
         seen="$seen $name"
     done <<<"$1"
-    [ "$seen" = " tor monerod p2pool xmrig-proxy dashboard" ]
+    [ "$seen" = " $required" ]
+}
+first_party_registry() { # <service/ref lines>
+    local service ref repo image registry found=""
+    while read -r service ref; do
+        [ -n "$service" ] && [ -n "$ref" ] || return 1
+        repo="${ref%@*}"
+        image="${repo##*/}"
+        case "$service:${image%%:*}" in # inspect drops the tag off tag@digest (job 1142)
+        tor:pithead-tor | monerod:pithead-monero | p2pool:pithead-p2pool | xmrig-proxy:pithead-xmrig-proxy | dashboard:pithead-dashboard) ;;
+        *) return 1 ;;
+        esac
+        registry="${repo%/*}"
+        [ "$registry" != "$repo" ] && [[ "$registry" =~ ^[A-Za-z0-9._:/-]+$ ]] || return 1
+        [ -z "$found" ] || [ "$found" = "$registry" ] || return 1
+        found="$registry"
+    done <<<"$1"
+    [ -n "$found" ] && printf '%s\n' "$found"
 }
 worker_names() { api_state | jq -r '.workers[]?.name' 2>/dev/null | sort -u; }
 _pred_worker_set() { [ "$(worker_names)" = "$1" ]; }
 all_running_refs() {
     rx 'docker compose ps --services --status running 2>/dev/null | sort | while read -r s; do c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ] || exit 1; docker inspect --format "$s {{.Config.Image}}" "$c"; done'
 }
-stateful_mounts() {
-    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
+stateful_mounts() { # tmpfs excluded (job 1181): no host Source to snapshot, unlike a bind at the same destination
+    rx 'set -euo pipefail; docker compose ps --services --status running | while read -r s; do [ -n "$s" ] || continue; c=$(docker compose ps -q "$s" | head -n1); [ -n "$c" ]; docker inspect "$c" | jq -r --arg s "$s" '\''.[0].Mounts[] | select(.RW == true and .Type != "tmpfs" and (.Destination | IN("/var/lib/tor","/home/ubuntu/.bitmonero","/home/ubuntu/wallets","/var/tari/node","/home/ubuntu/wallet","/home/ubuntu","/data","/clearnet-state","/control/requests","/var/log/caddy"))) | [$s,.Destination,.Source,.Type] | @tsv'\''; done | sort'
 }
 normalized_stateful_mounts() { # <version-dir> <mount TSV>
     awk -F '\t' -v OFS='\t' -v root="$1" '$2 == "/clearnet-state" || $2 == "/control/requests" || $2 == "/var/log/caddy" { prefix=root "/data/"; if (index($3,prefix) != 1) exit 1; $3="@release/data/" substr($3,length(prefix)+1) } { print }' <<<"$2"
@@ -156,10 +187,20 @@ ensure_cosign_image() {
         docker pull -q "$LIVE_COSIGN_IMAGE" >/dev/null 2>&1
 }
 
-run_trusted_cosign() {
+# Registry trust mirrors verify_release_images (03-release-verify.sh), which the candidate's own
+# `pithead upgrade` runs next: the signed candidate's cosign.registry-ca.crt for a TLS debug
+# registry, else plain HTTP for a non-ghcr registry on a debug variant (job 1046).
+run_trusted_image_cosign() {
+    local ca="$UPGRADE_STAGE_DIR/pithead/cosign.registry-ca.crt" registry_args=() mounts=(-v "$UPGRADE_IMAGE_TRUSTED_KEY:/trusted.pub:ro")
+    if [ -n "$UPGRADE_STAGE_DIR" ] && [ -f "$ca" ]; then
+        mounts+=(-v "$ca:/registry-ca.crt:ro")
+        registry_args=(--registry-cacert /registry-ca.crt)
+    elif [ -n "$UPGRADE_CANDIDATE_REGISTRY" ] && [ "$UPGRADE_CANDIDATE_REGISTRY" != ghcr.io/p2pool-starter-stack ] &&
+        [ "$(tr -d ' \t\r\n' <"${PITHEAD_VARIANT_FILE:-/etc/pithead-variant}" 2>/dev/null || true)" = debug ]; then
+        registry_args=(--allow-http-registry)
+    fi
     ensure_cosign_image || return 1
-    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
-        -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" "$LIVE_COSIGN_IMAGE" "$@"
+    docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp "${mounts[@]}" "$LIVE_COSIGN_IMAGE" "$@" "${registry_args[@]}"
 }
 
 extract_candidate_archive() { # <snapshot.tar.gz> <private-stage>
@@ -182,44 +223,43 @@ PY
 }
 
 prepare_candidate_bundle() {
-    local _service ref revision service line candidate_commit
-    UPGRADE_STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pithead-live-candidate.XXXXXX")" || return 1
+    local _service ref revision service candidate_commit
+    UPGRADE_TRUST_STEP='stage-inputs' UPGRADE_STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pithead-live-candidate.XXXXXX")" || return 1
     chmod 700 "$UPGRADE_STAGE_DIR" || return 1
     UPGRADE_BUNDLE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.tar.gz"
     UPGRADE_SIGNATURE_SNAPSHOT="$UPGRADE_STAGE_DIR/candidate.sig"
     UPGRADE_TRUSTED_KEY="$UPGRADE_STAGE_DIR/trusted.pub"
+    UPGRADE_IMAGE_TRUSTED_KEY="$UPGRADE_STAGE_DIR/image-trusted.pub"
     (umask 077 && cp "$CANDIDATE_BUNDLE" "$UPGRADE_BUNDLE_SNAPSHOT" &&
         cp "$CANDIDATE_SIGNATURE" "$UPGRADE_SIGNATURE_SNAPSHOT" &&
-        cp "$TRUSTED_COSIGN_PUB" "$UPGRADE_TRUSTED_KEY") || return 1
-    chmod 400 "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_SIGNATURE_SNAPSHOT" "$UPGRADE_TRUSTED_KEY" || return 1
-    ensure_cosign_image || return 1
+        cp "$TRUSTED_COSIGN_PUB" "$UPGRADE_TRUSTED_KEY" &&
+        cp "${TRUSTED_IMAGE_COSIGN_PUB:-$TRUSTED_COSIGN_PUB}" "$UPGRADE_IMAGE_TRUSTED_KEY") || return 1
+    chmod 400 "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_SIGNATURE_SNAPSHOT" "$UPGRADE_TRUSTED_KEY" "$UPGRADE_IMAGE_TRUSTED_KEY" || return 1
+    UPGRADE_TRUST_STEP='bundle-signature' && ensure_cosign_image || return 1
     docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
         -v "$UPGRADE_TRUSTED_KEY:/trusted.pub:ro" -v "$UPGRADE_BUNDLE_SNAPSHOT:/candidate.tar.gz:ro" \
         -v "$UPGRADE_SIGNATURE_SNAPSHOT:/candidate.sig:ro" "$LIVE_COSIGN_IMAGE" verify-blob --key /trusted.pub \
         --signature /candidate.sig --insecure-ignore-tlog=true /candidate.tar.gz >/dev/null 2>&1 || return 1
-    extract_candidate_archive "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_STAGE_DIR" || return 1
+    UPGRADE_TRUST_STEP='bundle-layout' && extract_candidate_archive "$UPGRADE_BUNDLE_SNAPSHOT" "$UPGRADE_STAGE_DIR" || return 1
     [ -x "$UPGRADE_STAGE_DIR/pithead/pithead" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/docker-compose.yml" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/cosign.pub" ] &&
         [ -f "$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT" ] &&
         [ -z "$(find "$UPGRADE_STAGE_DIR/pithead" -type l -print -quit)" ] || return 1
-    cmp -s "$UPGRADE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
-    candidate_commit="$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
+    UPGRADE_TRUST_STEP='image-key-binding' && cmp -s "$UPGRADE_IMAGE_TRUSTED_KEY" "$UPGRADE_STAGE_DIR/pithead/cosign.pub" || return 1
+    UPGRADE_TRUST_STEP='candidate-commit' candidate_commit="$(tr -d '\n' <"$UPGRADE_STAGE_DIR/pithead/PITHEAD_COMMIT")"
     valid_full_sha "$candidate_commit" && [ "$candidate_commit" = "$IMAGE_UPGRADE_TO_SHA" ] || return 1
-    UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
+    UPGRADE_TRUST_STEP='pinned-refs' UPGRADE_CANDIDATE_ALL_REFS="$(candidate_compose_refs)" || return 1
     all_refs_pinned "$UPGRADE_CANDIDATE_ALL_REFS" || return 1
-    UPGRADE_CANDIDATE_REFS="$({
-        for service in tor monerod p2pool xmrig-proxy dashboard; do
-            line="$(awk -v s="$service" '$1==s {print}' <<<"$UPGRADE_CANDIDATE_ALL_REFS")"
-            [ -n "$line" ] || exit 1
-            printf '%s\n' "$line"
-        done
-    })" || return 1
-    pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" || return 1
+    UPGRADE_CANDIDATE_REFS="$(candidate_refs_for_running_set "$(first_party_running_services)")" || return 1
+    pinned_refs_valid "$UPGRADE_CANDIDATE_REFS" "$(first_party_running_services)" || return 1
+    # shellcheck disable=SC2034 # consumed by live-gates.sh after this sourced helper returns
+    UPGRADE_CANDIDATE_REGISTRY="$(first_party_registry "$UPGRADE_CANDIDATE_REFS")" || return 1
     while read -r _service ref; do
-        run_trusted_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
-        docker pull -q "$ref" >/dev/null 2>&1 || return 1
-        revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref" 2>/dev/null)"
+        UPGRADE_TRUST_STEP='image-signature' && run_trusted_image_cosign verify --key /trusted.pub --private-infrastructure "$ref" >/dev/null 2>&1 || return 1
+        UPGRADE_TRUST_STEP='image-pull' && docker pull -q "$ref" >/dev/null 2>&1 || return 1
+        # shellcheck disable=SC2034 # read by live-gates.sh when this check refuses
+        UPGRADE_TRUST_STEP='image-revision' revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref" 2>/dev/null)"
         revision_matches_sha "$revision" "$IMAGE_UPGRADE_TO_SHA" || return 1
     done <<<"$UPGRADE_CANDIDATE_REFS"
 }
@@ -261,65 +301,63 @@ restore_upgrade_baseline() {
     [ "$_UPGRADE_RESTORE_ARMED" = "1" ] || return 0
     _UPGRADE_RESTORE_ARMED=0
     it_warn "restoring the exact pre-upgrade release, state, and image set"
-    local failed=0 files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local failed="" files_ok=1 state restored_workers restored_telemetry monero_tip monero_height
+    local PITHEAD_REGISTRY="$UPGRADE_BASELINE_REGISTRY"
+    export PITHEAD_REGISTRY
     pithead down >/dev/null 2>&1 || {
-        failed=1
+        failed+=" stop"
         files_ok=0
     }
     IT_REMOTE_DIR="$UPGRADE_BASELINE_DIR"
     [ "$files_ok" = 0 ] || repoint_baseline_install || {
-        failed=1
+        failed+=" repoint"
         files_ok=0
     }
     if [ "$files_ok" = 1 ]; then
         pithead restore -y "$SAFETY_ARCHIVE" >/dev/null 2>&1 || {
-            failed=1
+            failed+=" archive-restore"
             files_ok=0
         }
         pithead down >/dev/null 2>&1 || {
-            failed=1
+            failed+=" stop-after-restore"
             files_ok=0
         }
         if [ "$files_ok" = 1 ] && ! restore_state_snapshots; then
-            failed=1
+            failed+=" state-snapshots"
             files_ok=0
         fi
     fi
-    if [ "$files_ok" = 1 ]; then
-        if ! reset_control_units_for_render || ! pithead render >/dev/null 2>&1 ||
-            ! strict_pithead up >/dev/null 2>&1 || ! wait_status_ok 300 ||
-            ! wait_for 240 5 "the exact baseline worker set" _pred_worker_set "$UPGRADE_BEFORE_WORKERS"; then
-            failed=1
-        fi
+    if [ "$files_ok" = 1 ] && ! start_restored_baseline; then
+        failed+=" start:$BASELINE_START_STEP${BASELINE_START_ERROR:+ [$BASELINE_START_ERROR]}"
     fi
-    [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed=1
-    [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed=1
-    [ "$(derived_state_fingerprint)" = "$UPGRADE_BEFORE_DERIVED" ] || failed=1
-    [ "$(all_running_refs)" = "$UPGRADE_BEFORE_REFS" ] || failed=1
-    [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed=1
+    [ "$(rx 'cat config.json' 2>/dev/null)" = "$BASELINE_CONFIG" ] || failed+=" config"
+    [ "$(upgrade_secret_fingerprints)" = "$UPGRADE_BEFORE_SECRETS" ] || failed+=" secrets"
+    [ "$(derived_state_fingerprint)" = "$UPGRADE_BEFORE_DERIVED" ] || failed+=" derived-state"
+    [ "$(all_running_refs)" = "$UPGRADE_BEFORE_REFS" ] || failed+=" running-refs"
+    [ "$(first_party_revisions)" = "$UPGRADE_BEFORE_REVISIONS" ] || failed+=" revisions"
     state="$(api_state)"
-    [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed=1
-    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed=1
+    [ "$(jq_get "$state" '.sync.monero.state')" = "done" ] || failed+=" monero-sync"
+    [ "$(jq_get "$state" '.sync.tari.state')" = "done" ] || failed+=" tari-sync"
     monero_tip="$(monero_chain_tip)"
     monero_height="${monero_tip%% *}"
-    chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed=1
-    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed=1
-    [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed=1
-    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed=1
-    [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed=1
+    chain_tip_valid "$monero_tip" && height_continues "$UPGRADE_BEFORE_MONERO" "$monero_height" || failed+=" monero-height"
+    height_continues "$UPGRADE_BEFORE_TARI" "$(jq_get "$state" '.sync.tari.current')" || failed+=" tari-height"
+    [ "$(monero_block_identity "$((UPGRADE_BEFORE_MONERO - 1))")" = "$UPGRADE_BEFORE_MONERO_ID" ] || failed+=" monero-identity"
+    [ "$(tari_block_identity "$UPGRADE_BEFORE_TARI")" = "$UPGRADE_BEFORE_TARI_ID" ] || failed+=" tari-identity"
+    [ "$(stateful_mounts)" = "$UPGRADE_BEFORE_MOUNTS" ] || failed+=" mounts"
     restored_workers="$(worker_names)"
-    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed=1
-    [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed=1
-    [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed=1
-    restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH")"
-    telemetry_rows_continue "$UPGRADE_BEFORE_TELEMETRY" "$restored_telemetry" || failed=1
-    if [ "$failed" != 0 ]; then
+    [ "$restored_workers" = "$UPGRADE_BEFORE_WORKERS" ] || failed+=" workers"
+    [ "$(jq_get "$state" '.proxy_workers')" -ge "$EXPECTED_WORKERS" ] 2>/dev/null || failed+=" proxy-workers"
+    [ "$(jq_get "$state" '.stratum.total_hashes')" -gt 0 ] 2>/dev/null || failed+=" hashes"
+    restored_telemetry="$(dashboard_durable_rows "$UPGRADE_TELEMETRY_EPOCH" --baseline-schema)"
+    telemetry_rows_continue "$UPGRADE_BEFORE_TELEMETRY" "$restored_telemetry" || failed+=" dashboard-rows"
+    if [ -n "$failed" ]; then
         pithead down >/dev/null 2>&1 || true
         # shellcheck disable=SC2034 # consumed by run.sh:safety_cleanup after this sourced file returns
         SAFETY_RESTORE_FAILED=1
         _SAFETY_RESTORE_ARMED=0
         it_fail "exact pre-upgrade release baseline restored" \
-            "code, state, health, config, secrets, images, chains, mounts, workers, or mining differ; recovery trees retained at $UPGRADE_ROLLBACK_DIR and $SAFETY_ARCHIVE"
+            "differs:$failed; recovery trees retained at $UPGRADE_ROLLBACK_DIR and $SAFETY_ARCHIVE"
         return 1
     fi
     it_pass "exact pre-upgrade release baseline restored"
@@ -351,59 +389,17 @@ arm_upgrade_abort_restore() {
     trap upgrade_abort_restore EXIT
 }
 
-dashboard_durable_rows() { # <fixed capture epoch>
-    local payload
-    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
-    rx "printf %s $(quote_arg "$payload") | base64 -d | docker exec -i dashboard python3 - --require-current-schema $(quote_arg "$1")" 2>/dev/null
-}
-
-archived_dashboard_durable_rows() { # <archive> <fixed capture epoch>
-    local payload
-    payload="$(base64 <"$HERE/lib/migration-state-probe.py" | tr -d '\n')"
-    rx "d=\$(mktemp -d); cleanup() { rm -rf \"\$d\"; }; trap cleanup EXIT; member=\$(tar -tzf $(quote_arg "$1") | grep '/mining_data.db$'); [ \$(printf '%s\\n' \"\$member\" | grep -c .) = 1 ] && tar -xOf $(quote_arg "$1") \"\$member\" >\"\$d/db\" && printf %s $(quote_arg "$payload") | base64 -d | python3 - $(quote_arg "$2") \"\$d/db\"" 2>/dev/null
-}
-
-telemetry_rows_continue() { # <before-lines> <after-lines>
-    [ -n "$1" ] && [ -z "$(comm -23 <(printf '%s\n' "$1" | sort) <(printf '%s\n' "$2" | sort))" ]
-}
-
-proxy_active_route() {
-    rx "docker exec dashboard python3 -c 'import json;from mining_dashboard.client.xmrig_proxy_client import XMRigProxyClient;from mining_dashboard.config.config import PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN;c=XMRigProxyClient(PROXY_HOST,PROXY_API_PORT,PROXY_AUTH_TOKEN).get_config();p=next((p for p in c.get(\"pools\",[]) if p.get(\"enabled\")),{});print(json.dumps({\"url\":p.get(\"url\",\"\"),\"socks5\":p.get(\"socks5\",\"\")}))' 2>/dev/null"
-}
-proxy_active_pool() { proxy_active_route | jq -r '.url // empty' 2>/dev/null; }
-proxy_active_socks5() { proxy_active_route | jq -r '.socks5 // empty' 2>/dev/null; }
-
-_pred_proxy_route() { # <mode-substring> <active-pool-url>
-    local st
-    st="$(api_state)"
-    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *"$1"* ]] &&
-        [ "$(proxy_active_pool)" = "$2" ] &&
-        [ "$(jq_get "$st" '.proxy_workers')" -gt 0 ] 2>/dev/null
-}
-
-_pred_xvb_feed_fresh() {
-    local st ts
-    st="$(api_state)"
-    ts="$(rx 'curl -fsS --max-time 8 http://127.0.0.1:8000/api/xvb-standby 2>/dev/null' | jq -r '(.ts // 0) | floor' 2>/dev/null)"
-    [ "$(jq_get "$st" '.hashrate.xvb_stale')" = "false" ] &&
-        [ "${ts:-0}" -gt "$XVB_FEED_TS_BEFORE" ] 2>/dev/null
-}
-
-_pred_xvb_routed_visible() {
-    local st routed
-    st="$(api_state)"
-    routed="$(jq_get "$st" '.hashrate.xvb_routed_1h')"
-    [[ "$(jq_get "$st" '.hashrate.mode_name')" == *XVB* ]] &&
-        [ "$(jq_get "$st" '.shares_window.count')" -gt 0 ] 2>/dev/null &&
-        [ -n "$routed" ] && [ "$routed" != "0.00 H/s" ]
-}
-
+# #2057: MONERO_RPC_URL is never rendered into the dashboard's own env (it defaults to
+# 127.0.0.1:18081, correct only by coincidence for a LOCAL node under network_mode: host) — build
+# the URL from MONERO_NODE_HOST (correct in both modes) and MONERO_RPC_PORT instead, matching what
+# p2pool's own --host/--rpc-port already use. A remote node with no local monerod otherwise always
+# resolves the request against nothing, failing every gate that calls these two functions.
 monero_block_identity() { # <height>
-    rx "docker exec dashboard python3 -c 'import requests,sys;from requests.auth import HTTPDigestAuth;from mining_dashboard.config.config import MONERO_NODE_PASSWORD,MONERO_NODE_USERNAME,MONERO_RPC_URL;a=HTTPDigestAuth(MONERO_NODE_USERNAME,MONERO_NODE_PASSWORD) if MONERO_NODE_USERNAME else None;r=requests.post(MONERO_RPC_URL.rstrip(\"/\")+\"/json_rpc\",auth=a,json={\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_block_header_by_height\",\"params\":{\"height\":int(sys.argv[1])}},timeout=8);r.raise_for_status();print(r.json()[\"result\"][\"block_header\"][\"hash\"])' $(quote_arg "$1")" 2>/dev/null
+    rx "docker exec dashboard python3 -c 'import os,requests,sys;from requests.auth import HTTPDigestAuth;from mining_dashboard.config.config import MONERO_NODE_PASSWORD,MONERO_NODE_USERNAME,MONERO_NODE_HOST;a=HTTPDigestAuth(MONERO_NODE_USERNAME,MONERO_NODE_PASSWORD) if MONERO_NODE_USERNAME else None;url=\"http://\"+MONERO_NODE_HOST+\":\"+os.environ.get(\"MONERO_RPC_PORT\",\"18081\");r=requests.post(url+\"/json_rpc\",auth=a,json={\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"get_block_header_by_height\",\"params\":{\"height\":int(sys.argv[1])}},timeout=8);r.raise_for_status();print(r.json()[\"result\"][\"block_header\"][\"hash\"])' $(quote_arg "$1")" 2>/dev/null
 }
 
 monero_chain_tip() {
-    rx "docker exec dashboard python3 -c 'import requests;from requests.auth import HTTPDigestAuth;from mining_dashboard.config.config import MONERO_NODE_PASSWORD,MONERO_NODE_USERNAME,MONERO_RPC_URL;a=HTTPDigestAuth(MONERO_NODE_USERNAME,MONERO_NODE_PASSWORD) if MONERO_NODE_USERNAME else None;r=requests.get(MONERO_RPC_URL.rstrip(\"/\")+\"/get_info\",auth=a,timeout=8);r.raise_for_status();v=r.json();print(v[\"height\"],v[\"top_block_hash\"])'" 2>/dev/null
+    rx "docker exec dashboard python3 -c 'import os,requests;from requests.auth import HTTPDigestAuth;from mining_dashboard.config.config import MONERO_NODE_PASSWORD,MONERO_NODE_USERNAME,MONERO_NODE_HOST;a=HTTPDigestAuth(MONERO_NODE_USERNAME,MONERO_NODE_PASSWORD) if MONERO_NODE_USERNAME else None;url=\"http://\"+MONERO_NODE_HOST+\":\"+os.environ.get(\"MONERO_RPC_PORT\",\"18081\");r=requests.get(url+\"/get_info\",auth=a,timeout=8);r.raise_for_status();v=r.json();print(v[\"height\"],v[\"top_block_hash\"])'" 2>/dev/null
 }
 
 chain_tip_valid() { [[ "${1:-}" =~ ^[1-9][0-9]*\ [0-9a-f]{64}$ ]]; }

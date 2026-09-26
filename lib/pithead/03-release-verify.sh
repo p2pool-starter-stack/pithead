@@ -95,7 +95,7 @@ verify_release_images() {
     cosign_available ||
         error "cosign.pub is present but docker is not available to run the verifier — refusing an unverified pull. Install Docker ($DOCS_URL/docs/getting-started.md#1-prerequisites) and re-run '$0'."
     # The 5 first-party images, verified by the exact digest compose pins them to (#451/#461).
-    local suffix repo sha image out cosign_registry_args=()
+    local suffix repo sha image out said cosign_registry_args=()
     # A debug build's private-registry CA is program material beside cosign.pub, so the install-dir
     # mount already carries it into the container — a relative name, like --key on the same command.
     if [ -f cosign.registry-ca.crt ]; then
@@ -116,7 +116,16 @@ verify_release_images() {
             # Strip control chars: cosign's stderr echoes registry-supplied bytes, and error()
             # prints via `echo -e`, so an attacker-controlled registry response could otherwise
             # inject ANSI escapes into the operator's terminal (#376 review).
-            error "Signature verification FAILED for $image — the published image does not match the release key; refusing to pull or restart, nothing was changed. cosign said: $(printf '%s' "$out" | tr -d '[:cntrl:]' | tail -c 300)"
+            said=$(printf '%s' "$out" | tr -d '[:cntrl:]' | tail -c 300)
+            # #2735: cosign exits 1 for an unreachable registry too, and calling that a key mismatch
+            # sent the operator hunting a tampered image. Match Go's own dial errors only, and never
+            # vouch for the image: the text rides the same untrusted channel as the note above.
+            case "$out" in
+            *"dial tcp "*": connect: "* | *"dial tcp "*": i/o timeout"* | *"dial tcp: lookup "*)
+                error "Signature verification could not complete for $image — cosign reports a network error reaching the registry, so the image is UNVERIFIED; refusing to pull or restart, nothing was changed. Check this machine's network path to the registry and retry. cosign said: $said"
+                ;;
+            esac
+            error "Signature verification FAILED for $image — the published image does not match the release key; refusing to pull or restart, nothing was changed. cosign said: $said"
         fi
     done
     log "All 5 release images verify against their pinned digest (cosign.pub)."

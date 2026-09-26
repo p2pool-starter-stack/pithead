@@ -64,8 +64,8 @@ _phase_install_restore() {
         # Settle on the provisioning UNITS, not on `podman ps` (#1945): the wizard's `up` holds the
         # mutation lock through its tor-health wait for minutes after the stack looks live, and a
         # backup taken then waits it out or, when that `up` dies, archives the wreck. 900 s covers tor.
-        if ! provisioning_settled 900; then
-            bad "restore leg: provisioning never finished on the machine ($(provisioning_state))"
+        if ! provisioning_settled 900 || provisioning_setup_failed; then # #2725: settled is not succeeded
+            bad "restore leg: provisioning did not finish clean on the machine ($(provisioning_state))"
             backup_failure_evidence
             rm -f "$target_disk"
             return
@@ -306,12 +306,12 @@ _phase_install_restore() {
         # finished and started nothing. A condition-SKIPPED unit also reads `inactive` here; the
         # #2043 dump below carries ConditionResult for that half.
         local rswait=900
-        if provisioning_settled 900; then
+        if provisioning_settled 900 && [[ " $(provisioning_units) " != *" failed "* ]]; then # #2735: settled is not succeeded
             ok "restore leg: provisioning finished on the RESTORED machine ($(provisioning_state))"
         else
-            bad "restore leg: provisioning never settled on the restored machine ($(provisioning_state))"
-            # Still activating after 900 s means containers are not coming, and a second 900 s here
-            # would spend half an hour re-measuring a symptom whose cause the row above just named.
+            bad "restore leg: provisioning did not finish clean on the restored machine ($(provisioning_state))"
+            # Unsettled or failed after 900 s means containers are not coming, and a second 900 s
+            # here would spend half an hour re-measuring a symptom the row above just named.
             rswait=0
         fi
         # THE assertion this leg exists for (#1091): config.json landing on disk proves the archive
