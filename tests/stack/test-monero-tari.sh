@@ -136,13 +136,9 @@ assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
 # Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
-HCBIN="$SANDBOX/hc-bin"
-HCDIR="$SANDBOX/hc-wallet"
+HCBIN="$SANDBOX/hc-bin" HCDIR="$SANDBOX/hc-wallet"
 mkdir -p "$HCBIN" "$HCDIR"
-mk_curl() {
-    printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl"
-    chmod +x "$HCBIN/curl"
-}
+mk_curl() { printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl" && chmod +x "$HCBIN/curl"; }
 run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
@@ -157,10 +153,14 @@ assert_eq "healthcheck: RPC down with expired scan marker -> unhealthy (#2268)" 
 mk_curl 0
 assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
-# RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
-mk_curl 7
+mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
+printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
+run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
+: >"$HCDIR/payout-wallet" && run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
