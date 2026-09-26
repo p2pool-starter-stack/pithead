@@ -159,7 +159,10 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod ran with its
   default `fast:async` database mode, which opens LMDB with `MDB_NOSYNC`, so a commit could return
   before it reached the disk. The bundled node now runs with `db-sync-mode=safe`, which syncs every
-  commit. Initial sync is slower as a result.
+  commit, so a power cut can no longer take the chain back below a height it had already committed.
+  In the appliance power-cut test, early-mainnet sync (heights 29,000 to 79,000) ran at 14 to 71
+  blocks/s under `safe` and 8 to 37 blocks/s under the old mode, with no slowdown measurable at that
+  scale. Later blocks are larger, and their cost was not measured.
 
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
