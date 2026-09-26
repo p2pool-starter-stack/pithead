@@ -179,7 +179,7 @@ apply() {
     [ -f "$apply_marker" ] && incomplete=1
 
     local destructive=0 caddy_changed=0 caddy_before="" caddy_had=0 wallet_keys=() line flag msg old new
-    local dashboard_data_dir_old=""
+    local dashboard_data_dir_old="" rearm_sync_gate=0
     if [ "${#changed[@]}" -gt 0 ]; then
         echo ""
         log "The following changes will be applied:"
@@ -193,6 +193,9 @@ apply() {
             # #2360: remember the active dashboard.data_dir for the carry before .env publication.
             # The separate historical-default migration runs later, after service configuration.
             [ "$key" == "DASHBOARD_DATA_DIR" ] && dashboard_data_dir_old="$old"
+            # #2763: a required chain now dials another node (remote<->local, a new endpoint)
+            # that may not have synced, so the #35 release earned on the old node no longer holds.
+            case "$key" in MONERO_NODE_HOST | MONERO_RPC_PORT | TARI_MODE | TARI_GRPC_ADDRESS) rearm_sync_gate=1 ;; esac
             line=$(describe_change "$key" "$old" "$new")
             flag=${line%%$'\t'*}
             msg=${line#*$'\t'}
@@ -257,6 +260,15 @@ apply() {
             fi
             carry_dashboard_data_move "$dashboard_data_dir_old" "${DASHBOARD_DIR:-}"
             [ "$dashboard_carry_recovery" -eq 0 ] || dashboard_carry_published=1
+        fi
+        # Re-arm the sync gate with the restore's marker (#2626). Each key above reaches the
+        # dashboard's environment (the port via MONERO_RPC_URL), so compose recreates it and it
+        # reads the marker at start. It holds the miner until the new node syncs (or releases on the first cycle if it already has).
+        # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
+        # operator's is another; the dashboard removes the file through its directory either way.
+        if [ "$rearm_sync_gate" -eq 1 ] && ! { : >"$DASHBOARD_DIR/sync-gate-reset" 2>/dev/null ||
+            sudo touch "$DASHBOARD_DIR/sync-gate-reset"; }; then
+            error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset)."
         fi
         mv "$newenv" "$ENV_FILE"
         provision_node_onions # #103: a node that just went local needs its onion before it starts
