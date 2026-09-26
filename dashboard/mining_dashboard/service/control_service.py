@@ -41,9 +41,10 @@ SECRET_PATHS = [
     # the token is a Bearer credential — both masked like the ping URL above.
     ("notifications", "ntfy", "url"),
     ("notifications", "ntfy", "token"),
-    # The backup's primary-dashboard URL (#249) can carry the primary's dashboard basic-auth as
-    # userinfo — a capability secret, masked like the ping URL above.
+    # The backup's primary-dashboard URL (#249) can carry the primary's basic-auth as userinfo.
     ("xvb", "standby", "source"),
+    # The operator-set Tari explorer URL (#2464) may carry a token: a capability URL like the others.
+    ("tari", "explorer_url"),
 ]
 SECRET_SENTINEL = {"__secret__": True}
 # notifications.webhooks[] (#848): a list of bare URL strings, each one a bearer secret (query

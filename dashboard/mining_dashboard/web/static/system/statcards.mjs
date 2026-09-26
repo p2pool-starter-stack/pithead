@@ -56,14 +56,13 @@ export class MoreStats extends Component {
 // (channel_state READY) — NOT on `active` (a chain is merely configured). When configured but the
 // channel is down (e.g. TRANSIENT_FAILURE) we show the raw state in a warn style and no ✔, so a dead
 // channel can never read as "TRANSIENT_FAILURE ✔". A READY channel is not a node on the chain
-// (#2464): an amber or red chain verdict replaces the line with its reasons and the next step.
+// (#2464): an amber or red chain verdict colours the line, and the server's status text (its reasons
+// and the next step, derived in build_tari) is printed as it stands.
 export const TariStatus = ({ tari }) => {
   const h = tari.health;
   if (h && h.level !== "green") {
     return html`
-    <p class=${h.level === "red" ? "status-bad" : "status-warn"}>
-        Not following the chain: ${h.reasons.join("; ")}. ${h.advice}
-    </p>`;
+    <p class=${h.level === "red" ? "status-bad" : "status-warn"}>${tari.status}</p>`;
   }
   return html`
     <p class=${tari.connected ? "status-ok" : tari.active ? "status-warn" : ""}>

@@ -21,12 +21,14 @@ test('Tari status gates the ✔ on a live gRPC channel, never on active-but-dead
 test('A READY channel on a node off the chain reads amber/red with the reason, never ✔ (#2464)', () => {
     for (const [level, cls] of [['amber', 'status-warn'], ['red', 'status-bad']]) {
         const s = clone();
+        // build_tari derives the text (#2464); the panel must print it as it stands, coloured by level.
         Object.assign(s.tari, {
-            connected: true, active: true, status: 'Merge mining',
+            connected: true, active: true,
+            status: 'Not following the chain: tip 342574 unchanged for 31 min. restart the Tari node',
             health: { level, reasons: ['tip 342574 unchanged for 31 min'], advice: 'restart the Tari node' },
         });
         const out = renderApp({ state: s });
-        assert.match(out, new RegExp(`${cls}">\\s*Not following the chain: tip 342574 unchanged for 31 min\\. restart the Tari node`));
+        assert.match(out, new RegExp(`${cls}">Not following the chain: tip 342574 unchanged for 31 min\\. restart the Tari node<`));
         assert.doesNotMatch(out, /check-inline/);
     }
     const green = clone();

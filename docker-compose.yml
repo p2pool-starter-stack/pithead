@@ -413,6 +413,9 @@ services:
       - ${P2POOL_DATA_DIR}:/home/ubuntu
       - ${P2POOL_DATA_DIR}/stats:/stats
       - /dev/hugepages:/dev/hugepages
+      # The dashboard's marker dir, read-only (#2464): a tari-merge-mine-suppressed marker there makes
+      # the entrypoint launch without --merge-mine while the Tari verdict is red.
+      - ${CLEARNET_STATE_DIR:-./data/clearnet-state}:/clearnet-state:ro
     command:
       - --no-log-file
       - --host

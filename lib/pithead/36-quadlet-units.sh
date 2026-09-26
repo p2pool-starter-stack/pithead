@@ -1,6 +1,5 @@
-# Appliance unit rendering (#77 phase 1). Emits Podman Quadlet units from a rendered .env — the
-# second render target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime
-# architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
+# Appliance unit rendering (#77 phase 1): Podman Quadlet units from a rendered .env, the second render
+# target beside docker-compose (docs/dev/dual-distribution-plan.md § Runtime architecture). The os/quadlet/ fixtures pin the #78 spike's live unit set byte-for-byte at tier 1;
 # drift needs a bench re-proof. Spike-proven rules baked in: Notify=healthy services carry
 # TimeoutStartSec=infinity (a finite timeout KILLS a not-yet-healthy service — compose's
 # start_period never does); plain depends_on maps to After=+Wants= (Requires= would stop-couple);
@@ -246,6 +245,7 @@ Environment=$(_qenvq P2POOL_FLAGS)
 Exec=--no-log-file --host $(_qenv MONERO_NODE_HOST) --rpc-port $(_qenv MONERO_RPC_PORT)$([ -z "$(_qenv MONERO_NODE_USERNAME)" ] || printf ' --rpc-login %s:%s' "$(_qenv MONERO_NODE_USERNAME)" "$(_qenv MONERO_NODE_PASSWORD)") --zmq-port $(_qenv MONERO_ZMQ_PORT) --wallet $(_qenv MONERO_WALLET_ADDRESS) --merge-mine tari://$(_qenv TARI_GRPC_ADDRESS) $(_qenv TARI_WALLET_ADDRESS) --onion-address $(_qenv P2POOL_ONION_ADDRESS) --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:$(_qenv P2POOL_PORT) --data-api /stats
 Volume=$(_qenv P2POOL_DATA_DIR):/home/ubuntu
 Volume=$(_qenv P2POOL_DATA_DIR)/stats:/stats
+Volume=$(_qenv CLEARNET_STATE_DIR):/clearnet-state:ro
 Volume=/dev/hugepages:/dev/hugepages
 Tmpfs=/tmp:size=64m,mode=1777
 ReadOnly=true

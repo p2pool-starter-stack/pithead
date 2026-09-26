@@ -48,7 +48,7 @@ RENDER="$(cd "$HERE/../../.." && pwd)/lib/pithead/33-render-env.sh"
 
 # Hand-classified, and the classification IS the judgement this file encodes. A screened key in
 # none of these lists fails below BY NAME, so the rendered schema cannot drift past it.
-MUST_REDACT="DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP DASHBOARD_AUTH_USER
+MUST_REDACT="TARI_EXPLORER_URL DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP DASHBOARD_AUTH_USER
 DASHBOARD_ONION_CLIENT_PRIVKEY DASHBOARD_ONION_CLIENT_PUBKEY HEALTHCHECKS_PING_URL
 MONERO_NODE_PASSWORD MONERO_NODE_USERNAME MONERO_VIEW_KEY MONERO_WALLET_ADDRESS
 NOTIFY_WEBHOOK_URLS NTFY_TOKEN NTFY_URL PROXY_AUTH_TOKEN PROXY_STRATUM_PASSWORD TARI_SPEND_PUBLIC_KEY
@@ -62,7 +62,6 @@ WALLET_RPC_USERNAME XMRIG_API_TOKEN XVB_DONOR_ID"
 #   DASHBOARD_ONION_CLIENT_AUTH  a normalize_bool() result — literally `true` or `false`
 #   TELEGRAM_CHAT_ID             a routing id
 #   P2POOL_URL / XVB_POOL_URL    public service endpoints
-#   TARI_EXPLORER_URL            a public read-only explorer (#2464); no token, answered through Tor
 #   MONERO_RPC_URL / MONERO_WALLET_RPC_URL  node endpoints the bundle is read against
 #   TARI_GRPC_ADDRESS / TARI_WALLET_GRPC_ADDRESS  host:port endpoints the bundle is read against
 # ⛔ STATED, not settled, for that last pair: in LOCAL mode they are bridge addresses inside the
@@ -73,7 +72,7 @@ WALLET_RPC_USERNAME XMRIG_API_TOKEN XVB_DONOR_ID"
 # Left surviving and named
 # so the next reader meets a decision rather than an oversight.
 MUST_SURVIVE="XMRIG_API_AUTH DASHBOARD_ONION_CLIENT_AUTH TELEGRAM_CHAT_ID P2POOL_URL XVB_POOL_URL
-MONERO_RPC_URL MONERO_WALLET_RPC_URL TARI_GRPC_ADDRESS TARI_WALLET_GRPC_ADDRESS TARI_EXPLORER_URL"
+MONERO_RPC_URL MONERO_WALLET_RPC_URL TARI_GRPC_ADDRESS TARI_WALLET_GRPC_ADDRESS"
 
 # ⛔ `NTFY_URL` WAS pinned here as a known gap, on the reason that the bare word `URL` could not be
 # added without taking every public endpoint above with it. True, and it was never the technique

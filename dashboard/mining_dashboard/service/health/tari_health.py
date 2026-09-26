@@ -56,6 +56,14 @@ RED_SUSTAIN_SEC = 5 * 60
 COOLDOWN_SEC = 60 * 60
 MAX_RESTARTS = 3
 GREEN_CONFIRM_SEC = 15 * 60
+# A restart whose stop landed but whose start failed left the node stopped by this code; its gRPC is
+# then silent for that reason, not a migration, so start alone is retried, a bounded number of times.
+START_RETRY_SEC = 60
+START_RETRIES = 5
+STOPPED_ADVICE = (
+    "the automatic restart stopped the Tari node but could not start it again; "
+    "start it with './pithead up'"
+)
 
 RESTART_ADVICE = (
     "restart the Tari node ('./pithead restart tari'); startup clears its bad-block list"
@@ -77,8 +85,10 @@ def _explorer_tip(url: str) -> int | None:
         ).json()
         return int(body["tipInfo"]["metadata"]["best_block_height"])
     except Exception as exc:
+        # The type only: a request error's text carries the URL, which may hold a token.
         logger.info(
-            "Tari explorer reference unavailable (%s); verdict uses local signals only.", exc
+            "Tari explorer reference unavailable (%s); verdict uses local signals only.",
+            type(exc).__name__,
         )
         return None
 
@@ -119,6 +129,10 @@ class TariChainHealth:
         self._green_since = None
         self._restarts = 0
         self._last_restart = None
+        self._start_owed = 0  # start-only retries left for a node this code stopped (0 = none owed)
+        self._start_tried = None
+        self._stopped_by_us = False  # stopped by a restart and not started since
+        self.advanced_at = None  # when the tip last moved past a height already seen
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
 
     def observe(self, sync, connections, now):
@@ -128,6 +142,8 @@ class TariChainHealth:
         if sync.get("reachable") and sync.get("current"):
             height = sync["current"]
             if height != self._height:
+                if self._height is not None:
+                    self.advanced_at = now
                 self._height, self._height_since = height, now
         if sync.get("reachable") and connections is not None:
             if connections:
@@ -211,7 +227,13 @@ class TariChainHealth:
             # A failed fetch drops the reference rather than keeping an old one alive past its hour.
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
-        action = self.decide(bool(sync.get("reachable")), now)
+        reachable = bool(sync.get("reachable"))
+        if self._stopped_by_us and reachable:
+            self._start_owed, self._stopped_by_us = 0, False  # running again, whoever started it
+        if self._start_owed:
+            action = await self._retry_start(now)
+        else:
+            action = self.decide(reachable, now)
         if action == "restart":
             logger.warning(
                 "Tari node red for %d min — restarting it (attempt %d/%d).",
@@ -221,11 +243,17 @@ class TariChainHealth:
             )
             stopped = await self._docker.stop(self.CONTAINER, stop_timeout=60, request_timeout=90)
             started = await self._docker.start(self.CONTAINER, request_timeout=60)
-            if not (stopped and started):
+            if not stopped:
                 # Never issued: give the slot back so a flaky control proxy can't spend the budget.
                 self._restarts -= 1
                 self._last_restart = None
                 action = "restart_failed"
+            elif not started:
+                # Stopped by us and not running: the silent gRPC that follows is ours, not a
+                # migration, so the withheld guard must not strand it. Owe a bounded start.
+                self._start_owed, self._start_tried = START_RETRIES, now
+                self._stopped_by_us = True
+                action = "start_failed"
         elif action == "withheld":
             verdict["advice"] = (
                 "the node's gRPC is not answering (a database migration may be running); "
@@ -233,10 +261,23 @@ class TariChainHealth:
             )
         if self._restarts >= MAX_RESTARTS and verdict["level"] != "green":
             verdict["advice"] = ESCALATED_ADVICE
+        if self._stopped_by_us:
+            verdict["advice"] = STOPPED_ADVICE
         verdict["restarts"] = self._restarts
         verdict["action"] = action
         await self._alert(verdict)
         return verdict
+
+    async def _retry_start(self, now: float) -> str:
+        """Start-only retry for a node whose restart stopped it and failed to start it."""
+        if now - self._start_tried < START_RETRY_SEC:
+            return "start_pending"
+        self._start_tried = now
+        self._start_owed -= 1
+        if await self._docker.start(self.CONTAINER, request_timeout=60):
+            self._start_owed, self._stopped_by_us = 0, False
+            return "started"
+        return "start_pending" if self._start_owed else "start_gave_up"
 
     async def _alert(self, verdict):
         """Red on the verdict, not the restart: one alert on entering red and one each time the

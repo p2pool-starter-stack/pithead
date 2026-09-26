@@ -28,10 +28,6 @@ tari_ns_ipt() { # <iptables args...>
     rx "p=\$(docker inspect -f '{{.State.Pid}}' tari 2>/dev/null); [ \"\${p:-0}\" -gt 0 ] && sudo -n nsenter -t \"\$p\" -n iptables $*" 2>/dev/null
 }
 
-tari_strand_rule() { # <tor-ip>
-    tari_ns_ipt "-I OUTPUT -d $1 -m comment --comment $TARI_STRAND_TAG -j DROP" >/dev/null
-}
-
 # Tagged rules in tari's namespace, and the packets they have dropped so far.
 tari_strand_count() { tari_ns_ipt "-S OUTPUT" | grep -c -- "$TARI_STRAND_TAG"; }
 tari_strand_drops() { tari_ns_ipt "-L OUTPUT -v -n -x" | awk -v t="$TARI_STRAND_TAG" '$0 ~ t {n += $1} END {print n + 0}'; }
@@ -47,9 +43,30 @@ tari_strand_remove_all() {
     rx "docker compose unpause tari" >/dev/null 2>&1 || true # a no-op error when not paused
 }
 
+# A loopback webhook sink (#2464): the dashboard is host-networked, so the one-off alert sender that
+# also feeds Telegram posts its text here. The bench has no Telegram credentials; this proves the red
+# alert leaves the dashboard with its reasons, through the same sender Telegram rides.
+TARI_HOOK_PORT=18199
+TARI_HOOK_LOG=/tmp/pithead-e2e-tari-alerts.log
+tari_hook_start() {
+    rx "rm -f $TARI_HOOK_LOG; nohup python3 -c 'import http.server as h
+class R(h.BaseHTTPRequestHandler):
+    def do_POST(s):
+        n = int(s.headers.get(\"Content-Length\") or 0); open(\"$TARI_HOOK_LOG\", \"ab\").write(s.rfile.read(n) + b\"\\n\"); s.send_response(204); s.end_headers()
+h.HTTPServer((\"127.0.0.1\", $TARI_HOOK_PORT), R).serve_forever()' >/dev/null 2>&1 & echo \$! >/tmp/pithead-e2e-tari-hook.pid" >/dev/null 2>&1
+}
+tari_hook_stop() { rx "kill \$(cat /tmp/pithead-e2e-tari-hook.pid 2>/dev/null) 2>/dev/null; rm -f /tmp/pithead-e2e-tari-hook.pid" >/dev/null 2>&1 || true; }
+tari_restore_config() {
+    tari_hook_stop
+    push_config "$BASELINE_CONFIG"
+    pithead apply -y >/dev/null 2>&1
+    wait_status_ok 240 || true
+}
+
 tari_strand_abort() {
     local rc=$?
     tari_strand_remove_all
+    tari_restore_config
     [ -n "${_TARI_STRAND_FOREIGN_TRAP:-}" ] && eval "$_TARI_STRAND_FOREIGN_TRAP"
     return "$rc"
 }
@@ -58,6 +75,8 @@ tari_health_field() { jq_get "$(api_state)" ".tari.health.$1"; }
 _pred_tari_level() { [ "$(tari_health_field level)" = "$1" ]; }
 _pred_tari_restarted() { [ "$(tari_health_field restarts)" -ge 1 ] 2>/dev/null; }
 _pred_tari_withheld() { [ "$(tari_health_field action)" = withheld ]; }
+_pred_tari_merge() { [ "$(tari_health_field merge_mining)" = "$1" ]; }
+_pred_tari_alerted() { rx "grep -q 'Tari node is not following the chain' $TARI_HOOK_LOG" >/dev/null 2>&1; }
 tari_strand_state() { echo "verdict '$(tari_health_field level)', height $(tari_health_field height), $(tari_strand_drops) packets dropped by the fault"; }
 
 run_tari_stranded() {
@@ -75,9 +94,22 @@ run_tari_stranded() {
         it_fail "tari-stranded: tor address" "empty — fault not injected"
         return
     fi
+    if [ -z "${IT_TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${IT_TELEGRAM_CHAT_ID:-}" ]; then
+        it_skip_leg "tari-stranded: red alert delivered by Telegram itself (#2464)" "no IT_TELEGRAM_BOT_TOKEN/IT_TELEGRAM_CHAT_ID on the bench; the alert is captured at a loopback webhook fed by the same sender" "missing"
+    fi
+    tari_hook_start
+    if ! push_config "$(printf '%s' "$BASELINE_CONFIG" | jq --arg u "http://127.0.0.1:$TARI_HOOK_PORT/tari" '.notifications.webhooks=[$u] | .notifications.tor=false')" ||
+        ! pithead apply -y >/dev/null 2>&1 || ! wait_status_ok 240; then
+        it_fail "tari-stranded: loopback alert sink configured" "apply did not converge — fault not injected"
+        tari_restore_config
+        return
+    fi
     wait_for 600 10 "Tari verdict green before the fault" _pred_tari_level green ||
         it_fail "tari-stranded: green baseline" "verdict '$(tari_health_field level)' before any fault — fault not injected"
-    [ "$(tari_health_field level)" = green ] || return
+    if [ "$(tari_health_field level)" != green ]; then
+        tari_restore_config
+        return
+    fi
 
     local cur
     cur="$(trap -p EXIT)"
@@ -89,14 +121,15 @@ run_tari_stranded() {
     trap tari_strand_abort EXIT
 
     it_step "fault: drop tari -> tor inside tari's network namespace ($TARI_STRAND_TAG)…"
-    tari_strand_rule "$tor"
+    tari_ns_ipt "-I OUTPUT -d $tor -m comment --comment $TARI_STRAND_TAG -j DROP" >/dev/null
     t0=$(now_s)
     # A fault that is not in place must fail here, not read later as "the verdict stayed green".
     if [ "$(tari_strand_count)" -ge 1 ] 2>/dev/null; then
         it_pass "tari-stranded: DROP rule is in tari's OUTPUT chain"
     else
         it_fail "tari-stranded: DROP rule is in tari's OUTPUT chain" "not found — fault not injected"
-        tari_strand_remove_all
+        tari_strand_abort
+        trap - EXIT
         return
     fi
     if wait_for $((600 + TARI_DISCONNECT_GRACE + TARI_POLL_SLACK)) 10 "Tari verdict amber" _pred_tari_level amber; then
@@ -111,6 +144,14 @@ run_tari_stranded() {
     fi
     pithead doctor >/dev/null 2>&1
     assert_ne "tari-stranded: doctor exits non-zero on red" "$?" "0"
+    # The panel prints .tari.status as it stands, coloured by .tari.health.level (statcards.mjs).
+    assert_contains "tari-stranded: the Tari panel reads red with the reasons (live /api/state)" \
+        "$(tari_health_field level)|$(jq_get "$(api_state)" '.tari.status')" "red|Not following the chain: tip"
+    if wait_for 120 10 "red alert at the sink" _pred_tari_alerted; then
+        it_pass "tari-stranded: the red alert left the dashboard with its reasons"
+    else
+        it_fail "tari-stranded: the red alert left the dashboard with its reasons" "nothing at the loopback sink"
+    fi
     assert_contains "tari-stranded: status prints the red verdict" "$(pithead status 2>&1)" "NOT following the chain"
 
     # Pause, not SIGSTOP: tari runs under an init (#2627), and SIGSTOP stops only PID 1 while the node
@@ -125,6 +166,15 @@ run_tari_stranded() {
         it_fail "tari-stranded: restart withheld while the node's gRPC is silent" "action '$(tari_health_field action)', restarts $(tari_health_field restarts)"
     fi
     assert_eq "tari-stranded: no restart while the node's gRPC is silent" "$(tari_health_field restarts)" "0"
+    # Merge-mining stops on the verdict whatever the restart does (withheld here): p2pool is
+    # relaunched without --merge-mine and keeps mining Monero.
+    if wait_for 420 10 "Tari merge-mining suspended" _pred_tari_merge suppressed; then
+        it_pass "tari-stranded: Tari merge-mining suspended while red, restart withheld"
+    else
+        it_fail "tari-stranded: Tari merge-mining suspended while red, restart withheld" "merge_mining '$(tari_health_field merge_mining)'"
+    fi
+    assert_contains "tari-stranded: p2pool relaunched without --merge-mine" "$(rx "docker logs --tail 200 p2pool 2>&1" 2>/dev/null)" "Tari node not following the chain (#2464): not merge-mining"
+    assert_eq "tari-stranded: p2pool keeps running for Monero" "$(svc_state_of "$(service_state p2pool)")" "running"
 
     # Unpause with the rule still in place: the node is reachable again but still stranded and red, so
     # the restart must fire now. The restart is also the recovery: a new container gets a new network
@@ -146,6 +196,12 @@ run_tari_stranded() {
 
     assert_eq "tari-stranded: the restart took the fault with it (fresh namespace, no rule)" "$(tari_strand_count)" "0"
     tari_strand_remove_all # a no-op after a restart; the safety net when it never came
+    if wait_for 900 15 "Tari merge-mining resumed" _pred_tari_merge on; then
+        it_pass "tari-stranded: Tari merge-mining resumed after recovery"
+    else
+        it_fail "tari-stranded: Tari merge-mining resumed after recovery" "merge_mining '$(tari_health_field merge_mining)'"
+    fi
+    tari_restore_config
     trap - EXIT
     # shellcheck disable=SC2064  # restore the saved trap text as it was, expanded now on purpose
     [ -n "${_TARI_STRAND_FOREIGN_TRAP:-}" ] && trap "$_TARI_STRAND_FOREIGN_TRAP" EXIT

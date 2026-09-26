@@ -9,7 +9,11 @@ set -euo pipefail
 # other value leaves argv exactly as it arrived. A token starting with `-` in a value position is
 # kept, the same rule _redact_argv applies: a malformed argv must not swallow the next flag NAME.
 # Until #1905 lands nothing renders TARI_MODE, so at that tip this block strips nothing.
-if [ "${TARI_MODE:-}" = off ]; then
+# The same strip runs while the dashboard's Tari verdict is red (#2464): it writes this marker and
+# restarts p2pool, so no Tari work is built on a stale tip while Monero mining carries on; it removes
+# the marker and restarts p2pool again once the node follows the chain.
+TARI_MM_SUPPRESSED="${TARI_MM_SUPPRESSED:-/clearnet-state/tari-merge-mine-suppressed}" # overridable for the stack test
+if [ "${TARI_MODE:-}" = off ] || [ -e "$TARI_MM_SUPPRESSED" ]; then
     _args=() _drop=0 _dropped=0
     for _a in "$@"; do
         if [ "$_drop" -gt 0 ]; then
@@ -30,7 +34,8 @@ if [ "${TARI_MODE:-}" = off ]; then
     set -- "${_args[@]}"
     # Said only when something was removed: once the host also stops rendering the triple, an
     # unconditional line would claim a drop on every launch for the life of the container.
-    [ "$_dropped" -eq 0 ] || echo "[p2pool-entrypoint] tari.mode off (#1903): not merge-mining, --merge-mine dropped from the launch."
+    if [ "${TARI_MODE:-}" = off ]; then _why="tari.mode off (#1903)"; else _why="Tari node not following the chain (#2464)"; fi
+    [ "$_dropped" -eq 0 ] || echo "[p2pool-entrypoint] $_why: not merge-mining, --merge-mine dropped from the launch."
 fi
 
 # P2Pool launcher. (mDNS/.local resolution was removed — point p2pool at an IP or a

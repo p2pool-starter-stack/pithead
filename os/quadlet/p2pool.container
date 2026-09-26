@@ -11,6 +11,7 @@ Environment="P2POOL_FLAGS=--mini"
 Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login rendered-node-user:rendered-node-password --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats
 Volume=/opt/pithead/data/p2pool:/home/ubuntu
 Volume=/opt/pithead/data/p2pool/stats:/stats
+Volume=/opt/pithead/data/clearnet-state:/clearnet-state:ro
 Volume=/dev/hugepages:/dev/hugepages
 Tmpfs=/tmp:size=64m,mode=1777
 ReadOnly=true
