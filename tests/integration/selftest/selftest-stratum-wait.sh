@@ -19,7 +19,10 @@ case_() { # name want(0=true,1=false) fixture
     local got=0
     FIXTURE="$3"
     _pred_stratum_hashes || got=1
-    if [ "$got" = "$2" ]; then it_pass "$1"; else it_fail "$1" "predicate returned $got, want $2"; BAD=$((BAD + 1)); fi
+    if [ "$got" = "$2" ]; then it_pass "$1"; else
+        it_fail "$1" "predicate returned $got, want $2"
+        BAD=$((BAD + 1))
+    fi
 }
 
 EXPECTED_WORKERS=2
