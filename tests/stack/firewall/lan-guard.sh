@@ -73,9 +73,8 @@ SYSTEMCTL
 chmod +x "$LGD/bin/"*
 mkdir -p "$LGD/units"
 export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log"
-export PITHEAD_UNIT_DIR="$LGD/units"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
-lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
+lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
 
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
