@@ -11,6 +11,10 @@ rg_apply() { # <monero-json> <tari-json> <pool>
     (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 }
 rg_marked() { if [ -e "$RG_MARK" ]; then echo marked; else echo none; fi; }
+rg_check() { # <rc> <label> <want>: the apply must succeed AND leave the gate as wanted
+    assert_rc "$2: apply succeeds" "$1" "0"
+    assert_eq "$2" "$(rg_marked)" "$3"
+}
 
 echo "== black-box: apply re-arms the sync gate on a node change (#2763) =="
 seed_env
@@ -18,34 +22,34 @@ rg_apply '"mode":"local"' '' main
 assert_rc "local baseline applies" "$?" "0"
 rm -f "$RG_MARK"
 rg_apply '"mode":"local"' '' main
-assert_eq "unchanged re-apply leaves the gate alone" "$(rg_marked)" none
+rg_check "$?" "unchanged re-apply leaves the gate alone" none
 rg_apply '"mode":"local"' '' mini
-assert_eq "a change that keeps both nodes leaves the gate alone" "$(rg_marked)" none
+rg_check "$?" "a change that keeps both nodes leaves the gate alone" none
 rg_apply '"mode":"remote","remote":{"host":"node.example"}' '' mini
-assert_eq "monero local -> remote re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "monero local -> remote re-arms the gate" marked
 rm -f "$RG_MARK"
 rg_apply '"mode":"remote","remote":{"host":"node.example","rpc_port":28081}' '' mini
-assert_eq "a new monero remote port re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "a new monero remote port re-arms the gate" marked
 rm -f "$RG_MARK"
 rg_apply '"mode":"local"' '' mini
-assert_eq "monero remote -> local re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "monero remote -> local re-arms the gate" marked
 rm -f "$RG_MARK"
 rg_apply '"mode":"local"' ',"mode":"remote","remote":{"host":"tari.example.com"}' mini
-assert_eq "tari local -> remote re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "tari local -> remote re-arms the gate" marked
 rm -f "$RG_MARK"
 rg_apply '"mode":"local"' ',"mode":"remote","remote":{"host":"tari2.example.com"}' mini
-assert_eq "a new tari remote host re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "a new tari remote host re-arms the gate" marked
 rm -f "$RG_MARK"
 rg_apply '"mode":"local"' '' mini
-assert_eq "tari remote -> local re-arms the gate" "$(rg_marked)" marked
+rg_check "$?" "tari remote -> local re-arms the gate" marked
 rm -f "$RG_MARK"
 # A recreate that failed after the commit is retried on an unchanged .env: the retry marker carries
 # the re-arm, so the retry still plants it; a retry with nothing to re-arm plants nothing.
 printf 'rearm-sync-gate\n' >"$V/.env.apply-incomplete"
 rg_apply '"mode":"local"' '' mini
-assert_eq "a retried recreate keeps the re-arm" "$(rg_marked)" marked
+rg_check "$?" "a retried recreate keeps the re-arm" marked
 assert_eq "the successful retry clears its retry marker" "$([ -e "$V/.env.apply-incomplete" ] && echo kept || echo none)" none
 rm -f "$RG_MARK"
 : >"$V/.env.apply-incomplete"
 rg_apply '"mode":"local"' '' mini
-assert_eq "a retry with no node change leaves the gate alone" "$(rg_marked)" none
+rg_check "$?" "a retry with no node change leaves the gate alone" none
