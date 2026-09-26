@@ -11,10 +11,11 @@ assert_eq "the failover-arm predicate is extractable" \
     "$(printf '%s\n' "$SRC" | sed -n '1p;$p' | tr '\n' ' ')" \
     "_pred_failover_armed() { } "
 
-arm_result() { # <reachable> <released> <rejected> <proxy-state>
-    local state proxy_state="$4"
-    state="$(jq -nc --argjson reachable "$1" --argjson released "$2" --argjson rejected "$3" \
-        '{monero_sync:{reachable:$reachable},miner_released:$released,workers_rejected:$rejected}')"
+arm_result() { # <monero-sync-state> <proxy-state> [badge text...]
+    local sync_state="$1" proxy_state="$2" state
+    shift 2
+    state="$(jq -nc --arg state "$sync_state" --args \
+        '{sync:{monero:{state:$state}},badges:[$ARGS.positional[] | {text: .}]}' "$@")"
     api_state() { printf '%s' "$state"; }
     service_state() { printf '%s' "$proxy_state"; }
     eval "$SRC"
@@ -23,22 +24,29 @@ arm_result() { # <reachable> <released> <rejected> <proxy-state>
 
 echo "== node-down injection waits for a live dashboard observation =="
 assert_eq "a live released stack arms node-down injection" \
-    "$(arm_result true true false 'running healthy')" "armed"
-assert_eq "an unseen monerod keeps node-down injection blocked" \
-    "$(arm_result false true false 'running healthy')" "blocked"
+    "$(arm_result 'done' 'running healthy')" "armed"
+assert_eq "an unseen (still syncing) monerod keeps node-down injection blocked" \
+    "$(arm_result 'syncing' 'running healthy')" "blocked"
+assert_eq "a held miner keeps node-down injection blocked" \
+    "$(arm_result 'done' 'running healthy' 'Miner held (sync)')" "blocked"
 assert_eq "an already-rejected proxy keeps a duplicate fault blocked" \
-    "$(arm_result true true true 'exited none')" "blocked"
+    "$(arm_result 'done' 'exited none' 'Workers rejected')" "blocked"
 
 echo "== node-down call site never injects an unarmed fault =="
 FAULT_SRC="$(sed -n '/^fault_node_down() {$/,/^}$/p' "$HERE/../lib/run-faults.sh")"
 STOP_LOG="$(mktemp)"
 trap 'rm -f "$STOP_LOG"' EXIT
-wait_for() { return 1; }
-it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
-rx() { printf '%s\n' "$*" >>"$STOP_LOG"; }
-eval "$FAULT_SRC"
-fault_node_down
-assert_eq "an unarmed fault records one failure" "$IT_FAIL" "1"
+# A subshell: the simulated fault's own failure must not reach this file's exit gate.
+unarmed_failures="$(
+    wait_for() { return 1; }
+    it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+    rx() { printf '%s\n' "$*" >>"$STOP_LOG"; }
+    IT_FAIL=0
+    eval "$FAULT_SRC"
+    fault_node_down >/dev/null 2>&1
+    printf '%s' "$IT_FAIL"
+)"
+assert_eq "an unarmed fault records one failure" "$unarmed_failures" "1"
 assert_eq "an unarmed fault never calls docker compose stop" "$(grep -c 'stop monerod' "$STOP_LOG")" "0"
 
 echo "== injected RigForge credentials stay out of jq argv =="
@@ -50,3 +58,6 @@ assert_contains "jq reads the protected process environment" "$CONTROL_SRC" 'tok
 HARDENING_SRC="$(sed -n '/^run_hardening() {$/,/^}$/p' "$HERE/../lib/run-hardening.sh")"
 assert_eq "full preview configs reach jq on stdin" \
     "$(printf '%s' "$HARDENING_SRC" | grep -c -- '--argjson c')" "0"
+
+echo "selftest-failover-arm: $IT_PASS passed, $IT_FAIL failed"
+[ "$IT_FAIL" -eq 0 ] || exit 1

@@ -322,7 +322,7 @@ wait_bench_healthy() { # <timeout_s>
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
 # tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
 # measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its one-shot readiness check (which never retries) doesn't judge a tari that's still reconnecting.
+# so its one-shot Tari readiness row (which never retries) doesn't judge a tari that's still reconnecting.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -497,9 +497,9 @@ provision() {
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
     log "Taking a safety backup of the live stack (the rollback anchor)"
-    # ponytail: --no-encrypt because v1.4 refuses to write a plaintext archive unattended without
-    # PITHEAD_BACKUP_PASSPHRASE; this rollback anchor never leaves the bench, so plaintext is fine here.
-    on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt >/dev/null 2>&1" || die "pithead backup failed."
+    # ponytail: --no-encrypt, as v1.4 refuses plaintext unattended without PITHEAD_BACKUP_PASSPHRASE; the anchor stays on the bench. Output kept for the die reason (#2757).
+    local out rc=0 && out="$(on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt 2>&1")" || rc=$?
+    [ "$rc" -eq 0 ] || die "pithead backup failed (exit $rc): $(printf '%s\n' "$out" | tail -n 20 | redact_remote_output | paste -sd'|' -)"
     SAFETY_ARCHIVE="$(on_bench "ls -t '$CANONICAL_DIR'/backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1")"
     [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
     ok "safety backup: $SAFETY_ARCHIVE"

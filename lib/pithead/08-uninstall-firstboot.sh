@@ -41,6 +41,13 @@ stack_uninstall() {
         esac
     done
     [ -f .env ] || error "No .env here — nothing deployed to uninstall. A never-deployed checkout is just a directory: remove it."
+    # #2692: every version dir drives the one Compose project (`name: pithead`), the host firewall
+    # and the shared data root, so uninstall from a kept rollback dir would take down the LIVE
+    # stack. Refuse before anything runs; the live dir is where uninstall belongs.
+    local live
+    if live=$(superseded_by_live_install "$PWD"); then
+        error "This is not the live install: $(dirname "$PWD")/current points at $live, and uninstall here would stop that stack. Nothing changed. To uninstall, run it in $live. To tidy up this old version only, delete $PWD by hand, after checking that no *_DATA_DIR in $live/.env lives inside it."
+    fi
     detect_os
 
     # Every path below is read from .env BEFORE uninstall deletes it.
@@ -97,6 +104,7 @@ stack_uninstall() {
     fi
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
+    remove_lan_guard
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
@@ -168,9 +176,10 @@ wizard_mint_token() {
 # Consume one wizard submission: validate the candidate with the same parser setup/apply use; on
 # success install it as ./config.json and mark the spool applied (the wizard page polls for it).
 # On failure surface a short error into the spool for the form. rc: 0 applied, 1 rejected, 2 none.
-firstboot_consume_spool() ( # <spool-dir>
-    local spool="$1" cand="$1/config.json" err
+firstboot_consume_spool() ( # <spool-dir> [<config-dest>]
+    local spool="$1" dest="${2:-$PWD/config.json}" cand="$1/config.json" err
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" config.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap}.bak-1x"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -178,13 +187,17 @@ firstboot_consume_spool() ( # <spool-dir>
     # CONFIG_FILE is readonly after sourcing; validate the candidate in a fresh process via the
     # PITHEAD_CONFIG_FILE override (the same parser setup/apply run, against the same file).
     if err=$(PITHEAD_CONFIG_FILE="$cand" PITHEAD_CONFIG_SET=1 bash -c "source '${BASH_SOURCE[0]}' && parse_and_validate_config" 2>&1); then
-        install -m 600 "$cand" "$PWD/config.json" || return 1
+        install -m 600 "$cand" "$dest" || {
+            wizard_clear_submission_transaction "$spool" || true
+            return 1
+        }
         rm -f "$spool/config.json"
-        wizard_spool_publish "$spool" applied true
+        wizard_spool_publish "$spool" applied true || return 1
         return 0
     fi
     printf '%s' "$err" | tail -n 2 | tr -d '[:cntrl:]' | tail -c 240 | wizard_spool_publish "$spool" error.txt cat
     rm -f "$spool/config.json"
+    wizard_clear_submission_transaction "$spool" || return 1
     return 1
 )
 
@@ -277,10 +290,15 @@ wizard_setup_failed() { # <exit status of setup>
 
 # The marker, read back. Anything unrecognised (or absent) is a coordinator: every machine
 # provisioned before this contract existed had no marker and was one.
+#
+# PITHEAD_MACHINE_ROLE_FILE overrides $PWD/machine-role, mirroring PITHEAD_CONFIG_FILE and
+# PITHEAD_ENV_FILE (#2057): the script itself always `cd`s to its own SCRIPT_DIR at startup
+# (00-prelude.sh), so a caller cannot point one invocation at a DIFFERENT stack directory's
+# marker by `cd`ing there first — the same reason those two already take an override.
 machine_role() { # echoes pithead|both|rig
-    local r=""
-    if [ -f "$PWD/machine-role" ]; then
-        r=$(tr -d '[:space:]' <"$PWD/machine-role" 2>/dev/null) || r=""
+    local r="" f="${PITHEAD_MACHINE_ROLE_FILE:-$PWD/machine-role}"
+    if [ -f "$f" ]; then
+        r=$(tr -d '[:space:]' <"$f" 2>/dev/null) || r=""
     fi
     case "$r" in rig | both | pithead) printf '%s' "$r" ;; *) printf 'pithead' ;; esac
 }
@@ -314,6 +332,7 @@ publish_rig_defaults() { # <spool-dir>
 firstboot_consume_rig() ( # <spool-dir>
     local spool="$1" req="$1/rig-request.json" pool worker host port
     local snap rc=0
+    wizard_submission_ready "$spool" || return 2
     snap=$(wizard_spool_request "$spool" rig-request.json) || rc=$?
     [ "$rc" = 0 ] || return "$rc"
     trap 'rm -f "${snap%/*}/rig.json"; wizard_spool_clean "${snap%/*}"' EXIT
@@ -327,11 +346,13 @@ firstboot_consume_rig() ( # <spool-dir>
     if [ "$host" = "$pool" ] || ! is_valid_host "$host" || ! is_valid_port "$port"; then
         printf 'the pool address must look like host:port — a Pithead answers on port 3333' | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     if ! timeout 5 bash -c '</dev/tcp/"$1"/"$2"' _ "$host" "$port" 2>/dev/null; then
         printf 'cannot reach a pool at %s:%s — check the address, and that the Pithead is up' "$host" "$port" | wizard_spool_publish "$spool" error.txt cat
         rm -f "$spool/rig-request.json"
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     # The control token (#1836) survives a "Set up again" that keeps the role AND the worker name
@@ -348,6 +369,7 @@ firstboot_consume_rig() ( # <spool-dir>
     ); then
         rm -f "$spool/rig-request.json" "$PWD/rig.json"
         printf 'could not record the rig settings — submit again' | wizard_spool_publish "$spool" error.txt cat
+        wizard_clear_submission_transaction "$spool" || return 1
         return 1
     fi
     chmod 600 "$PWD/rig.json" 2>/dev/null || true

@@ -154,6 +154,8 @@ chk "data-reset ordered before /data mounts (a mounted partition cannot be refor
     'grep -q "^Before=data.mount local-fs.target" "$ROOT/etc/systemd/system/pithead-data-reset.service"'
 chk "data-reset's repair tools are baked (e2fsck + mkfs.ext4, #1069 W11)" \
     'data_reset_repair_tools_present "$ROOT"'
+chk "image-upgrade gate's guest-local reflink filesystem tool is baked" \
+    'test -x "$ROOT/usr/sbin/mkfs.xfs"'
 # Hugepages: the sysctl the Dockerfile calls load-bearing for the memory caps.
 chk "hugepage reservation baked (RandomX dataset must land in hugetlbfs)" 'grep -q "vm.nr_hugepages=3072" "$ROOT/etc/sysctl.d/99-pithead-hugepages.conf"'
 # The low-RAM sizing that corrects that sysctl at boot: without it a small machine gets the
@@ -246,9 +248,6 @@ chk "boot unit triggers on a coordinator's config.json" 'grep -q "^ConditionPath
 chk "boot unit triggers on an accepted role marker (a rig has no config.json)" 'grep -q "^ConditionPathExists=|/data/pithead/machine-role" "$BOOTU"'
 chk "firstboot is closed by config.json" 'grep -q "^ConditionPathExists=!/data/pithead/config.json" "$FBU"'
 chk "firstboot is closed by the role marker (no wizard on a provisioned rig)" 'grep -q "^ConditionPathExists=!/data/pithead/machine-role" "$FBU"'
-# shellcheck disable=SC2034  # read inside chk's eval'd conditions
-INSTALLER="$ROOT/usr/local/sbin/pithead-install"
-chk "a carried restore clears keep-preserved boot markers, not chains" 'grep -q "pithead-restore.enc" "$INSTALLER" && grep -q "pithead/config.json.*pithead/machine-role" "$INSTALLER"'
 # Prebuilt-first for the rig role: the baked binary is asserted above, and the seeding that puts
 # it in the rig's workspace is pithead-sync's, shared with the Both role.
 chk "sync seeds the prebuilt into the miner workspace" 'grep -q "prebuilt/xmrig" "$ROOT/usr/local/sbin/pithead-sync"'

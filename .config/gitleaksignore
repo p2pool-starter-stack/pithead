@@ -15,3 +15,6 @@ e55d839eb8bbd47a8a1567031c2269af26f17549:tests/stack/test-worker-config.sh:gener
 ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:135
 ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:136
 ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.sh:generic-api-key:172
+# Base64 of the literal "stale-fixture": non-credential dashboard-hash fixtures in this branch's superseded restore tests (#2362).
+89b87e79daad712f15ecd9084aa7c9b8b31748b1:tests/stack/test-cli-restore-hardening.sh:generic-api-key:161
+05401bd873289a5de5da68c69ecef47483505a24:tests/stack/test-cli-restore-hardening.sh:generic-api-key:184
