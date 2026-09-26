@@ -17,26 +17,31 @@
 #
 # The tiers, and why the low one is "reduced", not "skip":
 #   >= 15 GiB   full 3072 pages (6 GiB). The supported machine; nothing to say.
-#   >= 7 GiB    2560 pages (5 GiB). Only p2pool builds a RandomX dataset. At the pinned
-#               versions the stack's own large pages are:
-#                 p2pool v4.18.1   1040-page dataset + two 128-page caches (current and
-#                                  previous seed) = 1296, plus one scratchpad page for each
-#                                  of up to 9 VMs (3 lanes x 2 light + 1 full): ~1305.
-#                 monerod v0.18.5.1  no dataset: rx_alloc_dataset returns early unless
-#                                  MONERO_RANDOMX_FULL_MEM is set or monerod mines, and the
-#                                  stack does neither. Two 128-page caches (main and secondary
-#                                  seed) = 256, plus one scratchpad page for each light VM, up
-#                                  to two on each thread that verifies a hash.
-#               That is about 1560 pages plus monerod's per-thread pages. The pool must hold
-#               p2pool's share at least: a dataset that falls out of hugetlbfs costs p2pool
-#               2592 MiB of ordinary RAM, which its 4 GiB cap holds (#2562) but an 8 GB machine
-#               already squeezed by the reservation cannot spare, and it thrashes. Up to ~1000
-#               pages remain, less monerod's per-thread pages: unmeasured margin. The bench has
-#               never run a synced stack on a reduced-RAM box, which is the only way to observe
-#               the pool's real peak, so the margin stays until that is measured (#2685). The
-#               rest of the stack runs squeezed (Tari's auto ceiling already re-reads
-#               HugePages_Total at render time, so the caps adapt), and the console, journal
-#               and doctor all say so.
+#   >= 7 GiB    2048 pages (4 GiB), MEASURED (#2685, tier4-e2e job
+#               1115@701013bb1faaea1a9a337cde16dbe79fbca797d1, targeted mode: the scenario,
+#               auth-fail-closed, lifecycle and the restore), not derived.
+#               Per-process peaks over the whole run, from each daemon's own
+#               /proc/<pid>/smaps_rollup (never a HugePages_Free delta — the e2e bench's pool
+#               has other tenants):
+#                 p2pool     1305 pages peak (2,672,640 KiB), up to 47 threads. Its dataset is
+#                            the only one either process builds at the pinned versions.
+#                 monerod    129 pages peak (264,192 KiB), up to 30 threads on the measuring
+#                            bench — an upper bound: its per-thread verification scratchpads
+#                            scale with thread count, and the bench's exceeds a reduced-tier
+#                            appliance's 7-15 GiB class.
+#               Combined peak 1434 pages. + 256 for the two processes' second-seed caches
+#               (128 each), which a run this long is not guaranteed to touch (a seed switch is
+#               every ~2048 blocks, ~2.8 days) = 1690. + 10% margin = 1859, rounded up to the
+#               next 512-page (1 GiB) step = 2048. tests/integration's live harness carries the
+#               bound `combined peak + 256 <= REDUCED_PAGES` as a standing gate row, checked
+#               against this same file, on every tier4-e2e run.
+#               Since #2562 raised p2pool's container cap to 4g, a HugePages shortfall no
+#               longer restart-loops it (that was the #78 finding this tier exists to avoid):
+#               it now runs on ordinary memory instead, silently, which is what the gate row's
+#               "no instance held zero pages for 300s+" check catches.
+#               Sized for today's full-mode p2pool; #2486 (p2pool --light-mode on this tier)
+#               would remove its dataset, the largest term above, and reruns this measurement
+#               when it lands.
 #   below       0 pages: no reservation at all leaves more RAM than any reduced pool could,
 #               and the stack cannot run in what remains either way. Releasing it keeps the
 #               machine itself responsive enough to tell the operator what is wrong.
@@ -57,7 +62,7 @@ MARKER="${PITHEAD_HUGEPAGES_MARKER:-/run/pithead-hugepages-degraded}"
 # Same value as the CLI's PITHEAD_HUGEPAGES and the baked sysctl.d line; the stack suite pins
 # all three together so they cannot drift.
 FULL_PAGES=3072
-REDUCED_PAGES=2560
+REDUCED_PAGES=2048
 
 # Target page count for this machine — a pure function of a meminfo-shaped file, so the tiers
 # are unit-testable. Unreadable meminfo keeps the full baked reservation: degrading is the
@@ -110,7 +115,7 @@ main() {
 
     local msg
     if [ "$want" -gt 0 ]; then
-        msg="This machine has ${mem_gib:-?} GiB of RAM — below the supported 16 GB. The mining reservation is reduced from 6 GiB to 5 GiB of large pages so mining can still run, and everything else runs squeezed: expect lower performance and less headroom. Use a 16 GB machine for supported operation."
+        msg="This machine has ${mem_gib:-?} GiB of RAM — below the supported 16 GB. The mining reservation is reduced from 6 GiB to 4 GiB of large pages so mining can still run, and everything else runs squeezed: expect lower performance and less headroom. Use a 16 GB machine for supported operation."
     else
         msg="This machine has ${mem_gib:-?} GiB of RAM — far below the supported 16 GB. The 6 GiB mining reservation is released entirely so the machine stays responsive, and the mining stack will not run reliably on this hardware."
     fi

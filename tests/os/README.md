@@ -51,7 +51,11 @@ unresolved half): the restore leg's source-provisioning machine can fail with to
 healthy, and the only evidence any battery captured for it was the compose orchestration's own
 verdict ("dependency tor failed to start") — never tor's own log, so nobody could tell why the
 healthcheck itself failed. `backup_failure_evidence` now also dumps tor's container status, its
-own healthcheck verdict and its own log. The provision phase's onion-exposure leg calls the same dump,
+own healthcheck verdict, tor's bootstrap and warning lines from its whole log, and the log's tail.
+A dump whose `ssh` fails says so, with the ssh error, instead of printing an empty section. The
+restore leg reds its row and dumps as soon as a provisioning unit ends `failed`, before it takes the
+backup (#2725). The backup restarts the stack through `pithead-boot`, and on an unhealthy tor
+`pithead-boot` reboots the guest, which erased job 1194's evidence. The provision phase's onion-exposure leg calls the same dump,
 after the tail of the refused `./pithead apply -y` output, when that apply fails (#2680).
 
 Keep the registry host, port and CA path out of this repo: they are bench topology. The working
@@ -93,7 +97,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   must appear under `xvb` in the reinstall pre-fill, never survive under its removed name. The
   restore leg uploads the checked-in encrypted v1.20.0 fixture to an existing appliance disk and
   requires its running stack to carry the prior-release wallet, Tor identity and secrets while
-  both the fixture's and the target's chain-data sentinels survive.
+  both the fixture's and the target's chain-data sentinels survive. The fixture's removed 1.x
+  `xmrig_proxy` settings must move to `xvb` unchanged without leaving a `config.json.bak-1x`,
+  and `telegram.control` must be dropped.
 - **provision** — submit a config through the wizard's real HTTP flow and require the STACK to
   come up: wizard accepted, setup ran, images pulled and verified, containers running, dashboard
   served, built-in miner up. The Tor-only egress enforcement backstop — a real clearnet dial from a
@@ -102,8 +108,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   when it could not be exercised on an otherwise-green phase. It used to sit at the tail of the
   successful path, so every battery to date skipped the product's stated security property silently
   ([#2059](https://github.com/p2pool-starter-stack/pithead/issues/2059)).
-  The nightly KVM battery also makes one wallet-bearing XvB stats request through that Tor SOCKS
-  path, then starts the otherwise sync-held proxy only long enough to invoke the controller's
+  The nightly KVM battery also makes a wallet-bearing XvB stats request through that Tor SOCKS
+  path, up to three attempts 15 seconds apart because one Tor circuit can read-time-out against the
+  remote host; every attempt refuses any socket but the Tor SOCKS. It then starts the otherwise sync-held proxy only long enough to invoke the controller's
   existing route actuator from P2Pool to XvB and back, reading the persisted dashboard state in
   the same process before the unsynced controller can return it to P2Pool. This bounded injection
   proves appliance wiring and the dashboard state, not a share or hashrate transition: fresh guests cannot mine
@@ -251,9 +258,12 @@ skipped: 0 scenarios, 0 phases, 5 legs
 
 The pass total is the part that tracks the run; the five skip rows are what `--phase all` always
 enumerates — the rig phase's one by-design row, the update phase's three missing rows, and leg 4's
-covered row. Narrower invocations print a subset of those five and nothing else: `--phase update`
-drops the by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
-and `--phase rig` prints that row alone.
+covered row. A bench whose reserved Monero node requires an RPC login adds a sixth, the provision
+phase's reserved-node commit (`6 legs`, `4 missing, 1 by-design, 1 covered`; see the remote-node
+row below). Narrower invocations print a subset and nothing else: `--phase update` drops the
+by-design row (`4 legs`, `3 missing, 0 by-design, 1 covered`), which is the rig phase's,
+`--phase rig` prints that row alone, and `--phase provision` prints only the reserved-node row,
+and only on a credentialed bench.
 
 A row that cannot apply to the guest under test is a named, counted skip, not a silently absent
 row or a folded-in early return. Which class it takes is decided by one question, and the answer
@@ -284,11 +294,24 @@ nodes from `PITHEAD_OS_MONERO_NODE_HOST`, `PITHEAD_OS_MONERO_RPC_PORT`,
 `PITHEAD_OS_TARI_GRPC_PORT`. `PITHEAD_OS_MONERO_NODE_USERNAME` and
 `PITHEAD_OS_MONERO_NODE_PASSWORD` may be empty when the test node allows it; when supplied they
 must be disposable test-only credentials, never an operator credential. Supply these to the
-root-run battery without overriding `HOME`. The row requires the host preflight and typed
-confirmation to succeed, checks the current p2pool container's narrowly extracted
-Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
-configuration. Missing node inputs are a counted failure, never a skipped release gate.
+root-run battery without overriding `HOME`.
+
+The gate assertions run on every bench. The row previews the reserved-node change with blank
+credentials, which keeps the live secret sentinel, and requires the combined approval gate to show
+both endpoints, the preview to name no node credential, the rendered Monero and Tari endpoints
+p2pool is started with, an unconfirmed commit to be refused for want of typed APPLY, and that
+refusal's audit row to carry no approver. When credentials are supplied it first previews the
+change with them and requires a hard refusal: `MONERO_NODE_USERNAME` and `MONERO_NODE_PASSWORD` sit
+in none of the dashboard-committable tiers (`42-control-policy-and-host-checks.sh`).
+
+The commit then depends on the node. With both credentials blank, the row requires the host
+preflight and typed confirmation to succeed, checks the current p2pool container's narrowly
+extracted Monero and Tari endpoints, binds the current-startup `uses chain_id` verdict to that Tari
+endpoint (or its documented SOCKS loopback bridge), and restores the original local-node
+configuration. With either supplied, the host preflight would probe the node with the appliance's
+own credentials, which the dashboard cannot change, so the commit, the p2pool consumption check and
+the `chain_id` round trip are a counted `missing` leg: a bench node without RPC auth runs them.
+Missing node inputs are a counted failure, never a skipped release gate.
 
 ## Static verification
 

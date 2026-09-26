@@ -85,6 +85,12 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
+  --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
+                         testnet-target build of the pinned release runs LocalNet alone on an
+                         internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
+                         it against the box's monerod, and every block P2Pool reports is read back
+                         from the node's main chain with its parent. Leaves the live stack alone;
+                         needs local Monero.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -259,6 +265,10 @@ parse_args() {
             ;;
         --mergemine-submit)
             RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --mergemine-localnet)
+            RUN_MERGEMINE_LOCALNET=1
             shift
             ;;
         --auth-fail-closed)
