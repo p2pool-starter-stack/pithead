@@ -43,11 +43,11 @@
 #     matrix line documents the axis for coverage, resolve_overrides SKIPS it in the hot-apply
 #     loop (with a loud reason), and run.sh's `--subnet` phase runs it for real via a full
 #     down -> up on the moved subnet (chains are bind-mounted by path, so they are never touched).
-#   * Payout confirmation (#381/#462) needs a REAL Monero view key for the box's own wallet
-#     (IT_MONERO_VIEW_KEY) — never hardcoded here. The row carries the marker
-#     "payout_confirm=env"; resolve_overrides swaps it for the real monero.view_key override (and
-#     folds in tari.view_key/spend_public_key too when IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY
-#     are BOTH set), or SKIPs the row when the env var is absent.
+#   * Payout confirmation (#381/#462/#2731) needs the box's own REAL wallet keys, never hardcoded
+#     here: IT_MONERO_VIEW_KEY, or IT_TARI_VIEW_KEY + IT_TARI_SPEND_PUBLIC_KEY, or both. The row
+#     carries the marker "payout_confirm=env"; resolve_overrides swaps it for the monero.view_key
+#     and/or tari.view_key/spend_public_key overrides (the Tari pair with a past birthday), or
+#     SKIPs the row when neither is set.
 
 # Emit the matrix as `NAME<TAB>overrides…`, one scenario per line. Lines starting with the
 # canonical-first scenario are ordered so the cheapest, most-common config runs first.

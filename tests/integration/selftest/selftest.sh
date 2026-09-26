@@ -76,9 +76,8 @@ rc=$?
 assert_rc "tari remote ok with endpoint" "$rc" "0"
 assert_contains "augments remote tari host" "$RESOLVED" "tari.remote.host=10.0.0.6"
 unset REMOTE_TARI_HOST
-# Payout confirmation (#381/#462/#942): the "payout_confirm=env" marker gates on
-# IT_MONERO_VIEW_KEY, is always stripped from RESOLVED, and folds in tari's pair only when BOTH
-# tari env vars are set.
+# Payout confirmation (#381/#462/#942/#2731): the "payout_confirm=env" marker gates on
+# IT_MONERO_VIEW_KEY or BOTH tari env vars, is always stripped from RESOLVED, and folds in each.
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 resolve_overrides "p2pool.pool=main payout_confirm=env"
 rc=$?
@@ -97,12 +96,6 @@ case "$RESOLVED" in
 *tari.view_key=*) it_fail "tari pair absent without both tari env vars" "tari.view_key present in $RESOLVED" ;;
 *) it_pass "tari pair absent without both tari env vars" ;;
 esac
-IT_TARI_VIEW_KEY="tvk" IT_TARI_SPEND_PUBLIC_KEY="tspk"
-resolve_overrides "payout_confirm=env"
-rc=$?
-assert_rc "payout confirm ok with both tari env vars too" "$rc" "0"
-assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
-assert_contains "augments tari.spend_public_key and a past birthday (#2731)" "$RESOLVED" "tari.spend_public_key=tspk tari.payout_scan_birthday=1425"
 unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
 # Compound prerequisites both augment.
 BASELINE_PRUNE=1

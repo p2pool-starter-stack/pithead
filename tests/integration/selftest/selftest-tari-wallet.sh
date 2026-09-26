@@ -13,6 +13,23 @@ export INTEGRATION_RUN_SUITE=1
 source "$HERE/../lib/run-tari-wallet.sh"
 
 echo "== selftest: Tari payout-scan leg (#2731) =="
+# The payout row's gate: the Tari pair alone enables it, with a past birthday; one var does not.
+unset IT_MONERO_VIEW_KEY IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
+IT_MONERO_VIEW_KEY="deadbeef"
+IT_TARI_VIEW_KEY="tvk"
+resolve_overrides "payout_confirm=env"
+assert_rc "payout confirm still ok with the monero key and one tari var" "$?" "0"
+unset IT_MONERO_VIEW_KEY
+resolve_overrides "payout_confirm=env"
+assert_rc "one tari env var alone does not enable the row (#2731)" "$?" "1"
+IT_TARI_SPEND_PUBLIC_KEY="tspk"
+resolve_overrides "payout_confirm=env"
+assert_rc "the tari pair alone enables the row (#2731)" "$?" "0"
+assert_eq "no monero key without IT_MONERO_VIEW_KEY" "${RESOLVED/monero.view_key/}" "$RESOLVED"
+assert_contains "augments tari.view_key" "$RESOLVED" "tari.view_key=tvk"
+assert_contains "augments tari.spend_public_key and a past birthday (#2731)" "$RESOLVED" "tari.spend_public_key=tspk tari.payout_scan_birthday=1425"
+unset IT_TARI_VIEW_KEY IT_TARI_SPEND_PUBLIC_KEY
+
 # /proc/net/tcp remotes: loopback and bridge peers are local, a public address is not.
 PT='  sl  local_address rem_address   st
    0: 1F00A8C0:C350 1B001CAC:2328 01
