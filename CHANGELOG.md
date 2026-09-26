@@ -148,6 +148,16 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A slow first Tor bootstrap no longer fails provisioning
+  ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
+  for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
+  started. A cold bootstrap on a fresh Tor data directory has taken 5 minutes. When it ran that
+  long, `docker compose up` stopped with `dependency tor failed to start` and never started the
+  nodes. On the appliance, the setup wizard reopened with the configuration marked as failed. Tor
+  now has 10 minutes to bootstrap before failed checks count against it. A Tor that bootstraps
+  sooner is marked healthy at its next 30-second check, as before. A Tor that never bootstraps
+  now fails `up` after about 12.5 minutes instead of 3.5.
+
 - **An unreachable image registry is no longer reported as a bad signature
   ([#2735](https://github.com/p2pool-starter-stack/pithead/issues/2735)).** When cosign cannot
   reach the registry, for example `no route to host`, the start and upgrade paths still refuse to

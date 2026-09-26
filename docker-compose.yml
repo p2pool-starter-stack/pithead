@@ -59,12 +59,17 @@ services:
     # 30s interval (#595): each probe opens a control connection; at 10s that was steady
     # log spam + wasted cycles on the stack's busiest single-threaded service. Failure
     # detection worst-case moves from ~50s to ~150s — dependents only gate on STARTUP order.
+    # 10m start_period (#2648): a cold bootstrap on a fresh DataDirectory has taken 5 minutes.
+    # At 90s, Tor was marked unhealthy about 3.5 minutes after starting. `compose up` then
+    # failed provisioning with "dependency tor failed to start", and Tor was healthy 90s later.
+    # A probe that passes during the grace still marks Tor healthy at once, so a fast bootstrap
+    # is not slowed. A Tor that never bootstraps is marked unhealthy after 12.5 minutes.
     healthcheck:
       test: ["CMD", "/usr/local/bin/tor-healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 600s
 
   # --- Monero Daemon (monerod) ---
   # Only starts if "local_node" profile is active
