@@ -120,6 +120,7 @@ lan_guard_reason() { # <rc>
     3) printf 'installing or reading it needs root (passwordless sudo)' ;;
     4) printf 'nothing jumps from FORWARD to DOCKER-USER' ;;
     5) printf 'a firewall rule that is not ours accepts traffic above it in DOCKER-USER' ;;
+    6) printf 'the boot unit that restores it after a reboot could not be installed' ;;
     *) printf 'the readback failed (rc %s)' "$1" ;;
     esac
 }
@@ -150,9 +151,11 @@ apply_lan_guard() {
         # 4 before the first network exists: Docker adds the FORWARD jump when compose creates it.
         [ "$rc" = 4 ] && rc=0
     fi
+    # #2749: without the boot unit a reboot drops the rule while dockerd restarts the containers on
+    # 0.0.0.0, so a rule that cannot outlive a reboot counts as not installed.
+    [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
     if [ "$rc" = 0 ]; then
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
-        provision_lan_guard_boot_unit "${ports[@]}"
         return 0
     fi
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
@@ -169,6 +172,10 @@ check_lan_guard() {
     [ -n "$published" ] || return 0
     for kp in $published; do ports+=("${kp#*:}"); done
     lan_guard_enforced "${ports[@]}" || rc=$?
+    if [ "$rc" = 0 ] && tor_egress_boot_unit_applies && ! systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
+        dr_warn_surface "LAN-only sources are enforced on port(s) ${ports[*]} now, but $LAN_GUARD_BOOT_UNIT is not enabled, so a reboot reopens them to every source until './pithead up'. Run './pithead up' to install it." "Node port(s) ${ports[*]} are limited to the LAN now, but that limit will not survive a restart of this machine."
+        return 0
+    fi
     if [ "$rc" = 0 ]; then
         dr_ok "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
@@ -256,12 +263,12 @@ WantedBy=docker.service
 EOF
 }
 
-# Write and enable the unit for <port>..., or leave it when it already matches and is enabled.
+# Write and enable the unit for <port>..., or leave it when it already matches and is enabled. Returns 1 when it could not.
 # Enable, not --now: apply_lan_guard has just installed the live rule. Same hosts as the egress unit.
 provision_lan_guard_boot_unit() { # <port>...
     tor_egress_boot_unit_applies || return 0
     local ipt unit_dir want
-    ipt=$(command -v iptables) || return 0
+    ipt=$(command -v iptables) || return 1
     unit_dir=$(control_unit_dir)
     want=$(render_lan_guard_boot_unit "$ipt" "$@")
     if [ "$(cat "$unit_dir/$LAN_GUARD_BOOT_UNIT" 2>/dev/null)" = "$want" ] &&
@@ -271,9 +278,9 @@ provision_lan_guard_boot_unit() { # <port>...
     if printf '%s\n' "$want" | sudo tee "$unit_dir/$LAN_GUARD_BOOT_UNIT" >/dev/null &&
         sudo systemctl daemon-reload && sudo systemctl enable "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
         log "LAN-only source rule will be restored at boot, before the containers restart ($LAN_GUARD_BOOT_UNIT)."
-    else
-        warn "lan-guard:boot-unit-install-failed — could not install $LAN_GUARD_BOOT_UNIT. The rule is live now, but after a host reboot port(s) $* are open to every source until './pithead up' runs."
+        return 0
     fi
+    return 1
 }
 
 # Disable and delete the unit (every *_lan_access switch off, uninstall). Only our unit name.

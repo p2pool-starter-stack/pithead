@@ -63,11 +63,13 @@ esac
 exit 0
 DOCKER
 printf '#!/usr/bin/env bash\necho Linux\n' >"$LGD/bin/uname" # OS_TYPE is read when pithead is sourced
-# systemctl logs every call; `is-enabled` answers from LG_ENABLED (default: not enabled).
+# systemctl logs every call; `is-enabled` answers from LG_ENABLED (default: not enabled), `enable`
+# from LG_ENABLE_RC (default: succeeds).
 cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
 [ "$1" = is-enabled ] && exit "${LG_ENABLED:-1}"
+[ "$1" = enable ] && exit "${LG_ENABLE_RC:-0}"
 exit 0
 SYSTEMCTL
 chmod +x "$LGD/bin/"*
@@ -107,6 +109,11 @@ assert_eq "...and compose is handed 127.0.0.1, not 0.0.0.0" "$(cat "$LG_COMPOSE"
 lg_out="$(LG_LIVE=1 LG_RESTORE_RC=1 lg 'compose_up -d')"
 assert_contains "the install itself fails (no root): the reason is named" "$lg_out" "could not enforce"
 assert_eq "...and compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+: >"$LG_COMPOSE"
+rm -f "$LG_UNIT"
+lg_out="$(LG_LIVE=1 LG_ENABLE_RC=1 lg 'compose_up -d')"
+assert_contains "the rule is live but its boot unit cannot be enabled: named (#2749)" "$lg_out" "boot unit that restores it after a reboot could not be installed"
+assert_eq "...and compose is handed 127.0.0.1, so a reboot cannot reopen the port" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
 : >"$LG_COMPOSE"
 lg_out="$(PITHEAD_ENGINE=podman LG_LIVE=0 lg 'compose_up -d')"
 assert_eq "podman: an nft table that does not read back holds the port on 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
@@ -183,8 +190,13 @@ assert_eq "uninstall removes the unit" "$(test -e "$LG_UNIT" && echo present)" "
 mv "$LGD/.env.keep" "$LGD/.env" # uninstall removes .env too
 
 echo "== doctor tells a port held on loopback from one exposed without the rule (#2616) =="
-lg_out="$(LG_LIVE=1 lg check_lan_guard)"
-assert_contains "rule live: OK" "$lg_out" "LAN-only sources enforced on port(s) 18142"
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 lg check_lan_guard)"
+assert_contains "rule live and its boot unit enabled: OK" "$lg_out" "LAN-only sources enforced on port(s) 18142"
+lg_out="$(LG_LIVE=1 LG_ENABLED=1 lg check_lan_guard)"
+assert_contains "rule live but no boot unit enabled: WARN that a reboot reopens it (#2749)" "$lg_out" "a reboot reopens them"
+assert_not_contains "...and never OK" "$lg_out" "LAN-only sources enforced on port(s) 18142:"
+lg_out="$(LG_LIVE=1 LG_ENABLED=1 LG_APPLIANCE=1 lg check_lan_guard)"
+assert_contains "the appliance needs no boot unit: OK" "$lg_out" "LAN-only sources enforced on port(s) 18142"
 lg_out="$(LG_LIVE=0 LG_PUBLISHED=0.0.0.0 lg check_lan_guard)"
 assert_contains "rule missing and the port on 0.0.0.0: FAIL" "$lg_out" "published on every interface with NO LAN-only source rule"
 lg_out="$(LG_LIVE=0 LG_PUBLISHED=127.0.0.1 lg check_lan_guard)"

@@ -389,11 +389,11 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The images the baseline is on (and whether it has the #2460 egress boot unit), captured before
+    # The images the baseline is on (and whether it has the #2460 and #2749 boot units), captured before
     # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
-    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
-    # record is taken here or not at all. Read by verify_restore_proof.
-    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)"
+    # baseline resolves to — and installs those units. Taken here or not at all; read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
+    LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"

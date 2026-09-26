@@ -620,7 +620,8 @@ and `--list` prints it).
   ([#2616](https://github.com/p2pool-starter-stack/pithead/issues/2616)). The row then strips the
   rule as a reboot does, checks that the non-private dial now connects, runs
   `pithead-lan-guard.service` on the bench, and dials again: non-private refused, private through
-  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
+  ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)). The restore proof removes
+  that unit, as it does `pithead-egress.service`, unless the bench had it before the run.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
