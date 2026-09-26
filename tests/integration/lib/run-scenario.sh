@@ -275,11 +275,11 @@ assert_release_readiness() {
     fi
 
     # The prune axis infers CoW from the fstype above, which is a proxy. --image-upgrade does not
-    # get to infer: it takes `cp --reflink=auto` snapshots of every writable mount (instant CoW
-    # where the filesystem supports it, a full copy otherwise — #2057, job 1192, for the named
-    # volumes that never live on this chain FS regardless), so the only honest check of the chain
-    # mount itself is to ATTEMPT one. A WARN, not a FAIL — a box without reflink here still runs
-    # --image-upgrade, just with a slower, disk-hungrier snapshot of the chain data specifically.
+    # get to infer: it clones every data-dir bind mount with `cp --reflink=always` (named volumes,
+    # small and on the engine's own root, are the only full copies — #2057), so the only honest
+    # check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine release
+    # server for everything except that one gate, and saying so here is what stops someone
+    # scheduling a destructive upgrade run that cannot reach its own rollback net.
     if [ -n "$mdir" ]; then
         local probe rc
         probe="$mdir/.itest-reflink-probe-$$"
@@ -287,9 +287,9 @@ assert_release_readiness() {
         rc=$?
         rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1 || true
         if [ "$rc" = 0 ]; then
-            it_pass "writable-mount filesystem supports cp --reflink (--image-upgrade snapshots the chain instantly)"
+            it_pass "the chain data dir's filesystem supports cp --reflink=always (every other bind source and its parent must too)"
         else
-            it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade still runs, but its rollback snapshot of the chain data is a full copy: slower, and needs headroom for a second copy"
+            it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade cannot take its rollback snapshots and will refuse; every other phase is unaffected"
         fi
     fi
 

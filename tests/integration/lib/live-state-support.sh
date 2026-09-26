@@ -1,14 +1,18 @@
 # shellcheck shell=bash
-# Private snapshots for exact rollback of writable live mount sources: a CoW clone where the
-# source's filesystem supports it, a full copy otherwise (a named volume's own storage — #2057).
+# Private snapshots for exact rollback of writable live mount sources. A data-dir bind mount (where
+# the chain lives) is cloned with cp --reflink=always: on a filesystem that cannot CoW the gate
+# refuses cleanly, never starts a full copy of a chain with the stack down and no headroom check.
+# Only a named volume (the small, bounded wallet DBs, kept on the container engine's own storage
+# root, never on the stack's reflink filesystem — #2057, job 1192) is copied with --reflink=auto.
 
 capture_state_snapshots() { # <stateful mount TSV>
-    local source parent base snap nonce prior covered kept=""
+    local source type reflink parent base snap nonce prior covered kept=""
     nonce="$$-$(date +%s)"
     UPGRADE_STATE_SNAPSHOTS=""
+    UPGRADE_STATE_VOLUMES=""
     UPGRADE_STATE_OLD_DIRS=""
     UPGRADE_SNAPSHOT_REASON=""
-    while IFS= read -r source; do
+    while IFS=$'\t' read -r source type; do
         [ -n "$source" ] || continue
         # A named label per sub-check (job 1181's tmpfs fix cleared the mounts filter, but the
         # combined message it fed still hid which of these four steps a NEW failure stops at) —
@@ -24,14 +28,17 @@ capture_state_snapshots() { # <stateful mount TSV>
         [ "$covered" = 0 ] || continue
         parent="$(dirname "$source")" base="$(basename "$source")"
         snap="$parent/.pithead-live-$base-$nonce"
+        reflink=always
+        [ "$type" != volume ] || reflink=auto
         if ! rx "test -d $(quote_arg "$source")"; then
             UPGRADE_SNAPSHOT_REASON="not-a-directory:$base"
         elif rx "test -L $(quote_arg "$source")"; then
             UPGRADE_SNAPSHOT_REASON="is-a-symlink:$base"
         elif rx "test -e $(quote_arg "$snap")"; then
             UPGRADE_SNAPSHOT_REASON="snapshot-path-exists:$base"
-        elif ! rx "sudo -n cp -a --reflink=auto -- $(quote_arg "$source") $(quote_arg "$snap")"; then
+        elif ! rx "sudo -n cp -a --reflink=$reflink -- $(quote_arg "$source") $(quote_arg "$snap")"; then
             UPGRADE_SNAPSHOT_REASON="copy-failed:$base"
+            [ "$reflink" != always ] || UPGRADE_SNAPSHOT_REASON="reflink-copy-failed:$base"
         fi
         if [ -n "$UPGRADE_SNAPSHOT_REASON" ]; then
             rx "sudo -n rm -rf -- $(quote_arg "$snap")" >/dev/null 2>&1 || true
@@ -40,9 +47,16 @@ capture_state_snapshots() { # <stateful mount TSV>
         fi
         kept+="${kept:+$'\n'}$source"
         UPGRADE_STATE_SNAPSHOTS+="${UPGRADE_STATE_SNAPSHOTS:+$'\n'}$source"$'\t'"$snap"
-    done < <(printf '%s\n' "$1" | cut -f3 | sort -u)
+        [ "$reflink" != auto ] || UPGRADE_STATE_VOLUMES+="${UPGRADE_STATE_VOLUMES:+$'\n'}$source"
+    done < <(printf '%s\n' "$1" | cut -f3,4 | LC_ALL=C sort -u) # C order: a parent sorts before its child
     [ -n "$UPGRADE_STATE_SNAPSHOTS" ] || UPGRADE_SNAPSHOT_REASON="${UPGRADE_SNAPSHOT_REASON:-no-stateful-mounts}"
     [ -n "$UPGRADE_STATE_SNAPSHOTS" ]
+}
+
+# The restore copies each mount back the way it was captured: always for a bind mount, auto only
+# for a source the capture recorded as a named volume.
+state_reflink_mode() { # <source>
+    if printf '%s\n' "${UPGRADE_STATE_VOLUMES:-}" | grep -Fxq -- "$1"; then printf auto; else printf always; fi
 }
 
 restore_state_snapshots() {
@@ -54,7 +68,7 @@ restore_state_snapshots() {
             return 1
         fi
         replacement="$source.pithead-restore-$nonce" old="$source.pithead-old-$nonce"
-        rx "test -d $(quote_arg "$snap") && test ! -e $(quote_arg "$replacement") && test ! -e $(quote_arg "$old") && sudo -n cp -a --reflink=auto -- $(quote_arg "$snap") $(quote_arg "$replacement")" || {
+        rx "test -d $(quote_arg "$snap") && test ! -e $(quote_arg "$replacement") && test ! -e $(quote_arg "$old") && sudo -n cp -a --reflink=$(state_reflink_mode "$source") -- $(quote_arg "$snap") $(quote_arg "$replacement")" || {
             cleanup_restore_replacements "$journal"
             return 1
         }

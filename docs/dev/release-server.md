@@ -67,13 +67,14 @@ Target an LTS Ubuntu (22.04 / 24.04). One-time:
    `monero.data_dir` / `tari.data_dir` are the asset the harness reuses.
 2. Keep the active chain on fast storage (SSD/NVMe). monerod is random-I/O heavy, so the chain
    it runs against must not sit on a spinning HDD; that alone makes every scenario crawl. A
-   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis and
-   for `tests/integration/run.sh --image-upgrade` run directly on this server: it lets the harness
-   snapshot/restore a chain, or every writable mount while the stack is stopped, cheaply and
-   instantly. It is not a hard requirement even there — the snapshot falls back to a full copy on
-   a filesystem that can't reflink, slower and needing headroom for a second copy, but it still
-   runs (#2057). The `tier4-kvm` `image-upgrade` phase instead creates and removes a sparse reflink
-   XFS inside its disposable guest; it does not depend on the bench filesystem either way. On plain
+   snapshot/reflink-capable filesystem (btrfs/zfs/xfs reflink) is a bonus for the prune axis: it
+   lets the harness snapshot/restore a chain cheaply. It is a hard requirement only when this
+   server runs `tests/integration/run.sh --image-upgrade` directly, because that command takes
+   `cp --reflink=always` snapshots of every bind mount (chain, data dirs and the install dir's own
+   `data/`) while the stack is stopped and refuses on a filesystem that cannot clone them, so the
+   install dir and every data dir need one reflink-capable filesystem (only the small named volumes
+   are copied, #2057). The `tier4-kvm` `image-upgrade` phase instead creates and removes a sparse reflink
+   XFS inside its disposable guest; it does not require reflinks on the bench filesystem. On plain
    ext4-on-SSD
    the matrix only edits `config.json` and reuses one chain, with `--safety-backup` isolating
    destructive runs. See the recipe below for the prune-axis details.
@@ -310,10 +311,11 @@ lsblk -d -o NAME,ROTA,SIZE,MODEL   # ROTA=0 is SSD/NVMe, ROTA=1 is a spinning HD
 Keep the chain monerod runs against on an SSD/NVMe. A spare HDD is fine for cold backups and
 `pithead backup` archives, but not for an active test chain.
 
-A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and for a direct
-`tests/integration/run.sh --image-upgrade` run's rollback snapshots: instant, instead of a full
-copy that needs headroom for a second one (#2057). The `tier4-kvm` `image-upgrade` phase supplies
-its own guest-local reflink XFS and does not depend on the bench filesystem either way. On a CoW
+A CoW filesystem (btrfs/zfs/xfs-reflink) is a bonus for the config matrix and a requirement for a
+direct `tests/integration/run.sh --image-upgrade` run, which cannot take its rollback snapshots of
+the data-dir bind mounts without `cp --reflink=always` and refuses rather than fully copying a
+chain (#2057). The `tier4-kvm` `image-upgrade` phase supplies its own guest-local reflink XFS and
+does not depend on the bench filesystem. On a CoW
 volume the harness can snapshot/restore a chain cheaply for per-scenario isolation, but only if
 it's on fast storage. A
 loopback btrfs on a spare HDD gives you CoW semantics at HDD speed, which is the wrong trade for an
@@ -434,7 +436,8 @@ Treat the box as production-sensitive. It holds keys and it's the thing that sig
   regression-guarded in `tests/stack/standalone/test_compose.sh`).
 - Reproducible, clean baseline. The matrix reuses the synced read/write chains, which may advance
   normally; it does not replace them during config-only cases. The image-upgrade gate takes
-  private reflink snapshots of every writable mount and restores them, restores the
+  private reflink snapshots of every writable bind mount (a plain copy of the small named
+  volumes) and restores them, restores the
   original `config.json` at the end, and `--safety-backup` takes a `pithead backup` first and
   rolls the box back (down → restore → up) if anything fails.
 - Build isolation and integrity. Build images in containers with pinned upstream versions and
