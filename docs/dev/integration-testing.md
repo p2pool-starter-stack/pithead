@@ -757,12 +757,16 @@ the reconciler cannot move the row off `accepted` until it has read that one. Se
 config therefore ends at the start of that window rather than after it, and reading the row there
 raced it by up to ninety seconds. The claim survived because two of the three keys that reach that
 assertion, `max_temp_c` and `watchdog_interval_min`, are on RigForge's restart-free fast path, where
-the window is too small to see. The third, `DONATION`, is off that list and takes the full path —
-which is where the ninety-second bound comes from, and where a hardware run would have hit this.
+the window is too small to see. The third, `DONATION`, is off that list and takes the full path,
+and so does `pools`.
 
-The row is now waited to a terminal status before it is read, on the same ninety-second bound the
-window itself has. Terminal rather than `applied`, which is what keeps the assertion honest in both
-directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
+The row is now waited to a terminal status before it is read. The bound follows the apply path
+([#2761](https://github.com/p2pool-starter-stack/pithead/issues/2761)): ninety seconds when every
+key in the change is on the fast path, 300 otherwise. The full path restarts xmrig, checks the
+pool, and waits up to twenty hashrate reads three seconds apart before it publishes `applied`, and
+the dashboard reads that on its next poll. Job 1313 held `DONATION` and `pools` to ninety seconds
+and read both rows still `accepted`, after the rig had already reported both configs. Terminal
+rather than `applied`, which is what keeps the assertion honest in both directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
 reds on the real status instead of spending the whole bound on a verdict already known, and a row
 that never settles stays `accepted` and reds as well. The one answer the wait must never invent is
 `applied` for a row nobody has confirmed. Terminal is written as the complement of `accepted` and

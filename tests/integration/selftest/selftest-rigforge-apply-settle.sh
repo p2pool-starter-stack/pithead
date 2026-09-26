@@ -135,6 +135,19 @@ wait_for() { return 1; }
 assert_eq "a timed-out settle reports the status the row is stuck at, so the caller can name it" \
     "$(_settle_history_row r c-stuck)" "accepted"
 
+echo "== _settle_history_row: a restart-path change gets the longer bound (#2761) =="
+# RigForge applies only max_temp_c and watchdog_interval_min without restarting xmrig; every other
+# key restarts it and waits for a live hashrate before it publishes "applied". Job 1313 read
+# DONATION and pools at the fast path's 90s and saw "accepted". Recording the bound wait_for is
+# handed kills a revert to one fixed bound, and the mixed case kills a check of the first key only.
+wait_for() { WAIT_BOUND="$1"; return 0; }
+for case_ in "max_temp_c:90" "watchdog_interval_min:90" "DONATION:300" "pools:300" \
+    "max_temp_c,DONATION:300" ":90"; do
+    WAIT_BOUND=""
+    _settle_history_row r c-stuck "${case_%%:*}" >/dev/null
+    assert_eq "history settle bound for keys '${case_%%:*}'" "$WAIT_BOUND" "${case_##*:}"
+done
+
 echo "== _settle_worker_apply_maxt: RigForge #344 async apply (#1309) =="
 # This is the load-bearing mutation-kill: if the "accepted is terminal" bug (#1309) were
 # reintroduced — treating status verbatim instead of polling for it to settle — this would still
