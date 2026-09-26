@@ -118,7 +118,6 @@ assert_eq "confirmed change landed in config.json" "$(jq -r '.monero.clearnet_in
 assert_contains "confirmed commit audits as commit-confirmed with the key name" \
     "$(grep '"action":"commit-confirmed","status":"applied"' "$AUDIT" | tail -n 1)" "monero.clearnet_initial_sync"
 jq 'del(.network)' "$C/config.json" >"$C/cand.json" && mv "$C/cand.json" "$C/config.json" && (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1) # the host's firewall back on
-
 echo "== black-box: sensitive changes need the typed payout-confirmation envelope (#1959, #2076) =="
 # Type-to-confirm alone is still only friction, and it is no longer the ONLY thing the gate wants:
 # a sensitive change is refused unless the commit also carries the confirmation envelope, whose
@@ -173,26 +172,27 @@ assert_contains "confirmed change records the signed-in actor" "$(grep '"action"
 # verifier. An audit row that carries one would mean the removed leg came back.
 assert_not_contains "no commit records an approver" "$(cat "$AUDIT")" '"approver":"tg-'
 
-# An existing worker descriptor is no longer a hidden host-only exception: the JSON pane can
-# repoint it, but only through the same approval identity, and the audit names the schema path.
+# Worker descriptors (#2641): a repoint is refused at preview and at commit, even with a
+# self-written envelope; adopting a new rig previews as a typed-APPLY change and then applies.
 jq '.workers={api_port:8080,api_auth:"none",api_token:"",list:[{name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]}' "$C/config.json" >"$C/config.worker" && mv "$C/config.worker" "$C/config.json"
 (cd "$C" && DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list[0].host="192.168.1.51")}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "worker repoint preview is rejected, not previewed for approval (2026-09-13 perimeter audit round 2)" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "worker repoint preview is rejected, not previewed" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_contains "worker repoint refusal names workers.list" "$(jq -r '.error' "$RESULTS/$UUID3.json")" "workers.list"
-jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
+jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY",approval:{payout_suffixes:{}}}' >"$REQS/$UUID3.json"
 run_pending >/dev/null
-assert_eq "a self-written envelope does not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
+assert_eq "APPLY and a self-written envelope do not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
-jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json"
+jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json" && run_pending >/dev/null
+assert_contains "the adopt preview's audit row names workers.list" "$(tail -n 1 "$AUDIT")" '"action":"preview","status":"previewed","keys":"workers.list"'
+assert_eq "an adopt preview is a destructive, typed-APPLY change" "$(jq -c '[.status, .destructive, (.changes[] | select(.key == "workers.list") | .flag)]' "$RESULTS/$APPEND_UUID.json")" '["previewed",true,"CONFIRM"]'
+assert_contains "the adopt warning names the rig and its address" "$(jq -r '.changes[].msg' "$RESULTS/$APPEND_UUID.json")" "rig-2 at 192.168.1.52"
+assert_not_contains "the adopt preview never echoes the token" "$(cat "$RESULTS/$APPEND_UUID.json")" "another-token"
+jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
-assert_eq "worker append preview is rejected, not previewed for approval" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
-jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",approval:{payout_suffixes:{}}}' >"$REQS/$APPEND_UUID.json"
-run_pending >/dev/null
-assert_eq "a self-written envelope does not commit a worker append" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json")" "rejected"
-assert_eq "config.json gains no rig-2 descriptor" "$(jq -r '[.workers.list[] | select(.name=="rig-2")] | length' "$C/config.json")" "0"
+assert_eq "a confirmed adopt appends rig-2 after rig-1" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json"):$(jq -c '[.workers.list[].name]' "$C/config.json")" 'applied:["rig-1","rig-2"]'
 # A confirm-key in its heavy direction (prune disable) is now approval-gated too: it still needs
 # typed APPLY, but is no longer impossible for a shell-less appliance operator.
 jq -n --arg w "$WALLET" '{monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p",prune:true},

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Self-test for safety_restore_exact naming WHICH check failed (#2062).
+# Self-test for safety_restore_exact naming WHICH check failed (#2062, #2362).
 #
 # The function used to fold five independent failure points (restore, up, health, config,
 # secrets) into one boolean via a chained `||`, so every rollback failure reported the same
 # generic "restore/apply/health/config/secret verification failed" — job 510 hit this reading a
-# real appliance-channel rollback failure and there was no way to tell which check actually
+# real tier4 rollback failure and there was no way to tell which check actually
 # failed from the log. Fixed by testing each disjunct in order and recording which one fired in
 # SAFETY_RESTORE_FAIL_REASON; this file pins that each failure mode is named distinctly.
 #
@@ -26,11 +26,11 @@ INTEGRATION_RUN_SUITE=1
 # shellcheck source=tests/integration/lib/run-safety.sh
 source "$HERE/lib/run-safety.sh"
 
-_restore_reason() { # <pithead-restore-rc> <config: match|drift> <secrets: match|drift>
+_restore_reason() { # <restore-rc> <up-rc> <health-rc> <config: match|drift> <secrets: match|drift>
     (
         SAFETY_ARCHIVE=/tmp/a.tar.gz SAFETY_RESTORE_FAILED=0 SAFETY_RESTORE_FAIL_REASON=""
-        BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP='fp'
-        _restore_rc="$1" _config_state="${2:-match}" _secret_state="${3:-match}"
+        BASELINE_CONFIG='baseline' BASELINE_EXACT_SECRET_FP=$'wallet=wallet-before\nproxy=proxy-before'
+        _restore_rc="$1" _up_rc="$2" _health_rc="$3" _config_state="${4:-match}" _secret_state="${5:-match}"
         pithead() {
             case "$1" in
             down) return 0 ;;
@@ -38,24 +38,34 @@ _restore_reason() { # <pithead-restore-rc> <config: match|drift> <secrets: match
             up) return 0 ;;
             esac
         }
-        strict_pithead() { return 0; }
-        wait_status_ok() { return 0; }
+        strict_pithead() { return "$_up_rc"; }
+        wait_status_ok() { return "$_health_rc"; }
         rx() { [ "$_config_state" = match ] && printf 'baseline' || printf 'drifted'; }
-        upgrade_secret_fingerprints() { [ "$_secret_state" = match ] && printf fp || printf other; }
+        upgrade_secret_fingerprints() {
+            case "$_secret_state" in
+            match) printf '%s\n' "$BASELINE_EXACT_SECRET_FP" ;;
+            drift) printf '%s\n' 'wallet=wallet-after' 'proxy=proxy-before' ;;
+            *) return 1 ;;
+            esac
+        }
         it_log() { :; }
         safety_restore_exact >/dev/null 2>&1
         printf '%s' "$SAFETY_RESTORE_FAIL_REASON"
     )
 }
 
-echo "== safety_restore_exact names which check failed, not a generic verdict (#2062) =="
+echo "== safety_restore_exact names which check failed, not a generic verdict (#2062, #2362) =="
 
-assert_eq "restore failure is named" "$(_restore_reason 1 match match)" "pithead restore failed"
-assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 match match)" ""
+assert_eq "restore failure is named" "$(_restore_reason 1 0 0 match match)" "pithead restore failed"
+assert_eq "startup failure is named" "$(_restore_reason 0 1 0 match match)" "stack did not come back up"
+assert_eq "health failure is named" "$(_restore_reason 0 0 1 match match)" "pithead status did not become healthy within 240s"
+assert_eq "a healthy restore leaves no reason" "$(_restore_reason 0 0 0 match match)" ""
 assert_eq "a config drift is named, distinctly from restore/secrets" \
-    "$(_restore_reason 0 drift match)" "restored config.json does not match the baseline byte-for-byte"
+    "$(_restore_reason 0 0 0 drift match)" "restored config.json does not match the baseline byte-for-byte"
 assert_eq "a secret drift is named, distinctly from restore/config" \
-    "$(_restore_reason 0 match drift)" "restored wallet/proxy/dashboard/RPC/onion secrets do not match the baseline"
+    "$(_restore_reason 0 0 0 match drift)" "restored secret categories do not match the baseline: wallet"
+assert_eq "an unreadable secret category is named" \
+    "$(_restore_reason 0 0 0 match unreadable)" "restored secret categories are unreadable"
 
 _safety_backup_recovery_case() { # <healthy|normal|mkdir-fail|command-fail|redactor-fail>
     (
