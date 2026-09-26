@@ -261,4 +261,7 @@ class DataSetupMixin:
                 tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
             except Exception as exc:  # the verdict must never break the data loop
                 logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
+                # Serve the last verdict: a failed cycle must not make a red node vanish from
+                # the panel, doctor and status.
+                tari_sync["health"] = self.tari_chain.verdict
         return self.tari_health.update(tari_sync.get("reachable", True))
