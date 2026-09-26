@@ -129,7 +129,10 @@ lan_guard_reason() { # <rc>
 apply_lan_guard() {
     local published kp ports=() old rc=0
     published=$(lan_guard_published)
-    [ -n "$published" ] || return 0
+    if [ -z "$published" ]; then
+        remove_lan_guard_boot_unit
+        return 0
+    fi
     for kp in $published; do ports+=("${kp#*:}"); done
     if [ "$(container_engine)" = "podman" ]; then
         if ! command -v nft >/dev/null 2>&1 || ! render_lan_guard_nft "${ports[@]}" | sudo nft -f - 2>/dev/null; then rc=2; fi
@@ -149,6 +152,7 @@ apply_lan_guard() {
     fi
     if [ "$rc" = 0 ]; then
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
+        provision_lan_guard_boot_unit "${ports[@]}"
         return 0
     fi
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
@@ -203,4 +207,81 @@ remove_lan_guard() {
     sudo -n iptables -F "$LAN_GUARD_CHAIN" 2>/dev/null || true
     sudo -n iptables -X "$LAN_GUARD_CHAIN" 2>/dev/null || true
     return 0
+}
+# --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
+# A reboot empties PITHEAD-LAN and the DOCKER-USER jumps, while dockerd restarts monerod and tari
+# still published on 0.0.0.0, so the ports were open to every source until `./pithead up`. Same fix
+# and same reasons as pithead-egress.service (02a-tor-egress-boot.sh): a oneshot ordered
+# Before=docker.service and pulled in by it, the rules inline, no checkout path and no docker call.
+# The appliance needs none: pithead-boot runs `up`, and compose_up installs the rule first.
+LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
+
+# The unit text for <iptables path> <port>.... Pure (args only) so it unit-tests. Fails closed: the
+# chain's DROP goes in before anything jumps to it, the RETURNs are inserted above the DROP, and the
+# jumps come last, so a start that stops halfway drops every source on those ports instead of none.
+# The `-D` lines make a manual restart replace the jumps rather than stack them.
+render_lan_guard_boot_unit() { # <iptables> <port>...
+    local ipt="$1" p jump i
+    shift
+    local -a srcs
+    read -r -a srcs <<<"$LAN_GUARD_SOURCES"
+    cat <<EOF
+[Unit]
+Description=pithead LAN-only sources on the *_lan_access node ports, restored before containers start
+Before=docker.service
+# A firewall manager that loads after us could flush what we insert.
+# After the egress unit too, so our jumps land above its rules, as they do after pithead up.
+After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-$ipt -N DOCKER-USER
+ExecStart=-$ipt -N $LAN_GUARD_CHAIN
+ExecStart=$ipt -F $LAN_GUARD_CHAIN
+ExecStart=$ipt -A $LAN_GUARD_CHAIN -j DROP
+EOF
+    for ((i = ${#srcs[@]} - 1; i >= 0; i--)); do
+        printf 'ExecStart=%s -I %s 1 -s %s -j RETURN\n' "$ipt" "$LAN_GUARD_CHAIN" "${srcs[$i]}"
+    done
+    for p in "$@"; do
+        jump="-p tcp -m tcp --dport $p -m conntrack --ctstate NEW -m comment --comment $LAN_GUARD_TAG -j $LAN_GUARD_CHAIN"
+        printf 'ExecStart=-%s -D DOCKER-USER %s\n' "$ipt" "$jump"
+        printf 'ExecStart=%s -I DOCKER-USER 1 %s\n' "$ipt" "$jump"
+    done
+    cat <<EOF
+
+[Install]
+WantedBy=docker.service
+EOF
+}
+
+# Write and enable the unit for <port>..., or leave it when it already matches and is enabled.
+# Enable, not --now: apply_lan_guard has just installed the live rule. Same hosts as the egress unit.
+provision_lan_guard_boot_unit() { # <port>...
+    tor_egress_boot_unit_applies || return 0
+    local ipt unit_dir want
+    ipt=$(command -v iptables) || return 0
+    unit_dir=$(control_unit_dir)
+    want=$(render_lan_guard_boot_unit "$ipt" "$@")
+    if [ "$(cat "$unit_dir/$LAN_GUARD_BOOT_UNIT" 2>/dev/null)" = "$want" ] &&
+        systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
+        return 0
+    fi
+    if printf '%s\n' "$want" | sudo tee "$unit_dir/$LAN_GUARD_BOOT_UNIT" >/dev/null &&
+        sudo systemctl daemon-reload && sudo systemctl enable "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
+        log "LAN-only source rule will be restored at boot, before the containers restart ($LAN_GUARD_BOOT_UNIT)."
+    else
+        warn "lan-guard:boot-unit-install-failed — could not install $LAN_GUARD_BOOT_UNIT. The rule is live now, but after a host reboot port(s) $* are open to every source until './pithead up' runs."
+    fi
+}
+
+# Disable and delete the unit (every *_lan_access switch off, uninstall). Only our unit name.
+remove_lan_guard_boot_unit() {
+    local unit_dir
+    unit_dir=$(control_unit_dir)
+    [ -e "$unit_dir/$LAN_GUARD_BOOT_UNIT" ] || return 0
+    sudo systemctl disable "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1 || true
+    sudo rm -f "$unit_dir/$LAN_GUARD_BOOT_UNIT" || true
+    sudo systemctl daemon-reload >/dev/null 2>&1 || true
 }

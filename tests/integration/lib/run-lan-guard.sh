@@ -34,4 +34,33 @@ assert_lan_guard_live() { # <config>
         assert_eq "LAN port $p: a non-private source cannot connect (#2616)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "LAN port $p: a private source can (#2616)" "$(_lan_probe 10.254.254 "$p")" open
     done
+    # shellcheck disable=SC2086 # one argument per port
+    assert_lan_guard_boot_restore $ports
+}
+
+# DIY reboot restore (#2749), without rebooting the bench: a reboot empties PITHEAD-LAN and its
+# DOCKER-USER jumps while dockerd restarts the nodes still published on 0.0.0.0, and
+# pithead-lan-guard.service is what puts the rule back first. Check docker.service pulls the unit in
+# and waits for it, strip the rule as a reboot does (the open dial is the control that the strip
+# took), run the installed unit on the real kernel, and dial again. Docker hosts only: podman has no
+# unit, its boot path is `up`.
+assert_lan_guard_boot_restore() { # <port>...
+    local p rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    assert_eq "up installed and enabled the LAN-guard boot unit (#2749)" \
+        "$(rx 'systemctl is-enabled pithead-lan-guard.service 2>/dev/null')" "enabled"
+    assert_contains "docker.service pulls it in (#2749)" "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-lan-guard.service"
+    assert_contains "docker.service starts only after it (#2749)" "$(rx 'systemctl show -p After --value docker.service')" "pithead-lan-guard.service"
+    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || true
+    assert_eq "the rule is gone, as after a reboot" "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-lan-guard')" "0"
+    assert_eq "control: with the rule gone, a non-private source reaches port $1" "$(_lan_probe 198.51.100 "$1")" open
+    rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
+    assert_rc "the boot unit starts cleanly on the real kernel (#2749)" "$rc" "0"
+    for p in "$@"; do
+        assert_eq "after the boot unit, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+        assert_eq "after the boot unit, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
+    done
+    rc=0
+    rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
+    assert_rc "the rule it restored reads as enforced, as apply's does (#2749)" "$rc" "0"
 }

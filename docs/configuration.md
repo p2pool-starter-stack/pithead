@@ -259,9 +259,14 @@ addresses is not supported.
 The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the appliance.
 `pithead` installs it on every `up`, `apply` and `upgrade` and removes it on `down`. When it cannot
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
-without it. `./pithead doctor` then says the ports are held and why. A doctor FAIL means a port is
-published on every interface while the rule is missing, for example after a reboot restarted the
-containers; `./pithead up` reinstalls it.
+without it. `./pithead doctor` then says the ports are held and why.
+
+A reboot clears the rule. On the Docker install, Docker restarts the node containers by itself, so
+`pithead` also installs `pithead-lan-guard.service`. That unit runs before `docker.service` and puts
+the rule back before any container starts. `pithead` removes the unit when every `*_lan_access`
+switch is off, and `uninstall` removes it. The appliance needs no such unit: its boot runs
+`pithead up`, which installs the rule first. A doctor FAIL means a port is published on every
+interface while the rule is missing; `./pithead up` reinstalls it.
 
 ## Data directories
 
