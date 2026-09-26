@@ -81,7 +81,7 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     assert_contains "the rig's own config confirms $key changed (#1236)" "$ckeys" "$key"
     # Matched by change_id, not "the newest row" — #579/#604's reconciler, as the #513 leg does —
     # and waited to terminal first, because the settle above returns before the rig has published
-    # its outcome (#1471). Read unwaited, this raced a window of up to ~90s.
+    # its outcome (#1471). Read unwaited, this raced the rig's whole apply (#2761).
     assert_eq "$key worker-apply recorded in the per-worker history (#185/#1236/#1471)" \
         "$(_settle_history_row "$rig" "$change_id" "$key")" "applied"
     it_step "reverting $key $probe -> ${orig}…"

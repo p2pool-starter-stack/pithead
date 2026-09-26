@@ -762,11 +762,11 @@ and so does `pools`.
 
 The row is now waited to a terminal status before it is read. The bound follows the apply path
 ([#2761](https://github.com/p2pool-starter-stack/pithead/issues/2761)): ninety seconds when every
-key in the change is on the fast path, 240 otherwise. The full path restarts xmrig and waits up to
-twenty polls three seconds apart for a live hashrate before it publishes `applied`, and the
-dashboard reads that on its next poll. Job 1313 held `DONATION` and `pools` to ninety seconds and
-read both rows still `accepted`, after the rig had already reported both configs. Terminal rather than `applied`, which is what keeps the assertion honest in both
-directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
+key in the change is on the fast path, 300 otherwise. The full path restarts xmrig, checks the
+pool, and waits up to twenty hashrate reads three seconds apart before it publishes `applied`, and
+the dashboard reads that on its next poll. Job 1313 held `DONATION` and `pools` to ninety seconds
+and read both rows still `accepted`, after the rig had already reported both configs. Terminal
+rather than `applied`, which is what keeps the assertion honest in both directions: a rig that genuinely rejected a change publishes its terminal row at once, so the leg
 reds on the real status instead of spending the whole bound on a verdict already known, and a row
 that never settles stays `accepted` and reds as well. The one answer the wait must never invent is
 `applied` for a row nobody has confirmed. Terminal is written as the complement of `accepted` and

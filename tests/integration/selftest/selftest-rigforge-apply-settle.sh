@@ -141,8 +141,8 @@ echo "== _settle_history_row: a restart-path change gets the longer bound (#2761
 # DONATION and pools at the fast path's 90s and saw "accepted". Recording the bound wait_for is
 # handed kills a revert to one fixed bound, and the mixed case kills a check of the first key only.
 wait_for() { WAIT_BOUND="$1"; return 0; }
-for case_ in "max_temp_c:90" "watchdog_interval_min:90" "DONATION:240" "pools:240" \
-    "max_temp_c,DONATION:240" ":90"; do
+for case_ in "max_temp_c:90" "watchdog_interval_min:90" "DONATION:300" "pools:300" \
+    "max_temp_c,DONATION:300" ":90"; do
     WAIT_BOUND=""
     _settle_history_row r c-stuck "${case_%%:*}" >/dev/null
     assert_eq "history settle bound for keys '${case_%%:*}'" "$WAIT_BOUND" "${case_##*:}"
