@@ -377,13 +377,13 @@ provision_lan_guard_boot_unit() { # <port>...
 
 # Disable and delete both units (every *_lan_access switch off, uninstall). Only our unit names.
 remove_lan_guard_boot_unit() {
-    local unit_dir u gone=0
+    local unit_dir lg_unit lg_removed=0
     unit_dir=$(control_unit_dir)
-    for u in "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT"; do
-        [ -e "$unit_dir/$u" ] || continue
-        sudo systemctl disable "$u" >/dev/null 2>&1 || true
-        sudo rm -f "$unit_dir/$u" || true
-        gone=1
+    for lg_unit in "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT"; do
+        [ -e "$unit_dir/$lg_unit" ] || continue
+        sudo systemctl disable "$lg_unit" >/dev/null 2>&1 || true
+        sudo rm -f "$unit_dir/$lg_unit" || true
+        lg_removed=1
     done
-    [ "$gone" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || true
+    [ "$lg_removed" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || true
 }
