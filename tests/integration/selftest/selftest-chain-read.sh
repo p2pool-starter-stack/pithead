@@ -7,6 +7,7 @@ source "$HERE/../lib.sh"
 # shellcheck source=tests/integration/lib/chain-keep.sh
 source "$HERE/../lib/chain-keep.sh"
 
+echo "== chain-safe read lease =="
 before=$'monerod m1 T1 sha256:m\ntari t1 T1 sha256:t\ntor o1 T1 sha256:o'
 E2E_DIR=/e2e RESTORE_DIR=/base CHAIN_BEFORE="$before" CHAIN_SERVICES='monerod tari'
 chain_snapshot() { printf '%s\n' "${NOW:-$before}"; }
@@ -84,10 +85,16 @@ assert_eq "write path reaches normal remove and up" "$(grep -c touched "$command
 main_source="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../e2e.sh")"
 (
     eval "$main_source"
+    # shellcheck disable=SC2034 # the evaluated main consumes these globals
     MODE=chain-safe CI_CHAIN_SAFE_READ=1 KEEP=0 BRANCH=test BENCH_HOST=test E2E_DIR=/e2e
-    log() { :; }; ok() { :; }; preflight() { :; }; provision() { :; }
+    log() { :; }
+    ok() { :; }
+    preflight() { :; }
+    provision() { :; }
     backup_stack() { echo backup >>"$commands"; }
-    borrow_miner() { :; }; deploy_branch() { :; }; run_harness() { :; }
+    borrow_miner() { :; }
+    deploy_branch() { :; }
+    run_harness() { :; }
     main
 )
 assert_rc "read guarded main completes without a stopping backup" "$?" 0
@@ -97,10 +104,14 @@ restore_source="$(sed -n '/^restore_all() {$/,/^}$/p' "$HERE/../e2e.sh")"
 : >"$commands"
 (
     eval "$restore_source"
+    # shellcheck disable=SC2034 # the evaluated restore_all consumes these globals
     MODE=chain-safe CI_CHAIN_SAFE_READ=1 RESTORED=0 KEEP=0 MINER_CFG_BACKUP=''
+    # shellcheck disable=SC2034 # the evaluated restore_all consumes these globals
     RESTORE_DIR=/base BENCH_HOST=test SAFETY_ARCHIVE=''
-    drain_harness_or_refuse() { :; }; parent_lock_checkpoint() { :; }
-    parent_lock_miner_restore() { :; }; log() { :; }
+    drain_harness_or_refuse() { :; }
+    parent_lock_checkpoint() { :; }
+    parent_lock_miner_restore() { :; }
+    log() { :; }
     chain_read_unchanged() { return 1; }
     on_bench() { printf '%s\n' "$1" >>"$commands"; }
     restore_all

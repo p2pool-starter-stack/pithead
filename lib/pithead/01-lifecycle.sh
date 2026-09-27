@@ -155,7 +155,10 @@ scope_keep_running() { # <compose up flags and services...>
         if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
             case " ${services[*]} " in
             *" $svc "*) ;;
-            *) warn "PITHEAD_KEEP_RUNNING names '$svc', which is inactive in the rendered stack."; return 1 ;;
+            *)
+                warn "PITHEAD_KEEP_RUNNING names '$svc', which is inactive in the rendered stack."
+                return 1
+                ;;
             esac
         fi
         container_is_running "$svc" || {
