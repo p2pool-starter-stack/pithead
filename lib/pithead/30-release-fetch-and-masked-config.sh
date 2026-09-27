@@ -173,7 +173,7 @@ render_masked_config() { # <control-dir>
     mkdir -p "$mdir" 2>/dev/null || true
     tmp="$mdir/.config.json.tmp"
     # Per-worker tokens (#172) live in the variable-length descriptor array at workers.list[]
-    # (#506), out of reach of the fixed-path walk above — mask each SET .token entry by entry.
+    # (#506), out of reach of the fixed-path walk above — mask each SET secret entry by entry.
     # Masking an empty array is a no-op.
     #
     # dashboard.workers[] STAYS masked although 2.0.0 removed that alias (#1832), for the reason
@@ -191,7 +191,8 @@ render_masked_config() { # <control-dir>
             else setpath($p; {"__secret__": true}) end)
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
-              if (.token // "") == "" then . else .token = {"__secret__": true} end)
+              if (.token // "") == "" then . else .token = {"__secret__": true} end
+              | if (.api_token // "") == "" then . else .api_token = {"__secret__": true} end)
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(

@@ -88,10 +88,8 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         control_physical_presence_error
         return 1
     fi
-    # workers.list[] is a HOST + API TOKEN — a credential (SECURITY.md), refused outright, same as
-    # wallets/firewall/control-channel — #1959 tracks a real second identity a future approval tier
-    # could rejoin. Checked BEFORE default-deny below, or WORKER_API_TOKENS (#2349, unlisted in
-    # every tier) wins the generic refusal by env-var name.
+    # workers.list[] carries credentials and is refused before default-deny; otherwise the
+    # unlisted WORKER_API_TOKENS env row wins with a generic refusal (#2349).
     if [ "$worker_sensitive" -eq 1 ]; then
         printf 'this change alters a worker descriptor (workers.list) — an added, repointed, or removed rig control host and API token is a credential change and is not committable from the dashboard. %s' "$(_control_host_remedy)"
         return 1
@@ -237,7 +235,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     (umask 077 && jq --argjson paths "$CONTROL_SECRET_PATHS" --slurpfile live "$CONFIG_FILE" "$WORKER_LIST_JQ"'
         (reduce (($live[0] | worker_list) + (($live[0].dashboard // {}) | .workers // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
-            then .[$w.name] = ($w.token // "") else . end)) as $livetok
+            then .[$w.name] = {token: ($w.token // ""), api_token: ($w.api_token // "")} else . end)) as $livetok
         | if ((.config | has("ssh") | not) and ($live[0] | has("ssh"))) then .config.ssh = $live[0].ssh else . end
         | reduce $paths[] as $p (.config;
             (try getpath($p) catch null) as $v
@@ -247,13 +245,15 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token | type) == "object" and .token.__secret__ == true
-              then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
-              else . end)
+              then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
+              else . end
+              | if (.api_token | type) == "object" and .api_token.__secret__ == true
+                then .api_token = ($livetok[.name].api_token // "") else . end)
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
               if (.token | type) == "object" and .token.__secret__ == true
-              then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
+              then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
               else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true

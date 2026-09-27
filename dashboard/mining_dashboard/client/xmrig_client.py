@@ -378,7 +378,7 @@ class XMRigWorkerClient:
 
         Per-worker overrides (#506, ``workers.list[]``) merge on top: per-worker field >
         fleet default > inherit. An operator-set ``host`` replaces the connecting IP as the probe
-        target; a per-worker ``token`` becomes the Bearer for that worker only.
+        target; a per-worker read credential becomes the Bearer for that worker only.
 
         Only two things are ever used as the request host (SSRF guard, #122): the worker's
         validated IP, or a host the OPERATOR wrote into config.json. A miner-controlled worker
@@ -405,15 +405,14 @@ class XMRigWorkerClient:
 
         port = override.get("port", XMRIG_API_PORT)
         url = f"http://{host}:{port}/1/summary"
-        if isinstance(override.get("token"), dict):
-            read_token = override.get("read_token")
-            if not read_token:  # #2313: usually under RigForge's 32-char read-derivation floor
-                hint = "the control token is likely under RigForge's 32-char read-derivation floor"
-                self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
-                return {"api_ok": False, "adopted": adopted}
-            headers = self._auth_header(name_token, read_token)
+        if override.get("read_token"):
+            headers = self._auth_header(name_token, override["read_token"])
+        elif override.get("token"):
+            hint = "the control token is likely under RigForge's 32-char read-derivation floor"
+            self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
+            return {"api_ok": False, "adopted": adopted}
         else:
-            headers = self._auth_header(name_token, override.get("token", ""))
+            headers = self._auth_header(name_token, "")
 
         try:
             async with self.session.get(url, headers=headers, timeout=API_TIMEOUT) as response:

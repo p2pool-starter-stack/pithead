@@ -260,7 +260,7 @@ WORKER_READ_TOKENS_PATH, DASHBOARD_WORKERS = "/control/masked/worker-read-tokens
 
 
 def current_worker_endpoints():
-    # WORKER_API_TOKENS (#2349): {name: token} JSON restores masked tokens (#440) from .env.
+    # WORKER_API_TOKENS (#2349): endpoint-bound read-only probe credentials, never control tokens.
     tokens_env = os.environ.get("WORKER_API_TOKENS", "")
     if DASHBOARD_WORKERS is not None:
         return DASHBOARD_WORKERS

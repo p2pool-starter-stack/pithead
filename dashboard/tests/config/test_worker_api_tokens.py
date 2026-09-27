@@ -1,69 +1,61 @@
 import json
 
-# #2349: the masked config mount can only ever hold a set workers.list[].token as the
-# {"__secret__": true} sentinel (#440). The real value rides WORKER_API_TOKENS instead — a JSON
-# {name: token} map rendered by render_env, the same owner-only .env path XMRIG_API_TOKEN already
-# takes — and is merged back onto the masked entry, restoring the "forces token-auth for that one
-# rig" promise (docs/configuration.md) the masked mount alone cannot keep.
+
+def _write(tmp_path, workers):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"workers": {"api_port": 8081, "list": workers}}))
+    return str(path)
 
 
-def _write(tmp_path, payload):
-    p = tmp_path / "config.json"
-    p.write_text(json.dumps(payload))
-    return str(p)
+def _env(host="10.0.0.5", port=8081, token="probe-only"):
+    return json.dumps({"rig1": {"host": host, "port": port, "token": token}})
 
 
-def test_masked_token_resolves_from_worker_api_tokens_env(tmp_path):
+def test_probe_token_joins_only_its_pinned_masked_endpoint(tmp_path):
     from mining_dashboard.config.config import load_worker_endpoints
 
-    p = _write(
+    path = _write(
         tmp_path,
-        {
-            "workers": {
-                "list": [
-                    {"name": "rig1", "host": "10.0.0.5", "token": {"__secret__": True}},
-                    {"name": "rig2", "host": "10.0.0.6", "token": {"__secret__": True}},
-                ]
-            }
-        },
+        [
+            {"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}},
+            {"name": "rig2", "host": "10.0.0.6", "token": {"__secret__": True}},
+        ],
     )
-    got = load_worker_endpoints(p, tokens_env=json.dumps({"rig1": "the-real-rig1-token"}))
-    assert got == [
-        {"name": "rig1", "host": "10.0.0.5", "token": "the-real-rig1-token"},
-        # rig2 has no entry in the map: stays masked, fail-closed (never a fleet fallback).
+    assert load_worker_endpoints(path, tokens_env=_env()) == [
+        {"name": "rig1", "host": "10.0.0.5", "read_token": "probe-only"},
         {"name": "rig2", "host": "10.0.0.6", "token": {"__secret__": True}},
     ]
+    for env in (_env(host="10.0.0.7"), _env(port=9999), '{"rig1":"old-format"}'):
+        assert "read_token" not in load_worker_endpoints(path, tokens_env=env)[0]
 
 
-def test_worker_api_tokens_env_ignores_malformed_or_invalid_values(tmp_path):
+def test_probe_token_requires_explicit_sentinel_and_host(tmp_path):
     from mining_dashboard.config.config import load_worker_endpoints
 
-    p = _write(
-        tmp_path,
-        {"workers": {"list": [{"name": "rig1", "host": "h", "token": {"__secret__": True}}]}},
-    )
-    baseline = load_worker_endpoints(p)
-    for bad_env in ("not json", "[]", json.dumps({"rig1": "has space"}), json.dumps({"rig1": 5})):
-        assert load_worker_endpoints(p, tokens_env=bad_env) == baseline
+    for worker in (
+        {"name": "rig1", "host": "10.0.0.5"},
+        {"name": "rig1", "api_token": {"__secret__": True}},
+        {"name": "rig1", "host": "10.0.0.5", "token": {"__secret__": True}},
+    ):
+        path = _write(tmp_path, [worker])
+        assert "read_token" not in load_worker_endpoints(path, tokens_env=_env())[0]
 
 
-def test_current_worker_endpoints_merges_worker_api_tokens_env(tmp_path, monkeypatch):
-    # End-to-end: current_worker_endpoints() is what the probe actually calls — prove the masked
-    # mount + WORKER_API_TOKENS env combination it reads at runtime resolves to the real Bearer,
-    # not just the loader function in isolation.
+def test_invalid_probe_token_env_is_ignored(tmp_path):
+    from mining_dashboard.config.config import load_worker_endpoints
+
+    path = _write(tmp_path, [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}])
+    for env in ("not json", "[]", _env(token="has space"), _env(port=True)):
+        assert "read_token" not in load_worker_endpoints(path, tokens_env=env)[0]
+
+
+def test_current_worker_endpoints_uses_bound_probe_token(tmp_path, monkeypatch):
     import mining_dashboard.config.config as cfg
 
-    p = _write(
-        tmp_path,
-        {
-            "workers": {
-                "list": [{"name": "rig1", "host": "10.0.0.5", "token": {"__secret__": True}}]
-            }
-        },
-    )
-    monkeypatch.setattr(cfg, "HOST_CONFIG_PATH", p)
+    path = _write(tmp_path, [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}])
+    monkeypatch.setattr(cfg, "HOST_CONFIG_PATH", path)
     monkeypatch.setattr(cfg, "DASHBOARD_WORKERS", None)
-    monkeypatch.setenv("WORKER_API_TOKENS", json.dumps({"rig1": "the-real-rig1-token"}))
+    monkeypatch.setenv("WORKER_API_TOKENS", _env())
     assert cfg.current_worker_endpoints() == [
-        {"name": "rig1", "host": "10.0.0.5", "token": "the-real-rig1-token"}
+        {"name": "rig1", "host": "10.0.0.5", "read_token": "probe-only"}
     ]

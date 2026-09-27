@@ -177,9 +177,9 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
 #
 # dashboard.energy.price_feed and workers.list[] are NOT here because this list cannot see them by
-# path: both are named by path in the gate instead (43-). workers.list[]'s per-entry token (#2349)
-# DOES render an env row (WORKER_API_TOKENS, the masked config mount can only ever hold each token
-# as the {"__secret__": true} sentinel, #440) — deliberately left off every list here too, same as
+# path: both are named by path in the gate instead (43-). workers.list[].api_token (#2349)
+# renders a read-only probe env row (WORKER_API_TOKENS); writable .token stays host-only. The row
+# is deliberately left off every list here too, same as
 # XMRIG_API_TOKEN's URL cousin above: the path-level refusal in 43- already denies the WHOLE
 # workers.list[] block outright (host+token is a credential, SECURITY.md), and admitting the token
 # env row here would let a container-side commit smuggle a fleet-wide credential in behind a path
