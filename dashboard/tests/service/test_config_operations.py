@@ -48,7 +48,6 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
     for path in (
         "monero.wallet_address",
         "monero.view_key",
-        "monero.node_password",
         "workers.api_token",
     ):
         assert path not in cfg["_approval_keys"], path
@@ -59,6 +58,11 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
     assert "dashboard.auth.password" not in cfg["_confirm_keys"]
     assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
     assert not any(path.startswith("ssh.") for path in cfg["_confirm_keys"])
+    # The node RPC login confirms (#2367/#2333, #2368): never free-commit, never the approval tier.
+    for path in ("monero.node_username", "monero.node_password"):
+        assert path in cfg["_confirm_keys"], path
+        assert path not in cfg["_editable_keys"], path
+        assert path not in cfg["_approval_keys"], path
     assert "telegram.enabled" in cfg["_approval_keys"]
     assert "dashboard.host" in cfg["_approval_keys"]
 

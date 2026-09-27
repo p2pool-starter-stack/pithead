@@ -90,7 +90,10 @@ The stack's defaults:
   suffixes protect against mistakes, not a compromised dashboard process, which can write both its
   request and its confirmation. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. A dashboard-confirmed data-directory move is further held to an
+  a node that is not there. The node RPC username and password confirm the same way (#2367/#2368):
+  before an endpoint or login change commits, the host authenticates to the staged endpoint with
+  the staged login, and the preview never echoes the credential. A dashboard-confirmed
+  data-directory move is further held to an
   **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI

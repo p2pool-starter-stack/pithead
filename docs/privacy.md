@@ -294,8 +294,9 @@ Per-component flags in `config.json`, both `false` by default:
 "tari":   { "clearnet_initial_sync": false }
 ```
 
-Set the one(s) you want to `true` and run `./pithead apply`. Monero and Tari sync independently, so
-you can enable either, both, or neither.
+Set the one(s) you want to `true`, set `network.tor_egress_firewall: false` (see
+[below](#it-needs-the-egress-firewall-turned-off)), and run `./pithead apply`. Monero and Tari sync
+independently, so you can enable either, both, or neither.
 
 NOTE: both flags act on the bundled daemons only. With `monero.mode` or `tari.mode: remote` there is
 no local daemon here to sync, so the matching flag does nothing — set it back to `false` when you
@@ -332,20 +333,23 @@ be explicitly opted into.
 
 ### It needs the egress firewall turned off
 
-The trade-off above only actually happens if the clearnet dials can leave the host. The [fail-closed
-egress firewall](#enforced-fail-closed-not-just-configured-270) is on by default and DROPs any direct
-dial to the public internet from the mining bridge — including the clearnet peers, priority nodes, and
-DNS seeds a clearnet sync needs. With both left at their defaults, the sync falls back to
-whatever it can still reach over Tor: no faster, and no less private, than leaving
-`clearnet_initial_sync` off in the first place. Nothing leaks — the firewall is doing exactly its
-job — but the speed the flag promised never materializes, and nothing said so.
+The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) is on by default and
+DROPs any direct dial to the public internet from the mining bridge, including the clearnet peers,
+priority nodes, and DNS seeds a clearnet sync needs. A clearnet monerod has no Tor proxy left, so
+behind that firewall it would have no peers at all: it would never finish syncing and so never switch
+back to Tor.
 
-To actually get a clearnet-speed sync, turn the firewall off for the duration:
-`network.tor_egress_firewall: false`. `pithead` warns at `apply`/`doctor` time whenever a
-`clearnet_initial_sync` flag and the egress firewall are both on, naming the choice: turn the firewall
-off for a real clearnet sync, or turn the sync flag off and accept the normal Tor-speed sync. A
-scoped exception that lets only the sync's own dials through without opening the firewall generally is
-a real feature, not yet built — for now it's an explicit either/or.
+`pithead` therefore passes a `clearnet_initial_sync` flag to the daemons only while
+`network.tor_egress_firewall` is `false`. With the firewall on, the flag is ignored: both nodes stay on
+Tor and sync at Tor speed, no faster and no less private than leaving the flag off. `pithead` warns at
+`apply`/`doctor` time that the flag is ignored and names the choice: turn the firewall off for a real
+clearnet sync, or turn the sync flag off to silence the warning.
+
+To get a clearnet-speed sync, set `network.tor_egress_firewall: false` for the duration and run
+`./pithead apply`. Once the sync completes and the dashboard switches the node back to Tor, turn the
+firewall back on and apply again; the node stays on Tor. A scoped exception that lets only the sync's
+own dials through without opening the firewall generally is a real feature, not yet built: for now
+it's an explicit either/or.
 
 ### It switches back to Tor automatically (#234)
 
@@ -357,7 +361,7 @@ Tari transition independently, each as soon as *it* finishes.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
-off and on again with `./pithead apply`, which re-arms it.)
+off and on again with `./pithead apply`, which re-arms it; the egress firewall must be off for it.)
 
 ### It is loud and always-visible
 

@@ -68,13 +68,15 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 
 # Explicit confirm keys (#719) tell the form which existing operational fields need APPLY and retain
 # their direction-specific preview copy. Unlisted schema-backed values receive the same treatment
-# dynamically at preview and commit. Node endpoints also run the host-side reachability probe; data
+# dynamically at preview and commit. Node endpoints and the node RPC login (#2368) also run the
+# host-side reachability/authentication preflight; data
 # directories keep the tighter destination allowlist. COMPOSE_PROFILES rides with tari.mode and the
 # exact rendered token set stays pinned by test-control-editable-allowlist.sh.
 CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TOR_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
-    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD'
 
 # The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
 # approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
@@ -96,8 +98,9 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
 # XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
 # "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
 # endpoint (33-render-env.sh) — and 39-describe-change.sh classifies it as a secret configuration
-# value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
-# host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
+# value. A free-form string that reaches a URL does not belong on this approval list, so it stays
+# out and, like every unlisted schema value since #1959, confirms behind APPLY instead. Check what
+# a key IS, not which tier it happens to sit in today.
 #
 # dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
 # all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
@@ -131,11 +134,11 @@ control_committable_re() {
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
 }
 
-# The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
-# trigger is not a fourth hand-kept copy of these key names. Every key here must also be in
-# CONTROL_DASHBOARD_CONFIRM_KEYS above — a key here but not there is unreachable; a node key there
-# but not here would be committable with NO reachability probe, which is the failure that matters.
-CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+# The node changes that require a staged reachability/authentication preflight, named once so the
+# approval gate cannot forget the login when only a credential changes. Every key here must also be
+# confirm-gated; the probe itself no-ops for a local chain.
+CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
 # SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space

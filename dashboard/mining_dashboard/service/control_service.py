@@ -222,6 +222,9 @@ CONFIRM_ENV_KEY_PATHS = {
     # purpose: monero.mode and the view keys also move it and keep their own classification.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
+    # Reserved-node RPC login (#2333/#2367 ruling): confirm-gated like the endpoints above, never refused.
+    "MONERO_NODE_USERNAME": ("monero.node_username",),
+    "MONERO_NODE_PASSWORD": ("monero.node_password",),
 }
 
 
