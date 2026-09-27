@@ -147,8 +147,8 @@ for EDIT in '.workers.list[0].token="edited-token"' '.workers.list[0].control_po
     run_pending >/dev/null
     jq -n --arg id "$GUARD_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$GUARD_UUID.json"
     run_pending >/dev/null
-    assert_eq "a same-host edit of an adopted rig is refused with APPLY (${EDIT%%=*})" \
-        "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+    assert_contains "a same-host edit of an adopted rig is refused with APPLY (${EDIT%%=*})" \
+        "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$GUARD_UUID.json")" "rejected: this change edits or removes a rig the dashboard already controls"
 done
 assert_eq "same-host edits leave the adopted rig as it was and adopt nothing" \
     "$(jq -r '"\(.workers.list[0].token)|\(.workers.list[0].control_port)|\(.workers.list | length)"' "$C/config.json")" "rig-token|8082|1"
