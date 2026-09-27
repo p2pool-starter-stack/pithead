@@ -64,6 +64,9 @@ def test_anything_but_a_fresh_verdict_is_unverified(tmp_path, body):
         {"rc": 0.0, "checked_at": NOW},
         {"rc": 0, "checked_at": True},
         {"rc": 0, "checked_at": str(NOW)},
+        # A JSON integer has no size limit: float() of 400 digits raises OverflowError.
+        '{"rc": 0, "checked_at": 1' + "0" * 399 + "}",
+        '{"rc": 0, "checked_at": -1' + "0" * 399 + "}",
     ],
 )
 def test_a_malformed_field_is_unverified_never_enforced(tmp_path, body):

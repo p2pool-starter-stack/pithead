@@ -12,17 +12,20 @@ control results mount. This module reads it and applies it to the egress posture
 
 The file is typed on read, never coerced: ``rc`` must be a JSON integer and ``checked_at`` a finite
 JSON number. ``json`` accepts ``NaN`` and ``Infinity``, and Python treats ``False`` as ``0``, so a
-bare ``int()``/``float()`` would read ``{"rc": false}`` as enforced.
+bare ``int()``/``float()`` would read ``{"rc": false}`` as enforced. A JSON integer is also
+unbounded, and turning 400 digits into a float raises ``OverflowError``, so ``checked_at`` is range
+checked before any arithmetic: comparing an int with a float is exact in Python and never
+overflows, and NaN and the infinities fail the same range.
 """
 
 import json
-import math
 import time
 
 from mining_dashboard.config import config
 
 STATUS_PATH = "/control/results/egress-status.json"  # the read-only control results mount
 CHECK_INTERVAL_S = 120  # pithead-egress.timer's OnUnitActiveSec
+_MAX_EPOCH_S = 2**53  # past any real clock, and every integer below it is an exact float
 ENFORCED, MISSING, UNVERIFIED = "enforced", "missing", "unverified"
 _MISSING_RCS = {1, 2, 4, 5}
 _LABELS = {
@@ -41,7 +44,9 @@ def egress_firewall_state(path=None, now=None):
         return UNVERIFIED
     rc = status.get("rc") if isinstance(status, dict) else None
     checked_at = status.get("checked_at") if isinstance(status, dict) else None
-    if type(rc) is not int or type(checked_at) not in (int, float) or not math.isfinite(checked_at):
+    if type(rc) is not int or type(checked_at) not in (int, float):
+        return UNVERIFIED
+    if not -_MAX_EPOCH_S <= checked_at <= _MAX_EPOCH_S:  # also False for NaN
         return UNVERIFIED
     now = time.time() if now is None else now
     if abs(now - checked_at) > 3 * CHECK_INTERVAL_S:
