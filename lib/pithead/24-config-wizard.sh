@@ -245,14 +245,10 @@ wizard_ask_tari() {
 
 # Stage 2 (#502): a FEW overarching "how should this run" questions, each Enter-through and each
 # driving a whole cluster of keys — never one prompt per key. Sets globals consumed by
-# wizard_write_config: CLEARNET_SYNC, ONION_ENABLED, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+# wizard_write_config: ONION_ENABLED, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
 wizard_ask_shape() {
     echo ""
     echo "--- A Few More (Enter for the default) ---"
-
-    read -r -p "First sync: fully private over Tor (days), or faster over clearnet (hours)? (y/N = private): " IN_CLEARNET || true
-    CLEARNET_SYNC=false
-    [[ "$IN_CLEARNET" =~ ^[Yy] ]] && CLEARNET_SYNC=true
 
     read -r -p "Reach the dashboard from outside your LAN over Tor? (y/N): " IN_ONION || true
     ONION_ENABLED=false
@@ -315,10 +311,6 @@ wizard_write_config() {
 
     if [ -n "$IN_DASH_PASS" ]; then
         cfg=$(jq --arg u "$IN_DASH_USER" --arg p "$IN_DASH_PASS" '.dashboard.auth = {username: $u, password: $p}' <<<"$cfg")
-    fi
-
-    if [ "$CLEARNET_SYNC" = true ]; then
-        cfg=$(jq '.monero.clearnet_initial_sync = true | .tari.clearnet_initial_sync = true' <<<"$cfg")
     fi
 
     if [ "$ONION_ENABLED" = true ]; then

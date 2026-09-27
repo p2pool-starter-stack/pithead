@@ -85,10 +85,6 @@ def build_config(form: dict) -> dict:
     if s_("xvb") == "false":
         cfg["xvb"] = {"enabled": False}
 
-    if form.get("clearnet_sync") == "true":
-        cfg["monero"]["clearnet_initial_sync"] = True
-        cfg["tari"]["clearnet_initial_sync"] = True
-
     tz = s_("timezone")
     if tz and tz != "auto":  # auto IS the documented default — writing it would only pin it
         cfg.setdefault("dashboard", {})["timezone"] = tz

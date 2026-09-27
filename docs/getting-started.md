@@ -118,9 +118,9 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.
-   - **A few more, Enter for the default:** a faster clearnet initial sync instead of the private
-     Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
-     whether this machine should also mine with its spare CPU (a co-located RigForge worker).
+   - **A few more, Enter for the default:** reaching the dashboard from outside your LAN over
+     Tor; Telegram alerts; and whether this machine should also mine with its spare CPU (a
+     co-located RigForge worker).
    - Everything else — ports, XvB tuning, energy pricing, per-worker overrides, and more — keeps
      its documented default; the wizard prints a pointer to `config.json` and
      [Configuration](configuration.md) at the end for anyone who wants it.

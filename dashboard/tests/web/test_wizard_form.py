@@ -100,15 +100,12 @@ def test_the_local_miner_is_opt_in():
     assert "local_miner" not in build_config(BASE)
 
 
-def test_the_clearnet_first_sync_applies_to_both_chains_or_neither():
-    # One chain syncing over clearnet while the other waits on Tor is not a state the operator
-    # asked for; the question is asked once and answers for both.
+def test_the_wizard_never_writes_a_clearnet_first_sync():
+    # The appliance cannot turn its egress firewall off, and with it on the flag is ignored
+    # (#2649), so the wizard offers no first-sync choice (#2678). A stray field changes nothing.
     cfg = build_config({**BASE, "clearnet_sync": "true"})
-    assert cfg["monero"]["clearnet_initial_sync"] is True
-    assert cfg["tari"]["clearnet_initial_sync"] is True
-    plain = build_config({**BASE, "clearnet_sync": "false"})
-    assert "clearnet_initial_sync" not in plain["monero"]
-    assert "clearnet_initial_sync" not in plain["tari"]
+    assert "clearnet_initial_sync" not in cfg["monero"]
+    assert "clearnet_initial_sync" not in cfg["tari"]
 
 
 def test_the_mode_key_is_written_for_every_answer_including_the_default():

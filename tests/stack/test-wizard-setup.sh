@@ -61,7 +61,7 @@ echo "== unit: wizard prompt count is pinned (#502 — a silently-added prompt f
 core_reads=$(awk '/^wizard_ask_core\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 shape_reads=$(awk '/^wizard_ask_shape\(\) \{/,/^\}/' "$STACK" | grep -c '^\s*read -r')
 assert_eq "wizard_ask_core has exactly 11 read prompts (Monero wallet, node config, pool tier, dashboard login — the Tari prompts are wizard_ask_tari's, pinned in test-wizard-tari.sh)" "$core_reads" "11"
-assert_eq "wizard_ask_shape has exactly 6 read prompts (clearnet-sync, remote-access, alerts cluster, local-miner opt-in)" "$shape_reads" "6"
+assert_eq "wizard_ask_shape has exactly 5 read prompts (remote-access, alerts cluster, local-miner opt-in)" "$shape_reads" "5"
 
 echo "== unit: wizard — Enter-through defaults skip everything but the core answers (#502) =="
 # Local node, every optional prompt left blank. Proves two things at once: the core answers land
@@ -101,7 +101,7 @@ assert_eq "defaults path: no local_miner block written (opt-in off, #593)" \
 # local_miner.enabled=true; every other answer left blank so only that key appears.
 WLM="$SANDBOX/wizard-local-miner"
 mkdir -p "$WLM"
-printf '%s\n\n2\n%s\n\n\n\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
+printf '%s\n\n2\n%s\n\n\n\n\n\ny\n' "$WALLET" "$VALID_TARI" | run_sourced "$WLM" run_wizard >/dev/null 2>&1
 wlm_cfg="$(cat "$WLM/config.json" 2>/dev/null)"
 assert_eq "opt-in path: local_miner.enabled written true (#593)" "$(jq -r '.local_miner.enabled' <<<"$wlm_cfg")" "true"
 unset wlm_cfg
@@ -143,7 +143,7 @@ echo "== unit: wizard — shape-question and dashboard-login answers flow into c
 # tier mapping, the dashboard-login cluster, and each Stage-2 cluster) actually wires through.
 W2="$SANDBOX/wizard-full"
 mkdir -p "$W2"
-printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\ny\nmybottoken123\n987654321\n' \
+printf '%s\n\n2\n%s\nmain\nopuser\nsuperSecret1\ny\ny\nmybottoken123\n987654321\n' \
     "$WALLET" "$VALID_TARI" | run_sourced "$W2" run_wizard >/dev/null 2>&1
 w2_cfg="$(cat "$W2/config.json" 2>/dev/null)"
 assert_eq "full path: monero.mode local (Enter-through)" "$(jq -r '.monero.mode' <<<"$w2_cfg")" "local"
@@ -154,8 +154,8 @@ assert_eq "full path: stratum auth defaults on for new installs (#208)" "$(jq -r
 assert_eq "config.minimal.json ships stratum auth on (#208)" "$(jq -r '.p2pool.stratum_password' "$ROOT/config.minimal.json")" "auto"
 assert_eq "full path: dashboard.auth.username set" "$(jq -r '.dashboard.auth.username' <<<"$w2_cfg")" "opuser"
 assert_eq "full path: dashboard.auth.password set" "$(jq -r '.dashboard.auth.password' <<<"$w2_cfg")" "superSecret1"
-assert_eq "full path: clearnet-sync cluster sets BOTH chains together" \
-    "$(jq -rc '[.monero.clearnet_initial_sync, .tari.clearnet_initial_sync]' <<<"$w2_cfg")" '[true,true]'
+assert_eq "full path: no clearnet_initial_sync written for either chain (#2678)" \
+    "$(jq -rc '[(.monero | has("clearnet_initial_sync")), (.tari | has("clearnet_initial_sync"))]' <<<"$w2_cfg")" '[false,false]'
 assert_eq "full path: remote-access sets dashboard.onion.enabled" "$(jq -r '.dashboard.onion.enabled' <<<"$w2_cfg")" "true"
 assert_eq "full path: telegram cluster sets enabled+token+chat_id together" \
     "$(jq -rc '[.telegram.enabled, .telegram.bot_token, .telegram.chat_id]' <<<"$w2_cfg")" '[true,"mybottoken123","987654321"]'

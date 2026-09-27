@@ -327,3 +327,11 @@ test("TariSection and XvbField render from props alone, with no app around them"
   );
   assert.match(renderToString(html`<${XvbField} v=${v} on=${on} />`), /XMRvsBeast/);
 });
+
+test("the setup form offers no clearnet first sync the appliance cannot honour (#2678)", () => {
+  // With the egress firewall on, which the appliance cannot change, the flag is ignored (#2649):
+  // a first-boot choice that does nothing is not offered at all.
+  const page = renderToString(form(clone(REF)).renderSetup());
+  assert.match(page, /Dashboard login/, "the setup form rendered");
+  assert.doesNotMatch(page, /clearnet-sync|open internet|First sync/);
+});

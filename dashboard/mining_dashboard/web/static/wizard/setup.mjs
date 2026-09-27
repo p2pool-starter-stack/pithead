@@ -23,7 +23,6 @@ const FIELDS = {
   pool: { path: "p2pool.pool" },
   localMiner: { path: "local_miner.enabled" },
   xvb: { path: "xvb.enabled" },
-  clearnetSync: { path: "monero.clearnet_initial_sync" },
   healthchecks: { path: "healthchecks.ping_url" },
   telegramToken: { path: "telegram.bot_token" },
   telegramChat: { path: "telegram.chat_id" },
@@ -213,14 +212,6 @@ export function renderSetup(app) {
                 appliance is for.<//>`
             }
             <${XvbField} v=${v} on=${on} />
-
-            <h2>First sync</h2>
-            <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
-                  value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
-                    ["false", "Private, over Tor", "Takes days."],
-                    ["true", "Faster, over the open internet", "Takes hours; use Tor afterwards."],
-                  ]} />
-
 
             <h2>Dashboard login</h2>
             <${RadioField} label="How should the dashboard be protected?" name="auth-mode"
