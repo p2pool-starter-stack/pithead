@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
@@ -246,11 +248,10 @@ kept_chain_files_snippet() { # <path>...
 
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
-# re-provisions from what was kept (and the harness's own secrets). The stack is stopped BEFORE the first snapshot: a running
-# monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
-# a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
-# nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
-# is empty. Always ends by bringing a stack back up, so the phases after this one have one.
+# re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
+# the first snapshot: a running monerod writes its LMDB, log and peer state continuously, and
+# shutdown flushes them, so a live snapshot can never match (job 680). Stopped, the daemons write
+# nothing; uninstall must change zero bytes of kept data. The stack is brought back up afterward.
 run_uninstall_round_trip() {
     local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
     it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
@@ -278,6 +279,16 @@ run_uninstall_round_trip() {
         wait_status_ok 240 || true
         return 1
     fi
+    IT_UNRELATED_VOLUME_CREATED="" IT_UNRELATED_VOLUME_NAME="" IT_WALLET_CREATE_ATTEMPTED=""
+    arm_inactive_tari_wallet_volume
+    if [ "$IT_FAIL" -gt "$fails_before" ]; then
+        rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1 || true
+        cleanup_failed_tari_wallet_fixture
+        rx 'rm -f .env.itest-round-trip'
+        pithead up >/dev/null 2>&1
+        wait_status_ok 240 || true
+        return 1
+    fi
     out="$(pithead uninstall -y 2>&1)"
     rc=$?
     assert_rc "pithead uninstall -y succeeded" "$rc" "0"
@@ -295,8 +306,13 @@ run_uninstall_round_trip() {
     if vols="$(rx "docker volume ls -q")"; then
         assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
             "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+        assert_eq "uninstall preserves an unrelated Docker volume" \
+            "$(printf '%s\n' "$vols" | grep -Fx "$IT_UNRELATED_VOLUME_NAME")" "$IT_UNRELATED_VOLUME_NAME"
     else
         it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+    fi
+    if ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
+        it_fail "uninstall fixture removes its unrelated volume" "volume cleanup failed"
     fi
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done
