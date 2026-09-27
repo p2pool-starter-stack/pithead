@@ -64,11 +64,13 @@ mv config.json.tari-wallet-test config.json
             bad "Tari wallet: tari-wallet did not stay up (was 'true $restarts', now '${state:-absent}')"
         fi
     fi
-    owner=$(_ssh 'stat -c %u "$(podman volume inspect pithead-tari-wallet-db --format "{{.Mountpoint}}")"' 2>/dev/null | tr -d '\r\n')
+    # Read from inside the container: the mount root it sees is the volume root, whatever the engine
+    # named the volume (job 1512's by-name lookup found none on this channel).
+    owner=$(_ssh "podman exec tari-wallet stat -c %u /var/tari/wallet" 2>/dev/null | tr -d '\r\n')
     if [ "$owner" = 1000 ]; then
-        ok "Tari wallet: the pithead-tari-wallet-db volume root is owned by the image's uid 1000"
+        ok "Tari wallet: the wallet volume root is owned by the image's uid 1000"
     else
-        bad "Tari wallet: the pithead-tari-wallet-db volume root is owned by '${owner:-unknown}', not uid 1000"
+        bad "Tari wallet: the wallet volume root is owned by '${owner:-unknown}', not uid 1000"
     fi
     if _ssh "podman exec tari-wallet test -f /var/tari/wallet/mainnet/config/wallet/log4rs.yml" 2>/dev/null; then
         ok "Tari wallet: the wallet wrote its own config into /var/tari/wallet"
