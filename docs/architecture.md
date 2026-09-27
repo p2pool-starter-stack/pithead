@@ -120,8 +120,9 @@ never leave the machine. The dashboard makes six outbound internet calls — the
 Tor-routed, so enabling any of them never reveals where your stack runs (the webhook/ntfy sinks have
 a `notifications.tor: false` opt-out for LAN endpoints Tor can't reach; see
 [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks)). The dashboard also polls
-each rig's RigForge API for worker stats, and config applies travel the same path — dialed by the
-host-side control runner, so the rig tokens never enter the dashboard container (#185). Both are
+each rig's API for worker stats over LAN. The dashboard probe uses a derived RigForge read bearer
+or an explicit endpoint-bound read-only `api_token`; the write-capable RigForge control token stays
+host-only, and the host-side control runner uses it for config applies (#185). These are
 direct **LAN** connections to your rigs; they don't route over Tor, so they carry no Tor tag. Node
 colors group services by role: 🟦 control plane (Caddy, Dashboard), 🟪 privacy and isolation (Tor,
 Docker socket proxies), and 🟩 the mining core.

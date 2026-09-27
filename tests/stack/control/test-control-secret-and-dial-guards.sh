@@ -14,7 +14,7 @@ jq -n --arg w "$WALLET" '{
     monero:{mode:"local",wallet_address:$w,node_username:"u",node_password:"p"},
     tari:{wallet_address:"'"$VALID_TARI"'"}, p2pool:{pool:"mini"},
     workers:{api_port:8080,api_auth:"token",api_token:"fleet-token",list:[
-      {name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token"}]},
+      {name:"rig-1",host:"192.168.1.50",control_port:8082,token:"rig-token",api_token:"rig-read-token"}]},
     notifications:{webhooks:["https://example.com/hook"],
                    ntfy:{url:"https://ntfy.example/old",token:"ntfy-token"}},
     dashboard:{secure:true,host:"box.lan",auth:{username:"admin",password:"a control passphrase"},
@@ -105,6 +105,16 @@ run_pending >/dev/null
 assert_eq "inherited worker port cannot repoint a masked per-worker bearer" \
     "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
 assert_contains "inherited-port refusal names the masked worker token" \
+    "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "masked worker token"
+
+jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \
+    '{id:$id,action:"preview",actor:"admin",config:($live[0]
+      | .workers.api_port=8081
+      | .workers.list[0].api_token={"__secret__":true})}' >"$REQS/$GUARD_UUID.json"
+run_pending >/dev/null
+assert_eq "inherited worker port cannot repoint a masked read-only probe bearer" \
+    "$(jq -r '.status' "$RESULTS/$GUARD_UUID.json")" "rejected"
+assert_contains "inherited-port refusal names the masked worker credential" \
     "$(jq -r '.error' "$RESULTS/$GUARD_UUID.json")" "masked worker token"
 
 jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" \

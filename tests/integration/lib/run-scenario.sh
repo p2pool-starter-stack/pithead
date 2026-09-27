@@ -227,10 +227,11 @@ assert_release_readiness() {
     if monero_caught_up; then it_pass "Monero is synced (chain reusable by the matrix)"; elif [ $? = 1 ]; then it_fail "Monero is synced" "monerod answered: not caught up — the matrix would have to re-sync"; else it_fail "Monero is synced" "monerod could not be asked — unreachable, refused, timed out or rejected; sync state unknown"; fi
     # Tari is the other chain the matrix reuses; a readiness verdict that only looked at Monero
     # passed boxes whose merge-mining scenarios would start from an incomplete chain.
-    if [ "$(jq_get "$(api_state)" '.sync.tari.state')" = "done" ]; then
+    local tari_bound=240
+    if wait_for "$tari_bound" 5 "Tari sync done" _pred_tari_synced; then
         it_pass "Tari is synced (chain reusable by the matrix)"
     else
-        it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
+        it_fail "Tari is synced" "dashboard did not report Tari done within ${tari_bound}s — the matrix would start from an incomplete chain"
     fi
     local status_out="" status_bound=240
     if wait_for "$status_bound" 5 "pithead status OK" _pred_readiness_status; then
@@ -354,6 +355,10 @@ $(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")
         it_pass "backup/rollback prerequisites present (writable backups/, tar)"
     else
         it_fail "backup prerequisites present" "backups/ not writable or tar missing — --safety-backup won't work"
+    fi
+    # The runner retries a Tari-only readiness refusal after restoring the baseline.
+    if [ "$IT_FAIL" -eq 1 ] && [ "$IT_FAILED_NAMES" = '\n    - readiness: Tari is synced' ]; then
+        printf 'e2e-env: tari-not-done\n'
     fi
 }
 

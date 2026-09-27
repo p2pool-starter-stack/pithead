@@ -34,15 +34,26 @@ phase_fault() {
 
     # Fault A: cut power WHILE the updater is writing the spare slot. The invariant is not that
     # the update survives — it is that the box still boots something.
-    local mark verdict
+    local mark verdict start_out
     for i in 1 2 3; do
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
-        virsh destroy "$VM" >/dev/null 2>&1 || true
+        verdict=$(fault_power_cut "$VM") || {
+            bad "A$i: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+            return
+        }
         sleep 3
-        virsh start "$VM" >/dev/null 2>&1 || true
+        mark=$(fault_serial_cut "$SERIAL") || {
+            bad "A$i: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+            return
+        }
+        # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
+        # jobs 220 and 129 read an A1 console with not one byte after the cut).
+        start_out=$(virsh start "$VM" 2>&1) || {
+            bad "A$i: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+            return
+        }
         # A hard power cycle can hand the guest a NEW DHCP lease; without re-reading it here,
         # _wait_ssh spends its whole budget probing the address it held before the cut (#2381:
         # bench-ci job 101 read a booted, unreachable guest as BRICKED — an "all"-phase run had let
@@ -54,8 +65,11 @@ phase_fault() {
         elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
             bad "A$i: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
             return
+        elif [ $? -eq 2 ]; then
+            bad "A$i: $verdict"
+            return
         else
-            bad "A$i: BRICKED — $verdict (disqualifying)"
+            bad "A$i: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
             return
         fi
     done
@@ -65,7 +79,10 @@ phase_fault() {
     # refusal — refusing to install is correct, crashing is not, and bricking is disqualifying.
     info "fault C — install a deliberately corrupted bundle"
     _ssh "dd if=/dev/urandom of=/data/update.bundle bs=1M seek=8 count=2 conv=notrunc" >/dev/null 2>&1 || true
-    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
+    mark=$(fault_serial_mark "$SERIAL") || {
+        bad "C: could not read the console size before the corrupt install — a failed boot after it could not be judged, so the leg stops here"
+        return
+    }
     local corrupt_rc=0
     out=$(_ssh "$(_install_cmd /data/update.bundle) 2>&1") || corrupt_rc=$?
     if printf '%s' "$out" | grep -qi "panic"; then
@@ -82,6 +99,9 @@ phase_fault() {
         ok "C: still boots after being handed a corrupt bundle (marker '$(_marker)')"
     elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
         bad "C: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        return
+    elif [ $? -eq 2 ]; then
+        bad "C: $verdict"
         return
     else
         bad "C: BRICKED — $verdict (disqualifying)"
@@ -114,18 +134,32 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    mark=$(wc -c <"$SERIAL" 2>/dev/null | tr -d ' ')
-    virsh destroy "$VM" >/dev/null 2>&1 || true
+    verdict=$(fault_power_cut "$VM") || {
+        bad "B: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+        return
+    }
     sleep 3
-    virsh start "$VM" >/dev/null 2>&1 || true
+    mark=$(fault_serial_cut "$SERIAL") || {
+        bad "B: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+        return
+    }
+    # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
+    # jobs 220 and 129 read an A1 console with not one byte after the cut).
+    start_out=$(virsh start "$VM" 2>&1) || {
+        bad "B: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+        return
+    }
     _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A above
     if _wait_ssh 300; then
         ok "B: survived a mid-commit power cut — booted slot marker '$(_marker)'"
     elif verdict=$(fault_boot_verdict "$SERIAL" "$mark"); then
         bad "B: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
         return
+    elif [ $? -eq 2 ]; then
+        bad "B: $verdict"
+        return
     else
-        bad "B: BRICKED — $verdict (disqualifying)"
+        bad "B: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
         return
     fi
 
@@ -201,13 +235,16 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
-    local serial_before=0
-    [ -f "$SERIAL" ] && serial_before=$(wc -c <"$SERIAL")
-    virsh destroy "$VM" >/dev/null 2>&1 || {
-        bad "D: could not cut power during the image load"
+    verdict=$(fault_power_cut "$VM") || {
+        bad "D: the power cut during the image load did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
         return
     }
     sleep 3
+    local serial_before
+    serial_before=$(fault_serial_cut "$SERIAL") || {
+        bad "D: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+        return
+    }
     virsh start "$VM" >/dev/null 2>&1 || {
         bad "D: could not restore power after the image-load cut"
         return
@@ -228,7 +265,7 @@ phase_fault() {
         local refusal deadline=$(($(date +%s) + 60)) verdict
         local legible='The container image store is damaged|Could not load the baked image archive'
         while [ "$(date +%s)" -lt "$deadline" ]; do
-            refusal=$(tail -c "+$((serial_before + 1))" "$SERIAL" 2>/dev/null)
+            refusal=$(fault_serial_since "$SERIAL" "$serial_before") || break
             grep -qE "$legible" <<<"$refusal" && break
             sleep 3
         done
@@ -236,9 +273,11 @@ phase_fault() {
             ok "D: refused to continue after the interrupted load, with a legible console message"
         elif verdict=$(fault_boot_verdict "$SERIAL" "$serial_before"); then
             bad "D: $verdict — probe: $(_ssh_unreachable_reason "$ip") (not disqualifying)"
+        elif [ $? -eq 2 ]; then
+            bad "D: $verdict"
         else
             # Narrowing the match makes a red actionable only if it says what the console DID say.
-            bad "D: BRICKED — $verdict (disqualifying)"
+            bad "D: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
         fi
         return
     fi

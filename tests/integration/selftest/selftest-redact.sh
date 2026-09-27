@@ -201,8 +201,8 @@ MUST_SURVIVE="xvb.url workers.api_auth telegram.chat_id"
 # same move unsafe for the bare word `url`. Moved to MUST_REDACT above.
 KNOWN_GAP="notifications.ntfy.url notifications.webhooks[]"
 # Arrays OF OBJECTS: not a gap in redact() but in what an EMPTY value document can say about a
-# schema. Their `.token` entries are masked by render_masked_config (#172) and covered at tier 1
-# in tests/stack/test-worker-config.sh; populate it and `.token` returns to the name rule through
+# schema. Their `.token` and `.api_token` entries are masked by render_masked_config and covered at tier 1
+# in tests/stack/test-worker-config.sh; populate them and both names return to the name rule through
 # the screen above. The deprecated dashboard.workers[] twin went with the alias in 2.0.0 (#1832).
 ELEMENT_SHAPE_UNKNOWN="workers.list[]"
 
@@ -324,7 +324,7 @@ for field in $SCREENED; do
     if in_list "$field" "$ELEMENT_SHAPE_UNKNOWN"; then
         elems="$(printf '%s\n' "$ARRAY_LEN" | awk -v f="$field" '$1 == f { print $2; exit }')"
         if [ "$elems" = "0" ]; then
-            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token entries are covered by render_masked_config and by tier 1, not by this filter."
+            it_warn "NOT MEASURED (#1723): $field is an array of objects and the reference carries 0 elements, read from the schema — its .token and .api_token entries are covered by render_masked_config and by tier 1, not by this filter."
         else
             it_fail "$field is in ELEMENT_SHAPE_UNKNOWN and the reference carries no element" \
                 "the reference carries ${elems:-no measured count} — this bucket asserts nothing BECAUSE there was no element to probe, so reclassify $field against what its element actually holds"

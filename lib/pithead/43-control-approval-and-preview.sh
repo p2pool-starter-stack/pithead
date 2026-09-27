@@ -56,14 +56,17 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change adds config keys not in the schema (%s) — refusing to commit. %s' "$unknown" "$(_control_host_remedy)"
         return 1
     fi
-    # Every unlisted schema-backed env change joins the typed confirmation tier (#1959).
-    local committable_re approval_re bad hit
-    committable_re=$(control_committable_re)
-    bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
     if control_never_path_changed "$staged"; then
         control_physical_presence_error
         return 1
     fi
+    # Every unlisted schema-backed env change joins the typed confirmation tier (#1959).
+    local committable_re approval_re bad hit
+    committable_re=$(control_committable_re)
+    # The only source of this row is workers.list[].api_token. Admit it only after the shared
+    # worker gate has proved the change is a strict, SSRF-checked append.
+    [ -z "$worker_new" ] || committable_re="$committable_re|WORKER_API_TOKENS"
+    bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
     if [ "${bad:-0}" -gt 0 ]; then
         approval_required=1
         needs_confirm=1
@@ -122,12 +125,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
             return 1
         fi
     fi
-    # Permitted: echo the changed key NAMES so the commit's audit entry can record WHAT changed
-    # (#349) without a third dry-run. Names only, never values. dashboard.energy (#504) is
-    # config.json-only, so it never appears in the env porcelain — include the changed
-    # dashboard.energy.* paths directly, else an energy-only commit would audit no key.
-    # Reference defaults merged into both sides (#696), same as the preview leg: the editor
-    # round-trips the reference-merged form, and materialized defaults are not a change.
+    # Audit changed path names, never values; this also covers config-only fields (#349/#504).
     {
         control_changed_config_paths "$staged"
         [ -z "$worker_new" ] || printf '%s\n' 'workers.list'
@@ -143,7 +141,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
-    # A masked worker token may survive an ordinary round-trip, but never an endpoint repoint.
+    # A masked worker credential may survive an ordinary round-trip, but never an endpoint repoint.
     # Restoring the old bearer by name after host/port/control_port changed would send a secret the
     # container never knew to a destination it chose. Make the operator provide the replacement.
     if ! jq -e --slurpfile live "$CONFIG_FILE" '
@@ -153,7 +151,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             then .[$w.name] = $w else . end)) as $live_workers
         | [(.config.workers.api_port // 8080), ($live[0].workers.api_port // 8080)] as [$candidate_api_port, $live_api_port]
         | all(.config.workers.list[]?;
-            if (.token | type) == "object" and .token.__secret__ == true
+            if ((.token | type) == "object" and .token.__secret__ == true)
+                or ((.api_token | type) == "object" and .api_token.__secret__ == true)
             then (.name | type) == "string"
               and ($live_workers[.name] | type) == "object"
               and endpoint($candidate_api_port) == ($live_workers[.name] | endpoint($live_api_port))
@@ -171,15 +170,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
-    # The "blank secret keeps the live value" merge happens HERE, host-side (#440): the request
-    # arrives with {"__secret__":true} sentinels for secrets hidden from the editor/browser, and
-    # each sentinel is swapped for the live config.json value at staging. A sentinel for a secret
-    # that is not actually set
-    # collapses to "" rather than leaking a dict into config.json. The staged copy therefore
-    # carries merged secrets: it lives in host-only staged/ — never mounted — and is pinned
-    # owner-only so a co-tenant on the host can't read secrets from it (#33 hardening). Created
-    # under umask 077 so it is never even briefly world-readable (create-then-chmod race); the
-    # chmod stays as belt-and-suspenders.
+    # Restore masked secrets from live config host-side (#440); unset secrets become "".
+    # The staged copy is host-only and created under umask 077 (#33 hardening).
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
@@ -198,7 +190,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     (umask 077 && jq --argjson paths "$CONTROL_SECRET_PATHS" --slurpfile live "$CONFIG_FILE" "$WORKER_LIST_JQ"'
         (reduce (($live[0] | worker_list) + (($live[0].dashboard // {}) | .workers // []) | reverse | .[]) as $w ({};
             if ($w | type) == "object" and ($w.name | type) == "string"
-            then .[$w.name] = ($w.token // "") else . end)) as $livetok
+            then .[$w.name] = {token: ($w.token // ""), api_token: ($w.api_token // "")} else . end)) as $livetok
         | if ((.config | has("ssh") | not) and ($live[0] | has("ssh"))) then .config.ssh = $live[0].ssh else . end
         | reduce $paths[] as $p (.config;
             (try getpath($p) catch null) as $v
@@ -208,8 +200,11 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
               if (.token | type) == "object" and .token.__secret__ == true
-              then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
-              else . end)
+              then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
+              else . end
+              | if (.api_token | type) == "object" and .api_token.__secret__ == true
+                then .api_token = (if (.name | type) == "string" then ($livetok[.name].api_token // "") else "" end)
+                else . end)
           else . end
         | if (.notifications | type) == "object" and (.notifications.webhooks | type) == "array"
           then .notifications.webhooks |= (to_entries | map(
@@ -220,8 +215,11 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
               if (.token | type) == "object" and .token.__secret__ == true
-              then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
-              else . end)
+              then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
+              else . end
+              | if (.api_token | type) == "object" and .api_token.__secret__ == true
+                then .api_token = (if (.name | type) == "string" then ($livetok[.name].api_token // "") else "" end)
+                else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     local policy_error
@@ -238,8 +236,10 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         # refuses here, before the operator is asked to type anything.
         local approval_required=false committable_re approval_re bad worker_new worker_err="" config_paths
         committable_re=$(control_committable_re)
-        bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
+        # Classify worker changes before treating unlisted rows as confirmable.
         worker_new=$(control_worker_append "$staged") || { worker_err="${worker_new:-could not classify the worker descriptors — refusing}" && worker_new=""; }
+        [ -z "$worker_new" ] || committable_re="$committable_re|WORKER_API_TOKENS"
+        bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
         if control_never_path_changed "$staged"; then
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(control_physical_presence_error)" '{status:"rejected",error:$e,ts:(now|floor)}')"
             rm -f "$errf"
@@ -277,8 +277,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             def dotted($p): $p | map(tostring) | join(".");
             def hidden($p):
               any($secret_paths[]; . == $p)
-              or ($p[0:2] == ["workers","list"] and $p[-1] == "token")
-              or ($p[0:2] == ["dashboard","workers"] and $p[-1] == "token")
+              or ($p[0:2] == ["workers","list"] and ($p[-1] == "token" or $p[-1] == "api_token"))
+              or ($p[0:2] == ["dashboard","workers"] and ($p[-1] == "token" or $p[-1] == "api_token"))
               or $p[0:2] == ["notifications","webhooks"];
             ($ref[0] * $live[0]) as $live_full
             | ($ref[0] * $staged[0]) as $staged_full
