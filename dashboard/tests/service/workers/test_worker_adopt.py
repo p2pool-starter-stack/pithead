@@ -133,6 +133,17 @@ class TestNewWorkerEntries:
         staged = {"workers": {"list": [VALID_ENTRY, rig2]}}
         assert new_worker_entries(live, staged) == [rig2]
 
+    def test_masked_live_secret_still_identifies_a_new_tail(self):
+        rig2 = {"name": "rig2", "host": "10.0.0.10", "token": "tok-456"}
+        masked = {
+            **VALID_ENTRY,
+            "token": {"__secret__": True},
+            "api_token": {"__secret__": True},
+        }
+        live = {"workers": {"list": [masked]}}
+        staged = {"workers": {"list": [{**VALID_ENTRY, "api_token": "read-only"}, rig2]}}
+        assert new_worker_entries(live, staged) == [rig2]
+
     def test_no_change_returns_nothing_new(self):
         live = {"workers": {"list": [VALID_ENTRY]}}
         assert new_worker_entries(live, dict(live)) == []

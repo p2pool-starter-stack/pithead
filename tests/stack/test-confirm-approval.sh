@@ -178,11 +178,12 @@ run_pending >/dev/null
 assert_eq "APPLY and a self-written envelope do not commit a worker repoint" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 assert_eq "config.json keeps the original worker host" "$(jq -r '.workers.list[0].host' "$C/config.json")" "192.168.1.50"
 APPEND_UUID="44444444-4444-4444-8444-444444444444"
-jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token"}])}' >"$REQS/$APPEND_UUID.json" && run_pending >/dev/null
-assert_contains "the adopt preview's audit row names workers.list" "$(tail -n 1 "$AUDIT")" '"action":"preview","status":"previewed","keys":"workers.list"'
+jq -n --slurpfile live "$C/config.json" --arg id "$APPEND_UUID" '{id:$id,action:"preview",actor:"admin",config:($live[0] | .workers.list += [{name:"rig-2",host:"192.168.1.52",control_port:8082,token:"another-token",api_token:"read-only-token"}])}' >"$REQS/$APPEND_UUID.json" && run_pending >/dev/null
+assert_contains "the adopt audit names worker and env rows" "$(tail -n 1 "$AUDIT")" '"keys":"WORKER_API_TOKENS workers.list"'
 assert_eq "an adopt preview is a destructive, typed-APPLY change" "$(jq -c '[.status, .destructive, (.changes[] | select(.key == "workers.list") | .flag)]' "$RESULTS/$APPEND_UUID.json")" '["previewed",true,"CONFIRM"]'
 assert_contains "the adopt warning names the rig and its address" "$(jq -r '.changes[].msg' "$RESULTS/$APPEND_UUID.json")" "rig-2 at 192.168.1.52"
 assert_not_contains "the adopt preview never echoes the token" "$(cat "$RESULTS/$APPEND_UUID.json")" "another-token"
+assert_not_contains "the adopt preview never echoes probe token" "$(cat "$RESULTS/$APPEND_UUID.json")" "read-only-token"
 jq -n --arg id "$APPEND_UUID" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$APPEND_UUID.json"
 run_pending >/dev/null
 assert_eq "a confirmed adopt appends rig-2 after rig-1" "$(jq -r '.status' "$RESULTS/$APPEND_UUID.json"):$(jq -c '[.workers.list[].name]' "$C/config.json")" 'applied:["rig-1","rig-2"]'

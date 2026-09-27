@@ -102,16 +102,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
 # out and, like every unlisted schema value since #1959, confirms behind APPLY instead. Check what
 # a key IS, not which tier it happens to sit in today.
 #
-# dashboard.energy.price_feed and workers.list[] are NOT here because they render no env row at
-# all, so this list cannot see them: both are named by path in the gate instead (43-). "Every OTHER
-# config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
-# config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
-# round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] is classified by
-# control_worker_append (42-control-approval-helpers.sh): adopting a new rig is an append behind the
-# typed APPLY and the SSRF floor below (#2641); repointing or removing one is refused (#912).
-# Treat "every OTHER path renders to .env" as false in general: a schema leaf
-# that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
+# workers.list[].api_token renders WORKER_API_TOKENS, while its writable .token stays host-only.
+# The env row is not generally committable: control_worker_append (42-control-approval-helpers.sh)
+# allows only a typed, SSRF-checked append and 43- admits that row only for such an append.
+# dashboard.energy.price_feed and local_miner.enabled render no env row; 43- checks them by path.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.
