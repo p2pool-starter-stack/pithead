@@ -98,8 +98,9 @@ stray argument), so run flagged commands separately.
 ### Two commands at once
 
 Commands that change the stack take a lock, so a second one waits instead of running alongside
-the first. Without it a `backup` — which stops the stack to take a consistent archive — could
-remove a container out from under a `setup` or an `apply` that was still using it.
+the first. `uninstall` joins that window before its first destructive step. Without it a
+`backup` — which stops the stack to take a consistent archive — could remove a container out from
+under a `setup` or an `apply` that was still using it.
 
 The waiting command says what it is waiting for:
 
@@ -199,12 +200,12 @@ appliance whose compose was rendered ahead of its pinned images), the check repo
 dialing the API — a caveat, not a bug, since it only trades a permanent false ✗ for a rare false ✓
 on a release you're already about to update past. A service whose check hasn't passed yet shows as
 starting, which is normal for a minute after a start or upgrade. The Monero payout wallet stays
-healthy while it scans after a start (the first scan, or the catch-up of a reopened wallet) and its
-RPC is busy, but only while its scan marker, written at each start, is less than 24 hours old.
-After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400 seconds in the
-wallet-rpc environment. The Tari payout wallet remains process-liveness only because its gRPC is a
-long stream rather than a request/response readiness probe; it detects a crashed wallet, not scan
-progress.
+healthy while it scans, on its first run and while it catches up after each restart, but only
+while its scan marker is less than 24 hours old; the marker is cleared once the wallet reaches
+monerod's tip. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
+seconds in the wallet-rpc environment. The Tari payout wallet remains process-
+liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
+detects a crashed wallet, not scan progress.
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
@@ -271,7 +272,25 @@ The unit names are global to the host, so removal is ownership-checked: a checko
 off only removes units whose `ExecStart` points at itself, comparing physical paths so the
 `current` symlink and the versioned directory it targets count as the same checkout. Another
 checkout on the same box (an e2e harness, a bundle smoke test) therefore cannot delete the live
-stack's runner and strand its queued requests.
+stack's runner and strand its queued requests. That physical-path comparison also decides whether
+`apply` needs to touch the runner at all: an `apply` whose config did not change re-provisions
+only when the installed units genuinely differ (a stale checkout path, a container-engine change,
+a missing hardening field) — never on a routine, unchanged apply, however the checkout was reached
+(`current` symlink or its versioned directory).
+
+When re-provisioning is needed, `apply` holds the shared mutation lock while it stops
+`pithead-control.path`, waits up to 30 seconds for a request the runner has already claimed to
+write its result, rewrites the units and enables the path unit again. The runner itself never
+takes the lock, so a request that changes nothing on the stack (a preview, a diagnostic) is never
+delayed by a `pithead` command running in a shell, and never delays one. A request that changes
+the stack (a commit, a lifecycle verb, an upgrade) takes the lock inside its own handler like any
+shell command. If one is in flight when `apply` re-provisions, it is waiting for the lock `apply`
+holds, so the 30-second wait runs out, `apply` finishes, and the request then runs. None of these
+calls stops a runner that is working a request: on systemd 255 the running service finishes and
+writes its result. A request still sitting in `requests/` is
+untouched, and `pithead-control.path` fires for it as soon as the path unit is enabled again.
+A first install, and the `pithead render` that runs on every appliance boot, have no runner to
+drain and take no lock.
 
 Installation is ownership-checked the same way: when the units already name a different install
 that still exists on disk, `apply` refuses to overwrite them and names the owning directory — a
