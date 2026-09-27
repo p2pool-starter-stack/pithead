@@ -63,6 +63,7 @@ GREEN_CONFIRM_SEC = 15 * 60
 # The owed start is kept on disk (owed_start), so a dashboard restart resumes it rather than leaving
 # a node it stopped to the withheld guard; a start never interrupts a migration.
 START_RETRY_SEC = 60
+STOP_REQUEST_SEC = 90  # the stop's HTTP timeout: past it, a stop that landed has finished
 START_RETRIES = 5
 STOPPED_ADVICE = (
     "the automatic restart stopped the Tari node but could not start it again; "
@@ -140,7 +141,7 @@ class TariChainHealth:
         self._restarts = 0
         self._last_restart = None
         # Stopped by a restart and not started since: the start-only retry, across dashboard restarts.
-        self._owed = OwedStart(state_dir, self.CONTAINER, START_RETRIES, inspect)
+        self._owed = OwedStart(state_dir, self.CONTAINER, START_RETRIES, inspect, STOP_REQUEST_SEC)
         self._start_tried = None
         self._best = None  # highest height seen: only a rise past it is progress
         self._was_red = False  # the last alert-relevant level, so each entry into red alerts
@@ -243,7 +244,7 @@ class TariChainHealth:
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
         reachable = bool(sync.get("reachable"))
-        if reachable and self._owed.pending():
+        if reachable and self._owed.pending() and not self._owed.stopping():
             self._owed.settle()  # running again, whoever started it
         if self._owed.pending():
             action = await self._retry_start(now)
@@ -260,10 +261,10 @@ class TariChainHealth:
             # owes the start. No record, no stop: the restart is not issued and the slot comes back.
             recorded = self._owed.owe()
             stopped = recorded and await self._docker.stop(
-                self.CONTAINER, stop_timeout=60, request_timeout=90
+                self.CONTAINER, stop_timeout=60, request_timeout=STOP_REQUEST_SEC
             )
             started = stopped and await self._docker.start(self.CONTAINER, request_timeout=60)
-            if started or not stopped:
+            if started or not recorded:
                 self._owed.settle()
             if not recorded:
                 self._restarts -= 1
@@ -271,9 +272,12 @@ class TariChainHealth:
                 action = "restart_unrecorded"
                 verdict["advice"] = UNRECORDED_ADVICE
             elif not stopped:
-                # Never issued: give the slot back so a flaky control proxy can't spend the budget.
+                # Reported failed: give the slot back so a flaky control proxy can't spend the
+                # budget. The acknowledgement may be what was lost, so the record stays and the
+                # start retry reads the container: running, nothing owed; stopped, started.
                 self._restarts -= 1
                 self._last_restart = None
+                self._start_tried = now
                 action = "restart_failed"
             elif not started:
                 # Stopped by us and not running: the silent gRPC that follows is ours, not a

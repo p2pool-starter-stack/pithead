@@ -38,6 +38,7 @@ RESUMED = "tari-merge-mine-resumed"  # when the marker went: a launch older than
 SUPPRESS_AFTER_SEC = RED_SUSTAIN_SEC
 RESUME_AFTER_SEC = 5 * 60
 P2POOL = "p2pool"
+STOP_REQUEST_SEC = 60
 
 
 class TariMergeMineGate:
@@ -47,7 +48,7 @@ class TariMergeMineGate:
         self._docker = docker_control
         self._clock = clock
         self._inspect = inspect
-        self._owed = OwedStart(state_dir, P2POOL, inspect=inspect)
+        self._owed = OwedStart(state_dir, P2POOL, inspect=inspect, grace=STOP_REQUEST_SEC)
         self.suppressed = os.path.exists(self._path)
         self._at_height = self._read_height() if self.suppressed else None
         self._red_since = None
@@ -133,9 +134,11 @@ class TariMergeMineGate:
             return self._confirmed()
         if not self._owed.owe():
             return  # no durable record, no stop: still unconfirmed, tried again next cycle
-        if not await self._docker.stop(P2POOL, stop_timeout=30, request_timeout=60):
-            self._owed.settle()
-        elif await self._docker.start(P2POOL, request_timeout=60):
+        if not await self._docker.stop(P2POOL, stop_timeout=30, request_timeout=STOP_REQUEST_SEC):
+            # The acknowledgement may be what was lost: the record stays, and the owed-start retry
+            # reads p2pool before anything is called reconciled. Running: restarted again.
+            return
+        if await self._docker.start(P2POOL, request_timeout=60):
             self._owed.settle()
             self._confirmed()
 

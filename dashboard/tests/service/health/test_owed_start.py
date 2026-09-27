@@ -9,6 +9,13 @@ from unittest.mock import AsyncMock
 from mining_dashboard.service.health.owed_start import OwedStart
 
 
+def age_record(path, seconds):
+    """Move a record's stop time ``seconds`` into the past, as if that much time had passed."""
+    record = json.loads(path.read_text())
+    record["stopped_at"] -= seconds
+    path.write_text(json.dumps(record))
+
+
 def _stopped(started_at):
     async def inspect(name):
         return False, started_at
@@ -43,3 +50,17 @@ def test_a_record_that_cannot_be_removed_is_logged(tmp_path, caplog):
     os.mkdir(tmp_path / "p2pool-start-owed")  # a directory: os.remove refuses it
     rec.settle()
     assert "Could not remove" in caplog.text
+
+
+def test_a_running_container_within_the_stop_grace_stays_owed(tmp_path):
+    """A stop reported failed may still be landing: running, within the grace, is not proof."""
+
+    async def running(name):
+        return True, time.time() - 3600
+
+    rec = OwedStart(str(tmp_path), "p2pool", inspect=running, grace=60)
+    rec.owe()
+    assert rec.stopping() and asyncio.run(rec.retry(AsyncMock())) == "start_pending"
+    age_record(tmp_path / "p2pool-start-owed", 61)
+    assert not rec.stopping() and asyncio.run(rec.retry(AsyncMock())) == "start_settled"
+    assert not rec.pending() and not rec.stopping()

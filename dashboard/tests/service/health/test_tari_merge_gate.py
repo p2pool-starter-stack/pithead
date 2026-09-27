@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from mining_dashboard.service.health import owed_start
 from mining_dashboard.service.health import tari_merge_gate as mg
 from mining_dashboard.service.health.tari_merge_gate import TariMergeMineGate
+from tests.service.health.test_owed_start import age_record
 
 RED = {"level": "red", "reasons": ["tip 1 unchanged for 30 min"]}
 GREEN = {"level": "green", "reasons": []}
@@ -113,10 +114,14 @@ def test_a_stop_that_failed_is_retried(tmp_path):
     p2pool.stop_ok = False
     gate, _, clock = _gate(tmp_path, p2pool)
     _run(gate, clock, _red_at(1), mg.SUPPRESS_AFTER_SEC)
-    assert p2pool.running and not (tmp_path / "p2pool-start-owed").exists()
+    assert p2pool.running and (tmp_path / "p2pool-start-owed").exists()  # uncertain: kept
     p2pool.stop_ok = True
     _run(gate, clock, _red_at(1), 0)
+    p2pool.docker.start.assert_not_awaited()  # still within the stop's grace: maybe stopping
+    age_record(tmp_path / "p2pool-start-owed", mg.STOP_REQUEST_SEC + 1)
+    _run(gate, clock, _red_at(1), 0)  # running past the grace: the stop never landed; again
     assert p2pool.docker.start.await_count == 1 and p2pool.started_at > time.time() - 60
+    assert not (tmp_path / "p2pool-start-owed").exists() and not gate._launch_unconfirmed
 
 
 def test_the_suppression_height_survives_a_dashboard_restart(tmp_path):
@@ -282,3 +287,28 @@ def test_an_unrecordable_owed_start_stops_nothing_and_stays_unconfirmed(tmp_path
     _run(gate, clock, _red_at(500), 0)
     assert p2pool.running and p2pool.started_at > os.path.getmtime(tmp_path / mg.MARKER)
     assert not gate._launch_unconfirmed and not (tmp_path / "p2pool-start-owed").exists()
+
+
+# --- a stop whose acknowledgement was lost (#2464 review round 6) -------------------------------
+
+
+def test_a_lost_stop_acknowledgement_leaves_p2pool_owed_across_a_dashboard_restart(tmp_path):
+    """The stop landed but came back False. Settling on that would leave p2pool stopped, and the
+    next cycle, seeing it stopped, would call the launch reconciled: Monero mining gone."""
+    p2pool = P2Pool()
+
+    async def lost_ack(name, **kw):
+        p2pool.running = False
+        return False
+
+    p2pool.docker.stop.side_effect = lost_ack
+    p2pool.start_ok = False
+    gate, _, clock = _gate(tmp_path, p2pool)
+    _run(gate, clock, _red_at(500), mg.SUPPRESS_AFTER_SEC + 120)
+    assert not p2pool.running and (tmp_path / "p2pool-start-owed").exists()
+    assert gate._launch_unconfirmed and p2pool.docker.start.await_count >= 1  # retried
+    p2pool.start_ok = True
+    fresh, _, fclock = _gate(tmp_path, p2pool)  # a new dashboard picks the owed start up
+    _run(fresh, fclock, _red_at(500), 0)
+    assert p2pool.running and p2pool.started_at > os.path.getmtime(tmp_path / mg.MARKER)
+    assert not (tmp_path / "p2pool-start-owed").exists() and not fresh._launch_unconfirmed

@@ -13,6 +13,11 @@ this code stopped it is started, and at most ``retries`` times (None: until it r
 A record that cannot be written is reported to the caller, which must then not stop anything: a stop
 with no durable record is exactly the stranding this exists to prevent. A spent retry that cannot be
 recorded is still counted in memory, so the limit holds within the process.
+
+A stop whose result was an error is not proof it did not land (a lost acknowledgement), so the
+record stays and the container's own state decides. A container still running within ``grace``
+seconds of the stop may still be stopping, so it stays owed; after that, running means the stop did
+not land and nothing is owed.
 """
 
 import json
@@ -36,16 +41,24 @@ def write_atomic(path, text):
 
 
 class OwedStart:
-    def __init__(self, state_dir, container, retries=None, inspect=container_started):
+    def __init__(self, state_dir, container, retries=None, inspect=container_started, grace=0):
         self._path = os.path.join(state_dir, f"{container}-start-owed")
         self.container = container
         self._retries = retries
         self._inspect = inspect
+        self._grace = grace
         self._left = None  # the lowest count this process has spent to, whatever the file says
         self._failing = False  # a write failure already reported: log once per streak
 
     def pending(self) -> bool:
         return os.path.exists(self._path)
+
+    def stopping(self) -> bool:
+        """Within ``grace`` of the recorded stop: a container that answers may still be stopping."""
+        try:
+            return time.time() - self._read()[0] < self._grace
+        except OSError:
+            return False
 
     def owe(self) -> bool:
         """Record the stop about to be issued. False when the record did not reach the disk: the
@@ -95,6 +108,8 @@ class OwedStart:
         if state is None:
             return "start_pending"
         running, started_at = state
+        if running and started_at <= stopped_at and time.time() - stopped_at < self._grace:
+            return "start_pending"  # the stop may still be landing
         if running or started_at > stopped_at:
             self.settle()
             return "start_settled"
