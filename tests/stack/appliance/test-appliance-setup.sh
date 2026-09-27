@@ -208,6 +208,7 @@ assert_eq "uninstall keeps config.json" "$([ -f "$V/config.json" ] && echo yes)"
 assert_eq "uninstall keeps backups/" "$([ -d "$V/backups" ] && echo yes)" "yes"
 assert_eq "uninstall keeps every *_DATA_DIR byte-identical (hash before == after)" "$(hash_kept)" "$hash_before"
 assert_eq "uninstall removes its owned control-runner units" "$(find "$UNINSTALL_UNITS" -type f -print -quit)" ""
+cp "$V/bin/docker" "$V/bin/docker-wallet"
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"
 # #2692: every version dir drives the one Compose project, so uninstall in a kept rollback dir
@@ -256,7 +257,16 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"$V/bin/systemctl"
 chmod +x "$V/bin/systemctl"
 : >"$V/data/control/.claim.1"
 SECONDS=0
-out=$(cd "$V" && PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+cp "$V/bin/docker-wallet" "$V/bin/docker"
+printf 'other/volume\n' >"$V/.wallet-volume"
+FOREIGN_VOLUME_LOG="$V/docker-foreign.log"
+: >"$FOREIGN_VOLUME_LOG"
+out=$(cd "$V" && DOCKER_LOG="$FOREIGN_VOLUME_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
+assert_eq "uninstall keeps a same-named volume without Pithead's Compose labels" \
+    "$(cat "$V/.wallet-volume")" "other/volume"
+assert_not_contains "uninstall does not remove a foreign volume" "$(cat "$FOREIGN_VOLUME_LOG")" "volume rm pithead_tari_wallet_data"
+cp "$V/bin/docker-base" "$V/bin/docker"
+rm -f "$V/.wallet-volume" "$V/bin/docker-wallet" "$V/bin/docker-base"
 assert_eq "uninstall drains the runner in the CONTROL_DIR restored from .env" "$([ "$SECONDS" -lt 20 ] && echo prompt || echo "waited ${SECONDS}s")" "prompt"
 rm -rf "$UNINSTALL_UNITS" "$V/bin/systemctl" "$V/data/control/.claim.1"
 unset UNINSTALL_UNITS
