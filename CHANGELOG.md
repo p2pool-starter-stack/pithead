@@ -178,9 +178,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
   below a height it had already committed. At the tip nothing changes. While syncing, each commit
   now waits for two disk flushes, and the bytes written are the same. Counted from the monerod
-  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes about 295,000 commits
-  when every download batch is full, and at most about 7.56 million if every batch holds one
-  block. The added time is the number of flushes times the disk's flush time, which was not
+  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes at most about 295,000
+  commits when every download batch is full, and at most about 7.56 million if every batch holds
+  one block. The added time is the number of flushes times the disk's flush time, which was not
   measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
   4.2 hours.
 
