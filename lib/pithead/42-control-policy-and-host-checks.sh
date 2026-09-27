@@ -7,9 +7,11 @@
 # Telegram lifecycle verbs, #338), `worker-apply`/`worker-upgrade` (a rig's own control API,
 # #185/#597), `backup` (an encrypted archive + one-time emergency kit, #908), the five staged
 # appliance OS-update verbs `os-check`/`os-download`/`os-verify`/`os-install`/`os-reboot`
-# (47-/48-os-update-*.sh), and the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
-# (#913/#943, 46a-control-diagnostics.sh). The dispatching `case` in 49-control-request-loop.sh
-# is the list this sentence must match; check it there before trusting this one.
+# (47-/48-os-update-*.sh), the two read-only diagnostics verbs `diag-doctor`/`diag-logs`
+# (#913/#943, 46a-control-diagnostics.sh), and `onion-client-key` (the dashboard onion's
+# client-auth credential as a one-time kit, #1882, 45-control-backup.sh). The dispatching `case`
+# in 49-control-request-loop.sh is the list this sentence must match; check it there before
+# trusting this one.
 # Outcomes land in results/ and an audit line in audit/, both mounted read-only in the container —
 # as is masked/, the pre-masked config copy the editor form prefills from (#440); the raw
 # config.json is never mounted, so the container holds no secret it wasn't given.
@@ -176,23 +178,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # value. A free-form string that reaches a URL is the exact class this allowlist exists to keep
 # host-only, so it stays out. Check what a key IS, not which tier it happens to sit in today.
 #
-# dashboard.energy.price_feed and workers.list[] are NOT here because this list cannot see them by
-# path: both are named by path in the gate instead (43-). workers.list[].api_token (#2349)
-# renders a read-only probe env row (WORKER_API_TOKENS); writable .token stays host-only. The row
-# is deliberately left off every list here too, same as
-# XMRIG_API_TOKEN's URL cousin above: the path-level refusal in 43- already denies the WHOLE
-# workers.list[] block outright (host+token is a credential, SECURITY.md), and admitting the token
-# env row here would let a container-side commit smuggle a fleet-wide credential in behind a path
-# check that only ever looks at workers.list. "Every OTHER config path renders to .env" was claimed
-# here once and was FALSE — local_miner.enabled is a third config.json-only leaf with no porcelain
-# row, discovered by a review of this issue after the first round shipped; the gate now names it
-# explicitly too (43-, ordinary tier, no approval — it is a documented dashboard-editable toggle,
-# docs/workers.md). workers.list[] itself moved from approval-tier to REFUSED outright in that same
-# review: an appended or repointed rig host+token is a credential change, and SECURITY.md promises
-# every credential is never dashboard-committable — the "documented exception" this file used to
-# carve out for it contradicted that promise instead of satisfying it. Treat "every OTHER path
-# renders to .env" as false in general: a schema leaf that renders NOTHING must be named by path in
-# 43- or it is unclassified, not merely unlisted here.
+# workers.list[].api_token renders WORKER_API_TOKENS, while its writable .token stays host-only.
+# The env row is not generally committable: control_worker_append (42-control-approval-helpers.sh)
+# allows only a typed, SSRF-checked append and 43- admits that row only for such an append.
+# dashboard.energy.price_feed and local_miner.enabled render no env row; 43- checks them by path.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
 # there without its key here is offered to the operator and then refused host-side.
@@ -244,7 +233,9 @@ _is_canonical_ipv4() {
 # docker-bridge /24 (network.subnet, read from the LIVE config — a same-commit network.subnet
 # change is refused elsewhere, on neither editable allowlist, so the live value is the honest
 # baseline either way). RFC1918 LAN ranges (10/8, 172.16/12, 192.168/16) are deliberately NOT on
-# this list — dialing a LAN rig is this feature's whole purpose.
+# this list — dialing a LAN rig is this feature's whole purpose. This machine's OWN LAN address and
+# its other bridges vary per box, so the worker floor checks them separately (42b-, #2671); the
+# remote-node probe (10-node-probe.sh) shares this classifier and does not.
 _ipv4_is_sensitive() {
     local a b prefix
     IFS=. read -r a b _ _ <<<"$1"
@@ -308,7 +299,7 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
+# True if $1 — a workers.list[] host an adopt (append-only) commit is about to introduce —
 # resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
 # already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
@@ -316,7 +307,9 @@ _resolve_host_ips() {
 # so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
 # its own host's loopback services or a sibling container, then immediately dial it (with an
 # attacker-chosen bearer) via the pre-existing worker-apply/worker-upgrade path, which resolves and
-# dials strictly from the HOST's own config. An ordinary LAN or public rig address is unaffected.
+# dials strictly from the HOST's own config. That reach includes this machine's own interface
+# addresses and every bridge subnet on it (42b-, #2671), not only the fixed classes above. An
+# ordinary LAN or public rig address is unaffected.
 #
 # #893 round 5: an earlier version of this function classified by STRING SHAPE alone — a denylist
 # of "localhost" and its known /etc/hosts aliases. An independent review found that a spelling
@@ -342,13 +335,16 @@ _resolve_host_ips() {
 # is why that's acceptable without also adding a dial-time re-check (see the PR's "Dial-time
 # re-check" note).
 _control_host_is_internal() {
-    local host resolved ip
+    local host resolved ip own
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
+    # This machine's own interface addresses and bridge subnets (#2671, 42b-). An unreadable
+    # interface list -> FAIL CLOSED, as for an unresolvable name.
+    own=$(_host_local_networks) || return 0
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host"
+        _ipv4_is_sensitive "$host" || _ip_in_host_networks "$host" "$own"
         return
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
@@ -371,6 +367,7 @@ _control_host_is_internal() {
         else
             return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
+        _ip_in_host_networks "$ip" "$own" && return 0
     done <<<"$resolved"
     return 1
 }

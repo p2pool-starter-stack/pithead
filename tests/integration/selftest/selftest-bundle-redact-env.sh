@@ -42,6 +42,7 @@ RENDER="$REPO/lib/pithead/33-render-env.sh"
 # Run the SHIPPED function in a subshell, so sourcing the artifact cannot leak definitions into
 # this harness. `source` reads from /dev/null so it can never consume the payload on stdin.
 bre() { (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     bundle_redact_env
 ); }
@@ -50,6 +51,7 @@ bre() { (
 # Without this, a broken source makes every absence assertion below pass vacuously.
 echo "== unit: support-bundle env redactor is reachable (#1631) =="
 if (
+    # shellcheck source=/dev/null  # CLI is its own lint root (#2632)
     source "$REPO/pithead" </dev/null >/dev/null 2>&1
     declare -F bundle_redact_env >/dev/null
 ); then
@@ -77,6 +79,89 @@ for _key in NTFY_URL NOTIFY_WEBHOOK_URLS MONERO_NODE_USERNAME XVB_DONOR_ID; do
     esac
 done
 
+# --- WHICH LINES ARE READ (#2414) --------------------------------------------------------------
+# The filter used to look only at lines matching `^[A-Z][A-Z0-9_]*=` and print everything else
+# verbatim, so the previous password a hand-edited .env keeps commented out above the live one
+# shipped in the clear. Each variant below carries a distinct value, so a failure names the shape
+# that leaked. Ruled on the issue: every ambiguity fails closed, so a secret anywhere in comment
+# prose, after a survivor's value or behind an unclosed quote is redacted too.
+echo "== unit: commented, indented and malformed secret lines are redacted (#2414) =="
+while IFS='|' read -r _label _line; do
+    OUT="$(printf '%s\n' "$_line" | bre)"
+    case "$OUT" in
+    *OLDSECRET*) it_fail "$_label is redacted" "raw value survived: $OUT" ;;
+    *) it_pass "$_label is redacted" ;;
+    esac
+done <<'ROWS'
+active assignment|MONERO_NODE_PASSWORD=OLDSECRET1
+commented assignment|# MONERO_NODE_PASSWORD=OLDSECRET2
+commented, no space|#MONERO_NODE_PASSWORD=OLDSECRET3
+double-hash comment|## TELEGRAM_BOT_TOKEN=OLDSECRET4
+indented assignment|    WALLET_RPC_PASSWORD=OLDSECRET5
+tab-indented comment|	#	PROXY_AUTH_TOKEN=OLDSECRET6
+export prefix|export NTFY_TOKEN=OLDSECRET7
+commented export|# export XMRIG_API_TOKEN=OLDSECRET8
+spaces around =|TARI_WALLET_PASSWORD = OLDSECRET9
+lowercase key|monero_node_password=OLDSECRET10
+malformed, no =|MONERO_NODE_PASSWORD OLDSECRET11
+malformed, empty key|=OLDSECRET12
+malformed, bare value|OLDSECRET13
+secret inside comment prose|# rotated; see WALLET_RPC_PASSWORD=OLDSECRET14 for the old one
+second secret in comment prose|# STRATUM_PORT is 3333, NTFY_TOKEN=x and TELEGRAM_BOT_TOKEN = OLDSECRET15
+trailing comment on a survivor|STRATUM_PORT=3333 # old MONERO_NODE_PASSWORD=OLDSECRET16
+trailing prose on a survivor|MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc # pw OLDSECRET17
+second KEY= on a survivor|STRATUM_PORT=3333 MONERO_NODE_PASSWORD=OLDSECRET18
+second KEY= on a commented survivor|# STRATUM_PORT=3334 MONERO_NODE_PASSWORD=OLDSECRET19
+unclosed quote on a survivor|STRATUM_BIND="0.0.0.0 OLDSECRET20
+second KEY= after a comma|HOST_PORT=80,WALLET_RPC_PASSWORD=OLDSECRET21
+second KEY= glued on|HOST_PORT=80WALLET_RPC_PASSWORD=OLDSECRET22
+second KEY= glued on, in prose|# was HOST_PORT=3333WALLET_RPC_PASSWORD=OLDSECRET23
+second KEY= after a comma, in prose|# was HOST_PORT=3333,WALLET_RPC_PASSWORD=OLDSECRET24
+ROWS
+
+# Fail closed must not become fail useless: the operational keys the bundle exists to carry stay
+# readable through every new path, including the double-quoted form dotenv_render_value writes.
+echo "== unit: survivor values stay readable through every new path (#2414) =="
+while IFS='|' read -r _label _line _want; do
+    OUT="$(printf '%s\n' "$_line" | bre)"
+    if [ "$OUT" = "$_want" ]; then
+        it_pass "$_label survives readable"
+    else
+        it_fail "$_label survives readable" "want: $_want got: $OUT"
+    fi
+done <<'ROWS'
+indented survivor|    STRATUM_PORT=3333|    STRATUM_PORT=3333
+export survivor|export STRATUM_PORT=3333|export STRATUM_PORT=3333
+commented survivor|# STRATUM_PORT=3334|# STRATUM_PORT=3334
+survivor with a trailing note|STRATUM_PORT=3333   # note|STRATUM_PORT=3333 # [redacted]
+indented export survivor with a note|	export TARI_MODE=full # note|	export TARI_MODE=full # [redacted]
+quoted survivor with spaces|P2POOL_FLAGS="--mini --socks5 172.28.0.2:9050"|P2POOL_FLAGS="--mini --socks5 172.28.0.2:9050"
+quoted survivor with an escaped quote and a hash|P2POOL_FLAGS="a \" # b" # note|P2POOL_FLAGS="a \" # b" # [redacted]
+survivor in comment prose|# was STRATUM_PORT=3334 until May|# was STRATUM_PORT=3334 until May
+survivor URL in comment prose|# was MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc ok|# was MONERO_WALLET_RPC_URL=http://127.0.0.1:18082/json_rpc ok
+ROWS
+
+echo "== unit: comment structure and non-secret configuration survive (#2414) =="
+FIXTURE='# Monero node
+# MONERO_NODE_PASSWORD=OLDSECRETA
+
+MONERO_NODE_PASSWORD=LIVESECRETB
+# STRATUM_PORT=3334
+    STRATUM_PORT=3333'
+WANT='# Monero node
+# MONERO_NODE_PASSWORD=[redacted]
+
+MONERO_NODE_PASSWORD=[redacted]
+# STRATUM_PORT=3334
+    STRATUM_PORT=3333'
+OUT="$(printf '%s\n' "$FIXTURE" | bre)"
+if [ "$OUT" = "$WANT" ]; then
+    it_pass "a hand-edited .env keeps its markers, prose, blanks and survivors line for line"
+else
+    it_fail "a hand-edited .env keeps its markers, prose, blanks and survivors line for line" \
+        "got: $OUT"
+fi
+
 # --- FULL POPULATION SWEEP ----------------------------------------------------------------------
 # Hand-classified against the rendered population, measured 127 keys at the time of this change.
 # A key in neither list fails below BY NAME.
@@ -86,7 +171,7 @@ DASHBOARD_AUTH_USER DASHBOARD_AUTH_HASH_B64 DASHBOARD_AUTH_PW_FP TARI_SPEND_PUBL
 MONERO_WALLET_ADDRESS MONERO_VIEW_KEY TARI_WALLET_ADDRESS TARI_VIEW_KEY XVB_DONOR_ID
 MONERO_ONION_ADDRESS TARI_ONION_ADDRESS P2POOL_ONION_ADDRESS DASHBOARD_ONION_ADDRESS
 DASHBOARD_ONION_CLIENT_PUBKEY DASHBOARD_ONION_CLIENT_PRIVKEY NTFY_URL NOTIFY_WEBHOOK_URLS
-HEALTHCHECKS_PING_URL XVB_STANDBY_SOURCE TELEGRAM_CHAT_ID MONERO_NODE_HOST TARI_GRPC_ADDRESS HOST_IP"
+HEALTHCHECKS_PING_URL XVB_STANDBY_SOURCE TELEGRAM_CHAT_ID MONERO_NODE_HOST MONERO_RPC_URL TARI_GRPC_ADDRESS HOST_IP"
 
 MUST_SURVIVE="CADDY_LOG_DIR CLEARNET_STATE_DIR COMPOSE_PROFILES CONTROL_DIR
 DASHBOARD_CHECK_UPDATES DASHBOARD_CONTROL_ENABLED DASHBOARD_DATA_DIR DASHBOARD_EXPOSE_PUBLIC_IP

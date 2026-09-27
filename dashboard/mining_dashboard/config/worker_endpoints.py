@@ -156,7 +156,8 @@ def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[di
             if read_token and read_token[:2] == (entry["host"], port):
                 entry["read_token"] = read_token[2]
             elif probe_token and (probe_token["host"], probe_token["port"]) == (
-                entry["host"], port
+                entry["host"],
+                port,
             ):
                 entry["read_token"] = probe_token["token"]
         seen.add(name)

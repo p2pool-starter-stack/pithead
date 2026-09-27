@@ -1,6 +1,5 @@
 # shellcheck shell=bash
 : "${OS_RUN_SUITE:?source via the suite runner}"
-#
 # SCOPE (#2055 G1): legs 1-3 below keep the guest UNPROVISIONED throughout — neither config.json
 # nor machine-role is ever written, so pithead-boot.service's ConditionPathExists never triggers
 # and the unit never runs for the whole of legs 1-3. Their `rauc install`/`mark-good`/`mark-bad`
@@ -212,6 +211,7 @@ phase_update() {
         "legs 1-3 never provision, so no floor is ever raised or put back here — phase_provision_floor_fallback_leg proves it under --phase provision or --phase all" missing
 
     phase_update_dashboard "$bundle" "${serial_mark:-0}"
+    phase_update_healthgate_leg # leg 5, split out (file budget): phases/update-healthgate-leg.sh
 
     # Recorded AFTER leg 4, and classed on what leg 4 actually did. Claiming "covered by leg 4"
     # before leg 4 runs would let a red run assert its own proof: leg 4 returns early at any of a

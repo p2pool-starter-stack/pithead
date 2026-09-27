@@ -31,11 +31,24 @@ public internet is DROPPED. Only the `tor` container reaches the internet. So if
 misconfigured, buggy, or learns a clearnet peer address (as Tari's comms layer does), the connection
 fails closed instead of leaking your IP.
 
+Connection tracking lets replies through, which keeps clients on the published ports working, and
+nothing else. A clearnet connection an app opened while the rules were absent (a host firewall
+reload that flushed them, a `down` followed by a manual container start) does not survive their
+return: the next TCP packet the app sends on it is answered with a reset, and any other packet is
+dropped. What the app sent before the rules went back in has already left the box. A re-install
+never opens such a window itself: `up`, `apply` and `upgrade` replace the rules in one kernel
+transaction (`iptables-restore --noflush` on Docker, one `nft -f` on the appliance), and a load
+the kernel refuses leaves the rules already there in place.
+
 The rules land where the running container engine actually filters forwarded traffic, which differs
 by channel:
 
 - **Docker (DIY channel):** the rules go in Docker's `DOCKER-USER` chain. Docker adds the
   `FORWARD → DOCKER-USER` jump when it creates the network, so the chain is traversed on egress.
+  A reboot empties the chain, and the containers restart on their own when Docker starts, so
+  `pithead` also installs `pithead-egress.service`: a oneshot unit ordered before
+  `docker.service` and pulled in by it, carrying the same rules. It inserts the `DROP` first,
+  so a start that fails halfway blocks more than intended rather than less.
 - **podman + netavark (appliance):** netavark serves the forward hook from its own nftables table and
   never adds a `DOCKER-USER` jump, so the same iptables rules would sit in a chain no packet reaches.
   `pithead` instead installs an independent `inet pithead_egress` nftables table hooked at forward
@@ -58,7 +71,8 @@ and everything else the bridge originates is dropped, leaving the host's own IPv
 other interface untouched. If a v6 subnet is present but the bridge interface can't be resolved,
 `pithead` refuses to install a v4-only firewall it would otherwise report as fail-closed.
 
-- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`.
+- Needs root (the firewall rules), like the GRUB/HugePages steps; removed at `pithead down`. The
+  DIY boot unit stays through `down` and is removed by `uninstall` or by opting out.
 - Opt out with `network.tor_egress_firewall: false` (then routing falls back to per-app config only).
 - The accepted destinations are the private ranges only: `10.0.0.0/8`, `172.16.0.0/12`,
   `192.168.0.0/16`, and `100.64.0.0/10` (CGNAT, so Tailscale addresses work). A remote Monero or
@@ -68,7 +82,7 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
   over the Tor SOCKS (`socks5h`, [#163](#runtime-egress)/#224) — with one exception. With
   `tari.mode: remote` the dashboard reads that node's state over gRPC directly, un-proxied, the same
   plaintext leg p2pool uses.
-- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections.
+- Verify it live with [`tests/integration/benchmarks/bench-verify-egress.sh`](../tests/integration/benchmarks/bench-verify-egress.sh); it confirms 0 app-container public connections, and names each one it finds as an outbound dial (a leak) or an inbound client on a published port.
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
@@ -129,12 +143,13 @@ What the running stack sends to the internet, connection by connection.
 | **monerod** P2P + tx broadcast | Monero network | — | ✅ Tor (`proxy=` / `tx-proxy=`) | on | Tor by default; **P2P** can opt into clearnet for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) — tx broadcast stays on Tor regardless |
 | **monerod** DNS (checkpoints, blocklist, update check, priority-node hostnames) | DNS resolvers | "this IP runs Monero" | ✅ **closed** — `disable-dns-checkpoints`, `check-updates=disabled`, `enable-dns-blocklist=0`, hostname priority-nodes dropped (#161) | n/a | — |
 | **monerod RPC to a remote node** (only if `monero.mode: remote`) | the node you configured | **your real home IP**, to that node's operator | ❌ clearnet | **off** — the bundled local node is the default and has no remote-RPC egress | use a node you run on your LAN or reachable over WireGuard; a `.onion` remote isn't supported — with Tor on, p2pool's socat bridge moves this leg off the SOCKS5 proxy before it could reach Tor |
-| **Tari** P2P | Tari network | — | ✅ Tor (`type = "tor"`) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
+| **Tari** P2P | Tari network | — | ✅ Tor SOCKS (`type = "socks5"`): onion and `/ip4` peers alike are dialled through the `tor` container, and `use_libtor = false` keeps the node's own in-process Tor off ([#2653](https://github.com/p2pool-starter-stack/pithead/issues/2653)) | on | Tor by default; can opt into clearnet (TCP) for the initial sync only ([#183](#optional-clearnet-initial-sync-off-by-default)) |
 | **Tari** DNS seeds + Pulse (`seeds.tari.com`, `checkpoints.tari.com`) | DNS resolvers | "this IP runs Tari" | ✅ **closed** — `dns_seeds = []` and onion `peer_seeds`, so the configured resolvers are never queried (#162) | n/a | clearnet sync ([#183](#optional-clearnet-initial-sync-off-by-default)) re-enables the `seeds.tari.com` DNS seed for the sync window |
 | **P2Pool** merge-mine gRPC to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — same posture as monerod's own remote-node RPC above | **off** — the bundled local Tari node is the default and this leg only exists in remote mode | use a node on your LAN or reachable over WireGuard; a `.onion` remote isn't supported yet (see [Configuration › Remote Tari node](configuration.md#remote-tari-node)) |
 | **Dashboard** sync poll to a remote Tari node (only if `tari.mode: remote`) | the node you configured | **your real IP**, to that node's operator | ❌ clearnet — a plaintext gRPC dial, and the host-networked dashboard sits outside the Tor-egress firewall | **off** — only exists in remote mode | same as the p2pool leg above: LAN or WireGuard |
 | **P2Pool** inbound peers | reach you via onion | — | ✅ onion hidden service | on | — |
 | **P2Pool** outbound sidechain peers | P2Pool sidechain peers, via Tor | — | ✅ **Tor** (`--socks5`, proxy-type `tor`) by default (#165) | on | opt out with `p2pool.clearnet: true` (exposes your IP for max yield) → [below](#p2pool-outbound-peers-165---tor-by-default) |
+| **P2Pool** DNS seeds (`seeds-mini.p2pool.io`, `mini.p2poolpeers.net`, or the `main`/`nano` equivalents) | DNS resolvers | "this IP runs P2Pool" | ✅ **closed** — `--no-dns` with the Tor default, so peers come from the saved peer list and the onion seed nodes (#2496) | n/a | `p2pool.clearnet: true` re-enables the DNS seeds along with clearnet peering |
 | Dashboard **XvB stats** fetch | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, #163) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
 | Dashboard **XvB raffle registration** (#263) | `xmrvsbeast.com` | your Monero **wallet** (no longer your IP) | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled; fires once you have a PPLNS share | `XVB_ENABLED=false`, or set `XVB_SUBMIT_URL` to a disable sentinel (`off`), to stop it |
 | Dashboard **XvB winners fetch** (raffle-wins display) | `xmrvsbeast.com` | nothing — the winners file is public and the request carries no wallet | ✅ Tor (`socks5h`, same path as the stats fetch) | on, only if XvB enabled | `XVB_ENABLED=false` stops it |
@@ -227,6 +242,13 @@ sidechain peers over clearnet, exposing your IP to the P2Pool network. As of v1.
 `--socks5 <tor-ip>:9050 --socks5-proxy-type tor` into P2Pool's `command:` by default, so outbound
 dials go through Tor. No action needed.
 
+The same default adds `--no-dns` (#2496). The SOCKS proxy does not cover P2Pool's seed-node lookup:
+without the flag it looks up `seeds-mini.p2pool.io` (or the `main`/`nano` equivalent) in DNS
+on every peer-list load, which tells your ISP or resolver that the address runs P2Pool.
+With it, P2Pool makes no DNS queries and builds its peer list from its saved `p2pool_peers.txt`, its
+built-in onion seed nodes and any `--addpeers`. `p2pool.clearnet: true` drops `--no-dns` along with
+the SOCKS flags, so a clearnet node still bootstraps from the DNS seeds.
+
 Opt out for maximum yield (lower stale/uncle rate plus a larger peer set, at the cost of exposing
 your IP, worse on `--mini`/`--nano`): set `p2pool.clearnet: true` in `config.json` and re-run
 `./pithead apply`. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
@@ -285,7 +307,7 @@ switch, or the exposure banner keeps warning about a sync that isn't happening.
 |---|---|---|
 | **Monero** P2P | over Tor (`proxy=172.28.0.25:9050`) | **direct to clearnet seed nodes** (proxy line dropped), `out-peers` 48 → **32** + P2Pool v4.18's recommended **priority nodes** (`p2pmd.xmrvsbeast.com`, `nodes.hashvault.pro`) for fast, reliable sync |
 | **Monero** tx broadcast | over Tor (`tx-proxy=`) | **still over Tor** — unchanged |
-| **Tari** transport | Tor (`type = "tor"`) | **TCP** (`type = "tcp"`) |
+| **Tari** transport | Tor SOCKS (`type = "socks5"`) | **TCP** (`type = "tcp"`) |
 | **Tari** seeds | onion `peer_seeds`, `dns_seeds = []` | **`dns_seeds = ["seeds.tari.com"]`** (onion seeds are unreachable without Tor), onion `public_addresses` dropped |
 
 ### The privacy trade-off (threat model)

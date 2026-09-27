@@ -1,6 +1,6 @@
 name: Shell
 
-# Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~215 s) and
+# Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~90 s, #2632) and
 # the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~730 s) but the generated
 # CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
 # fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
@@ -83,7 +83,7 @@ jobs:
   shell-lint:
     name: Shell lint (shellcheck + shfmt)
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # 198-225 s over the four runs measured in #2048
+    timeout-minutes: 15 # lint-sh took 87 s when measured in #2632
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

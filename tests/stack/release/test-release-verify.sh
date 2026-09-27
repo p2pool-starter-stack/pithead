@@ -102,6 +102,14 @@ out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 \
 assert_rc "bad signature -> pull aborts (fail closed)" "$?" "1"
 assert_contains "bad-signature abort names the pinned image" "$out" "Signature verification FAILED for ghcr.io/test/pithead-tor@$TOR_DG"
 
+# An unreachable registry also makes cosign exit 1 (#2735, job 1227): still fail closed, but say the
+# registry was unreachable instead of blaming the release key.
+out="$(PATH="$VRI/bin:/usr/bin:/bin" COSIGN_RC=1 COSIGN_STDERR='Error: Get "https://reg.invalid/v2/": dial tcp 192.0.2.1:443: connect: no route to host' \
+    PITHEAD_REGISTRY="ghcr.io/test" STACK_VERSION="v9.9.9" run_sourced "$VRI" verify_release_images 2>&1)"
+assert_rc "unreachable registry -> pull aborts (fail closed)" "$?" "1"
+assert_contains "unreachable registry is named as such" "$out" "could not complete for ghcr.io/test/pithead-tor@$TOR_DG — cosign reports a network error"
+assert_not_contains "unreachable registry is not called a key mismatch" "$out" "does not match the release key"
+
 # cosign.pub present but the compose is NOT digest-pinned (a pre-#461 or tampered bundle): FAIL
 # CLOSED (#451). Without a digest there's nothing to bind verification to the pulled bytes, so the
 # verify-then-pull window can't be closed — refuse rather than fall back to verifying the tag.

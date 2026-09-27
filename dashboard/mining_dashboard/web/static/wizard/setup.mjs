@@ -102,9 +102,13 @@ export function renderSetup(app) {
           on ${dataWiped.when} — the wallets, node identity and synced chains that were on it are
           gone. If you have a backup, restore it below instead of setting up as a fresh machine.</p>`
         }
-        <p><button type="button" class="wizard-link"
-            onClick=${() => app.setState({ restoreMode: true, error: "" })}>
-            Restoring an existing Pithead? Upload its backup instead.</button></p>
+        <p>${
+          app.state.restoreEnabled
+            ? html`<button type="button" class="wizard-link"
+                onClick=${() => app.setState({ restoreMode: true, error: "" })}>
+                Restoring an existing Pithead? Upload its backup instead.</button>`
+            : "Restore from a backup requires HTTPS. Reboot after setup TLS is available."
+        }</p>
         ${app.state.probing && html`<${NodeProbeProgress} config=${cfg} />`}
         <${NodeProbeReport} report=${app.state.nodeProbe}>Setup does not continue while a
         check is failing. Correct the address below and submit again.<//>

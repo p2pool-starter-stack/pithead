@@ -294,7 +294,7 @@ gr_run() { # <doctor-exit> <code> <size> -> ready|held
         cd "$GR" || exit 1
         # shellcheck disable=SC1090
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-        BOOT_DOCTOR_JSON="$GR/doctor.json"
+        BOOT_DOCTOR_JSON="$GR/doctor.json" BOOT_STATUS_LOG="$GR/status.log"
         gate_ready "$2" "$3" && echo ready || echo held
     )
 }
@@ -451,11 +451,8 @@ unset -f orv_run
 unset ORV
 
 echo "== unit: revenue_container_verdict — commit-gate honesty, syncing vs crashed (#852) =="
-# The pure classifier behind check_revenue_containers, so the commit gate's central judgement is
-# tested without a running stack. Two rules it must hold:
-#   1. a crashed/unhealthy CHAIN node (monerod/tari/wallets) is a fault — the slot must not commit;
-#   2. a DOWN sync-gated miner (p2pool/xmrig-proxy) is the deliberate #35 hold, not a fault — so a
-#      days-long initial sync still commits. Only a running-but-unhealthy miner is a fault.
+# The pure classifier behind check_revenue_containers pins both rules: chain faults hold the slot;
+# only genuinely stopped sync-gated miners are the deliberate #35 hold during a long initial sync.
 rcv() { run_sourced "$SANDBOX" revenue_container_verdict "$@"; }
 # Chain nodes: healthy commits, everything short of running-and-healthy holds.
 assert_eq "monerod up+healthy -> ok" "$(rcv monerod running 'Up 5 minutes (healthy)')" "ok"
@@ -467,18 +464,21 @@ assert_contains "wallet-rpc down -> fail (chain-side must be up)" "$(rcv wallet-
 # Sync-gated miners: down is the #35 hold (ok); only running-but-unhealthy is a fault.
 assert_eq "p2pool exited (sync hold) -> ok" "$(rcv p2pool exited 'Exited (0) 4 minutes ago')" "ok"
 assert_eq "p2pool created (never started, held) -> ok" "$(rcv p2pool created 'Created')" "ok"
+assert_contains "p2pool restarting -> fail, never mistaken for a sync hold" \
+    "$(rcv p2pool restarting 'Restarting (1) 2 seconds ago')" "fail:p2pool"
 assert_eq "p2pool up+healthy -> ok" "$(rcv p2pool running 'Up 6 minutes (healthy)')" "ok"
 assert_contains "p2pool running+unhealthy -> fail" "$(rcv p2pool running 'Up 30 seconds (unhealthy)')" "fail:p2pool"
 assert_eq "xmrig-proxy down (sync hold) -> ok" "$(rcv xmrig-proxy exited 'Exited (0) 4 minutes ago')" "ok"
+assert_eq "xmrig-proxy blank state with Exited status (older Docker) -> ok" "$(rcv xmrig-proxy '' 'Exited (0) 4 minutes ago')" "ok"
 # Non-revenue containers are out of scope — the rest of doctor covers them.
 assert_eq "caddy (not revenue) -> ok" "$(rcv caddy running 'Up 5 minutes')" "ok"
 assert_eq "dashboard (not revenue) -> ok" "$(rcv dashboard running 'Up 5 minutes (healthy)')" "ok"
-# The migration hold (#851): with chain_hold=1 a chain node is judged by the miners' rule — the
-# boot path is deliberately withholding it, so down is expected and the commit must not deadlock
-# on the very hold it gates. A RUNNING-but-unhealthy chain node is still a fault.
+# The migration hold (#851) permits its deliberately stopped chain nodes, never active faults.
 assert_eq "monerod down under the migration hold -> ok" "$(rcv monerod exited 'Exited (0) 1 minute ago' 1)" "ok"
 assert_eq "tari never created under the migration hold -> ok" "$(rcv tari created 'Created' 1)" "ok"
 assert_eq "wallet-rpc down under the migration hold -> ok" "$(rcv wallet-rpc exited 'Exited (0) 2 minutes ago' 1)" "ok"
+assert_contains "monerod restarting under the migration hold -> still fail" \
+    "$(rcv monerod restarting 'Restarting (1) 2 seconds ago' 1)" "fail:monerod"
 assert_contains "monerod running+unhealthy under the hold -> still fail" "$(rcv monerod running 'Up 2 minutes (unhealthy)' 1)" "fail:monerod"
 assert_eq "monerod up+healthy under the hold -> ok (an early manual start is not a fault)" "$(rcv monerod running 'Up 5 minutes (healthy)' 1)" "ok"
 assert_contains "the hold changes nothing for a miner" "$(rcv p2pool running 'Up 30 seconds (unhealthy)' 1)" "fail:p2pool"
@@ -564,7 +564,7 @@ bg_run() { # <cwd> — one fail_boot in a sandbox, printing "<reboots> <counter>
     (
         cd "$1" 2>/dev/null || exit 1
         source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-        PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor)" 2>&1
+        PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
     )
 }
 rm -f "$BG"/rebooted.*
@@ -598,7 +598,7 @@ rm -f "$BG"/rebooted.*
 bg_out3=$(
     cd "$BGX" && rmdir "$BGX"
     source "$ROOT/os/overlay/pithead-boot" 2>/dev/null
-    PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor)" 2>&1
+    PITHEAD_REBOOT_CMD="touch $BG/rebooted.$$" fail_boot "the stack never became healthy (serving + doctor + status)" 2>&1
 )
 assert_eq "a counter it cannot write means it does NOT reboot" "$(ls "$BG"/rebooted.* 2>/dev/null | wc -l | tr -d ' ')" "0"
 assert_contains "and it says a reboot it cannot count is a reboot loop" "$bg_out3" "a reboot it cannot count is a reboot loop"

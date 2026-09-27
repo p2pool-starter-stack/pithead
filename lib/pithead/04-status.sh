@@ -15,6 +15,11 @@ tari_clearnet_exposed() {
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
 
+container_state_is_stopped() { # <state> [status]; the only states a deliberate hold can produce
+    case "$1" in created | exited | stopped) return 0 ;; "") case "${2:-}" in Created* | Exited* | Stopped*) return 0 ;; esac ;; esac
+    return 1
+}
+
 # Loud, persistent CLEARNET-SYNC banner (#183). Names exactly which daemon(s) are currently exposed
 # on clearnet so the operator can never forget. Prints nothing once both are back on Tor.
 print_clearnet_banner() {
@@ -100,7 +105,8 @@ stack_status() {
         return 1
     fi
 
-    local problems=0 proxy_state="" p2pool_state="" node_down=0
+    local problems=0 proxy_state="" p2pool_state="" node_down=0 chain_hold=0
+    os_migration_hold_active && chain_hold=1
     local s cid info state health
     while IFS= read -r s; do
         [ -z "$s" ] && continue
@@ -125,6 +131,19 @@ stack_status() {
             health=${info##* }
         fi
 
+        # A migration marker authorizes only the explicit pre-commit stop of chain services.
+        # Missing/stopped is expected; restarting or running-unhealthy still takes the normal fault path.
+        if [ "$chain_hold" = 1 ]; then
+            case " $REVENUE_CHAIN_CONTAINERS " in
+            *" $s "*)
+                if [ "$state" = missing ] || container_state_is_stopped "$state"; then
+                    printf '  %b⚠%b %-13s %s — intentionally held until this slot commits its data migration\n' "$C_YELLOW" "$C_RESET" "$s" "$state"
+                    continue
+                fi
+                ;;
+            esac
+        fi
+
         # Track required-node health (monerod/tari) to interpret a stopped proxy below.
         if [ "$s" = "monerod" ] || [ "$s" = "tari" ]; then
             if [ "$state" != "running" ] || { [ "$health" != "healthy" ] && [ "$health" != "none" ]; }; then
@@ -134,11 +153,11 @@ stack_status() {
 
         # Defer the verdict for the miner containers until we know whether a node is down /
         # the sync hold is on: a stopped p2pool or xmrig-proxy is often intentional (#31/#35).
-        if [ "$s" = "xmrig-proxy" ] && [ "$state" != "running" ]; then
+        if [ "$s" = "xmrig-proxy" ] && container_state_is_stopped "$state"; then
             proxy_state="$state"
             continue
         fi
-        if [ "$s" = "p2pool" ] && [ "$state" != "running" ]; then
+        if [ "$s" = "p2pool" ] && container_state_is_stopped "$state"; then
             p2pool_state="$state"
             continue
         fi
@@ -165,7 +184,7 @@ stack_status() {
         esac
     done <<<"$expected"
 
-    # A stopped p2pool/xmrig-proxy is normally intentional: the dashboard stops xmrig-proxy to
+    # A genuinely stopped p2pool/xmrig-proxy is normally intentional: the dashboard stops it to
     # fail workers over a node-down (#31), and holds the miner until the required chains finish
     # syncing (#35). We can't tell those apart from a genuine fault here (a healthy node can
     # still be syncing), so report it as likely-intentional and point at the dashboard.

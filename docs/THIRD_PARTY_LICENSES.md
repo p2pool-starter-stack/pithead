@@ -11,7 +11,7 @@ Version-pinned, sha256-verified, **unmodified** upstream binaries (pin + hash in
 | Binary | Version | License | Source |
 |--------|---------|---------|--------|
 | monerod | v0.18.5.1 | BSD-3-Clause | <https://github.com/monero-project/monero> |
-| p2pool | v4.18 | **GPL-3.0-or-later** | <https://github.com/SChernykh/p2pool/releases/tag/v4.18> |
+| p2pool | v4.18.1 | **GPL-3.0-or-later** | <https://github.com/SChernykh/p2pool/releases/tag/v4.18.1> |
 | xmrig-proxy | 6.26.0 | **GPL-3.0-or-later** | <https://github.com/xmrig/xmrig-proxy/releases/tag/v6.26.0> |
 | tor | distro | BSD-3-Clause | <https://gitlab.torproject.org/tpo/core/tor> |
 

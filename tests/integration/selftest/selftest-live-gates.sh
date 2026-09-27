@@ -150,9 +150,9 @@ if (
     td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
     mkdir "$td/bin"
     printf '%s\n' 'TOR_EGRESS_TAG=pithead-tor-egress' 'container_engine() { echo docker; }' 'env_get() { :; }' \
-        'tor_egress_rules() { printf "%s\n" "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-s 172.28.0.25 -j ACCEPT" "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" "-s 172.28.0.0/24 -j DROP"; }' 'apply_tor_egress_firewall() { :; }' \
+        'tor_egress_rules() { printf "%s\n" "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" "-s 172.28.0.25 -j ACCEPT" "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" "-s 172.28.0.0/24 -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" "-s 172.28.0.0/24 -j DROP"; }' 'apply_tor_egress_firewall() { :; }' \
         'error() { exit 1; }' 'main() { apply_tor_egress_firewall; printf "%s" "$1" > called; }' >"$td/pithead"
-    printf '%s\n' '#!/bin/sh' 'shift; [ "$1 $2" != "iptables -S" ] || printf "%s\n" "-A DOCKER-USER -m comment --comment pithead-tor-egress -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.25 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"' >"$td/bin/sudo"
+    printf '%s\n' '#!/bin/sh' 'shift; [ "$1 $2" != "iptables -S" ] || printf "%s\n" "-A DOCKER-USER -m comment --comment pithead-tor-egress -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.25 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" "-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP"' >"$td/bin/sudo"
     chmod +x "$td/bin/sudo"
     IT_REMOTE_DIR="$td" PATH="$td/bin:$PATH"
     rx() { (cd "$IT_REMOTE_DIR" && bash -c "$1"); }
@@ -235,9 +235,9 @@ fw_arm() { # <rules the stub reports installed...> -> rc of verify_tor_egress_fi
         # The real one lives in pithead (lib/pithead/02-tor-egress.sh); the selftest does not source
         # the CLI, so mirror its output. Kept byte-identical to that function's printf list.
         tor_egress_rules() {
-            printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-s $2 -j ACCEPT" \
+            printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" "-s $2 -j ACCEPT" \
                 "-s $1 -d 10.0.0.0/8 -j ACCEPT" "-s $1 -d 172.16.0.0/12 -j ACCEPT" \
-                "-s $1 -d 192.168.0.0/16 -j ACCEPT" "-s $1 -d 100.64.0.0/10 -j ACCEPT" "-s $1 -j DROP"
+                "-s $1 -d 192.168.0.0/16 -j ACCEPT" "-s $1 -d 100.64.0.0/10 -j ACCEPT" "-s $1 -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" "-s $1 -j DROP"
         }
         # shellcheck disable=SC2034 # read by the eval'd verifier, which shellcheck cannot follow into
         TOR_EGRESS_TAG=pithead-tor-egress
@@ -248,17 +248,17 @@ fw_arm() { # <rules the stub reports installed...> -> rc of verify_tor_egress_fi
 # The exact specs the applier installs, in order.
 FW_OK=()
 while IFS= read -r r; do FW_OK+=("DOCKER-USER -m comment --comment pithead-tor-egress $r"); done < <(
-    printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT" "-s 172.28.0.25 -j ACCEPT" \
+    printf '%s\n' "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" "-s 172.28.0.25 -j ACCEPT" \
         "-s 172.28.0.0/24 -d 10.0.0.0/8 -j ACCEPT" "-s 172.28.0.0/24 -d 172.16.0.0/12 -j ACCEPT" \
         "-s 172.28.0.0/24 -d 192.168.0.0/16 -j ACCEPT" "-s 172.28.0.0/24 -d 100.64.0.0/10 -j ACCEPT" \
-        "-s 172.28.0.0/24 -j DROP"
+        "-s 172.28.0.0/24 -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" "-s 172.28.0.0/24 -j DROP"
 )
 fw_arm "${FW_OK[@]}" && it_pass "egress firewall verifier ACCEPTS the canonical ruleset (control: the fixture can pass)" ||
     it_fail "egress firewall verifier ACCEPTS the canonical ruleset (control: the fixture can pass)"
-fw_arm "${FW_OK[@]:0:6}" && it_fail "a missing canonical rule is refused" || it_pass "a missing canonical rule is refused"
+fw_arm "${FW_OK[@]:0:7}" && it_fail "a missing canonical rule is refused" || it_pass "a missing canonical rule is refused"
 fw_arm "${FW_OK[@]}" "DOCKER-USER -m comment --comment pithead-tor-egress -s 10.9.9.9 -j ACCEPT" &&
     it_fail "a stray extra tagged rule is refused" || it_pass "a stray extra tagged rule is refused"
-fw_arm "${FW_OK[@]:6:1}" "${FW_OK[@]:0:6}" && it_fail "the subnet DROP ahead of the ACCEPTs is refused" ||
+fw_arm "${FW_OK[@]:7:1}" "${FW_OK[@]:0:7}" && it_fail "the subnet DROP ahead of the ACCEPTs is refused" ||
     it_pass "the subnet DROP ahead of the ACCEPTs is refused"
 
 echo "== image-upgrade continuity verdicts =="

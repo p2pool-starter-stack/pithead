@@ -196,7 +196,8 @@ render_masked_config() { # <control-dir>
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
-              if (.token // "") == "" then . else .token = {"__secret__": true} end)
+              if (.token // "") == "" then . else .token = {"__secret__": true} end
+              | if (.api_token // "") == "" then . else .api_token = {"__secret__": true} end)
           else . end
         # notifications.webhooks[] (#848): the whole URL is the bearer secret (query strings carry
         # tokens), and there is no fixed leaf path — mask each set entry, like the worker tokens.

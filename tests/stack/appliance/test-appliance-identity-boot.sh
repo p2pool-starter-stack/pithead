@@ -131,8 +131,8 @@ hg_want() {
 }
 assert_eq "16 GiB machine keeps the full 3072-page pool" "$(hg_want "$HG/meminfo-16g")" "3072"
 assert_eq "exactly the 15 GiB floor keeps the full pool (a real 16 GB box clears it)" "$(hg_want "$HG/meminfo-at-floor")" "3072"
-assert_eq "just under the floor reduces to 2560 pages (both RandomX datasets still fit)" "$(hg_want "$HG/meminfo-under-floor")" "2560"
-assert_eq "8 GiB machine reduces to 2560 pages" "$(hg_want "$HG/meminfo-8g")" "2560"
+assert_eq "just under the floor reduces to 2048 pages (measured, #2685)" "$(hg_want "$HG/meminfo-under-floor")" "2048"
+assert_eq "8 GiB machine reduces to 2048 pages" "$(hg_want "$HG/meminfo-8g")" "2048"
 assert_eq "4 GiB machine releases the reservation (0 pages)" "$(hg_want "$HG/meminfo-4g")" "0"
 assert_eq "garbage MemTotal keeps the full baked pool (degrade only on evidence)" "$(hg_want "$HG/meminfo-garbage")" "3072"
 assert_eq "missing MemTotal keeps the full baked pool" "$(hg_want "$HG/meminfo-no-total")" "3072"
@@ -162,11 +162,11 @@ out=$(
     source "$ROOT/os/overlay/pithead-hugepages"
     main
 )
-assert_eq "low-RAM boot shrinks the pool to the reduced target" "$(cat "$HG/nr_hugepages")" "2560"
-assert_contains "low-RAM boot announces the degrade on the console/journal (#1221 full wording)" "$out" "This machine has 7.7 GiB of RAM — below the supported 16 GB. The mining reservation is reduced from 6 GiB to 5 GiB of large pages so mining can still run, and everything else runs squeezed: expect lower performance and less headroom. Use a 16 GB machine for supported operation."
+assert_eq "low-RAM boot shrinks the pool to the reduced target" "$(cat "$HG/nr_hugepages")" "2048"
+assert_contains "low-RAM boot announces the degrade on the console/journal (#1221 full wording)" "$out" "This machine has 7.7 GiB of RAM — below the supported 16 GB. The mining reservation is reduced from 6 GiB to 4 GiB of large pages so mining can still run, and everything else runs squeezed: expect lower performance and less headroom. Use a 16 GB machine for supported operation."
 assert_contains "degraded marker names the supported floor in plain words" "$(cat "$HG/marker" 2>/dev/null)" "16 GB"
 assert_eq "marker records the chosen page count — the authority later writers honour" \
-    "$(sed -n 's/^pages=//p' "$HG/marker" 2>/dev/null)" "2560"
+    "$(sed -n 's/^pages=//p' "$HG/marker" 2>/dev/null)" "2048"
 assert_not_contains "degrade message carries no issue numbers (operator text)" "$out" "#9"
 
 # main, too-small tier: releases the pool entirely and says the stack will not run.
@@ -199,12 +199,12 @@ assert_eq "supported machine says nothing" "$out" ""
 # doctor reads the marker as a WARN — never FAIL, so the A/B commit gate (which takes doctor's
 # exit code) still commits a degraded-but-serving box. The words on line one are for the human;
 # the pages= record under them is for the writers, and doctor must not leak it.
-printf 'This machine has 7.7 GiB of RAM - below the supported 16 GB. Reduced reservation.\npages=2560\n' >"$HG/marker"
+printf 'This machine has 7.7 GiB of RAM - below the supported 16 GB. Reduced reservation.\npages=2048\n' >"$HG/marker"
 out=$(PITHEAD_HUGEPAGES_MARKER="$HG/marker" run_sourced "$SANDBOX" check_hugepages_degraded 2>&1)
 assert_contains "doctor surfaces the degraded-hugepages message as a WARN" "$out" "WARN"
 assert_contains "doctor repeats the boot-time message verbatim" "$out" "below the supported 16 GB"
 assert_not_contains "doctor never FAILs on the degrade (commit gate must still pass)" "$out" "FAIL"
-assert_not_contains "doctor repeats the words, not the machine record" "$out" "pages=2560"
+assert_not_contains "doctor repeats the words, not the machine record" "$out" "pages=2048"
 rc=$(
     PITHEAD_HUGEPAGES_MARKER="$HG/absent-marker" run_sourced "$SANDBOX" check_hugepages_degraded >/dev/null 2>&1
     echo $?

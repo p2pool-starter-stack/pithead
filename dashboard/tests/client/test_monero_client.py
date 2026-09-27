@@ -58,13 +58,16 @@ class TestGetInfo:
         # Digest auth and a bounded timeout are passed through on every call.
         assert mock_get.call_args.kwargs["timeout"] == client.timeout
         assert mock_get.call_args.kwargs["auth"] is client._auth
+        assert mock_get.call_args.kwargs["allow_redirects"] is False
 
-    def test_network_error_returns_none(self):
-        client = MoneroClient(username="u", password="p")
+    def test_network_error_returns_none_without_logging_the_endpoint(self, caplog):
+        client = MoneroClient(url="http://private-node.example:18081", username="u", password="p")
         with patch.object(
-            monero_mod.requests, "get", side_effect=requests.RequestException("refused")
+            monero_mod.requests, "get", side_effect=requests.ConnectionError("refused")
         ):
             assert client.get_info() is None
+        assert "private-node.example" not in caplog.text
+        assert "ConnectionError" in caplog.text
 
     def test_non_200_returns_none(self):
         client = MoneroClient(username="u", password="p")

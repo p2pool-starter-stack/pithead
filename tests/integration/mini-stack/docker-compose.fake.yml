@@ -37,6 +37,12 @@ services:
     volumes:
       - dashboard_data:/data
       - dashboard_stats:/app/stats:ro
+      - type: bind
+        source: ${PITHEAD_LOCK_FILE:?PITHEAD_LOCK_FILE is required}
+        target: /pithead-lock
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
       HOST_IP: "127.0.0.1"
       TZ: "Etc/UTC"

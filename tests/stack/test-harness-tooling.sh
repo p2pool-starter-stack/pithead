@@ -114,7 +114,7 @@ echo "== unit: #1936 wizard-state-poll self-test =="
 # proves it and it needs no KVM.
 bash "$ROOT/tests/os/provision-browser-submit.sh" --self-test >/dev/null 2>&1
 assert_rc "#1936 wizard-state-poll self-test passes" "$?" "0"
-bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null 2>&1
+bash "$ROOT/tests/os/selftest-run-modules.sh" >/dev/null
 assert_rc "the OS runner module and control lifecycle guard self-test passes" "$?" "0"
 bash "$ROOT/tests/os/appliance-hostname-leg.sh" --self-test >/dev/null 2>&1
 assert_rc "#1966 appliance hostname verdict self-test passes" "$?" "0"
@@ -310,11 +310,10 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # THE NUMBERED ENTRIES ARE A DIFFERENT CLASS AND CARRY A DIFFERENT PROOF (#1767). A label built from
 # a POSITIONAL is a WRAPPER's label: what actually prints is whatever its callers pass, which this
 # file cannot see. So the sweep flags the wrapper and the review has to go to the callers. Done
-# mechanically — every call of the ELEVEN wrappers, with backslash continuations joined, argument
-# extracted by a shell-grammar parser rather than by eye: 73 calls, 72 passing a bare string
-# literal, and one passing `${ev}` from test-control-editable-allowlist.sh's loop over 25
-# spelled-out event names. That one is a loop variable over a fixed list, so the whole class is
-# run-invariant today.
+# mechanically — every call of the ELEVEN wrappers, continuations joined, argument extracted by a
+# shell-grammar parser: 73 calls, 72 bare string literals and one `${ev}` from
+# test-control-editable-allowlist.sh's loop over 25 spelled-out event names, a loop variable over a
+# fixed list. #2671 added two wrappers with 15 calls, all bare literals. Run-invariant today.
 #   * COUNT THE WRAPPERS, NOT THE ROWS. The first pass said "eight wrappers, 55 calls" because it
 #     counted ROWS: a row is <file>|<index>, so test-config.sh|2 collapses three wrappers and
 #     test-rig-worker.sh|3 three more. Eleven and 73 are the numbers the imperative below is about;
@@ -326,9 +325,8 @@ vd_interp_names() { # <file...> -> "<basename>|<name>", once per distinct interp
 # caller handing one of these wrappers a measured value keeps the set identical and the row green —
 # the caller audit above is a point-in-time reading, not a standing instrument. Re-run it when a
 # wrapper gains callers; that is the residual #1740 could not close and this row does not either.
-# The special-parameter class has no live site beyond $@ — no label in tests/stack uses $* or $#.
-# They are seeded below anyway, so all three characters have a control that can fail rather than two
-# branches that pass by construction.
+# No label in tests/stack uses $* or $#, the special parameters past $@. They are seeded below
+# anyway, so all three have a control that can fail, not two branches that pass by construction.
 vd_expected="$(
     cat <<'VDEXP'
 lib.sh|1
@@ -353,6 +351,8 @@ test-control-diagnostics.sh|_c
 test-control-diagnostics.sh|_diag_container
 test-control-editable-allowlist.sh|1
 test-control-editable-allowlist.sh|k
+test-control-ssrf-host-local.sh|2
+test-doctor-surface.sh|_s
 test-doctor.sh|ip
 test-recovery-address-gates.sh|_rag_v
 test-recovery-address-gates.sh|label
@@ -376,7 +376,6 @@ VDEXP
 mapfile -t stack_fragments < <(find "$ROOT/tests/stack" -type f -name 'test-*.sh' | sort)
 assert_eq "every PASS label that interpolates a value is one the suite has reviewed" \
     "$(vd_interp_names "$ROOT/tests/stack/lib.sh" "${stack_fragments[@]}")" "$vd_expected"
-
 # The row above is an equality over a set, so a sweep that silently stopped matching would report
 # an empty actual against a non-empty expectation and fail loudly — but it would fail naming the
 # wrong cause. These three drive the extractor over a file written for the purpose, so each

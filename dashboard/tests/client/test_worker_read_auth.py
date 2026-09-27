@@ -62,7 +62,10 @@ async def test_stale_read_map_never_sends_credential(
     monkeypatch.setattr(cfg, "WORKER_READ_TOKENS_PATH", str(read_path))
     monkeypatch.setattr(cfg, "DASHBOARD_WORKERS", None)
     monkeypatch.setattr(xc, "WORKER_ENDPOINTS", None)
-    monkeypatch.setenv("WORKER_API_TOKENS", json.dumps({"rig1": {"host": "10.0.0.5", "port": 8081, "token": "probe-only"}}))
+    monkeypatch.setenv(
+        "WORKER_API_TOKENS",
+        json.dumps({"rig1": {"host": "10.0.0.5", "port": 8081, "token": "probe-only"}}),
+    )
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     assert (await XMRigWorkerClient(session).get_stats(descriptor_host, "rig1"))["api_ok"] is False
     assert session.calls == []
@@ -77,7 +80,10 @@ async def test_worker_api_token_never_targets_an_unpinned_host(tmp_path, monkeyp
     monkeypatch.setattr(cfg, "WORKER_READ_TOKENS_PATH", str(read_path))
     monkeypatch.setattr(cfg, "DASHBOARD_WORKERS", None)
     monkeypatch.setattr(xc, "WORKER_ENDPOINTS", None)
-    monkeypatch.setenv("WORKER_API_TOKENS", json.dumps({"rig1": {"host": "10.0.0.6", "port": 8080, "token": "probe-only"}}))
+    monkeypatch.setenv(
+        "WORKER_API_TOKENS",
+        json.dumps({"rig1": {"host": "10.0.0.6", "port": 8080, "token": "probe-only"}}),
+    )
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     assert (await XMRigWorkerClient(session).get_stats("10.0.0.6", "rig1"))["api_ok"] is False
     assert session.calls == []
@@ -86,13 +92,23 @@ async def test_worker_api_token_never_targets_an_unpinned_host(tmp_path, monkeyp
 @pytest.mark.asyncio
 async def test_explicit_read_only_probe_token_authenticates_without_adoption(tmp_path, monkeypatch):
     config_path, read_path = tmp_path / "config.json", tmp_path / "worker-read-tokens.json"
-    _write(config_path, {"workers": {"list": [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}]}})
+    _write(
+        config_path,
+        {
+            "workers": {
+                "list": [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}]
+            }
+        },
+    )
     _write(read_path, [])
     monkeypatch.setattr(cfg, "HOST_CONFIG_PATH", str(config_path))
     monkeypatch.setattr(cfg, "WORKER_READ_TOKENS_PATH", str(read_path))
     monkeypatch.setattr(cfg, "DASHBOARD_WORKERS", None)
     monkeypatch.setattr(xc, "WORKER_ENDPOINTS", None)
-    monkeypatch.setenv("WORKER_API_TOKENS", json.dumps({"rig1": {"host": "10.0.0.5", "port": 8080, "token": "probe-only"}}))
+    monkeypatch.setenv(
+        "WORKER_API_TOKENS",
+        json.dumps({"rig1": {"host": "10.0.0.5", "port": 8080, "token": "probe-only"}}),
+    )
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     result = await XMRigWorkerClient(session).get_stats("10.0.0.8", "rig1")
     assert result["api_ok"] is True and result["adopted"] is False
@@ -148,6 +164,14 @@ async def test_masked_control_token_without_read_map_fails_closed(monkeypatch):
         "api_ok": False,
         "adopted": True,
     }
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unmasked_control_token_is_never_probe_bearer(monkeypatch):
+    monkeypatch.setattr(xc, "WORKER_ENDPOINTS", [{"name": "rig1", "host": "10.0.0.5", "token": "write-capable"}])
+    session = FakeSession(response=FakeResponse(200, {"ok": True}))
+    assert (await XMRigWorkerClient(session).get_stats("10.0.0.5", "rig1"))["api_ok"] is False
     assert session.calls == []
 
 

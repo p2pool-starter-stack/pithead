@@ -17,7 +17,9 @@
 # Interpretation:
 #   - `tor` arm  → EVERY app container must show 0 PERSISTENT public connections (all egress via Tor).
 #                  Only the `tor` container should reach public IPs (Tor relays). A persistent app
-#                  connection = LEAK → exit 1.
+#                  connection → exit 1, each one labelled `outbound to port N` (the app dialled it: a
+#                  CLEARNET LEAK) or `inbound on listening port N` (a public client reached a port the
+#                  container publishes; no app dial). (#2549)
 #   - `clearnet` → the mining-path containers (p2pool, xmrig-proxy while donating) SHOULD show direct
 #                  public connections; monerod/tari staying at 0 confirms node-sync is still Tor
 #                  (the benchmark holds those constant — see docs/benchmarks/tor-vs-clearnet.md).
@@ -88,10 +90,18 @@ done
 # /proc/net/tcp `rem_address` is little-endian hex "IIIIIIII:PPPP"; decode with bash arithmetic so we
 # don't depend on gawk/strtonum inside minimal images (only `cat` runs in the container). IPv4-only by
 # design — mining_net is IPv4 (matches the #270 firewall scope).
-public_conns() { # <container-id>  → one "ip:port" per established public connection
-    docker exec "$1" sh -c 'cat /proc/net/tcp 2>/dev/null' | while read -r _sl _local rem st _rest; do
-        [ "$st" = "01" ] || continue
-        local hip="${rem%:*}" hport="${rem#*:}" o1 o2 o3 o4
+# Each row names its DIRECTION (#2549): a socket whose local port is one this container LISTENs on
+# (st=0A, IPv4 or IPv6 table) was accepted from a public client — `in <local port>`; any other was
+# dialled by the app — `out <remote port>`. Both still fail the tor arm; the label only says which.
+public_conns() { # <container-id>  → one "ip in|out port" per established public connection
+    local tcp listen=" " _sl lport rem st _rest hip hport o1 o2 o3 o4
+    tcp="$(docker exec "$1" sh -c 'cat /proc/net/tcp && { cat /proc/net/tcp6 2>/dev/null || true; }')" || return 1
+    while read -r _sl lport _rem st _rest; do
+        [ "$st" = "0A" ] && listen="$listen${lport##*:} "
+    done <<<"$tcp"
+    while read -r _sl lport rem st _rest; do
+        [ "$st" = "01" ] && [ "${#rem}" -eq 13 ] || continue
+        hip="${rem%:*}" hport="${rem#*:}"
         o1=$((16#${hip:6:2}))
         o2=$((16#${hip:4:2}))
         o3=$((16#${hip:2:2}))
@@ -99,8 +109,12 @@ public_conns() { # <container-id>  → one "ip:port" per established public conn
         case "$o1.$o2" in 10.* | 127.* | 0.* | 169.254 | 192.168) continue ;; esac
         { [ "$o1" = 172 ] && [ "$o2" -ge 16 ] && [ "$o2" -le 31 ]; } && continue
         { [ "$o1" = 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ]; } && continue
-        printf '%d.%d.%d.%d:%d\n' "$o1" "$o2" "$o3" "$o4" "$((16#$hport))"
-    done
+        if [[ "$listen" == *" ${lport##*:} "* ]]; then
+            printf '%d.%d.%d.%d in %d\n' "$o1" "$o2" "$o3" "$o4" "$((16#${lport##*:}))"
+        else
+            printf '%d.%d.%d.%d out %d\n' "$o1" "$o2" "$o3" "$o4" "$((16#$hport))"
+        fi
+    done <<<"$tcp"
 }
 
 cid_of() { (cd "$DIR" && docker compose ps -q "$1" 2>/dev/null | head -n1); }
@@ -111,8 +125,9 @@ expected="$(cd "$DIR" && docker compose config --services 2>/dev/null)" || {
     exit 2
 }
 
-# Poll POLLS times; per poll record each app's UNIQUE public foreign IPs (drop the churning port). An
-# (app, ip) pair seen in >= MIN_HITS distinct polls is a SUSTAINED connection, not a startup transient.
+# Poll POLLS times; per poll record each app's UNIQUE public foreign IPs with the direction and
+# service port (the churning ephemeral port is dropped). An (app, ip) pair seen in >= MIN_HITS
+# distinct polls is a SUSTAINED connection, not a startup transient, whatever its ports.
 samples="$(mktemp)"
 trap 'rm -f "$samples"' EXIT
 p=1 read_failed=0 observed_apps=0
@@ -131,13 +146,19 @@ while [ "$p" -le "$POLLS" ]; do
             read_failed=1
             continue
         fi
-        printf '%s\n' "$rows" | sed '/^$/d; s/:.*//' | sort -u | sed "s/^/$c /" >>"$samples"
+        printf '%s\n' "$rows" | sed '/^$/d' | sort -u | sed "s/^/$c $p /" >>"$samples"
     done
     [ "$p" -lt "$POLLS" ] && sleep "$INTERVAL"
     p=$((p + 1))
 done
-# uniq -c over the per-poll-unique lines = #polls each (app,ip) appeared in; keep the persistent ones.
-persistent=$(sort "$samples" | uniq -c | awk -v m="$MIN_HITS" '$1>=m {print $2" "$3" "$1}') # "app ip hits"
+# Samples are "app poll ip dir port". Count the distinct polls each (app,ip) appeared in and keep the
+# persistent ones, with every direction and port seen for it: "app ip hits attribution...".
+persistent=$(awk -v m="$MIN_HITS" '
+    { k = $1 " " $3
+      if (!((k, $2) in seen)) { seen[k, $2] = 1; hits[k]++ }
+      a = ($4 == "in" ? "inbound on listening port " : "outbound to port ") $5
+      if (!((k, a) in has)) { has[k, a] = 1; attr[k] = attr[k] (attr[k] == "" ? "" : ", ") a } }
+    END { for (k in hits) if (hits[k] >= m) print k " " hits[k] " " attr[k] }' "$samples")
 
 fail=0
 for c in $APPS; do
@@ -150,13 +171,15 @@ for c in $APPS; do
         echo "  ! $c: not running (inconclusive)"
         continue
     }
-    rows=$(printf '%s\n' "$persistent" | awk -v a="$c" -v P="$POLLS" '$1==a {print $2" ("$3"/"P" polls)"}')
+    rows=$(printf '%s\n' "$persistent" | awk -v a="$c" -v P="$POLLS" '$1==a {r=$0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", r); print $2" ("$3"/"P" polls) "r}')
     n=$(printf '%s' "$rows" | grep -c . || true)
     if [ "$ARM" = "tor" ]; then
         if [ "$n" -eq 0 ]; then
             echo "  ✓ $c: no persistent public connections — all egress via Tor"
         else
-            echo "  ✗ $c: $n PERSISTENT PUBLIC connection(s) — CLEARNET LEAK:"
+            kind="CLEARNET LEAK"
+            [[ "$rows" == *outbound* ]] || kind="public clients reached a listening port, no app dial"
+            echo "  ✗ $c: $n PERSISTENT PUBLIC connection(s) — $kind:"
             printf '%s\n' "$rows" | sed 's/^/        /'
             fail=1
         fi
@@ -175,7 +198,7 @@ if [ -z "$tcid" ] || ! tor_rows="$(public_conns "$tcid")"; then
     fi
     echo "  · tor: sockets unreadable — waived by --allow-tor-down; the app verdict below stands"
 else
-    tn=$(printf '%s\n' "$tor_rows" | sed 's/:.*//' | sort -u | grep -c . || true)
+    tn=$(printf '%s\n' "$tor_rows" | awk 'NF {print $1}' | sort -u | grep -c . || true)
 fi
 [ -z "$tcid" ] || echo "  · tor: $tn external relay connection(s) (expected > 0 — this is the only container that should reach the internet)"
 

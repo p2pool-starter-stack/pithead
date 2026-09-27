@@ -161,6 +161,104 @@ migrate_dashboard_data() {
     log "Dashboard data migrated to $new."
 }
 
+# Live dashboard.data_dir relocation (#2360) — distinct from the one-time #455 migration above,
+# which only ever moves the pre-#455 in-install default. This fires when an operator types the
+# confirm (dashboard.data_dir is in CONTROL_DASHBOARD_CONFIRM_KEYS / the host apply CONFIRM class)
+# and repoints dashboard.data_dir at an arbitrary new path while data already lives at the old
+# one. Without a carry, the recreated dashboard opens an EMPTY DB at the new path and the payout-
+# wallet tripwire (#375) silently re-seeds its baseline on the next observation — the seeding
+# branch is silent by design, so a payout change bundled with the move would never raise the
+# wallet-changed alert. Copy — never move: the operator's old path is theirs to keep or clean up,
+# unlike the #455 in-install default this function never removes it. Verify by content compare,
+# then let the compose recreate that follows every apply mount the new path. A refusal (non-empty
+# target, a failed or unverified copy) leaves the old data and the active path untouched.
+carry_dashboard_data_move() {
+    local old="$1" new="$2" old_path new_path new_parent_path current_path new_entries stage f published=()
+    [ -n "$old" ] && [ -n "$new" ] && [ "$old" != "$new" ] || return 0
+    [ -f "$old/mining_data.db" ] || return 0 # nothing live at the old path — nothing to carry
+    assert_safe_dir "$new"
+    old_path=$(cd "$old" && pwd -P) || error "Could not resolve the current dashboard.data_dir ($old)."
+    mkdir -p "$(dirname "$new")" || error "Could not create the parent of the new dashboard.data_dir ($new)."
+    new_parent_path=$(cd "$(dirname "$new")" && pwd -P) || error "Could not resolve the parent of the new dashboard.data_dir ($new)."
+    case "$new_parent_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
+    mkdir -p "$new" || error "Could not create the new dashboard.data_dir ($new)."
+    new_path=$(cd "$new" && pwd -P) || error "Could not resolve the new dashboard.data_dir ($new)."
+    case "$new_path/" in "$old_path/"*) error "The new dashboard.data_dir ($new) cannot be inside the current one ($old)." ;; esac
+    new_entries=$(ls -A "$new" 2>/dev/null) || error "Could not inspect the new dashboard.data_dir ($new) — refusing to treat it as empty. Fix its permissions, then re-run."
+    if [ -n "$new_entries" ]; then
+        error "Dashboard data already exists at the new dashboard.data_dir ($new) — refusing to overwrite it with the data at $old. Empty $new (or pick a different path), then re-run."
+    fi
+    log "Carrying the dashboard database to the new dashboard.data_dir: $old -> $new..."
+    docker compose stop dashboard >/dev/null 2>&1 || error "Could not stop the dashboard before copying its database — the active data remains at $old."
+    current_path=$(cd "$old" && pwd -P) || current_path=""
+    [ "$current_path" = "$old_path" ] || {
+        docker compose start dashboard >/dev/null 2>&1 || error "The current dashboard.data_dir changed and the dashboard could not restart — the active data remains at $old."
+        error "The current dashboard.data_dir changed while copying was prepared — refusing to copy it."
+    }
+    current_path=$(cd "$new" && pwd -P) || current_path=""
+    [ "$current_path" = "$new_path" ] || {
+        docker compose start dashboard >/dev/null 2>&1 || error "The new dashboard.data_dir changed and the dashboard could not restart — the active data remains at $old."
+        error "The new dashboard.data_dir changed while copying was prepared — refusing to copy it."
+    }
+    new_entries=$(ls -A "$new_path" 2>/dev/null) || {
+        docker compose start dashboard >/dev/null 2>&1 || error "Could not inspect $new after stopping the dashboard, and the dashboard could not restart — the active data remains at $old."
+        error "Could not inspect the new dashboard.data_dir ($new) after stopping the dashboard — refusing to treat it as empty."
+    }
+    if [ -n "$new_entries" ]; then
+        docker compose start dashboard >/dev/null 2>&1 || error "Dashboard data appeared at $new and the dashboard could not restart — the active data remains at $old."
+        error "Dashboard data appeared at the new dashboard.data_dir ($new) while copying was prepared — refusing to overwrite it with the data at $old."
+    fi
+    stage=$(mktemp -d) || {
+        docker compose start dashboard >/dev/null 2>&1 || error "Could not stage the dashboard database and the dashboard could not restart — the active data remains at $old."
+        error "Could not create a private staging directory for the dashboard database — the active data remains at $old."
+    }
+    [ -f "$old_path/mining_data.db" ] && [ ! -L "$old_path/mining_data.db" ] || {
+        rmdir "$stage" || true
+        docker compose start dashboard >/dev/null 2>&1 || error "The dashboard database changed and the dashboard could not restart — the active data remains at $old."
+        error "The dashboard database changed while copying was prepared — refusing to copy it."
+    }
+    for f in mining_data.db mining_data.db-wal mining_data.db-shm mining_data.db-journal; do
+        [ -e "$old_path/$f" ] || [ -L "$old_path/$f" ] || continue
+        [ -f "$old_path/$f" ] && [ ! -L "$old_path/$f" ] || {
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "Dashboard data changed and the dashboard could not restart — the active data remains at $old."
+            error "Dashboard data contains an unsafe $f — refusing to copy it."
+        }
+        if ! cp -p --no-dereference "$old_path/$f" "$stage/$f"; then
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "Could not copy $old/$f and the dashboard could not restart — the active data remains at $old."
+            error "Could not copy $old/$f to $new — the live dashboard data is still at $old, untouched. Fix the problem, then re-run."
+        fi
+        if ! cmp -s "$old_path/$f" "$stage/$f"; then
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "The dashboard copy to $new did not verify and the dashboard could not restart — the active data remains at $old."
+            error "The dashboard copy to $new did not verify ($f content mismatch) — the live data is still at $old, untouched. Fix the problem, then re-run."
+        fi
+    done
+    for f in mining_data.db mining_data.db-wal mining_data.db-shm mining_data.db-journal; do
+        [ -f "$stage/$f" ] || continue
+        mv "$stage/$f" "$new_path/$f" || {
+            rm -f -- "$new_path/$f" "${published[@]}"
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "Could not publish the verified dashboard copy to $new and the dashboard could not restart — the active data remains at $old."
+            error "Could not publish the verified dashboard copy to $new — the active data remains at $old."
+        }
+        published+=("$new_path/$f")
+        cmp -s "$old_path/$f" "$new_path/$f" || {
+            rm -f -- "${published[@]}"
+            rm -rf "$stage"
+            docker compose start dashboard >/dev/null 2>&1 || error "The published dashboard copy at $new did not verify and the dashboard could not restart — the active data remains at $old."
+            error "The published dashboard copy at $new did not verify ($f content mismatch) — the active data remains at $old."
+        }
+    done
+    rmdir "$stage" || {
+        rm -f -- "${published[@]}"
+        docker compose start dashboard >/dev/null 2>&1 || error "Could not remove the dashboard staging directory and the dashboard could not restart — the active data remains at $old."
+        error "Could not remove the dashboard staging directory — the active data remains at $old."
+    }
+    log "Dashboard database carried to $new (the copy at $old was left in place)."
+}
+
 # One authoritative pointer to the live install (#455): when this install lives in a versioned
 # deploy dir (pithead-vX.Y.Z), keep a `current` symlink beside it pointing here — updated with
 # `ln -sfn` on every successful setup/upgrade, so the live version dir is discoverable without

@@ -5,8 +5,8 @@ prefill the editor form, writes typed JSON intents into the requests/ spool — 
 single writable leg — and reads results back from the read-only results/ mount. The host-side
 runner (``pithead control-run-pending``) re-validates and executes; nothing here runs a command.
 
-Secrets never enter the container: the host masks every set secret to the ``{"__secret__": true}``
-sentinel before the copy is mounted (the raw config.json is not mounted at all), a proposal
+The raw host config never enters the container: the host masks its secrets to sentinels
+before the copy is mounted. Read-only worker probe credentials travel separately in env. A proposal
 carries the sentinel back for an untouched secret, and the host swaps it for the live value when
 it stages the intent. ``read_config`` re-applies the same masking as defense-in-depth.
 """
@@ -79,9 +79,8 @@ def _set(cfg, path, value):
 
 
 def mask_secrets(cfg):
-    """Replace every set secret leaf (``SECRET_PATHS``) and each set ``notifications.webhooks[]``
-    entry with the sentinel, in place. Mirrors pithead's ``render_masked_config``; shared by
-    ``read_config`` and ``data_service`` so the fixed-path walk and the webhooks array mask (#848)
+    """Mask fixed secret leaves, webhook URLs, and per-worker tokens in place. Mirrors
+    pithead's ``render_masked_config``; shared by ``read_config`` and ``data_service`` so masks
     never drift between the two defense-in-depth passes. An empty secret stays empty."""
     for path in SECRET_PATHS:
         found, value = _get(cfg, path)
@@ -90,6 +89,13 @@ def mask_secrets(cfg):
     found, hooks = _get(cfg, WEBHOOKS_PATH)
     if found and isinstance(hooks, list):
         _set(cfg, WEBHOOKS_PATH, [dict(SECRET_SENTINEL) if h else h for h in hooks])
+    workers = cfg.get("workers")
+    if isinstance(workers, dict) and isinstance(workers.get("list"), list):
+        for worker in workers["list"]:
+            if isinstance(worker, dict):
+                for key in ("token", "api_token"):
+                    if worker.get(key):
+                        worker[key] = dict(SECRET_SENTINEL)
     return cfg
 
 
@@ -175,11 +181,8 @@ EDITABLE_ENV_KEY_PATHS = {
     },
 }
 
-# dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
-# straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
-# it (#504). Fold it in as the map's one special-case addition. Worker descriptors (workers.list[],
-# #506) are the OTHER config.json-only case but are REFUSED outright (per-rig hosts/tokens), so they
-# never get an editable path — and buildSections never renders an array as a field anyway (#172).
+# dashboard.energy.* is config.json-only but gate-allowed (#504), so add it explicitly.
+# Worker descriptors are append-only via Worker Inspect (#2641), never editor fields.
 _ENERGY_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
@@ -195,16 +198,8 @@ def _editable_paths():
     return sorted(paths)
 
 
-# Env-var -> config-path map for the CONFIRM-gated set (#719), mirroring pithead's
-# CONTROL_DASHBOARD_CONFIRM_KEYS the same way EDITABLE_ENV_KEY_PATHS mirrors the editable allowlist
-# (drift-guarded by test_confirm_keys_have_no_intra_repo_drift). These are operationally-disruptive
-# but NOT the security perimeter: the dashboard MAY commit them, but only behind a type-to-confirm.
-# Surfaced to the browser as ``_confirm_keys`` so the Configuration view renders them editable with
-# a "confirm to proceed" affordance instead of greying them out as host-only. The gate is still the
-# authority: describe_change decides per-DIRECTION whether a change is CONFIRM (a data-dir move, a
-# stratum-port repoint, a clearnet-sync ENABLE, a prune ENABLE) or stays a host-only DEST (prune
-# DISABLE, a TOR data-dir move), so a field here can still be refused at commit in its heavy
-# direction — the same edit-then-maybe-refuse tradeoff the issue accepts for MONERO_PRUNE.
+# CONFIRM-gated env-key map (#719), mirrored host-side and drift-tested. The gate remains
+# authoritative: some directions are DEST and refused even when the editor offers a field.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),

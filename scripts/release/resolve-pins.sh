@@ -5,7 +5,7 @@
 # pin-watch.sh asks "is the pinned VERSION behind upstream's latest release" and says outright that
 # it does NOT ask whether a pinned `tag@sha256:...` still has a digest that matches its tag. This
 # script asks exactly that second question, for every third-party image docker-compose.yml pins by
-# digest: quay.io/tarilabs' tari node and wallet, tecnativa's socket-proxy, and caddy.
+# digest: ghcr.io/tari-project's tari node and wallet, tecnativa's socket-proxy, and caddy.
 #
 # The digest is what actually runs. A version bump that moves a tag and leaves the digest behind
 # still runs the OLD image while the pin, the release notes, and every doc claim the new one — the
@@ -114,7 +114,7 @@ if [ "${1:-}" = "--self-test" ]; then
     cat >"$fx1" <<'EOF'
     image: ${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}/pithead-dashboard:${STACK_VERSION:-dev}
     image: caddy:2.11.4@sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
-    image: quay.io/tarilabs/minotari_node:v5.3.1-mainnet@sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
+    image: ghcr.io/tari-project/minotari_node:v6.0.0-mainnet@sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2
 EOF
     st "extraction finds exactly the digest-pinned refs" "$(extract_pins "$fx1" | wc -l | tr -d ' ')" "2"
     st "a \${VAR} first-party image is skipped" "$(extract_pins "$fx1" | grep -c '\${' || true)" "0"

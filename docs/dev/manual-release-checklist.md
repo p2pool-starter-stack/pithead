@@ -78,6 +78,45 @@ back **by itself** after the plug is pulled still needs hands on real hardware:
   (M10, #2067, `tests/os/phases/provision-power-cut.sh`), which checks the complete recovery after
   every one of its three cuts — same caveat.*
 
+### Recorded runs
+
+The operator's own record is the evidence; each run is reported in full on
+[#2044](https://github.com/p2pool-starter-stack/pithead/issues/2044). The runs below are a dev
+image, not a shipping image: they do not prove the final release SHA, and the final shipping
+image's evidence stays with the GA gates (the soak,
+[#1652](https://github.com/p2pool-starter-stack/pithead/issues/1652), and pre-publication
+verification, [#1653](https://github.com/p2pool-starter-stack/pithead/issues/1653)).
+
+**2026-09-18 and 2026-09-19, one physical x86-64 UEFI laptop with an NVMe and no second disk.**
+Source: `develop` at `1b0da07016`, the debug variant (SSH, dev certificate, LAN registry) built by
+bench job 482, flashed to a USB stick. Image checksum: UNKNOWN, not recorded at the run. The M7,
+M8 and M9 bundles were dev bundles built on the bench from that head with a raised VERSION
+(2.0.1, and the deliberately broken 2.0.2 and 2.0.3).
+
+| Step | Result | Observed |
+|---|---|---|
+| M1 flash and boot | PASS | Booted from the stick with Secure Boot off and reached the wizard. |
+| M2 discovery | PASS, partial | `http://pithead.local` reached from another machine: token gate, the expected certificate warning. Not run: the monitor-unplug half (the target is a laptop). |
+| M3 install to disk | PASS | Pithead and RigForge installed with "Keep everything" on the NVMe; stick pulled; the box booted from the internal disk and served the setup page. |
+| M4 wrong-disk guard | NOT RUN | No second disk in the machine. |
+| M5 reinstall keeps the chain | PASS | After the M6 reinstall, monerod kept its chain and caught up only the blocks missed during the test. |
+| M6 configure by paste | PASS, with findings | A pasted subaddress was refused with an explanation; a node name that does not resolve was refused; the stack provisioned and the dashboard came up. Findings: #2350, #2351, #2352. |
+| M7 real update | PASS | 2.0.1 installed with `pithead os-update`; after a manual reboot the box came up on slot B and `pithead-boot` committed it. Finding: #2382 (no "reboot next" message). |
+| M8 pull the plug, three times | PASS | Forced power-off at 61%, 87% and 99% of the slot copy; each time the box booted slot A with the dashboard serving. RAUC marked the target slot bad before each write and active only after a complete copy. |
+| M9 bad release rollback | PASS, with finding | 2.0.3 (Caddy started against a missing config): the gate waited, left the slot uncommitted and rebooted; the box fell back to slot A and committed it with nobody present. The operator rollback from a committed 2.0.1 with `rauc status mark-bad booted && reboot` returned to A. Findings: 2.0.2 (dashboard healthcheck always failing) was committed because the gate did not read container health, #2383; the console is silent for the whole gate wait, #2436. |
+| M10 power loss while mining | PASS | Forced off by holding the power button and powered on again: stack healthy, RigForge mining, dashboard reachable. Not shown: the box powering on by itself after a cut at the wall (Restore on AC Power Loss). |
+| M15 backup and restore | FAIL | "Backup did not complete", no archive: `compose down` failed on a podman overlay unmount of the Caddy container (#2364). Not run: the restore half. |
+| M16 settings after provisioning | PARTIAL | The energy value previewed, applied and persisted, and the change history was accurate. Findings: #2365, #2366, #2367. Not run: the node-endpoint `APPLY` step. |
+| RC1 addendum | NOT RUN | |
+
+Hardware-only observation: a freshly booted slot reads `bad` in `rauc status` until its gate
+commits it, about two and a half minutes into the boot; rebooting inside that window leaves both
+slots reading `bad` until the gate runs again. The Fresh Start reinstall sequence behind #2352 is
+not in the KVM install phase yet (#2447).
+
+Still open from these runs: #2351, #2367, #2436 and #2447. Fixed on `develop` since, and not
+re-run on hardware: #2350, #2352, #2364, #2365, #2366, #2382 and #2383.
+
 ### Install-path cases worth walking deliberately
 
 - A **fresh** disk.

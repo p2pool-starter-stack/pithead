@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tor-only egress ENFORCEMENT backstop for the provisioned appliance (#855/#2059). Sourced by
-# tests/os/run.sh; --self-test exercises the pure probe list without a guest.
+# tests/os/run.sh; --self-test drives the leg against a stubbed guest.
 #
 # Why this lives in its own file rather than inline at the tail of the provision phase (#2059):
 # it is the only tier-4 assertion in the repo that proves the KERNEL enforces Tor-only egress, and
@@ -35,6 +35,12 @@ egress_diag_probes() { # -> "<label>\t<remote command>" per line
         'mining-net' 'podman network inspect mining_net 2>&1 | head -c 600' \
         'boot-log' 'journalctl -u pithead-boot --no-pager 2>/dev/null | grep -i egress | tail -5' \
         'firstboot-log' 'journalctl -u pithead-firstboot --no-pager 2>/dev/null | grep -i egress | tail -5'
+}
+
+# True when a /proc/net/if_inet6 dump holds a global-scope address. Its fourth column is the scope:
+# 00 global, 10 host (::1), 20 link (fe80::).
+egress_has_global_v6() { # <if_inet6 contents>
+    awk '$4 == "00" { found = 1 } END { exit !found }' <<<"$1"
 }
 
 # Run every probe and print a bounded one-line excerpt each. Bounded on purpose: the harness
@@ -101,25 +107,37 @@ phase_provision_egress_backstop() { # <phase-rc>
         "$unexercised" "monerod container never came up — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
         return 0
     fi
-    if ! _ssh "podman exec monerod sh -c 'command -v curl' >/dev/null 2>&1"; then
-        "$unexercised" "curl missing from the monerod image — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
+    # build/monero/Dockerfile installs curl, and apt puts it at this fixed path. Every probe below
+    # names its executable by absolute path so no probe depends on the exec's PATH.
+    local rc=0
+    _ssh "podman exec monerod /usr/bin/curl --version >/dev/null 2>&1" 2>/dev/null || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        # A probe that cannot run is unverified, never a pass: it stays a distinct failure even when
+        # an earlier provision assertion already made the phase red. The rc tells a missing binary
+        # (127) from a podman error such as monerod exiting since the wait above (125).
+        bad "could not run /usr/bin/curl in monerod (rc=$rc) — cannot assert the Tor-only egress drop (the #855 backstop is unverified)"
         return 0
     fi
 
-    # NEGATIVE — a direct clearnet dial by IP must be DROPPED (curl times out, non-zero). This is
-    # the check whose absence let a leaking appliance ship green: it FAILS against the
-    # orphaned-chain code and PASSES once the nft table is installed and effective.
-    if _ssh "podman exec monerod curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null; then
+    # NEGATIVE — a direct clearnet dial by IP must be DROPPED. This is the check whose absence let
+    # a leaking appliance ship green: it FAILS against the orphaned-chain code and PASSES once the
+    # nft table is installed and effective. The rule is a silent `drop`, so a refused dial is a
+    # curl timeout (28). Any other failure (podman 125, ssh 255) is a dial that never ran.
+    rc=0
+    _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 http://1.1.1.1/" 2>/dev/null || rc=$?
+    case "$rc" in
+    0)
         bad "clearnet egress is FAIL-OPEN — monerod reached 1.1.1.1 directly, bypassing Tor (the firewall is not enforced)"
         _egress_capture_diagnostics
-    else
-        ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced"
-    fi
+        ;;
+    28) ok "direct clearnet dial from a mining container is dropped — Tor-only egress is enforced" ;;
+    *) bad "the direct clearnet dial from monerod failed without timing out (rc=$rc) — the Tor-only egress drop is unverified" ;;
+    esac
     # POSITIVE — the SAME container still reaches clearnet THROUGH Tor's SOCKS, proving the drop
     # spares Tor and intra-subnet traffic (real mining keeps working) AND that the negative above
     # failed because of the firewall rather than because the guest has no route to the internet at
     # all. Tor's default SOCKS is 172.28.0.25:9050 on the appliance's mining_net.
-    if _ssh "podman exec monerod curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
+    if _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 30 --socks5-hostname 172.28.0.25:9050 http://1.1.1.1/" 2>/dev/null; then
         ok "egress through Tor's SOCKS still works — the drop did not break real mining"
     else
         bad "the mining container can no longer reach clearnet even through Tor — the firewall is too tight, or the guest has no route out (which would also void the drop above)"
@@ -128,18 +146,73 @@ phase_provision_egress_backstop() { # <phase-rc>
     # IPv6 backstop (#858): mining_net is IPv4-only by design, so monerod has no global v6 and this
     # leg self-skips on the stock appliance. If mining_net ever gains a v6 subnet, the container CAN
     # originate v6 clearnet — assert that dial is DROPPED too (the fail-open the v4-only rules left
-    # behind). Guarded on the container actually holding a global v6 address.
-    if _ssh "podman exec monerod sh -c 'ip -6 addr show scope global 2>/dev/null | grep -q inet6'" 2>/dev/null; then
-        if _ssh "podman exec monerod curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null; then
+    # behind). Guarded on the container actually holding a global v6 address. The guard reads the
+    # kernel's own table with the image's cat: the image ships no `ip`, and a guard that cannot run
+    # must fail rather than report the IPv4-only pass below (bench-ci#532).
+    local inet6
+    rc=0
+    inet6=$(_ssh "podman exec monerod /usr/bin/cat /proc/net/if_inet6" 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        bad "could not read /proc/net/if_inet6 in monerod (rc=$rc) — the IPv6 egress backstop is unverified"
+    elif egress_has_global_v6 "$inet6"; then
+        rc=0
+        _ssh "podman exec monerod /usr/bin/curl -s -o /dev/null -m 8 -g 'http://[2606:4700:4700::1111]/'" 2>/dev/null || rc=$?
+        case "$rc" in
+        0)
             bad "IPv6 clearnet egress is FAIL-OPEN — monerod reached a v6 address directly, bypassing Tor"
             _egress_capture_diagnostics
-        else
-            ok "direct IPv6 clearnet dial from a mining container is dropped — the v6 backstop holds"
-        fi
+            ;;
+        28) ok "direct IPv6 clearnet dial from a mining container is dropped — the v6 backstop holds" ;;
+        *) bad "the direct IPv6 dial from monerod failed without timing out (rc=$rc) — the v6 backstop is unverified" ;;
+        esac
     else
         ok "mining_net is IPv4-only (no global v6 in the container) — v6 clearnet dial not possible, backstop not exercised"
     fi
     return 0
+}
+
+# Drive the leg against a stubbed guest in a subshell, so the stubs and counters never leak into the
+# caller. Prints one line per guest command (`call ...`) and per reported row (`ok ...`/`bad ...`).
+# <guest>: unreachable | no-curl (curl exits 127) | no-cat (cat exits 127) | v4-only | global-v6 |
+# dial-lost (both direct dials die in podman, 125) | dial-refused (both are refused, curl 7) |
+# fail-open (both connect) | tor-down (the SOCKS dial fails, curl 7). All but v4-only hold a global
+# v6 address. Otherwise the guest is well behaved: the direct dials time out (28) and the Tor SOCKS
+# dial succeeds.
+_egress_drive() { # <phase-rc> <guest>
+    (
+        guest=$2
+        ok() { printf 'ok %s\n' "$1"; }
+        bad() { printf 'bad %s\n' "$1"; }
+        info() { :; }
+        _egress_capture_diagnostics() { :; }
+        _ssh() {
+            printf 'call %s\n' "$1" >&3 # the leg sends _ssh's stderr to /dev/null
+            [ "$guest" != unreachable ] || return 1
+            case "$1" in
+            true) return 0 ;;
+            *"podman ps"*) printf 'monerod\n' ;;
+            *--socks5-hostname*) if [ "$guest" = tor-down ]; then return 7; else return 0; fi ;;
+            *"/usr/bin/curl --version"*) [ "$guest" != no-curl ] || return 127 ;;
+            *"/usr/bin/cat /proc/net/if_inet6"*)
+                [ "$guest" != no-cat ] || return 127
+                printf '00000000000000000000000000000001 01 80 10 80       lo\n'
+                printf 'fe800000000000000000000000000001 02 40 20 80     eth0\n'
+                [ "$guest" = v4-only ] ||
+                    printf 'fd000000000000000000000000000002 02 40 00 00     eth0\n'
+                ;;
+            *"/usr/bin/curl -s -o /dev/null -m 8 "*)
+                case "$guest" in
+                dial-lost) return 125 ;;
+                dial-refused) return 7 ;;
+                fail-open) return 0 ;;
+                *) return 28 ;;
+                esac
+                ;;
+            *) return 1 ;;
+            esac
+        }
+        phase_provision_egress_backstop "$1"
+    ) 3>&1
 }
 
 _egress_self_test() {
@@ -162,21 +235,86 @@ _egress_self_test() {
     # The #2059 fix itself: an UNEXERCISED backstop must read RED on a green phase and must not
     # double-count on an already-red one. Driven, not grepped — a source check would pass on a
     # function that assigned the variable and then ignored it. Stub the guest away so the leg takes
-    # its earliest unexercised path, and count what each arm actually reported.
-    local PASS=0 FAIL=0
-    _ssh() { return 1; }
-    phase_provision_egress_backstop 0 >/dev/null
-    [ "$FAIL" -eq 1 ] && [ "$PASS" -eq 0 ] || {
-        printf 'unexercised backstop on a GREEN phase did not report FAIL (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
+    # its earliest unexercised path, and read what each arm actually reported.
+    local out
+    out=$(_egress_drive 0 unreachable)
+    [ "$(grep -c '^bad ' <<<"$out")" = 1 ] && ! grep -q '^ok ' <<<"$out" || {
+        printf 'unexercised backstop on a GREEN phase did not report FAIL: %s\n' "$out" >&2
         f=$((f + 1))
     }
-    PASS=0 FAIL=0
-    phase_provision_egress_backstop 1 >/dev/null
-    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 0 ] || {
-        printf 'unexercised backstop on an ALREADY-RED phase double-counted (pass=%s fail=%s)\n' "$PASS" "$FAIL" >&2
+    out=$(_egress_drive 1 unreachable)
+    ! grep -qE '^(ok|bad) ' <<<"$out" || {
+        printf 'unexercised backstop on an ALREADY-RED phase double-counted: %s\n' "$out" >&2
         f=$((f + 1))
     }
-    unset -f _ssh
+
+    # bench-ci#532: a probe executable that cannot run is a counted failure, never a pass, on a
+    # green phase and on an already-red one alike. Once for curl, once for the v6 guard's cat.
+    local phase_rc
+    for phase_rc in 0 1; do
+        out=$(_egress_drive "$phase_rc" no-curl)
+        grep -q '^bad could not run /usr/bin/curl in monerod (rc=127)' <<<"$out" &&
+            ! grep -q '^ok ' <<<"$out" || {
+            printf 'a missing /usr/bin/curl did not fail the backstop (phase rc %s): %s\n' "$phase_rc" "$out" >&2
+            f=$((f + 1))
+        }
+        out=$(_egress_drive "$phase_rc" no-cat)
+        grep -q '^bad could not read /proc/net/if_inet6 in monerod (rc=127)' <<<"$out" &&
+            ! grep -q '^ok .*IPv4-only' <<<"$out" || {
+            printf 'a v6 guard that could not run reported a pass (phase rc %s): %s\n' "$phase_rc" "$out" >&2
+            f=$((f + 1))
+        }
+    done
+    # The guard reads the kernel's scope column: loopback and link-local alone are IPv4-only, and a
+    # global address sends the leg into the v6 dial.
+    out=$(_egress_drive 0 v4-only)
+    grep -q '^ok mining_net is IPv4-only' <<<"$out" && ! grep -q '^bad ' <<<"$out" &&
+        ! grep -q '2606:4700' <<<"$out" || {
+        printf 'a container with only lo and link-local v6 was not read as IPv4-only: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    out=$(_egress_drive 0 global-v6)
+    grep -q "^call podman exec monerod /usr/bin/curl .*2606:4700" <<<"$out" &&
+        grep -q '^ok direct IPv6 clearnet dial from a mining container is dropped' <<<"$out" || {
+        printf 'a container with a global v6 address did not run the v6 dial: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    # Only a timeout is a drop: a direct dial that never ran, or that something other than the silent
+    # drop refused, must not read as one, on either family.
+    local guest rc_want
+    for guest in dial-lost:125 dial-refused:7; do
+        rc_want=${guest#*:}
+        out=$(_egress_drive 0 "${guest%:*}")
+        [ "$(grep -c "^bad .*failed without timing out (rc=$rc_want)" <<<"$out")" = 2 ] &&
+            ! grep -q '^ok .*dropped' <<<"$out" || {
+            printf 'a direct dial that exited %s was reported as dropped: %s\n' "$rc_want" "$out" >&2
+            f=$((f + 1))
+        }
+    done
+    # The verdicts themselves: a dial that connects is FAIL-OPEN on both families, and a Tor path
+    # that fails is red, however green the drop looks.
+    out=$(_egress_drive 0 fail-open)
+    grep -q '^bad clearnet egress is FAIL-OPEN' <<<"$out" &&
+        grep -q '^bad IPv6 clearnet egress is FAIL-OPEN' <<<"$out" &&
+        ! grep -q '^ok .*dropped' <<<"$out" || {
+        printf 'a direct dial that connected was not reported FAIL-OPEN: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    out=$(_egress_drive 0 tor-down)
+    grep -q '^bad the mining container can no longer reach clearnet even through Tor' <<<"$out" &&
+        ! grep -q "^ok egress through Tor's SOCKS" <<<"$out" || {
+        printf 'a failed Tor SOCKS dial was not reported: %s\n' "$out" >&2
+        f=$((f + 1))
+    }
+    # Every exec names its executable by absolute path, so no probe depends on the exec's PATH.
+    if grep '^call podman exec' <<<"$out" | grep -qv '^call podman exec monerod /usr/bin/'; then
+        printf 'a monerod probe is not pinned to an absolute /usr/bin path: %s\n' "$out" >&2
+        f=$((f + 1))
+    fi
+    [ "$(grep -c '^call podman exec monerod /usr/bin/curl -s' <<<"$out")" = 3 ] || {
+        printf 'expected three pinned curl dials (v4 direct, Tor SOCKS, v6 direct): %s\n' "$out" >&2
+        f=$((f + 1))
+    }
 
     # EVERY probe must run. The self-test missed this once and a real battery paid for it: the stub
     # below now CONSUMES STDIN, which is what real ssh does and what silently truncated the capture
