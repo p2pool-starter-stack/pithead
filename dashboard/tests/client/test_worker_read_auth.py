@@ -117,6 +117,32 @@ async def test_explicit_read_only_probe_token_authenticates_without_adoption(tmp
 
 
 @pytest.mark.asyncio
+async def test_stale_explicit_probe_token_never_falls_back_to_fleet_bearer(tmp_path, monkeypatch):
+    config_path, read_path = tmp_path / "config.json", tmp_path / "worker-read-tokens.json"
+    _write(
+        config_path,
+        {
+            "workers": {
+                "list": [{"name": "rig1", "host": "10.0.0.5", "api_token": {"__secret__": True}}]
+            }
+        },
+    )
+    _write(read_path, [])
+    monkeypatch.setattr(cfg, "HOST_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(cfg, "WORKER_READ_TOKENS_PATH", str(read_path))
+    monkeypatch.setattr(xc, "WORKER_ENDPOINTS", None)
+    monkeypatch.setattr(xc, "XMRIG_API_AUTH", "token")
+    monkeypatch.setattr(xc, "XMRIG_API_TOKEN", "fleet-secret")
+    monkeypatch.setenv(
+        "WORKER_API_TOKENS",
+        json.dumps({"rig1": {"host": "10.0.0.5", "port": 9999, "token": "probe-only"}}),
+    )
+    session = FakeSession(response=FakeResponse(200, {"ok": True}))
+    assert (await XMRigWorkerClient(session).get_stats("10.0.0.5", "rig1"))["api_ok"] is False
+    assert session.calls == []
+
+
+@pytest.mark.asyncio
 async def test_masked_control_token_uses_only_derived_read_bearer(monkeypatch):
     monkeypatch.setattr(xc, "XMRIG_API_AUTH", "name")
     endpoint = _descriptor()["workers"]["list"][0] | {"read_token": "a" * 64}

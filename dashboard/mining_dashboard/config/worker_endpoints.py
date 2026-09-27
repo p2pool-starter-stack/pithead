@@ -142,8 +142,10 @@ def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[di
                 entry["token"] = tok
             else:
                 continue
-        if "api_token" in item and item["api_token"] != {"__secret__": True}:
-            continue
+        if "api_token" in item:
+            if item["api_token"] != {"__secret__": True}:
+                continue
+            entry["api_token"] = item["api_token"]
         if "watts" in item:
             watts = _valid_watts(item["watts"])
             if watts is None:
@@ -152,7 +154,7 @@ def load_worker_endpoints(path, read_tokens_path=None, tokens_env="") -> list[di
         if "host" in entry:
             port = entry.get("port", workers_block.get("api_port", 8080))
             read_token = read_tokens.get(name) if "token" in entry else None
-            probe_token = worker_tokens.get(name) if "api_token" in item else None
+            probe_token = worker_tokens.get(name) if "api_token" in entry else None
             if read_token and read_token[:2] == (entry["host"], port):
                 entry["read_token"] = read_token[2]
             elif probe_token and (probe_token["host"], probe_token["port"]) == (

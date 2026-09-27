@@ -22,7 +22,12 @@ def test_probe_token_joins_only_its_pinned_masked_endpoint(tmp_path):
         ],
     )
     assert load_worker_endpoints(path, tokens_env=_env()) == [
-        {"name": "rig1", "host": "10.0.0.5", "read_token": "probe-only"},
+        {
+            "name": "rig1",
+            "host": "10.0.0.5",
+            "api_token": {"__secret__": True},
+            "read_token": "probe-only",
+        },
         {"name": "rig2", "host": "10.0.0.6", "token": {"__secret__": True}},
     ]
     for env in (_env(host="10.0.0.7"), _env(port=9999), '{"rig1":"old-format"}'):
@@ -61,5 +66,10 @@ def test_current_worker_endpoints_uses_bound_probe_token(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "DASHBOARD_WORKERS", None)
     monkeypatch.setenv("WORKER_API_TOKENS", _env())
     assert cfg.current_worker_endpoints() == [
-        {"name": "rig1", "host": "10.0.0.5", "read_token": "probe-only"}
+        {
+            "name": "rig1",
+            "host": "10.0.0.5",
+            "api_token": {"__secret__": True},
+            "read_token": "probe-only",
+        }
     ]

@@ -388,9 +388,7 @@ class XMRigWorkerClient:
         name_token = name.split("+")[0].strip()[:_MAX_NAME_TOKEN] if name else ""
         safe_ip = _safe_probe_host(ip)
         override = _worker_override(name_token, safe_ip) or {}
-        # Adoption (#1836/#1857): decided HERE so it reuses the probe's own name-then-host
-        # descriptor match — a name-only lookup downstream would miss a `+suffix` stratum name.
-        # It rides BOTH verdicts, so the field cannot contradict itself between two polls.
+        # Adoption reuses the probe's name-then-host match, including `+suffix` names (#1857).
         adopted = bool(override.get("token"))
         if "host" in override:
             # Operator-set in config.json — never miner-advertised (#122). Pinning the host also
@@ -407,6 +405,9 @@ class XMRigWorkerClient:
         url = f"http://{host}:{port}/1/summary"
         if override.get("read_token"):
             headers = self._auth_header(name_token, override["read_token"])
+        elif override.get("api_token"):
+            self._warn(host, name_token, url, "probe token missing", "check host/port")
+            return {"api_ok": False, "adopted": adopted}
         elif override.get("token"):
             hint = "the control token is likely under RigForge's 32-char read-derivation floor"
             self._warn(host, name_token, url, "adopted rig's read credential unavailable", hint)
