@@ -230,14 +230,14 @@ def test_tari_wallet_no_transactions_reads_empty():
 # (proven in the tier-1 suite), so a descriptor is the honest way to target a local test server.
 
 
-def _probe_worker(fake, *, auth="none", token="", fleet_token="", name="rig1"):
+def _probe_worker(fake, *, auth="none", read_token="", fleet_token="", name="rig1"):
     """Run one real get_stats() against `fake`, configuring the client exactly as config.py would.
 
     Restores the module globals afterward so the matrix cases don't leak into each other."""
     saved = (xc.WORKER_ENDPOINTS, xc.XMRIG_API_AUTH, xc.XMRIG_API_TOKEN)
     entry = {"name": name, "host": fake.host, "port": fake.port}
-    if token:
-        entry["token"] = token  # a per-worker token forces token-auth for that rig
+    if read_token:
+        entry.update(api_token={"__secret__": True}, read_token=read_token)
     xc.WORKER_ENDPOINTS = [entry]
     xc.XMRIG_API_AUTH = auth
     xc.XMRIG_API_TOKEN = fleet_token
@@ -276,15 +276,15 @@ def test_worker_auth_name_sends_bearer_name():
         assert bad == {"api_ok": False, "adopted": False}
 
 
-def test_worker_per_worker_token_forces_token_auth():
-    # A per-worker descriptor token (#172) is sent as the bearer whatever the fleet mode is.
+def test_worker_per_worker_read_token_forces_token_auth():
+    # An explicit read-only probe token is sent as the bearer whatever the fleet mode is.
     with FakeWorkerApi(auth="token", token="s3cr3t") as fake:
-        ok = _probe_worker(fake, auth="none", token="s3cr3t")
+        ok = _probe_worker(fake, auth="none", read_token="s3cr3t")
         assert ok["api_ok"] is True
     # Wrong token → real 401 → api_ok False (the documented misconfiguration failure mode).
     with FakeWorkerApi(auth="token", token="s3cr3t") as fake:
-        bad = _probe_worker(fake, auth="none", token="wrong")
-        assert bad == {"api_ok": False, "adopted": True}
+        bad = _probe_worker(fake, auth="none", read_token="wrong")
+        assert bad == {"api_ok": False, "adopted": False}
 
 
 def test_worker_fleet_token_mode_sends_shared_token():
