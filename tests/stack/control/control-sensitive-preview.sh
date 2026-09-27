@@ -50,4 +50,29 @@ jq '.healthchecks.ping_url="https://hc.example/ping"' "$C/config.json" >"$C/cand
 preview_only "$C/cand.json"
 assert_eq "ping-URL preview is envelope-gated and names the unnoticed outage" \
     "$(previewed_with "someone else's check" "outage here goes unnoticed")" "true"
-unset -f preview_only previewed_with
+# Enabling a login from none is DEST and names the same costs. The control channel cannot carry
+# that transition (control needs a password set), so assert it on the host preview function itself.
+assert_eq "password enable (unset to set) previews as DEST naming the lockout and console-login costs" \
+    "$(run_sourced "$C" describe_change DASHBOARD_AUTH_HASH_B64 "" "new-hash" | jq -Rr 'split("\t") | .[0] == "DEST" and (.[1] | contains("locks this session out") and contains("console root login"))')" "true"
+jq '.telegram.enabled=false' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "Telegram-off preview is envelope-gated and names every alert silenced, tamper alarms included" \
+    "$(previewed_with "every Telegram alert stops" "tamper alarms included")" "true"
+# Exposure keys (owner, 2026-09-27): each names what becomes visible, to whom, and what stops being
+# blocked, instead of the generic "KEY: old → new" line.
+exposure_previews() { # <label> <jq-edit> <needle...>
+    local label="$1" edit="$2"
+    shift 2
+    jq "$edit" "$C/config.json" >"$C/cand.json"
+    preview_only "$C/cand.json"
+    assert_eq "$label" "$(previewed_with "$@")" "true"
+}
+exposure_previews "egress-firewall-off preview names the direct dials it stops blocking" '.network.tor_egress_firewall=false' \
+    "Tor-only egress firewall DISABLED" "show this host's IP to whatever it dials"
+exposure_previews "XvB-off-Tor preview names XvB seeing this host's IP" '.xvb.tor=false' \
+    "XvB donation mining OFF Tor" "XvB sees this host's IP"
+exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
+    "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
+exposure_previews "P2Pool-clearnet preview names this host's IP visible to the P2Pool network" '.p2pool.clearnet=true' \
+    "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
+unset -f preview_only previewed_with exposure_previews

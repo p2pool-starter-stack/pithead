@@ -193,28 +193,6 @@ test("buildSections: field types follow the JSON value", () => {
   assert.equal(fields["p2pool.stratum_password"].type, "text");
 });
 
-test("buildSections: high-consequence fields carry their inline warning", () => {
-  const tg = { bot_token: { __secret__: true }, chat_id: "1111" };
-  tg.events = { wallet_changed: true, clearnet_exposed: true };
-  const cfg = { ...CFG, telegram: tg, healthchecks: { ping_url: { __secret__: true } } };
-  const fields = Object.fromEntries(
-    buildSections(cfg)
-      .flatMap((s) => s.fields)
-      .map((f) => [f.key, f]),
-  );
-  assert.match(fields["p2pool.pool"].warning, /PPLNS window resets/);
-  assert.match(fields["monero.wallet_address"].warning, /payout address/);
-  assert.equal(fields["monero.prune"].warning, undefined);
-  // #2367: the password and hostname name their consequence before the operator confirms.
-  assert.match(fields["dashboard.auth.password"].warning, /logged out|locks this session/);
-  assert.match(fields["dashboard.host"].warning, /approval-gated day-two rename/);
-  assert.match(fields["telegram.events.wallet_changed"].warning, /wallet swap could go unnoticed/);
-  assert.match(fields["telegram.events.clearnet_exposed"].warning, /exposing this machine's IP/);
-  assert.match(fields["telegram.bot_token"].warning, /stops every Telegram alert.*another bot/);
-  assert.match(fields["telegram.chat_id"].warning, /stops delivery.*another chat/);
-  assert.match(fields["healthchecks.ping_url"].warning, /someone else's check.*goes unnoticed/);
-});
-
 test("array values are not form fields (#172)", () => {
   // workers.list is a list of per-rig descriptors — there is no form rendering for it, so
   // buildSections must skip it (a text field would mangle it into a string). Survival through

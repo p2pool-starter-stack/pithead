@@ -136,7 +136,7 @@ directly.
 
 | Field | Exposed how | Gate |
 |---|---|---|
-| `telegram.enabled` | Configuration view, Notifications | Confirm preview + typed approval envelope |
+| `telegram.enabled` | Configuration view, Notifications; warns turning it off stops every Telegram alert, tamper alarms included | Confirm preview + typed approval envelope |
 | `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it); warns a wrong token silences every alert and another bot's token reroutes them | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.chat_id` | Configuration view, Notifications; warns a wrong id stops delivery or sends alerts to another chat | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |

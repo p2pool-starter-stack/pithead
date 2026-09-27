@@ -332,12 +332,10 @@ without it. The machine publishes the dashboard as a Tor hidden service — no p
 VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
 dashboard, with a **Copy** button.
 
-After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
-onion settings until
-[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
-[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
-or off on a running machine, use
-[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+After setup, the Configuration view can change this switch too. Turning the onion on or off is a
+confirmed change: review the preview, type `APPLY`, and complete the confirmation step. Keep
+`dashboard.onion.client_auth` at `true` while the config editor is on, or the change is refused.
+[A USB stick](#changing-settings-with-a-usb-stick) and **Set up again** remain available.
 
 The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
 to publish a config editor behind nothing but a password on an anonymously-reachable address, so

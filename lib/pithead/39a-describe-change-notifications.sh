@@ -3,7 +3,11 @@ describe_notification_change() { # <key> <old> <new>; sets caller's flag/msg
     local key="$1" old="$2" new="$3"
     case "$key" in
     TELEGRAM_ENABLED)
-        msg="Telegram operator bot → $([ "$new" == "true" ] && echo on || echo off) — the dashboard container is recreated."
+        if [ "$new" == "true" ]; then
+            msg="Telegram operator bot → on — the dashboard container is recreated."
+        else
+            msg="Telegram operator bot → off — every Telegram alert stops, the wallet-change and clearnet-exposure tamper alarms included; the dashboard container is recreated."
+        fi
         ;;
     TELEGRAM_BOT_TOKEN)
         # Secret — never echo the token value into the change preview / logs. #2367: name the cost.

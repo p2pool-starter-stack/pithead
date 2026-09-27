@@ -1,7 +1,7 @@
 # Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
-    if describe_notification_change "$key" "$old" "$new"; then
+    if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
@@ -200,7 +200,7 @@ describe_change() {
             msg="Dashboard login DISABLED — the dashboard is reachable without a password again."
         elif [ -z "$old" ]; then
             flag=DEST
-            msg="Dashboard login ENABLED — Caddy now requires the configured username/password; the caddy container is recreated."
+            msg="Dashboard login ENABLED — Caddy now requires the configured username/password: a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         else
             flag=DEST
             msg="Dashboard login password CHANGED — other signed-in sessions are logged out, a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
