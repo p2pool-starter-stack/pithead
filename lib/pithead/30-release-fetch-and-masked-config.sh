@@ -14,8 +14,7 @@ readonly CONTROL_SECRET_PATHS='[
     ["healthchecks","ping_url"],
     ["notifications","ntfy","url"],
     ["notifications","ntfy","token"],
-    ["xvb","standby","source"],
-    ["tari","explorer_url"]]'
+    ["xvb","standby","source"]]'
 
 # #690: bound every host-runner curl so a hostile/MITM'd rig or release response can't stream an
 # unbounded body into memory ($( )) or onto disk (-o) inside the --max-time window. --max-filesize

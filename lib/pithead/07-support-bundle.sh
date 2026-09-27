@@ -167,8 +167,11 @@ stack_support_bundle() {
     # {"__secret__": true}. Rendered into the scratch dir, never into the live control spool.
     if [ -f "$CONFIG_FILE" ]; then
         render_masked_config "$tmp/scratch" 2>/dev/null || true
+        # The Tari explorer URL (#2464) may carry a token; it is masked here only, not in the
+        # control channel, whose commit gate would read the mask as an edit to TARI_EXPLORER_URL.
         [ -f "$tmp/scratch/masked/config.json" ] &&
-            cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
+            jq 'if (.tari.explorer_url // "") != "" then .tari.explorer_url = {"__secret__": true} else . end' \
+                "$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
     # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
     # dirs, modes) stays — that is what support actually needs.

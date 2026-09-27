@@ -43,8 +43,6 @@ SECRET_PATHS = [
     ("notifications", "ntfy", "token"),
     # The backup's primary-dashboard URL (#249) can carry the primary's basic-auth as userinfo.
     ("xvb", "standby", "source"),
-    # The operator-set Tari explorer URL (#2464) may carry a token: a capability URL like the others.
-    ("tari", "explorer_url"),
 ]
 SECRET_SENTINEL = {"__secret__": True}
 # notifications.webhooks[] (#848): a list of bare URL strings, each one a bearer secret (query
