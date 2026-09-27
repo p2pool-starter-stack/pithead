@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from mining_dashboard.config import config
 from mining_dashboard.service.network.clearnet_sync import tor_attested
+from mining_dashboard.service.network.egress_status import with_firewall_state
 from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re-exported)
     CLEARNET,
     INACTIVE,
@@ -15,25 +16,13 @@ from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re
     TOPOLOGY_NODES,
     TOR,
     UNKNOWN,
+    _notify_route,
+    _xvb_route,
     edge,
     ext_node,
     node_route,
     topology_nodes,
 )
-
-
-def _xvb_route(xvb_enabled, xvb_tor):
-    if not xvb_enabled:
-        return INACTIVE
-    return TOR if xvb_tor else CLEARNET
-
-
-def _notify_route(enabled, tor, private):
-    if not enabled:
-        return INACTIVE
-    if tor:
-        return TOR
-    return LOCAL if private else CLEARNET
 
 
 def _xvb_standby_route(source):
@@ -235,7 +224,8 @@ def _sync_pending(chain, flag):
 
 def egress_posture_from_config():
     """Build the posture from the live dashboard config (values pithead rendered into the env)."""
-    return compute_egress_posture(
+    return with_firewall_state(
+        compute_egress_posture,
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
@@ -402,7 +392,8 @@ def compute_topology(
 
 def topology_from_config():
     """Build the topology from the live dashboard config (values pithead rendered into the env)."""
-    return compute_topology(
+    return with_firewall_state(
+        compute_topology,
         firewall=config.TOR_EGRESS_FIREWALL,
         p2pool_clearnet=config.P2POOL_CLEARNET,
         xvb_enabled=config.ENABLE_XVB,
