@@ -348,6 +348,10 @@ $(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")
     else
         it_fail "backup prerequisites present" "backups/ not writable or tar missing — --safety-backup won't work"
     fi
+    # The runner retries a Tari-only readiness refusal after restoring the baseline.
+    if [ "$IT_FAIL" -eq 1 ] && [ "$IT_FAILED_NAMES" = '\n    - readiness: Tari is synced' ]; then
+        printf 'e2e-env: tari-not-done\n'
+    fi
 }
 
 # --- Lifecycle + edge phase (--lifecycle) -----------------------------------
