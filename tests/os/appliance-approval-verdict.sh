@@ -51,6 +51,13 @@ dashboard_password_repoint_applied_verdict() { # <control-result-json>
     printf '%s' "$1" | jq -e '.status == "applied"' >/dev/null
 }
 
+# #2367: before the password commit, the host preview must be a real preview, envelope-gated, and
+# name both costs the owner required (session lockout, appliance console login) in one message.
+dashboard_password_preview_warns_verdict() { # <preview-json>
+    printf '%s' "$1" | jq -e '.status == "previewed" and .approval_required == true and
+        ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))' >/dev/null
+}
+
 # The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
 # endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
 # rendered when the port differs from the live one, so an absent port row is not a miss.

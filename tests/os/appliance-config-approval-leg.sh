@@ -89,7 +89,16 @@ password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current
         return 1
     }
     proposed=$(printf '%s' "$live" | jq -c --arg p "$1" '.dashboard.auth.password = $p')
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return 1
+    sensitive_preview "$(dashboard_config_body "$proposed")" || {
+        bad "dashboard-password repoint NOT exercised: the preview never returned"
+        return 1
+    }
+    # The owner's #2367 ruling: the operator sees the cost before confirming. Refuse to commit
+    # unless the host preview is envelope-gated and names the lockout and console-login costs.
+    if ! dashboard_password_preview_warns_verdict "$APPROVAL_PREVIEW"; then
+        bad "dashboard-password preview did not warn before the commit (want previewed, approval_required, lockout + console-login text; got $(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, approval_required, warns: ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))}' 2>/dev/null || printf 'unparseable preview'))"
+        return 1
+    fi
     rid=$APPROVAL_REQUEST_ID
     dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY",approve:true,payout_suffixes:{}}')" 20 >/dev/null || true
     while [ "$tries" -lt 140 ]; do
@@ -170,12 +179,27 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
 }
 
 _password_commit_via_host_self_test() (
+    local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
+    local good preview committed
+    good=$(jq -nc --arg m "$msg" '{id:"r1",status:"previewed",approval_required:true,changes:[{msg:$m}]}')
     sensitive_live_config() { printf '{"dashboard":{"auth":{"password":"old"}}}'; }
-    sensitive_preview() { APPROVAL_REQUEST_ID=r1; }
-    dashboard_control_request() { return 1; }
+    sensitive_preview() { APPROVAL_PREVIEW=$preview APPROVAL_REQUEST_ID=r1; }
+    dashboard_control_request() {
+        committed=1
+        return 1
+    }
     bad() { :; }
     _ssh() { printf '{"status":"applied"}'; }
-    password_commit_via_host new || exit 1
+    preview=$good committed=0
+    password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    # A preview missing the status, the approval flag or either warning is refused BEFORE commit.
+    for bad_preview in "$(jq -c 'del(.status)' <<<"$good")" "$(jq -c '.approval_required=false' <<<"$good")" \
+        "$(jq -c '.changes[0].msg|=sub("locks this session out";"")' <<<"$good")" \
+        "$(jq -c '.changes[0].msg|=sub("console root login";"")' <<<"$good")"; do
+        preview=$bad_preview committed=0
+        ! password_commit_via_host new && [ "$committed" = 0 ] || exit 1
+    done
+    preview=$good committed=0
     _ssh() { printf '{"status":"rejected","error":"type APPLY"}'; }
     ! password_commit_via_host new || exit 1
 )
