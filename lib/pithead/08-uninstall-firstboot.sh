@@ -115,9 +115,15 @@ stack_uninstall() {
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
     # Compose excludes profile-only volumes from down -v when the profile is inactive.
     # Inspect ownership before removing the one volume its active model can miss.
-    if [ "$(docker volume inspect pithead_tari_wallet_data --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}' 2>/dev/null)" = 'pithead/tari_wallet_data' ]; then
-        docker volume rm pithead_tari_wallet_data >/dev/null ||
-            warn "Could not remove pithead_tari_wallet_data — remove it with: docker volume rm pithead_tari_wallet_data"
+    local volumes labels
+    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
+    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
+        labels=$(docker volume inspect pithead_tari_wallet_data --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = 'pithead/tari_wallet_data' ]; then
+            docker volume rm pithead_tari_wallet_data >/dev/null ||
+                error "Could not remove pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the volume is available."
+        fi
     fi
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
