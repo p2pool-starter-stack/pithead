@@ -44,7 +44,14 @@ remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <
         REMOTE_NODE_RUNTIME_REASON="login-missing"
         [ -n "$login" ] || return 1
         REMOTE_NODE_RUNTIME_REASON="login-stale"
-        { [ -z "$mu" ] || [ "${login%%:*}" = "$mu" ]; } && { [ -z "$mp" ] || [ "${login#*:}" = "$mp" ]; } || return 1
+        # Anchored matches, never a split: either part may itself contain ':'.
+        if [ -n "$mu" ] && [ -n "$mp" ]; then
+            [ "$login" = "$mu:$mp" ]
+        elif [ -n "$mu" ]; then
+            case "$login" in "$mu:"*) ;; *) false ;; esac
+        else
+            case "$login" in *":$mp") ;; *) false ;; esac
+        fi || return 1
     fi
     REMOTE_NODE_RUNTIME_REASON="flags-unreadable"
     flags=$(_ssh "podman inspect p2pool --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^P2POOL_FLAGS=//p'" 2>/dev/null | tr -d '\r') || return 1
@@ -337,7 +344,7 @@ _remote_node_login_verdict_self_test() (
         *rpc-login*) printf '%s\n' "$fake_login" ;;
         esac
     }
-    for fake_login in "" "old-user:old-pass" "new-user:old-pass"; do
+    for fake_login in "" "old-user:old-pass" "new-user:old-pass" "old-user:new-pass" "new-user:new-pass:x"; do
         out=$(remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass 2>&1) && return 1
         [ -z "$out" ] || return 1
     done
@@ -347,8 +354,12 @@ _remote_node_login_verdict_self_test() (
     [ "$REMOTE_NODE_RUNTIME_REASON" = login-stale ] || return 1
     fake_login="new-user:new-pass"
     out=$(remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass 2>&1) || return 1
-    [ -z "$out" ] && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" "" new-pass &&
-        [ "$REMOTE_NODE_RUNTIME_REASON" = ok ]
+    [ -z "$out" ] && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" "" new-pass || return 1
+    ! remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" "" old-pass || return 1
+    fake_login="us:er:pa:ss" && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" us:er pa:ss || return 1
+    remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" us:er "" &&
+        ! remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" other "" &&
+        [ "$REMOTE_NODE_RUNTIME_REASON" = login-stale ]
 )
 
 # The real verdict against a fake podman's inspect JSON (.Name without Docker's leading slash).
