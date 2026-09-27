@@ -27,15 +27,22 @@ assert_eq "the extraction ends with the whole readiness function" \
     "$(printf '%s\n' "$READINESS_SRC" | sed -n '/^assert_release_readiness() {$/p;$p' | tr '\n' ' ')" "assert_release_readiness() { } "
 
 SECRET_PASS="readiness-selftest-stratum-pass"
-drive_readiness() { # <healthy-at-second|never> -> "fails=<n> clock=<s>" then the row output
+drive_readiness() { # <healthy-at-second|never> [tari-done-at-second|never] -> result and rows
     (
         # shellcheck disable=SC2034 # IT_FAIL/IT_PASS are read after the eval'd function returns
-        IT_FAIL=0 IT_PASS=0 FAKE_NOW=0 HEALTHY_AT="$1" IT_GREEN='' IT_RED='' IT_RESET=''
+        IT_FAIL=0 IT_PASS=0 FAKE_NOW=0 HEALTHY_AT="$1" TARI_DONE_AT="${2:-0}" IT_GREEN='' IT_RED='' IT_RESET=''
         now_s() { printf '%s' "$FAKE_NOW"; }
         sleep() { FAKE_NOW=$((FAKE_NOW + $1)); }
         monero_caught_up() { return 0; }
         api_state() { printf '{}'; }
-        jq_get() { printf 'done'; }
+        jq_get() {
+            if [ "$1" = '{}' ] && [ "$2" = '.sync.tari.state' ] &&
+                { [ "$TARI_DONE_AT" = never ] || [ "$FAKE_NOW" -lt "$TARI_DONE_AT" ]; }; then
+                printf 'loading'
+            else
+                printf 'done'
+            fi
+        }
         env_on_box() { :; }
         box_mode() { printf 600; }
         rx() { return 0; }
@@ -69,6 +76,14 @@ row_of() { awk '/stack is healthy \(pithead status\)/ { on = 1; print; next } on
 HEALTHY_NOW="$(drive_readiness 0)"
 assert_eq "a healthy stack passes on the first read" "$(head -n1 <<<"$HEALTHY_NOW")" "fails=0 clock=0"
 assert_contains "the healthy row is a pass" "$HEALTHY_NOW" "✓ stack is healthy (pithead status)"
+
+TARI_SETTLES="$(drive_readiness 0 15)"
+assert_eq "a brief Tari sync dip settles before readiness proceeds" "$(head -n1 <<<"$TARI_SETTLES")" "fails=0 clock=15"
+assert_contains "the settled Tari row is a pass" "$TARI_SETTLES" "✓ Tari is synced (chain reusable by the matrix)"
+
+TARI_STAYS="$(drive_readiness 0 never)"
+assert_eq "Tari stuck off tip fails one row after the bound" "$(head -n1 <<<"$TARI_STAYS")" "fails=1 clock=240"
+assert_contains "the Tari failure names its bound" "$TARI_STAYS" "dashboard did not report Tari done within 240s"
 
 SETTLES="$(drive_readiness 60)"
 assert_eq "a stack that settles within the bound passes the whole readiness run" "$(head -n1 <<<"$SETTLES")" "fails=0 clock=60"
