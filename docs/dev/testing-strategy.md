@@ -588,7 +588,9 @@ Every scenario, at every tier, holds to the same rules.
   mini-stack tears down with `down -v`.
 - Actionable failures. Per-scenario pass/fail, continue-on-error to collect the whole matrix, and
   artifact capture (redacted logs, `compose ps`, `.env`-minus-secrets, dashboard responses) on
-  failure.
+  failure. Captures retain Tor's health probe history and bounded container log. The lifecycle
+  phase captures them at a failed missing-image `up` or dashboard data-dir carry, before later
+  recovery steps can replace the failing container's state.
 - Secrets hygiene. Tokens, RPC creds, and onions are never printed; preservation is checked by
   hashing on the box; all artifacts pass a redactor.
 - Reproducible. The live run records a manifest (stack `VERSION`, git rev, image digests).
