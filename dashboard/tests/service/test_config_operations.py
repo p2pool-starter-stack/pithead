@@ -47,7 +47,6 @@ def test_perimeter_fields_are_offered_in_no_tier_at_all(config_paths):
     for path in (
         "monero.wallet_address",
         "monero.view_key",
-        "monero.node_password",
         "workers.api_token",
     ):
         assert path not in cfg["_approval_keys"], path
@@ -55,6 +54,14 @@ def test_perimeter_fields_are_offered_in_no_tier_at_all(config_paths):
         assert path not in cfg["_editable_keys"], path
     assert "dashboard.auth.password" not in cfg["_approval_keys"]
     assert "dashboard.auth.password" not in cfg["_editable_keys"]
+    # The node RPC login LEFT this set on the owner's 2026-09-19 ruling (#2367/#2333): every config
+    # field is editable from the dashboard, and a security-sensitive one warns and asks for the
+    # typed confirmation rather than being refused. Confirm-gated is the whole of that concession —
+    # never free-commit, and never the approval tier, whose envelope the container writes itself.
+    for path in ("monero.node_username", "monero.node_password"):
+        assert path in cfg["_confirm_keys"], path
+        assert path not in cfg["_editable_keys"], path
+        assert path not in cfg["_approval_keys"], path
     # Positive control: the tier is narrowed, not emptied. Without this an approval_paths() that
     # returned nothing at all would satisfy every assertion above.
     assert "telegram.enabled" in cfg["_approval_keys"]

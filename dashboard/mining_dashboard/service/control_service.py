@@ -198,8 +198,8 @@ def _editable_paths():
     return sorted(paths)
 
 
-# CONFIRM-gated env-key map (#719), mirrored host-side and drift-tested. The gate remains
-# authoritative: some directions are DEST and refused even when the editor offers a field.
+# CONFIRM-gated env-key map (#719), mirrored host-side and drift-tested. It drives the
+# editor affordance; the host gate remains authoritative and may refuse a direction.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),
@@ -227,6 +227,9 @@ CONFIRM_ENV_KEY_PATHS = {
     # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
+    # Reserved-node RPC login (#2333/#2367 ruling): confirm-gated like the endpoints above, never refused.
+    "MONERO_NODE_USERNAME": ("monero.node_username",),
+    "MONERO_NODE_PASSWORD": ("monero.node_password",),
 }
 
 
