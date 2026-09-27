@@ -101,6 +101,22 @@ pin_first_party_images() { # <compose-file> <registry> <stack-version>
     done
 }
 
+# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail,
+# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
+# stays failed. The fault goes in the shipped compose file, not the image: the dashboard is pinned
+# to its signed registry digest above, so a layer rebuilt onto the baked archive never runs (#2694).
+# Exactly one dashboard healthcheck must be rewritten, or the bundle would hold no fault at all.
+break_dashboard_healthcheck() { # <compose-file>
+    local compose="$1" probe='^[[:space:]]*test: \["CMD", "/app/healthcheck\.sh"\]$'
+    [ "$(grep -cE "$probe" "$compose")" = 1 ] || {
+        echo "build-image: no single dashboard healthcheck to break in $compose" >&2
+        return 1
+    }
+    # ENVIRON, not -v: awk -v would unescape the regex's \[ into a bracket expression.
+    PROBE="$probe" awk '$0 ~ ENVIRON["PROBE"] { sub(/\[.*\]/, "[\"CMD-SHELL\", \"exit 1\"]") } { print }' \
+        "$compose" >"$compose.new" && mv "$compose.new" "$compose"
+}
+
 # stage_compose (#1215): put the compose file the image will ship, plus a COMPOSE_SOURCE stamp
 # naming where it came from, into <stage-dir>. Every `image:` in docker-compose.yml is pinned by
 # STACK_VERSION, which the appliance derives from its baked VERSION — so an image built from a
@@ -242,6 +258,13 @@ fi
 if [ "${PITHEAD_OS_SYNTHETIC_COMPOSE:-}" != 1 ]; then
     pin_first_party_images os/build/stage/docker-compose.yml "${PITHEAD_REGISTRY:-ghcr.io/p2pool-starter-stack}" "$STACK_VERSION" || exit 1
 fi
+if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
+    [ -n "${PITHEAD_TEST_SSH_PUBKEY:-}" ] || {
+        echo "PITHEAD_TEST_BREAK_HEALTHCHECK is restricted to debug harness builds" >&2
+        exit 1
+    }
+    break_dashboard_healthcheck os/build/stage/docker-compose.yml || exit 1
+fi
 mkdir -p os/rootfs/images
 echo "==> staging wizard image $WIZARD_IMAGE"
 if [ -n "${PITHEAD_WIZARD_IMAGE:-}" ]; then
@@ -275,14 +298,6 @@ if [ -n "${PITHEAD_TEST_MARKER:-}" ]; then
     # USER root/pithead mirrors dashboard/Dockerfile: the runtime user cannot write /app.
     printf 'FROM %s\nUSER root\nRUN printf %%s "%s" >/app/mining_dashboard/web/static/os-test-marker.txt\nUSER pithead\n' \
         "$WIZARD_SOURCE" "$PITHEAD_TEST_MARKER" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
-fi
-# Harness builds only, fault injection (#2383): force the dashboard's OWN healthcheck to fail —
-# reproducing manual battery M9, a container that starts and answers HTTP while its healthcheck
-# stays failed. FROM $WIZARD_IMAGE (not $WIZARD_SOURCE) so this stacks on top of a marker stamp
-# when both are set. Release builds set neither and get no extra layer.
-if [ -n "${PITHEAD_TEST_BREAK_HEALTHCHECK:-}" ]; then
-    printf 'FROM %s\nUSER root\nRUN printf "#!/bin/sh\\nexit 1\\n" >/app/healthcheck.sh\nUSER pithead\n' \
-        "$WIZARD_IMAGE" | docker build -q -t "$WIZARD_IMAGE" - >/dev/null
 fi
 docker save "$WIZARD_IMAGE" | gzip -1 >os/rootfs/images/dashboard.tar.gz
 

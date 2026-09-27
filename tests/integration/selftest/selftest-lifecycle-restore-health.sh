@@ -24,7 +24,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         pithead() {
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || return 1 ;; # the third push is the carry
-            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore | up-fails:up) return 1 ;;
+            backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
+            up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
@@ -37,13 +38,16 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         dashboard_durable_rows() { printf 'blocks -'; }
         telemetry_rows_continue() { [ "$RESTORE_CASE" != carry-rows-diverge ]; }
         telemetry_rows_diff() { :; }
+        run_uninstall_round_trip() { :; } # driven on its own by selftest-uninstall-round-trip.sh
         jq_get() { [ -n "$1" ] && printf main; }
         api_state() { [ "$RESTORE_CASE" != pool-state-fails ] && printf '{}'; }
-        secret_fingerprint() {
+        secret_fingerprint() { printf fingerprint; }
+        # The round-trip compares every secret category (#2579), not the coarse fingerprint.
+        upgrade_secret_fingerprints() {
             case "$RESTORE_CASE:$RESTORED" in
             secret-before-fails:* | secret-after-fails:yes) return 1 ;;
             esac
-            printf fingerprint
+            printf 'dashboard=fingerprint'
         }
         render_scenario_config() { printf '{}'; }
         push_config() {
@@ -57,14 +61,18 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             [ "$RESTORE_CASE:$1" != "secret-fails:restore preserves secrets" ] || it_fail
         }
         quote_arg() { printf '%s' "$1"; }
+        service_state() { printf 'running healthy'; }
         rx() {
             case "$1" in
+            "test -f dashboard/Dockerfile") [ "${SRC_CHECKOUT:-no}" = yes ] ;;
+            *"config --images") [ "$RESTORE_CASE" != no-proxy-image ] && printf 'tecnativa/docker-socket-proxy@sha256:x\n' ;;
+            *"image inspect --format"*) printf 'sha256:id' ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
         }
         eval "$LIFECYCLE_SRC"
-        run_lifecycle >/dev/null
+        run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         printf '%s|%s' "$?" "$IT_FAIL"
     )
 }
@@ -87,10 +95,20 @@ assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_r
 assert_eq "a failed dashboard carry apply fails lifecycle (#2360)" "$(drive_restore yes carry-apply-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
+assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
+assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
+assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
+LIFECYCLE_OUT="$(mktemp)"
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null
+assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
+rm -f "$LIFECYCLE_OUT"
 
+eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
 assert_eq "telemetry diff names the tables that lost rows" "$(telemetry_rows_diff $'blocks -\nblocks aaa\nkv_store-stable ccc\nkv_store-stable ddd' $'blocks -\nblocks aaa')" "before=4 after=2 missing: kv_store-stable x2"
 assert_eq "telemetry diff reports an empty probe" "$(telemetry_rows_diff "" "")" "before=0 after=0 missing: none"
+assert_eq "telemetry diff never blames a volatile kv_store shape the recreated dashboard rewrote (#2421)" \
+    "$(telemetry_rows_diff $'blocks -\nkv_store-volatile-shape:xvb_day aaa' $'blocks -\nkv_store-volatile-shape:xvb_day bbb')" "before=2 after=2 missing: none"
 
 # The real fingerprint must fail closed: an unreadable or secret-less .env is not a fingerprint.
 FP_SRC="$(sed -n '/^secret_fingerprint() {$/,/^}$/p' "$HERE/../lib/run-matrix.sh")"
@@ -115,15 +133,17 @@ else
     it_fail "an .env with secrets gives a 64-hex fingerprint" "got '$FP_OK'"
 fi
 
-MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1$/,/^    \[ "\$rig_control_ok" = 1 \] && \[ "\$lifecycle_ok" = 1 \] && \[ "\$RUN_FAULTS" = "1" \] && run_fault_injection$/p' "$HERE/../run.sh")"
+MAIN_SRC="$(sed -n '/^    local lifecycle_ok=1 _gated$/,/^    fi # fault-injection gate$/p' "$HERE/../run.sh")"
 assert_contains "the extracted gate includes lifecycle and fault injection" "$MAIN_SRC" "run_fault_injection"
 
-drive_gate() { # <lifecycle-rc> -> fault-ran
+drive_gate() { # <lifecycle-rc> [rig-control-ok] -> fault-ran
     (
         # shellcheck disable=SC2034 # read by the extracted run.sh gate via eval
-        RUN_LIFECYCLE=1 RUN_FAULTS=1 rig_control_ok=1 fault_ran=no lifecycle_rc="$1"
+        RUN_LIFECYCLE=1 RUN_FAULTS=1 RUN_AUTH_FAIL_CLOSED=0 RUN_HARDENING=0 RUN_XVB_ROUTING=0 RUN_ALERT_EGRESS=0 \
+            RUN_MERGEMINE_SUBMIT=0 RUN_MERGEMINE_LOCALNET=0 RUN_SUBNET=0 rig_control_ok="${2:-1}" fault_ran=no lifecycle_rc="$1"
         run_lifecycle() { return "$lifecycle_rc"; }
         run_fault_injection() { fault_ran=yes; }
+        it_skip_phase() { fault_ran="${fault_ran#no}skipped:$1 "; }
         gate() { eval "$MAIN_SRC"; }
         gate >/dev/null 2>&1 || true
         printf '%s' "$fault_ran"
@@ -131,7 +151,8 @@ drive_gate() { # <lifecycle-rc> -> fault-ran
 }
 
 assert_eq "fault injection runs after a healthy lifecycle" "$(drive_gate 0)" "yes"
-assert_eq "fault injection is skipped after a failed lifecycle" "$(drive_gate 1)" "no"
+assert_eq "fault injection is reported skipped after a failed lifecycle (#2755)" "$(drive_gate 1)" "skipped:fault-injection "
+assert_eq "a failed rigforge-control names the requested phases it gates off (#2755)" "$(drive_gate 0 0)" "skipped:lifecycle skipped:fault-injection "
 
 echo "selftest-lifecycle-restore-health: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ] || exit 1

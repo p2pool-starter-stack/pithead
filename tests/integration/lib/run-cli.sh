@@ -35,11 +35,6 @@ MATRIX:
   --remote-monero-rpc-port <p>  that node's RPC port, when it is not the default 18081
   --remote-monero-zmq-port <p>  that node's ZMQ port, when it is not the default 18083
   --remote-tari-host <h>  bare host or IPv4 address for an external Tari node (#103)
-  --appliance-channel    this run is driving a KVM appliance guest, not a DIY install (#2062,
-                         tests/os/phases/stack.sh) — the ONLY effect is that the merge-mining
-                         gRPC round-trip (#1397) reports a by-design skip naming #2326 instead of
-                         failing, since that gap is real on the appliance channel and open
-                         separately; every other assertion runs exactly as it does without this flag.
   --pruned-data-dir <d>  synced PRUNED monero data dir (enables the pruned case when the
                          box's baseline is full)
   --full-data-dir <d>    synced FULL monero data dir (enables the full case when the box's
@@ -72,6 +67,8 @@ MATRIX:
   --candidate-bundle <tar.gz> <sig> <trusted-cosign.pub>
                          private candidate bundle, detached signature, and external trust root.
                          Required with --image-upgrade; all paths must be absolute local files.
+  --candidate-image-key <trusted-cosign.pub>
+                         optional image trust root; defaults to --candidate-bundle's key.
   --xvb-routing-smoke    establish P2Pool routing, enable XvB at the donor tier, and poll the real
                          controller/proxy/dashboard through one bounded XvB→P2Pool transition,
                          then restore the original config. Requires --safety-backup, miners, a
@@ -90,6 +87,12 @@ MATRIX:
                          (tests/integration/mergemine, built at the pinned Tari tag) judges each
                          submission and its legacy/mutated controls at 349,999/350,000/350,001
                          under mainnet rules. Leaves the live stack alone; needs local Monero.
+  --mergemine-localnet   also run the merge-mining acceptance leg (#2589, V5 of #1129): Tari's
+                         testnet-target build of the pinned release runs LocalNet alone on an
+                         internal docker network; a throwaway P2Pool (IT_MM_P2POOL_VERSION) mines on
+                         it against the box's monerod, and every block P2Pool reports is read back
+                         from the node's main chain with its parent. Leaves the live stack alone;
+                         needs local Monero.
   --auth-fail-closed     also run the fail-closed auth phase (#153/#203): empty PROXY_AUTH_TOKEN
                          in .env and assert `pithead up` REFUSES to start (the live counterpart
                          to the tier-1 compose-config check), then restore the exact token and
@@ -218,10 +221,6 @@ parse_args() {
             REMOTE_TARI_HOST="$2"
             shift 2
             ;;
-        --appliance-channel)
-            IT_APPLIANCE_CHANNEL=1
-            shift
-            ;;
         --pruned-data-dir)
             PRUNED_DATA_DIR="$2"
             shift 2
@@ -258,6 +257,14 @@ parse_args() {
             TRUSTED_COSIGN_PUB="$4"
             shift 4
             ;;
+        --candidate-image-key)
+            [ "$#" -ge 2 ] || {
+                it_err "--candidate-image-key requires <trusted-cosign.pub>."
+                exit 2
+            }
+            TRUSTED_IMAGE_COSIGN_PUB="$2"
+            shift 2
+            ;;
         --xvb-routing-smoke)
             RUN_XVB_ROUTING=1
             shift
@@ -268,6 +275,10 @@ parse_args() {
             ;;
         --mergemine-submit)
             RUN_MERGEMINE_SUBMIT=1
+            shift
+            ;;
+        --mergemine-localnet)
+            RUN_MERGEMINE_LOCALNET=1
             shift
             ;;
         --auth-fail-closed)

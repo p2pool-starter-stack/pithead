@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2329  # fake functions and dynamic globals are the controls
-# Verdicts and pure self-tests for appliance-config-approval-leg.sh.
+# Verdicts and pure self-tests for the appliance approval and node-runtime legs.
 #
 # #2076 removed the Telegram approval round-trip, and with it the fake-provider transport this file
 # used to carry: approval_fixture_arm/bind/quiesce/disarm, approval_fixture_post/preview, the
@@ -47,6 +47,34 @@ approval_bind_payload() { # <result-json> <audit-jsonl> <request-id> [landed]
 
 physical_presence_password_refusal_verdict() { # <control-result-json>
     printf '%s' "$1" | jq -e '.status == "rejected" and (.error | contains("configuration stick"))' >/dev/null
+}
+
+# The pre-commit half of remote_node_runtime_verdict: the preview's rendered .env rows name the
+# endpoints p2pool is started with. Hosts always move off the bundled nodes; a port row is only
+# rendered when the port differs from the live one, so an absent port row is not a miss.
+reserved_node_rendered_endpoints_verdict() { # <preview-json> <mh> <rpc> <zmq> <th> <grpc>
+    printf '%s' "$1" | jq -e --arg mh "$2" --arg rpc "$3" --arg zmq "$4" --arg tg "$5:$6" '
+        def row($k): [.changes[]? | select(.key == $k) | .msg];
+        def to($k; $v): row($k) | any(contains("→ " + $v + " — "));
+        def port($k; $v): (row($k) | length == 0) or to($k; $v);
+        to("MONERO_NODE_HOST"; $mh) and to("TARI_GRPC_ADDRESS"; $tg) and
+        port("MONERO_RPC_PORT"; $rpc) and port("MONERO_ZMQ_PORT"; $zmq)' >/dev/null
+}
+
+_reserved_node_rendered_endpoints_self_test() {
+    local ok_rows
+    ok_rows='{"changes":[{"key":"MONERO_NODE_HOST","msg":"MONERO node endpoint (MONERO_NODE_HOST): monerod → node.fixture — x"},
+        {"key":"TARI_GRPC_ADDRESS","msg":"TARI node endpoint (TARI_GRPC_ADDRESS): tari:18142 → tari.fixture:18142 — x"}]}'
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 18142 || return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" other.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$ok_rows" node.fixture 18081 18083 tari.fixture 9999 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_RPC_PORT",msg:"MONERO node endpoint (MONERO_RPC_PORT): 18081 → 18089 — x"}]')" \
+        other.fixture 18089 18083 tari.fixture 18142 && return 1
+    reserved_node_rendered_endpoints_verdict "$(printf '%s' "$ok_rows" | jq -c '.changes += [{key:"MONERO_ZMQ_PORT",msg:"MONERO node endpoint (MONERO_ZMQ_PORT): 18083 → 18084 — x"}]')" \
+        node.fixture 18081 18083 tari.fixture 18142 && return 1
+    return 0
 }
 
 # Bounded, credential-scrubbed evidence for a reserved-node preview verdict (#2297). The row that
@@ -338,8 +366,8 @@ _control_post_timeout_self_test() (
 
 # --- self-test (#2060) -------------------------------------------------------------------------
 #
-# Driven by tests/stack/test-harness-tooling.sh. The leg that consumes this file is at its file
-# budget, so the payload's controls live here with it rather than in the leg's own self-test.
+# Driven by tests/stack/test-harness-tooling.sh. The payload controls stay beside the verdicts they
+# exercise rather than the live guest paths.
 #
 # What must be proven is DISCRIMINATION: the row this feeds already prints one red for four
 # different defects, so a payload that printed one sentence for all four would leave it exactly
@@ -395,5 +423,6 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${1:-}" = --self-test ]; then
     _approval_bind_payload_self_test || f=1
     _reserved_node_preview_payload_self_test || f=1
     _physical_presence_password_refusal_self_test || f=1
+    _reserved_node_rendered_endpoints_self_test || f=1
     exit "$f"
 fi

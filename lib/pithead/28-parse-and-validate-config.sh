@@ -155,20 +155,20 @@ parse_and_validate_config() {
     # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
     # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
-    # Clearnet initial sync vs. the egress firewall: a clearnet_initial_sync flag asks a daemon's
-    # first sync to dial out over clearnet (fast); the egress firewall (default on) DROPs every
-    # non-Tor dial, so that clearnet sync is silently defeated — the daemon just falls back to
-    # syncing over Tor at ordinary speed instead of failing. Nothing leaks (the firewall did its
-    # job), so this is WARN not FAIL — refusing would block a config that is merely slower than
-    # the operator intended, not one that's unsafe. Checked here (not just in render_env, which
-    # only runs for `up`/`apply`) so the contradiction surfaces on every command that validates
-    # config, including `doctor` and `edit`.
+    # Clearnet initial sync vs. the egress firewall (#941): a clearnet_initial_sync flag asks a
+    # daemon's first sync to dial out over clearnet (fast); the egress firewall (default on) DROPs
+    # every non-Tor dial. render_env therefore ignores the flag while the firewall is on and keeps
+    # both daemons on Tor (#2649), so the sync runs at ordinary Tor speed. Nothing leaks, so this
+    # is WARN not FAIL — refusing would block a config that is merely slower than the operator
+    # intended, not one that's unsafe. Checked here (not just in render_env, which only runs for
+    # `up`/`apply`) so the contradiction surfaces on every command that validates config,
+    # including `doctor` and `edit`.
     if [ "$TOR_EGRESS_FIREWALL" = "true" ]; then
         local _cn_sync=""
         [ "$(config_bool '.monero.clearnet_initial_sync' false)" = "true" ] && _cn_sync="Monero"
         [ "$(config_bool '.tari.clearnet_initial_sync' false)" = "true" ] && _cn_sync="${_cn_sync:+$_cn_sync + }Tari"
         if [ -n "$_cn_sync" ]; then
-            warn "$_cn_sync clearnet_initial_sync is on, but network.tor_egress_firewall is also on — the firewall drops the clearnet dials, so the sync will not actually leave Tor. Either turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync and accept the normal Tor-speed sync."
+            warn "$_cn_sync clearnet_initial_sync is ignored while network.tor_egress_firewall is on — the firewall would drop the clearnet dials, so the node syncs over Tor at normal speed. Turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync to silence this warning."
         fi
     fi
     # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the

@@ -57,7 +57,7 @@ from mining_dashboard.service.data_audit import (
     _RIG_EDIT_WINDOW_SEC,
     DataAuditMixin,
 )
-from mining_dashboard.service.data_gates import DataGateMixin, chain_synced
+from mining_dashboard.service.data_gates import SYNC_GATE_RESET_PATH, DataGateMixin, chain_synced
 from mining_dashboard.service.data_helpers import (
     _SHARE_STAT_KEYS,
     _aggregate_hashrate,

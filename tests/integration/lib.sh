@@ -374,13 +374,12 @@ control_units_verdict() { # <doctor-output>
 
 # Authoritative "is Monero caught up?" — monerod's own get_info (creds stay on the box): its
 # `synchronized` flag or target_height 0 (looser than the #2472 sync gate, which needs the flag).
-# "Its own" follows the mode: in monero.mode=remote nothing listens on the box's loopback (the
-# render emits no MONERO_RPC_URL; the in-stack relay is container-local), so the endpoint derives
-# from config.json — found by #1083's first live remote run. Read the rc with `= 1`, never `!= 0` (#1605).
+# "Its own" follows the rendered MONERO_RPC_URL. The config.json derivation remains only for testing
+# upgrades from versions that predate that rendered key. Read the rc with `= 1`, never `!= 0` (#1605).
 monero_caught_up() { # 0 caught up / 1 answered, behind / ANY other could-not-ask: 2 no usable body, 255 ssh
     rx 'u=$(grep -E "^MONERO_NODE_USERNAME=" .env 2>/dev/null | cut -d= -f2-);
         p=$(grep -E "^MONERO_NODE_PASSWORD=" .env 2>/dev/null | cut -d= -f2-);
-        url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=$(jq -r "if (.monero.mode // \"local\") == \"remote\" and .monero.remote.host then \"http://\" + .monero.remote.host + \":\" + ((.monero.remote.rpc_port // 18081) | tostring) else \"http://127.0.0.1:18081\" end" config.json 2>/dev/null); [ -n "$url" ] || url="http://127.0.0.1:18081";
+        url=$(grep -E "^MONERO_RPC_URL=" .env 2>/dev/null | cut -d= -f2-); [ -n "$url" ] || url=$(jq -r "if (.monero.mode // \"local\") == \"remote\" and .monero.remote.host then (.monero.remote.host | if contains(\":\") then \"[\" + . + \"]\" else . end) as \$host | \"http://\" + \$host + \":\" + ((.monero.remote.rpc_port // 18081) | tostring) else \"http://127.0.0.1:18081\" end" config.json 2>/dev/null); [ -n "$url" ] || url="http://127.0.0.1:18081";
         if [ -n "$u" ]; then body=$(printf "user = %s\n" "$(printf "%s:%s" "$u" "$p" | jq -Rs .)" | curl -fsS --max-time 8 --digest -K - "$url/get_info" 2>/dev/null);
         else body=$(curl -fsS --max-time 8 "$url/get_info" 2>/dev/null); fi;
         [ -n "$body" ] || exit 2; printf "%s" "$body" | jq -e "(.status==\"OK\") and ((.synchronized==true) or (.target_height==0))" >/dev/null 2>&1; case $? in 0) exit 0 ;; 1) exit 1 ;; *) exit 2 ;; esac'
@@ -596,20 +595,19 @@ _pred_share_stats_nonempty() {
     [ -n "$n" ] && [ "$n" -gt 0 ] 2>/dev/null
 }
 
-# Predicate: the proxy's stratum counters show hashes accumulating — proof a rig is actually
-# submitting work, not merely listed. A REAL borrowed rig fails over to its secondary pool when
-# the bench stratum bounces between scenarios and returns on xmrig's own retry clock (~60-90s),
-# so a single early sample legitimately reads 0 on a rig that is mining a minute later (#831).
+# Predicate: workers online on the proxy AND hashes accumulating — proof a rig is submitting work.
+# A REAL rig fails over when the bench stratum bounces and returns on xmrig's retry clock (~60-90s,
+# #831); p2pool's cumulative total_hashes survives a proxy restart, so it alone never waits (#2750).
 _pred_stratum_hashes() {
-    local st h
+    local st h w
     st="$(api_state)"
     [ -n "$st" ] || return 1
-    h="$(jq_get "$st" '.stratum.total_hashes')"
-    [ -n "$h" ] && [ "$h" -gt 0 ] 2>/dev/null
+    h="$(jq_get "$st" '.stratum.total_hashes')" w="$(jq_get "$st" '.proxy_workers')"
+    [ "${h:-0}" -gt 0 ] 2>/dev/null && [ "${w:-0}" -ge "${EXPECTED_WORKERS:-1}" ] 2>/dev/null
 }
 
 wait_status_ok() { wait_for "${1:-180}" 5 "pithead status OK" _pred_status_ok; }
-wait_stratum_hashes() { wait_for "${1:-180}" 10 "stratum hashes accumulating" _pred_stratum_hashes; }
+wait_stratum_hashes() { wait_for "${1:-180}" 10 "workers online + stratum hashes accumulating" _pred_stratum_hashes; }
 wait_monero_synced() { wait_for "${1:-300}" 10 "Monero sync complete" _pred_monero_synced; }
 wait_miner_running() { wait_for "${1:-180}" 5 "miner released" _pred_miner_running; }
 wait_tari_synced() { wait_for "${1:-300}" 10 "Tari sync complete" _pred_tari_synced; }
@@ -680,7 +678,7 @@ capture_artifacts() {
     local dir="${outdir}/${scenario}"
     mkdir -p "$dir"
     it_step "capturing artifacts to ${dir}"
-    rx "docker compose ps" 2>&1 | redact >"${dir}/compose-ps.txt" || true
+    rx 'docker compose ps; docker inspect --format "{{.Name}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} restarts={{.RestartCount}}" $(docker compose ps -aq)' 2>&1 | redact >"${dir}/compose-ps.txt" || true
     rx "$IT_PITHEAD status" 2>&1 | redact >"${dir}/status.txt" || true
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true
     # config.json is masked BY PATH first (#1630) — redact() is line-wise and cannot see nesting.

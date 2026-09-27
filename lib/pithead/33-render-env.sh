@@ -6,18 +6,16 @@ render_env() {
     log "Rendering environment configuration ($target)..."
 
     # Mode → host / ports / compose profile
-    local mono_host rpc_port zmq_port profiles
+    local mono_host rpc_port zmq_port mono_rpc_url profiles
     if [ "$MONERO_MODE" == "local" ]; then
-        mono_host="${NETWORK_PREFIX}.26"
-        rpc_port="18081"
-        zmq_port="18083"
-        profiles="local_node"
+        mono_host="${NETWORK_PREFIX}.26" rpc_port="18081" zmq_port="18083" profiles="local_node"
+        mono_rpc_url="http://127.0.0.1:18081" # host loopback, not the bridge IP above
     else
         # Reuse the parse-time validated globals — the validated value IS the rendered value.
-        mono_host="$MONERO_REMOTE_HOST"
-        rpc_port="$MONERO_REMOTE_RPC_PORT"
-        zmq_port="$MONERO_REMOTE_ZMQ_PORT"
+        mono_host="$MONERO_REMOTE_HOST" rpc_port="$MONERO_REMOTE_RPC_PORT" zmq_port="$MONERO_REMOTE_ZMQ_PORT"
         profiles="" # Empty profile disables local monerod
+        # Bracket a literal IPv6 host for URL use (RFC 3986).
+        case "$mono_host" in *:*) mono_rpc_url="http://[$mono_host]:$rpc_port" ;; *) mono_rpc_url="http://$mono_host:$rpc_port" ;; esac
     fi
 
     # Tari mode → gRPC address / compose profile (#103/#1855), mirroring Monero above. local -> the
@@ -64,14 +62,14 @@ render_env() {
     local prune
     prune=$(monero_prune_flag)
 
-    # Optional clearnet initial sync (#183). DEFAULT OFF (privacy-first). When on for a daemon, its
-    # initial blockchain download runs over CLEARNET (fast) instead of Tor — briefly exposing this
-    # host's IP to that P2P network. Per-component, since Monero and Tari sync independently.
-    # config_bool honours an explicit false; normalize_bool then maps the result to true/false.
-    # Monero keeps tx-proxy=tor the whole time. Flip back to false + `apply` once synced.
-    local monero_clearnet tari_clearnet
-    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
+    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
+    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
+    local monero_clearnet=false tari_clearnet=false
+    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
+        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    fi
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
@@ -455,6 +453,7 @@ MONERO_OUT_PEERS=$(dotenv_render_value "$out_peers")
 MONERO_RPC_BIND=$(dotenv_render_value "$rpc_bind")
 MONERO_ZMQ_BIND=$(dotenv_render_value "$zmq_bind")
 MONERO_NODE_HOST=$(dotenv_render_value "$mono_host")
+MONERO_RPC_URL=$(dotenv_render_value "$mono_rpc_url")
 MONERO_RPC_PORT=$(dotenv_render_value "$rpc_port")
 MONERO_ZMQ_PORT=$(dotenv_render_value "$zmq_port")
 TARI_MODE=$(dotenv_render_value "$TARI_MODE")

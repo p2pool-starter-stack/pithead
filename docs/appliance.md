@@ -243,7 +243,7 @@ Then a handful of choices, all with sensible defaults:
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. |
+| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. The faster sync needs the egress firewall off, which the appliance cannot change, so for now it syncs over Tor either way. |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
@@ -275,11 +275,11 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
 
-A remote node's address is not a one-time answer. If the node you point at goes away, moves, or
-you want to try another one, the dashboard's Configuration view changes it on a running machine:
-type `APPLY` to confirm, and the machine dials the new endpoint and refuses it if nothing answers
-there ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). The node's RPC
-username and password are the exception and stay fixed at setup.
+A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
+changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
+endpoint with the staged login before it commits the pair
+([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). Changing one login field in
+local-node mode preserves its masked partner and applies the pair to the local services together.
 
 **Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
@@ -305,11 +305,12 @@ it on. An install that had already reported success is safe on the disk.)
 Most of the configuration stays editable from the dashboard afterwards — see
 [configuration](configuration.md) for everything you can tune. Be aware of one honest limit
 in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password, per-rig worker entries) can be set **here, at install**, but not changed from the
-dashboard later — that restriction is deliberate, so a compromised browser session can never
-redirect your payouts or repoint a rig's control address and token to one it controls. A
-shell-less appliance adopting a new rig after install therefore needs the USB-stick route below,
-not the dashboard. Changing any of these later does not mean reinstalling: write the new settings
+password) can be set **here, at install**, but not changed from the dashboard later — that
+restriction is deliberate, so a compromised browser session can never redirect your payouts. Rigs
+are half-way: the dashboard can adopt a new rig after install (Worker Inspect's adopt form,
+confirmed by typing `APPLY`), but it cannot repoint or remove a rig it already controls, so a
+compromised browser session cannot move an adopted rig's control address and token to one it
+controls. Changing any of these later does not mean reinstalling: write the new settings
 to a
 FAT stick as `pithead-config.json`, insert it and reboot — see
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
@@ -403,7 +404,12 @@ the machine keeps the new version and notes the gap in its boot log and with the
 recorded outcome: the mismatch is about this machine's addresses, not the update, and
 running `pithead apply` on the machine mints the certificate — that command now does so
 even when the configuration is unchanged. The machine refuses images that are unsigned, built for
-different hardware, or older than what it runs; there is no override. If another operation is changing the stack when you start an
+different hardware, or older than what it runs; there is no override. It also refuses an update
+that migrates the chain data when the data partition lacks room for the Tari migration. That
+migration writes a compacted copy of the Tari database beside the old one, so the machine needs
+free space of the database's current size plus 5 GiB. The refusal names the size needed and the
+size free, and the downloaded image stays on the machine, so you can free space and install it
+again. If another operation is changing the stack when you start an
 install, the install is not started at all: nothing is written to the idle copy and the
 dashboard says so rather than reporting a failed install. Start it again once that
 operation has finished. See
@@ -568,6 +574,11 @@ This works on the installation medium's combined page too.
 
 A wrong passphrase or a damaged archive is rejected with the reason, and the page keeps the restore
 form open so you can correct it and retry or return to the normal form — restore never blocks setup.
+A restore that fails while writing its files puts back the machine's previous configuration, Tor
+keys, and dashboard database, and removes any chain files it added. If one of them cannot be put
+back, the error says so, and the previous copy stays beside it under a `.restore-old` name. If a
+file the restore added cannot be removed, the error says that too, and the file stays under its
+`.restore` name or in the chain data directory.
 Restore is available at first setup and from the saved-setup screen. In both cases it runs through
 setup again; the day-two `restore` command is the separate path for restoring a running stack in
 place.

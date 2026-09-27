@@ -49,6 +49,7 @@ MONERO_PREP_THREADS=4
 MONERO_RPC_BIND=127.0.0.1
 MONERO_ZMQ_BIND=127.0.0.1
 MONERO_NODE_HOST=172.28.0.26
+MONERO_RPC_URL=http://monero.example:28081
 MONERO_RPC_PORT=18081
 MONERO_ZMQ_PORT=18083
 TARI_GRPC_ADDRESS=172.28.0.27:18142
@@ -57,7 +58,6 @@ COMPOSE_PROFILES=local_node,local_tari
 DASHBOARD_SECURE=true
 HOST_IP=box.lan
 EOF
-
 echo "Validating docker-compose.yml ..."
 if docker compose --env-file "$ENV_FILE" -f "$ROOT/docker-compose.yml" config -q; then
     echo "  ✓ compose config is valid"
@@ -185,12 +185,12 @@ jq_assert "mining services are not on proxy_net" \
     '[.services["monerod"], .services["tari"], .services["p2pool"], .services["xmrig-proxy"]] | all((.networks // {} | keys) | any(. == "proxy_net") | not)'
 jq_assert "p2pool disables its persistent file log (#1989)" '.services.p2pool.command | index("--no-log-file") != null'
 # The Tari probe uses the [m] bracket so grep can't match its own argv (a false-healthy bug).
-jq_assert "tari healthcheck uses the [m]inotari self-match guard" \
-    '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari healthcheck uses the [m]inotari self-match guard" '(.services.tari.healthcheck.test | tostring) | contains("[m]inotari")'
+jq_assert "tari runs under an init that reaps and forwards signals (#2627)" '.services.tari.init == true'
 jq_assert "compose project name is pinned to pithead" '.name == "pithead"'
-# Memory ceilings (#132): every service carries a mem_limit so a leak/runaway OOM-restarts the
-# offender in its own cgroup instead of the host OOM-killer reaching monerod (the revenue service).
-jq_assert "memory ceiling (mem_limit) on every service (#132)" '[.services[] | select(.mem_limit != null)] | length >= 9'
+# Memory ceilings (#132) OOM-restart a leak in its own cgroup, not monerod via the host OOM-killer.
+# p2pool's holds its 2592 MiB RandomX fallback off short HugePages plus heap: 1g OOM-looped (#2562).
+jq_assert "memory ceiling on every service (#132); p2pool's >= 3 GiB, no swap (#2562)" '([.services[] | select(.mem_limit != null)] | length >= 9) and (.services.p2pool | ((.mem_limit | tonumber) >= 3221225472) and (.memswap_limit == .mem_limit))'
 # Immutable root filesystems (#377): every service runs read_only with exactly its expected tmpfs
 # scratch set, INCLUDING the mount options. An edit that grows a size cap or slips in `exec` —
 # re-creating the executable staging area read_only exists to remove — must fail CI, not evolve
@@ -280,7 +280,7 @@ jq_assert "control staged/ dir never enters the container (#33)" \
     '.services.dashboard.volumes | any(.target | contains("staged")) | not'
 jq_assert "control channel defaults off in the dashboard env (#33)" \
     '.services.dashboard.environment["DASHBOARD_CONTROL_ENABLED"] == "false"'
-
+jq_assert "rendered Monero RPC URL reaches the dashboard (#1271)" '.services.dashboard.environment["MONERO_RPC_URL"] == "http://monero.example:28081"'
 # depends_on startup ordering (#565): "wait until healthy" vs "wait until started" is a startup-
 # correctness guarantee, not decoration. Render with the optional payout-confirmation profiles too
 # (payout_confirm/tari_payout_confirm, #381/#462) so the profile-gated wallet-rpc/tari-wallet edges
@@ -298,16 +298,16 @@ for edge in "monerod=tor" "tari=tor" "wallet-rpc=monerod" "tari-wallet=tari"; do
     jq_assert "$svc waits for $dep to be service_healthy (#565)" \
         ".services[\"$svc\"].depends_on[\"$dep\"].condition == \"service_healthy\""
 done
-jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" \
-    '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+jq_assert "xmrig-proxy waits for p2pool service_started only, not health-gated (#565)" '.services["xmrig-proxy"].depends_on["p2pool"].condition == "service_started"'
+# Both service_healthy edges on tor fail the whole `up` once tor reads unhealthy, and a cold Tor
+# bootstrap has taken 5 minutes (#2648). Compose renders durations as Go strings: "10m", "1m30s".
+jq_assert "tor's start_period covers a slow cold bootstrap: 10 minutes or more (#2648)" 'def secs: capture("^((?<h>[0-9]+)h)?((?<m>[0-9]+)m)?((?<s>[0-9]+)s)?$") | ((.h // "0" | tonumber) * 3600 + (.m // "0" | tonumber) * 60 + (.s // "0" | tonumber)); (.services.tor.healthcheck.start_period | secs) >= 600'
 # Peer-loss coupling (#972): a tor restart/recreate kills monerod's SOCKS peers and monerod does
 # NOT re-dial on its own (bench: 0 in / 0 out peers for ~6h, healthcheck green). restart: true
 # makes every compose operation that restarts/recreates tor restart monerod right after — and it
 # is deliberately the ONLY such coupling: p2pool re-peers on its own.
-jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" \
-    '.services["monerod"].depends_on["tor"].restart == true'
-jq_assert "the tor restart coupling stays monerod-only (#972)" \
-    '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
+jq_assert "monerod restarts whenever compose restarts/recreates tor (#972)" '.services["monerod"].depends_on["tor"].restart == true'
+jq_assert "the tor restart coupling stays monerod-only (#972)" '[.services[] | (.depends_on // {}) | to_entries[] | select(.value.restart == true)] | length == 1'
 jq_assert "p2pool has no depends_on — both monerod and tari can be profiled off (#103/#565)" \
     '(.services["p2pool"].depends_on // {}) == {}'
 # Count guard: a NEW depends_on edge (health-gated or not) added anywhere in the file must show up

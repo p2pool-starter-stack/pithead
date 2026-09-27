@@ -37,6 +37,8 @@ source "$HERE/lib/borrow-rearm.sh" || exit $?
 source "$HERE/lib/zmq-probe.sh" || exit $?
 # shellcheck source=tests/integration/lib/mergemine-probe.sh
 source "$HERE/lib/mergemine-probe.sh" || exit $?
+# shellcheck source=tests/integration/lib/hugepage-probe.sh
+source "$HERE/lib/hugepage-probe.sh" || exit $?
 
 # --- Defaults / globals -----------------------------------------------------
 IT_MODE="ssh"
@@ -61,6 +63,7 @@ IMAGE_UPGRADE_TO_SHA=""
 RUN_XVB_ROUTING=0
 RUN_ALERT_EGRESS=0
 RUN_MERGEMINE_SUBMIT=0
+RUN_MERGEMINE_LOCALNET=0
 RIG_HOST=""
 RIG_NAME=""
 RIGFORGE_BOOTSTRAP_VERSION=""
@@ -78,7 +81,6 @@ REMOTE_MONERO_HOST=""
 REMOTE_MONERO_RPC_PORT=""
 REMOTE_MONERO_ZMQ_PORT=""
 REMOTE_TARI_HOST=""
-IT_APPLIANCE_CHANNEL=0
 PRUNED_DATA_DIR=""
 FULL_DATA_DIR=""
 OUT_DIR="$HERE/results"
@@ -94,6 +96,8 @@ source "$HERE/lib/run-cli.sh" || exit $?
 source "$HERE/lib/run-matrix.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-lan-guard.sh
+source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
 source "$HERE/lib/run-scenario.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lifecycle.sh
@@ -116,6 +120,8 @@ source "$HERE/lib/live-gates.sh" || exit $?
 source "$HERE/lib/run-alert-egress.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-mergemine-submit.sh
 source "$HERE/lib/run-mergemine-submit.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-mergemine-localnet.sh
+source "$HERE/lib/run-mergemine-localnet.sh" || exit $?
 # --- Main -------------------------------------------------------------------
 
 main() {
@@ -164,6 +170,8 @@ main() {
         return
     fi
     [ -z "$SAFETY_ARCHIVE" ] || arm_safety_abort_restore
+    # Sampled for the whole destructive run, restore included; gated before each summary (#2685).
+    hugepages_begin
 
     # Upgrade first: old images are still running when the harness starts, and every later phase
     # then exercises the declared candidate image set. Do not mutate further after a failed
@@ -180,6 +188,7 @@ main() {
             fi
             [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
             safety_cleanup
+            hugepages_finish
             summary
             return
         fi
@@ -208,16 +217,35 @@ main() {
     elif [ "$RUN_RIGFORGE" = "1" ]; then
         run_rigforge_integration
     fi
-    local lifecycle_ok=1
+    local lifecycle_ok=1 _gated
+    # A failed rigforge-control leaves the borrowed rig off its baseline, so no later phase runs;
+    # name every requested one in the summary instead of dropping it silently (#2755).
+    if [ "$rig_control_ok" != 1 ]; then
+        for _gated in LIFECYCLE:lifecycle FAULTS:fault-injection AUTH_FAIL_CLOSED:auth-fail-closed HARDENING:hardening \
+            XVB_ROUTING:xvb-routing ALERT_EGRESS:alert-egress MERGEMINE_SUBMIT:mergemine-submit \
+            MERGEMINE_LOCALNET:mergemine-localnet SUBNET:subnet; do
+            local _flag="RUN_${_gated%%:*}"
+            [ "${!_flag}" = 1 ] && it_skip_phase "${_gated#*:}" "the rigforge-control phase failed, so the rig is not back on its baseline"
+        done
+    fi
     if [ "$rig_control_ok" = 1 ] && [ "$RUN_LIFECYCLE" = "1" ]; then
         run_lifecycle || lifecycle_ok=0
     fi
-    [ "$rig_control_ok" = 1 ] && [ "$lifecycle_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ] && run_fault_injection
+    if [ "$rig_control_ok" = 1 ] && [ "$RUN_FAULTS" = "1" ]; then
+        # Faults need the healthy stack a passing lifecycle leaves (#2501); a requested phase that
+        # does not run is named in the summary, never dropped silently (#2755).
+        if [ "$lifecycle_ok" = 1 ]; then
+            run_fault_injection
+        else
+            it_skip_phase "fault-injection" "the lifecycle phase failed, so there is no healthy stack to inject faults into (#2501)"
+        fi
+    fi # fault-injection gate
     [ "$rig_control_ok" = 1 ] && [ "$RUN_AUTH_FAIL_CLOSED" = "1" ] && run_auth_fail_closed
     [ "$rig_control_ok" = 1 ] && [ "$RUN_HARDENING" = "1" ] && run_hardening
     [ "$rig_control_ok" = 1 ] && [ "$RUN_XVB_ROUTING" = "1" ] && run_xvb_routing_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_ALERT_EGRESS" = "1" ] && run_alert_egress_smoke
     [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_SUBMIT" = "1" ] && run_mergemine_submit
+    [ "$rig_control_ok" = 1 ] && [ "$RUN_MERGEMINE_LOCALNET" = "1" ] && run_mergemine_localnet
     # Subnet last among the destructive phases: it does a full down/up, so it re-establishes the
     # baseline stack cleanly before the end-of-run restore.
     [ "$rig_control_ok" = 1 ] && [ "$RUN_SUBNET" = "1" ] && run_subnet_scenario
@@ -233,6 +261,7 @@ main() {
     fi
     [ "$SAFETY_RESTORE_FAILED" = 0 ] && _SAFETY_RESTORE_ARMED=0
     safety_cleanup
+    hugepages_finish
     summary
 }
 

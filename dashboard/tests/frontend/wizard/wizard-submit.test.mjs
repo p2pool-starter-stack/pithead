@@ -93,11 +93,10 @@ test("before a disk is chosen, the page asks ONLY that", async () => {
 });
 
 // --- restore-at-setup (#909, #786 sub-issue B): the config form's alternative -----------------
-// Upload an encrypted backup + its passphrase instead of typing a config. Validation is entirely
-// host-side (same "container asks, host decides" split); the client wires the two answers up and
-// enforces the size cap it can check without a round trip.
+// Upload a backup and, when encrypted, its passphrase instead of typing a config. Validation is
+// host-side; the client wires the answers up and enforces the size cap it can check locally.
 
-test("restore section: names what a restore does and asks for the archive + passphrase", () => {
+test("restore section: names both backup formats and asks for the archive + passphrase", () => {
   const section = RestoreSection({
     file: null,
     passphrase: "",
@@ -109,6 +108,8 @@ test("restore section: names what a restore does and asks for the archive + pass
   const out = renderToString(section);
   assert.match(out, /Restore from a backup/);
   assert.match(out, /emergency-kit passphrase/);
+  assert.match(out, /plaintext/);
+  assert.match(out, /needs no passphrase/);
   assert.match(out, /type="file"/);
   assert.match(out, /type="password"/);
   assert.match(out, /autocomplete="off" autocorrect="off" autocapitalize="off"/);
@@ -165,6 +166,27 @@ test("the setup form offers a toggle into restore mode, and back again", async (
   assert.match(during, /Restore from a backup/);
   assert.doesNotMatch(during, /Payout address/); // the normal form is gone, not just hidden
   assert.match(during, /Back to the setup form/);
+  restore();
+});
+
+test("plain HTTP offers no restore form and sends no archive or passphrase", async () => {
+  const { inst, restore } = await appOn([stateFor("setup", { restore_enabled: false })]);
+  const out = renderToString(inst.render());
+  assert.match(out, /Restore from a backup requires HTTPS/);
+  assert.doesNotMatch(out, /Restoring an existing Pithead/);
+  assert.doesNotMatch(out, /type="file"/);
+  const file = new File([new Uint8Array(4)], "backup.tar.gz");
+  inst.setState({ restoreMode: true, restoreFile: file, restorePassphrase: "fixture-pw" });
+  let fetched = false;
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => {
+    fetched = true;
+    return { ok: true, status: 200 };
+  };
+  await inst.submitRestore({ preventDefault() {} });
+  globalThis.fetch = real;
+  assert.equal(fetched, false);
+  assert.match(inst.state.error, /requires HTTPS/);
   restore();
 });
 

@@ -136,13 +136,9 @@ assert_eq "scan height: empty -> genesis 0" "$(rsh '')" "0"
 assert_eq "scan height: explicit block kept verbatim" "$(rsh 2500000)" "2500000"
 
 # Wallet healthcheck (#718/#2268): stub `curl` on PATH to control RPC up/down.
-HCBIN="$SANDBOX/hc-bin"
-HCDIR="$SANDBOX/hc-wallet"
+HCBIN="$SANDBOX/hc-bin" HCDIR="$SANDBOX/hc-wallet"
 mkdir -p "$HCBIN" "$HCDIR"
-mk_curl() {
-    printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl"
-    chmod +x "$HCBIN/curl"
-}
+mk_curl() { printf '#!/bin/sh\nexit %s\n' "$1" >"$HCBIN/curl" && chmod +x "$HCBIN/curl"; }
 run_hc() { (
     PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" sh "$ROOT/build/monero/wallet-healthcheck.sh" >/dev/null 2>&1
     echo $?
@@ -157,10 +153,14 @@ assert_eq "healthcheck: RPC down with expired scan marker -> unhealthy (#2268)" 
 mk_curl 0
 assert_eq "healthcheck: RPC up -> healthy (#718)" "$(run_hc)" "0"
 if [ -f "$HCDIR/.payout-scanning" ]; then bad "healthcheck: RPC up clears the scan marker (#718)" "marker still present"; else ok "healthcheck: RPC up clears the scan marker (#718)"; fi
-# RPC down + NO marker (scan already finished once) -> unhealthy: a real fault, not scan tolerance.
-mk_curl 7
+mk_curl 7 # RPC down + NO marker (scan already finished once): a real fault, not scan tolerance.
 assert_eq "healthcheck: RPC down after scan done -> unhealthy (#718)" "$(run_hc)" "1"
-assert_contains "wallet-entrypoint touches the scan marker on create (#718)" "$(cat "$ROOT/build/monero/wallet-entrypoint.sh")" 'touch "$SCAN_MARKER"'
+printf '#!/bin/sh\nexit 0\n' >"$HCBIN/monero-wallet-rpc" && chmod +x "$HCBIN/monero-wallet-rpc"
+run_wep() { rm -f "$HCDIR/.payout-scanning" && PATH="$HCBIN:$PATH" WALLET_DIR="$HCDIR" GEN_JSON="$SANDBOX/wgen.json" bash "$ROOT/build/monero/wallet-entrypoint.sh" >/dev/null 2>&1; } # every start marks a scan (#718): a reopen's catch-up blocks the RPC too (#2756)
+run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on create"; else bad "wallet-entrypoint marks the scan on create" "no marker"; fi
+: >"$HCDIR/payout-wallet" && run_wep
+if [ -f "$HCDIR/.payout-scanning" ]; then ok "wallet-entrypoint marks the scan on reopen"; else bad "wallet-entrypoint marks the scan on reopen" "no marker"; fi
 
 echo "== unit: monero_address_type — p2pool needs a PRIMARY address, and a REAL one (#250, #829) =="
 _a93="$(printf 'a%.0s' $(seq 93))"
@@ -542,8 +542,7 @@ assert_rc "above-maximum out_peers refused" "$?" "1"
 assert_contains "above-maximum refusal names the bounds" "$out" "between 8 and 1024"
 
 echo "== black-box: local node creds auto-generated + persisted (#50) =="
-# A local node with BLANK creds: apply must generate them, write them into .env AND back into
-# config.json, and keep them stable on a second apply (don't regenerate every run).
+# Blank local credentials are generated, persisted, and stable across apply.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"","node_password":""}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
@@ -555,26 +554,26 @@ assert_eq "username persisted to config.json" "$(jq -r '.monero.node_username' "
 assert_eq "password persisted to config.json" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "password stable across apply" "$(jq -r '.monero.node_password' "$V/config.json")" "$env_pass"
-
-# A REMOTE node with blank creds means "no auth" — leave it empty, don't invent credentials.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com"}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote username left blank" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_NODE_USERNAME)" ""
 assert_eq "remote creds not persisted" "$(jq -r '.monero.node_username' "$V/config.json")" ""
-
-# Custom remote rpc_port/zmq_port propagate to .env (the dashboard + p2pool read these to reach the
-# node); both default to 18081/18083 but an operator can point at a node on non-standard ports.
 seed_env
 printf '{ "monero": {"mode":"remote","wallet_address":"%s","node_username":"","node_password":"","remote":{"host":"node.example.com","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "remote rpc_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_PORT)" "28081"
+assert_eq "remote RPC URL rendered from the endpoint" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://node.example.com:28081"
 assert_eq "remote zmq_port propagated" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "28083"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_eq "zmq_port defaults to 18083" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_ZMQ_PORT)" "18083"
-
+assert_eq "local RPC URL renders host loopback" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://127.0.0.1:18081"
+seed_env
+printf '{ "monero": {"mode":"remote","wallet_address":"%s","remote":{"host":"fd00::10","rpc_port":28081,"zmq_port":28083}}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+assert_eq "IPv6 remote RPC URL brackets the host" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_RPC_URL)" "http://[fd00::10]:28081"
 seed_env
 : >"$DOCKER_LOG"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead logs monerod 2>&1)"

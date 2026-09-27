@@ -87,7 +87,7 @@ cat >"$DRBIN/iptables" <<'EOF'
 # so once the check asserted REACHABILITY (#2091) it read a healthy host as an orphaned chain.
 [ "$*" = "-S FORWARD" ] && exec echo '-A FORWARD -j DOCKER-USER'
 [ "${IPT_TAGGED:-0}" = "1" ] || exec echo '-P DOCKER-USER ACCEPT'
-echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT'
+echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT'
 echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
 EOF
 cat >"$DRBIN/ss" <<'EOF'
