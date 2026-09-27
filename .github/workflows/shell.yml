@@ -27,7 +27,7 @@ jobs:
   shell:
     name: Shell tests (pithead suite)
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # run.sh alone is 692-772 s (#2048); the old 25 min covered all three jobs
+    timeout-minutes: 30 # run.sh reached ~19 min on develop by 2026-09-26 (was 692-772 s at #2048); headroom per #2776
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
