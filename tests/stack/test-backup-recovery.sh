@@ -18,7 +18,7 @@ case "$*" in
     n=$((n + 1)); printf '%s' "$n" >"$UP_COUNT"
     [ "$n" -gt "${UP_FAILS:-0}" ] || { echo "dependency failed to start: container tor is unhealthy" >&2; exit 1; }
     ;;
-  "inspect"*) echo '{"Status":"unhealthy","Log":[{"ExitCode":1,"Output":"control port refused"}]}' ;;
+  "inspect"*) echo "{\"Status\":\"unhealthy\",\"Log\":[{\"ExitCode\":1,\"Output\":\"control port refused after attempt $(cat "${UP_COUNT:?}")\"}]}" ;;
   "logs"*) echo "Bootstrapped 45%: Asking for relay descriptors at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion" ;;
 esac
 exit 0
@@ -84,6 +84,13 @@ assert_contains "failed backup restart retains Tor health" "$out" "unhealthy"
 assert_contains "failed backup restart retains Tor health-check output" "$out" "control port refused"
 assert_contains "failed backup restart retains Tor log" "$out" "Bootstrapped 45%"
 assert_not_contains "failed backup restart redacts onion in Tor log" "$out" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion"
+
+out="$(backup_case env UP_FAILS=99 TAR_FAIL=0)"
+rc=$?
+assert_rc "backup reports two failed normal restarts" "$rc" 1
+assert_eq "failed normal restart makes two up attempts" "$(cat "$FB/up.count")" 2
+assert_contains "failed final restart retains its own Tor health-check output" "$out" "control port refused after attempt 2"
+assert_contains "failed normal restart keeps the original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
 
 out="$(backup_case env PITHEAD_APPLIANCE=1 UP_FAILS=99 TAR_FAIL=0)"
 rc=$?
