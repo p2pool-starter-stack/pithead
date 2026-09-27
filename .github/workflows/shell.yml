@@ -1,7 +1,7 @@
 name: Shell
 
 # Split out of ci.yml by #2048, where one serial job decided CI's wall clock. lint-sh (~90 s, #2632) and
-# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~730 s) but the generated
+# the standalone suites (~110 s) share nothing with `tests/stack/run.sh` (~19 min on develop, #2776) but the generated
 # CLI, which each job builds for itself. run.sh itself is NOT sharded: its domain files are run.sh
 # fragments by design — each opens with a `$STACK_SUITE` guard saying so — and share a sandbox
 # chain, so splitting them is a test-design change, not a YAML one. #2048 has the per-domain table
@@ -27,7 +27,7 @@ jobs:
   shell:
     name: Shell tests (pithead suite)
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # run.sh alone is 692-772 s (#2048); the old 25 min covered all three jobs
+    timeout-minutes: 30 # develop's run.sh now takes ~19 min (#2776); leave room for added tests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
