@@ -246,11 +246,10 @@ kept_chain_files_snippet() { # <path>...
 
 # uninstall -> setup round trip (#2379): uninstall removes the named volumes and every derived
 # path, keeps every *_DATA_DIR, config.json and backups/ byte-identical, and a setup after it
-# re-provisions from what was kept (and the harness's own secrets). The stack is stopped BEFORE the first snapshot: a running
-# monerod writes its LMDB, log and peer state continuously, and its own shutdown flushes them, so
-# a snapshot of a live node can never match anything (job 680). Stopped, the daemons write
-# nothing, and uninstall's own code must then change zero bytes: the allowlist of permitted writes
-# is empty. Always ends by bringing a stack back up, so the phases after this one have one.
+# re-provisions from what was kept (and the harness's own secrets). The stack is stopped before
+# the first snapshot: a running monerod writes its LMDB, log and peer state continuously, and
+# shutdown flushes them, so a live snapshot can never match (job 680). Stopped, the daemons write
+# nothing; uninstall must change zero bytes of kept data. The stack is brought back up afterward.
 run_uninstall_round_trip() {
     local fails_before="$IT_FAIL" key p kept=() derived=() snippet before after out rc onion_before big_before big_after
     it_step "pithead uninstall keeps every byte of data, then setup re-provisions from it…"
@@ -273,6 +272,28 @@ run_uninstall_round_trip() {
         ! before="$(rx "$snippet")" || [ -z "$before" ] ||
         ! big_before="$(rx "$(kept_chain_files_snippet "${kept[@]}")")"; then
         it_fail "stopped stack snapshot readable before uninstall" "pithead down or the kept-data snapshot failed"
+        rx 'rm -f .env.itest-round-trip'
+        pithead up >/dev/null 2>&1
+        wait_status_ok 240 || true
+        return 1
+    fi
+    # Seed a Compose-owned volume while its only service's profile is inactive.
+    local wallet_labels="" wallet_volumes=""
+    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" tari_payout_confirm; then
+        it_fail "Tari payout profile is inactive before uninstall" "tari_payout_confirm is active"
+    elif ! wallet_volumes="$(rx 'docker volume ls -q')"; then
+        it_fail "owned Tari wallet volume exists before uninstall" "volume listing failed"
+    else
+        it_pass "Tari payout profile is inactive before uninstall"
+        if printf '%s\n' "$wallet_volumes" | grep -Fx pithead_tari_wallet_data >/dev/null ||
+            rx 'docker volume create --label com.docker.compose.project=pithead --label com.docker.compose.volume=tari_wallet_data pithead_tari_wallet_data' >/dev/null; then
+            wallet_labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || wallet_labels=""
+            assert_eq "owned Tari wallet volume exists before uninstall" "$wallet_labels" "pithead/tari_wallet_data"
+        else
+            it_fail "owned Tari wallet volume exists before uninstall" "volume creation failed"
+        fi
+    fi
+    if [ "$IT_FAIL" -gt "$fails_before" ]; then
         rx 'rm -f .env.itest-round-trip'
         pithead up >/dev/null 2>&1
         wait_status_ok 240 || true

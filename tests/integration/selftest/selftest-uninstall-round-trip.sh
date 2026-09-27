@@ -21,13 +21,26 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"
 cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-[ "$*" != "volume ls -q" ] || { [ ! -e .fake-volume ] || echo pithead_tari_wallet_data; }
+case "$*" in
+"volume create --label com.docker.compose.project=pithead --label com.docker.compose.volume=tari_wallet_data pithead_tari_wallet_data")
+    [ "$FAKE_CASE" != no-wallet-seed ] || exit 1
+    : >.created-volume
+    : >.fake-volume
+    echo pithead_tari_wallet_data ;;
+"volume inspect pithead_tari_wallet_data --format "*)
+    [ -e .fake-volume ] || exit 1
+    [ "$FAKE_CASE" != wrong-wallet-label ] && echo pithead/tari_wallet_data || echo foreign/volume ;;
+"volume ls -q")
+    [ ! -e .fake-volume ] || echo pithead_tari_wallet_data ;;
+esac
 EOF
 cat >"$T/fake-pithead" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
 down) : >.stopped ;;
+up) : >.restarted ;;
 uninstall)
+    : >.uninstalled
     # A stack still running when uninstall stops it writes its shutdown state into the chain dir.
     [ -e .stopped ] || printf x >>data/monero/p2pstate.bin
     printf 'Removed: x\nKept (yours): y\nLeft behind (shared with the machine): z\n  sudo rm -rf y\n'
@@ -37,8 +50,8 @@ uninstall)
     rewrites-big) printf x | dd of=data/monero/lmdb/data.mdb bs=1 seek=10 conv=notrunc 2>/dev/null ;;
     deletes-dir) rmdir data/tor/keys ;;
     leaves-secret) : >data/tari-wallet-secret.env ;;
-    leaves-volume) : >.fake-volume ;;
     esac
+    [ "$FAKE_CASE" = leaves-volume ] || rm -f .fake-volume
     ;;
 setup)
     # The real setup refuses a deployed .env; the harness must hand back its secrets without the flag.
@@ -58,11 +71,13 @@ drive() { # <case> -> round-trip-rc|failures
         printf chain >"$B/data/monero/p2pstate.bin"
         truncate -s 70M "$B/data/monero/lmdb/data.mdb"
         printf '{}' >"$B/config.json"
+        [ "$1" != wrong-wallet-label ] || : >"$B/.fake-volume"
         : >"$B/data/tari-wallet-secret.env"
         printf '%s\n' "MONERO_DATA_DIR=$B/data/monero" "TOR_DATA_DIR=$B/data/tor" "CONTROL_DIR=$B/data/control" \
             COMPOSE_PROFILES=local_node MONERO_ONION_ADDRESS=abc.onion PROXY_AUTH_TOKEN=tok \
             DEPLOYMENT_COMPLETED=true >"$B/.env.fixture"
         cp "$B/.env.fixture" "$B/.env"
+        [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node/COMPOSE_PROFILES=local_node,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
         export FAKE_CASE="$1"
@@ -72,11 +87,22 @@ drive() { # <case> -> round-trip-rc|failures
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
         has_compose_profile() { case ",$1," in *",$2,"*) return 0 ;; *) return 1 ;; esac }
         run_uninstall_round_trip >/dev/null
-        printf '%s|%s' "$?" "$IT_FAIL"
+        result=$?
+        case "$1" in
+        no-wallet-seed|wrong-wallet-label|active-wallet-profile)
+            [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"
+            [ -e "$B/.restarted" ] || it_fail "bad fixture restarts the stack" "up did not run"
+            [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed" ;;
+        esac
+        [ "$1" != wrong-wallet-label ] || [ ! -e "$B/.created-volume" ] || it_fail "foreign volume is never recreated" "create ran"
+        printf '%s|%s' "$result" "$IT_FAIL"
     )
 }
 
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
+assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
+assert_eq "a wallet volume with foreign labels fails the owned-volume precondition" "$(drive wrong-wallet-label)" "1|1"
+assert_eq "an active payout profile refuses the uninstall fixture" "$(drive active-wallet-profile)" "1|1"
 assert_eq "one appended byte in a small kept file fails byte identity" "$(drive writes-small)" "1|1"
 assert_eq "a same-size rewrite of a large chain file fails byte identity" "$(drive rewrites-big)" "1|1"
 assert_eq "a removed kept directory fails byte identity" "$(drive deletes-dir)" "1|1"
