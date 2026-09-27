@@ -89,10 +89,11 @@ drive() { # <case> -> round-trip-rc|failures
         run_uninstall_round_trip >/dev/null
         result=$?
         case "$1" in
-        no-wallet-seed|wrong-wallet-label|active-wallet-profile)
+        no-wallet-seed | wrong-wallet-label | active-wallet-profile)
             [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"
             [ -e "$B/.restarted" ] || it_fail "bad fixture restarts the stack" "up did not run"
-            [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed" ;;
+            [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed"
+            ;;
         esac
         [ "$1" != wrong-wallet-label ] || [ ! -e "$B/.created-volume" ] || it_fail "foreign volume is never recreated" "create ran"
         printf '%s|%s' "$result" "$IT_FAIL"
