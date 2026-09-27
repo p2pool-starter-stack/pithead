@@ -13,6 +13,20 @@ describe_notification_change() { # <key> <old> <new>; sets caller's flag/msg
     TELEGRAM_COMMANDS_ENABLED)
         msg="Telegram command interface → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now answers" || echo "no longer answers") /status, /hashrate, /workers, /sync from the configured chat; the dashboard container is recreated."
         ;;
+    TELEGRAM_EVENT_WALLET_CHANGED | TELEGRAM_EVENT_CLEARNET_EXPOSED)
+        # The tamper alarms (#2367): editable, but silencing one is how the change it watches goes
+        # unnoticed, so the off direction is a DEST row and names what stops alerting.
+        if [ "$new" == "false" ]; then
+            flag=DEST
+            if [ "$key" = TELEGRAM_EVENT_WALLET_CHANGED ]; then
+                msg="Wallet-change alarm OFF — a payout-address change will no longer alert Telegram; a wallet swap could go unnoticed."
+            else
+                msg="Clearnet-exposure alarm OFF — a node exposing this machine's IP over clearnet will no longer alert Telegram."
+            fi
+        else
+            msg="${key#TELEGRAM_EVENT_} Telegram alarm → on."
+        fi
+        ;;
     TELEGRAM_EVENT_*) msg="Telegram alert toggle ($key): $old → $new." ;;
     TELEGRAM_DAILY_SUMMARY_TIME) msg="Telegram daily summary time: $old → $new (local time)." ;;
     NOTIFY_WEBHOOK_URLS)

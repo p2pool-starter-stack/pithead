@@ -366,20 +366,6 @@ describe_change() {
         # The last two are fixed internals that co-change with the view-key toggle and stay silent. The FIRST is OPERATOR-SETTABLE (tari.spend_public_key) and must never be: an empty message never reaches the porcelain (40-apply-and-render.sh drops the row), which is all control_approval_gate reads — so a silent settable key commits with no typed token and no approval. It is a PUBLIC key, safe to echo.
         if [ "$key" = TARI_SPEND_PUBLIC_KEY ]; then msg="Tari payout confirmation spend key: ${old:-unset} → ${new:-unset}."; else msg=""; fi
         ;;
-    TELEGRAM_EVENT_WALLET_CHANGED | TELEGRAM_EVENT_CLEARNET_EXPOSED)
-        # The tamper alarms (#2367): editable, but silencing one is how the change it watches goes
-        # unnoticed, so the off direction is a DEST row and names what stops alerting.
-        if [ "$new" == "false" ]; then
-            flag=DEST
-            if [ "$key" = TELEGRAM_EVENT_WALLET_CHANGED ]; then
-                msg="Wallet-change alarm OFF — a payout-address change will no longer alert Telegram; a wallet swap could go unnoticed."
-            else
-                msg="Clearnet-exposure alarm OFF — a node exposing this machine's IP over clearnet will no longer alert Telegram."
-            fi
-        else
-            msg="${key#TELEGRAM_EVENT_} Telegram alarm → on."
-        fi
-        ;;
     *)
         msg="$key: $old → $new."
         ;;

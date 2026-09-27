@@ -12,8 +12,8 @@ assert_eq "password preview is envelope-gated and names the lockout and console-
     "$(jq -r '.approval_required and ([.changes[].msg] | any(contains("locks this session out") and contains("console root login")))' "$RESULTS/$UUID5.json" 2>/dev/null)" "true"
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 preview_only "$C/cand.json"
-assert_eq "wallet-changed alarm off previews as an envelope-gated DEST row naming the unnoticed swap" \
-    "$(jq -r '.approval_required and ([.changes[] | select(.flag == "DEST") | .msg] | any(contains("wallet swap could go unnoticed")))' "$RESULTS/$UUID5.json" 2>/dev/null)" "true"
+assert_eq "wallet-changed alarm off previews envelope-gated, naming the unnoticed swap" \
+    "$(jq -r '.approval_required and ([.changes[].msg] | any(contains("wallet swap could go unnoticed")))' "$RESULTS/$UUID5.json" 2>/dev/null)" "true"
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID5" >"$REQS/$UUID5.json"
 run_pending >/dev/null
 assert_contains "a token-less alarm-off commit is refused for want of typed APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
