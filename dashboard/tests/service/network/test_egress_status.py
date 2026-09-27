@@ -73,6 +73,12 @@ def test_a_malformed_field_is_unverified_never_enforced(tmp_path, body):
     assert egress_firewall_state(_write(tmp_path, body), now=NOW) == UNVERIFIED
 
 
+@pytest.mark.parametrize("opener", ["[", '{"rc": '])
+def test_deeply_nested_json_cannot_escape_the_reader(tmp_path, opener):
+    # json.load recurses per nesting level: 100k levels raise RecursionError, not ValueError.
+    assert egress_firewall_state(_write(tmp_path, opener * 100_000), now=NOW) == UNVERIFIED
+
+
 def test_a_check_within_three_intervals_is_fresh(tmp_path):
     path = _write(tmp_path, {"rc": 0, "checked_at": NOW - 3 * 120})
     assert egress_firewall_state(path, now=NOW) == ENFORCED

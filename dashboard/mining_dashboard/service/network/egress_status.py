@@ -15,7 +15,8 @@ JSON number. ``json`` accepts ``NaN`` and ``Infinity``, and Python treats ``Fals
 bare ``int()``/``float()`` would read ``{"rc": false}`` as enforced. A JSON integer is also
 unbounded, and turning 400 digits into a float raises ``OverflowError``, so ``checked_at`` is range
 checked before any arithmetic: comparing an int with a float is exact in Python and never
-overflows, and NaN and the infinities fail the same range.
+overflows, and NaN and the infinities fail the same range. Deep nesting makes ``json`` raise
+``RecursionError``, which reads unverified like any other unparseable file.
 """
 
 import json
@@ -40,7 +41,7 @@ def egress_firewall_state(path=None, now=None):
     try:
         with open(path or STATUS_PATH, encoding="utf-8") as f:
             status = json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):  # json recurses per nesting level
         return UNVERIFIED
     rc = status.get("rc") if isinstance(status, dict) else None
     checked_at = status.get("checked_at") if isinstance(status, dict) else None
