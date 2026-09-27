@@ -6,6 +6,7 @@ import {
   createPreviewServer,
   previewState,
 } from "../fixtures/sovereign-preview.mjs";
+import { wizardPreviewState } from "../fixtures/wizard-preview.mjs";
 
 function rawStatus(port, path) {
   return new Promise((resolve, reject) => {
@@ -38,6 +39,16 @@ test("previewState is deterministic, synthetic, and supports empty and syncing v
   assert.equal(previewState("sync").syncing, true);
 });
 
+test("wizard fixtures cover each host-owned stage with sample-only values", () => {
+  assert.equal(wizardPreviewState("setup").stage, "installer");
+  assert.equal(wizardPreviewState("reinstall").saved_role.role, "both");
+  assert.equal(wizardPreviewState("rig").saved_role.role, "rig");
+  assert.equal(wizardPreviewState("credentials").stage, "handoff");
+  assert.equal(wizardPreviewState("installing").stage, "installing");
+  assert.equal(wizardPreviewState("failed").stage, "failed");
+  assert.match(wizardPreviewState("failed").error, /^Sample failure:/);
+});
+
 test("preview server serves the real shell and state, and rejects writes and unsafe paths", async (t) => {
   const server = createPreviewServer();
   await new Promise((resolve, reject) => {
@@ -65,6 +76,41 @@ test("preview server serves the real shell and state, and rejects writes and uns
   assert.deepEqual(referred.workers, []);
 
   assert.equal((await fetch(`${base}/api/control/preview`, { method: "POST" })).status, 405);
+
+  const wizard = await fetch(`${base}/wizard?ui=sovereign&fixture=setup`);
+  const wizardHtml = await wizard.text();
+  assert.equal(wizard.status, 200);
+  assert.match(wizardHtml, /Sample device · Read-only preview/);
+  assert.match(wizardHtml, /fixture=credentials/);
+  assert.ok(wizardHtml.indexOf("Read-only preview") < wizardHtml.indexOf('<main id="app"'));
+
+  const setup = await (
+    await fetch(`${base}/api/wizard-state`, {
+      headers: { referer: `${base}/wizard?ui=sovereign&fixture=setup` },
+    })
+  ).json();
+  assert.equal(setup.stage, "installer");
+  assert.deepEqual(setup.disks.map(({ state }) => state), ["empty", "pithead-with-data"]);
+  assert.equal(setup.handoff, null);
+
+  const credentials = await (
+    await fetch(`${base}/api/wizard-state?fixture=credentials`)
+  ).json();
+  assert.equal(credentials.stage, "handoff");
+  assert.match(credentials.handoff.password, /^SAMPLE-ONLY/);
+  assert.match(credentials.handoff.dashboard, /\.invalid$/);
+
+  assert.equal((await fetch(`${base}/api/wizard-state?fixture=gate`)).status, 401);
+  assert.equal((await fetch(`${base}/handoff-ack`, { method: "POST" })).status, 405);
+
+  const checks = await fetch(`${base}/checks`);
+  const checksHtml = await checks.text();
+  assert.match(checksHtml, /name="viewport"/);
+  assert.match(checksHtml, /theme-init\.js/);
+  assert.match(checksHtml, /dashboard\.css/);
+  assert.match(checksHtml, /chart\.umd\.min\.js/);
+  assert.match(checksHtml, /id="results"/);
+  assert.equal((await fetch(`${base}/checks/browser-checks.mjs`)).status, 200);
   assert.equal((await fetch(`${base}/static/%E0%A4%A`)).status, 400);
   assert.equal(await rawStatus(server.address().port, "/static/..%2Ftemplates%2Findex.html"), 403);
 });

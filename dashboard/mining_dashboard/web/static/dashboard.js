@@ -29,6 +29,11 @@ export const REFRESH_MS = 30000;
 // Derived from REFRESH_MS so the two can't drift apart; far above a healthy Tor round-trip,
 // so it only trips on dead links.
 export const FETCH_TIMEOUT_MS = REFRESH_MS - 5000;
+const CHART_RANGES = new Set(["1h", "24h", "1w", "1m", "all"]);
+
+function normalizeRange(range) {
+  return CHART_RANGES.has(range) ? range : "all";
+}
 
 // A manual-zoom window {from, to} (epoch seconds) read from ?from=&to= so a zoomed URL is
 // shareable and survives reload (Issue #47); null/garbage falls back to the preset range.
@@ -71,7 +76,7 @@ export function initDashboard({
   doc.documentElement.setAttribute("data-ui", sovereign ? "sovereign" : "classic");
 
   const ui = {
-    range: params.get("range") || "all",
+    range: normalizeRange(params.get("range")),
     window: windowFromUrl(params), // {from,to} epoch-s when zoomed, else null
     series: loadSeries(storage.getItem("dashboardSeries")), // booleans per SERIES_KEYS (Issue #47)
     // Hashrate-averaging window the chart plots (#168); persisted, default 10m (today's series).
@@ -101,7 +106,9 @@ export function initDashboard({
 
   let state = null; // latest /api/state payload, or null before the first response
   let connected = true; // false after a failed fetch (we keep showing the last snapshot)
-  let inflight = false; // guard against overlapping fetches if one is slow
+  let inflight = null; // one shared promise prevents overlapping fetches
+  let queued = false; // a UI change during a poll must fetch its latest query once that poll ends
+  let revision = 0; // stale responses must not paint beneath newer range controls
 
   // Tests inject renderApp to observe exactly what the App would receive; the browser default
   // renders the real <App> with the same props.
@@ -133,7 +140,7 @@ export function initDashboard({
       onDismissHint: dismissHint,
       onInspect: openInspect,
       onCloseInspect: closeInspect,
-      onRetry: tick,
+      onRetry: refresh,
     });
   }
 
@@ -147,9 +154,8 @@ export function initDashboard({
     rerender();
   }
 
-  async function tick() {
-    if (inflight) return;
-    inflight = true;
+  async function poll() {
+    const pollRevision = revision;
     try {
       // A custom zoom window overrides the preset range; the server adapts resolution to it. The
       // averaging window (#168) applies to both — the server selects which window's columns to plot.
@@ -162,16 +168,39 @@ export function initDashboard({
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
-      state = await res.json();
-      connected = true;
-      if (state.page_title) doc.title = state.page_title;
+      const nextState = await res.json();
+      if (pollRevision === revision) {
+        state = nextState;
+        connected = true;
+        if (state.page_title) doc.title = state.page_title;
+      }
     } catch (e) {
-      connected = false;
-      console.warn("dashboard refresh failed", e);
+      if (pollRevision === revision) {
+        connected = false;
+        console.warn("dashboard refresh failed", e);
+      }
     } finally {
-      inflight = false;
-      rerender();
+      if (pollRevision === revision) rerender();
     }
+  }
+
+  async function drain() {
+    do {
+      queued = false;
+      await poll();
+    } while (queued);
+  }
+
+  function tick() {
+    if (inflight) return;
+    inflight = drain().finally(() => (inflight = null));
+    return inflight;
+  }
+
+  function refresh() {
+    revision += 1;
+    queued = true;
+    return inflight || tick();
   }
 
   function replaceChartUrl(query) {
@@ -183,10 +212,10 @@ export function initDashboard({
   }
 
   function setRange(r) {
-    ui.range = r;
+    ui.range = normalizeRange(r);
     ui.window = null; // picking a preset exits any manual zoom
-    replaceChartUrl(r === "all" ? "" : "range=" + encodeURIComponent(r));
-    return tick(); // re-fetch immediately; the chart/series depend on the range
+    replaceChartUrl(ui.range === "all" ? "" : "range=" + encodeURIComponent(ui.range));
+    return refresh(); // re-fetch immediately; the chart/series depend on the range
   }
 
   // Called (debounced) by the chart when a zoom/pan gesture settles: pin the visible window and
@@ -194,13 +223,13 @@ export function initDashboard({
   function setZoom(fromS, toS) {
     ui.window = { from: fromS, to: toS };
     replaceChartUrl("from=" + Math.round(fromS) + "&to=" + Math.round(toS));
-    return tick();
+    return refresh();
   }
 
   function resetZoom() {
     ui.window = null;
     replaceChartUrl(ui.range === "all" ? "" : "range=" + encodeURIComponent(ui.range));
-    return tick();
+    return refresh();
   }
 
   function onSort(idx) {
@@ -246,19 +275,19 @@ export function initDashboard({
   function setAvgWindow(w) {
     ui.avg = normalizeAvgWindow(w);
     storage.setItem("dashboardAvgWindow", ui.avg);
-    return tick();
+    return refresh();
   }
 
   applyTheme(ui.theme); // re-assert the (normalized) theme before the first paint
   if (sovereign) {
     listen("popstate", () => {
       const query = new URL(currentHref()).searchParams;
-      const range = query.get("range") || "all";
+      const range = normalizeRange(query.get("range"));
       const window = windowFromUrl(query);
       if (range === ui.range && JSON.stringify(window) === JSON.stringify(ui.window)) return;
       ui.range = range;
       ui.window = window;
-      return tick();
+      return refresh();
     });
   }
   rerender(); // paint the loading shell immediately

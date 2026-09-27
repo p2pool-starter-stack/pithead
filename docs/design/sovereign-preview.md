@@ -23,6 +23,12 @@ Set `PORT` to choose another local port. The server binds to loopback, serves sy
 sample data and rejects all write requests. It does not start a stack or connect to miners.
 The sample-data label stays in the footer.
 
+Open `/wizard?ui=sovereign&fixture=setup` on that same local server for the appliance
+wizard. The sample-stage links cover the token gate, installer, reinstall, rig,
+one-time credentials, installation and failure. It uses the real wizard components
+and synthetic device data. Every write is refused, including authentication, submit,
+restore and acknowledgement; this is not an installation simulator.
+
 On a dashboard built from this branch, append `?ui=sovereign#overview` to its URL to use
 real telemetry with the existing authenticated API. The ordinary URL retains the classic UI.
 Chart range and zoom parameters remain available with the preview selector.
@@ -41,6 +47,9 @@ Chart range and zoom parameters remain available with the preview selector.
   configuration, backup and diagnostics. Expert fields and host confirmation gates remain.
 - Configuration drafts stay mounted across local page navigation; reload/close uses the
   native unsaved-changes prompt. Drafts and secrets are not persisted to browser storage.
+- An opt-in appliance wizard frame follows the existing host-owned stages and preserves
+  the role, disk confirmation, restore and one-time credential controls. The appliance
+  image and its boot/provisioning scripts are unchanged.
 
 ## Boundaries and remaining work
 
@@ -68,3 +77,13 @@ The complete `make test` gate requires the documented Linux toolchain; on macOS 
 Frontend checks include routing, status distinctions, retained snapshots, control gating,
 bounded activity and the preview server's read-only/path boundary. Browser review covers
 desktop and phone layouts, both palettes, navigation and worker filtering.
+
+Open `/checks?ui=sovereign` on the preview server to run the repeatable native-browser
+checks. They mount real Preact components and exercise route focus, address reveal,
+combined filters, draft retention across navigation/polling, stale snapshot retry and
+listener cleanup. The page reports each assertion and the viewport width. Run at desktop
+and phone widths. This is an additional browser check, not part of `make test-frontend`
+or a substitute for the real screen-reader and appliance gates.
+
+See [remaining risks and test acceptance](sovereign-testing.md) before treating this
+preview as release-ready.

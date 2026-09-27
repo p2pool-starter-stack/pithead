@@ -9,7 +9,7 @@ const go = (onView, page) => () => onView(page);
 function Hero({ state, onView }) {
   const total = String(state.hashrate?.total || "—");
   const match = total.match(/^(.+?)\s+([^\s]+)$/);
-  const connected = Number(state.proxy_workers || 0);
+  const connected = Number.isFinite(state.proxy_workers) ? state.proxy_workers : null;
   return html`
     <section class="sov-hero" aria-labelledby="sov-title">
       <div class="sov-hero-copy">
@@ -18,7 +18,7 @@ function Hero({ state, onView }) {
         <div class="sov-hashrate">
           <span class="sov-label">Current proxy hashrate</span>
           <strong>${match ? match[1] : total}${match ? html` <small class="sov-unit">${match[2]}</small>` : null}</strong>
-          <span>${connected} connected worker${connected === 1 ? "" : "s"}</span>
+          <span>${connected ?? "—"} connected worker${connected === 1 ? "" : "s"}</span>
         </div>
         ${
           state.xvb_calc?.enabled
@@ -42,7 +42,7 @@ function Metrics({ state }) {
   const xmr = state.earnings_summary?.xmr;
   const recorded = xmr?.enabled && xmr.actual_30d != null;
   const partial = recorded && xmr.partial;
-  const shares = state.shares_window?.count;
+  const shares = state.shares_window?.ok ? state.shares_window.count : null;
   return html`
     <section class="sov-metrics" aria-label="Mining summary">
       <div class="sov-metric">
@@ -76,15 +76,27 @@ function WorkerRow({ worker, onInspect }) {
 function attentionItems(state) {
   const items = [];
   const add = (label, page) => items.push({ label, page });
-  const offline = (state.workers || []).filter((worker) => worker.status !== "online").length;
-  if (offline) add(`${offline} worker feed${offline === 1 ? "" : "s"} not online`, "machines");
+  const workers = (state.workers || []).filter(
+    (worker) =>
+      worker.status !== "online" ||
+      worker.api_ok === false ||
+      worker.reject_flag ||
+      worker.rigforge?.miner_down,
+  ).length;
+  if (workers)
+    add(
+      `${workers} worker feed${workers === 1 ? "" : "s"} need${workers === 1 ? "s" : ""} attention`,
+      "machines",
+    );
   if (state.proxy_summary?.reject_level === "high")
     add(`Proxy rejects ${state.proxy_summary.reject_pct}`, "machines");
-  if (state.sync?.monero?.state !== "done")
-    add(`Monero sync ${state.sync?.monero?.percent ?? "—"}%`, "network");
+  if (!state.sync?.monero) add("Monero sync unavailable", "network");
+  else if (state.sync.monero.state !== "done")
+    add(`Monero sync ${state.sync.monero.percent ?? "—"}%`, "network");
   if (state.tari?.active && !state.tari.connected) add(`Tari: ${state.tari.status}`, "network");
   const topology = state.topology?.summary;
-  if (topology && topology.level !== "ok")
+  if (!topology) add("Configured egress unavailable", "network");
+  else if (topology.level !== "ok")
     add(`Configured egress: ${topology.label || "unverified"}`, "network");
   for (const [name, label] of [
     ["cpu", "CPU"],
@@ -92,9 +104,11 @@ function attentionItems(state) {
     ["disk", "Disk"],
   ]) {
     const metric = state.system?.[name];
-    if (metric && metric.level !== "ok")
+    if (!metric?.level) add(`${label} unavailable`, "maintenance");
+    else if (metric.level !== "ok")
       add(`${label} ${metric.percent || metric.level}`, "maintenance");
   }
+  if (state.shares_window?.ok === false) add("Share window unavailable", "activity");
   if (state.db_healthy === false) add("Dashboard database needs attention", "maintenance");
   if (state.update?.available) add(`Pithead ${state.update.latest} available`, "maintenance");
   return items;

@@ -3,6 +3,13 @@ import { createReadStream, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BROWSER_CHECKS,
+  CHECKS_HTML,
+  WIZARD_VARIANTS,
+  wizardPreviewHtml,
+  wizardPreviewState,
+} from "./wizard-preview.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB = resolve(HERE, "../../../mining_dashboard/web");
@@ -252,6 +259,11 @@ function json(res, status, body, head = false) {
   res.end(head ? undefined : `${JSON.stringify(body)}\n`);
 }
 
+function text(res, type, body, head = false) {
+  res.writeHead(200, headers(type));
+  res.end(head ? undefined : body);
+}
+
 function file(res, path, head) {
   try {
     if (!statSync(path).isFile()) throw new Error("not a file");
@@ -263,7 +275,7 @@ function file(res, path, head) {
   else createReadStream(path).on("error", () => res.destroy()).pipe(res);
 }
 
-function fixtureVariant(req, url) {
+function fixtureVariant(req, url, allowed = ["empty", "sync"], fallback = "sample") {
   let variant = url.searchParams.get("fixture");
   if (!variant && req.headers.referer) {
     try {
@@ -273,7 +285,7 @@ function fixtureVariant(req, url) {
       // A malformed or cross-origin Referer cannot select preview data.
     }
   }
-  return ["empty", "sync"].includes(variant) ? variant : "sample";
+  return allowed.includes(variant) ? variant : fallback;
 }
 
 export function createPreviewServer() {
@@ -293,8 +305,21 @@ export function createPreviewServer() {
       return json(res, 400, { error: "Malformed URI" }, head);
     }
     if (pathname === "/") return file(res, INDEX, head);
+    if (pathname === "/wizard") {
+      return text(res, "text/html; charset=utf-8", wizardPreviewHtml(), head);
+    }
+    if (pathname === "/checks") {
+      return text(res, "text/html; charset=utf-8", CHECKS_HTML, head);
+    }
+    if (pathname === "/checks/browser-checks.mjs") return file(res, BROWSER_CHECKS, head);
     if (pathname === "/api/state") {
       return json(res, 200, previewState(fixtureVariant(req, url)), head);
+    }
+    if (pathname === "/api/wizard-state") {
+      const variant = fixtureVariant(req, url, WIZARD_VARIANTS, "setup");
+      return variant === "gate"
+        ? json(res, 401, { error: "unauthenticated" }, head)
+        : json(res, 200, wizardPreviewState(variant), head);
     }
     if (pathname === "/api/audit") return json(res, 200, { entries: [] }, head);
     if (pathname === "/api/access") {
