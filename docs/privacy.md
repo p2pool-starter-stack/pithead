@@ -346,8 +346,9 @@ the live rules before the dashboard restarts the node on Tor. It then verifies t
 Tor configuration and firewall rules and writes a host-owned completion result for that transition.
 The dashboard keeps the warning until that result matches the current marker. A failed refresh or
 verification leaves the transition pending and retries; it never clears the marker to reopen
-clearnet. The node stays on Tor across restarts, `apply`, and reboots. Monero and Tari transition
-independently.
+clearnet. A malformed marker path also keeps the exception closed and the node on Tor while the host
+reports the failed claim. The node stays on Tor across restarts, `apply`, and reboots. Monero and Tari
+transition independently.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag

@@ -7,10 +7,13 @@ tor_egress_sync_ips() {
     local prefix
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null)
     [ -n "$prefix" ] || prefix=172.28.0
-    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] &&
-        [ ! -f "$(clearnet_state_dir)/monero.synced" ] && printf '%s\n' "$prefix.26"
-    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
-        [ ! -f "$(clearnet_state_dir)/tari.synced" ] && printf '%s\n' "$prefix.27"
+    local marker
+    marker="$(clearnet_state_dir)/monero.synced"
+    [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != monero ] && [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = true ] &&
+        [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.26"
+    marker="$(clearnet_state_dir)/tari.synced"
+    [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != tari ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
+        [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.27"
     return 0
 }
 

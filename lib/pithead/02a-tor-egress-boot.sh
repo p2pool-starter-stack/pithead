@@ -61,7 +61,7 @@ EOF
         printf -v qipt '%q' "$ipt"
         printf -v qtag '%q' "$TOR_EGRESS_TAG"
         printf -v qip '%q' "$ip"
-        cmd="test -e $qmarker || $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT"
+        cmd="if test ! -e $qmarker && test ! -L $qmarker; then $qipt -I DOCKER-USER 1 -m comment --comment $qtag -s $qip -j ACCEPT; fi"
         printf "ExecStart=/bin/bash -c '%s'\n" "$cmd"
     done
     cat <<EOF

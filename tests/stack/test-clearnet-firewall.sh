@@ -24,6 +24,7 @@ assert_eq "only Monero receives a public-dial exemption" "$(run_sourced "$V" tor
 assert_contains "iptables rules allow only opted-in Monero before DROP" "$(run_sourced "$V" tor_egress_rules 172.28.0.0/24 172.28.0.25 172.28.0.26)" "-s 172.28.0.26 -j ACCEPT"
 CN_BOOT="$(run_sourced "$V" render_tor_egress_boot_unit /usr/sbin/iptables 172.28.0.0/24 172.28.0.25 172.28.0.26)"
 assert_contains "reboot unit checks the spent marker before restoring Monero's exception" "$CN_BOOT" "monero.synced"
+assert_contains "reboot unit rejects dangling marker links" "$CN_BOOT" "test ! -L"
 assert_contains "reboot unit closes stale Monero exception first" "$CN_BOOT" "-D DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.26 -j ACCEPT"
 cnfw_apply false true
 assert_eq "tari flag + firewall on: tari starts clearnet sync" "$(cnfw_env TARI_CLEARNET_SYNC)" "true"
@@ -50,6 +51,20 @@ echo "== black-box: a firewall toggle does not re-arm a completed clearnet sync 
 cnfw_apply true true '{"tor_egress_firewall":false}'
 CN_SDIR="$(cnfw_env CLEARNET_STATE_DIR)"
 [ -n "$CN_SDIR" ] || CN_SDIR="$V/data/clearnet-state"
+mkdir -p "$CN_SDIR"
+mkdir "$CN_SDIR/monero.synced"
+ln -s "$CN_SDIR/missing-target" "$CN_SDIR/tari.synced"
+assert_eq "malformed marker paths never authorize node exemptions" "$(run_sourced "$V" tor_egress_sync_ips)" ""
+for entry in "$ROOT/build/monero/entrypoint.sh" "$ROOT/build/tari/entrypoint.sh"; do
+    for marker in "$CN_SDIR/monero.synced" "$CN_SDIR/tari.synced"; do
+        if (export PITHEAD_TEST_SOURCE=1 MONERO_CLEARNET_SYNC=true TARI_CLEARNET_SYNC=true CLEARNET_MARKER="$marker";
+            # shellcheck disable=SC1090  # both entrypoints are chosen by the loop above
+            source "$entry"; clearnet_sync_active); then
+            bad "malformed node marker keeps Tor" "clearnet active: $entry"
+        else ok "malformed node marker keeps Tor"; fi
+    done
+done
+rm -rf "$CN_SDIR/monero.synced" "$CN_SDIR/tari.synced"
 mkdir -p "$CN_SDIR" && : >"$CN_SDIR/monero.synced" && : >"$CN_SDIR/tari.synced"
 cnfw_apply true true
 [ -f "$CN_SDIR/monero.synced" ] && [ -f "$CN_SDIR/tari.synced" ] &&
@@ -146,6 +161,23 @@ CN_SYMLINK_PROBE=$(
     rm -rf "$td"
 )
 assert_eq "root runner refuses a symlinked dashboard marker" "$CN_SYMLINK_PROBE" "rejected"
+CN_FIFO_PROBE=$(
+    td=$(mktemp -d)
+    mkfifo "$td/monero.synced"
+    python3 - "$STACK" "$td/monero.synced" <<'PYFIFO'
+import subprocess, sys
+try:
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; egress_sync_marker_result "$2" >/dev/null 2>&1',
+         "probe", sys.argv[1], sys.argv[2]], timeout=2, check=False)
+except subprocess.TimeoutExpired:
+    print("blocked")
+else:
+    print("rejected" if result.returncode else "accepted")
+PYFIFO
+    rm -rf "$td"
+)
+assert_eq "FIFO marker cannot block the root runner" "$CN_FIFO_PROBE" "rejected"
 CN_CLAIM_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
@@ -154,6 +186,11 @@ CN_CLAIM_PROBE=$(
     printf '00000000-0000-4000-8000-000000000003\n' >"$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
     sudo() { if [ "$1" = chown ]; then echo "owner=$2"; else "$@"; fi; } # simulate root
+    eval "$(declare -f egress_sync_marker_result | sed '1s/egress_sync_marker_result/real_egress_sync_marker_result/')"
+    egress_sync_marker_result() {
+        if [ -k "$td" ]; then real_egress_sync_marker_result "$1" | jq '.uid=0'
+        else real_egress_sync_marker_result "$1"; fi
+    }
     egress_sync_claim_marker monero
     printf 'clearnet initial sync complete; node returned to Tor (#234)\n' >"$td/tari.synced"
     egress_sync_claim_marker tari
@@ -170,6 +207,39 @@ assert_contains "host claim makes marker directory sticky" "$CN_CLAIM_PROBE" "di
 assert_contains "host claim makes the directory root-owned" "$CN_CLAIM_PROBE" "owner=root:root"
 assert_contains "host claim makes marker non-writable to dashboard" "$CN_CLAIM_PROBE" "marker=644"
 assert_contains "host claim migrates a legacy spent marker" "$CN_CLAIM_PROBE" "legacy=migrated"
+CN_CLAIM_RACE=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    td=$(mktemp -d)
+    printf '00000000-0000-4000-8000-000000000004\n' >"$td/monero.synced"
+    clearnet_state_dir() { printf '%s' "$td"; }
+    sudo() {
+        if [ "$1" = python3 ]; then
+            rm "$td/monero.synced"
+            mkdir "$td/monero.synced"
+        fi
+        case "$1" in chown) : ;; *) "$@" ;; esac
+    }
+    egress_sync_claim_marker monero >/dev/null 2>&1 && echo accepted || echo rejected
+    [ -d "$td/monero.synced" ] && echo marker=directory
+    rm -rf "$td"
+)
+assert_contains "directory swap during claim fails closed" "$CN_CLAIM_RACE" $'rejected\nmarker=directory'
+CN_FAILED_REFRESH=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    td=$(mktemp -d)
+    clearnet_state_dir() { printf '%s' "$td"; }
+    egress_sync_claim_marker() { return 1; }
+    apply_tor_egress_firewall() { printf 'refresh:%s\n' "$(tor_egress_sync_ips | tr '\n' ' ')"; }
+    tor_egress_enforced() { echo verified; }
+    egress_sync_refresh monero && echo accepted || echo pending
+    rm -rf "$td"
+)
+assert_contains "failed claim still closes Monero and verifies live firewall" "$CN_FAILED_REFRESH" "refresh:172.28.0.27"
+assert_contains "failed claim keeps the transition pending" "$CN_FAILED_REFRESH" $'verified\npending'
 CN_ATTEST_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090

@@ -1,25 +1,26 @@
 # Host-owned clearnet sync transition: claim the marker, close and verify the firewall,
 # then attest the restarted daemon on Tor. Sourced after 02b by the generated CLI.
-# A host request can only close an exemption for a chain whose marker exists. The readback is the
-# same one apply/doctor use and must agree with BOTH chains' flags and markers (#2059/#2678).
+# A host request closes its chain's exemption even when a malformed marker cannot be claimed. The
+# readback uses the same desired-rule predicate as apply/doctor (#2059/#2678).
 egress_sync_refresh() { # <monero|tari>
     case "$1" in monero | tari) ;; *) return 1 ;; esac
-    [ -f "$(clearnet_state_dir)/$1.synced" ] || return 1
     mutation_lock_acquire egress-sync
-    local rc=0
+    # shellcheck disable=SC2034  # read dynamically by tor_egress_sync_ips in the preceding slice
+    local rc=0 EGRESS_SYNC_CLOSE_CHAIN="$1"
     egress_sync_refresh_locked "$1" || rc=$?
     mutation_lock_release
     return "$rc"
 }
 
 egress_sync_refresh_locked() { # <monero|tari>; called with the mutation lock held
-    local chain="$1" enabled rc=0 prefix ip out
-    egress_sync_claim_marker "$chain" || return 1
+    local chain="$1" enabled rc=0 claim_failed=0 prefix ip out
+    egress_sync_claim_marker "$chain" || claim_failed=1
     apply_tor_egress_firewall refresh || return 1
     enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
     if [ "$(normalize_bool "${enabled:-true}")" = true ]; then
         tor_egress_enforced || rc=$?
         [ "$rc" -eq 0 ] || return 1
+        [ "$claim_failed" -eq 0 ] || return 1
         egress_sync_record_tor "$chain"
         return $?
     fi
@@ -31,6 +32,7 @@ egress_sync_refresh_locked() { # <monero|tari>; called with the mutation lock he
     if [ "$(container_engine)" = podman ]; then
         out=$(sudo -n nft -j list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || {
             sudo -n nft list tables >/dev/null 2>&1 || return 1
+            [ "$claim_failed" -eq 0 ] || return 1
             egress_sync_record_tor "$chain"
             return $?
         }
@@ -40,11 +42,13 @@ egress_sync_refresh_locked() { # <monero|tari>; called with the mutation lock he
     else
         out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || {
             sudo -n iptables -S >/dev/null 2>&1 || return 1
+            [ "$claim_failed" -eq 0 ] || return 1
             egress_sync_record_tor "$chain"
             return $?
         }
         grep -E -- "-s $ip(/32)?( |$)" <<<"$out" | grep -qE -- ' -j ACCEPT($| )' && return 1
     fi
+    [ "$claim_failed" -eq 0 ] || return 1
     egress_sync_record_tor "$chain"
 }
 
@@ -68,7 +72,7 @@ egress_sync_marker_result() { # <marker-file>; safely read one regular UUID mark
     # arbitrary host file bytes into the dashboard-readable result through a marker symlink.
     python3 - "$1" <<'PY'
 import json, os, re, stat, sys, uuid
-fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
 try:
     st = os.fstat(fd)
     data = os.read(fd, 128)
@@ -99,14 +103,21 @@ egress_sync_claim_marker() { # <monero|tari>
     file="$dir/$1.synced"
     result=$(egress_sync_marker_result "$file") || return 1
     sudo chown root:root "$dir" && sudo chmod 1777 "$dir" || return 1
-    [ "$(jq -r .uid <<<"$result")" = 0 ] && [ "$(jq -r .writable <<<"$result")" = false ] &&
-        [ "$(jq -r .legacy <<<"$result")" = false ] && return 0
     marker=$(jq -r .marker <<<"$result") || return 1
-    tmp=$(sudo mktemp "$dir/.claimed.XXXXXXXX") || return 1
-    if ! printf '%s\n' "$marker" | sudo tee "$tmp" >/dev/null || ! sudo chmod 644 "$tmp" || ! sudo mv -f "$tmp" "$file"; then
-        sudo rm -f "$tmp"
-        return 1
+    if [ "$(jq -r .uid <<<"$result")" != 0 ] || [ "$(jq -r .writable <<<"$result")" != false ] ||
+        [ "$(jq -r .legacy <<<"$result")" != false ]; then
+        tmp=$(sudo mktemp "$dir/.claimed.XXXXXXXX") || return 1
+        if ! printf '%s\n' "$marker" | sudo tee "$tmp" >/dev/null || ! sudo chmod 644 "$tmp" ||
+            ! sudo python3 -c 'import os,sys; os.replace(sys.argv[1],sys.argv[2])' "$tmp" "$file"; then
+            sudo rm -f "$tmp"
+            return 1
+        fi
     fi
+    result=$(egress_sync_marker_result "$file") || return 1
+    [ "$(jq -r .marker <<<"$result")" = "$marker" ] &&
+        [ "$(jq -r .uid <<<"$result")" = 0 ] &&
+        [ "$(jq -r .writable <<<"$result")" = false ] &&
+        [ "$(jq -r .legacy <<<"$result")" = false ]
 }
 
 # The result directory is host-owned and dashboard-mounted read-only. A stale result is rejected
