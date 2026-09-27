@@ -317,8 +317,7 @@ class XMRigWorkerClient:
     def _auth_header(self, name_token, override_token=""):
         """Build the single Authorization header for the configured auth mode (or no header).
 
-        An endpoint-bound per-worker read credential overrides fleet auth for that worker only.
-        The host-only RigForge control token is never passed here.
+        Endpoint-bound read credentials override fleet auth; host-only control tokens never do.
         """
         # Only a real string overrides fleet auth. Masked sentinels are handled by get_stats before
         # this helper; they may never fall through to a fleet credential (#1983).
