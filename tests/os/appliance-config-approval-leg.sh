@@ -77,7 +77,7 @@ test "$(stat -c %a /data/pithead/data/control/.os1966-original-config.json)" = 6
 
 approval_restore_pending() {
     [ -n "$APPROVAL_RESTORE_SNAPSHOT" ] || return 0
-    # The apply restarts the control runner (#2363); over a request in flight it loses its result (#2094).
+    # Keep the harness restore at a quiet phase boundary; apply does not stop a running runner (#2363).
     _control_requests_drained || return 1
     _ssh 'set -euo pipefail
 install -m 600 /data/pithead/data/control/.os1966-original-config.json /data/pithead/config.json
@@ -354,10 +354,9 @@ _hostname_landed_fallback_self_test() (
     esac
 )
 
-# #2094's root fix at the caller: the restore's own `pithead apply` restarts the control runner
-# (#2363), so a spool that never drains must stop it BEFORE the apply reaches the guest, not after.
-# Driving the real function with one request stuck in requests/ forever must refuse, and must leave
-# `pithead apply` uncalled — removing the `_control_requests_drained` line makes both halves fail.
+# The restore keeps its own phase boundary quiet before `pithead apply` (#2363). Driving the real
+# function with one request stuck in requests/ forever must refuse, and must leave `pithead apply`
+# uncalled — removing the `_control_requests_drained` line makes both halves fail.
 # The real `_control_requests_drained` is driven by selftest-run-modules.sh; deleting this caller's
 # call to it fails both halves below.
 _restore_waits_for_control_drain_self_test() (

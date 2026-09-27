@@ -17,9 +17,13 @@ inject_service_configs() {
     # Re-arm clearnet auto-sync (#234): clear a chain's "sync complete" marker whenever its flag is
     # OFF, so re-enabling later starts a fresh clearnet sync. While a flag is ON the dashboard owns
     # the marker, so leave it. Markers live in the shared, dashboard-writable clearnet-state dir.
+    # Read the configured flag, not .env: render_env zeroes the .env flag while the egress firewall
+    # is on (#2649), and a firewall toggle must not re-arm a sync that already completed.
     local _csdir
     _csdir=$(clearnet_state_dir)
     mkdir -p "$_csdir" 2>/dev/null || true
-    [ "$(env_get MONERO_CLEARNET_SYNC)" = "true" ] || rm -f "$_csdir/monero.synced" 2>/dev/null || true
-    [ "$(env_get TARI_CLEARNET_SYNC)" = "true" ] || rm -f "$_csdir/tari.synced" 2>/dev/null || true
+    [ "$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")" = "true" ] ||
+        rm -f "$_csdir/monero.synced" 2>/dev/null || true
+    [ "$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")" = "true" ] ||
+        rm -f "$_csdir/tari.synced" 2>/dev/null || true
 }
