@@ -35,8 +35,6 @@ NEVER_COMMITTABLE_ENV_KEYS = frozenset(
         "TOR_EGRESS_FIREWALL",
         "MONERO_WALLET_ADDRESS",
         "MONERO_VIEW_KEY",
-        "MONERO_NODE_USERNAME",
-        "MONERO_NODE_PASSWORD",
         "WALLET_RPC_PASSWORD",
         "TARI_VIEW_KEY",
         # NODE ENDPOINTS LEFT THIS LIST ON 2026-09-06 (#1888, operator ruling) — MONERO_NODE_HOST,
@@ -47,9 +45,13 @@ NEVER_COMMITTABLE_ENV_KEYS = frozenset(
         # is no host shell there, so the setting became unchangeable for the life of the machine
         # (#786/#1821). They are now the confirm-gated tier, behind the control channel's own auth
         # plus a host-side reachability probe on the staged endpoint (43-control-approval-and-
-        # preview.sh). Their RPC LOGIN CREDENTIALS — MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD,
-        # still above — did NOT move, and neither did the binds below: address identity is not a
-        # secret, and a listen address is not an endpoint.
+        # preview.sh). Their RPC LOGIN CREDENTIALS — MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD —
+        # LEFT THIS LIST TOO on 2026-09-19 (#2333/#2367, operator ruling): every config field is
+        # dashboard-editable, and a security-sensitive one gets a typed-confirmation warning rather
+        # than an outright refusal. They join the confirm-gated tier alongside the endpoints, never
+        # the free-commit editable tier, and describe_change never echoes the credential's value.
+        # The binds below did NOT move: address identity is not a secret, and a listen address is
+        # not an endpoint.
         # Binds (SECURITY.md's "binds"): the RPC/gRPC listen addresses. DASHBOARD_HOST (above)
         # covers the dashboard's own bind; these are the merge-mined services' local listeners.
         "MONERO_RPC_BIND",
@@ -77,9 +79,9 @@ def _pithead_key_sets():
         m = re.search(rf"CONTROL_DASHBOARD_{name}_KEYS='([^']*)'", pithead)
         assert m, f"could not find pithead's {name.lower()} allowlist"
         found[name.lower()] = set(m.group(1).split())
-    m = re.search(r"CONTROL_NODE_ENDPOINT_KEYS='([^']*)'", pithead)
-    assert m, "could not find pithead's CONTROL_NODE_ENDPOINT_KEYS (#1888)"
-    found["node_endpoints"] = set(m.group(1).split())
+    m = re.search(r"CONTROL_NODE_PREFLIGHT_KEYS='([^']*)'", pithead)
+    assert m, "could not find pithead's CONTROL_NODE_PREFLIGHT_KEYS (#1888/#2333)"
+    found["node_preflight"] = set(m.group(1).split())
     return pithead, found
 
 
@@ -95,22 +97,22 @@ def test_approval_keys_have_no_intra_repo_drift():
     assert set(config_operations.APPROVAL_ENV_KEY_PATHS.keys()) == keys["approval"]
 
 
-def test_node_endpoint_keys_are_confirm_gated_and_probed():
-    """#1888: the node endpoints left the never-committable perimeter for the confirm tier, and the
-    approval gate's reachability probe fires on CONTROL_NODE_ENDPOINT_KEYS. Those are two separate
+def test_node_changes_are_confirm_gated_and_probed():
+    """#1888/#2333: node endpoints and the RPC login are in the confirm tier, and the
+    approval gate's reachability probe fires on CONTROL_NODE_PREFLIGHT_KEYS. Those are two separate
     hand-kept lists, so the failure this guards is not hypothetical: a node key added to the confirm
-    allowlist but NOT to the endpoint list would be dashboard-committable with NO probe behind it —
+    allowlist but NOT to the preflight list would be dashboard-committable with NO probe behind it —
     the one thing the operator ruling traded the perimeter entry for. The Python copy is checked the
     same way, because the browser renders its fields from that one."""
     pithead, keys = _pithead_key_sets()
-    assert keys["node_endpoints"], "the node-endpoint list is empty — nothing would ever be probed"
-    for key in keys["node_endpoints"]:
+    assert keys["node_preflight"], "the node-preflight list is empty — nothing would ever be probed"
+    for key in keys["node_preflight"]:
         assert key in keys["confirm"], f"{key} is probed but not confirm-gated in pithead"
         assert key not in keys["editable"], f"{key} is free-commit in pithead — it must be CONFIRM"
         assert key in control_service.CONFIRM_ENV_KEY_PATHS, (
             f"{key} missing from CONFIRM_ENV_KEY_PATHS"
         )
-    # The half that matters, and it needs a source the endpoint list itself cannot supply, or the
+    # The half that matters, and it needs a source the preflight list itself cannot supply, or the
     # check is a tautology: a confirm key whose CONFIG PATH lives under a chain's `remote.` block IS
     # a node endpoint, whatever any hand-kept list says. Derived from the paths, compared to the
     # list — so a node key added to the confirm allowlist and forgotten here reds instead of
@@ -120,9 +122,10 @@ def test_node_endpoint_keys_are_confirm_gated_and_probed():
         for k, target in control_service.CONFIRM_ENV_KEY_PATHS.items()
         if any(".remote." in p for p in target)
     }
-    assert by_path == keys["node_endpoints"], (
-        f"confirm keys pointing at a remote node endpoint {sorted(by_path)} do not match the probe "
-        f"list {sorted(keys['node_endpoints'])} — one of them would commit with no reachability probe"
+    login = {"MONERO_NODE_USERNAME", "MONERO_NODE_PASSWORD"}
+    assert by_path | login == keys["node_preflight"], (
+        f"remote node endpoints plus login {sorted(by_path | login)} do not match the preflight "
+        f"list {sorted(keys['node_preflight'])} — one could commit without an authenticated probe"
     )
 
 

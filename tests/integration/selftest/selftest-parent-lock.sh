@@ -111,8 +111,8 @@ echo "== source wiring checks every mutating boundary =="
 assert_eq "e2e checks both parent-held rigs at every mutating boundary" \
     "$(cat "$HERE/../e2e.sh" "$HERE/../lib/parent-lock.sh" | grep -Ec 'parent_lock_checkpoint (restore|provision|deploy)|parent_lock_checkpoint "(the first bench touch|miner restore|loaner borrow)"')" 6
 assert_contains "detached launch reads token and continuity identity from stdin" \
-    "$(sed -n '/printf.*IT_RIG_TOKEN.*RIG_LOCK_PARENT_NONCE/p' "$HERE/../e2e.sh")" \
-    "printf '%s\\n%s\\n%s\\n%s\\n%s\\n'"
+    "$(sed -n '/^harness_launch_records() {$/,/^}$/p' "$HERE/../lib/detached-harness.sh")" \
+    'for record in "${IT_RIG_TOKEN:-}" "${RIG_LOCK_PARENT_ACTOR:-}" "${RIG_LOCK_PARENT_NONCE:-}"'
 assert_contains "detached harness owns a process group that cleanup can drain" "$(cat "$HERE/../e2e.sh")" 'nohup setsid ./.e2e-run.sh'
 assert_contains "launch waits for the durable owned process-group identity" "$(cat "$HERE/../e2e.sh")" 'until grep -Eq \"^running \$p [0-9]+\$\"'
 assert_contains "parent mode keeps the inherited lock descriptor instead of crossing SSH" "$(cat "$HERE/../e2e.sh" "$HERE/../lib/parent-lock.sh")" 'parent-held lock descriptor cannot cross SSH'
