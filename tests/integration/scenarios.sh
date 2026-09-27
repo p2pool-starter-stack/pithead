@@ -27,9 +27,8 @@
 # never set the key); only the `true` value needs a dedicated case, so axis_coverage lists just
 # the `true`s — run.sh asserts the rendered Tor-vs-clearnet config for both states on every run.
 # tari.mode/stratum_tls/tor_egress_firewall follow the same rule: only the non-default value gets
-# a dedicated case. The clearnet scenario turns the egress firewall off too: with it on, render_env
-# ignores clearnet_initial_sync (#2649), so only a firewall-off run shows a real clearnet sync and
-# the #234 transition back to Tor. run_scenario turns the firewall back on before that scenario ends.
+# a dedicated case. The clearnet scenario keeps the default firewall on; only the selected nodes
+# get temporary egress exceptions, removed before the #234 Tor restart (#2678).
 #
 # Prerequisite-gated axes (skipped-with-a-loud-log, never silently, when the box can't host
 # them — see run.sh):
@@ -65,7 +64,7 @@ local-pruned-nano-insecure	monero.mode=local monero.prune=true p2pool.pool=nano 
 local-pruned-main-rpclan	monero.mode=local monero.prune=true monero.rpc_lan_access=true monero.zmq_lan_access=true tari.grpc_lan_access=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-xvb-off	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=false dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-tari-optional	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=false
-local-pruned-main-clearnet-sync	monero.mode=local monero.prune=true monero.clearnet_initial_sync=true tari.clearnet_initial_sync=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.tor_egress_firewall=false
+local-pruned-main-clearnet-sync	monero.mode=local monero.prune=true monero.clearnet_initial_sync=true tari.clearnet_initial_sync=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 remote-main-secure-tari	monero.mode=remote monero.view_key= p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true
 local-pruned-main-subnet	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true network.subnet=10.84.0.0/24
 remote-tari-main-secure	monero.mode=local monero.prune=true p2pool.pool=main xvb.enabled=true dashboard.secure=true dashboard.tari_required=true tari.mode=remote

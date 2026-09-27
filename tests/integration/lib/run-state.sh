@@ -14,7 +14,7 @@ assert_running_state() {
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"
     rpc_lan="$(jq_get "$config" '.monero.rpc_lan_access')"
-    # Clearnet initial sync (#183): absent => default false; ignored while the firewall is on (#2649).
+    # Clearnet initial sync (#183): absent => default false; a chosen sync keeps the firewall on.
     monero_clearnet="$(clearnet_flag_effective "$config" monero)"
     tari_clearnet="$(clearnet_flag_effective "$config" tari)"
 
@@ -29,18 +29,20 @@ assert_running_state() {
         local csdir
         csdir="$(env_on_box CLEARNET_STATE_DIR)"
         if [ "$monero_clearnet" = "true" ]; then
-            if wait_for 180 10 "monero clearnet→Tor transition marker (#234)" rx "test -f '$csdir/monero.synced'"; then
+            if wait_for 180 10 "monero clearnet→Tor transition marker (#234)" rx "test -f '$csdir/monero.synced.tor'"; then
                 it_pass "monero auto-transitioned clearnet→Tor (#234)"
             else it_fail "monero auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
             wait_for 240 10 "monerod restarted back on Tor — proxy restored (#234)" \
                 rx "docker exec monerod grep -qE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null" || true
         fi
         if [ "$tari_clearnet" = "true" ]; then
-            if wait_for 180 10 "tari clearnet→Tor transition marker (#234)" rx "test -f '$csdir/tari.synced'"; then
+            if wait_for 180 10 "tari clearnet→Tor transition marker (#234)" rx "test -f '$csdir/tari.synced.tor'"; then
                 it_pass "tari auto-transitioned clearnet→Tor (#234)"
             else it_fail "tari auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
         fi
         wait_for 240 5 "stack healthy after clearnet→Tor transition (#234)" _pred_status_ok || true
+        assert_contains "firewall on: completed sync exceptions absent from live rules (#2678)" \
+            "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
 
     # 1. Expected containers up; unexpected ones absent.

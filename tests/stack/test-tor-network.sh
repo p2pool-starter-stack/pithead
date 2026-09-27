@@ -6,8 +6,7 @@
 # refusal when the bridge can't be resolved, #855/#858), apply/remove_tor_egress_firewall end to
 # end (#270), the regression that every command installs the firewall BEFORE compose so no
 # clearnet-capable container ever starts unguarded (#276/#291), the clearnet-initial-sync helpers
-# and render on both chains including the contradiction warning against a firewall that would just
-# drop the clearnet dials anyway (#183 — the map's code-read: this is the Tor<->clearnet transport
+# and render on both chains including the chosen-node firewall exception (#183/#2678 — this is the Tor<->clearnet transport
 # switch, kept together with the egress rules rather than split to the monero/tari file), the node
 # configs' clearnet-DNS-egress guarantees (#161 monerod, #162 tari), tor.auto_heal (#424), the tor
 # container's own entrypoint rendering both the dashboard's opt-in onion vhost and the per-node
@@ -562,7 +561,7 @@ assert_contains "tari default: Tor SOCKS transport" "$(cat "$V/build/tari/config
 assert_contains "tari default: DNS seeds empty" "$(cat "$V/build/tari/config.toml")" "dns_seeds = []"
 assert_contains "tari default: advertises onion" "$(cat "$V/build/tari/config.toml")" "/onion3/"
 
-# Monero clearnet ON (Tari left off), firewall off so the flag reaches .env (#2649): only the Monero
+# Monero clearnet ON (Tari left off): only the Monero
 # flag flips; Tari stays Tor. The preview must spell out the exposure (CONFIRM, warned ⚠ on the host).
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
@@ -597,31 +596,21 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_contains "doctor: OK when Tor-only (#183)" "$(cd "$V" && PATH="$V/bin:$PATH" ./pithead doctor 2>&1)" "Tor-only"
 
-echo "== black-box: clearnet_initial_sync vs. tor_egress_firewall contradiction warning =="
-# A clearnet_initial_sync flag asks a daemon to sync off-Tor; the egress firewall (default on) DROPs
-# every non-Tor dial, so render_env ignores the flag while the firewall is on (#2649) and the sync
-# runs over Tor, slower than intended but not unsafe (nothing leaks). WARN, not FAIL: apply must
-# still succeed, but say so loudly. Covers the contradictory pair and all three non-contradictory
-# combinations so the warning fires only where it is true (the render: test-clearnet-firewall.sh).
-CN_WARN_NEEDLE="clearnet_initial_sync is ignored while network.tor_egress_firewall is on"
+echo "== black-box: selected clearnet sync with firewall on (#2678) =="
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "monero clearnet + firewall on: apply still succeeds (warn, not fail)" "$?" "0"
-assert_contains "monero clearnet + firewall on: warns" "$out" "$CN_WARN_NEEDLE"
+assert_rc "monero clearnet + firewall on: apply succeeds" "$?" "0"
+assert_eq "monero chosen sync reaches the daemon" "$(run_sourced "$V" env_get_file "$V/.env" MONERO_CLEARNET_SYNC)" "true"
+assert_contains "monero chosen sync reports IP exposure" "$out" "CLEARNET"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","clearnet_initial_sync":true}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "tari clearnet + firewall on: apply still succeeds (warn, not fail)" "$?" "0"
-assert_contains "tari clearnet + firewall on: warns" "$out" "$CN_WARN_NEEDLE"
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":true}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "network":{"tor_egress_firewall":false}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
-out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_not_contains "clearnet sync + firewall OFF: no warning (not contradictory)" "$out" "$CN_WARN_NEEDLE"
+assert_rc "tari clearnet + firewall on: apply succeeds" "$?" "0"
+assert_eq "tari chosen sync reaches the daemon" "$(run_sourced "$V" env_get_file "$V/.env" TARI_CLEARNET_SYNC)" "true"
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_not_contains "no clearnet sync + firewall on: no warning (not contradictory)" "$out" "$CN_WARN_NEEDLE"
 
 # p2pool compose↔image coupling fail-safe (#273): clearnet is off, so apply renders P2POOL_FLAGS with
 # the #165 --socks5. doctor reads the RUNNING p2pool argv (/proc/1/cmdline, stubbed via P2POOL_PROC1)

@@ -1,21 +1,10 @@
 # --- Tor-only egress enforcement (#270) ---------------------------------------------------------
-# Fail-closed host firewall so a misconfigured/buggy bridge daemon (monerod/p2pool/tari/xmrig-proxy)
-# CAN'T leak the home IP: each may reach the LAN, the other containers and the Tor SOCKS, but any
-# DIRECT clearnet dial is DROPPED — only the `tor` container reaches the internet. Installed BEFORE
-# containers start on every path that brings a clearnet-capable app up — `up`, `upgrade`, `apply`,
-# `reset-dashboard`, and on a DIY host every boot (02a-tor-egress-boot.sh) — so there is no startup
-# window to grandfather a leak past; removed at `down`. Needs root (sudo). The allow-set is IPv4
-# (mining_net is IPv4-only by design); the nft backend also fences IPv6 off the mining bridge if
-# mining_net gains a v6 subnet. Opt out with network.tor_egress_firewall=false. Proven by
-# tests/integration/benchmarks/bench-verify-egress.sh. See docs/privacy.md.
+# Host firewall installed before container starts. The selected node syncs may use
+# their fixed IPv4 addresses until their markers are written; all other public dials are
+# dropped. The nft backend also fences IPv6. See docs/privacy.md.
 #
-# Two enforcement backends, one allow-set. Docker adds a `FORWARD -> DOCKER-USER` jump when it
-# creates a network, so on the DIY/Docker channel the rules live in DOCKER-USER (iptables). The
-# appliance runs podman + netavark, which never adds that jump — DOCKER-USER is orphaned there and
-# the DROP never fires. On the podman path we instead install an independent `inet pithead_egress`
-# nftables table hooked at forward priority -5 (ahead of netavark's priority-0 accept), owning no
-# chain shared with netavark so it survives netavark reprogramming its own table. apply/remove/doctor
-# all branch on container_engine.
+# Docker uses DOCKER-USER; podman/netavark uses an independent nft forward hook at priority -5.
+# apply/remove/doctor select the backend through container_engine.
 TOR_EGRESS_TAG="pithead-tor-egress"
 TOR_EGRESS_NFT_TABLE="pithead_egress"
 
@@ -23,15 +12,18 @@ TOR_EGRESS_NFT_TABLE="pithead_egress"
 # unit-tests; ACCEPTs first, DROP last — the order is load-bearing. conntrack accepts REPLIES only,
 # and an app's own established TCP flow to a public address is reset (#2672): a dial made while the
 # rules were absent (a re-apply, a rolled-back insert) no longer stays open under them.
-tor_egress_rules() { # <subnet> <tor_ip>
-    local subnet="$1" tor_ip="$2"
+tor_egress_rules() { # <subnet> <tor_ip> [sync-ip ...]
+    local subnet="$1" tor_ip="$2" ip
+    shift 2
     printf '%s\n' \
         "-m conntrack --ctstate ESTABLISHED,RELATED --ctdir REPLY -j ACCEPT" \
         "-s $tor_ip -j ACCEPT" \
         "-s $subnet -d 10.0.0.0/8 -j ACCEPT" \
         "-s $subnet -d 172.16.0.0/12 -j ACCEPT" \
         "-s $subnet -d 192.168.0.0/16 -j ACCEPT" \
-        "-s $subnet -d 100.64.0.0/10 -j ACCEPT" \
+        "-s $subnet -d 100.64.0.0/10 -j ACCEPT"
+    for ip in "$@"; do printf '%s\n' "-s $ip -j ACCEPT"; done
+    printf '%s\n' \
         "-s $subnet -p tcp -m conntrack --ctstate ESTABLISHED -j REJECT --reject-with tcp-reset" \
         "-s $subnet -j DROP"
 }
@@ -46,8 +38,10 @@ tor_egress_rules() { # <subnet> <tor_ip>
 # The optional third arg is the mining bridge, passed only if mining_net ever gains an IPv6 subnet
 # (it is IPv4-only by design). It appends the v6 fail-closed backstop, keyed on that INTERFACE since
 # there is no assigned v6 range to source-match, leaving v6 forwarded on any other interface alone.
-render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge>]
-    local subnet="$1" tor_ip="$2" br="${3:-}"
+render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge> [sync-ip ...]]
+    local subnet="$1" tor_ip="$2" br="${3:-}" ip
+    shift 2
+    [ "$#" -eq 0 ] || shift
     printf '%s\n' \
         "add table inet $TOR_EGRESS_NFT_TABLE" \
         "delete table inet $TOR_EGRESS_NFT_TABLE" \
@@ -59,7 +53,9 @@ render_tor_egress_nft() { # <subnet> <tor_ip> [<mining_bridge>]
         "    ip saddr $subnet ip daddr 10.0.0.0/8 accept" \
         "    ip saddr $subnet ip daddr 172.16.0.0/12 accept" \
         "    ip saddr $subnet ip daddr 192.168.0.0/16 accept" \
-        "    ip saddr $subnet ip daddr 100.64.0.0/10 accept" \
+        "    ip saddr $subnet ip daddr 100.64.0.0/10 accept"
+    for ip in "$@"; do printf '%s\n' "    ip saddr $ip accept"; done
+    printf '%s\n' \
         "    ip saddr $subnet meta l4proto tcp ct state established reject with tcp reset" \
         "    ip saddr $subnet drop"
     # IPv6 backstop (br set). The reply ct accept above is family-agnostic; here the v6 LAN (ULA
@@ -351,6 +347,7 @@ tor_egress_enforced() {
             | ($r | map(any(has("drop"))) | index(true)) as $d
             | $d != null and (($r[0:$d] // []) | all(is_unconditional_accept | not))
         ' >/dev/null 2>&1 <<<"$out" || return 1
+        tor_egress_sync_rules_match nft "$out" || return 1
         return 0
     fi
     command -v iptables >/dev/null 2>&1 || return 2
@@ -361,6 +358,7 @@ tor_egress_enforced() {
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
     grep -qE -- "$TOR_EGRESS_TAG.* -j DROP" <<<"$out" || return 1
+    tor_egress_sync_rules_match iptables "$out" || return 1
     # iptables is FIRST MATCH WINS, so a rule ABOVE our DROP makes it dead while it is still
     # "present". Inserting an ACCEPT at DOCKER-USER position 1 is a documented ufw/firewalld
     # workaround, and this function measured rc 0 — "enforced" — with the DROP unreachable behind

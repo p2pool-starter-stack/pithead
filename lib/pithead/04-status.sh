@@ -1,17 +1,16 @@
 # Per-chain "is this node EXPOSED on clearnet right now?" (#183/#234): the flag is on AND the
-# dashboard's auto-transition marker is absent (so it hasn't been switched back to Tor yet). Once
-# the marker appears the node is Tor-only again and this reads false — which is why the status/doctor
-# warnings clear on their own. Read-only; safe from status/doctor/up.
+# the dashboard's completion marker is absent. The earlier .synced marker only requests a host
+# firewall refresh; the running daemon can still be on clearnet while that refresh is pending.
 clearnet_state_dir() {
     local sdir
     sdir=$(env_get CLEARNET_STATE_DIR 2>/dev/null)
     [ -n "$sdir" ] && printf '%s' "$sdir" || printf '%s' "$PWD/data/clearnet-state"
 }
 monero_clearnet_exposed() {
-    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/monero.synced" ]
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/monero.synced.tor" ]
 }
 tari_clearnet_exposed() {
-    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/tari.synced" ]
+    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/tari.synced.tor" ]
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
 

@@ -1,5 +1,5 @@
 control_process_request() { # <claimed-file> <control-dir>
-    local file="$1" cdir="$2" id action actor size
+    local file="$1" cdir="$2" id action actor size chain
     # Refuse a symlinked / non-regular claimed file (graft #437): a symlink dropped in requests/
     # could point the root runner at any host file. Skip + audit, never follow it.
     if [ -L "$file" ] || [ ! -f "$file" ]; then
@@ -30,7 +30,7 @@ control_process_request() { # <claimed-file> <control-dir>
     # schema for EVERY action, exactly as `worker`/`changes` already do — the check is a shape
     # guard, and the value guard is per-verb: control_diag_logs takes the container name only if it
     # matches a member of its own fixed allowlist, and clamps the count host-side.
-    if [ "$(jq -r '[keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines")] | length' "$file")" != "0" ]; then
+    if [ "$(jq -r '[keys[] | select(. != "id" and . != "action" and . != "config" and . != "actor" and . != "version" and . != "worker" and . != "changes" and . != "confirm" and . != "approval" and . != "container" and . != "lines" and . != "chain")] | length' "$file")" != "0" ]; then
         control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"unexpected keys in request",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "" "invalid" "rejected"
         return 0
@@ -41,6 +41,11 @@ control_process_request() { # <claimed-file> <control-dir>
     printf '%s' "$actor" | grep -qE '^[A-Za-z0-9._@-]{0,64}$' || actor="untrusted"
     action=$(jq -r '.action // ""' "$file")
     case "$action" in
+    egress-sync)
+        chain=$(jq -r 'if ((keys | sort) == ["action","actor","chain","id"])
+            then .chain // "" else "" end' "$file")
+        control_egress_sync "$id" "$chain" "$cdir"
+        ;;
     preview) control_preview "$file" "$id" "$actor" "$cdir" ;;
     commit) control_commit "$id" "$actor" "$cdir" "$(jq -r '.confirm // ""' "$file")" "$(jq -c '.approval // null' "$file")" ;;
     upgrade) control_upgrade "$file" "$id" "$actor" "$cdir" ;;

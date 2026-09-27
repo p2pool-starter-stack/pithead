@@ -266,8 +266,8 @@ class AlertEdgesMixin:
                 (
                     self.EVT_CLEARNET_EXPOSED,
                     self._fmt(
-                        "⚠️ \U0001f310 Clearnet initial sync ACTIVE — this host's IP is exposed to the "
-                        "chain's P2P network until it finishes syncing (reverts to Tor automatically)."
+                        "\U0001f310 Clearnet first sync by your choice — this host's IP is visible to "
+                        "the chain's peers until it switches to Tor automatically."
                     ),
                 )
             ]

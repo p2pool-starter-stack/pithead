@@ -118,8 +118,9 @@ Setup walks through five stages. It's interactive on the first run and safe to r
      dashboard's Configuration view, or by editing `tari.mode` and running `./pithead apply`.
    - Once the config is written, setup asks one more thing: the hostname you'll use to reach the
      dashboard in a browser. Enter accepts this machine's hostname.
-   - **A few more, Enter for the default:** a faster clearnet initial sync instead of the private
-     Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
+   - **A few more, Enter for the default:** a faster clearnet initial sync (hours instead of days,
+     with your IP visible to that chain's peers until it switches to Tor automatically) instead of
+     the private Tor default; reaching the dashboard from outside your LAN over Tor; Telegram alerts; and
      whether this machine should also mine with its spare CPU (a co-located RigForge worker).
    - Everything else — ports, XvB tuning, energy pricing, per-worker overrides, and more — keeps
      its documented default; the wizard prints a pointer to `config.json` and
@@ -181,8 +182,9 @@ both states.
 > against a node on another machine — see [Remote Tari node](configuration.md#remote-tari-node).
 
 > Sync crawling over Tor? The default routes the first sync over Tor for privacy, which is slow.
-> You can opt into a faster clearnet initial sync for Monero and/or Tari, with the egress firewall
-> turned off for the sync; each node switches back to Tor automatically once it's synced. It's default-off and privacy-relevant, so read the
+> You can opt into a faster clearnet initial sync for Monero and/or Tari while the egress firewall
+> stays on. It takes hours instead of days, exposes your IP to that chain's peers during the sync,
+> and switches each node back to Tor automatically when it finishes. Read the
 > trade-off first:
 > [Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default).
 

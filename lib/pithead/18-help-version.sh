@@ -164,6 +164,9 @@ Maintenance:
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
 
+  egress-run-pending        Close completed clearnet-sync firewall exemptions when dashboard
+                            control is off. Normally fired by pithead-egress-sync.path.
+
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a
                             rendered .env — the second render target beside docker-compose.

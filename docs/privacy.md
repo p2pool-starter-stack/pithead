@@ -294,9 +294,8 @@ Per-component flags in `config.json`, both `false` by default:
 "tari":   { "clearnet_initial_sync": false }
 ```
 
-Set the one(s) you want to `true`, set `network.tor_egress_firewall: false` (see
-[below](#it-needs-the-egress-firewall-turned-off)), and run `./pithead apply`. Monero and Tari sync
-independently, so you can enable either, both, or neither.
+Set the one(s) you want to `true` and run `./pithead apply`. Keep the egress firewall on. Monero and
+Tari sync independently, so you can enable either, both, or neither.
 
 NOTE: both flags act on the bundled daemons only. With `monero.mode` or `tari.mode: remote` there is
 no local daemon here to sync, so the matching flag does nothing — set it back to `false` when you
@@ -331,37 +330,24 @@ That's the same exposure as running any ordinary (non-Tor) full node, scoped to 
 a privacy-first deployment it's still a real disclosure, which is why it is off by default and must
 be explicitly opted into.
 
-### It needs the egress firewall turned off
+### The egress firewall stays on
 
-The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) is on by default and
-DROPs any direct dial to the public internet from the mining bridge, including the clearnet peers,
-priority nodes, and DNS seeds a clearnet sync needs. A clearnet monerod has no Tor proxy left, so
-behind that firewall it would have no peers at all: it would never finish syncing and so never switch
-back to Tor.
-
-`pithead` therefore passes a `clearnet_initial_sync` flag to the daemons only while
-`network.tor_egress_firewall` is `false`. With the firewall on, the flag is ignored: both nodes stay on
-Tor and sync at Tor speed, no faster and no less private than leaving the flag off. `pithead` warns at
-`apply`/`doctor` time that the flag is ignored and names the choice: turn the firewall off for a real
-clearnet sync, or turn the sync flag off to silence the warning.
-
-To get a clearnet-speed sync, set `network.tor_egress_firewall: false` for the duration and run
-`./pithead apply`. Once the sync completes and the dashboard switches the node back to Tor, turn the
-firewall back on and apply again; the node stays on Tor. A scoped exception that lets only the sync's
-own dials through without opening the firewall generally is a real feature, not yet built: for now
-it's an explicit either/or.
+The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
+egress only from the selected node's own container during its first sync. Monero and Tari have
+separate exceptions; every other container stays restricted, and the IPv6 backstop remains in place.
+The chosen node gets clearnet peers without opening the entire stack's egress.
 
 ### It switches back to Tor automatically (#234)
 
-The dashboard tracks each chain's sync state. The first time a clearnet node reports fully synced, the
-dashboard writes a persistent "sync complete" marker and restarts the daemon, which comes back up
-Tor-only. From then on the node stays on Tor across restarts, `apply`, and reboots (the marker, not
-the flag, is the source of truth, so a restart can never silently re-expose a synced node). Monero and
-Tari transition independently, each as soon as *it* finishes.
+The dashboard tracks each chain's sync state. When a clearnet node reports fully synced, it writes
+that chain's persistent marker and asks the host to remove its firewall exception. The host verifies
+the live rules before the dashboard restarts the node on Tor. A failed refresh leaves the transition
+pending and retries; it never clears the marker to reopen clearnet. The node stays on Tor across
+restarts, `apply`, and reboots. Monero and Tari transition independently.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
-off and on again with `./pithead apply`, which re-arms it; the egress firewall must be off for it.)
+off and on again with `./pithead apply`, which re-arms it.)
 
 ### It is loud and always-visible
 

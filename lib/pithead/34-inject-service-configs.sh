@@ -23,7 +23,7 @@ inject_service_configs() {
     _csdir=$(clearnet_state_dir)
     mkdir -p "$_csdir" 2>/dev/null || true
     [ "$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")" = "true" ] ||
-        rm -f "$_csdir/monero.synced" 2>/dev/null || true
+        rm -f "$_csdir/monero.synced" "$_csdir/monero.synced.tor" 2>/dev/null || true
     [ "$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")" = "true" ] ||
-        rm -f "$_csdir/tari.synced" 2>/dev/null || true
+        rm -f "$_csdir/tari.synced" "$_csdir/tari.synced.tor" 2>/dev/null || true
 }
