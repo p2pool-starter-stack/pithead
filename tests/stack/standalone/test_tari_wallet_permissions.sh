@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The wallet wrapper must repair a root-owned named volume before launching as uid 1000 (#2454).
 set -euo pipefail
+echo "== tari-wallet volume ownership and uid drop =="
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

@@ -317,8 +317,8 @@ jq_assert "exactly 5 depends_on edges total (#565)" \
 # The wallet probe must fit ps's 15-char CMD column — procps truncates CMD there, so the full
 # binary name never matches and the container would report unhealthy forever while the wallet
 # runs fine (#777). Asserted here because tari-wallet only renders under tari_payout_confirm.
-jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" \
-    '(.services["tari-wallet"].healthcheck.test | tostring) | contains("[m]inotari_consol") and (contains("[m]inotari_console_wallet") | not)'
+jq_assert "tari-wallet probe sees process after UID drop (#2454/#777)" \
+    '.services["tari-wallet"].healthcheck.test == ["CMD-SHELL", "ps -e | grep '\''[m]inotari_consol'\'' || exit 1"]'
 jq_assert "tari-wallet wrapper may repair its volume before dropping uid (#2454)" \
     '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and ((.cap_add | sort) == (["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"] | sort)) and .read_only == true'
 # The console wallet's digest pin had NO assertion anywhere (#1137). It cannot have one where the
