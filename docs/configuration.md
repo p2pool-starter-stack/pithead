@@ -133,14 +133,14 @@ and the Healthchecks ping URL, is reachable from the panel behind the confirmati
 
 | Field | Exposed how | Gate |
 |---|---|---|
-| `telegram.enabled` | Configuration view, Dashboard & access | Confirm preview + typed `APPLY` |
-| `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it) | Confirm preview + typed `APPLY` |
-| `telegram.chat_id` | Configuration view, Notifications | Confirm preview + typed `APPLY` |
+| `telegram.enabled` | Configuration view, Notifications | Confirm preview + typed approval envelope |
+| `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
+| `telegram.chat_id` | Configuration view, Notifications | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
 | `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Not exposed | Physical presence only — see above |
-| `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + approval envelope |
-| `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns this session logs itself out on a mistyped password | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
-| `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` |
+| `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + typed approval envelope |
+| `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns a mistyped password locks this session out and, on the appliance, also changes the console `root` login | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
+| `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
 
 `workers.list` is narrower than the rest. The dashboard can only adopt a new rig: an append with
 every existing descriptor unchanged, a name no existing rig uses, a control host that is not this
