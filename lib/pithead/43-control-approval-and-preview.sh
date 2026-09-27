@@ -177,8 +177,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
     # container's probe). A sentinel for a rig with no live token collapses to "" too. The endpoint
     # guard above rejects a sentinel without a same-name live descriptor or with a changed
-    # host/port/control_port, before any bearer can be restored. Webhook sentinels are positional
-    # because their order is their only stable identity. dashboard.workers[] is restored too, and
+    # host/port/control_port, before any bearer can be restored. Webhook sentinels are positional;
+    # control_masked_binding_error refuses a list that no longer lines up with the live one (#2373). dashboard.workers[] is restored too, and
     # MUST be: 30's masker still masks that shape after 2.0.0 removed the alias (#1832, see the note
     # there), and mask and restore are one mechanism. Keeping the mask without the restore would let
     # a sentinel be committed as a literal token.

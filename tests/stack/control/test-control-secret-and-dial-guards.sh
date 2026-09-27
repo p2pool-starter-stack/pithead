@@ -173,6 +173,16 @@ jq -n --arg id "$GUARD_UUID" '{id:$id,action:"commit",actor:"admin"}' >"$REQS/$G
 run_pending >/dev/null
 assert_eq "masked webhook survives an unrelated commit" \
     "$(jq -r '.notifications.webhooks[0]' "$C/config.json")" "https://example.com/hook"
+# A changed count shifts positions, so a masked slot would restore some other live URL (#2373).
+for HOOKS in '["https://example.com/new",{"__secret__":true}]' '[{"__secret__":true},"https://example.com/new"]'; do
+    jq -n --slurpfile live "$C/config.json" --arg id "$GUARD_UUID" --argjson hooks "$HOOKS" \
+        '{id:$id,action:"preview",actor:"admin",config:($live[0] | .notifications.webhooks=$hooks)}' >"$REQS/$GUARD_UUID.json"
+    run_pending >/dev/null
+    assert_contains "a masked webhook is refused when the list length changes ($HOOKS)" \
+        "$(jq -r '"\(.status): \(.error)"' "$RESULTS/$GUARD_UUID.json")" "rejected: notifications.webhooks were added, removed or reordered"
+done
+assert_eq "refused webhook edits leave the live list as it was" \
+    "$(jq -c '.notifications.webhooks' "$C/config.json")" '["https://example.com/hook"]'
 rm -f "$C/bin/getent" "$C/bin/ip"
 
 # A DNS name can change after the safety check. Resolve safely for both host checks, then return
