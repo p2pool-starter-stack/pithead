@@ -37,6 +37,14 @@ services:
     volumes:
       - dashboard_data:/data
       - dashboard_stats:/app/stats:ro
+      # Production control boundary: only requests is writable; results, audit and the host-masked
+      # config are read-only. The host runner remains outside this container.
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/requests:/control/requests
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/results:/control/results:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/audit:/control/audit:ro
+      - ${PITHEAD_ITEST_CONTROL_DIR:?control fixture missing}/masked:/control/masked:ro
+      - ../../../config.reference.json:/host-config/config.reference.json:ro
+      - ../../../config.core-keys.json:/host-config/config.core-keys.json:ro
       - type: bind
         source: ${PITHEAD_LOCK_FILE:?PITHEAD_LOCK_FILE is required}
         target: /pithead-lock
@@ -90,6 +98,7 @@ services:
       # blank the shared TOR_SOCKS_PROXY — the client then pings the fake receiver directly.
       HEALTHCHECKS_PING_URL: "http://fake-hc:9000/ph"
       TOR_SOCKS_PROXY: ""
+      DASHBOARD_CONTROL_ENABLED: "true"
       TELEGRAM_ENABLED: "${TELEGRAM_ENABLED:-true}"
       TELEGRAM_BOT_TOKEN: "itest-token"
       TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-itest-chat}"
