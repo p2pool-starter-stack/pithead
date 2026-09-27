@@ -35,7 +35,7 @@ on_bench() { printf '%s\n' "$1" >>"$commands"; }
 chain_read_unchanged() { [ "${LATE_OK:-yes}" = yes ]; }
 deploy_keeping_chain
 assert_rc "read guarded deploy succeeds when unchanged" "$?" 0
-assert_contains "upgrade holds both nodes and Tor" "$(cat "$commands")" "PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade"
+assert_contains "upgrade holds both nodes and Tor" "$(cat "$commands")" "CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade"
 assert_eq "no second up under a read lease" "$(grep -c './pithead up$' "$commands")" 0
 : >"$commands"
 LATE_OK=no deploy_keeping_chain
@@ -56,7 +56,7 @@ assert_eq "onion refusal leaves Tor alone" "$(grep -c touched "$commands")" 0
 
 (
     source "$HERE/../../../lib/pithead/01-lifecycle.sh"
-    PITHEAD_KEEP_RUNNING='monerod tari tor'
+    PITHEAD_KEEP_RUNNING='monerod tari tor' CI_CHAIN_SAFE_READ=1
     docker() { printf '%s\n' dashboard tor tari; }
     container_is_running() { return 0; }
     warn() { :; }
@@ -66,6 +66,20 @@ assert_eq "onion refusal leaves Tor alone" "$(grep -c touched "$commands")" 0
 )
 assert_rc "inactive held node refuses before profile removal" "$?" 1
 assert_eq "inactive node refusal touches no container" "$(grep -c touched "$commands")" 0
+(
+    source "$HERE/../../../lib/pithead/01-lifecycle.sh"
+    PITHEAD_KEEP_RUNNING='monerod tari tor' CI_CHAIN_SAFE_READ=0
+    docker() { printf '%s\n' dashboard tor tari; }
+    container_is_running() { return 0; }
+    resolve_pull_policy() { echo never; }
+    log() { :; }
+    remove_deactivated_profile_containers() { echo touched >>"$commands"; }
+    compose_up() { echo touched >>"$commands"; }
+    compose_up_checked -d
+)
+assert_rc "write path still reconciles inactive profile" "$?" 0
+assert_eq "write path reaches normal remove and up" "$(grep -c touched "$commands")" 2
+: >"$commands"
 
 main_source="$(sed -n '/^main() {$/,/^}$/p' "$HERE/../e2e.sh")"
 (

@@ -270,7 +270,7 @@ restore_all() {
         restore_cmd="./pithead upgrade >/dev/null 2>&1 || { $restore_cmd; }"
     fi
     if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
-        restore_cmd="PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade >/dev/null 2>&1"
+        restore_cmd="CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade >/dev/null 2>&1"
     fi
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
         [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || chain_read_restore_proof

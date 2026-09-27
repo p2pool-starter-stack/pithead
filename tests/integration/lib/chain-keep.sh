@@ -186,7 +186,7 @@ deploy_keeping_chain() {
         done
         chain_read_unchanged || return 1
         # Holding Tor is essential: its recreate restarts monerod through depends_on.
-        on_bench "cd '$E2E_DIR' && PITHEAD_KEEP_RUNNING='$held tor' ./pithead upgrade" || return 1
+        on_bench "cd '$E2E_DIR' && CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='$held tor' ./pithead upgrade" || return 1
         chain_read_unchanged || {
             warn "chain: late difference under the read guard; refusing recreate"
             return 1
