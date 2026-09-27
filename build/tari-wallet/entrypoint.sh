@@ -49,6 +49,11 @@ else
 fi
 
 mkdir -p "$WALLET_DIR"
+# A named volume created over this image's absent /home/ubuntu/wallet starts root-owned. Repair
+# existing volumes too, then run the wallet as the original non-root uid (#2454).
+if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ]; then
+    chown 1000:1000 "$WALLET_DIR"
+fi
 birthday="$(resolve_birthday)"
 echo "Starting view-only Tari payout wallet (birthday $birthday, base node $BASE_NODE_GRPC) (#462)..."
 
@@ -61,7 +66,7 @@ export MINOTARI_WALLET__BASE_NODE__GRPC_BASE_NODE_ADDRESS="/dns4/${BASE_NODE_GRP
 # The three MINOTARI_WALLET_VIEW_PRIVATE_KEY / SPEND_KEY / PASSWORD env vars (sourced above, now
 # exported) supply the view-only wallet material WITHOUT ever landing on the command line. Supplying
 # all three creates the read-only wallet non-interactively on first run and reopens it after.
-exec minotari_console_wallet \
+exec setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wallet \
     --base-path "$WALLET_DIR" \
     --non-interactive-mode \
     --enable-grpc \
