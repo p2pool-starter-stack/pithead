@@ -137,7 +137,9 @@ mk_tmpdir WXMAL
 mkdir -p "$WXMAL/staged" "$WXMAL/results" "$WXMAL/audit"
 WXID="99999999-9999-4999-8999-999999999999"
 jq --arg id "$WXID" '{id:$id,action:"preview",actor:"admin",config:(.workers.list += [{api_token:{"__secret__":true}}])}' "$MASKED" >"$WXMAL/request.json"
-run_sourced "$C" control_preview "$WXMAL/request.json" "$WXID" admin "$WXMAL" >/dev/null 2>&1
+# control_preview re-invokes $0 for its dry run; give this sourced call the sandbox CLI as $0.
+(cd "$C" && PATH="$C/bin:$PATH" bash -c 'source "$1"; set +e; control_preview "$2" "$3" admin "$4"' \
+    "$C/pithead" "$STACK" "$WXMAL/request.json" "$WXID" "$WXMAL") >/dev/null 2>&1
 assert_eq "nameless worker descriptor is rejected" "$(jq -r '.status' "$WXMAL/results/$WXID.json" 2>/dev/null)" "rejected"
 assert_contains "nameless probe sentinel reaches worker validation" "$(jq -r '.log' "$WXMAL/results/$WXID.json" 2>/dev/null)" 'every entry needs a "name"'
 rm -rf "$WXMAL"
