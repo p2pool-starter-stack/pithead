@@ -43,8 +43,9 @@ test-integration-selftest: pithead ## Integration harness pure-logic self-test (
 	for t in tests/integration/selftest/*.sh; do bash "$$t" || exit 1; done
 	for t in tests/os/selftest*.sh; do bash "$$t" || exit 1; done
 
-test-tools: ## Bounded-log sanitizer contract (no services or dependencies)
+test-tools: ## Bounded-log sanitizer and shell workflow budget (no services or dependencies)
 	bash scripts/lint/test-sanitize-test-log.sh
+	sed -n '/^  shell:$$/,/^  shell-standalone:$$/p' .github/workflows/shell.yml | grep -Eq '^    timeout-minutes: 30( |$$)'
 
 test-fakes: ## Fake-daemon contract test — real dashboard clients vs controllable fakes (no docker)
 	uv run --locked --project dashboard --extra test python -m pytest tests/integration/fakes -q
