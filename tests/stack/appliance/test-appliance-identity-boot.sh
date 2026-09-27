@@ -366,7 +366,7 @@ run_hint() {
         apt_fetch_failure_hint "$log" 2>&1
     )
 }
-assert_contains "404 signature triggers the --fresh-index remedy" "$(run_hint 'E: Failed to fetch ... 404  Not Found')" "--fresh-index"
+assert_contains "404 signature names the apt fetch failure" "$(run_hint 'E: Failed to fetch ... 404  Not Found')" "apt could not fetch a package"
 assert_contains "'Unable to fetch' signature triggers the remedy" "$(run_hint 'E: Unable to fetch some archives, maybe run apt-get update')" "--fresh-index"
 assert_eq "an unrelated failure prints no hint" "$(run_hint 'E: some other build error')" ""
 

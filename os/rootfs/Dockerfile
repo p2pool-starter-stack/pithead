@@ -130,10 +130,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `rauc info` extracts a bundle's manifest with unsquashfs, and without it `pithead os-update`
 # cannot read any bundle's compatibility metadata — every guard it carries was dead on the
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
-# Cache-busts ONLY this layer (#929): a warm builder cache reuses the apt index for weeks, and
-# when the mirror rotates a package between builds the stale index 404s. build-image.sh's
-# --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
-# hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
+# --fresh-index changes this ARG to rebuild the package layer with a current apt index. A cache
+# hit now reuses both update and install together; it cannot run install against an older index.
 ARG APT_INDEX_STAMP=0
 ARG PITHEAD_UPDATER=""
 # gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
@@ -155,9 +153,8 @@ RUN set -e; \
         git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
         linux-cpupower msr-tools $updater_packages; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
-# All appliance packages are installed and apt's temporary files removed in one layer. Keeping
-# the lists and installing toolchain/RAUC in later layers retained large intermediate snapshots
-# across every marked battery build, exhausting the builder disk before the last install.
+# All appliance packages are installed and apt's temporary files removed in one layer. Marker
+# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
 # The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
 # services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
