@@ -90,3 +90,32 @@ restore_fixture_secret_verdict() {
         ok "restore leg: the restored dashboard password authenticates against the restored bcrypt" ||
         bad "restore leg: the restored dashboard password did not authenticate (got HTTP ${auth_code:-none})"
 }
+
+# #2626: the archive's dashboard DB carries the source's sync-gate latch. The marker must
+# land in the dashboard's OWN /data mount, and the dashboard must hold the miner on this
+# guest's unsynced chains instead of inheriting a release — for every case in this loop.
+restore_sync_gate_verdict() { # <restore case>
+    local restore_case="$1"
+    local dash_data gtries=0 gate_seen=0
+    dash_data=$(_ssh "podman inspect dashboard --format '{{range .Mounts}}{{if eq .Destination \"/data\"}}{{.Source}}{{end}}{{end}}'" 2>/dev/null | tr -d '\r')
+    { [ -n "$dash_data" ] && _ssh "test -f '$dash_data/sync-gate-reset'" 2>/dev/null; } &&
+        ok "restore leg ($restore_case): the restore's sync-gate marker is in the dashboard's data mount (#2626)" ||
+        bad "restore leg ($restore_case): no sync-gate marker in the dashboard's data mount (${dash_data:-none}) (#2626)"
+    while [ "$gtries" -lt 30 ] && [ "$gate_seen" -eq 0 ]; do
+        _ssh "podman logs dashboard 2>&1 | grep -q 'holding p2pool, xmrig-proxy until synced'" 2>/dev/null && gate_seen=1
+        [ "$gate_seen" -eq 1 ] || { sleep 10 && gtries=$((gtries + 1)); }
+    done
+    [ "$gate_seen" -eq 1 ] &&
+        ok "restore leg ($restore_case): the restored dashboard holds the miner on this machine's unsynced chains (#2626)" ||
+        bad "restore leg ($restore_case): the restored dashboard never held the miner — a carried sync-gate release (#2626)"
+}
+
+# A kept target's chain survives the restore without a resync: both the fixture's sentinel and
+# the one planted on the target before the restore must still be there. No-op without a sentinel.
+restore_fixture_chain_verdict() { # [<target chain sentinel>]
+    local target_chain_sentinel="$1"
+    [ -n "$target_chain_sentinel" ] || return 0
+    _ssh "test -f /data/pithead/data/monero/chain-sentinel && test -f /data/pithead/data/monero/$target_chain_sentinel" &&
+        ok "restore leg: fixture and pre-restore target chain sentinels survived without a resync" ||
+        bad "restore leg: fixture or pre-restore target chain sentinel is missing after restore"
+}

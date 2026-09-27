@@ -93,9 +93,8 @@ export const InstallSection = ({
 </div>`;
 };
 
-// Restore-at-setup (#909): the config form's alternative — an uploaded encrypted backup +
-// its emergency-kit passphrase. Validation is host-side (the same "container asks, host
-// decides" split as everything else here); this just carries the two answers up.
+// Restore-at-setup (#909): the config form's alternative. Validation is host-side; this only
+// carries the archive and the optional passphrase.
 export const RestoreSection = ({
   file,
   passphrase,
@@ -105,10 +104,10 @@ export const RestoreSection = ({
   onPassphraseVisible,
 }) => html`<div>
     <h2>Restore from a backup</h2>
-    <${Note}>Upload the encrypted backup archive and its emergency-kit passphrase — shown once,
-    when the backup was made. This restores settings, wallets, keys and the dashboard's history;
-    the machine then provisions itself from what it restores, exactly as if you had filled in
-    the form.<//>
+    <${Note}>Upload a Pithead backup. An encrypted <code>.enc</code> backup needs the emergency-kit
+    passphrase shown when it was made; a plaintext <code>.tar.gz</code> backup needs no passphrase.
+    This restores settings, wallets, keys and the dashboard's history; the machine then
+    provisions itself from what it restores.<//>
     <${Field} label="Backup archive">
         <input type="file" accept=".enc,.tar.gz" onChange=${onFile} />
     <//>
