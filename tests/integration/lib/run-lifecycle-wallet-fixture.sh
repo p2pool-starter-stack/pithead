@@ -32,9 +32,9 @@ arm_inactive_tari_wallet_volume() {
         return 1
     fi
     IT_WALLET_CREATE_ATTEMPTED=1
-    if ! rx 'docker compose create --no-deps tari-wallet' >/dev/null 2>&1; then
+    if ! rx 'docker compose up --no-deps --no-start tari-wallet' >/dev/null 2>&1; then
         rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1
-        it_fail "active Compose profile creates the wallet volume" "compose create failed"
+        it_fail "active Compose profile creates the wallet volume" "compose up --no-start failed"
         return 1
     fi
     labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
@@ -74,17 +74,23 @@ arm_inactive_tari_wallet_volume() {
 }
 
 cleanup_failed_tari_wallet_fixture() {
-    local labels=""
+    local labels="" containers="" volumes=""
     if [ -n "$IT_WALLET_CREATE_ATTEMPTED" ]; then
-        if ! rx 'docker compose --profile tari_payout_confirm rm -sf tari-wallet' >/dev/null 2>&1; then
+        containers="$(rx 'docker container ls -a --format "{{.Names}}"')" ||
+            it_fail "failed fixture lists containers for cleanup" "Docker container listing failed"
+        if printf '%s\n' "$containers" | grep -Fx tari-wallet >/dev/null &&
+            ! rx 'docker compose --profile tari_payout_confirm rm -sf tari-wallet' >/dev/null 2>&1; then
             it_fail "failed fixture removes its wallet container" "Compose service cleanup failed"
         fi
-    fi
-    if [ -n "$IT_WALLET_CREATE_ATTEMPTED" ]; then
-        labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
-        if [ "$labels" = 'pithead/tari_wallet_data' ] &&
-            ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
-            it_fail "failed fixture removes its owned wallet volume" "volume cleanup failed"
+        volumes="$(rx 'docker volume ls -q')" ||
+            it_fail "failed fixture lists volumes for cleanup" "Docker volume listing failed"
+        if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
+            labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" ||
+                it_fail "failed fixture inspects wallet volume for cleanup" "Docker volume inspection failed"
+            if [ "$labels" = 'pithead/tari_wallet_data' ] &&
+                ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
+                it_fail "failed fixture removes its owned wallet volume" "volume cleanup failed"
+            fi
         fi
     fi
     if [ -n "$IT_UNRELATED_VOLUME_CREATED" ] &&

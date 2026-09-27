@@ -162,7 +162,7 @@ cp "$V/bin/docker" "$V/bin/docker-base"
 cat >"$V/bin/docker" <<'DOCKEREOF'
 #!/usr/bin/env bash
 case "$*" in
-"compose create --no-deps tari-wallet")
+"compose up --no-deps --no-start tari-wallet")
     grep -Eq '^COMPOSE_PROFILES=.*(^|,)tari_payout_confirm(,|$)' .env || exit 1
     [ ! -f .wallet-volume ] || exit 1
     printf 'pithead/tari_wallet_data\n' >.wallet-volume
@@ -194,7 +194,7 @@ esac
 DOCKEREOF
 chmod +x "$V/bin/docker"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$V/.env"
-out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose create --no-deps tari-wallet 2>&1)
+out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose up --no-deps --no-start tari-wallet 2>&1)
 assert_rc "active Compose profile creates the wallet service" "$?" "0"
 assert_eq "Compose creation leaves the wallet volume with project and volume ownership" \
     "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead/tari_wallet_data"

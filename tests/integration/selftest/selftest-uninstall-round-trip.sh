@@ -24,12 +24,12 @@ mkdir -p "$T/bin"
 cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
-"compose create --no-deps tari-wallet")
-    [ "$FAKE_CASE" != no-wallet-seed ] || exit 1
+"compose up --no-deps --no-start tari-wallet")
+    case "$FAKE_CASE" in no-wallet-seed | cleanup-list-error) exit 1 ;; esac
     grep -q 'tari_payout_confirm' .env || exit 1
     : >.created-volume
     : >.fake-volume
-    [ "$FAKE_CASE" != partial-wallet-seed ] || exit 1
+    case "$FAKE_CASE" in partial-wallet-seed | cleanup-inspect-error) exit 1 ;; esac
     : >.fake-container ;;
 "compose rm -sf tari-wallet")
     [ -e .fake-container ] || exit 1
@@ -37,6 +37,9 @@ case "$*" in
 "compose --profile tari_payout_confirm rm -sf tari-wallet")
     [ "$FAKE_CASE" != owned-preexisting ] || exit 1
     rm -f .fake-container ;;
+"container ls -a --format {{.Names}}")
+    [ "$FAKE_CASE" != cleanup-list-error ] || exit 1
+    [ ! -e .fake-container ] || echo tari-wallet ;;
 "compose config --volumes")
     if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
 "volume create pithead_itest_unrelated_"*)
@@ -48,6 +51,7 @@ case "$*" in
 "volume rm pithead_tari_wallet_data")
     rm -f .fake-volume ;;
 "volume inspect pithead_tari_wallet_data --format "*)
+    if [ "$FAKE_CASE" = cleanup-inspect-error ] && [ -e .created-volume ]; then exit 1; fi
     [ -e .fake-volume ] || exit 1
     case "$FAKE_CASE" in
     wrong-wallet-label | foreign-preexisting) echo foreign/volume ;;
@@ -134,6 +138,8 @@ assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
 assert_eq "partial Compose create failure cleans its owned volume" "$(drive partial-wallet-seed)" "1|1"
+assert_eq "cleanup reports a failed container listing" "$(drive cleanup-list-error)" "1|2"
+assert_eq "cleanup reports a failed volume inspection" "$(drive cleanup-inspect-error)" "1|2"
 assert_eq "a wallet volume with foreign labels fails the owned-volume precondition" "$(drive wrong-wallet-label)" "1|1"
 assert_eq "a preexisting foreign wallet volume is never removed" "$(drive foreign-preexisting)" "1|1"
 assert_eq "an active payout profile refuses the uninstall fixture" "$(drive active-wallet-profile)" "1|1"
