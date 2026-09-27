@@ -169,7 +169,9 @@ async def test_masked_control_token_without_read_map_fails_closed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_unmasked_control_token_is_never_probe_bearer(monkeypatch):
-    monkeypatch.setattr(xc, "WORKER_ENDPOINTS", [{"name": "rig1", "host": "10.0.0.5", "token": "write-capable"}])
+    monkeypatch.setattr(
+        xc, "WORKER_ENDPOINTS", [{"name": "rig1", "host": "10.0.0.5", "token": "write-capable"}]
+    )
     session = FakeSession(response=FakeResponse(200, {"ok": True}))
     assert (await XMRigWorkerClient(session).get_stats("10.0.0.5", "rig1"))["api_ok"] is False
     assert session.calls == []
