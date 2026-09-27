@@ -192,7 +192,8 @@ case "$*" in
   *hash-password*)
     # Fake `caddy hash-password` (#8): a per-password digest so enable/change paths differ, and it
     # never echoes the plaintext back (real bcrypt doesn't either) — keeps the leak checks honest.
-    _pw="${*##*--plaintext }"
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d" ;;
 esac

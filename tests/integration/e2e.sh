@@ -322,7 +322,7 @@ wait_bench_healthy() { # <timeout_s>
 # After a deploy recreates monerod/tari, they reload the EXISTING synced chain and re-confirm their
 # tip: seconds for monerod (NOT a re-sync), but tari also rebuilds its Tor circuits first — #2455
 # measured that at >18min. Wait for the dashboard to report both "done" before running the harness,
-# so its one-shot Tari readiness row (which never retries) doesn't judge a tari that's still reconnecting.
+# so its bounded Tari readiness row has a synced chain before it starts.
 wait_synced() { # <timeout_s>
     local deadline=$(($(date +%s) + ${1:-300})) st
     while :; do
@@ -390,9 +390,10 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The baseline's images and #2460/#2749 boot units, read before deploy_branch rebuilds the images
+    # The baseline's images and #2460/#2599/#2749 units, read before deploy_branch rebuilds the images
     # (on a source checkout, under the baseline's own tag) and installs the units. For verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
+    EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
     LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
     HOLD_UNIT_BEFORE="$(boot_unit_state pithead-lan-hold.service)"
     BASELINE_IMAGES="$(stack_image_census)"
@@ -401,19 +402,18 @@ preflight() {
     else
         warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
     fi
-    # Chains at tip BEFORE anything is locked or borrowed (#914): a bench that starts hours
-    # behind fails the required-sync assertions as environment noise — not a regression — and
-    # burns the borrowed-rig hour finding out. Same dashboard sync signal wait_synced polls.
+    # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
+    # report loading on an otherwise synced bench, so wait for its sync panels to settle.
     if [ "$SKIP_PREFLIGHT" = "1" ]; then
         warn "--skip-preflight: not checking the bench chains are synced."
     else
         local sync_line mst mheights tst theights
-        sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
-        [ -n "$sync_line" ] || die "Cannot read the bench dashboard's sync state (127.0.0.1:8000/api/state on $BENCH_HOST) — is the stack up? --skip-preflight overrides."
-        read -r mst mheights tst theights <<<"$sync_line"
-        if [ "$mst" = "done" ] && [ "$tst" = "done" ]; then
+        if wait_synced 120; then
             ok "bench chains synced (monero done, tari done)"
         else
+            sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
+            [ -n "$sync_line" ] || die "Cannot read the bench dashboard's sync state (127.0.0.1:8000/api/state on $BENCH_HOST) — is the stack up? --skip-preflight overrides."
+            read -r mst mheights tst theights <<<"$sync_line"
             warn "monero: $mst (current/target $mheights)"
             warn "tari:   $tst (current/target $theights)"
             die "Bench chains are not at tip — the required-sync assertions would fail on the environment, not the branch (#914). Let the bench catch up, or pass --skip-preflight to run anyway."

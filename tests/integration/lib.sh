@@ -669,7 +669,6 @@ assert_tari_synced_required() { # <state>
     fi
 }
 wait_hashes_flowing() { wait_for "${1:-300}" 5 "stratum hashes flowing" _pred_hashes_flowing; }
-
 # --- Artifact capture -------------------------------------------------------
 # On a scenario failure, collect everything needed to debug it — redacted. Writes into
 # <outdir>/<scenario>/. Best-effort: never let capture failures mask the test result.
@@ -678,6 +677,8 @@ capture_artifacts() {
     local dir="${outdir}/${scenario}"
     mkdir -p "$dir"
     it_step "capturing artifacts to ${dir}"
+    rx "docker inspect --format '{{json .State.Health}}' tor" 2>&1 | redact >"${dir}/tor-health.json" || true
+    rx "docker logs --tail=200 tor" 2>&1 | redact >"${dir}/tor.log" || true
     rx 'docker compose ps; docker inspect --format "{{.Name}} exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} restarts={{.RestartCount}}" $(docker compose ps -aq)' 2>&1 | redact >"${dir}/compose-ps.txt" || true
     rx "$IT_PITHEAD status" 2>&1 | redact >"${dir}/status.txt" || true
     rx "$IT_PITHEAD doctor" 2>&1 | redact >"${dir}/doctor.txt" || true

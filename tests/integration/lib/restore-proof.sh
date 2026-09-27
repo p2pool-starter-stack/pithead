@@ -40,6 +40,31 @@ boot_unit_state() { # <unit> -> present | absent | "" (the bench could not be as
     on_bench "if systemctl cat $1 >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
 }
 
+# The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
+EGRESS_CHECK_BEFORE=""
+
+egress_boot_unit_state() { boot_unit_state "${1:-pithead-egress.service}"; } # [unit]
+
+# The egress check pair (#2599), restored on the same rule as the boot unit below.
+restore_egress_check_units() {
+    case "$EGRESS_CHECK_BEFORE" in
+    present) return 0 ;;
+    absent) ;;
+    *)
+        warn "restore proof: whether pithead-egress.timer predates this run was never recorded, so the restore cannot say it left the bench as found (#2599)."
+        return 1
+        ;;
+    esac
+    on_bench "sudo systemctl disable --now pithead-egress.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.timer /etc/systemd/system/pithead-egress-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
+    if [ "$(egress_boot_unit_state pithead-egress.timer)" = absent ] &&
+        [ "$(egress_boot_unit_state pithead-egress-check.service)" = absent ]; then
+        ok "restore proof: pithead-egress.timer and its check removed — no trace of this run's egress check on the bench (#2599)"
+        return 0
+    fi
+    warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
+    return 1
+}
+
 # Put a boot unit back the way the run found it and prove it. A unit that predates the run is the
 # baseline's own and stays. The live DOCKER-USER rules are left alone either way: they are the
 # baseline stack's own firewall, which the restore's apply has just reinstalled.
@@ -329,5 +354,6 @@ PROBE
     restore_boot_unit pithead-egress.service "$EGRESS_UNIT_BEFORE" "#2460" || prc=1
     restore_boot_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" "#2749" || prc=1
     restore_boot_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" "#2749" || prc=1
+    restore_egress_check_units || prc=1
     return "$prc"
 }
