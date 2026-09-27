@@ -3,8 +3,9 @@
 set -euo pipefail
 echo "== tari-wallet volume ownership and uid drop =="
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# shellcheck source=tests/stack/lib.sh
+source "$ROOT/tests/stack/lib.sh"
+WORK="$SANDBOX"
 mkdir -p "$WORK/bin" "$WORK/wallet/mainnet/config/wallet"
 printf 'MINOTARI_WALLET_PASSWORD=fixture\n' >"$WORK/secret"
 cat >"$WORK/bin/stat" <<'EOF'
