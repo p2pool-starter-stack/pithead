@@ -35,6 +35,7 @@ case "$*" in
     [ -e .fake-container ] || exit 1
     rm .fake-container ;;
 "compose --profile tari_payout_confirm rm -sf tari-wallet")
+    [ "$FAKE_CASE" != owned-preexisting ] || exit 1
     rm -f .fake-container ;;
 "compose config --volumes")
     if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;

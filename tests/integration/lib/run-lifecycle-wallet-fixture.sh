@@ -19,10 +19,6 @@ arm_inactive_tari_wallet_volume() {
             it_fail "preexisting Tari wallet volume is Compose-owned" "volume labels did not match"
             return 1
         fi
-        if ! rx 'docker compose --profile tari_payout_confirm rm -sf tari-wallet' >/dev/null 2>&1; then
-            it_fail "preexisting Tari wallet service removed for fixture reset" "Compose service removal failed"
-            return 1
-        fi
         if ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
             it_fail "preexisting owned wallet volume reset for Compose creation" "volume removal failed"
             return 1
