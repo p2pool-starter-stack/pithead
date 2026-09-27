@@ -40,6 +40,7 @@ export class WizardApp extends Component {
     // of role/install-target — an uploaded backup replaces the config the operator would
     // otherwise type in.
     restoreMode: false,
+    restoreEnabled: false,
     restoreFile: null,
     restorePassphrase: "",
     restorePassphraseVisible: false,
@@ -72,7 +73,14 @@ export class WizardApp extends Component {
       handoff: s.handoff || null,
       savedRole: s.saved_role || null,
       nodeProbe: s.node_probe || null,
+      restoreEnabled: s.restore_enabled === true,
     };
+    if (!next.restoreEnabled) {
+      next.restoreMode = false;
+      next.restoreFile = null;
+      next.restorePassphrase = "";
+      next.restorePassphraseVisible = false;
+    }
     // The host's discovery pre-fills the rig fields, but only while they are untouched — the
     // form polls, and a half-typed pool address must survive it (same rule as cfg below).
     if (!this.state.rigPool && !this.state.rigWorker) {
@@ -263,6 +271,10 @@ export class WizardApp extends Component {
   // without a round trip.
   submitRestore = async (e) => {
     e.preventDefault();
+    if (!this.state.restoreEnabled) {
+      this.setState({ error: "Restore requires HTTPS. Reboot after setup TLS is available." });
+      return;
+    }
     if (!this.state.restoreFile) {
       this.setState({ error: "Choose a backup archive to upload." });
       return;

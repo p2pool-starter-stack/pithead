@@ -4,11 +4,12 @@ comment, issue #893).
 The write itself rides the EXISTING control-channel config path — the same preview/commit
 mechanics ``ConfigView`` uses for any other edit (no new write endpoint, ``web/server.py``
 ``handle_control_preview``/``handle_control_commit``). This module only builds the one guard that
-path needs to carry a ``workers.list[]`` write at all: ``pithead``'s ``control_approval_gate``
-(``pithead`` ~L9695) refuses ANY diff to the per-worker descriptors outright — deliberately, since
-they hold per-rig hosts and bearer tokens (the #122 SSRF class) — with a single narrow exception
-for a strictly ADD-ONLY append (a brand-new descriptor; every already-live entry must reappear
-byte-for-byte). That host-side gate is the actual security authority and is exercised at commit.
+path needs to carry a ``workers.list[]`` write at all: ``pithead``'s ``control_worker_append``
+(``lib/pithead/42-control-approval-helpers.sh``), called by both the preview and the commit gate,
+refuses a repoint or removal of a per-worker descriptor — they hold per-rig hosts and bearer tokens
+(the #122 SSRF class) — and lets a strictly ADD-ONLY append through (a brand-new descriptor; every
+already-live entry must reappear byte-for-byte) behind its SSRF floor and the typed APPLY (#2641).
+That host-side check is the actual security authority.
 
 What lives here is the *dashboard-side* mirror of the same shape/charset validation pithead's own
 ``validate_worker_endpoints`` applies (defense in depth, the same pattern ``control_service``'s

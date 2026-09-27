@@ -201,6 +201,13 @@ assert_current_state() {
 box_fstype() { rx "df --output=fstype $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -d ' '"; }
 box_avail_gb() { rx "df -BG --output=avail $(quote_arg "$1") 2>/dev/null | tail -n1 | tr -dc '0-9'"; }
 box_mode() { rx "stat -c %a $(quote_arg "$1") 2>/dev/null"; }
+# The readiness health row polls where it once read `pithead status` a single time (#2656): job 949
+# failed it minutes after deploy where 973 passed at the same commit, and discarded the output that
+# would have named the container. The predicate keeps the last read in the caller's
+# `status_out`. Only the per-service verdict lines, warnings and errors leave it: the same
+# output prints the stratum password and the dashboard onion.
+_pred_readiness_status() { status_out="$(pithead status 2>&1)"; }
+status_verdict_lines() { sed -E 's/\x1b\[[0-9;]*m//g' | grep -E '^  (✓|…|⚠|✗) |^\[(WARNING|ERROR)\] ' | redact | tail -n 30; }
 
 assert_release_readiness() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
@@ -217,8 +224,15 @@ assert_release_readiness() {
     else
         it_fail "Tari is synced" "dashboard reports Tari is not done — the matrix would start from an incomplete chain"
     fi
-    pithead status >/dev/null 2>&1
-    assert_rc "stack is healthy (pithead status)" "$?" "0"
+    local status_out="" status_bound=240
+    if wait_for "$status_bound" 5 "pithead status OK" _pred_readiness_status; then
+        it_pass "stack is healthy (pithead status)"
+    else
+        local verdict
+        verdict="$(status_verdict_lines <<<"$status_out")"
+        it_fail "stack is healthy (pithead status)" "still unhealthy after ${status_bound}s; last pithead status:
+$(sed 's/^/        /' <<<"${verdict:-(no service verdict lines in its output)}")"
+    fi
 
     # 2. The prune axis must vary the DB without re-syncing or mutating the canonical chain. The
     #    OTHER prune mode is unlocked either by (a) a snapshot/reflink-capable live FS (so a
@@ -275,9 +289,10 @@ assert_release_readiness() {
     fi
 
     # The prune axis infers CoW from the fstype above, which is a proxy. --image-upgrade does not
-    # get to infer: it takes `cp --reflink=always` snapshots of every writable mount, so the only
-    # honest check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine
-    # release server for everything except that one gate, and saying so here is what stops someone
+    # get to infer: it clones every data-dir bind mount with `cp --reflink=always` (named volumes,
+    # small and on the engine's own root, are the only full copies — #2057), so the only honest
+    # check is to ATTEMPT one. A WARN, not a FAIL — a box without reflink is still a fine release
+    # server for everything except that one gate, and saying so here is what stops someone
     # scheduling a destructive upgrade run that cannot reach its own rollback net.
     if [ -n "$mdir" ]; then
         local probe rc
@@ -286,7 +301,7 @@ assert_release_readiness() {
         rc=$?
         rx "rm -rf $(quote_arg "$probe") $(quote_arg "$probe.copy")" >/dev/null 2>&1 || true
         if [ "$rc" = 0 ]; then
-            it_pass "writable-mount filesystem supports cp --reflink=always (--image-upgrade can snapshot)"
+            it_pass "the chain data dir's filesystem supports cp --reflink=always (every other bind source and its parent must too)"
         else
             it_warn "no reflink on the chain FS (${fstype:-unknown}) — --image-upgrade cannot take its rollback snapshots and will refuse; every other phase is unaffected"
         fi
