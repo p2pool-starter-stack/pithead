@@ -327,6 +327,9 @@ stack_restart() { # [tor|monerod]
     "" | tor | monerod) ;;
     *) error "restart takes no argument, 'tor' (fresh Tor guards when clearnet egress is stuck), or 'monerod' (re-dial peers after a Tor restart left the node out of sync). Got: '$1'." ;;
     esac
+    # `compose restart` also starts a stopped node, on its existing 0.0.0.0 publish, without
+    # compose_up's rule install: refuse while a published LAN port has no live rule (#2749).
+    lan_guard_ready || error "The LAN-only source rule for the published *_lan_access port(s) is not in place, so a restart would open them to every source. Run './pithead up', which installs it first."
     mutation_lock_acquire restart
     case "${1:-}" in
     "")

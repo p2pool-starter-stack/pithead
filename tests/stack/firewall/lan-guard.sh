@@ -168,22 +168,24 @@ for p in 18081 18142; do
         "ExecStart=-/usr/sbin/iptables -D DOCKER-USER -p tcp -m tcp --dport $p "
 done
 
-lg_hu="$(run_sourced "$LGD" render_lan_guard_hold_unit /usr/bin/docker monerod tari)"
+lg_hu="$(run_sourced "$LGD" render_lan_guard_hold_unit /usr/bin/docker /usr/sbin/iptables 18081 18083 18142)"
 assert_contains "the hold needs the guard: a failed guard never starts the containers" "$lg_hu" \
     "Requires=pithead-lan-guard.service docker.service"
 assert_contains "...and runs after both" "$lg_hu" "After=pithead-lan-guard.service docker.service"
 assert_contains "the hold is pulled in by the boot, not by docker.service" "$lg_hu" "WantedBy=multi-user.target"
 assert_not_contains "docker.service never depends on the hold" "$lg_hu" "WantedBy=docker.service"
-assert_eq "it starts exactly the named containers, a removed one no failure" \
+assert_eq "it starts each publishing container once, a removed one no failure" \
     "$(grep '^ExecStart=' <<<"$lg_hu" | tr '\n' '|')" "ExecStart=-/usr/bin/docker start monerod|ExecStart=-/usr/bin/docker start tari|"
+assert_eq "...only after checking each port's live jump, which fails the start when it is gone" \
+    "$(grep -c '^ExecStartPre=/usr/sbin/iptables -C DOCKER-USER -p tcp -m tcp --dport 18[01][0-9]* -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN$' <<<"$lg_hu")" "3"
 
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL" "$LG_HOLD"
 : >"$LG_COMPOSE.restart"
 LG_LIVE=1 lg 'compose_up -d' >/dev/null
 assert_eq "a live apply hands compose restart no for the container publishing a LAN port, and only it" \
-    "$(cat "$LG_COMPOSE.restart")" "restart=default,no"
+    "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,no"
 assert_eq "...and writes the hold for that container" "$(cat "$LG_HOLD" 2>/dev/null)" \
-    "$(run_sourced "$LGD" render_lan_guard_hold_unit "$LGD/bin/docker" tari)"
+    "$(run_sourced "$LGD" render_lan_guard_hold_unit "$LGD/bin/docker" "$LGD/bin/iptables" 18142)"
 assert_contains "...enabled for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable pithead-lan-hold.service"
 rm -f "$LG_HOLD"
 : >"$LG_COMPOSE"
@@ -191,12 +193,12 @@ rm -f "$LG_HOLD"
 lg_out="$(LG_LIVE=1 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
 assert_contains "the hold cannot be enabled: named" "$lg_out" "boot unit that restores it after a reboot could not be installed"
 assert_eq "...compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
-assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=default,default"
+assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=podman"; do
     : >"$LG_COMPOSE.restart"
     # shellcheck disable=SC2086,SC2163 # the case is a list of NAME=value words
     (export $lg_case && lg 'compose_up -d' >/dev/null)
-    assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=default,default"
+    assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=unless-stopped,unless-stopped"
 done
 
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
@@ -268,11 +270,23 @@ lg_out="$(LG_LIVE=1 LG_APPLIANCE=1 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_g
 assert_not_contains "the appliance has no hold to report" "$lg_out" "is down:"
 
 echo "== only the two LAN-access node services take their restart policy from apply_lan_guard (#2749) =="
-assert_eq "monerod and tari restart unless-stopped unless MONERO_RESTART/TARI_RESTART say otherwise" \
+# shellcheck disable=SC2016 # the compose text itself, unexpanded
+assert_eq "monerod and tari take MONERO_RESTART/TARI_RESTART, and a compose run without them fails closed to no" \
     "$(grep -E '^    restart: \$\{' "$ROOT/docker-compose.yml" | tr '\n' '|')" \
-    '    restart: ${MONERO_RESTART:-unless-stopped}|    restart: ${TARI_RESTART:-unless-stopped}|'
+    '    restart: ${MONERO_RESTART:-no}|    restart: ${TARI_RESTART:-no}|'
 assert_eq "...in that order: monerod's first, tari's second" \
     "$(awk '/^  [a-z-]+:$/{svc=$1} /^    restart: \$\{/{print svc}' "$ROOT/docker-compose.yml" | tr '\n' ' ')" "monerod: tari: "
+
+echo "== a restart, which bypasses compose_up, needs the live rule first (#2749) =="
+lg_rc=0
+LG_LIVE=0 lg lan_guard_ready >/dev/null || lg_rc=$?
+assert_eq "a published port without its live rule is not ready" "$([ "$lg_rc" != 0 ] && echo refused)" "refused"
+lg_rc=0
+LG_LIVE=1 lg lan_guard_ready >/dev/null || lg_rc=$?
+assert_eq "...with it, ready" "$lg_rc" "0"
+lg_sr="$(run_sourced "$LGD" declare -f stack_restart)"
+assert_contains "stack_restart refuses without it, before it restarts anything" \
+    "$(sed -n '1,/docker compose restart/p' <<<"$lg_sr")" "lan_guard_ready ||"
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
 # The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits

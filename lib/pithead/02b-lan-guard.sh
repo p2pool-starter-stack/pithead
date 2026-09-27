@@ -129,6 +129,8 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() {
     local published kp ports=() old rc=0
+    # The compose default is "no" (fail closed); provision_lan_guard_boot_unit sets it where it counts.
+    export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
     published=$(lan_guard_published)
     if [ -z "$published" ]; then
         remove_lan_guard_boot_unit
@@ -223,6 +225,14 @@ check_lan_guard_hold() { # <port>...
     done
 }
 
+# True when no LAN port is published or every published one's rule is live (#2749): what a start
+# that bypasses compose_up, such as `pithead restart`, checks first.
+lan_guard_ready() {
+    local kp ports=()
+    for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+    [ "${#ports[@]}" = 0 ] || lan_guard_enforced "${ports[@]}"
+}
+
 # Remove the rule from both backends. `sudo -n`: a leftover rule only drops outside traffic to a
 # port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
 remove_lan_guard() {
@@ -299,12 +309,18 @@ WantedBy=docker.service
 EOF
 }
 
-# The hold unit for <docker path> <container>.... Pure (args only) so it unit-tests. Requires= the
-# guard: when the guard fails, systemd never starts this unit and the containers stay stopped. `-`:
-# a container `down` removed is not a failure; one that exists but will not start is doctor's FAIL.
-render_lan_guard_hold_unit() { # <docker> <container>...
-    local docker="$1" c
-    shift
+# The hold unit for <docker> <iptables> <port>.... Pure (args only) so it unit-tests. Requires= the
+# guard: when the guard fails, systemd never starts this unit and the containers stay stopped. The
+# guard is a oneshot that stays "active" after the rule is gone (down, the backup window), and a
+# docker restart re-runs this unit, so each port's jump is checked live first (-C, no `-`). `-` on
+# the start: a container `down` removed is not a failure; one that will not start is doctor's FAIL.
+render_lan_guard_hold_unit() { # <docker> <iptables> <port>...
+    local docker="$1" ipt="$2" p c containers=()
+    shift 2
+    for p in "$@"; do
+        c=$(lan_guard_container "$p")
+        [[ " ${containers[*]} " == *" $c "* ]] || containers+=("$c")
+    done
     cat <<EOF
 [Unit]
 Description=pithead starts the *_lan_access node containers only once their LAN-only source rule is in place
@@ -315,7 +331,11 @@ After=$LAN_GUARD_BOOT_UNIT docker.service
 Type=oneshot
 RemainAfterExit=yes
 EOF
-    for c in "$@"; do printf 'ExecStart=-%s start %s\n' "$docker" "$c"; done
+    for p in "$@"; do
+        printf 'ExecStartPre=%s -C DOCKER-USER -p tcp -m tcp --dport %s -m conntrack --ctstate NEW -m comment --comment %s -j %s\n' \
+            "$ipt" "$p" "$LAN_GUARD_TAG" "$LAN_GUARD_CHAIN"
+    done
+    for c in "${containers[@]}"; do printf 'ExecStart=-%s start %s\n' "$docker" "$c"; done
     cat <<EOF
 
 [Install]
@@ -347,7 +367,7 @@ provision_lan_guard_boot_unit() { # <port>...
         [[ " ${containers[*]} " == *" $c "* ]] || containers+=("$c")
     done
     install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$@")" &&
-        install_lan_guard_unit "$unit_dir" "$LAN_GUARD_HOLD_UNIT" "$(render_lan_guard_hold_unit "$docker" "${containers[@]}")" ||
+        install_lan_guard_unit "$unit_dir" "$LAN_GUARD_HOLD_UNIT" "$(render_lan_guard_hold_unit "$docker" "$ipt" "$@")" ||
         return 1
     for c in "${containers[@]}"; do
         if [ "$c" = tari ]; then export TARI_RESTART=no; else export MONERO_RESTART=no; fi

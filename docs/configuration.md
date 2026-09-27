@@ -272,8 +272,10 @@ A reboot clears the rule. On the Docker install, `pithead` therefore installs tw
 `pithead-lan-hold.service` starts the node containers that publish a LAN port (`monerod` for
 `18081` and `18083`, `tari` for `18142`), and only once the guard has succeeded. Docker itself
 does not start those containers: they run with restart policy `no`. If the guard fails at boot,
-they stay stopped rather than listen with no rule. `docker.service` depends on neither unit, so
-other containers on the host start as usual. When either unit cannot be installed, `pithead` keeps
+they stay stopped rather than listen with no rule, and the hold also checks that the rule is live
+before it starts anything. `docker.service` depends on neither unit, so other containers on the
+host start as usual. `./pithead restart` refuses while a published port has no live rule, and the
+dashboard's Tor auto-heal never starts a stopped `monerod`. When either unit cannot be installed, `pithead` keeps
 the ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while
 the rule is live but the guard is not enabled. `pithead` removes both units when every
 `*_lan_access` switch is off, and `uninstall` removes them. The appliance needs neither: its boot
