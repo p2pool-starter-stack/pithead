@@ -51,6 +51,8 @@ mv config.json.tari-wallet-test config.json
     done
     if [ "${state%% *}" != true ]; then
         bad "Tari wallet: the tari-wallet container never ran (${state:-absent})"
+        # The wallet's own words, which the guest journal does not carry.
+        _ssh "podman logs --tail 15 tari-wallet 2>&1" 2>/dev/null | tr -d '\r' | sed 's/^/     | /'
     else
         # One wallet start, then 60 s: a wallet that cannot write its volume exits within seconds.
         restarts="${state##* }"

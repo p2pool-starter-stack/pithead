@@ -331,6 +331,8 @@ render_env() {
     local tari_secret_file="$PWD/data/tari-wallet-secret.env"
     if [ "$target" != "${ENV_FILE}.dryrun" ]; then
         mkdir -p "$PWD/data"
+        # Removed first: after the chown below, a non-root operator could no longer overwrite it.
+        rm -f "$tari_secret_file"
         (
             umask 077
             cat >"$tari_secret_file" <<EOF
@@ -339,6 +341,12 @@ MINOTARI_WALLET_SPEND_KEY=$TARI_SPEND_PUBLIC_KEY
 MINOTARI_WALLET_PASSWORD=$TARI_WALLET_PASSWORD
 EOF
         )
+        # The wallet container runs as APP_UID and the bind mount keeps this owner-only file's owner:
+        # written by root (the appliance) or another uid, the wallet cannot read it (#2731).
+        [ -z "$(find "$tari_secret_file" ! -uid "$APP_UID" -print 2>/dev/null)" ] ||
+            chown "$APP_UID:$APP_GID" "$tari_secret_file" 2>/dev/null ||
+            sudo chown "$APP_UID:$APP_GID" "$tari_secret_file" ||
+            warn "Could not give $tari_secret_file to uid $APP_UID; the Tari payout wallet cannot read it."
     fi
 
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion

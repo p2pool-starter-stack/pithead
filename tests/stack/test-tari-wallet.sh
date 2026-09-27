@@ -31,9 +31,23 @@ assert_contains "overflowing birthday message names the unit" "$out" "days since
 # (3) A valid past birthday applies and reflects verbatim into .env.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
+tw_sudo_log="$V/tw-sudo.log"
+: >"$tw_sudo_log"
+cp "$V/bin/sudo" "$V/bin/sudo.tw-orig"
+printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$tw_sudo_log" >"$V/bin/sudo"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid birthday accepted" "$?" "0"
+mv "$V/bin/sudo.tw-orig" "$V/bin/sudo"
 assert_eq "valid birthday reflected into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_BIRTHDAY)" "1000"
+# The wallet runs as uid 1000 and the bind mount keeps the owner-only secret file's owner, so apply
+# hands the file to 1000 whenever another uid (root, on the appliance) wrote it (#2731).
+tw_secret="$V/data/tari-wallet-secret.env"
+if [ -z "$(find "$tw_secret" ! -uid 1000 -print 2>/dev/null)" ] && [ -f "$tw_secret" ]; then
+    tw_owned=yes
+else
+    grep -qxF "chown 1000:1000 $tw_secret" "$tw_sudo_log" && tw_owned=yes || tw_owned="no ($(cat "$tw_sudo_log"))"
+fi
+assert_eq "the Tari wallet secret file is handed to the container uid" "$tw_owned" "yes"
 
 echo "== unit: tari-wallet entrypoint — Tari-epoch birthday, local-node scan URL (#2731) =="
 # Tari's --birthday counts days since 2022-01-01 (1640995200); "auto" must be today in that unit.
