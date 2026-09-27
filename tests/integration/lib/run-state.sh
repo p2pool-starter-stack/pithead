@@ -14,11 +14,9 @@ assert_running_state() {
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"
     rpc_lan="$(jq_get "$config" '.monero.rpc_lan_access')"
-    # Clearnet initial sync (#183): absent => default false.
-    monero_clearnet="$(jq_get "$config" '.monero.clearnet_initial_sync')"
-    [ "$monero_clearnet" = "true" ] || monero_clearnet="false"
-    tari_clearnet="$(jq_get "$config" '.tari.clearnet_initial_sync')"
-    [ "$tari_clearnet" = "true" ] || tari_clearnet="false"
+    # Clearnet initial sync (#183): absent => default false; ignored while the firewall is on (#2649).
+    monero_clearnet="$(clearnet_flag_effective "$config" monero)"
+    tari_clearnet="$(clearnet_flag_effective "$config" tari)"
 
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
     # dashboard supervisor flip it back to Tor, which RESTARTS the daemon(s). Wait for that to fully
@@ -160,8 +158,8 @@ assert_running_state() {
     assert_pool_type "pool type" "$(jq_get "$st" '.pool.type')" "$(pool_label "$pool")"
 
     # 6. End-to-end mining: workers online + hashes accumulating (#28). proxy_workers is the
-    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). The
-    #    hashes figure gets a bounded wait first (#831): between scenarios the bench stratum
+    #    reliable liveness signal; stratum.conns is reported but informational (can be 0). Both
+    #    figures get a bounded wait first (#831, #2750): between scenarios the bench stratum
     #    bounces, a REAL rig fails over to its secondary pool and returns on xmrig's own retry
     #    clock (~60-90s) — a single early sample reads 0 while the rig is genuinely mining a
     #    minute later, and which scenario loses that race moves run to run. The re-fetched
@@ -205,9 +203,9 @@ assert_running_state() {
         "$(expected_topology_nodes "$config")"
 
     # 8. Security/posture axes propagated to .env.
-    local want_bind
-    [ "$rpc_lan" = "true" ] && want_bind="0.0.0.0" || want_bind="127.0.0.1"
-    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" "$want_bind"
+    assert_eq "MONERO_RPC_BIND matches rpc_lan_access" "$(env_on_box MONERO_RPC_BIND)" \
+        "$([ "$rpc_lan" = "true" ] && echo 0.0.0.0 || echo 127.0.0.1)"
+    assert_lan_guard_live "$config" # #2616: only LAN sources reach a published node port
     assert_eq "DASHBOARD_SECURE matches config" "$(env_on_box DASHBOARD_SECURE)" "${secure:-true}"
     # #740: dashboard.port flows config -> .env. Unset in every scenario, so HOST_PORT must render
     # empty (the scheme-default path); a scenario that sets dash_port would assert the custom value.
@@ -254,10 +252,10 @@ assert_running_state() {
         # ALWAYS renders the canonical Tor config (the clearnet transform is applied per-start
         # in-container, gated on the flag AND the dashboard's marker). The dashboard switches a
         # clearnet node back to Tor once it's synced — so in the synced steady state asserted here,
-        # monerod always carries the Tor P2P proxy and Tari's canonical config stays `type = "tor"`.
+        # monerod always carries the Tor P2P proxy and Tari's canonical config stays `type = "socks5"`.
         assert_eq "MONERO_CLEARNET_SYNC matches config (#183)" "$(env_on_box MONERO_CLEARNET_SYNC)" "$monero_clearnet"
         assert_eq "TARI_CLEARNET_SYNC matches config (#183)" "$(env_on_box TARI_CLEARNET_SYNC)" "$tari_clearnet"
-        [ "$tmode" = "local" ] && assert_num_ge "tari canonical config is always Tor (#234)" "$(rx "docker exec tari grep -c '^type = \"tor\"' /var/tari/config/config.toml 2>/dev/null")" 1 || it_skip_leg "tari canonical config is always Tor (#234)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
+        [ "$tmode" = "local" ] && assert_num_ge "tari canonical config is always Tor (#234)" "$(rx "docker exec tari grep -c '^type = \"socks5\"' /var/tari/config/config.toml 2>/dev/null")" 1 || it_skip_leg "tari canonical config is always Tor (#234)" "tari.mode=$tmode (#1855) — no tari container to inspect" by-design
         assert_num_ge "monerod runs Tor-only in steady state — proxy present (#183/#234)" "$(rx "docker exec monerod grep -cE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null")" 1
         # (The clearnet→Tor auto-transition was already awaited + asserted at the top of this function,
         # before the steady-state battery, so the assertions above see the settled post-flip state.)

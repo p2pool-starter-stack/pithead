@@ -54,8 +54,8 @@
 # The env keys committable from the dashboard: operational tuning only, and only keys whose value
 # is derived from a validated enum, boolean, or number — never a free-form string that reaches a
 # command line, URL, or credential. Everything else — wallets, auth, onion exposure, the control
-# channel itself, Tor egress/clearnet toggles, binds, node RPC credentials, the XvB pool URL
-# and donor id, tokens and passwords, the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
+# channel itself, Tor egress/clearnet toggles, binds, the XvB pool URL and donor id, and every
+# token and password other than the confirm-gated node RPC credentials — including the #381 payout-confirmation secrets (MONERO_VIEW_KEY,
 # WALLET_RPC_PASSWORD) plus PAYOUT_CONFIRM_ENABLED, and their #462 Tari siblings (TARI_VIEW_KEY,
 # TARI_WALLET_PASSWORD, TARI_SPEND_PUBLIC_KEY) plus TARI_PAYOUT_CONFIRM_ENABLED /
 # TARI_WALLET_GRPC_ADDRESS / TARI_WALLET_SECRET_FILE — stays host-CLI-only. PAYOUT_SCAN_HEIGHT and
@@ -92,9 +92,13 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
     TELEGRAM_EVENT_RAFFLE_WIN'
 
 # The confirm-gated editable set (#719): operationally-disruptive env keys the dashboard MAY commit
-# behind a type-to-confirm — NOT the security perimeter (wallets, keys, credentials, onion,
+# behind a type-to-confirm — NOT the rest of the security perimeter (wallets, onion,
 # tor_egress_firewall, dashboard.control.enabled, stratum password, per-rig hosts/tokens all stay
-# host-only DEST). Type-to-confirm is UX FRICTION, not a security control: a compromised dashboard
+# host-only DEST). The owner's ruling on #2367/#2333 (2026-09-19) moved the reserved-node RPC
+# credentials (MONERO_NODE_USERNAME/PASSWORD) into this tier too: every config field is editable
+# from the dashboard, and a security-sensitive one warns and asks for the typed confirmation
+# instead of being refused — see the credential-specific note further down. Type-to-confirm is UX
+# FRICTION, not a security control: a compromised dashboard
 # that can set a field can also fill the confirm box, so this set is strictly the "expensive but
 # recoverable, not a breach" class — a data-dir move (re-sync), a stratum-port repoint (rigs
 # reconnect), a clearnet-sync enable (host IP exposed during IBD, auto-reverts), a prune enable
@@ -122,8 +126,12 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 # it is the host-side REACHABILITY PROBE the approval gate runs on the STAGED endpoint before it
 # accepts one (43-control-approval-and-preview.sh, #1889's preflight_remote_nodes): a dashboard
 # cannot silently park a chain on a node that is not there. The RPC LOGIN CREDENTIALS for a remote
-# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) are deliberately NOT here — those are secrets,
-# not address identity, and they stay host-only DEST with the rest of the credentials above.
+# node (MONERO_NODE_USERNAME / MONERO_NODE_PASSWORD) join the endpoints here (#2333, on the
+# owner's #2367 ruling that overruled the earlier host-CLI-only stance for exactly these two keys):
+# they are a secret, not address identity, but the ruling's answer to that is a WARNING and the
+# same typed confirmation the endpoints already use, never a refusal — the operator has no host
+# shell to fall back on here either. describe_change (39-) never echoes the old or new value in
+# the warning text; CONTROL_SECRET_PATHS keeps the preview's own JSON from doing so.
 # TARI_MODE (#1929) joins on the same reasoning as the endpoints, one step further: it decides
 # WHETHER this host merge-mines at all and whether the bundled Tari node runs. It is the expensive-
 # but-recoverable class this tier is for — the container stops, its chain data on disk is KEPT
@@ -153,7 +161,8 @@ CONTROL_DASHBOARD_EDITABLE_KEYS='P2POOL_FLAGS P2POOL_PORT
 CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR
     STRATUM_PORT MONERO_CLEARNET_SYNC TARI_CLEARNET_SYNC MONERO_PRUNE
     MONERO_OUT_PEERS TARI_MODE COMPOSE_PROFILES
-    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+    MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD'
 
 # The approval-gated editable set (2026-09-13 perimeter audit): env keys the dashboard MAY commit behind the typed
 # approval envelope. This is the NARROWEST of the three tiers and the one to be most suspicious of,
@@ -183,11 +192,10 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DA
 # config path renders to .env" was claimed here once and was FALSE — local_miner.enabled is a third
 # config.json-only leaf with no porcelain row, discovered by a review of this issue after the first
 # round shipped; the gate now names it explicitly too (43-, ordinary tier, no approval — it is a
-# documented dashboard-editable toggle, docs/workers.md). workers.list[] itself moved from
-# approval-tier to REFUSED outright in that same review: an appended or repointed rig host+token is
-# a credential change, and SECURITY.md promises every credential is never dashboard-committable —
-# the "documented exception" this file used to carve out for it contradicted that promise instead
-# of satisfying it. Treat "every OTHER path renders to .env" as false in general: a schema leaf
+# documented dashboard-editable toggle, docs/workers.md). workers.list[] is classified by
+# control_worker_append (42-control-approval-helpers.sh): adopting a new rig is an append behind the
+# typed APPLY and the SSRF floor below (#2641); repointing or removing one is refused (#912).
+# Treat "every OTHER path renders to .env" as false in general: a schema leaf
 # that renders NOTHING must be named by path in 43- or it is unclassified, not merely unlisted here.
 # Mirrored on the dashboard side by config_operations.APPROVAL_PATHS and drift-guarded like the two
 # lists above; a key added here without its path there is invisible in the editor, and a path added
@@ -206,11 +214,11 @@ control_committable_re() {
         "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//'
 }
 
-# The node-endpoint subset of the confirm set, named ONCE (#1888) so the approval gate's probe
-# trigger is not a fourth hand-kept copy of these key names. Every key here must also be in
-# CONTROL_DASHBOARD_CONFIRM_KEYS above — a key here but not there is unreachable; a node key there
-# but not here would be committable with NO reachability probe, which is the failure that matters.
-CONTROL_NODE_ENDPOINT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT TARI_GRPC_ADDRESS'
+# The node changes that require a staged reachability/authentication preflight, named once so the
+# approval gate cannot forget the login when only a credential changes. Every key here must also be
+# confirm-gated; the probe itself no-ops for a local chain.
+CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
+    MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
 # SSH, the dashboard password, and the two tamper alarms. Exact dotted paths/prefixes, space
@@ -240,7 +248,9 @@ _is_canonical_ipv4() {
 # docker-bridge /24 (network.subnet, read from the LIVE config — a same-commit network.subnet
 # change is refused elsewhere, on neither editable allowlist, so the live value is the honest
 # baseline either way). RFC1918 LAN ranges (10/8, 172.16/12, 192.168/16) are deliberately NOT on
-# this list — dialing a LAN rig is this feature's whole purpose.
+# this list — dialing a LAN rig is this feature's whole purpose. This machine's OWN LAN address and
+# its other bridges vary per box, so the worker floor checks them separately (42b-, #2671); the
+# remote-node probe (10-node-probe.sh) shares this classifier and does not.
 _ipv4_is_sensitive() {
     local a b prefix
     IFS=. read -r a b _ _ <<<"$1"
@@ -304,7 +314,7 @@ _resolve_host_ips() {
     timeout 5 getent ahosts "$1" 2>/dev/null | awk '{print $1}' | sort -u
 }
 
-# True if $1 — a workers.list[] host the add-only exception is about to let a commit introduce —
+# True if $1 — a workers.list[] host an adopt (append-only) commit is about to introduce —
 # resolves inside THIS host's own reach. Mirrors the READ-path SSRF guard a miner-claimed IP
 # already gets (_safe_probe_host, dashboard/mining_dashboard/client/xmrig_client.py, #122) for the
 # WRITE path: an add-only append is DASHBOARD-chosen (the operator confirms it in the browser, but
@@ -312,7 +322,9 @@ _resolve_host_ips() {
 # so without this a malicious/compromised dashboard could append a phantom descriptor pointed at
 # its own host's loopback services or a sibling container, then immediately dial it (with an
 # attacker-chosen bearer) via the pre-existing worker-apply/worker-upgrade path, which resolves and
-# dials strictly from the HOST's own config. An ordinary LAN or public rig address is unaffected.
+# dials strictly from the HOST's own config. That reach includes this machine's own interface
+# addresses and every bridge subnet on it (42b-, #2671), not only the fixed classes above. An
+# ordinary LAN or public rig address is unaffected.
 #
 # #893 round 5: an earlier version of this function classified by STRING SHAPE alone — a denylist
 # of "localhost" and its known /etc/hosts aliases. An independent review found that a spelling
@@ -338,13 +350,16 @@ _resolve_host_ips() {
 # is why that's acceptable without also adding a dial-time re-check (see the PR's "Dial-time
 # re-check" note).
 _control_host_is_internal() {
-    local host resolved ip
+    local host resolved ip own
     host=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
     host="${host%.}" # a trailing dot is DNS's "FQDN root" marker; getent treats it identically
+    # This machine's own interface addresses and bridge subnets (#2671, 42b-). An unreadable
+    # interface list -> FAIL CLOSED, as for an unresolvable name.
+    own=$(_host_local_networks) || return 0
     if _is_canonical_ipv4 "$host"; then
         # A canonical dotted-decimal literal is unambiguous — it IS the address that would be
         # dialed, so classify it directly with no resolver round trip.
-        _ipv4_is_sensitive "$host"
+        _ipv4_is_sensitive "$host" || _ip_in_host_networks "$host" "$own"
         return
     fi
     # Everything else — a genuine hostname, an IPv6 literal in ANY of its many equally-valid
@@ -367,6 +382,7 @@ _control_host_is_internal() {
         else
             return 0 # an answer shape we don't recognize -> FAIL CLOSED, never wave it through
         fi
+        _ip_in_host_networks "$ip" "$own" && return 0
     done <<<"$resolved"
     return 1
 }

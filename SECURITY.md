@@ -90,28 +90,35 @@ The stack's defaults:
   and Tari **node endpoints** (#1888) — commit only behind a typed confirmation in the dashboard,
   and only in that direction. A node-endpoint change carries a second, non-cosmetic gate: the host
   probes the staged endpoint and refuses one it cannot reach, so a dashboard cannot park a chain on
-  a node that is not there. The endpoints are address identity, not secrets — the remote node's RPC
-  username and password stay in the never-committable set below. A dashboard-confirmed
+  a node that is not there. The node RPC username and password commit the same way,
+  behind the same typed confirmation, on the owner's #2367 ruling (2026-09-19): every config field
+  is editable from the dashboard, and a security-sensitive one warns rather than refuses. The
+  preview names the field changing and never echoes the credential's value; masked like every
+  other secret in the editor prefill (`control_service.SECRET_PATHS`). A dashboard-confirmed
   data-directory move is further held to an **allowlist** (#728): the new location must sit under the
   stack's own data root (the install dir's `data/`) or a parent the stack already keeps data in;
   a move to any other absolute path is refused even with the typed confirmation and stays host-CLI
   only. The host CLI keeps its wider blocklist check — a shell operator already has filesystem-wide
   reach. Everything else is refused in
   every direction, as is anything the change preview flags destructive (including the heavy direction
-  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The security
-  perimeter — wallets and view keys, dashboard auth and onion exposure, the control channel itself,
-  the Tor egress firewall, binds, and every credential —
+  of a confirm-gated key, e.g. disabling pruning, which forces a full re-sync). The rest of the
+  security perimeter — wallets and view keys, dashboard auth and onion exposure, the control
+  channel itself, the Tor egress firewall, binds, and every credential except the confirm-gated
+  node RPC username and password —
   is never dashboard-committable, with or without the typed confirmation. A key added in the
   future stays un-committable until deliberately listed (the 2026-09-13 perimeter audit). Those
   edits must be applied from the host CLI, or on an appliance from a configuration stick.
   **The per-rig worker descriptors** (`workers.list[]`, each rig's control host and API token) are
-  in this perimeter too. #1978 moved them from an outright refusal to the approval tier so a
-  shell-less appliance could adopt a rig, and #2076 then left that tier holding a typed
-  confirmation rather than a second identity — the same self-approval shape this perimeter exists
-  to close for wallets, the egress firewall, and the control channel. A round-2 pass (2026-09-13)
-  closed it the same way: an added, repointed, or removed worker descriptor is a credential change
-  and is refused outright, host-CLI-only, same as the rest of this list. `#1959` tracks a real
-  second identity that a future approval tier could rejoin once one exists.
+  in this perimeter, with one route through it: adopting a new rig (#2641). The dashboard may
+  append a descriptor when every existing one comes back unchanged, no existing rig's name is
+  reused, the new host does not resolve to loopback, link-local or the stack's own docker-bridge
+  subnet, and the operator types `APPLY`; the audit log records the
+  commit as confirmed and names `workers.list`. Repointing or removing a rig the dashboard already
+  controls is refused, host-CLI-only (a configuration stick on an appliance). The typed `APPLY` is
+  friction, not a second identity: the dashboard container writes its own request, so a
+  compromised dashboard can adopt a rig at a LAN address of its choosing and send that address a
+  token it chose. The owner accepted that exposure on #1959 (dashboard login is the access control,
+  and no second approval identity is coming); what it cannot do is take over a rig already adopted.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the
