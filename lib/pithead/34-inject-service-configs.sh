@@ -15,15 +15,15 @@ inject_service_configs() {
     # monerod, whose entrypoint envsubsts + transforms in-container. Here we only re-arm:
 
     # Re-arm clearnet auto-sync (#234): clear a chain's "sync complete" marker whenever its flag is
-    # OFF, so re-enabling later starts a fresh clearnet sync. While a flag is ON the dashboard owns
-    # the marker, so leave it. Markers live in the shared, dashboard-writable clearnet-state dir.
-    # Read the configured flag, not .env: render_env zeroes the .env flag while the egress firewall
-    # is on (#2649), and a firewall toggle must not re-arm a sync that already completed.
-    local _csdir
+    # OFF, so re-enabling later starts a fresh clearnet sync. While a flag is ON, leave the marker
+    # and its host-owned attestation in place. A firewall toggle must not re-arm a completed sync.
+    local _csdir _cdir
     _csdir=$(clearnet_state_dir)
+    _cdir=$(env_get CONTROL_DIR 2>/dev/null)
+    [ -n "$_cdir" ] || _cdir="$PWD/data/control"
     mkdir -p "$_csdir" 2>/dev/null || true
     [ "$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")" = "true" ] ||
-        rm -f "$_csdir/monero.synced" "$_csdir/monero.synced.tor" 2>/dev/null || true
+        sudo rm -f "$_csdir/monero.synced" "$_csdir/monero.synced.tor" "$_cdir/results/clearnet-monero-tor.json" "$_cdir/results/clearnet-monero-baseline.json" || return 1
     [ "$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")" = "true" ] ||
-        rm -f "$_csdir/tari.synced" "$_csdir/tari.synced.tor" 2>/dev/null || true
+        sudo rm -f "$_csdir/tari.synced" "$_csdir/tari.synced.tor" "$_cdir/results/clearnet-tari-tor.json" "$_cdir/results/clearnet-tari-baseline.json" || return 1
 }

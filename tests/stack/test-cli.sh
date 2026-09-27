@@ -179,8 +179,6 @@ tz_bad="$(
 )"
 assert_eq "detect_host_timezone rejects garbage -> Etc/UTC" "$tz_bad" "Etc/UTC"
 
-# deps_satisfied is true only when jq/openssl/docker are present AND `docker compose version` works
-# (the v2-plugin gate). A docker whose `compose version` fails makes it false.
 DEPS="$SANDBOX/deps"
 make_stubs "$DEPS/bin"
 # shellcheck disable=SC1090  # STACK path is dynamic by design
@@ -190,6 +188,8 @@ make_stubs "$DEPS/bin"
     deps_satisfied
 )
 assert_rc "deps_satisfied true with all deps" "$?" "0"
+# shellcheck source=tests/stack/test-deps-python.sh
+source "$HERE/test-deps-python.sh"
 printf '#!/usr/bin/env bash\n[ "$*" = "compose version" ] && exit 1\nexit 0\n' >"$DEPS/bin/docker"
 chmod +x "$DEPS/bin/docker"
 # shellcheck disable=SC1090  # STACK path is dynamic by design

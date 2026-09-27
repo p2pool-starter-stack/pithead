@@ -10,7 +10,10 @@ def test_firewall_on_selected_sync_is_shown_as_operator_choice(_posture, _topo, 
     p = _posture(firewall=True, monero_clearnet_sync=True, tari_clearnet_sync=True)
     assert p["summary"]["level"] == "ok"
     assert p["summary"]["all_tor"] is False
-    assert "Monero + Tari first sync over clearnet by your choice" in p["summary"]["label"]
+    assert (
+        "Monero + Tari clearnet first sync or Tor transition pending by your choice"
+        in p["summary"]["label"]
+    )
     for chain, name in (("monerod", "initial block"), ("tari", "initial sync")):
         conn = _conn(p, chain, name)
         assert conn["chosen_clearnet"] is True

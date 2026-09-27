@@ -87,7 +87,7 @@ control_process_request() { # <claimed-file> <control-dir>
 #     more than CONTROL_BACKUP_MAX_COUNT (3) exist;
 #   - whatever age/count leave behind is still capped at CONTROL_RESULTS_MAX_BYTES (512 MiB) total,
 #     oldest-first, unless the protected files alone exceed it.
-# os-update-state.json (the appliance's persistent update ledger) is never a candidate, by name.
+# OS-update state and host-attested clearnet transitions are persistent state, not request results.
 # The result named by a live claim also never falls to age/count/bytes. A verb that blocks on a
 # background operation keeps rewriting its own result; the claimed request identifies that result
 # without making the newest completed result immortal.
@@ -134,7 +134,7 @@ control_prune_results() { # <control-dir>
     # had no way to see that pairing and could orphan an in-window archive's own status/passphrase.
     [ -n "$active_result" ] && [ -f "$dir/$active_result" ] && n=1
     for result in $(cd "$dir" 2>/dev/null && ls -1t -- *.json 2>/dev/null); do
-        [ "$result" == "os-update-state.json" ] && continue
+        case "$result" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
         [ "$result" == "$active_result" ] && continue
         [ -f "$dir/$(basename "$result" .json).tar.gz.enc" ] && continue # a backup's own result, handled above
         n=$((n + 1))
@@ -149,7 +149,7 @@ control_prune_results() { # <control-dir>
     if [ "$total" -gt "$max_bytes" ]; then
         for f in $(cd "$dir" 2>/dev/null && ls -1tr 2>/dev/null); do
             [ "$total" -le "$max_bytes" ] && break
-            [ "$f" == "os-update-state.json" ] && continue
+            case "$f" in os-update-state.json | clearnet-*-tor.json | clearnet-*-baseline.json) continue ;; esac
             [ "$f" == "$active_result" ] && continue
             case "$f" in
             *.tar.gz.enc)

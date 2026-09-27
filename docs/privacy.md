@@ -340,10 +340,14 @@ The chosen node gets clearnet peers without opening the entire stack's egress.
 ### It switches back to Tor automatically (#234)
 
 The dashboard tracks each chain's sync state. When a clearnet node reports fully synced, it writes
-that chain's persistent marker and asks the host to remove its firewall exception. The host verifies
-the live rules before the dashboard restarts the node on Tor. A failed refresh leaves the transition
-pending and retries; it never clears the marker to reopen clearnet. The node stays on Tor across
-restarts, `apply`, and reboots. Monero and Tari transition independently.
+that chain's persistent marker and asks the host to remove its firewall exception. The host claims
+the marker so the dashboard cannot delete it to reopen clearnet, then verifies
+the live rules before the dashboard restarts the node on Tor. It then verifies the running daemon's
+Tor configuration and firewall rules and writes a host-owned completion result for that transition.
+The dashboard keeps the warning until that result matches the current marker. A failed refresh or
+verification leaves the transition pending and retries; it never clears the marker to reopen
+clearnet. The node stays on Tor across restarts, `apply`, and reboots. Monero and Tari transition
+independently.
 
 You can leave `clearnet_initial_sync: true` in `config.json`; it's effectively spent once the sync
 completes. (To deliberately re-sync over clearnet later, e.g. after wiping a chain, toggle the flag
@@ -355,9 +359,8 @@ The active state is surfaced in four places, so it can't be enabled by accident 
 
 - `./pithead apply` prints a `⚠`-flagged, disruptive-change confirmation describing exactly what
   becomes exposed before it recreates the daemon.
-- `./pithead status` and `./pithead up` print a prominent **"CLEARNET INITIAL SYNC ACTIVE — node IP
-  exposed"** banner the whole time a node is actually on clearnet, and it clears by itself once the
-  auto-transition completes.
+- `./pithead status` and `./pithead up` print a prominent **"CLEARNET INITIAL SYNC OR TOR TRANSITION
+  PENDING"** banner until the host attests the live Tor configuration and closed exception.
 - `./pithead doctor` raises a `⚠ WARN` while a node is exposed and flips back to a green
   `✓ OK "all node P2P is Tor-only"` once it's switched back.
 - The dashboard shows the clearnet state live, and the daemon container logs a matching warning on

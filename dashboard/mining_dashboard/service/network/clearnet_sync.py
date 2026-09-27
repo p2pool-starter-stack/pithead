@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-import tempfile
+import stat
 import uuid
 
 from mining_dashboard.config import config
@@ -19,16 +19,38 @@ _RESTART_HTTP_TIMEOUT = (
 )
 
 
+def tor_attested(state_dir, name):
+    """A host result must match this transition's marker; dashboard files cannot attest success."""
+    try:
+        fd = os.open(os.path.join(state_dir, f"{name}.synced"), os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            marker_stat = os.fstat(fd)
+            marker = os.read(fd, 38).decode().strip()
+        finally:
+            os.close(fd)
+        with open(os.path.join(config.CONTROL_RESULTS_DIR, f"clearnet-{name}-tor.json")) as fh:
+            result = json.load(fh)
+        return stat.S_ISREG(marker_stat.st_mode) and result == {
+            "status": "verified",
+            "marker": marker,
+            "inode": marker_stat.st_ino,
+            "ctime_ns": marker_stat.st_ctime_ns,
+        }
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+
+
 class ClearnetSyncSupervisor:
     """Auto-transition a clearnet-syncing node back to Tor once it's synced (#183/#234).
 
     When ``monero.clearnet_initial_sync`` / ``tari.clearnet_initial_sync`` is on, the daemon does
-    its initial block download over CLEARNET (fast) instead of Tor — briefly exposing this host's IP
+    its initial block download over CLEARNET (fast) instead of Tor — exposing this host's IP
     to that chain's P2P network. This supervisor watches the per-chain "synced" signal the data loop
     already computes; the first time a clearnet node reports synced it drops a persistent marker in
     the shared ``state_dir`` and restarts the container. The daemon's entrypoint, seeing the marker,
-    comes back up Tor-only — and stays there across restarts/``apply`` (a reboot can't silently
-    re-expose it). ``pithead apply`` removes the marker while the configured flag is off, re-arming.
+    comes back up Tor-only. The host attests completion only after checking live firewall rules and
+    daemon configuration. The marker persists across restarts/``apply`` so a reboot cannot re-expose
+    it. ``pithead apply`` removes the marker while the configured flag is off, re-arming.
 
     Direction is one-way: it only ever moves a node TOWARD Tor. Fail-safe: the marker is written
     BEFORE the restart (so the restarted container is guaranteed to pick Tor), and a failed restart
@@ -46,9 +68,7 @@ class ClearnetSyncSupervisor:
         self.on_transition = on_transition
         # A marker alone means "Tor requested"; it does not prove the host closed its firewall
         # exception or that the restart succeeded. Retry that pending work after any restart.
-        self._flipped = {
-            n for n in ("monero", "tari") if os.path.isfile(self.marker_path(n) + ".tor")
-        }
+        self._flipped = {n for n in ("monero", "tari") if tor_attested(state_dir, n)}
         self._pending = {}
 
     def marker_path(self, name):
@@ -65,7 +85,7 @@ class ClearnetSyncSupervisor:
         try:
             os.makedirs(self.state_dir, exist_ok=True)
             with open(self.marker_path(name), "w") as fh:
-                fh.write("clearnet initial sync complete; Tor transition pending (#2678)\n")
+                fh.write(f"{uuid.uuid4()}\n")
             return True
         except OSError as exc:
             logger.error(
@@ -73,28 +93,26 @@ class ClearnetSyncSupervisor:
             )
             return False
 
-    def _write_completion(self, name) -> bool:
-        try:
-            with open(self.marker_path(name) + ".tor", "w") as fh:
-                fh.write("Tor restart completed after host firewall verification\n")
-            return True
-        except OSError as exc:
-            logger.error("%s: Tor restart succeeded but completion marker failed: %s", name, exc)
-            return False
-
     async def maybe_transition(self, name, container, flag_on, synced):
         """Drive one chain's clearnet→Tor transition. Idempotent; call every poll cycle.
 
-        Returns True iff the node is CURRENTLY exposed on clearnet (still syncing, or a flip that
-        hasn't succeeded yet) — the caller uses this to surface the "clearnet active" banner.
+        Returns True while clearnet is active or the Tor transition awaits host verification;
+        the caller keeps the transition warning visible until then.
         """
         if not flag_on:
             self._flipped.discard(name)
             self._pending.pop(name, None)
             return False
-        # Already on Tor: a prior run transitioned it, or we did this run.
-        if name in self._flipped:
+        if tor_attested(self.state_dir, name):
+            if name not in self._flipped and self.on_transition is not None:
+                try:
+                    self.on_transition(name, True)
+                except Exception:
+                    logger.debug("on_transition callback raised", exc_info=True)
+            self._flipped.add(name)
+            self._pending.pop(name, None)
             return False
+        self._flipped.discard(name)
         if not synced and not self._marker_exists(name):
             return True  # still doing its clearnet initial sync — exposed
 
@@ -125,6 +143,14 @@ class ClearnetSyncSupervisor:
                 except Exception:
                     logger.debug("on_transition callback raised", exc_info=True)
             return True
+        if tor_attested(self.state_dir, name):
+            self._flipped.add(name)
+            if self.on_transition is not None:
+                try:
+                    self.on_transition(name, True)
+                except Exception:
+                    logger.debug("on_transition callback raised", exc_info=True)
+            return False
         logger.warning(
             "%s: CLEARNET initial sync complete — switching %s back to Tor (#234).", name, container
         )
@@ -138,10 +164,9 @@ class ClearnetSyncSupervisor:
         )
         ok = await self.docker_control.start(container, request_timeout=_RESTART_HTTP_TIMEOUT)
         if ok:
-            ok = self._write_completion(name)
-            if ok:
-                self._flipped.add(name)
-                logger.info("%s: %s restarted — now Tor-only.", name, container)
+            logger.info(
+                "%s: %s restarted; awaiting host verification of live Tor config.", name, container
+            )
         else:
             # Restart failed: do NOT mark flipped, so we retry next cycle. The marker is already on
             # disk, so any start (this retry, a manual restart, a reboot) brings the node up on Tor.
@@ -151,31 +176,16 @@ class ClearnetSyncSupervisor:
                 name,
                 container,
             )
-        if self.on_transition is not None:
+        if not ok and self.on_transition is not None:
             try:
                 self.on_transition(name, ok)
             except Exception:  # never let a UI callback break the supervisor
                 logger.debug("on_transition callback raised", exc_info=True)
-        return not ok
+        return True
 
     def _request_refresh(self, name):
         rid = str(uuid.uuid4())
+        request = {"id": rid, "action": "egress-sync", "chain": name}
         if config.DASHBOARD_CONTROL_ENABLED:
-            return request_spool.write(
-                {"id": rid, "action": "egress-sync", "actor": "sync-supervisor", "chain": name}
-            )
-        request_dir = os.path.join(self.state_dir, "requests")
-        os.makedirs(request_dir, exist_ok=True)
-        path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=request_dir, prefix=f".{rid}.", delete=False
-            ) as fh:
-                path = fh.name
-                json.dump({"id": rid, "action": "egress-sync", "chain": name}, fh)
-            os.replace(path, os.path.join(request_dir, f"{rid}.json"))
-        except BaseException:
-            if path is not None and os.path.exists(path):
-                os.unlink(path)
-            raise
-        return rid
+            request["actor"] = "sync-supervisor"
+        return request_spool.write(request)

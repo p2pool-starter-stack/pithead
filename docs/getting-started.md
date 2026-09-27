@@ -28,7 +28,7 @@ dashboard, no Linux to set up.
 | CPU | A processor with AVX2 support for RandomX performance. |
 | RAM | 16 GB minimum with HugePages enabled (~6 GB is reserved for RandomX); 32 GB for a full node or long uptimes. |
 | Disk | A Monero node synced from genesis with pruning enabled consumed 285.8 GB in September 2026. Buy at least a 600 GB SSD with both Monero and Tari local, in either prune mode, or 370 GB with Tari remote. Both chains keep growing, so a 2–4 TB drive is the set-and-forget choice. Running either node on another machine drops its share — see [Running a node elsewhere](hardware.md#running-a-node-elsewhere). |
-| Software | Docker Engine, Docker Compose V2, `jq`, and `openssl`. |
+| Software | Docker Engine, Docker Compose V2, `jq`, `openssl`, and `python3`. |
 
 > 📐 Sizing guidance for the stack host — minimum vs. recommended specs, plus ways to run leaner —
 > is in **[Hardware Requirements](hardware.md)**. Miner specs live in
@@ -44,7 +44,7 @@ You don't have to install the software dependencies yourself. `setup` checks for
 Ubuntu, offers to install anything missing. To do it manually:
 
 ```bash
-sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl
+sudo apt update && sudo apt install -y jq docker.io docker-compose-v2 openssl python3
 ```
 
 On an unsupported OS, or if dependency detection misfires on an unusual setup, run setup with
@@ -95,7 +95,7 @@ numbered sources, so `make` builds the executable before the first `./pithead` c
 
 Setup walks through five stages. It's interactive on the first run and safe to re-run later.
 
-1. **Dependency check.** Verifies Docker, Docker Compose, `jq`, and `openssl` are present. On
+1. **Dependency check.** Verifies Docker, Docker Compose, `jq`, `openssl`, and `python3` are present. On
    Ubuntu it offers to `apt install` anything missing; on other systems it tells you what to
    install. Skip with `--skip-deps`.
 
@@ -184,7 +184,7 @@ both states.
 > Sync crawling over Tor? The default routes the first sync over Tor for privacy, which is slow.
 > You can opt into a faster clearnet initial sync for Monero and/or Tari while the egress firewall
 > stays on. It takes hours instead of days, exposes your IP to that chain's peers during the sync,
-> and switches each node back to Tor automatically when it finishes. Read the
+> and switches each node back to Tor automatically when it finishes; the warning stays until the host verifies the live daemon and firewall. Read the
 > trade-off first:
 > [Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default).
 

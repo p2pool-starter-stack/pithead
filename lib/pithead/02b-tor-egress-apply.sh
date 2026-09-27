@@ -22,11 +22,11 @@ tor_egress_sync_rules_match() { # <nft|iptables> <live rules>
     for ip in "$prefix.26" "$prefix.27"; do
         if [ "$backend" = nft ]; then
             actual=$(jq --arg ip "$ip" '[.nftables[] | select(.rule?.chain == "forward")
-                | .rule.expr | select(.[-1] == {"accept":null})
+                | .rule.expr | select(any(has("accept")))
                 | .[] | select(.match?.left?.payload? == {"protocol":"ip","field":"saddr"})
                 | select(.match.right == $ip)] | length' <<<"$out") || return 1
         else
-            actual=$(grep -Ec -- "$TOR_EGRESS_TAG.* -s $ip(/32)? -j ACCEPT$" <<<"$out") || true
+            actual=$(grep -E -- "-s $ip(/32)?( |$)" <<<"$out" | grep -Ec -- ' -j ACCEPT($| )') || true
         fi
         expected=0
         grep -Fxq -- "$ip" <<<"$active" && expected=1
@@ -89,7 +89,7 @@ render_tor_egress_restore() { # <subnet> <tor_ip> [sync-ip ...] (stdin: iptables
 # backend REPLACES its rules atomically; the other backend's rules are cleared only after the new
 # set is in, so an engine change never leaves a moment with neither.
 apply_tor_egress_firewall() {
-    local enabled subnet tor_ip
+    local enabled subnet tor_ip applied=0
     local -a sync_ips=()
     enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
     [ -n "$enabled" ] || enabled=true
@@ -107,57 +107,31 @@ apply_tor_egress_firewall() {
     tor_ip="${tor_ip}.25"
     mapfile -t sync_ips < <(tor_egress_sync_ips)
     if [ "$(container_engine)" = "podman" ]; then
-        apply_tor_egress_nft "$subnet" "$tor_ip" "${sync_ips[@]}" && remove_tor_egress_iptables
+        if apply_tor_egress_nft "$subnet" "$tor_ip" "${sync_ips[@]}"; then
+            remove_tor_egress_iptables
+        else
+            applied=1
+        fi
     else
-        if apply_tor_egress_iptables "$subnet" "$tor_ip" "${sync_ips[@]}" && command -v nft >/dev/null 2>&1; then
-            sudo nft delete table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null || true
+        if apply_tor_egress_iptables "$subnet" "$tor_ip" "${sync_ips[@]}"; then
+            if command -v nft >/dev/null 2>&1; then
+                sudo nft delete table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null || true
+            fi
+        else
+            applied=1
         fi
         [ "${1:-}" = refresh ] || provision_tor_egress_boot_unit "$subnet" "$tor_ip" "${sync_ips[@]}"
     fi
     [ "${1:-}" = refresh ] || provision_egress_sync_runner || return 1
+    [ "${1:-}" != refresh ] || return "$applied"
     return 0
-}
-
-# A host request can only close an exemption for a chain whose marker exists. The readback is the
-# same one apply/doctor use and must agree with BOTH chains' flags and markers (#2059/#2678).
-egress_sync_refresh() { # <monero|tari>
-    local chain="$1" enabled rc=0 prefix ip out
-    case "$chain" in monero | tari) ;; *) return 1 ;; esac
-    [ -f "$(clearnet_state_dir)/$chain.synced" ] || return 1
-    apply_tor_egress_firewall refresh
-    enabled=$(env_get TOR_EGRESS_FIREWALL 2>/dev/null)
-    if [ "$(normalize_bool "${enabled:-true}")" = true ]; then
-        tor_egress_enforced || rc=$?
-        [ "$rc" -eq 0 ]
-        return
-    fi
-    # An explicit firewall opt-out has no chain exemption to remove, but the old tagged rules
-    # must actually be gone before the supervisor may call this transition complete.
-    prefix=$(env_get NETWORK_PREFIX 2>/dev/null)
-    [ -n "$prefix" ] || prefix=172.28.0
-    case "$chain" in monero) ip="$prefix.26" ;; tari) ip="$prefix.27" ;; esac
-    if [ "$(container_engine)" = podman ]; then
-        out=$(sudo -n nft -j list table inet "$TOR_EGRESS_NFT_TABLE" 2>/dev/null) || {
-            sudo -n nft list tables >/dev/null 2>&1 || return 1
-            return 0
-        }
-        ! jq -e --arg ip "$ip" '[.nftables[] | select(.rule?.chain == "forward") | .rule.expr[]
-            | select(.match?.left?.payload? == {"protocol":"ip","field":"saddr"})
-            | select(.match.right == $ip)] | length > 0' <<<"$out" >/dev/null
-    else
-        out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || {
-            sudo -n iptables -S >/dev/null 2>&1 || return 1
-            return 0
-        }
-        ! grep -Eq -- "$TOR_EGRESS_TAG.* -s $ip(/32)? -j ACCEPT$" <<<"$out"
-    fi
 }
 
 # Control-off hosts still need a root-side trigger. It watches only the supervisor's separate
 # request directory, so enabling it never opens the operator-facing dashboard control channel.
 provision_egress_sync_runner() {
     [ "$OS_TYPE" = Linux ] && command -v systemctl >/dev/null 2>&1 || return 0
-    local unit_dir pwd_p state_dir engine enabled service path owner owner_p
+    local unit_dir pwd_p cdir engine enabled service path owner owner_p
     local -a enable_args=(enable --now)
     unit_dir=$(control_unit_dir)
     case "$unit_dir" in /run/*) enable_args=(enable --runtime --now) ;; esac
@@ -186,12 +160,12 @@ provision_egress_sync_runner() {
         fi
         return 0
     fi
-    state_dir=$(clearnet_state_dir)
-    mkdir -p "$state_dir/requests"
-    sudo chmod 777 "$state_dir/requests" 2>/dev/null || chmod 777 "$state_dir/requests" || return 1
+    cdir=$(env_get CONTROL_DIR 2>/dev/null)
+    [ -n "$cdir" ] || cdir="$PWD/data/control"
+    [ -d "$cdir/requests" ] && [ ! -L "$cdir/requests" ] || return 1
     engine=$(container_engine)
     if grep -qsF "ExecStart=$pwd_p/pithead egress-run-pending" "$service" &&
-        grep -qsF "PathExistsGlob=$state_dir/requests/*.json" "$path" &&
+        grep -qsF "PathExistsGlob=$cdir/requests/*.json" "$path" &&
         grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$service" &&
         systemctl is-enabled pithead-egress-sync.path >/dev/null 2>&1; then
         return 0
@@ -215,7 +189,7 @@ EOF
 Description=Watch completed Pithead clearnet sync requests
 
 [Path]
-PathExistsGlob=$state_dir/requests/*.json
+PathExistsGlob=$cdir/requests/*.json
 
 [Install]
 WantedBy=multi-user.target
@@ -228,20 +202,23 @@ EOF
 }
 
 egress_sync_run_pending() {
-    local state_dir cdir file name id chain ok
-    state_dir=$(clearnet_state_dir)
+    local cdir file name id chain ok claimed
     cdir=$(env_get CONTROL_DIR 2>/dev/null)
     [ -n "$cdir" ] || cdir="$PWD/data/control"
     mkdir -p "$cdir/results"
-    for file in "$state_dir"/requests/*.json; do
+    [ -d "$cdir/requests" ] && [ ! -L "$cdir/requests" ] || return 1
+    for file in "$cdir"/requests/*.json; do
         [ -e "$file" ] || continue
-        [ -f "$file" ] && [ ! -L "$file" ] && [ "$(wc -c <"$file")" -le 1024 ] || {
-            rm -f "$file"
-            continue
-        }
         name=${file##*/}
         id=${name%.json}
         [[ "$id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
+            rm -f "$file"
+            continue
+        }
+        claimed="$cdir/.claim.egress.$id"
+        mv -- "$file" "$claimed" || continue
+        file="$claimed"
+        [ -f "$file" ] && [ ! -L "$file" ] && [ "$(wc -c <"$file")" -le 1024 ] || {
             rm -f "$file"
             continue
         }

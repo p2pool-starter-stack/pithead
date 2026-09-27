@@ -125,7 +125,7 @@ record_manifest() {
 # globals RESOLVED / SKIP_REASON.
 
 run_scenario() {
-    local name="$1" overrides="$2"
+    local name="$1" overrides="$2" sync_dir=""
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="$name"
     echo ""
@@ -146,12 +146,37 @@ run_scenario() {
     fi
     push_config "$config"
 
+    # Hold the two dashboard-writable marker paths as directories for this one scenario. The
+    # supervisor cannot commit the transition yet, so the running daemons have time to establish
+    # real clearnet peers while the host firewall remains on. Release them immediately after the
+    # live egress sample; then the ordinary supervisor performs the automatic transition.
+    if [ "$name" = local-pruned-main-clearnet-sync ]; then
+        sync_dir="$(env_on_box CLEARNET_STATE_DIR)"
+        [ -n "$sync_dir" ] || sync_dir="$IT_REMOTE_DIR/data/clearnet-state"
+        if ! rx "mkdir -p $(quote_arg "$sync_dir") && rm -f $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced") && mkdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")"; then
+            it_fail "stage live clearnet sync window (#2678)" "could not reserve the marker paths"
+            return 0
+        fi
+    fi
+
     it_step "applying config (pithead apply -y)…"
     if ! pithead apply -y >"$OUT_DIR/${name}.apply.log" 2>&1; then
+        [ -z "$sync_dir" ] || rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" >/dev/null 2>&1
         it_fail "apply succeeded" "see $OUT_DIR/${name}.apply.log"
         capture_artifacts "$name" "$OUT_DIR"
         restore_firewall_after_clearnet "$name" "$config"
         return 0
+    fi
+
+    if [ -n "$sync_dir" ]; then
+        wait_for 180 5 "clearnet node containers running (#2678)" rx \
+            'docker compose ps --services --status running | grep -Fx monerod && docker compose ps --services --status running | grep -Fx tari' || true
+        assert_egress_posture node-sync
+        if rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")"; then
+            it_pass "release clearnet marker paths for automatic Tor transition (#2678)"
+        else
+            it_fail "release clearnet marker paths for automatic Tor transition (#2678)" "marker paths could not be released"
+        fi
     fi
 
     # Wait for the stack to settle on real readiness signals before asserting. The miner/hash

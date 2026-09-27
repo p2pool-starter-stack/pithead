@@ -1,16 +1,40 @@
 # Per-chain "is this node EXPOSED on clearnet right now?" (#183/#234): the flag is on AND the
-# the dashboard's completion marker is absent. The earlier .synced marker only requests a host
-# firewall refresh; the running daemon can still be on clearnet while that refresh is pending.
+# host's completion result is absent or names a different transition. The earlier .synced
+# marker only requests a refresh; the running daemon can still be on clearnet while it is pending.
 clearnet_state_dir() {
     local sdir
     sdir=$(env_get CLEARNET_STATE_DIR 2>/dev/null)
     [ -n "$sdir" ] && printf '%s' "$sdir" || printf '%s' "$PWD/data/clearnet-state"
 }
 monero_clearnet_exposed() {
-    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/monero.synced.tor" ]
+    [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" = "true" ] && ! clearnet_tor_attested monero
 }
 tari_clearnet_exposed() {
-    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && [ ! -f "$(clearnet_state_dir)/tari.synced.tor" ]
+    [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = "true" ] && ! clearnet_tor_attested tari
+}
+clearnet_tor_attested() { # <monero|tari>
+    local cdir
+    case "$1" in monero | tari) ;; *) return 1 ;; esac
+    cdir=$(env_get CONTROL_DIR 2>/dev/null)
+    [ -n "$cdir" ] || cdir="$PWD/data/control"
+    python3 - "$(clearnet_state_dir)/$1.synced" "$cdir/results/clearnet-$1-tor.json" <<'PY' >/dev/null 2>&1
+import json, os, stat, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        st = os.fstat(fd)
+        marker = os.read(fd, 38).decode().strip()
+    finally:
+        os.close(fd)
+    with open(sys.argv[2]) as fh:
+        result = json.load(fh)
+    valid = stat.S_ISREG(st.st_mode) and result == {
+        "status": "verified", "marker": marker, "inode": st.st_ino, "ctime_ns": st.st_ctime_ns
+    }
+except (OSError, UnicodeError, ValueError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
 }
 clearnet_sync_active() { monero_clearnet_exposed || tari_clearnet_exposed; }
 
@@ -19,19 +43,18 @@ container_state_is_stopped() { # <state> [status]; the only states a deliberate 
     return 1
 }
 
-# Loud, persistent CLEARNET-SYNC banner (#183). Names exactly which daemon(s) are currently exposed
-# on clearnet so the operator can never forget. Prints nothing once both are back on Tor.
+# Loud, persistent CLEARNET-SYNC banner (#183). Names the daemon(s) whose chosen clearnet sync
+# has not yet been attested on Tor. Prints nothing once both have host verification.
 print_clearnet_banner() {
     local who=""
     monero_clearnet_exposed && who="Monero"
     tari_clearnet_exposed && who="${who:+$who + }Tari"
     [ -n "$who" ] || return 0
     echo -e "${C_YELLOW}========================================================================${C_RESET}" >&2
-    echo -e "${C_YELLOW}[!] CLEARNET INITIAL SYNC ACTIVE — node IP exposed${C_RESET}" >&2
-    echo "    $who P2P is running over CLEARNET to sync faster, so this host's IP is" >&2
-    echo "    visible to that P2P network. Monero tx-broadcast stays on Tor; wallets are" >&2
-    echo "    never exposed. The dashboard switches each node back to Tor automatically" >&2
-    echo "    once it finishes syncing — no action needed." >&2
+    echo -e "${C_YELLOW}[!] CLEARNET INITIAL SYNC OR TOR TRANSITION PENDING${C_RESET}" >&2
+    echo "    $who P2P may expose this host's IP until the host verifies the Tor switch." >&2
+    echo "    Monero tx-broadcast stays on Tor; wallets are never exposed." >&2
+    echo "    The dashboard retries the transition automatically after sync." >&2
     echo -e "${C_YELLOW}========================================================================${C_RESET}" >&2
 }
 

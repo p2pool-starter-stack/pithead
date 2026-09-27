@@ -9,11 +9,11 @@
 # Sourced by tests/stack/run.sh.
 : "${V:?}" "${WALLET:?}" "${VALID_TARI:?}" "${DOCKER_LOG:?}"
 
-cnfw_apply() { # <monero-flag> <tari-flag> [network-json] -> applies; output in $out
+cnfw_apply() { # <monero-flag> <tari-flag> [network-json]
     seed_env
     printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p","clearnet_initial_sync":%s}, "tari":{"wallet_address":"%s","clearnet_initial_sync":%s}, %s"p2pool":{"pool":"mini"}, "dashboard":{"secure":false,"host":"box.lan"} }\n' \
         "$WALLET" "$1" "$VALID_TARI" "$2" "${3:+\"network\":$3, }" >"$V/config.json"
-    out="$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+    (cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
 }
 cnfw_env() { run_sourced "$V" env_get_file "$V/.env" "$1"; }
 
@@ -62,13 +62,20 @@ else ok "readback refuses stale exceptions after sync"; fi
 if run_sourced "$V" tor_egress_sync_rules_match iptables ""; then
     ok "readback accepts both spent exceptions absent"
 else bad "readback accepts both spent exceptions absent" "live rule mismatch"; fi
+if run_sourced "$V" tor_egress_sync_rules_match iptables "-A DOCKER-USER -s 172.28.0.26 -p tcp -j ACCEPT"; then
+    bad "readback rejects a narrow stale Monero exemption" "accepted extra live ACCEPT"
+else ok "readback rejects a narrow stale Monero exemption"; fi
 CN_REFRESH_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090  # the generated CLI is supplied by the stack suite
     source "$STACK"
     set +e
+    egress_sync_claim_marker() { return 0; }
     apply_tor_egress_firewall() { [ "$1" = refresh ] && printf 'refresh\n'; }
-    tor_egress_enforced() { printf 'verify\n'; return 1; }
+    tor_egress_enforced() {
+        printf 'verify\n'
+        return 1
+    }
     egress_sync_refresh monero
     printf 'rc=%s\n' "$?"
 )
@@ -77,9 +84,9 @@ assert_contains "failed readback keeps the transition pending" "$CN_REFRESH_PROB
 
 CN_CDIR="$(cnfw_env CONTROL_DIR)"
 [ -n "$CN_CDIR" ] || CN_CDIR="$V/data/control"
-mkdir -p "$CN_SDIR/requests" "$CN_CDIR/results"
+mkdir -p "$CN_CDIR/requests" "$CN_CDIR/results"
 CN_RID=00000000-0000-4000-8000-000000000001
-printf '{"id":"%s","action":"egress-sync","chain":"monero"}\n' "$CN_RID" >"$CN_SDIR/requests/$CN_RID.json"
+printf '{"id":"%s","action":"egress-sync","chain":"monero"}\n' "$CN_RID" >"$CN_CDIR/requests/$CN_RID.json"
 (
     cd "$V" || exit
     # shellcheck disable=SC1090
@@ -90,7 +97,7 @@ printf '{"id":"%s","action":"egress-sync","chain":"monero"}\n' "$CN_RID" >"$CN_S
 )
 assert_eq "control-off trigger records a failed refresh" "$(jq -r .status "$CN_CDIR/results/$CN_RID.json")" "failed"
 CN_RID=00000000-0000-4000-8000-000000000002
-printf '{"id":"%s","action":"egress-sync","chain":"tari"}\n' "$CN_RID" >"$CN_SDIR/requests/$CN_RID.json"
+printf '{"id":"%s","action":"egress-sync","chain":"tari"}\n' "$CN_RID" >"$CN_CDIR/requests/$CN_RID.json"
 (
     cd "$V" || exit
     # shellcheck disable=SC1090
@@ -101,6 +108,92 @@ printf '{"id":"%s","action":"egress-sync","chain":"tari"}\n' "$CN_RID" >"$CN_SDI
 )
 assert_eq "control-off retry records the other chain's success" "$(jq -r .status "$CN_CDIR/results/$CN_RID.json")" "applied"
 assert_eq "control-off result names the verified chain" "$(jq -r .chain "$CN_CDIR/results/$CN_RID.json")" "tari"
+printf '00000000-0000-4000-8000-000000000001\n' >"$CN_SDIR/monero.synced"
+CN_RESTART_PROBE=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    docker() { case "$1" in inspect) printf '%s\n' "$STARTED" ;; exec) [ "${TOR_CONFIG:-good}" = good ] ;; esac; }
+    STARTED=old
+    egress_sync_record_tor monero
+    printf 'before=%s\n' "$([ -f "$CN_CDIR/results/clearnet-monero-tor.json" ] && echo yes || echo no)"
+    STARTED=new TOR_CONFIG=bad
+    egress_sync_record_tor monero && echo invalid=accepted || echo invalid=rejected
+    STARTED=new TOR_CONFIG=good
+    egress_sync_record_tor monero
+    printf 'after=%s\n' "$(jq -r .status "$CN_CDIR/results/clearnet-monero-tor.json")"
+)
+assert_contains "old daemon start cannot authorize host completion" "$CN_RESTART_PROBE" "before=no"
+assert_contains "bad Tor config after restart is a failed host refresh" "$CN_RESTART_PROBE" "invalid=rejected"
+assert_contains "a new daemon start with Tor config permits attestation" "$CN_RESTART_PROBE" "after=verified"
+python3 - "$CN_CDIR/results/clearnet-monero-baseline.json" "$CN_CDIR/results/clearnet-monero-tor.json" <<'PYCLEAN'
+import os, sys
+for path in sys.argv[1:]:
+    os.unlink(path)
+PYCLEAN
+CN_SYMLINK_PROBE=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    td=$(mktemp -d)
+    printf 'root-readable-secret\n' >"$td/secret"
+    ln -s "$td/secret" "$td/monero.synced"
+    clearnet_state_dir() { printf '%s' "$td"; }
+    egress_sync_started_after_marker() { echo restarted; }
+    egress_sync_runtime_on_tor() { return 0; }
+    egress_sync_record_tor monero >/dev/null 2>&1 && echo accepted || echo rejected
+    rm -rf "$td"
+)
+assert_eq "root runner refuses a symlinked dashboard marker" "$CN_SYMLINK_PROBE" "rejected"
+CN_CLAIM_PROBE=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    td=$(mktemp -d)
+    printf '00000000-0000-4000-8000-000000000003\n' >"$td/monero.synced"
+    clearnet_state_dir() { printf '%s' "$td"; }
+    sudo() { if [ "$1" = chown ]; then echo "owner=$2"; else "$@"; fi; } # simulate root
+    egress_sync_claim_marker monero
+    printf 'clearnet initial sync complete; node returned to Tor (#234)\n' >"$td/tari.synced"
+    egress_sync_claim_marker tari
+    grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' "$td/tari.synced" && echo legacy=migrated
+    python3 - "$td" <<'PYCLAIM'
+import os, sys
+directory = sys.argv[1]
+print(f"directory={os.stat(directory).st_mode & 0o7777:o}")
+print(f"marker={os.stat(directory + '/monero.synced').st_mode & 0o777:o}")
+PYCLAIM
+    rm -rf "$td"
+)
+assert_contains "host claim makes marker directory sticky" "$CN_CLAIM_PROBE" "directory=1777"
+assert_contains "host claim makes the directory root-owned" "$CN_CLAIM_PROBE" "owner=root:root"
+assert_contains "host claim makes marker non-writable to dashboard" "$CN_CLAIM_PROBE" "marker=644"
+assert_contains "host claim migrates a legacy spent marker" "$CN_CLAIM_PROBE" "legacy=migrated"
+CN_ATTEST_PROBE=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    set +e
+    egress_sync_claim_marker() { return 0; }
+    apply_tor_egress_firewall() { [ "$1" = refresh ]; }
+    tor_egress_enforced() { return 0; }
+    docker() { case "$1" in inspect) [ "$TOR_ACTIVE" = 1 ] && echo new || echo old ;; exec) return 0 ;; esac; }
+    egress_sync_runtime_on_tor() { [ "$TOR_ACTIVE" = 1 ]; }
+    TOR_ACTIVE=0
+    egress_sync_refresh monero
+    printf 'before=%s\n' "$([ -f "$CN_CDIR/results/clearnet-monero-tor.json" ] && echo yes || echo no)"
+    TOR_ACTIVE=1
+    egress_sync_refresh monero
+    printf 'after=%s\n' "$(jq -r '.status + ":" + .marker' "$CN_CDIR/results/clearnet-monero-tor.json")"
+)
+assert_contains "host does not attest before the daemon starts on Tor" "$CN_ATTEST_PROBE" "before=no"
+assert_contains "host attests only after live Tor and firewall readback" "$CN_ATTEST_PROBE" "after=verified:00000000-0000-4000-8000-000000000001"
+assert_eq "matching host attestation clears the transition" "$(run_sourced "$V" clearnet_tor_attested monero && echo yes)" "yes"
+printf '00000000-0000-4000-8000-000000000002\n' >"$CN_SDIR/monero.synced"
+if run_sourced "$V" clearnet_tor_attested monero; then
+    bad "stale host result cannot complete a new transition" "accepted prior marker"
+else ok "stale host result cannot complete a new transition"; fi
 if run_sourced "$V" clearnet_sync_active; then
     ok "pending refresh keeps the exposure warning active"
 else
@@ -109,10 +202,25 @@ fi
 : >"$CN_SDIR/monero.synced.tor"
 : >"$CN_SDIR/tari.synced.tor"
 if run_sourced "$V" clearnet_sync_active; then
-    bad "verified Tor completion clears exposure warning" "still active"
+    ok "dashboard-writable completion files cannot clear the warning"
 else
-    ok "verified Tor completion clears exposure warning"
+    bad "dashboard-writable completion files cannot clear the warning" "forged result accepted"
 fi
+printf '00000000-0000-4000-8000-000000000002\n' >"$CN_SDIR/tari.synced"
+for chain in monero tari; do
+    python3 - "$CN_SDIR/$chain.synced" "$CN_CDIR/results/clearnet-$chain-tor.json" <<'PYFIXTURE'
+import json, os, sys
+st = os.stat(sys.argv[1])
+with open(sys.argv[1]) as fh:
+    marker = fh.read().strip()
+with open(sys.argv[2], "w") as fh:
+    json.dump({"status": "verified", "marker": marker, "inode": st.st_ino,
+               "ctime_ns": st.st_ctime_ns}, fh)
+PYFIXTURE
+done
+if run_sourced "$V" clearnet_sync_active; then
+    bad "verified Tor completion clears exposure warning" "still active"
+else ok "verified Tor completion clears exposure warning"; fi
 cnfw_apply false true
 [ -f "$CN_SDIR/monero.synced" ] &&
     bad "monero flag off: apply re-arms by removing its marker" "marker kept" ||

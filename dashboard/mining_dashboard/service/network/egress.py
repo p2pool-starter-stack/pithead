@@ -3,10 +3,10 @@ firewall; other container clearnet paths remain blocked. Host traffic is outside
 """
 
 import ipaddress
-import os
 from urllib.parse import urlsplit
 
 from mining_dashboard.config import config
+from mining_dashboard.service.network.clearnet_sync import tor_attested
 from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re-exported)
     CLEARNET,
     INACTIVE,
@@ -207,7 +207,7 @@ def compute_egress_posture(
             for name, active in (("Monero", monero_clearnet_sync), ("Tari", tari_clearnet_sync))
             if active
         )
-        label = f"{chains} first sync over clearnet by your choice — your IP is visible to peers; switches to Tor when complete"
+        label = f"{chains} clearnet first sync or Tor transition pending by your choice — your IP may be visible to peers until host verification"
     elif unverified:
         label = f"{unverified} egress path(s) unverified; Tor-only status cannot be confirmed"
     elif blocked:
@@ -230,9 +230,7 @@ def compute_egress_posture(
 
 
 def _sync_pending(chain, flag):
-    return flag and not os.path.isfile(
-        os.path.join(config.CLEARNET_STATE_DIR, f"{chain}.synced.tor")
-    )
+    return flag and not tor_attested(config.CLEARNET_STATE_DIR, chain)
 
 
 def egress_posture_from_config():
