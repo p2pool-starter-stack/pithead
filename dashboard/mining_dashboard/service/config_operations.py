@@ -1,10 +1,5 @@
 """Pure classification helpers for the day-two configuration surface."""
 
-# Empty since #2367: the owner ruled no config field is refused from the panel. The password and the
-# two Telegram tamper alarms confirm behind typed APPLY and the envelope like any other unlisted
-# leaf; `ssh.*` stays excluded by prefix below (absent from release images).
-NEVER_APPROVE_PATHS = frozenset()
-
 EDITOR_METADATA = frozenset(
     {
         "_core_keys",
@@ -57,7 +52,8 @@ def approval_paths(reference, cfg, free_paths, confirm_paths):
         if path in named
         and path not in free
         and path not in confirm
-        and path not in NEVER_APPROVE_PATHS
+        # #2367: no field is refused from the panel; only retired `ssh.*` stays out (release
+        # images reject it), matching CONTROL_DASHBOARD_NEVER_PATHS on the host.
         and not path.startswith("ssh.")
     )
 
@@ -68,9 +64,7 @@ def confirmed_paths(reference, free_paths, confirm_paths, approval_paths):
     return sorted(
         path
         for path in leaf_paths(reference)
-        if path not in classified
-        and path not in NEVER_APPROVE_PATHS
-        and not path.startswith("ssh.")
+        if path not in classified and not path.startswith("ssh.")
     )
 
 
