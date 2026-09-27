@@ -39,7 +39,10 @@ phase_fault() {
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        virsh destroy "$VM" >/dev/null 2>&1 || true
+        verdict=$(fault_power_cut "$VM") || {
+            bad "A$i: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+            return
+        }
         sleep 3
         mark=$(fault_serial_cut "$SERIAL") || {
             bad "A$i: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
@@ -131,7 +134,10 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    virsh destroy "$VM" >/dev/null 2>&1 || true
+    verdict=$(fault_power_cut "$VM") || {
+        bad "B: the power cut did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
+        return
+    }
     sleep 3
     mark=$(fault_serial_cut "$SERIAL") || {
         bad "B: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
@@ -229,8 +235,8 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
-    virsh destroy "$VM" >/dev/null 2>&1 || {
-        bad "D: could not cut power during the image load"
+    verdict=$(fault_power_cut "$VM") || {
+        bad "D: the power cut during the image load did not take — the domain was still up after a minute of virsh destroy, so no boot was judged: $verdict"
         return
     }
     sleep 3

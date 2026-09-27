@@ -185,7 +185,41 @@ assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.fail
 # (A missing log fails the copy for root too, where a read-only directory would not.)
 verdict=$(fault_boot_verdict "$FBV/absent" 0)
 assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/absent.failed"
-unset -f fault_serial_cut fault_serial_mark fault_serial_since
+# Jobs 220, 129 and 224: `virsh destroy` on a guest busy writing its spare slot failed, the
+# discarded failure left the domain up, and `virsh start` answered "Domain is already active".
+# fault_power_cut retries until the domain reports "shut off", or says it never did.
+# Mutation run: return after one destroy -> the "third try" row reads 1, not 0.
+pcut() { # <tries until the domain is off, 0 = never> -> "<rc> <destroy calls> <output>"
+    (
+        want="$1"
+        echo 0 >"$FBV/destroys" # a file: fault_power_cut calls virsh inside $(...)
+        virsh() {
+            local n
+            n=$(cat "$FBV/destroys")
+            case "$1" in
+            destroy)
+                echo $((n + 1)) >"$FBV/destroys"
+                [ "$want" -gt 0 ] && [ $((n + 1)) -ge "$want" ] && return 0
+                echo "error: Failed to terminate process: Device or resource busy" >&2
+                return 1
+                ;;
+            domstate) if [ "$want" -gt 0 ] && [ "$n" -ge "$want" ]; then echo "shut off"; else echo running; fi ;;
+            esac
+        }
+        sleep() { :; }
+        out=$(fault_power_cut vm)
+        rc=$?
+        printf '%s %s %s' "$rc" "$(cat "$FBV/destroys")" "$out"
+    )
+}
+assert_eq "a domain off after the first destroy: one call" "$(pcut 1)" "0 1 "
+assert_eq "a domain that takes three destroys is waited for" "$(pcut 3)" "0 3 "
+assert_eq "a domain that never goes off fails the cut with virsh's word" "$(pcut 0)" \
+    "1 6 error: Failed to terminate process: Device or resource busy"
+assert_eq "all three power-cut legs cut through fault_power_cut and stop when it fails" \
+    "$(grep -cF 'verdict=$(fault_power_cut "$VM") || {' "$ROOT/tests/os/phases/fault.sh")" "3"
+unset -f pcut
+unset -f fault_power_cut fault_serial_cut fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict
 rm -rf "$FBV"
 
