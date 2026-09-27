@@ -86,3 +86,38 @@ def test_a_marker_left_by_a_previous_run_is_honoured(tmp_path):
     (tmp_path / mg.MARKER).write_text("x")
     gate, docker, clock = _gate(tmp_path)
     assert _run(gate, clock, GREEN, 60) == "suppressed"
+
+
+def _red_at(h):
+    return {**RED, "height": h}
+
+
+def _green_at(h):
+    return {**GREEN, "height": h}
+
+
+def test_recovery_that_stays_below_the_suppression_height_keeps_merge_mining_off(tmp_path):
+    """A rewound or reset node can be green again while still behind the tip it went stale at."""
+    gate, docker, clock = _gate(tmp_path)
+    _run(gate, clock, _red_at(500), mg.SUPPRESS_AFTER_SEC)
+    assert (tmp_path / mg.MARKER).read_text().startswith("height=500\n")
+    assert (
+        _run(gate, clock, _green_at(480), 3 * mg.RESUME_AFTER_SEC, advanced_at=clock.t)
+        == "suppressed"
+    )
+    assert (
+        _run(gate, clock, _green_at(500), 3 * mg.RESUME_AFTER_SEC, advanced_at=clock.t)
+        == "suppressed"
+    )
+    assert _run(gate, clock, _green_at(501), mg.RESUME_AFTER_SEC, advanced_at=clock.t) == "on"
+
+
+def test_the_suppression_height_survives_a_dashboard_restart(tmp_path):
+    gate, docker, clock = _gate(tmp_path)
+    _run(gate, clock, _red_at(500), mg.SUPPRESS_AFTER_SEC)
+    fresh, _, fclock = _gate(tmp_path)  # a new dashboard: green only because it has no history
+    assert (
+        _run(fresh, fclock, _green_at(499), 3 * mg.RESUME_AFTER_SEC, advanced_at=fclock.t)
+        == "suppressed"
+    )
+    assert _run(fresh, fclock, _green_at(505), mg.RESUME_AFTER_SEC, advanced_at=fclock.t) == "on"

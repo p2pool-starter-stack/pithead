@@ -49,3 +49,12 @@ assert_eq "a blank tari.explorer_url renders blank (reference off)" "$(run_sourc
 tari_status_strict() { set -eo pipefail && tari_chain_status_line && echo "rc=0"; }
 assert_eq "tari chain: dashboard down under pipefail leaves status's line empty, rc 0" \
     "$(CURL_RC=7 PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_status_strict 2>&1)" "rc=0"
+
+echo "== unit: support bundle masks the Tari explorer URL in config.masked.json (#2464) =="
+# Synthetic, credential-bearing: userinfo and a path token must not reach the bundle's config copy.
+TARI_BUNDLE_CFG='{"tari":{"mode":"local","explorer_url":"https://user:OLDSECRET31@explorer.invalid/OLDSECRET32/?json"},"xvb":{"url":"https://xvb.invalid"}}'
+tari_masked="$(printf '%s' "$TARI_BUNDLE_CFG" | run_sourced "$SANDBOX" bundle_mask_config 2>&1)"
+assert_not_contains "bundle config: explorer URL userinfo is gone" "$tari_masked" "OLDSECRET31"
+assert_not_contains "bundle config: explorer URL path token is gone" "$tari_masked" "OLDSECRET32"
+assert_eq "bundle config: explorer URL becomes the secret sentinel" "$(printf '%s' "$tari_masked" | jq -c '.tari.explorer_url')" '{"__secret__":true}'
+assert_eq "bundle config: the rest of the config survives" "$(printf '%s' "$tari_masked" | jq -r '.tari.mode + " " + .xvb.url')" "local https://xvb.invalid"

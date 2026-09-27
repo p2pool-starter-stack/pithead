@@ -132,7 +132,9 @@ class TariChainHealth:
         self._start_owed = 0  # start-only retries left for a node this code stopped (0 = none owed)
         self._start_tried = None
         self._stopped_by_us = False  # stopped by a restart and not started since
-        self.advanced_at = None  # when the tip last moved past a height already seen
+        self.advanced_at = None  # when the tip last rose above the highest height already seen
+        self._best = None  # highest height seen: only a rise past it is progress
+        self._was_red = False  # the last alert-relevant level, so each entry into red alerts
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
 
     def observe(self, sync, connections, now):
@@ -141,10 +143,13 @@ class TariChainHealth:
         node-down is NodeHealthMonitor's verdict, and a stall is measured across it."""
         if sync.get("reachable") and sync.get("current"):
             height = sync["current"]
-            if height != self._height:
-                if self._height is not None:
+            # Forward progress only: a height that falls (a reorg, a rewound or reset node) or
+            # returns below the best one seen must not reset the stall clock or count as recovery.
+            if self._best is None or height > self._best:
+                if self._best is not None:
                     self.advanced_at = now
-                self._height, self._height_since = height, now
+                self._best, self._height_since = height, now
+            self._height = height
         if sync.get("reachable") and connections is not None:
             if connections:
                 self._zero_since = None
@@ -156,6 +161,9 @@ class TariChainHealth:
         if self._height_since is not None and now - self._height_since >= TIP_STALE_SEC:
             reasons.append(
                 f"tip {self._height} unchanged for {int((now - self._height_since) // 60)} min"
+                if self._height == self._best
+                else f"tip {self._height} has not passed {self._best} for "
+                f"{int((now - self._height_since) // 60)} min"
             )
         if self._zero_since is not None and now - self._zero_since >= OFFLINE_SEC:
             reasons.append(f"0 peer connections for {int((now - self._zero_since) // 60)} min")
@@ -285,7 +293,9 @@ class TariChainHealth:
         if self._notify is None:
             return
         level = verdict["level"]
-        if level == "red" and verdict["advice"] != self._alerted:
+        entered = level == "red" and not self._was_red
+        self._was_red = level == "red"
+        if level == "red" and (entered or verdict["advice"] != self._alerted):
             self._alerted = verdict["advice"]
             text = (
                 "\U0001f534 ⛓️ Tari node is not following the chain — "

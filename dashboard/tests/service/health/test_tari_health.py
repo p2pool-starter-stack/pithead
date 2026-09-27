@@ -325,3 +325,37 @@ def test_advanced_at_moves_only_when_the_tip_moves_past_a_seen_height():
     assert mon.advanced_at is None  # first sight is not movement
     mon.observe({**SYNCED, "current": 342575}, 3, 60)
     assert mon.advanced_at == 60
+
+
+# --- forward progress only; each entry into red alerts (#2464 review round 3) -------------------
+
+
+def test_a_falling_height_is_not_progress_and_does_not_reset_the_stall():
+    mon = _monitor()
+    mon.observe({**SYNCED, "current": 500}, 0, 0)
+    mon.observe({**SYNCED, "current": 490}, 0, 10 * MIN)  # a rewind or reset
+    mon.observe({**SYNCED, "current": 500}, 0, 20 * MIN)  # back to, not past, the best
+    assert mon.advanced_at is None
+    v = mon.observe({**SYNCED, "current": 500}, 0, 30 * MIN)
+    assert v["level"] == "red" and v["reasons"][0] == "tip 500 unchanged for 30 min"
+    v = mon.observe({**SYNCED, "current": 495}, 0, 31 * MIN)
+    assert v["reasons"][0] == "tip 495 has not passed 500 for 31 min"
+    mon.observe({**SYNCED, "current": 501}, 5, 32 * MIN)
+    assert mon.advanced_at == 32 * MIN
+
+
+def test_red_amber_red_with_the_same_advice_alerts_on_each_entry_into_red():
+    clock, notify = Clock(), AsyncMock()
+    mon = _monitor(notify=notify, clock=clock)
+    for _ in range(31):  # stale tip + 0 peers: red
+        asyncio.run(mon.check(SYNCED, 0))
+        clock.t += MIN
+    assert notify.await_count == 1
+    asyncio.run(mon.check(SYNCED, 4))  # peers back: tip still stale, amber, same advice
+    assert mon.verdict["level"] == "amber"
+    for _ in range(11):  # peers gone again for 10 min: red again
+        clock.t += MIN
+        asyncio.run(mon.check(SYNCED, 0))
+    assert mon.verdict["level"] == "red"
+    assert notify.await_count == 2
+    assert all("not following the chain" in c.args[0] for c in notify.await_args_list)
