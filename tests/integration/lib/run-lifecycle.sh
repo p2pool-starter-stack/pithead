@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
+# shellcheck source=tests/integration/lib/run-lifecycle-wallet-fixture.sh
+source "$(dirname "${BASH_SOURCE[0]}")/run-lifecycle-wallet-fixture.sh" || exit $?
 run_lifecycle() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     IT_CURRENT_SCENARIO="lifecycle"
@@ -277,23 +279,11 @@ run_uninstall_round_trip() {
         wait_status_ok 240 || true
         return 1
     fi
-    # Seed a Compose-owned volume while its only service's profile is inactive.
-    local wallet_labels="" wallet_volumes=""
-    if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" tari_payout_confirm; then
-        it_fail "Tari payout profile is inactive before uninstall" "tari_payout_confirm is active"
-    elif ! wallet_volumes="$(rx 'docker volume ls -q')"; then
-        it_fail "owned Tari wallet volume exists before uninstall" "volume listing failed"
-    else
-        it_pass "Tari payout profile is inactive before uninstall"
-        if printf '%s\n' "$wallet_volumes" | grep -Fx pithead_tari_wallet_data >/dev/null ||
-            rx 'docker volume create --label com.docker.compose.project=pithead --label com.docker.compose.volume=tari_wallet_data pithead_tari_wallet_data' >/dev/null; then
-            wallet_labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || wallet_labels=""
-            assert_eq "owned Tari wallet volume exists before uninstall" "$wallet_labels" "pithead/tari_wallet_data"
-        else
-            it_fail "owned Tari wallet volume exists before uninstall" "volume creation failed"
-        fi
-    fi
+    IT_UNRELATED_VOLUME_CREATED="" IT_WALLET_CREATE_ATTEMPTED=""
+    arm_inactive_tari_wallet_volume
     if [ "$IT_FAIL" -gt "$fails_before" ]; then
+        rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1 || true
+        cleanup_failed_tari_wallet_fixture
         rx 'rm -f .env.itest-round-trip'
         pithead up >/dev/null 2>&1
         wait_status_ok 240 || true
@@ -316,8 +306,13 @@ run_uninstall_round_trip() {
     if vols="$(rx "docker volume ls -q")"; then
         assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
             "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+        assert_eq "uninstall preserves an unrelated Docker volume" \
+            "$(printf '%s\n' "$vols" | grep -Fx pithead_itest_unrelated)" "pithead_itest_unrelated"
     else
         it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+    fi
+    if ! rx 'docker volume rm pithead_itest_unrelated' >/dev/null 2>&1; then
+        it_fail "uninstall fixture removes its unrelated volume" "volume cleanup failed"
     fi
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done

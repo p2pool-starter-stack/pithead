@@ -162,9 +162,21 @@ cp "$V/bin/docker" "$V/bin/docker-base"
 cat >"$V/bin/docker" <<'DOCKEREOF'
 #!/usr/bin/env bash
 case "$*" in
+"compose create --no-deps tari-wallet")
+    grep -Eq '^COMPOSE_PROFILES=.*(^|,)tari_payout_confirm(,|$)' .env || exit 1
+    [ ! -f .wallet-volume ] || exit 1
+    printf 'pithead/tari_wallet_data\n' >.wallet-volume
+    : >.wallet-container
+    echo "[docker] $*" >>"$DOCKER_LOG" ;;
+"compose rm -sf tari-wallet")
+    [ -f .wallet-container ] || exit 1
+    rm .wallet-container ;;
+"compose config --volumes")
+    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
 "volume ls -q")
     [ "${FAIL_WALLET_LIST:-0}" != 1 ] || exit 1
-    [ ! -f .wallet-volume ] || echo pithead_tari_wallet_data ;;
+    [ ! -f .wallet-volume ] || echo pithead_tari_wallet_data
+    [ ! -f .unrelated-volume ] || echo pithead_itest_unrelated ;;
 'volume inspect pithead_tari_wallet_data --format {{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}')
     [ "${FAIL_WALLET_INSPECT:-0}" != 1 ] || exit 1
     cat .wallet-volume ;;
@@ -172,15 +184,29 @@ case "$*" in
     [ "${FAIL_WALLET_RM:-0}" != 1 ] || exit 1
     echo "[docker] $*" >>"$DOCKER_LOG"
     rm .wallet-volume ;;
+"volume create pithead_itest_unrelated")
+    : >.unrelated-volume
+    echo pithead_itest_unrelated ;;
+"volume rm pithead_itest_unrelated")
+    rm .unrelated-volume ;;
 *) exec "$(dirname "$0")/docker-base" "$@" ;;
 esac
 DOCKEREOF
 chmod +x "$V/bin/docker"
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$V/.env"
-printf 'pithead/tari_wallet_data\n' >"$V/.wallet-volume"
+out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose create --no-deps tari-wallet 2>&1)
+assert_rc "active Compose profile creates the wallet service" "$?" "0"
+assert_eq "Compose creation leaves the wallet volume with project and volume ownership" \
+    "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead/tari_wallet_data"
+assert_eq "Compose created the wallet container before profile disable" \
+    "$([ -f "$V/.wallet-container" ] && echo yes)" "yes"
+(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose rm -sf tari-wallet)
 sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari/' "$V/.env"
 rm -f "$V/.env.bak"
 assert_not_contains "uninstall fixture leaves the Tari wallet profile inactive" "$(grep '^COMPOSE_PROFILES=' "$V/.env")" "tari_payout_confirm"
+assert_eq "inactive Compose model excludes the wallet volume" \
+    "$(cd "$V" && PATH="$V/bin:$PATH" docker compose config --volumes)" ""
+(cd "$V" && PATH="$V/bin:$PATH" docker volume create pithead_itest_unrelated >/dev/null)
 
 # With -y: the three columns print, all named volumes go, every derived path is removed,
 # and every kept path survives byte-identical.
@@ -198,6 +224,8 @@ assert_eq "uninstall compose-downs with -v so the named volumes go with the cont
     "$(grep -Fc 'compose down --remove-orphans -v' "$DOCKER_LOG" 2>/dev/null | tr -d '[:space:]')" "1"
 assert_eq "uninstall removes the Tari wallet volume outside the inactive Compose model" \
     "$([ -f "$V/.wallet-volume" ] && echo present || echo gone)" "gone"
+assert_eq "uninstall preserves the unrelated volume" \
+    "$([ -f "$V/.unrelated-volume" ] && echo present)" "present"
 assert_eq "uninstall removes only the exact Tari wallet volume" \
     "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead_tari_wallet_data"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
@@ -212,6 +240,11 @@ assert_eq "uninstall keeps config.json" "$([ -f "$V/config.json" ] && echo yes)"
 assert_eq "uninstall keeps backups/" "$([ -d "$V/backups" ] && echo yes)" "yes"
 assert_eq "uninstall keeps every *_DATA_DIR byte-identical (hash before == after)" "$(hash_kept)" "$hash_before"
 assert_eq "uninstall removes its owned control-runner units" "$(find "$UNINSTALL_UNITS" -type f -print -quit)" ""
+# The kept config and data must still be usable by setup after uninstall.
+out=$(cd "$V" && printf 'n\n' | PATH="$V/bin:$PATH" ./pithead setup --skip-deps --skip-optimize 2>&1)
+assert_rc "setup recovers from kept config after uninstall" "$?" "0"
+assert_eq "setup restores a deployment environment" "$([ -f "$V/.env" ] && echo yes)" "yes"
+assert_eq "setup retains kept data" "$(hash_kept)" "$hash_before"
 cp "$V/bin/docker" "$V/bin/docker-wallet"
 out=$(cd "$V" && PATH="$V/bin:$PATH" ./pithead uninstall --bogus 2>&1) || true
 assert_contains "uninstall rejects unknown options" "$out" "Unknown option"

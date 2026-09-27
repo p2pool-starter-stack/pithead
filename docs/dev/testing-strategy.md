@@ -233,7 +233,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
-| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) seeds an owned Tari wallet volume with `tari_payout_confirm` inactive, then checks its removal and setup recovery; the tier-1 stub fails if the seed or its ownership labels are missing. A second stub checks removal after disabling the profile, preservation of a foreign same-named volume, and refusal to finish on volume inspection failure. Compose's inactive model omits the wallet volume from `down -v`. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
+| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) activates `tari_payout_confirm`, creates the Tari wallet service and its owned volume through Compose, removes the container, disables the profile, and verifies the inactive model excludes the volume. It then checks uninstall removes that volume, preserves an unrelated volume, and setup recovers from kept data. Tier-1 stubs prove the same profile transition and check preservation of a foreign same-named volume and refusal to finish on volume inspection failure. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
