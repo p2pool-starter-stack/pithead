@@ -401,13 +401,13 @@ preflight() {
     else
         warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
     fi
-    # Chains at tip BEFORE anything is locked or borrowed (#914): a bench that starts hours
-    # behind fails the required-sync assertions as environment noise — not a regression — and
-    # burns the borrowed-rig hour finding out. Same dashboard sync signal wait_synced polls.
+    # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
+    # report loading on an otherwise synced bench, so wait for its sync panels to settle.
     if [ "$SKIP_PREFLIGHT" = "1" ]; then
         warn "--skip-preflight: not checking the bench chains are synced."
     else
         local sync_line mst mheights tst theights
+        wait_synced 120 || true
         sync_line="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '$E2E_SYNC_SUMMARY_JQ' 2>/dev/null" || true)"
         [ -n "$sync_line" ] || die "Cannot read the bench dashboard's sync state (127.0.0.1:8000/api/state on $BENCH_HOST) — is the stack up? --skip-preflight overrides."
         read -r mst mheights tst theights <<<"$sync_line"

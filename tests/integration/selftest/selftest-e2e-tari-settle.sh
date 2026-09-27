@@ -64,6 +64,31 @@ assert_eq "a delayed Tari reconnect proceeds once the existing done/done predica
     "$(run_wait_synced 5 loading/loading done/done)" "0"
 assert_eq "a bench stuck loading returns 1 once its OWN timeout elapses" "$(run_wait_synced 1 loading/loading)" "1"
 
+PREFLIGHT_SYNC_SRC="$(sed -n '/^    if \[ "$SKIP_PREFLIGHT" = "1" \]; then/,/^    fi$/p' "$E2E_SRC")"
+run_preflight_sync() { # dashboard starts loading, then its next poll reports both chains done
+    (
+        STATE=loading/loading
+        # shellcheck disable=SC2034 # read by the extracted preflight block
+        SKIP_PREFLIGHT=0
+        ok() { :; }
+        warn() { :; }
+        die() { exit 1; }
+        sleep() { STATE=done/done; }
+        on_bench() {
+            if [[ "$1" == *current* ]]; then
+                if [ "$STATE" = done/done ]; then printf 'done 1/1 done 1/1'; else printf 'loading 0/0 loading 0/0'; fi
+            else
+                printf '%s' "$STATE"
+            fi
+        }
+        eval "$WAIT_SRC"
+        eval "$PREFLIGHT_SYNC_SRC"
+    ) >/dev/null 2>&1
+    echo "$?"
+}
+assert_eq "preflight waits through transient dashboard loading before accepting synced chains" \
+    "$(run_preflight_sync)" "0"
+
 # --- The other caller that runs the SAME `pithead upgrade` with the SAME short-wait defect ---
 # run-matrix.sh/run-rigforge.sh also call wait_tari_synced 300, but their wait feeds into
 # assert_tari_synced_required (#746), which already tolerates post-restart lag once Tari has
