@@ -446,7 +446,8 @@ via an `EXIT` trap):
    pre-run baseline is accepted only when both checkouts independently yield the same pinned base
    digest, resolved Compose build arguments and complete effective build context. The current
    proof supports the shared Monero image used by `monerod` and `wallet-rpc`; an unmodelled build
-   field, ignore rule, missing input or unequal fingerprint leaves the image classified as stale.
+   field, ignore rule, Dockerfile parser directive, missing input or unequal fingerprint leaves the
+   image classified as stale.
    Acceptance also requires the baseline's `pithead upgrade` to have succeeded and the restored
    service to retain the image ID captured immediately after that build; the `apply && up`
    fallback cannot certify reuse.

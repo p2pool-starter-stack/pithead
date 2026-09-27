@@ -23,7 +23,7 @@ spec=$(docker compose config --format json | jq -ce --arg s "$service" --arg c "
 [ -n "$spec" ] || exit 1
 # Dockerfile instructions are case-insensitive. Only the current single-stage, digest-pinned
 # grammar is supported; COPY --from or remote ADD would introduce an unmeasured image/input.
-if grep -Eiq '^[[:space:]]*ADD[[:space:]]|--from=|--mount=' "$context/Dockerfile"; then
+if grep -Eiq '^[[:space:]]*ADD[[:space:]]|--from=|--mount=|^[[:space:]]*#[[:space:]]*(syntax|escape|check)[[:space:]]*=' "$context/Dockerfile"; then
     exit 1
 fi
 base=$(awk 'toupper($1) == "FROM" {print $2}' "$context/Dockerfile")

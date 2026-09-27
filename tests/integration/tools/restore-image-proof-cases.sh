@@ -93,6 +93,17 @@ assert_eq "a RUN mount from an external image fails closed" "$(
     PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc >/dev/null 2>&1
     echo $?
 )" "1"
+cp "$proof_tmp/base/build/monero/Dockerfile" "$proof_tmp/branch/build/monero/Dockerfile"
+sed -i '1i# syntax=docker/dockerfile:latest' "$proof_tmp/branch/build/monero/Dockerfile"
+assert_eq "an unpinned Dockerfile frontend fails closed" "$(
+    PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc >/dev/null 2>&1
+    echo $?
+)" "1"
+sed -i '1c# escape=`' "$proof_tmp/branch/build/monero/Dockerfile"
+assert_eq "an alternate Dockerfile parser fails closed" "$(
+    PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc >/dev/null 2>&1
+    echo $?
+)" "1"
 touch "$proof_tmp/branch/build/monero/.dockerignore"
 assert_eq "unmodelled ignore rules fail closed" \
     "$(
