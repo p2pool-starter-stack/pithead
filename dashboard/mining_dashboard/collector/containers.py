@@ -25,7 +25,7 @@ MONITORED_CONTAINERS = (
 )
 
 
-def _host_boot_epoch():
+def _host_boot_epoch() -> int | None:
     """The host's boot time (``btime`` in ``/proc/stat``; a container shares the host kernel), or
     ``None`` when unreadable."""
     try:
@@ -38,7 +38,7 @@ def _host_boot_epoch():
     return None
 
 
-def _epoch(ts):
+def _epoch(ts: str | None) -> float | None:
     """Docker's RFC 3339 UTC timestamp (nanoseconds, ``Z``) as epoch seconds, or ``None``."""
     try:
         return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).timestamp()
