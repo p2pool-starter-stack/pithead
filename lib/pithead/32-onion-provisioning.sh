@@ -47,6 +47,9 @@ provision_node_onions() {
     if [ "${MONERO_MODE:-}" == "local" ] && onion_missing "${MONERO_ONION:-}"; then want_monero=true; fi
     if [ "${TARI_MODE:-}" == "local" ] && onion_missing "${TARI_ONION:-}"; then want_tari=true; fi
     [ "$want_monero" == "true" ] || [ "$want_tari" == "true" ] || return 0
+    case " ${PITHEAD_KEEP_RUNNING:-} " in
+    *" tor "*) error "A chain-safe read lease cannot provision a node onion by recreating Tor." ;;
+    esac
 
     log "Publishing the Tor hidden service for the node that just became local..."
     compose_up -d tor

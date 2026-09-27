@@ -163,6 +163,7 @@ done
 case "$MODE" in check | targeted | chain-safe | matrix) ;; *) die "--mode must be check|targeted|chain-safe|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
 [ "$MODE" != chain-safe ] || [ "$KEEP" != 1 ] || die "--keep is not supported with --mode chain-safe."
+[ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || [ "$MODE" = chain-safe ] || die "A chain-safe read lease requires --mode chain-safe."
 [[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
@@ -246,7 +247,11 @@ restore_all() {
     #    recreates only what differs. Restore from RESTORE_DIR — the dir the live stack ran from (#454),
     #    on a release box a per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir
     #    hands the "pithead" project locally-built :dev images.
-    step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
+    if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
+        chain_read_restore_prepare || exit 1
+    else
+        step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
+    fi
     # Look at the control units BEFORE the apply below converges them. Without this the run can
     # never report that it stranded the box — the post-restore proof runs downstream of its own
     # repair, so on the ordinary #1085 path it is green either way. Observation only: the strand is
@@ -257,25 +262,18 @@ restore_all() {
     stranded) step "control units before restore: STRANDED (expected — the branch deploy repoints them); the apply below must converge them" ;;
     *) step "control units before restore: $CONTROL_VERDICT_BEFORE" ;;
     esac
-    # #272, on the other end of the run. deploy_branch deliberately avoids a restore-shaped `apply`,
-    # because "apply runs `compose up --pull` (never --build), so it would test whatever images were last
-    # built on the box, not this branch" — and this restore used exactly that pairing. On a RELEASE-BUNDLE
-    # baseline that is right: STACK_VERSION is v<VERSION>, so the baseline's images are versioned tags the
-    # branch never touched. On a SOURCE-CHECKOUT baseline it is wrong, and silently: `pithead` exports
-    # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
-    # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
-    # back up under the baseline's name; the pull policy is `never` here, so nothing corrects it, and checks
-    # 1-3 below are all green on it. Rebuild from the baseline's own tree instead, falling back to the old
-    # pairing if that fails; check 4 grades either outcome honestly. `is_source_checkout` is
-    # `[ -f dashboard/Dockerfile ]` (pithead:180) — mirrored, not reinvented. The `{ }` below is
-    # load-bearing: unbraced, a failed `cd` runs the FALLBACK in the ssh session's default directory and
-    # STILL returns 0 — a restore that never entered RESTORE_DIR, reported as run. Proven, not read off.
+    # Source checkouts share :dev tags, so rebuild from the baseline tree (#272).
+    # Braces keep a failed cd from running fallback in the SSH session's default directory.
     local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1"
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade >/dev/null 2>&1 || { $restore_cmd; }"
     fi
+    if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
+        restore_cmd="PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade >/dev/null 2>&1"
+    fi
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+        [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || chain_read_restore_proof
         wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
@@ -669,7 +667,8 @@ main() {
     provision
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
-        backup_stack
+        # The ordinary safety backup stops the stack; a read-guarded run must leave nodes up.
+        [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ] || backup_stack
         borrow_miner
         deploy_branch
     fi

@@ -152,6 +152,10 @@ scope_keep_running() { # <compose up flags and services...>
         return 1
     }
     for svc in $PITHEAD_KEEP_RUNNING; do
+        case " ${services[*]} " in
+        *" $svc "*) ;;
+        *) warn "PITHEAD_KEEP_RUNNING names '$svc', which is inactive in the rendered stack."; return 1 ;;
+        esac
         container_is_running "$svc" || {
             warn "PITHEAD_KEEP_RUNNING names '$svc', which is not running — refusing to leave it down."
             return 1
