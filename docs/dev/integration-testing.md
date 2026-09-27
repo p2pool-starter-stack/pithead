@@ -299,7 +299,7 @@ directory. It does not take a stack backup, borrow a miner, deploy the branch, o
 
 Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
 chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
-while the dashboard polls an already-synced node. If either chain remains unready, it prints each
+while the dashboard polls an already-synced node. If the wait expires, it prints each
 chain's current/target height and aborts. A bench that starts hours behind tip fails the
 required-sync assertions as environment noise and avoids spending the borrowed-rig hour finding out
 ([#914](https://github.com/p2pool-starter-stack/pithead/issues/914)). `--skip-preflight`
