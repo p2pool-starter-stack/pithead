@@ -330,11 +330,14 @@ identity, but the dashboard carries it with the endpoint under the typed confirm
 warns without echoing either credential, then the confirmed commit stages mode, endpoint and login
 together for the host-side reachability preflight. This never leaves local mode with a foreign
 login attached to the still-running local monerod/wallet-rpc containers, or remote mode short the
-login its own preflight needs. The same edit sets `p2pool.clearnet=true`: p2pool otherwise routes its
-Tari merge-mining connection through Tor, and Tor's exit policy refuses a private address — which
-the reserved test nodes always are. The row checks the current p2pool container's narrowly extracted
-Monero and Tari endpoints, and binds the current-startup `uses chain_id` verdict to that Tari
-endpoint (or its documented SOCKS loopback bridge). It then restores the original local-node
+login its own preflight needs. Before that edit, the fixture sets `p2pool.clearnet=true` host-side:
+p2pool otherwise routes its Tari merge-mining connection through Tor, and Tor's exit policy refuses
+a private address — which the reserved test nodes always are — while the dashboard cannot commit
+that setting on an appliance. The row checks the current p2pool container's narrowly extracted
+Monero and Tari endpoints and, for each nonblank proposed login part, that p2pool's live
+`--rpc-login` carries it (compared on the harness, never printed). It then binds the
+current-startup `uses chain_id` verdict to that Tari endpoint (or its documented SOCKS loopback
+bridge). It then restores the original local-node
 configuration. Missing node inputs are a counted failure, never a skipped release gate.
 
 On a failed current-startup Tari round trip, the row first searches the full current P2Pool log

@@ -12,8 +12,8 @@ remote_node_proposal() { # <config> <monero-host> <rpc> <zmq> <user> <password> 
         .tari.mode="remote" | .tari.remote={host:$v[6],grpc_port:($v[7]|tonumber)}'
 }
 
-remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <p2pool-startup-log>
-    local mh="$1" rpc="$2" zmq="$3" th="$4" grpc="$5" snapshot="$6" env cmd flags logs tari_endpoint started now
+remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <p2pool-startup-log> [user] [pass]
+    local mh="$1" rpc="$2" zmq="$3" th="$4" grpc="$5" snapshot="$6" mu="${7:-}" mp="${8:-}" env cmd flags logs tari_endpoint started now login
     started=$(printf '%s\n' "$snapshot" | sed -n '1s/^PITHEAD_P2POOL_STARTED=//p')
     logs=$(printf '%s\n' "$snapshot" | sed '1d')
     REMOTE_NODE_RUNTIME_REASON="startup-epoch-missing"
@@ -36,6 +36,16 @@ remote_node_runtime_verdict() { # <monero-host> <rpc> <zmq> <tari-host> <grpc> <
     cmd=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'def val(\$name): index(\$name) as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end; [val(\"--host\"),val(\"--rpc-port\"),val(\"--zmq-port\"),val(\"--merge-mine\")] | @tsv'" 2>/dev/null | tr -d '\r') || return 1
     REMOTE_NODE_RUNTIME_REASON="command-mismatch"
     [ "$cmd" = "$(printf '%s\t%s\t%s\ttari://%s:%s' "$mh" "$rpc" "$zmq" "$th" "$grpc")" ] || return 1
+    # A nonblank proposed login part must be what P2Pool dials with; a blank one kept the masked
+    # live value. Compared here, never printed: the reason names the failure, not the value.
+    if [ -n "$mu$mp" ]; then
+        REMOTE_NODE_RUNTIME_REASON="login-unreadable"
+        login=$(_ssh "podman inspect p2pool --format '{{json .Config.Cmd}}' | jq -r 'index(\"--rpc-login\") as \$i | if \$i == null then \"\" else .[\$i+1] // \"\" end'" 2>/dev/null | tr -d '\r') || return 1
+        REMOTE_NODE_RUNTIME_REASON="login-missing"
+        [ -n "$login" ] || return 1
+        REMOTE_NODE_RUNTIME_REASON="login-stale"
+        { [ -z "$mu" ] || [ "${login%%:*}" = "$mu" ]; } && { [ -z "$mp" ] || [ "${login#*:}" = "$mp" ]; } || return 1
+    fi
     REMOTE_NODE_RUNTIME_REASON="flags-unreadable"
     flags=$(_ssh "podman inspect p2pool --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^P2POOL_FLAGS=//p'" 2>/dev/null | tr -d '\r') || return 1
     tari_endpoint="$th:$grpc"
@@ -265,7 +275,7 @@ _reserved_node_regressions() {
     tries=0 logs=""
     while [ "$tries" -lt 60 ]; do
         logs=$(p2pool_current_startup_merge_lines)
-        remote_node_runtime_verdict "$mh" "$rpc" "$zmq" "$th" "$grpc" "$logs" && break
+        remote_node_runtime_verdict "$mh" "$rpc" "$zmq" "$th" "$grpc" "$logs" "$mu" "$mp" && break
         tries=$((tries + 1))
         sleep 10
     done
@@ -312,6 +322,33 @@ _remote_node_runtime_reason_self_test() (
     [ "$REMOTE_NODE_RUNTIME_REASON" = container-epoch-unreadable ] || return 1
     remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 invalid && return 1
     [ "$REMOTE_NODE_RUNTIME_REASON" = startup-epoch-missing ]
+)
+
+# The proposed nonblank login must reach P2Pool's live argv: missing and stale fail, the right one
+# passes, and no verdict output ever carries the credential.
+_remote_node_login_verdict_self_test() (
+    local fake_login out snapshot=$'PITHEAD_P2POOL_STARTED=epoch-one\nMergeMiningClientTari tari://tari.fixture:18142 uses chain_id 0123456789abcdef'
+    _ssh() {
+        case "$1" in
+        *StartedAt*) printf 'epoch-one\n' ;;
+        *pithead/.env*) printf 'MONERO_NODE_HOST=monero.fixture\nMONERO_RPC_PORT=18081\nMONERO_ZMQ_PORT=18083\nTARI_GRPC_ADDRESS=tari.fixture:18142\n' ;;
+        *@tsv*) printf 'monero.fixture\t18081\t18083\ttari://tari.fixture:18142\n' ;;
+        *P2POOL_FLAGS*) printf '\n' ;;
+        *rpc-login*) printf '%s\n' "$fake_login" ;;
+        esac
+    }
+    for fake_login in "" "old-user:old-pass" "new-user:old-pass"; do
+        out=$(remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass 2>&1) && return 1
+        [ -z "$out" ] || return 1
+    done
+    fake_login="" && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass
+    [ "$REMOTE_NODE_RUNTIME_REASON" = login-missing ] || return 1
+    fake_login="new-user:old-pass" && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass
+    [ "$REMOTE_NODE_RUNTIME_REASON" = login-stale ] || return 1
+    fake_login="new-user:new-pass"
+    out=$(remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" new-user new-pass 2>&1) || return 1
+    [ -z "$out" ] && remote_node_runtime_verdict monero.fixture 18081 18083 tari.fixture 18142 "$snapshot" "" new-pass &&
+        [ "$REMOTE_NODE_RUNTIME_REASON" = ok ]
 )
 
 # The real verdict against a fake podman's inspect JSON (.Name without Docker's leading slash).
@@ -379,6 +416,7 @@ _remote_node_self_test() {
     _remote_node_proposal_self_test || f=$((f + 1))
     _node_readiness_self_test || f=$((f + 1))
     _remote_node_runtime_reason_self_test || f=$((f + 1))
+    _remote_node_login_verdict_self_test || f=$((f + 1))
     _local_node_login_self_test || f=$((f + 1))
     _reserved_node_proposal_scope_self_test || f=$((f + 1))
     _startup_since_self_test || f=$((f + 1))
