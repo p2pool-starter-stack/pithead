@@ -28,6 +28,7 @@ and every alert and doctor row built on it, follows the signals, never the resta
 """
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -35,6 +36,7 @@ import time
 from mining_dashboard.collector.containers import container_started
 from mining_dashboard.config.config import CLEARNET_STATE_DIR, TARI_MODE, TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.service.health import owed_start
 from mining_dashboard.service.health.owed_start import OwedStart
 
 logger = logging.getLogger("TariHealth")
@@ -62,6 +64,7 @@ GREEN_CONFIRM_SEC = 15 * 60
 # then silent for that reason, not a migration, so start alone is retried, a bounded number of times.
 # The owed start is kept on disk (owed_start), so a dashboard restart resumes it rather than leaving
 # a node it stopped to the withheld guard; a start never interrupts a migration.
+BUDGET = "tari-restart-budget"  # restarts this outage and the last one's wall time, across restarts
 START_RETRY_SEC = 60
 STOP_REQUEST_SEC = 90  # the stop's HTTP timeout: past it, a stop that landed has finished
 START_RETRIES = 5
@@ -140,6 +143,8 @@ class TariChainHealth:
         self._green_since = None
         self._restarts = 0
         self._last_restart = None
+        self._budget = os.path.join(state_dir, BUDGET)
+        self._load_budget()
         # Stopped by a restart and not started since: the start-only retry, across dashboard restarts.
         self._owed = OwedStart(state_dir, self.CONTAINER, START_RETRIES, inspect, STOP_REQUEST_SEC)
         self._start_tried = None
@@ -211,6 +216,7 @@ class TariChainHealth:
                 self._green_since = now
             if self._restarts and now - self._green_since >= GREEN_CONFIRM_SEC:
                 self._restarts, self._last_restart = 0, None
+                self._save_budget(now)  # sustained green is the only thing that refills it
                 return "recovered"
             return None
         self._green_since = None
@@ -244,10 +250,12 @@ class TariChainHealth:
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
         reachable = bool(sync.get("reachable"))
-        if reachable and self._owed.pending() and not self._owed.stopping():
-            self._owed.settle()  # running again, whoever started it
         if self._owed.pending():
+            if reachable and not self._owed.stopping():
+                self._start_tried = None  # it answers past the stop's grace: read the container now
             action = await self._retry_start(now)
+            if action == "stop_missed":
+                self._refund(now)  # running throughout: the stop never landed, the slot comes back
         else:
             action = self.decide(reachable, now)
         if action == "restart":
@@ -257,26 +265,24 @@ class TariChainHealth:
                 self._restarts,
                 MAX_RESTARTS,
             )
-            # The record goes to disk before the stop, so a dashboard restart between the two still
-            # owes the start. No record, no stop: the restart is not issued and the slot comes back.
-            recorded = self._owed.owe()
+            # Both records reach the disk before the stop: the spent slot, so neither a lost
+            # acknowledgement nor a new dashboard can grant another, and the owed start, so a
+            # dashboard restart between stop and start still owes it. No records, no stop.
+            recorded = self._save_budget(now) and self._owed.owe()
             stopped = recorded and await self._docker.stop(
                 self.CONTAINER, stop_timeout=60, request_timeout=STOP_REQUEST_SEC
             )
             started = stopped and await self._docker.start(self.CONTAINER, request_timeout=60)
-            if started or not recorded:
+            if started:
                 self._owed.settle()
             if not recorded:
-                self._restarts -= 1
-                self._last_restart = None
+                self._refund(now)
                 action = "restart_unrecorded"
                 verdict["advice"] = UNRECORDED_ADVICE
             elif not stopped:
-                # Reported failed: give the slot back so a flaky control proxy can't spend the
-                # budget. The acknowledgement may be what was lost, so the record stays and the
-                # start retry reads the container: running, nothing owed; stopped, started.
-                self._restarts -= 1
-                self._last_restart = None
+                # Reported failed, but the acknowledgement may be what was lost: the slot stays
+                # spent and the record stays, and the start retry reads the container. Stopped:
+                # it is started, no further stop. Running throughout: the slot comes back.
                 self._start_tried = now
                 action = "restart_failed"
             elif not started:
@@ -297,6 +303,41 @@ class TariChainHealth:
         verdict["action"] = action
         await self._alert(verdict)
         return verdict
+
+    def _refund(self, now):
+        self._restarts -= 1
+        self._last_restart = None
+        self._save_budget(now)
+
+    def _save_budget(self, now) -> bool:
+        """The outage's restart count and the last restart's wall time, atomically."""
+        last = None if self._last_restart is None else time.time() - (now - self._last_restart)
+        try:
+            owed_start.write_atomic(
+                self._budget, json.dumps({"restarts": self._restarts, "last_restart": last})
+            )
+            return True
+        except OSError as exc:
+            logger.warning("Could not record the Tari restart budget: %s", exc)
+            return False
+
+    def _load_budget(self) -> None:
+        """A new dashboard inherits the outage: its count, and the cooldown from the last restart.
+        An unreadable record reads as spent; only sustained green refills it."""
+        try:
+            with open(self._budget) as fh:
+                record = json.load(fh)
+            restarts, last = int(record["restarts"]), record["last_restart"]
+            last = None if last is None else float(last)
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, TypeError, KeyError):
+            logger.warning("Tari restart budget unreadable; treating it as spent until green.")
+            self._restarts = MAX_RESTARTS
+            return
+        self._restarts = min(max(restarts, 0), MAX_RESTARTS)
+        if last is not None:
+            self._last_restart = self._clock() - max(0.0, time.time() - last)
 
     async def _retry_start(self, now: float) -> str:
         """Start-only retry for a node whose restart stopped it and failed to start it. The first

@@ -62,5 +62,5 @@ def test_a_running_container_within_the_stop_grace_stays_owed(tmp_path):
     rec.owe()
     assert rec.stopping() and asyncio.run(rec.retry(AsyncMock())) == "start_pending"
     age_record(tmp_path / "p2pool-start-owed", 61)
-    assert not rec.stopping() and asyncio.run(rec.retry(AsyncMock())) == "start_settled"
+    assert not rec.stopping() and asyncio.run(rec.retry(AsyncMock())) == "stop_missed"
     assert not rec.pending() and not rec.stopping()

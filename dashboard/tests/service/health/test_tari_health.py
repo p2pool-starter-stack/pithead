@@ -200,13 +200,15 @@ def test_check_restarts_the_tari_container_and_alerts_on_red():
     assert notify.await_count == 1  # red is alerted once, not every cycle
 
 
-def test_failed_restart_refunds_the_budget():
+def test_a_failed_stop_acknowledgement_keeps_the_slot_spent():
+    """The stop may have landed (here it did: the node reads stopped since), so no refund; only a
+    container proven running throughout gives the slot back (test_tari_start_owed)."""
     clock = Clock()
     mon = _monitor(docker_control=_docker(ok=False), clock=clock)
     for _ in range(36):
         v = asyncio.run(mon.check(SYNCED, 0))
         clock.t += MIN
-    assert v["restarts"] == 0
+    assert v["action"] == "restart_failed" and v["restarts"] == 1
 
 
 def test_escalates_after_the_third_restart_without_green():

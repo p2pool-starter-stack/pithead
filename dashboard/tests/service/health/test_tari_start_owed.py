@@ -3,7 +3,6 @@ start. It is kept on disk, so a dashboard restart resumes it without starting a 
 has started (or stopped) since, and without ever stopping one."""
 
 import asyncio
-import os
 import time
 
 from mining_dashboard.service.health import owed_start
@@ -72,7 +71,7 @@ def test_a_dashboard_restart_resumes_the_start_owed_to_a_node_it_stopped(tmp_pat
     mon = _monitor(docker_control=docker, clock=Clock(), state_dir=str(tmp_path))
     v = asyncio.run(mon.check({"reachable": False}, None))
     assert v["action"] == "started" and docker.stop.await_count == 1
-    assert os.listdir(tmp_path) == []
+    assert not (tmp_path / "tari-start-owed").exists()
 
 
 def test_the_start_retry_limit_survives_a_dashboard_restart(tmp_path):
@@ -104,7 +103,7 @@ def test_a_node_started_since_the_stop_is_never_started_again(tmp_path):
     )
     v = asyncio.run(mon.check({"reachable": False}, None))
     assert v["action"] == "start_settled" and v["advice"] != th.STOPPED_ADVICE
-    assert docker.start.await_count == 1 and os.listdir(tmp_path) == []
+    assert docker.start.await_count == 1 and not (tmp_path / "tari-start-owed").exists()
 
 
 def test_a_running_node_with_silent_grpc_is_left_to_migrate(tmp_path):
@@ -117,7 +116,8 @@ def test_a_running_node_with_silent_grpc_is_left_to_migrate(tmp_path):
     assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "start_pending"  # grace
     age_record(tmp_path / "tari-start-owed", th.STOP_REQUEST_SEC + 1)
     mon._clock.t += th.START_RETRY_SEC
-    assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "start_settled"
+    v = asyncio.run(mon.check({"reachable": False}, None))
+    assert v["action"] == "stop_missed" and v["restarts"] == 0  # running throughout: slot back
     assert docker.start.await_count == 1 and docker.stop.await_count == 1
 
 
@@ -150,7 +150,7 @@ def test_a_dashboard_restart_between_stop_and_start_still_owes_the_start(tmp_pat
             clock.t += MIN
     except SystemExit:
         pass
-    assert os.listdir(tmp_path) == ["tari-start-owed"]
+    assert (tmp_path / "tari-start-owed").exists()
     docker.start.side_effect, docker.start.return_value = None, True
     mon = _monitor(docker_control=docker, clock=Clock(), state_dir=str(tmp_path))
     assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
@@ -201,7 +201,7 @@ def test_an_unrecordable_restart_never_stops_the_node_across_a_dashboard_restart
     docker.stop.assert_not_awaited()
     disk.full = False  # the disk recovers: the restart goes ahead, and its failed start is owed
     actions = _red_cycles(mon, clock, cycles=1)
-    assert actions == ["start_failed"] and os.listdir(tmp_path) == ["tari-start-owed"]
+    assert actions == ["start_failed"] and (tmp_path / "tari-start-owed").exists()
     clock.t += th.START_RETRY_SEC
     docker.start.return_value = True
     assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
@@ -240,12 +240,12 @@ def test_a_lost_stop_acknowledgement_still_owes_the_start_across_a_dashboard_res
     for _ in range(37):
         actions.append(asyncio.run(mon.check(SYNCED, 0))["action"])
         clock.t += MIN
-    assert "restart_failed" in actions and mon.verdict["restarts"] == 0  # the slot came back
-    assert os.listdir(tmp_path) == ["tari-start-owed"]
+    assert "restart_failed" in actions and mon.verdict["restarts"] == 1  # it landed: still spent
+    assert (tmp_path / "tari-start-owed").exists()
     docker.start.return_value = True
     mon = _monitor(docker_control=docker, clock=Clock(), state_dir=str(tmp_path))
     assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
-    assert docker.stop.await_count == 1 and os.listdir(tmp_path) == []
+    assert docker.stop.await_count == 1 and not (tmp_path / "tari-start-owed").exists()
 
 
 def test_a_stop_that_really_failed_is_settled_once_its_grace_has_passed(tmp_path):
@@ -259,12 +259,14 @@ def test_a_stop_that_really_failed_is_settled_once_its_grace_has_passed(tmp_path
     for _ in range(36):
         asyncio.run(mon.check(SYNCED, 0))
         clock.t += MIN
-    assert os.listdir(tmp_path) == ["tari-start-owed"]  # uncertain: kept
+    assert (tmp_path / "tari-start-owed").exists()  # uncertain: kept
     assert (
         asyncio.run(mon.check(SYNCED, 0))["action"] == "start_pending"
     )  # answering, may be stopping
     age_record(tmp_path / "tari-start-owed", th.STOP_REQUEST_SEC + 1)
     clock.t += th.START_RETRY_SEC
-    # Settled (the node answers past the grace), so the still-red node's restart is tried again.
-    assert asyncio.run(mon.check(SYNCED, 0))["action"] == "restart_failed"
+    v = asyncio.run(mon.check(SYNCED, 0))  # answers past the grace: read now, never stopped
+    assert v["action"] == "stop_missed" and v["restarts"] == 0  # proven missed: the slot is back
+    clock.t += MIN
+    assert asyncio.run(mon.check(SYNCED, 0))["action"] == "restart_failed"  # so it is tried again
     assert docker.stop.await_count == 2 and docker.start.await_count == 0

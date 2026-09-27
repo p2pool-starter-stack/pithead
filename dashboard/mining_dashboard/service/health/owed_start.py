@@ -97,8 +97,8 @@ class OwedStart:
             return os.path.getmtime(self._path), 1
 
     async def retry(self, docker) -> str:
-        """``"started"``; ``"start_settled"`` (running, or started by someone since: nothing
-        owed); ``"start_pending"`` (still owed, or the container's state was unreadable); or
+        """``"started"``; ``"stop_missed"`` (running throughout: the stop never landed, nothing
+        owed); ``"start_settled"`` (started by someone since the stop: nothing owed); ``"start_pending"`` (still owed, or the container's state was unreadable); or
         ``"start_gave_up"`` (no retries left: the record stays, so the advice does)."""
         try:
             stopped_at, left = self._read()
@@ -108,8 +108,11 @@ class OwedStart:
         if state is None:
             return "start_pending"
         running, started_at = state
-        if running and started_at <= stopped_at and time.time() - stopped_at < self._grace:
-            return "start_pending"  # the stop may still be landing
+        if running and started_at <= stopped_at:
+            if time.time() - stopped_at < self._grace:
+                return "start_pending"  # the stop may still be landing
+            self.settle()
+            return "stop_missed"  # running since before the stop, past its grace: it never landed
         if running or started_at > stopped_at:
             self.settle()
             return "start_settled"
