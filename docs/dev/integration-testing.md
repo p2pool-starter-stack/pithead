@@ -452,6 +452,13 @@ via an `EXIT` trap):
    run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
    kept and the harness left as the baseline's container.
 
+`--mode chain-safe` deploys the branch, runs the live read-only `--check` assertions against that
+checkout, then restores the baseline. It does not run a scenario, lifecycle, auth, or RigForge
+control phase. It refuses `--scenario`, `--harness-arg`, and `--keep`. When the chain-keep comparison
+finds both nodes unchanged, restore proof requires their original container IDs and start times;
+the mode fails if a kept node restarts during the run. A branch that changes a node definition,
+mounted file, or image still recreates that node and requires bench-ci's node guard.
+
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
 node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-control` when a rig is
@@ -475,7 +482,7 @@ runs exactly one named phase against a commit without a dedicated `--mode`. Only
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
 and anything else is refused before any bench work, never built into a shell string from the raw
-value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+value. Not supported with `--mode check` or `--mode chain-safe`, which run nothing but `--check`.
 
 ---
 

@@ -219,6 +219,13 @@ tor o1 T1 sha256:o"
     chain_snapshot() { printf '%s\n' "$before"; }
     chain_restore_proof
     assert_rc "the restore proof passes when the nodes are untouched" "$?" "0"
+    MODE=chain-safe CHAIN_KEPT="monerod tari"
+    chain_snapshot() { printf 'monerod m1 T2 sha256:m\ntari t1 T1 sha256:t\ntor o1 T1 sha256:o\n'; }
+    chain_restore_proof
+    assert_rc "chain-safe rejects a kept node restarted by the harness" "$?" "1"
+    chain_snapshot() { printf '%s\n' "$before"; }
+    chain_restore_proof
+    assert_rc "chain-safe accepts unchanged node identity and start time" "$?" "0"
     CHAIN_BEFORE=""
     chain_restore_proof
     assert_rc "no deploy snapshot (a --mode check run): nothing to grade" "$?" "0"

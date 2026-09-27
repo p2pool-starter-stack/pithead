@@ -27,7 +27,8 @@
 # (chain_baseline_current), and tor must keep its container through the deploy: an up that
 # recreated tor without a node in it would leave that node on dead Tor connections (#972).
 #
-# Out of scope: harness phases that drive pithead from the e2e checkout themselves (--lifecycle's
+# Node-preserving runs use --mode chain-safe, which deploys and reads current state without those
+# phases. Other harness phases drive pithead from the e2e checkout themselves (--lifecycle's
 # restart, pool-flip apply and backup round trip; --subnet; a scenario's apply) recreate or restart
 # the nodes on purpose. The restore proof records that as such, and a job that runs them still
 # needs bench-ci's node guard; `targeted` runs --lifecycle.
@@ -256,8 +257,18 @@ chain_restore_proof() {
     while IFS= read -r line; do
         case "$line" in
         untouched\ *) ok "restore proof: ${line#* } is the same container, never restarted, as before the deploy" ;;
-        restarted\ *) ok "restore proof: ${line#* } is the same container as before the deploy, restarted in place" ;;
-        recreated\ *) step "restore proof: ${line#* } was recreated during this run (the branch changed it, or a phase did)" ;;
+        restarted\ *)
+            if [ "${MODE:-}" = chain-safe ] && case " $CHAIN_KEPT " in *" ${line#* } "*) true ;; *) false ;; esac then
+                warn "restore proof: ${line#* } restarted during a chain-safe run"
+                rc=1
+            else ok "restore proof: ${line#* } is the same container as before the deploy, restarted in place"; fi
+            ;;
+        recreated\ *)
+            if [ "${MODE:-}" = chain-safe ] && case " $CHAIN_KEPT " in *" ${line#* } "*) true ;; *) false ;; esac then
+                warn "restore proof: ${line#* } was recreated during a chain-safe run"
+                rc=1
+            else step "restore proof: ${line#* } was recreated during this run (the branch changed it, or a phase did)"; fi
+            ;;
         broken\ *)
             warn "restore proof: ${line#* } was kept through the deploy and the harness, and the RESTORE recreated or restarted it."
             warn "  Not a credential mismatch: the chain-node keep failed (#2639). A restart policy, tor auto-heal or the"

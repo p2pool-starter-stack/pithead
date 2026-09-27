@@ -69,6 +69,10 @@ rejected_before_ssh_args "a --scenario name with metacharacters never reaches SS
     --harness-arg --scenario --harness-arg 'name;touch'
 rejected_before_ssh_args "--harness-arg is refused outright with --mode check" \
     --harness-arg '--lifecycle' --mode check
+rejected_before_ssh_args "node-touching phase is refused with --mode chain-safe" \
+    --harness-arg '--lifecycle' --mode chain-safe
+rejected_before_ssh_args "--keep is refused with --mode chain-safe" --keep --mode chain-safe
+rejected_before_ssh_args "--scenario is refused with --mode chain-safe" --scenario local-pruned-main-secure-tari --mode chain-safe
 
 printf '\npassed: %s, failed: %s\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
