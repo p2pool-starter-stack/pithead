@@ -15,7 +15,7 @@
 # view-only wallet from the keys; later runs reopen the existing wallet DB from the named volume.
 set -eu
 
-WALLET_DIR="${WALLET_DIR:-/home/ubuntu/wallet}"
+WALLET_DIR="${WALLET_DIR:-/var/tari/wallet}"
 SECRET_FILE="${TARI_WALLET_SECRET_FILE_IN:-/run/secrets/tari_wallet_secret}"
 GRPC_BIND="${TARI_WALLET_GRPC_BIND:-/ip4/0.0.0.0/tcp/18143}"
 BASE_NODE_GRPC="${TARI_BASE_NODE_GRPC_ADDRESS:-127.0.0.1:18142}"

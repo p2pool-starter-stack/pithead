@@ -207,8 +207,8 @@ Network=mining.network
 IP=$prefix.31
 User=1000:1000
 Entrypoint=/wallet-config/entrypoint.sh
-Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/home/ubuntu/wallet
-Volume=pithead-tari-wallet-data:/home/ubuntu/wallet
+Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
+Volume=pithead-tari-wallet-data:/var/tari/wallet
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari-wallet:/wallet-config:ro
 Volume=$(_qenv TARI_WALLET_SECRET_FILE):/run/secrets/tari_wallet_secret:ro
 Tmpfs=/tmp:size=32m,mode=1777

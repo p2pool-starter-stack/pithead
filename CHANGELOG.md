@@ -178,7 +178,9 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
   it had no working base-node setting and fell back to Tari's public node over clearnet. A wallet
   created before this fix began at the tip and keeps its scan position; to backfill, stop the stack,
-  remove the `tari_wallet_data` volume, and start it again.
+  remove the `tari_wallet_data` volume, and start it again. The wallet also never started: its volume
+  was mounted where the image's uid-1000 user could not write, so it crash-looped creating its
+  config directory. It now mounts on the image's own `/var/tari/wallet`.
 
 - **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With

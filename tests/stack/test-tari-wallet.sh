@@ -54,3 +54,8 @@ assert_contains "node serves the wallet HTTP API" "$tw_tpl" "[base_node.http_wal
 assert_contains "wallet HTTP API on 9000" "$tw_tpl" "port = 9000"
 assert_not_contains "9000 never published by compose" "$(cat "$ROOT/docker-compose.yml")" ":9000:"
 assert_not_contains "9000 never published by quadlets" "$(cat "$ROOT"/os/quadlet/*/*.container)" "9000:9000"
+# The upstream image runs as uid 1000 and owns only /var/tari/wallet; it has no /home/ubuntu, and a
+# volume mounted there was root-owned, so the wallet crash-looped creating its config dir (#2731).
+assert_contains "compose mounts the wallet volume on the image's uid-1000 dir" "$(cat "$ROOT/docker-compose.yml")" "tari_wallet_data:/var/tari/wallet"
+assert_contains "the payout quadlet mounts it there too" "$(cat "$ROOT/os/quadlet/payout/tari-wallet.container")" "Volume=pithead-tari-wallet-data:/var/tari/wallet"
+assert_eq "the entrypoint's default base path matches" "$(PITHEAD_TEST_SOURCE=1 bash -c 'unset WALLET_DIR; source "$1"; echo "$WALLET_DIR"' _ "$ROOT/build/tari-wallet/entrypoint.sh")" "/var/tari/wallet"

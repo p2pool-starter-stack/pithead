@@ -342,7 +342,7 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     volumes:
-      - tari_wallet_data:/home/ubuntu/wallet
+      - tari_wallet_data:/var/tari/wallet
       - ./build/tari-wallet:/wallet-config:ro
     environment:
       # NON-SECRET config only — the three MINOTARI_WALLET_* secrets are delivered via `secrets:`
@@ -354,7 +354,7 @@ services:
       - TARI_BASE_NODE_GRPC_ADDRESS=${TARI_GRPC_ADDRESS:-172.28.0.27:18142}
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143
-      - WALLET_DIR=/home/ubuntu/wallet
+      - WALLET_DIR=/var/tari/wallet
     secrets:
       # Docker mounts this on a tmpfs at /run/secrets/tari_wallet_secret, owner-readable only; the
       # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount name).
@@ -1018,8 +1018,9 @@ volumes:
   # View-only payout wallet DB (#381). A named volume so it survives recreates; it inherits uid-1000
   # ownership from the image's /home/ubuntu/wallets dir, so the non-root container can write it.
   wallet_data:
-  # View-only Tari payout wallet DB (#462). Named volume, survives recreates; the wrapper mkdir's the
-  # base-path under uid 1000 (the container user) on first run.
+  # View-only Tari payout wallet DB (#462). Named volume, survives recreates. Mounted on the image's own
+  # uid-1000 /var/tari/wallet, so an empty volume inherits that ownership; the image has no
+  # /home/ubuntu, and a volume mounted there was root-owned and unwritable (#2731).
   tari_wallet_data:
 
 # --- Secrets ---
