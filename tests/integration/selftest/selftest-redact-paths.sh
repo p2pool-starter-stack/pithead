@@ -17,9 +17,9 @@
 # outside the drift alarm entirely: nothing reds when it changes.
 #
 # THE POPULATION IS MEASURED, NOT LISTED. A parse of the CONTROL_SECRET_PATHS literal would see 12
-# fixed paths and miss both variable-length array stanzas (workers.list[].token,
+# fixed paths and miss both variable-length array stanzas (workers.list[].token/api_token,
 # notifications.webhooks[]), which are masked in jq rather than in the list. So this runs the REAL
-# masker over a populated fixture and reads back which paths became {"__secret__": true} — 14 of
+# masker over a populated fixture and reads back which paths became {"__secret__": true} — 15 of
 # them. (dashboard.workers[].token was a third stanza until 2.0.0 removed the alias, #1832.) The four classification lists are likewise read
 # out of selftest-redact.sh rather than restated here; restating them is what drifts.
 #
@@ -61,7 +61,7 @@ CLASSIFIER="$HERE/selftest-redact.sh"
 FIXTURE_PATHS="monero.node_username monero.node_password monero.view_key tari.view_key
 p2pool.stratum_password xvb.standby.source dashboard.auth.password workers.api_token
 healthchecks.ping_url telegram.bot_token notifications.ntfy.url notifications.ntfy.token
-workers.list[].token notifications.webhooks[]"
+workers.list[].token workers.list[].api_token notifications.webhooks[]"
 
 echo "== render_masked_config's masked paths are all classified by selftest-redact.sh (#1730) =="
 
@@ -83,7 +83,7 @@ MISSING="$(
 import json, sys
 doc = json.load(open(sys.argv[1], encoding="utf-8"))
 for path in sys.argv[2].split():
-    # An array path is present when its CONTAINER is: workers.list[].token -> workers.list.
+    # An array path is present when its CONTAINER is: workers.list[].token/api_token -> workers.list.
     probe, node = path.split("[", 1)[0], doc
     for seg in probe.split("."):
         if isinstance(node, dict) and seg in node:
@@ -112,7 +112,7 @@ jq '
   | .telegram.bot_token   = "fixture-bot-token"
   | .notifications.ntfy.url   = "https://ntfy.example.invalid/fixture"
   | .notifications.ntfy.token = "fixture-ntfy-token"
-  | .workers.list      = [{"name": "w1", "token": "fixture-worker-token"}]
+  | .workers.list      = [{"name": "w1", "token": "fixture-worker-token", "api_token": "fixture-read-token"}]
   | .notifications.webhooks = ["https://hook.example.invalid/fixture"]
 ' "$REF" >"$BOX/config.json" || {
     it_fail "fixture renders" "jq could not populate the fixture from $REF"
@@ -195,7 +195,7 @@ def satisfied_by(p):
         if p in entries:
             return name, p
     # A path inside an array is satisfied by its ENCLOSING [] path being classified: that is what
-    # workers.list[].token needs, and precisely what ELEMENT_SHAPE_UNKNOWN means. Only a classified
+    # workers.list[].token and .api_token need, and precisely what ELEMENT_SHAPE_UNKNOWN means. Only a classified
     # entry ending in [] can enclose anything, so those are the only ones worth testing; the
     # LONGEST match wins, so the verdict names the most specific entry that covers the path.
     best = (None, None)

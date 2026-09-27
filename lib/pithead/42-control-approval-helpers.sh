@@ -210,8 +210,8 @@ control_physical_presence_error() {
     printf 'this change includes a physical-presence-only setting and cannot be made from the dashboard; use a configuration stick'
 }
 
-# Worker descriptors (workers.list[], #506) render no .env row, so the gate and the preview both
-# classify them here, through one function, and cannot disagree. Unchanged: prints nothing. A pure
+# Worker descriptors (workers.list[], #506) are classified here for both gate and preview;
+# api_token may also render an env row. Unchanged: prints nothing. A pure
 # append — every live entry byte-for-byte and in order, then the new ones (#893's prefix match) —
 # prints one "name at host" per new entry, once each new host clears the #122 SSRF floor. The
 # gate then asks for the typed APPLY (#2641): friction, not a second identity (the #1959 ruling).

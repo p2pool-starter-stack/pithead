@@ -13,7 +13,7 @@
 # THE FIX IS ROUTING, NOT NEW MACHINERY. The stack already classifies this document by PATH:
 # `render_masked_config` (lib/pithead/30-release-fetch-and-masked-config.sh) walks
 # CONTROL_SECRET_PATHS *plus* two variable-length array cases the fixed-path walk cannot reach
-# (workers.list[].token and notifications.webhooks[]; the deprecated dashboard.workers[].token was
+# (workers.list[].token/api_token and notifications.webhooks[]; the deprecated dashboard.workers[].token was
 # a third until 2.0.0 removed that alias, #1832).
 # The capture now SOURCES the box's own `./pithead` and calls that function, so there is ONE
 # classification source and this harness restates neither the list nor the jq program. Sourcing is
