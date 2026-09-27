@@ -236,7 +236,7 @@ Then a handful of choices, all with sensible defaults:
 
 | Question | Default | When to change it |
 |---|---|---|
-| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. It cannot be turned on from the dashboard afterwards — the Configuration view does not carry this switch; set the machine up again from the boot menu to change it. |
+| Merge-mine Tari? | no | Off on a new machine. Say yes and the same work earns on both chains, at no cost in hashrate; it then asks for a Tari payout address — paste that one too — and where the Tari node runs. You can change the mode and payout address later from the Configuration view behind confirmation. |
 | P2Pool sidechain | mini | `nano` for a single low-power rig, `main` only for very large hashrate. Changeable later. |
 | Telegram bot | — | Optional. Alerts and status commands; needs both the token and the chat id. |
 | Monero node | run it here | Point at a node you already run. It has to be on your own network — a private address (10.x, 172.16–31.x, 192.168.x) or one reached over a VPN — because the machine only lets the mining containers dial private ranges; everything else goes through Tor. |
@@ -279,7 +279,8 @@ A remote node's address and RPC login are not one-time answers. The dashboard's 
 changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
 endpoint with the staged login before it commits the pair
 ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). Changing one login field in
-local-node mode preserves its masked partner and applies the pair to the local services together.
+local-node mode preserves its masked partner and applies the pair to the local services together. A changed endpoint needs explicit replacement
+credentials: a masked login never follows it to a new node.
 
 **Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it
@@ -302,21 +303,20 @@ running *from* the stick, so the stick cannot come out while it runs. (If you pu
 early, the machine stops responding — hold the power button, leave the stick out, and switch
 it on. An install that had already reported success is safe on the disk.)
 
-Most of the configuration stays editable from the dashboard afterwards — see
-[configuration](configuration.md) for everything you can tune. Be aware of one honest limit
-in this release: the security-sensitive settings (payout addresses, view keys, the dashboard
-password) can be set **here, at install**, but not changed from the dashboard later — that
-restriction is deliberate, so a compromised browser session can never redirect your payouts. Rigs
-are half-way: the dashboard can adopt a new rig after install (Worker Inspect's adopt form,
-confirmed by typing `APPLY`), but it cannot repoint or remove a rig it already controls, so a
-compromised browser session cannot move an adopted rig's control address and token to one it
-controls. Changing any of these later does not mean reinstalling: write the new settings
-to a
-FAT stick as `pithead-config.json`, insert it and reboot — see
-[Changing settings with a USB stick](#changing-settings-with-a-usb-stick). Being able to insert
-media and power-cycle the machine is authority over it already, so that channel may set any
-supported setting, including what no remote channel is allowed to touch. Release images reject
-retired SSH settings.
+Reference settings stay editable from the dashboard afterwards — see
+[configuration](configuration.md). Security-sensitive changes, including payout destinations,
+require the signed-in operator to review full non-secret values and complete the confirmation step.
+Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
+mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
+toggles remain configuration-stick-only. Rigs are narrower: the dashboard can adopt a new rig
+(Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
+remove a rig it already controls. See
+[Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
+
+The USB-stick route stays available for everything the dashboard can set and for what it cannot:
+write the new settings to a FAT stick as `pithead-config.json`, insert it and reboot. Being able to
+insert media and power-cycle the machine is authority over it already, so that channel may set any
+supported setting, including the stick-only ones above. Release images reject retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
