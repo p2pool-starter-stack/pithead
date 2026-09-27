@@ -317,8 +317,8 @@ class XMRigWorkerClient:
     def _auth_header(self, name_token, override_token=""):
         """Build the single Authorization header for the configured auth mode (or no header).
 
-        A per-worker token (#172) implies token-auth for that worker only, whatever the
-        fleet-wide mode says.
+        An endpoint-bound per-worker read credential overrides fleet auth for that worker only.
+        The host-only RigForge control token is never passed here.
         """
         # Only a real string overrides fleet auth. Masked sentinels are handled by get_stats before
         # this helper; they may never fall through to a fleet credential (#1983).
@@ -383,7 +383,8 @@ class XMRigWorkerClient:
         Only two things are ever used as the request host (SSRF guard, #122): the worker's
         validated IP, or a host the OPERATOR wrote into config.json. A miner-controlled worker
         *name* is never a host — in ``name`` auth it is only offered back as the Bearer token —
-        and a per-worker token is never sent anywhere a miner-advertised value could point it.
+        and a per-worker read credential is never sent anywhere a miner-advertised value could
+        point it. The write-capable control token is never used for this probe.
         """
         name_token = name.split("+")[0].strip()[:_MAX_NAME_TOKEN] if name else ""
         safe_ip = _safe_probe_host(ip)
