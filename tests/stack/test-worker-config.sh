@@ -131,7 +131,7 @@ assert_eq "workers.list sentinel restored to the live token by name" "$(jq -r '.
 assert_eq "workers.list probe token restored host-side" "$(jq -r '.workers.list[0].api_token' "$STAGED/$UUID8.json" 2>/dev/null)" "probe_rig1secret"
 assert_eq "second workers.list sentinel restored by name" "$(jq -r '.workers.list[2].token' "$STAGED/$UUID8.json" 2>/dev/null)" "tok_rig3secret"
 assert_not_contains "canonical preview and audit hide probe token" "$(cat "$RESULTS/$UUID8.json")$(cat "$AUDIT")" "probe_rig1secret"
-# An invalid descriptor's probe-token sentinel must collapse safely before validation rejects it.
+# A nameless descriptor must not borrow a masked probe token from another worker.
 # Use a separate spool so this refusal cannot alter the audit/spool counts in later domains.
 mk_tmpdir WXMAL
 mkdir -p "$WXMAL/staged" "$WXMAL/results" "$WXMAL/audit"
@@ -141,7 +141,7 @@ jq --arg id "$WXID" '{id:$id,action:"preview",actor:"admin",config:(.workers.lis
 (cd "$C" && PATH="$C/bin:$PATH" bash -c 'source "$1"; set +e; control_preview "$2" "$3" admin "$4"' \
     "$C/pithead" "$STACK" "$WXMAL/request.json" "$WXID" "$WXMAL") >/dev/null 2>&1
 assert_eq "nameless worker descriptor is rejected" "$(jq -r '.status' "$WXMAL/results/$WXID.json" 2>/dev/null)" "rejected"
-assert_contains "nameless probe sentinel reaches worker validation" "$(jq -r '.log' "$WXMAL/results/$WXID.json" 2>/dev/null)" 'every entry needs a "name"'
+assert_contains "nameless probe sentinel is refused before restoration" "$(jq -r '.error' "$WXMAL/results/$WXID.json" 2>/dev/null)" "masked worker token"
 rm -rf "$WXMAL"
 # 3) commit: workers.list restored to live == live, so the gate passes on the pool-only change, and
 #    the committed config KEEPS the live per-worker tokens.
