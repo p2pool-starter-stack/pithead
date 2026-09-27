@@ -36,6 +36,27 @@ control_units_owner_dir() {
     printf '%s' "$(cd "$dir" 2>/dev/null && pwd -P)$tail"
 }
 
+# Bounded wait for the root runner to finish a request it already claimed (#2363): a `.claim.*`
+# file next to $CONTROL_DIR exists only while control_run_pending is actively working one
+# (49-control-request-loop.sh claims by mv before parsing a byte). Measured on systemd 255: none of
+# the calls below (stop .path, unit rewrite, daemon-reload, enable --now) stops a running oneshot,
+# so this does not rescue a runner from being killed. It makes the re-provision wait for an
+# in-flight result before it swaps the units under it.
+control_runner_wait_idle() {
+    local waited=0 max_wait=30 cdir="${CONTROL_DIR:-$PWD/data/control}" own_claim=""
+    # A dashboard commit runs a child `pithead apply -y` while its parent runner still holds the
+    # claim; waiting on that one would wait on itself (control_run_pending exports its pid).
+    [ -n "${PITHEAD_CONTROL_RUNNER_PID:-}" ] && own_claim="$cdir/.claim.$PITHEAD_CONTROL_RUNNER_PID"
+    while compgen -G "$cdir/.claim.*" | grep -Fvxq "$own_claim"; do
+        if [ "$waited" -ge "$max_wait" ]; then
+            warn "Timed out after ${max_wait}s waiting for an in-flight control request to finish — re-provisioning the runner anyway. The request keeps running and writes its result when it finishes."
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+}
+
 # Install (or remove) the systemd trigger for the runner (#33): a path unit that fires
 # `pithead control-run-pending` whenever a request file lands in the spool. Root, because `apply`
 # needs iptables/chown; the service is a FIXED ExecStart with no parameter from the container, so
@@ -44,8 +65,18 @@ control_units_owner_dir() {
 provision_control_runner() {
     [ "$OS_TYPE" == "Linux" ] || return 0
     command -v systemctl >/dev/null 2>&1 || return 0
-    local unit_dir engine
+    local unit_dir engine pwd_p control_dir_p
     unit_dir=$(control_unit_dir)
+    # Physical, never the literal $PWD (#2363): a boot-driven call (WorkingDirectory=/data/pithead,
+    # the symlink) starts a fresh bash, which sources $PWD from getcwd(2) — already resolved. An
+    # interactive `cd /data/pithead` shell keeps $PWD as the symlink text instead, and every
+    # ExecStart/WorkingDirectory line below, plus the idempotence check, embeds it verbatim. Two
+    # invocations of the SAME checkout then wrote two different strings, so a later apply with a
+    # config that had not changed at all still failed the idempotence check and re-provisioned —
+    # the "routine apply restarts the runner" bug, not just a rare one. control_units_owner_dir()
+    # already compared physical paths for ownership; this brings the idempotence check and the
+    # written unit content onto the same footing.
+    pwd_p=$(pwd -P)
     # The engine this install was provisioned WITH, pinned into the unit below (#2059).
     engine=$(container_engine)
     # Enablement must be --runtime wherever the units are runtime units: on the appliance's
@@ -73,12 +104,25 @@ provision_control_runner() {
                 fi
             fi
             log "Removing the dashboard control runner units..."
+            # Stop the trigger FIRST (#2363) — no new claim can start once .path is down — then
+            # wait for one already in flight, and only then take the units away.
+            # The mutation window covers the drain and the removal; apply/uninstall already hold
+            # it, so this is a counted no-op for them. The runner itself never takes it.
+            mutation_lock_acquire apply
+            sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
+            control_runner_wait_idle
             sudo systemctl disable --now pithead-control.path >/dev/null 2>&1 || true
             sudo rm -f "$unit_dir/pithead-control.path" "$unit_dir/pithead-control.service"
             sudo systemctl daemon-reload
+            mutation_lock_release
         fi
         return 0
     fi
+    # $CONTROL_DIR carries the identical two-spellings problem one level removed: it is
+    # "$PWD/data/control" as of parse_and_validate_config's own literal $PWD, so the SAME checkout
+    # produces two different PathExistsGlob strings across a boot-driven call and an interactive
+    # symlink `cd`. Disabled-control callers need not parse a control directory at all.
+    control_dir_p=$(cd "$CONTROL_DIR" 2>/dev/null && pwd -P) || control_dir_p="$CONTROL_DIR"
     # Already installed for this checkout — keep the routine apply sudo-free. (-F: both paths
     # are literals — versioned dirs carry dots (pithead-v1.9.3), and the glob star must not
     # read as a regex repeat.)
@@ -87,8 +131,8 @@ provision_control_runner() {
     # before that pin existed matches on its glob and ExecStart alone, so a template-only fix would
     # be silently inert on every box already provisioned — including the one the defect was measured
     # on. Falling through costs one sudo write, once, and then converges.
-    if grep -qsF "PathExistsGlob=$CONTROL_DIR/requests/*.json" "$unit_dir/pithead-control.path" &&
-        grep -qsF "ExecStart=$PWD/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
+    if grep -qsF "PathExistsGlob=$control_dir_p/requests/*.json" "$unit_dir/pithead-control.path" &&
+        grep -qsF "ExecStart=$pwd_p/pithead control-run-pending" "$unit_dir/pithead-control.service" &&
         grep -qsF "Environment=PITHEAD_ENGINE=$engine" "$unit_dir/pithead-control.service" &&
         grep -qsF "StartLimitIntervalSec=0" "$unit_dir/pithead-control.service"; then
         return 0
@@ -118,6 +162,18 @@ provision_control_runner() {
             return 0
         fi
     fi
+    # A fresh install has nothing running to drain and takes no lock (every appliance boot's
+    # `pithead render` comes through here). A re-provision (drifted unit, adoption, steal) does:
+    # stop the trigger BEFORE the rewrite below so no new claim can start, then wait for one
+    # already in flight to finish and write its result (#2363) — same ordering as the removal
+    # branch above, under the same mutation window (released after enable below).
+    local drained=0
+    if [ -e "$unit_dir/pithead-control.path" ] || [ -e "$unit_dir/pithead-control.service" ]; then
+        mutation_lock_acquire apply
+        drained=1
+        sudo systemctl stop pithead-control.path >/dev/null 2>&1 || true
+        control_runner_wait_idle
+    fi
     log "Installing the dashboard control runner (systemd path unit)..."
     sudo tee "$unit_dir/pithead-control.service" >/dev/null <<EOF
 [Unit]
@@ -134,7 +190,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 User=root
-WorkingDirectory=$PWD
+WorkingDirectory=$pwd_p
 # Retries a transient "not fully set up yet" (or any other one-off failure) without waiting for
 # a new request to land — the request already queued is what needs the retry (#2219). 15s: a
 # genuinely-stuck box (setup never completes) retries forever at this pace rather than fast-spinning
@@ -157,14 +213,14 @@ RestartSec=15
 # DETECTED, never hardcoded to podman: the same renderer runs on the DIY channel, where docker is
 # the correct answer. What the unit inherits is whatever the install itself was provisioned with.
 Environment=PITHEAD_ENGINE=$engine
-ExecStart=$PWD/pithead control-run-pending
+ExecStart=$pwd_p/pithead control-run-pending
 EOF
     sudo tee "$unit_dir/pithead-control.path" >/dev/null <<EOF
 [Unit]
 Description=Watch the pithead control spool for dashboard requests (#33)
 
 [Path]
-PathExistsGlob=$CONTROL_DIR/requests/*.json
+PathExistsGlob=$control_dir_p/requests/*.json
 
 [Install]
 WantedBy=multi-user.target
@@ -172,4 +228,5 @@ EOF
     sudo systemctl daemon-reload
     sudo systemctl "${enable_args[@]}" pithead-control.path >/dev/null 2>&1 ||
         warn "Could not enable pithead-control.path — dashboard config changes will not be applied until it is enabled."
+    [ "$drained" -eq 0 ] || mutation_lock_release
 }

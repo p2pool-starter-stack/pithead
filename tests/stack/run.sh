@@ -87,6 +87,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-tari.sh" && domain_ran test-monero-tari.sh "$_d0" "$?" || domain_ran test-monero-tari.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-monero-wallet-scan.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-monero-wallet-scan.sh" && domain_ran test-monero-wallet-scan.sh "$_d0" "$?" || domain_ran test-monero-wallet-scan.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-recovery-address-gates.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_ran test-recovery-address-gates.sh "$_d0" "$?" || domain_ran test-recovery-address-gates.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-p2pool-tari-off.sh disable=SC2015
@@ -180,6 +182,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-setup.sh" && domain_ran test-w
 _d0=$((PASS + FAIL)) && source "$HERE/test-wizard-tari.sh" && domain_ran test-wizard-tari.sh "$_d0" "$?" || domain_ran test-wizard-tari.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-provisioning.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-provisioning.sh" && domain_ran test-control-provisioning.sh "$_d0" "$?" || domain_ran test-control-provisioning.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-runner-drain.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-runner-drain.sh" && domain_ran test-control-runner-drain.sh "$_d0" "$?" || domain_ran test-control-runner-drain.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-identity.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-identity.sh" && domain_ran test-appliance-identity.sh "$_d0" "$?" || domain_ran test-appliance-identity.sh "$_d0" "$?"
 # shellcheck source=tests/stack/appliance/test-appliance-hostname.sh disable=SC2015
