@@ -197,14 +197,11 @@ def _editable_paths():
 
 # Env-var -> config-path map for the CONFIRM-gated set (#719), mirroring pithead's
 # CONTROL_DASHBOARD_CONFIRM_KEYS the same way EDITABLE_ENV_KEY_PATHS mirrors the editable allowlist
-# (drift-guarded by test_confirm_keys_have_no_intra_repo_drift). These are operationally-disruptive
-# but NOT the security perimeter: the dashboard MAY commit them, but only behind a type-to-confirm.
-# Surfaced to the browser as ``_confirm_keys`` so the Configuration view renders them editable with
-# a "confirm to proceed" affordance instead of greying them out as host-only. The gate is still the
-# authority: describe_change decides per-DIRECTION whether a change is CONFIRM (a data-dir move, a
-# stratum-port repoint, a clearnet-sync ENABLE, a prune ENABLE) or stays a host-only DEST (prune
-# DISABLE, a TOR data-dir move), so a field here can still be refused at commit in its heavy
-# direction — the same edit-then-maybe-refuse tradeoff the issue accepts for MONERO_PRUNE.
+# (drift-guarded by test_confirm_keys_have_no_intra_repo_drift). Operationally-disruptive but NOT
+# the security perimeter: commit behind a type-to-confirm, surfaced as ``_confirm_keys`` so the
+# Configuration view renders a "confirm to proceed" affordance rather than greying the field out.
+# describe_change still decides per-DIRECTION (an ENABLE/repoint/move is CONFIRM; some DISABLE
+# directions stay host-only DEST) — MONERO_PRUNE's edit-then-maybe-refuse.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),
@@ -232,6 +229,9 @@ CONFIRM_ENV_KEY_PATHS = {
     # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
+    # Reserved-node RPC login (#2333/#2367 ruling): confirm-gated like the endpoints above, never refused.
+    "MONERO_NODE_USERNAME": ("monero.node_username",),
+    "MONERO_NODE_PASSWORD": ("monero.node_password",),
 }
 
 
