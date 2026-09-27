@@ -82,7 +82,9 @@ services:
     # verification never trips it — raise it if a low-RAM host OOMs monerod during IBD.
     mem_limit: ${MONERO_MEM_LIMIT:-6g}
     memswap_limit: ${MONERO_MEM_LIMIT:-6g}
-    restart: unless-stopped
+    # "no" on a DIY Docker host that publishes a *_lan_access port: pithead-lan-hold.service starts
+    # it at boot once the LAN-only source rule is back (#2749). Exported by apply_lan_guard only.
+    restart: ${MONERO_RESTART:-unless-stopped}
     stop_grace_period: 1m
     logging: *default-logging
     environment:
@@ -224,7 +226,8 @@ services:
     # uid pithead chowns ${TARI_DATA_DIR} to. The wrapper entrypoint reads the canonical config
     # read-only and writes its runtime copy to /tmp, so only the data dir needs to be owned by 1000.
     user: "1000:1000"
-    restart: unless-stopped
+    # See monerod's restart (#2749).
+    restart: ${TARI_RESTART:-unless-stopped}
     stop_grace_period: 1m
     # An init as PID 1 (#2627): it reaps, and forwards the stop signal to the wrapper entrypoint,
     # which forwards it to the minotari_node it supervises (#2618). Without an init the wrapper is

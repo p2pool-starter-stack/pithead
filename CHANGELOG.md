@@ -139,8 +139,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 - **The LAN-only source rule now survives a DIY host reboot.** A reboot cleared the rule while
   Docker restarted the node containers still published on every interface, so `18081`, `18083`
   and `18142` took any source until `./pithead up`. `pithead-lan-guard.service`, ordered before
-  `docker.service`, now restores the rule before any container starts. If the unit cannot be
-  installed, the ports stay on `127.0.0.1`
+  `docker.service`, now restores the rule. The node containers that publish a LAN port run with
+  restart policy `no`, and `pithead-lan-hold.service` starts them only after the guard succeeds, so
+  a guard that fails at boot leaves them stopped instead of exposed. Docker no longer restarts a
+  crashed `monerod` or `tari` on such a host; `./pithead doctor` and a `container_unhealthy` alert
+  name the node and the reason, and `./pithead up` recovers. The first `up` after upgrading
+  recreates those containers once. If either unit cannot be installed, the ports stay on `127.0.0.1`
   ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)).
 
 - **The dashboard cannot commit the security perimeter again** (2026-09-13 perimeter audit).

@@ -36,6 +36,8 @@ assert_lan_guard_live() { # <config>
     done
     # shellcheck disable=SC2086 # one argument per port
     assert_lan_guard_boot_restore $ports
+    # shellcheck disable=SC2086
+    assert_lan_guard_boot_failure $ports
 }
 
 # DIY reboot restore (#2749), without rebooting the bench: a reboot empties PITHEAD-LAN and its
@@ -63,4 +65,64 @@ assert_lan_guard_boot_restore() { # <port>...
     rc=0
     rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
     assert_rc "the rule it restored reads as enforced, as apply's does (#2749)" "$rc" "0"
+}
+
+# Fail closed when the guard itself fails at boot (#2749). Stop the nodes and strip the rule as a
+# reboot does, then make the guard's firewall step fail (a runtime drop-in whose iptables call
+# appends to a chain that does not exist). Rebooting the shared bench is not an option, so dockerd's
+# boot-time restore is applied by hand: it starts every container whose restart policy is not "no"
+# (after a power loss even an unless-stopped one it did not see stopped). Before #2749 that started
+# the node on 0.0.0.0 with no rule; now the node is held, doctor names it, and `./pithead up`, the
+# documented recovery, brings it back behind the rule.
+assert_lan_guard_boot_failure() { # <port>...
+    local p c containers="" rc=0
+    [ "$(rx 'bash -c "source ./pithead && container_engine"')" = docker ] || return 0
+    for p in "$@"; do
+        c=$(rx "bash -c 'source ./pithead && lan_guard_container $p'")
+        [[ " $containers " == *" $c "* ]] || containers="$containers $c"
+    done
+    assert_eq "the hold unit is enabled for the next boot (#2749)" \
+        "$(rx 'systemctl is-enabled pithead-lan-hold.service 2>/dev/null')" "enabled"
+    assert_contains "it requires the guard (#2749)" "$(rx 'systemctl show -p Requires --value pithead-lan-hold.service')" "pithead-lan-guard.service"
+    assert_eq "docker.service requires neither unit, so other containers start regardless (#2749)" \
+        "$(rx 'systemctl show -p Requires --value docker.service | grep -c pithead-lan')" "0"
+    for c in $containers; do
+        assert_eq "$c runs with restart policy no, so dockerd never starts it at boot (#2749)" \
+            "$(rx "docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' $c")" "no"
+    done
+    # shellcheck disable=SC2086 # one argument per container
+    rx "docker stop -t 30 $containers" >/dev/null 2>&1 || true
+    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || true
+    rx 'sudo mkdir -p /run/systemd/system/pithead-lan-guard.service.d &&
+        printf "[Service]\nExecStart=\nExecStart=/usr/sbin/iptables -A PITHEAD-LAN-FAULT-2749 -j DROP\n" |
+            sudo tee /run/systemd/system/pithead-lan-guard.service.d/fault-2749.conf >/dev/null &&
+        sudo systemctl daemon-reload' >/dev/null 2>&1 || true
+    rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
+    assert_ne "the guard's firewall step fails (#2749)" "$rc" "0"
+    rc=0
+    rx 'sudo systemctl restart pithead-lan-hold.service' >/dev/null 2>&1 || rc=$?
+    assert_ne "systemd refuses the hold while the guard is failed (#2749)" "$rc" "0"
+    # dockerd's boot restore, by the container's real policy.
+    for c in $containers; do
+        rx "case \$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' $c) in no) ;; *) docker start $c ;; esac" >/dev/null 2>&1 || true
+    done
+    for p in "$@"; do
+        assert_eq "guard failed at boot, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    for c in $containers; do
+        assert_eq "$c stays stopped while the guard is failed (#2749)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" "false"
+    done
+    assert_contains "doctor names the held node and the recovery (#2749)" \
+        "$(rx "bash -c 'source ./pithead && check_lan_guard_hold $*'" 2>&1)" "held since boot"
+    rx 'sudo rm -rf /run/systemd/system/pithead-lan-guard.service.d && sudo systemctl daemon-reload && sudo systemctl reset-failed pithead-lan-guard.service pithead-lan-hold.service' >/dev/null 2>&1 || true
+    rc=0
+    pithead up >/dev/null 2>&1 || rc=$?
+    assert_rc "recovery: ./pithead up (#2749)" "$rc" "0"
+    for c in $containers; do
+        assert_eq "recovery: $c runs again (#2749)" "$(rx "docker inspect -f '{{.State.Running}}' $c")" "true"
+    done
+    for p in "$@"; do
+        assert_eq "recovery, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
+        assert_eq "recovery, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
+    done
 }

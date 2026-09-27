@@ -394,6 +394,7 @@ preflight() {
     # baseline resolves to — and installs those units. Taken here or not at all; read by verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
     LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
+    HOLD_UNIT_BEFORE="$(boot_unit_state pithead-lan-hold.service)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"

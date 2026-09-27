@@ -303,7 +303,9 @@ class AlertService(AlertEdgesMixin):
                 evt, template = self.EVT_CONTAINER_UNHEALTHY, EDGE_MESSAGES[edge]
                 if edge != "recovered":
                     self._record_incident(self.EVT_CONTAINER_UNHEALTHY)
-                alerts.append((evt, self._fmt(template.format(name=name))))
+                alerts.append(
+                    (evt, self._fmt(template.format(name=name, **containers.get(name, {}))))
+                )
 
         # --- Host health: data disk filling up, dashboard DB write failing / reset ---
         alerts += self._disk_edges(disk_percent)

@@ -4,7 +4,7 @@
 # with the LAN set only, compose never publishes on 0.0.0.0 unless the rule is live (the loopback
 # fallback), doctor tells exposed from held, and every publish of the three ports stays an explicit
 # IPv4 bind, so the IPv4-only rule covers it, and the boot unit that restores the rule before
-# docker.service restarts the containers (#2749). The live half, a non-private source refused on the
+# docker.service starts, plus the hold that starts the LAN-access containers only after it (#2749). The live half, a non-private source refused on the
 # bench before and after the rule is stripped and the unit re-run, is tests/integration/lib/run-lan-guard.sh.
 # Sourced by tests/stack/run.sh.
 
@@ -52,23 +52,34 @@ case "$*" in
 esac
 exit 0
 NFT
-# docker: `compose up` records the bind it was handed; `ps`/`port` answer the doctor rows.
+# docker: `compose up` records the bind and the restart policies it was handed; `ps`/`port`/`inspect`
+# answer the doctor rows (LG_RUNNING, LG_EXISTS, LG_POLICY, LG_EXIT).
 cat >"$LGD/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1 ${2:-}" in
-"compose up"*) echo "compose-bind=${TARI_GRPC_BIND:-from-env-file}" >>"$LG_COMPOSE" ;;
-"ps "*) echo cid123 ;;
+"compose up"*)
+    echo "compose-bind=${TARI_GRPC_BIND:-from-env-file}" >>"$LG_COMPOSE"
+    echo "restart=${MONERO_RESTART:-default},${TARI_RESTART:-default}" >>"$LG_COMPOSE.restart"
+    ;;
+"ps "*) [ "${LG_RUNNING:-1}" = 1 ] && echo cid123 ;;
+"inspect -f")
+    [ "${LG_EXISTS:-1}" = 1 ] || exit 1
+    case "$3" in *RestartPolicy*) echo "${LG_POLICY:-no}" ;; *ExitCode*) echo "${LG_EXIT:-137}" ;; esac
+    ;;
 "port "*) echo "${LG_PUBLISHED:-0.0.0.0}:18142" ;;
 esac
 exit 0
 DOCKER
 printf '#!/usr/bin/env bash\necho Linux\n' >"$LGD/bin/uname" # OS_TYPE is read when pithead is sourced
 # systemctl logs every call; `is-enabled` answers from LG_ENABLED (default: not enabled), `enable`
-# from LG_ENABLE_RC (default: succeeds).
+# from LG_ENABLE_RC, or LG_HOLD_ENABLE_RC for the hold unit (default: succeeds), `is-failed` from
+# LG_GUARD_FAILED (default: not failed).
 cat >"$LGD/bin/systemctl" <<'SYSTEMCTL'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
 [ "$1" = is-enabled ] && exit "${LG_ENABLED:-1}"
+[ "$1" = is-failed ] && exit "${LG_GUARD_FAILED:-1}"
+[ "$1 ${2:-}" = "enable pithead-lan-hold.service" ] && exit "${LG_HOLD_ENABLE_RC:-0}"
 [ "$1" = enable ] && exit "${LG_ENABLE_RC:-0}"
 exit 0
 SYSTEMCTL
@@ -78,6 +89,7 @@ export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
 lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
+LG_HOLD="$LGD/units/pithead-lan-hold.service"
 
 echo "== the rule admits loopback, RFC1918 and CGNAT only, and drops the rest (#2616) =="
 lg_out="$(printf '%s\n' '-A DOCKER-USER -p tcp -m tcp --dport 18081 -m comment --comment pithead-lan-guard -j PITHEAD-LAN' |
@@ -156,6 +168,37 @@ for p in 18081 18142; do
         "ExecStart=-/usr/sbin/iptables -D DOCKER-USER -p tcp -m tcp --dport $p "
 done
 
+lg_hu="$(run_sourced "$LGD" render_lan_guard_hold_unit /usr/bin/docker monerod tari)"
+assert_contains "the hold needs the guard: a failed guard never starts the containers" "$lg_hu" \
+    "Requires=pithead-lan-guard.service docker.service"
+assert_contains "...and runs after both" "$lg_hu" "After=pithead-lan-guard.service docker.service"
+assert_contains "the hold is pulled in by the boot, not by docker.service" "$lg_hu" "WantedBy=multi-user.target"
+assert_not_contains "docker.service never depends on the hold" "$lg_hu" "WantedBy=docker.service"
+assert_eq "it starts exactly the named containers, a removed one no failure" \
+    "$(grep '^ExecStart=' <<<"$lg_hu" | tr '\n' '|')" "ExecStart=-/usr/bin/docker start monerod|ExecStart=-/usr/bin/docker start tari|"
+
+rm -f "$LG_UNIT" "$LG_SYSTEMCTL" "$LG_HOLD"
+: >"$LG_COMPOSE.restart"
+LG_LIVE=1 lg 'compose_up -d' >/dev/null
+assert_eq "a live apply hands compose restart no for the container publishing a LAN port, and only it" \
+    "$(cat "$LG_COMPOSE.restart")" "restart=default,no"
+assert_eq "...and writes the hold for that container" "$(cat "$LG_HOLD" 2>/dev/null)" \
+    "$(run_sourced "$LGD" render_lan_guard_hold_unit "$LGD/bin/docker" tari)"
+assert_contains "...enabled for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable pithead-lan-hold.service"
+rm -f "$LG_HOLD"
+: >"$LG_COMPOSE"
+: >"$LG_COMPOSE.restart"
+lg_out="$(LG_LIVE=1 LG_HOLD_ENABLE_RC=1 lg 'compose_up -d')"
+assert_contains "the hold cannot be enabled: named" "$lg_out" "boot unit that restores it after a reboot could not be installed"
+assert_eq "...compose is handed 127.0.0.1" "$(cat "$LG_COMPOSE")" "compose-bind=127.0.0.1"
+assert_eq "...and the default restart, harmless on loopback" "$(cat "$LG_COMPOSE.restart")" "restart=default,default"
+for lg_case in "LG_LIVE=0" "LG_LIVE=1 LG_APPLIANCE=1" "LG_LIVE=1 PITHEAD_ENGINE=podman"; do
+    : >"$LG_COMPOSE.restart"
+    # shellcheck disable=SC2086,SC2163 # the case is a list of NAME=value words
+    (export $lg_case && lg 'compose_up -d' >/dev/null)
+    assert_eq "$lg_case: compose keeps the default restart" "$(cat "$LG_COMPOSE.restart")" "restart=default,default"
+done
+
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 assert_eq "a live apply writes the unit for the published ports" "$(cat "$LG_UNIT" 2>/dev/null)" \
@@ -180,6 +223,7 @@ rm -f "$LG_SYSTEMCTL"
 lg apply_lan_guard >/dev/null
 mv "$LGD/.env.on" "$LGD/.env"
 assert_eq "every switch off removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
+assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""
 assert_contains "...and disables it" "$(cat "$LG_SYSTEMCTL")" "disable pithead-lan-guard.service"
 assert_eq "...leaving another service's unit alone" "$(test -e "$LGD/units/other-firewall.service" && echo present)" "present"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
@@ -187,6 +231,7 @@ cp "$LGD/.env" "$LGD/.env.keep"
 lg_out="$(lg 'set +e; detect_os() { :; }; docker() { :; }; provision_control_runner() { :; }; stack_uninstall -y')"
 assert_contains "uninstall completes" "$lg_out" "Uninstalled."
 assert_eq "uninstall removes the unit" "$(test -e "$LG_UNIT" && echo present)" ""
+assert_eq "...and the hold" "$(test -e "$LG_HOLD" && echo present)" ""
 mv "$LGD/.env.keep" "$LGD/.env" # uninstall removes .env too
 
 echo "== doctor tells a port held on loopback from one exposed without the rule (#2616) =="
@@ -204,6 +249,30 @@ assert_contains "rule missing and the port on loopback: says it is held, and why
 assert_contains "...naming the reason" "$lg_out" "not in the live ruleset"
 lg_out="$(LG_LIVE=1 LG_FOREIGN='-A DOCKER-USER -j ACCEPT' LG_PUBLISHED=0.0.0.0 lg check_lan_guard)"
 assert_contains "a foreign ACCEPT above our jumps is not called enforced" "$lg_out" "not ours accepts traffic above it"
+
+echo "== doctor names a held or exited LAN-access node, and a restart policy that would beat the rule (#2749) =="
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_guard)"
+assert_contains "guard failed at boot: tari is down, held, with the recovery" "$lg_out" \
+    "tari is down: held since boot, because pithead-lan-guard.service failed"
+assert_contains "...and the recovery" "$lg_out" "Run './pithead up' to start it."
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_EXIT=139 lg check_lan_guard)"
+assert_contains "exited while running: named, with its exit code" "$lg_out" \
+    "tari is down: it exited (code 139), and with LAN access on Docker does not restart it"
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_RUNNING=0 LG_EXISTS=0 lg check_lan_guard)"
+assert_not_contains "a container down removed is no verdict" "$lg_out" "is down:"
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 LG_POLICY=unless-stopped lg check_lan_guard)"
+assert_contains "running with a restart Docker acts on at boot: FAIL" "$lg_out" "restart policy 'unless-stopped'"
+lg_out="$(LG_LIVE=1 LG_ENABLED=0 lg check_lan_guard)"
+assert_not_contains "running with restart no: no hold verdict" "$lg_out" "restart policy"
+lg_out="$(LG_LIVE=1 LG_APPLIANCE=1 LG_RUNNING=0 LG_GUARD_FAILED=0 lg check_lan_guard)"
+assert_not_contains "the appliance has no hold to report" "$lg_out" "is down:"
+
+echo "== only the two LAN-access node services take their restart policy from apply_lan_guard (#2749) =="
+assert_eq "monerod and tari restart unless-stopped unless MONERO_RESTART/TARI_RESTART say otherwise" \
+    "$(grep -E '^    restart: \$\{' "$ROOT/docker-compose.yml" | tr '\n' '|')" \
+    '    restart: ${MONERO_RESTART:-unless-stopped}|    restart: ${TARI_RESTART:-unless-stopped}|'
+assert_eq "...in that order: monerod's first, tari's second" \
+    "$(awk '/^  [a-z-]+:$/{svc=$1} /^    restart: \$\{/{print svc}' "$ROOT/docker-compose.yml" | tr '\n' ' ')" "monerod: tari: "
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
 # The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits

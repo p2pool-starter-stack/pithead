@@ -15,6 +15,12 @@ EDGE_MESSAGES = {
     "(OOM or bad config?). Check: docker logs {name}",
     "unhealthy": "\U0001f7e0 \U0001f4e6 Container {name} is running but unhealthy — its healthcheck "
     "keeps failing.",
+    # #2749: a LAN-access node on a DIY Docker host runs with restart "no", so these stay down.
+    "held": "\U0001f534 \U0001f4e6 Container {name} is down: held since boot because the LAN-only "
+    "source rule for its LAN-access ports was not restored (pithead-lan-guard.service failed). "
+    "Fix that, then run ./pithead up",
+    "exited": "\U0001f534 \U0001f4e6 Container {name} is down: it exited (code {exit_code}) and, "
+    "with LAN access on, Docker does not restart it. Run ./pithead up",
     "recovered": "\U0001f7e2 \U0001f4e6 Container {name} recovered.",
 }
 
@@ -38,8 +44,13 @@ class ContainerHealthMonitor:
     - **Recovered** — a previously *alerted* container back to running, not restarting, health
       in (None, "healthy") for ``recovery_after``, with no restart inside that window (so a
       slow crash loop can't ping-pong recovered/crash-loop).
-    - **Never an edge**: "exited" (not running, not restarting) — the stack stops p2pool and
-      xmrig-proxy on purpose (sync gate #35, node-down failover #31) — and a container that
+    - **Down, unsupervised** (#2749) — a container with restart policy "no" (``unsupervised``: a
+      LAN-access node on a DIY Docker host) not running for ``unhealthy_after``. Nothing restarts
+      it, so it is an edge: ``held`` when it has not started since boot (its LAN guard failed),
+      ``exited`` otherwise. Unlike the rest it fires from a first sighting too: a node held at boot
+      is down before the dashboard ever sees it up.
+    - **Never an edge**: any other "exited" (not running, not restarting) — the stack stops p2pool
+      and xmrig-proxy on purpose (sync gate #35, node-down failover #31) — and a container that
       disappears from the snapshot (profile off, remote mode, proxy down), which is silently
       forgotten so a later return re-baselines.
     - **Silent baseline.** A container's first sighting registers its current state with no
@@ -48,7 +59,7 @@ class ContainerHealthMonitor:
       alerted).
 
     :meth:`update` takes this cycle's snapshot dict and returns a list of ``(name, edge)``,
-    ``edge`` in ``{"crash_loop", "unhealthy", "recovered"}``.
+    ``edge`` in ``{"crash_loop", "unhealthy", "held", "exited", "recovered"}``.
 
     Clock defaults to wall-clock ``time.time``; injectable for deterministic tests.
     """
@@ -112,6 +123,7 @@ class ContainerHealthMonitor:
                     "restart_times": [],
                     "restarting_streak": 1 if s["restarting"] else 0,
                     "unhealthy_since": now if s["health"] == "unhealthy" else None,
+                    "down_since": now if _unsupervised_down(s) else None,
                     "ok_since": None,
                 }
             else:
@@ -144,6 +156,13 @@ class ContainerHealthMonitor:
         unhealthy = (
             c["unhealthy_since"] is not None and now - c["unhealthy_since"] >= self.unhealthy_after
         )
+        # Debounced like unhealthy, so a recreate during `pithead up` does not page.
+        if _unsupervised_down(s):
+            if c.get("down_since") is None:
+                c["down_since"] = now
+        else:
+            c["down_since"] = None
+        down = c["down_since"] is not None and now - c["down_since"] >= self.unhealthy_after
 
         clean = s["running"] and not s["restarting"] and s["health"] in (None, "healthy")
         if clean:
@@ -163,6 +182,10 @@ class ContainerHealthMonitor:
                 c["state"] = "bad"
                 c["alerted"] = True
                 edges.append((name, "unhealthy"))
+            elif down:
+                c["state"] = "bad"
+                c["alerted"] = True
+                edges.append((name, "held" if s.get("held_since_boot") else "exited"))
         elif (
             clean
             and now - c["ok_since"] >= self.recovery_after
@@ -172,3 +195,8 @@ class ContainerHealthMonitor:
                 edges.append((name, "recovered"))
             c["state"] = "ok"
             c["alerted"] = False
+
+
+def _unsupervised_down(s):
+    """Restart policy "no" and not running: nothing will start it again (#2749)."""
+    return bool(s.get("unsupervised")) and not s["running"] and not s["restarting"]

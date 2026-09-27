@@ -171,6 +171,7 @@ check_lan_guard() {
     published=$(lan_guard_published)
     [ -n "$published" ] || return 0
     for kp in $published; do ports+=("${kp#*:}"); done
+    check_lan_guard_hold "${ports[@]}"
     lan_guard_enforced "${ports[@]}" || rc=$?
     if [ "$rc" = 0 ] && tor_egress_boot_unit_applies && ! systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
         dr_warn_surface "LAN-only sources are enforced on port(s) ${ports[*]} now, but $LAN_GUARD_BOOT_UNIT is not enabled, so a reboot reopens them to every source until './pithead up'. Run './pithead up' to install it." "Node port(s) ${ports[*]} are limited to the LAN now, but that limit will not survive a restart of this machine."
@@ -197,6 +198,31 @@ check_lan_guard() {
     return 0
 }
 
+# doctor (#2749): on a DIY Docker host with a LAN port published, only pithead starts monerod/tari.
+# One that exists but is not running is a FAIL naming why (held at boot by a failed guard, or exited)
+# and the recovery. One running with a restart policy Docker would act on at boot, before the rule is
+# back, is a FAIL too. A container `down` removed is no verdict.
+check_lan_guard_hold() { # <port>...
+    tor_egress_boot_unit_applies || return 0
+    local p c seen=" " policy why
+    for p in "$@"; do
+        c=$(lan_guard_container "$p")
+        [[ "$seen" == *" $c "* ]] && continue
+        seen+="$c "
+        policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null) || continue
+        if container_is_running "$c"; then
+            [ "$policy" = no ] || dr_fail "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'."
+            continue
+        fi
+        if systemctl is-failed --quiet "$LAN_GUARD_BOOT_UNIT" 2>/dev/null; then
+            why="held since boot, because $LAN_GUARD_BOOT_UNIT failed and the LAN-only source rule is not in place (see 'journalctl -u $LAN_GUARD_BOOT_UNIT')"
+        else
+            why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it"
+        fi
+        dr_fail "$c is down: $why. Run './pithead up' to start it."
+    done
+}
+
 # Remove the rule from both backends. `sudo -n`: a leftover rule only drops outside traffic to a
 # port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
 remove_lan_guard() {
@@ -221,7 +247,17 @@ remove_lan_guard() {
 # and same reasons as pithead-egress.service (02a-tor-egress-boot.sh): a oneshot ordered
 # Before=docker.service and pulled in by it, the rules inline, no checkout path and no docker call.
 # The appliance needs none: pithead-boot runs `up`, and compose_up installs the rule first.
+#
+# The unit alone fails open: if its firewall step fails, dockerd still restarts the containers on
+# 0.0.0.0. So on these hosts the containers that publish a LAN port run with restart "no", and
+# pithead-lan-hold.service starts them after docker only once the guard has succeeded (Requires=).
+# docker.service never depends on either unit, so a host's other containers start regardless. The
+# cost: dockerd no longer restarts a crashed monerod/tari there; doctor and the dashboard say so.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
+LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
+
+# The container publishing <port>: monerod for 18081/18083, tari for 18142.
+lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; fi; }
 
 # The unit text for <iptables path> <port>.... Pure (args only) so it unit-tests. Fails closed: the
 # chain's DROP goes in before anything jumps to it, the RETURNs are inserted above the DROP, and the
@@ -263,32 +299,71 @@ WantedBy=docker.service
 EOF
 }
 
-# Write and enable the unit for <port>..., or leave it when it already matches and is enabled. Returns 1 when it could not.
-# Enable, not --now: apply_lan_guard has just installed the live rule. Same hosts as the egress unit.
-provision_lan_guard_boot_unit() { # <port>...
-    tor_egress_boot_unit_applies || return 0
-    local ipt unit_dir want
-    ipt=$(command -v iptables) || return 1
-    unit_dir=$(control_unit_dir)
-    want=$(render_lan_guard_boot_unit "$ipt" "$@")
-    if [ "$(cat "$unit_dir/$LAN_GUARD_BOOT_UNIT" 2>/dev/null)" = "$want" ] &&
-        systemctl is-enabled "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
-        return 0
-    fi
-    if printf '%s\n' "$want" | sudo tee "$unit_dir/$LAN_GUARD_BOOT_UNIT" >/dev/null &&
-        sudo systemctl daemon-reload && sudo systemctl enable "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1; then
-        log "LAN-only source rule will be restored at boot, before the containers restart ($LAN_GUARD_BOOT_UNIT)."
-        return 0
-    fi
-    return 1
+# The hold unit for <docker path> <container>.... Pure (args only) so it unit-tests. Requires= the
+# guard: when the guard fails, systemd never starts this unit and the containers stay stopped. `-`:
+# a container `down` removed is not a failure; one that exists but will not start is doctor's FAIL.
+render_lan_guard_hold_unit() { # <docker> <container>...
+    local docker="$1" c
+    shift
+    cat <<EOF
+[Unit]
+Description=pithead starts the *_lan_access node containers only once their LAN-only source rule is in place
+Requires=$LAN_GUARD_BOOT_UNIT docker.service
+After=$LAN_GUARD_BOOT_UNIT docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EOF
+    for c in "$@"; do printf 'ExecStart=-%s start %s\n' "$docker" "$c"; done
+    cat <<EOF
+
+[Install]
+WantedBy=multi-user.target
+EOF
 }
 
-# Disable and delete the unit (every *_lan_access switch off, uninstall). Only our unit name.
-remove_lan_guard_boot_unit() {
-    local unit_dir
+# Write and enable <unit> with <text>, or leave it when it already matches and is enabled.
+install_lan_guard_unit() { # <unit dir> <unit> <text>
+    if [ "$(cat "$1/$2" 2>/dev/null)" = "$3" ] && systemctl is-enabled "$2" >/dev/null 2>&1; then
+        return 0
+    fi
+    printf '%s\n' "$3" | sudo tee "$1/$2" >/dev/null &&
+        sudo systemctl daemon-reload && sudo systemctl enable "$2" >/dev/null 2>&1
+}
+
+# Install both units for <port>..., then hand compose restart "no" for the containers publishing
+# them. Returns 1 when either unit could not be installed, and apply_lan_guard holds the ports on
+# loopback. Enable, not --now: apply_lan_guard has just installed the live rule, and compose starts
+# the containers. Same hosts as the egress unit.
+provision_lan_guard_boot_unit() { # <port>...
+    tor_egress_boot_unit_applies || return 0
+    local ipt docker unit_dir p c containers=()
+    ipt=$(command -v iptables) || return 1
+    docker=$(command -v docker) || return 1
     unit_dir=$(control_unit_dir)
-    [ -e "$unit_dir/$LAN_GUARD_BOOT_UNIT" ] || return 0
-    sudo systemctl disable "$LAN_GUARD_BOOT_UNIT" >/dev/null 2>&1 || true
-    sudo rm -f "$unit_dir/$LAN_GUARD_BOOT_UNIT" || true
-    sudo systemctl daemon-reload >/dev/null 2>&1 || true
+    for p in "$@"; do
+        c=$(lan_guard_container "$p")
+        [[ " ${containers[*]} " == *" $c "* ]] || containers+=("$c")
+    done
+    install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$@")" &&
+        install_lan_guard_unit "$unit_dir" "$LAN_GUARD_HOLD_UNIT" "$(render_lan_guard_hold_unit "$docker" "${containers[@]}")" ||
+        return 1
+    for c in "${containers[@]}"; do
+        if [ "$c" = tari ]; then export TARI_RESTART=no; else export MONERO_RESTART=no; fi
+    done
+    log "At boot, ${containers[*]} start only once the LAN-only source rule is back ($LAN_GUARD_HOLD_UNIT); Docker does not restart them by itself."
+}
+
+# Disable and delete both units (every *_lan_access switch off, uninstall). Only our unit names.
+remove_lan_guard_boot_unit() {
+    local unit_dir u gone=0
+    unit_dir=$(control_unit_dir)
+    for u in "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT"; do
+        [ -e "$unit_dir/$u" ] || continue
+        sudo systemctl disable "$u" >/dev/null 2>&1 || true
+        sudo rm -f "$unit_dir/$u" || true
+        gone=1
+    done
+    [ "$gone" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || true
 }

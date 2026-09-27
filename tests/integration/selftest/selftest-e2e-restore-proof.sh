@@ -338,11 +338,19 @@ assert_contains "pithead-lan-guard.service: and the restore says so, so a leftov
     "$(unit_restore pithead-lan-guard.service present present 2>&1 >/dev/null)" "already on the bench before this run"
 assert_eq "pithead-lan-guard.service: a unit that survives the removal fails the restore proof" "$(unit_restore pithead-lan-guard.service absent present 1)" "1 present 1"
 assert_eq "pithead-lan-guard.service: an unrecorded baseline fails closed and removes nothing" "$(unit_restore pithead-lan-guard.service "" present)" "1 present 0"
-for u in "pithead-egress.service \"\$EGRESS_UNIT_BEFORE\"" "pithead-lan-guard.service \"\$LAN_UNIT_BEFORE\""; do
+assert_eq "pithead-lan-hold.service: a unit this run added is removed, and the absence proven" "$(unit_restore pithead-lan-hold.service absent present)" "0 absent 1"
+assert_eq "pithead-lan-hold.service: a unit the baseline already had is left alone" "$(unit_restore pithead-lan-hold.service present present)" "0 present 0"
+assert_contains "pithead-lan-hold.service: and the restore says so, so a leftover from a cancelled run is visible" \
+    "$(unit_restore pithead-lan-hold.service present present 2>&1 >/dev/null)" "already on the bench before this run"
+assert_eq "pithead-lan-hold.service: a unit that survives the removal fails the restore proof" "$(unit_restore pithead-lan-hold.service absent present 1)" "1 present 1"
+assert_eq "pithead-lan-hold.service: an unrecorded baseline fails closed and removes nothing" "$(unit_restore pithead-lan-hold.service "" present)" "1 present 0"
+for u in "pithead-egress.service \"\$EGRESS_UNIT_BEFORE\"" "pithead-lan-guard.service \"\$LAN_UNIT_BEFORE\"" \
+    "pithead-lan-hold.service \"\$HOLD_UNIT_BEFORE\""; do
     assert_contains "verify_restore_proof restores ${u%% *}" "$(declare -f verify_restore_proof)" "restore_boot_unit $u"
 done
 assert_contains "e2e.sh records the egress unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"'
 assert_contains "e2e.sh records the LAN-guard unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"'
+assert_contains "e2e.sh records the hold unit before deploy_branch installs it" "$(cat "$E2E_SRC")" 'HOLD_UNIT_BEFORE="$(boot_unit_state pithead-lan-hold.service)"'
 
 echo ""
 printf 'restore-proof self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"

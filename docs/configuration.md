@@ -261,14 +261,26 @@ The rule needs root: `sudo` with `iptables` on the Docker install, `nft` on the 
 install the rule, it keeps the ports on `127.0.0.1` for that start instead of publishing them
 without it. `./pithead doctor` then says the ports are held and why.
 
-A reboot clears the rule. On the Docker install, Docker restarts the node containers by itself, so
-`pithead` also installs `pithead-lan-guard.service`. That unit runs before `docker.service` and puts
-the rule back before any container starts. When the unit cannot be installed, `pithead` keeps the
-ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while the
-rule is live but the unit is not enabled. `pithead` removes the unit when every `*_lan_access`
-switch is off, and `uninstall` removes it. The appliance needs no such unit: its boot runs
-`pithead up`, which installs the rule first. A doctor FAIL means a port is published on every
-interface while the rule is missing; `./pithead up` reinstalls it.
+A reboot clears the rule. On the Docker install, `pithead` therefore installs two units.
+`pithead-lan-guard.service` runs before `docker.service` and puts the rule back.
+`pithead-lan-hold.service` starts the node containers that publish a LAN port (`monerod` for
+`18081` and `18083`, `tari` for `18142`), and only once the guard has succeeded. Docker itself
+does not start those containers: they run with restart policy `no`. If the guard fails at boot,
+they stay stopped rather than listen with no rule. `docker.service` depends on neither unit, so
+other containers on the host start as usual. When either unit cannot be installed, `pithead` keeps
+the ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while
+the rule is live but the guard is not enabled. `pithead` removes both units when every
+`*_lan_access` switch is off, and `uninstall` removes them. The appliance needs neither: its boot
+runs `pithead up`, which installs the rule first.
+
+Turning a `*_lan_access` switch on has a cost on the Docker install: Docker no longer restarts a
+crashed `monerod` or `tari`. It stays down until `./pithead up` or the next boot. `./pithead doctor`
+reports a node that is down with the reason, either held since boot because the guard failed (see
+`journalctl -u pithead-lan-guard`) or exited with its exit code. It also reports a running node
+whose restart policy would let Docker start it before the rule. The dashboard sends the same
+verdict as a `container_unhealthy` alert after two minutes (see [Telegram](telegram.md)). In
+every case, fix the cause and run `./pithead up`. A doctor FAIL that a port is published on every
+interface while the rule is missing is also fixed by `./pithead up`.
 
 ## Data directories
 

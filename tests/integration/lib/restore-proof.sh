@@ -18,12 +18,13 @@
 BASELINE_IMAGES=""
 BRANCH_IMAGES=""
 # Were the host-global boot units on the bench before this run? `up`/`upgrade` install
-# pithead-egress.service (#2460) on any DIY host, and pithead-lan-guard.service (#2749) when a
-# *_lan_access switch is on, the bench included. A run that found none must leave none: the bench
-# is shared, and an unrecorded unit is drift. present | absent; empty = never read, which the
-# restore refuses.
+# pithead-egress.service (#2460) on any DIY host, and pithead-lan-guard.service plus
+# pithead-lan-hold.service (#2749) when a *_lan_access switch is on, the bench included. A run that
+# found none must leave none: the bench is shared, and an unrecorded unit is drift.
+# present | absent; empty = never read, which the restore refuses.
 EGRESS_UNIT_BEFORE=""
 LAN_UNIT_BEFORE=""
+HOLD_UNIT_BEFORE=""
 
 boot_unit_state() { # <unit> -> present | absent | "" (the bench could not be asked)
     on_bench "if systemctl cat $1 >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
@@ -49,7 +50,7 @@ restore_boot_unit() { # <unit> <state before the run> <issue>
     esac
     on_bench "sudo systemctl disable --now $unit >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$unit; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
     if [ "$(boot_unit_state "$unit")" = absent ] &&
-        on_bench "! systemctl show -p Wants --value docker.service | grep -qw $unit" >/dev/null 2>&1; then
+        on_bench "! systemctl show -p Wants --value docker.service multi-user.target | grep -qw $unit" >/dev/null 2>&1; then
         ok "restore proof: $unit removed — no trace of this run's boot unit on the bench ($ref)"
         return 0
     fi
@@ -287,5 +288,6 @@ PROBE
     chain_restore_proof || prc=1
     restore_boot_unit pithead-egress.service "$EGRESS_UNIT_BEFORE" "#2460" || prc=1
     restore_boot_unit pithead-lan-guard.service "$LAN_UNIT_BEFORE" "#2749" || prc=1
+    restore_boot_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE" "#2749" || prc=1
     return "$prc"
 }
