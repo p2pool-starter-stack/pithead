@@ -228,7 +228,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
               else . end
               | if (.api_token | type) == "object" and .api_token.__secret__ == true
-                then .api_token = ($livetok[.name].api_token // "") else . end)
+                then .api_token = (if (.name | type) == "string" then ($livetok[.name].api_token // "") else "" end)
+                else . end)
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
@@ -236,7 +237,8 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               then .token = (if (.name | type) == "string" then ($livetok[.name].token // "") else "" end)
               else . end
               | if (.api_token | type) == "object" and .api_token.__secret__ == true
-                then .api_token = ($livetok[.name].api_token // "") else . end)
+                then .api_token = (if (.name | type) == "string" then ($livetok[.name].api_token // "") else "" end)
+                else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
     local carried_ssh=0

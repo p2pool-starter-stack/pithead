@@ -72,7 +72,7 @@ assert_eq "legacy probe token restored host-side" "$(jq -r '.dashboard.workers[0
 assert_eq "second per-worker sentinel restored by name" "$(jq -r '.dashboard.workers[2].token' "$STAGED/$UUID6.json" 2>/dev/null)" "tok_rig3secret"
 assert_eq "token-less worker stays token-less at staging" "$(jq -r '.dashboard.workers[1] | has("token")' "$STAGED/$UUID6.json" 2>/dev/null)" "false"
 case "$(cat "$RESULTS/$UUID6.json")$(cat "$AUDIT")" in
-*tok_rig1secret* | *tok_rig3secret*) bad "results/audit stay free of the restored per-worker token" "a per-worker token leaked" ;;
+*tok_rig1secret* | *tok_rig3secret* | *probe_rig1secret*) bad "results/audit stay free of the restored per-worker token" "a per-worker token leaked" ;;
 *) ok "results/audit stay free of the restored per-worker token" ;;
 esac
 # 3) commit: the sentinels resolve to the live values, so the gate sees only the pool change —
@@ -130,6 +130,17 @@ assert_eq "workers.list-sentinel preview validates" "$(jq -r '.status' "$RESULTS
 assert_eq "workers.list sentinel restored to the live token by name" "$(jq -r '.workers.list[0].token' "$STAGED/$UUID8.json" 2>/dev/null)" "tok_rig1secret"
 assert_eq "workers.list probe token restored host-side" "$(jq -r '.workers.list[0].api_token' "$STAGED/$UUID8.json" 2>/dev/null)" "probe_rig1secret"
 assert_eq "second workers.list sentinel restored by name" "$(jq -r '.workers.list[2].token' "$STAGED/$UUID8.json" 2>/dev/null)" "tok_rig3secret"
+assert_not_contains "canonical preview and audit hide probe token" "$(cat "$RESULTS/$UUID8.json")$(cat "$AUDIT")" "probe_rig1secret"
+# An invalid descriptor's probe-token sentinel must collapse safely before validation rejects it.
+# Use a separate spool so this refusal cannot alter the audit/spool counts in later domains.
+mk_tmpdir WXMAL
+mkdir -p "$WXMAL/staged" "$WXMAL/results" "$WXMAL/audit"
+WXID="99999999-9999-4999-8999-999999999999"
+jq --arg id "$WXID" '{id:$id,action:"preview",actor:"admin",config:(.workers.list += [{api_token:{"__secret__":true}}])}' "$MASKED" >"$WXMAL/request.json"
+run_sourced "$C" control_preview "$WXMAL/request.json" "$WXID" admin "$WXMAL" >/dev/null 2>&1
+assert_eq "nameless worker descriptor is rejected" "$(jq -r '.status' "$WXMAL/results/$WXID.json" 2>/dev/null)" "rejected"
+assert_contains "nameless probe sentinel reaches worker validation" "$(jq -r '.log' "$WXMAL/results/$WXID.json" 2>/dev/null)" 'every entry needs a "name"'
+rm -rf "$WXMAL"
 # 3) commit: workers.list restored to live == live, so the gate passes on the pool-only change, and
 #    the committed config KEEPS the live per-worker tokens.
 printf '{"id":"%s","action":"commit","actor":"admin"}\n' "$UUID8" >"$REQS/$UUID8.json"
