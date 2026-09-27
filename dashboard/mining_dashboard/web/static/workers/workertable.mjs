@@ -79,7 +79,16 @@ const ProxyTotals = ({ summary }) => {
     </div>`;
 };
 
-function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onInspect }) {
+function WorkersTable({
+  workers,
+  summary,
+  ui,
+  onSort,
+  hostIp,
+  stratumPort,
+  onInspect,
+  maskAddresses = false,
+}) {
   // First-run empty state (#385): show the one action to take instead of empty headers.
   // `workers` includes offline rigs, so a temporarily all-offline fleet keeps its (red) table.
   if ((workers || []).length === 0) {
@@ -129,7 +138,7 @@ function WorkersTable({ workers, summary, ui, onSort, hostIp, stratumPort, onIns
                                                 title="Inspect / edit this worker's config">${w.name}</button>`
                                 : w.name
                             } <${PoolBadge} pool=${w.pool} /><${ApiBadge} w=${w} onInspect=${onInspect} /><${RigForgeChips} rf=${w.rigforge} /><${RigUpdateBadge} up=${w.rigforge_update} name=${w.name} onInspect=${onInspect} /></td>
-                            <td>${w.ip}</td>
+                            <td>${maskAddresses ? "Hidden" : w.ip}</td>
                             <td>${uptimeCell(w)}</td>
                             <td>${w.h60_str}</td>
                             <td>${w.h15_str}</td>

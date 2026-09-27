@@ -72,6 +72,9 @@ atomicity and annotation tests in `tests/service/` check those boundaries.
 `python -m mining_dashboard.wizard` remains the appliance's wizard launch command;
 the package's `__main__.py` delegates to its server.
 
+The opt-in [Sovereign preview](../design/sovereign-preview.md) lives in
+`web/static/sovereign/`, with matching frontend tests and a loopback fixture server.
+
 Browser assets live in `web/static/`. JavaScript feature folders are `app/`,
 `config/`, `network/`, `system/`, `workers/`, `xvb/`, and `wizard/`.
 `tests/frontend/` mirrors those folders. Its `harness.mjs`, `helpers/`, and

@@ -20,6 +20,7 @@ import {
   WORKER_COLUMNS,
 } from "./app/logic.mjs";
 import { html, render } from "./app/preact.mjs";
+import { SovereignApp } from "./sovereign/app.mjs";
 
 export const REFRESH_MS = 30000;
 // Abort a poll that hasn't answered before the next tick would fire. Without this a hung
@@ -56,12 +57,18 @@ export function initDashboard({
   fetchFn = (url, opts) => fetch(url, opts),
   replaceUrl = (url) => history.replaceState(null, "", url),
   schedule = (fn, ms) => setInterval(fn, ms),
+  listen = (name, fn) => globalThis.addEventListener?.(name, fn),
+  currentHref = () => globalThis.location?.href || href,
   renderApp = null,
 } = {}) {
   const root = doc.getElementById("app");
+  if (root && !renderApp) root.replaceChildren();
   const pageUrl = new URL(href);
   const path = pageUrl.pathname;
   const params = pageUrl.searchParams;
+  const sovereign = params.get("ui") === "sovereign";
+  const Root = sovereign ? SovereignApp : App;
+  doc.documentElement.setAttribute("data-ui", sovereign ? "sovereign" : "classic");
 
   const ui = {
     range: params.get("range") || "all",
@@ -102,11 +109,11 @@ export function initDashboard({
     renderApp ??
     ((p) =>
       render(
-        html`<${App} state=${p.state} connected=${p.connected} ui=${p.ui}
+        html`<${Root} state=${p.state} connected=${p.connected} ui=${p.ui}
                      onRange=${p.onRange} onSort=${p.onSort} onView=${p.onView} onTheme=${p.onTheme}
                      onZoom=${p.onZoom} onResetZoom=${p.onResetZoom} onToggleSeries=${p.onToggleSeries}
                      onAvgWindow=${p.onAvgWindow} onDismissHint=${p.onDismissHint}
-                     onInspect=${p.onInspect} onCloseInspect=${p.onCloseInspect} />`,
+                     onInspect=${p.onInspect} onCloseInspect=${p.onCloseInspect} onRetry=${p.onRetry} />`,
         root,
       ));
 
@@ -126,6 +133,7 @@ export function initDashboard({
       onDismissHint: dismissHint,
       onInspect: openInspect,
       onCloseInspect: closeInspect,
+      onRetry: tick,
     });
   }
 
@@ -166,10 +174,18 @@ export function initDashboard({
     }
   }
 
+  function replaceChartUrl(query) {
+    if (!sovereign) return replaceUrl(query ? `?${query}` : path);
+    const next = new URL(currentHref());
+    for (const key of ["range", "from", "to"]) next.searchParams.delete(key);
+    for (const [key, value] of new URLSearchParams(query)) next.searchParams.set(key, value);
+    replaceUrl(next.pathname + next.search + next.hash);
+  }
+
   function setRange(r) {
     ui.range = r;
     ui.window = null; // picking a preset exits any manual zoom
-    replaceUrl(r === "all" ? path : "?range=" + r);
+    replaceChartUrl(r === "all" ? "" : "range=" + encodeURIComponent(r));
     return tick(); // re-fetch immediately; the chart/series depend on the range
   }
 
@@ -177,13 +193,13 @@ export function initDashboard({
   // refetch it from the server at duration-adaptive resolution (Issue #47).
   function setZoom(fromS, toS) {
     ui.window = { from: fromS, to: toS };
-    replaceUrl("?from=" + Math.round(fromS) + "&to=" + Math.round(toS));
+    replaceChartUrl("from=" + Math.round(fromS) + "&to=" + Math.round(toS));
     return tick();
   }
 
   function resetZoom() {
     ui.window = null;
-    replaceUrl(ui.range === "all" ? path : "?range=" + ui.range);
+    replaceChartUrl(ui.range === "all" ? "" : "range=" + encodeURIComponent(ui.range));
     return tick();
   }
 
@@ -234,6 +250,17 @@ export function initDashboard({
   }
 
   applyTheme(ui.theme); // re-assert the (normalized) theme before the first paint
+  if (sovereign) {
+    listen("popstate", () => {
+      const query = new URL(currentHref()).searchParams;
+      const range = query.get("range") || "all";
+      const window = windowFromUrl(query);
+      if (range === ui.range && JSON.stringify(window) === JSON.stringify(ui.window)) return;
+      ui.range = range;
+      ui.window = window;
+      return tick();
+    });
+  }
   rerender(); // paint the loading shell immediately
   const firstLoad = tick(); // first data load
   schedule(tick, REFRESH_MS); // then live updates

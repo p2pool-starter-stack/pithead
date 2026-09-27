@@ -10,3 +10,7 @@
 @import "./styles/topology.css";
 @import "./styles/config.css";
 @import "./styles/workers.css";
+@import "./sovereign/theme.css";
+@import "./sovereign/shell.css";
+@import "./sovereign/overview.css";
+@import "./sovereign/responsive.css";

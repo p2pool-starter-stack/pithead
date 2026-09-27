@@ -1,0 +1,218 @@
+/* Opt-in palette: existing controls, charts and native dialogs share these tokens. */
+:root[data-ui="sovereign"] {
+  --bg: #10100f;
+  --card: #171715;
+  --border: #363530;
+  --text: #f5f3ed;
+  --text-muted: #aaa69f;
+  --accent: #ff8a3d;
+  --accent-emphasis: #a94300;
+  --elevated: #282520;
+  --ok: #207c52;
+  --ok-fg: #57df9b;
+  --bad: #c74138;
+  --bad-fg: #ff8c82;
+  --warn: #efbd64;
+  --warn-emphasis: #876014;
+  --purple: #b29df4;
+  --purple-fg: #c1b0f7;
+  --purple-emphasis: #6950a5;
+  color-scheme: dark;
+}
+:root[data-ui="sovereign"][data-theme="light"] {
+  --bg: #f5f2eb;
+  --card: #fffcf6;
+  --border: #d2ccc1;
+  --text: #24211d;
+  --text-muted: #686056;
+  --accent: #a94300;
+  --accent-emphasis: #a94300;
+  --elevated: #e9e1d5;
+  --ok: #237645;
+  --ok-fg: #17663d;
+  --bad: #b73129;
+  --bad-fg: #b73129;
+  --warn: #805300;
+  --warn-emphasis: #805300;
+  --purple: #7053a6;
+  --purple-fg: #60418c;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-ui="sovereign"]:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #f5f2eb;
+    --card: #fffcf6;
+    --border: #d2ccc1;
+    --text: #24211d;
+    --text-muted: #686056;
+    --accent: #a94300;
+    --accent-emphasis: #a94300;
+    --elevated: #e9e1d5;
+    --ok: #237645;
+    --ok-fg: #17663d;
+    --bad: #b73129;
+    --bad-fg: #b73129;
+    --warn: #805300;
+    --warn-emphasis: #805300;
+    --purple: #7053a6;
+    --purple-fg: #60418c;
+    color-scheme: light;
+  }
+}
+:root[data-ui="sovereign"] body {
+  padding: 0;
+}
+:root[data-ui="sovereign"] .container {
+  max-width: none;
+}
+.sovereign {
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.sovereign *,
+.sovereign *::before,
+.sovereign *::after {
+  box-sizing: border-box;
+}
+.sovereign a {
+  color: var(--accent);
+}
+.sovereign button,
+.sovereign input,
+.sovereign select,
+.sovereign textarea {
+  font: inherit;
+}
+.sovereign button,
+.sovereign select,
+.sovereign summary {
+  cursor: pointer;
+}
+.sovereign :is(button, select, input:not([type="checkbox"]), summary) {
+  min-height: 40px;
+}
+.sovereign input,
+.sovereign select,
+.sovereign textarea {
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 9px 12px;
+}
+.sovereign :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.sovereign :is(h1, h2, h3) {
+  color: var(--text);
+  letter-spacing: -0.035em;
+}
+.sovereign .card {
+  padding: 22px;
+  border-radius: 6px;
+}
+.sovereign .card h2 {
+  font-size: 18px;
+  letter-spacing: -0.025em;
+  text-transform: none;
+  padding: 0;
+  border: 0;
+  margin: 0 0 18px;
+  color: var(--text);
+}
+.sovereign .card-advanced {
+  display: flex;
+}
+.sovereign .card[hidden],
+.sovereign [hidden] {
+  display: none !important;
+}
+.sovereign .stat-card {
+  border-color: var(--border);
+  background: transparent;
+}
+.sovereign .btn-toggle,
+.sovereign .btn-range {
+  border-radius: 4px;
+}
+.sovereign button:disabled {
+  cursor: not-allowed;
+}
+.sovereign .btn-toggle.active,
+.sovereign .btn-range.active {
+  background: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+  color: #fff;
+}
+.sovereign .sov-button {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 10px 20px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 600;
+}
+.sovereign .sov-button:hover {
+  background: var(--elevated);
+}
+.sovereign .table-scroll {
+  max-width: 100%;
+}
+.sovereign table {
+  line-height: 1.6;
+}
+.sovereign th {
+  font-size: 11px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.sovereign td {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+.sovereign .chart-controls,
+.sovereign .chart-legend {
+  justify-content: flex-start;
+}
+.sovereign .chart-legend {
+  gap: 4px;
+}
+.sovereign .legend-item {
+  border-radius: 4px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+.sovereign .chart-drag-hint {
+  display: none;
+}
+.sovereign .chart-options {
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.sovereign .chart-options summary {
+  min-height: 32px;
+  padding: 5px 0;
+}
+.sovereign .chart-controls .btn-range {
+  min-height: 32px;
+}
+.sovereign .disconnected-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="sovereign"] body,
+  .sovereign *,
+  .sovereign *::before,
+  .sovereign *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

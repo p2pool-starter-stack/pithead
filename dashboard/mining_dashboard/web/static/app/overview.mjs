@@ -48,7 +48,7 @@ function Overview({ state }) {
     </div>`;
 }
 
-function NodeStats({ state }) {
+function NodeStats({ state, showWallet = true }) {
   const hr = state.hashrate,
     st = state.stratum;
   // Headline = the figures an operator actually checks first (mode, total hashrate, routed
@@ -75,7 +75,7 @@ function NodeStats({ state }) {
     <div class="card card-advanced" id="card-mynode">
         <h2>My P2Pool Node Stats</h2>
         <${MoreStats} prefKey="dashboardCardNode" headline=${headline} detail=${detail} count=${12} />
-        <div class="wallet-text">Wallet: ${st.wallet}</div>
+        ${showWallet ? html`<div class="wallet-text">Wallet: ${st.wallet}</div>` : null}
     </div>`;
 }
 
@@ -194,7 +194,7 @@ function CadenceCard({ cadence }) {
     </div>`;
 }
 
-function TariCard({ tari, local }) {
+function TariCard({ tari, local, showWallet = true }) {
   return html`
     <div class="card card-advanced" id="card-tari">
         <h2>Tari Merge-Mining</h2>
@@ -206,7 +206,7 @@ function TariCard({ tari, local }) {
             <${StatCard} label="Node" value=${nodeLocation(local)}
                 title="Whether this stack runs its own Tari base node or points at somebody else's" />
         </div>
-        <div class="wallet-text">Wallet: ${tari.wallet}</div>
+        ${showWallet ? html`<div class="wallet-text">Wallet: ${tari.wallet}</div>` : null}
     </div>`;
 }
 
