@@ -35,7 +35,7 @@ test("keep the blockchains still asks the node questions — kept chains only an
   const out = await appWithPick("sda", "data");
   assert.match(out, /Where does Monero data come from/);
   assert.match(out, /Merge-mine Tari\?/);
-  assert.match(out, /First sync/);
+  assert.match(out, /P2Pool sidechain/);
   assert.match(out, /Payout address/);
   assert.match(out, /Dashboard login/);
 });
@@ -43,7 +43,7 @@ test("keep the blockchains still asks the node questions — kept chains only an
 test("wipe everything (or an empty disk): the full form asks everything", async () => {
   const all = await appWithPick("sda", "all");
   assert.match(all, /Where does Monero data come from/);
-  assert.match(all, /First sync/);
+  assert.match(all, /P2Pool sidechain/);
   const empty = await appWithPick("sdb", "keep");
   assert.match(empty, /Payout address/);
 });
@@ -172,7 +172,7 @@ test("role RigForge collapses the form to pool, worker, password — none of the
   assert.doesNotMatch(out, /Payout address/);
   assert.doesNotMatch(out, /Dashboard login/);
   assert.doesNotMatch(out, /Advanced/);
-  assert.doesNotMatch(out, /First sync/);
+  assert.doesNotMatch(out, /P2Pool sidechain/);
   restore();
 });
 

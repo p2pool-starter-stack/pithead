@@ -3,7 +3,7 @@
 ``test_wizard.py`` pins what ``build_config`` does with the questions every operator answers:
 the wallets, the ports and their defaults, the alert pair, the timezone. What it never reached
 is the set of switches an operator turns ON — remote Tari, node credentials, a pruned local
-chain, healthchecks, the local miner, the clearnet first sync. Each writes a key that changes
+chain, healthchecks, the local miner. Each writes a key that changes
 what the stack runs, and each was reachable only by a form nothing submitted, so this file
 exercises the ON side of every one of them.
 
