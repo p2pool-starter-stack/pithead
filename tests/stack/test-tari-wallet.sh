@@ -45,7 +45,9 @@ tw_secret="$V/data/tari-wallet-secret.env"
 if [ -z "$(find "$tw_secret" ! -uid 1000 -print 2>/dev/null)" ] && [ -f "$tw_secret" ]; then
     tw_owned=yes
 else
-    grep -qxF "chown 1000:1000 $tw_secret" "$tw_sudo_log" && tw_owned=yes || tw_owned="no ($(cat "$tw_sudo_log"))"
+    # Chowned as the temp file that is then renamed over the target (no symlink is followed).
+    grep -qF "chown 1000:1000 $V/data/.tari-wallet-secret." "$tw_sudo_log" && [ -f "$tw_secret" ] && [ ! -L "$tw_secret" ] &&
+        tw_owned=yes || tw_owned="no ($(cat "$tw_sudo_log"))"
 fi
 assert_eq "the Tari wallet secret file is handed to the container uid" "$tw_owned" "yes"
 

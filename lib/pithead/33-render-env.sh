@@ -321,22 +321,22 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462). The view key, public spend key and wallet password
-    # must NOT ride the tari-wallet's `environment:` (those show in `docker inspect`): they go in an
-    # owner-only file under data/ that compose and the quadlet bind-mount at /run/secrets, and the
-    # wrapper exports them to the wallet process only. The mount keeps the file's owner, so it belongs
-    # to the container's APP_UID; written by root (the appliance) the wallet could not read it (#2731).
-    # Rewritten for the REAL .env target only; empty values when the feature is off keep it resolvable.
-    local tari_secret_file="$PWD/data/tari-wallet-secret.env"
+    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password never
+    # ride `environment:` (visible in `docker inspect`) but an owner-only data/ file that compose and
+    # the quadlet bind-mount at /run/secrets. The mount keeps the file's owner, so it belongs to the
+    # container's APP_UID, or root-written (the appliance) the wallet cannot read it (#2731). Built as
+    # a temp file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
+    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp
     if [ "$target" != "${ENV_FILE}.dryrun" ]; then
         mkdir -p "$PWD/data"
-        rm -f "$tari_secret_file" # once chowned below, another uid could not overwrite it
-        (umask 077 && printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
-            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_file")
-        [ -z "$(find "$tari_secret_file" ! -uid "$APP_UID" -print 2>/dev/null)" ] ||
-            chown "$APP_UID:$APP_GID" "$tari_secret_file" 2>/dev/null ||
-            sudo chown "$APP_UID:$APP_GID" "$tari_secret_file" ||
+        tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
+        printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
+            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp"
+        [ -z "$(find "$tari_secret_tmp" ! -uid "$APP_UID" -print 2>/dev/null)" ] ||
+            chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null ||
+            sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp" ||
             warn "Could not give $tari_secret_file to uid $APP_UID; the Tari payout wallet cannot read it."
+        mv -f "$tari_secret_tmp" "$tari_secret_file"
     fi
 
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
