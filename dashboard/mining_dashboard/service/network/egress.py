@@ -212,7 +212,7 @@ def compute_egress_posture(
             "blocked_by_firewall": blocked,
             "unverified": unverified,
             "all_tor": leaks == 0 and chosen == 0 and unverified == 0,
-            "level": "ok" if leaks == 0 and unverified == 0 else "warn",
+            "level": "ok" if leaks == 0 and chosen == 0 and unverified == 0 else "warn",
             "label": label,
         },
     }

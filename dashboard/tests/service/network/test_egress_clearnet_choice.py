@@ -1,5 +1,7 @@
 """Selected node sync routes remain visible with the host firewall enabled."""
 
+from mining_dashboard.web.views.views import _egress_badge
+
 
 def _conn(posture, component, needle):
     comp = next(c for c in posture["components"] if c["name"] == component)
@@ -8,8 +10,9 @@ def _conn(posture, component, needle):
 
 def test_firewall_on_selected_sync_is_shown_as_operator_choice(_posture, _topo, _edge):
     p = _posture(firewall=True, monero_clearnet_sync=True, tari_clearnet_sync=True)
-    assert p["summary"]["level"] == "ok"
+    assert p["summary"]["level"] == "warn"
     assert p["summary"]["all_tor"] is False
+    assert _egress_badge(p["summary"])["variant"] == "warn"
     assert (
         "Monero + Tari clearnet first sync or Tor transition pending by your choice"
         in p["summary"]["label"]

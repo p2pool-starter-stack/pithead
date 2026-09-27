@@ -387,8 +387,8 @@ The active state is surfaced in four places, so it can't be enabled by accident 
   PENDING"** banner until the host attests the live Tor configuration and closed exception.
 - `./pithead doctor` raises a `⚠ WARN` while a node is exposed and flips back to a green
   `✓ OK "all node P2P is Tor-only"` once it's switched back.
-- The dashboard shows the clearnet state live, and the daemon container logs a matching warning on
-  every start until the transition completes.
+- The dashboard keeps a warning badge for the chosen clearnet sync or pending Tor transition,
+  and the daemon container logs a matching warning on every start until it completes.
 
 If the automatic switch ever fails (e.g. the dashboard couldn't restart the container), it is
 fail-safe: the marker is written before the restart, so any later restart still comes up Tor-only,
