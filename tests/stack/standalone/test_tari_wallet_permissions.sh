@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/bin" "$WORK/wallet"
+mkdir -p "$WORK/bin" "$WORK/wallet/mainnet/config/wallet"
 printf 'MINOTARI_WALLET_PASSWORD=fixture\n' >"$WORK/secret"
 cat >"$WORK/bin/stat" <<'EOF'
 #!/usr/bin/env bash
@@ -32,7 +32,7 @@ run_case() {
         bash "$ROOT/build/tari-wallet/entrypoint.sh" >/dev/null
 }
 run_case 0
-grep -qxF "chown 1000:1000 $WORK/wallet" "$WORK/actions"
+grep -qxF "chown -R 1000:1000 $WORK/wallet" "$WORK/actions"
 grep -qF 'setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wallet' "$WORK/actions"
 grep -qF "wallet --base-path $WORK/wallet" "$WORK/actions"
 run_case 1000

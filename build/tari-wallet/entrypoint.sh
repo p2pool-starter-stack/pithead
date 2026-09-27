@@ -52,7 +52,7 @@ mkdir -p "$WALLET_DIR"
 # A named volume created over this image's absent /home/ubuntu/wallet starts root-owned. Repair
 # existing volumes too, then run the wallet as the original non-root uid (#2454).
 if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ]; then
-    chown 1000:1000 "$WALLET_DIR"
+    chown -R 1000:1000 "$WALLET_DIR"
 fi
 birthday="$(resolve_birthday)"
 echo "Starting view-only Tari payout wallet (birthday $birthday, base node $BASE_NODE_GRPC) (#462)..."

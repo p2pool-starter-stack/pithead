@@ -337,6 +337,9 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
     # Immutable root filesystem (#377). The wallet DB lives in the named volume; the wrapper writes
     # only /tmp (tmpfs). Nothing else is written.
     read_only: true

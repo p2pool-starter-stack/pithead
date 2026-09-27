@@ -320,7 +320,7 @@ jq_assert "exactly 5 depends_on edges total (#565)" \
 jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" \
     '(.services["tari-wallet"].healthcheck.test | tostring) | contains("[m]inotari_consol") and (contains("[m]inotari_console_wallet") | not)'
 jq_assert "tari-wallet wrapper may repair its volume before dropping uid (#2454)" \
-    '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and .cap_add == ["CHOWN"] and .read_only == true'
+    '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and ((.cap_add | sort) == (["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"] | sort)) and .read_only == true'
 # The console wallet's digest pin had NO assertion anywhere (#1137). It cannot have one where the
 # other three live: $RENDERED is built with COMPOSE_PROFILES=local_node,local_tari and tari-wallet
 # is profiles: ["tari_payout_confirm"], so an expect_present there would pass and fail identically —
