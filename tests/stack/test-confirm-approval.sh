@@ -269,7 +269,6 @@ echo "== black-box: the dashboard password commits behind typed APPLY and the ap
 jq -n --slurpfile live "$C/config.json" --arg id "$UUID3" \
     '{id:$id,action:"preview",actor:"admin",config:($live[0] | .dashboard.auth.password="replacement-password")}' >"$C/pw-preview.json"
 cp "$C/pw-preview.json" "$REQS/$UUID3.json" && run_pending >/dev/null
-# A password change is a DEST row (describe_change's DASHBOARD_AUTH_HASH_B64): APPLY alone is refused.
 jq -n --arg id "$UUID3" '{id:$id,action:"commit",actor:"admin",confirm:"APPLY"}' >"$REQS/$UUID3.json" && run_pending >/dev/null
 assert_eq "dashboard password repoint with APPLY alone is refused" "$(jq -r '.status' "$RESULTS/$UUID3.json")" "rejected"
 cp "$C/pw-preview.json" "$REQS/$UUID3.json" && run_pending >/dev/null
