@@ -134,6 +134,9 @@ xmrig-proxy=sha256:xxx'
 }
 run_census_assertions
 
+# shellcheck source=tests/integration/selftest/restore-image-proof-cases.sh
+source "$HERE/restore-image-proof-cases.sh"
+
 # --- 2. Which restore command e2e.sh runs -----------------------------------------------------
 # The REAL restore_all out of the shipped e2e.sh, evaluated against stubs, so this reads the
 # command the box would actually have been given — not a re-implementation of the decision.
@@ -152,6 +155,7 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         E2E_DIR=/srv/code/pithead-e2e BENCH_HOST=bench SAFETY_ARCHIVE=""
         RESTORE_PROOF_FAILED=0 CONTROL_PROOF_FAILED=0 CONTROL_VERDICT_BEFORE=""
         BASELINE_IMAGES="" BRANCH_IMAGES="" SRC_CHECKOUT="$1" CMD_FILE="$cf"
+        UPGRADE_RESPONSE="${3:-fallback}" PROOF_STATE_FILE="${4:-}"
         log() { :; }
         step() { :; }
         warn() { :; }
@@ -161,7 +165,11 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
         parent_lock_miner_restore() { :; }
         control_units_verdict() { echo on-target; }
         wait_bench_healthy() { return 0; }
-        verify_restore_proof() { return 0; }
+        verify_restore_proof() {
+            [ -z "$PROOF_STATE_FILE" ] || printf '%s|%s' "$BASELINE_UPGRADE_OK" "$BASELINE_UPGRADE_IMAGES" >"$PROOF_STATE_FILE"
+            return 0
+        }
+        stack_image_census() { echo 'wallet-rpc=sha256:restored'; }
         chain_restore_prepare() { echo chain_restore_prepare >>"${ALL_LOG:-/dev/null}"; }
         on_bench() {
             echo "$1" >>"${ALL_LOG:-/dev/null}"
@@ -171,6 +179,9 @@ drive_restore() { # <is-source-checkout: yes|no> -> the `cd RESTORE_DIR && ...` 
             "test -f "*dashboard/Dockerfile*) [ "$SRC_CHECKOUT" = yes ] && return 0 || return 1 ;;
             "cd '$RESTORE_DIR' && "*)
                 printf '%s' "$1" >"$CMD_FILE"
+                if [ "$UPGRADE_RESPONSE" = success ] && [[ "$1" == *"./pithead upgrade"* ]]; then
+                    printf 'baseline-upgrade-ok\n'
+                fi
                 return 0
                 ;;
             esac
@@ -203,6 +214,13 @@ assert_contains "the source-checkout restore falls back to apply/up if the rebui
 assert_eq "a release-bundle baseline is NOT rebuilt" \
     "$(case "$BUNDLE_CMD" in *upgrade*) echo yes ;; *) echo no ;; esac)" "no"
 assert_contains "a release-bundle baseline still gets apply + up" "$BUNDLE_CMD" "./pithead apply -y"
+proof_state="$(mktemp)"
+drive_restore yes targeted success "$proof_state" >/dev/null
+assert_eq "a successful upgrade records its immediate running image census" \
+    "$(cat "$proof_state")" "1|wallet-rpc=sha256:restored"
+drive_restore yes targeted fallback "$proof_state" >/dev/null
+assert_eq "the apply/up fallback never authorizes image reuse" "$(cat "$proof_state")" "0|"
+rm -f "$proof_state"
 
 # --- 2b. The grouping, DRIVEN --------------------------------------------------------------------
 # `cd D && upgrade || { apply && up; }` does not mean what it looks like: the `||` binds to the whole

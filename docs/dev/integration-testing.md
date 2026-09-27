@@ -439,11 +439,18 @@ via an `EXIT` trap):
    stack running the branch's images under the baseline's name: the credentials are read from the
    on-disk `.env` at runtime, monerod answers with them, and the control units name the install
    either way. So the run records each service's image **ID** before it touches anything and again
-   after the restore, and grades them per service — kept, rebuilt, still-the-branch's, or gone. Image
+   after the restore, and grades them per service — kept, rebuilt, proved cache reuse, still-the-branch's, or gone. Image
    IDs, not tags: a tag that moved is the defect, so the tag cannot be the instrument. Per service,
    not as one list: a branch that changes two Dockerfiles rebuilds two images, and the rest carry an
-   ID that legitimately matches both sides. A service still on the image the run built for the branch
-   fails the proof and names itself. A rebuilt image is reported as "not the branch's" and no more:
+   ID that legitimately matches both sides. An image matching the branch but differing from the
+   pre-run baseline is accepted only when both checkouts independently yield the same pinned base
+   digest, resolved Compose build arguments and complete effective build context. The current
+   proof supports the shared Monero image used by `monerod` and `wallet-rpc`; an unmodelled build
+   field, ignore rule, missing input or unequal fingerprint leaves the image classified as stale.
+   Acceptance also requires the baseline's `pithead upgrade` to have succeeded and the restored
+   service to retain the image ID captured immediately after that build; the `apply && up`
+   fallback cannot certify reuse.
+   A rebuilt image is reported as "not the branch's" and no more:
    settling "built from the install directory" would need the image's own build provenance, and the
    dashboard's `org.opencontainers.image.revision` ships empty
    ([#1449](https://github.com/p2pool-starter-stack/pithead/issues/1449)) while the other four

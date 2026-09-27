@@ -272,12 +272,13 @@ restore_all() {
     # `[ -f dashboard/Dockerfile ]` (pithead:180) — mirrored, not reinvented. The `{ }` below is
     # load-bearing: unbraced, a failed `cd` runs the FALLBACK in the ssh session's default directory and
     # STILL returns 0 — a restore that never entered RESTORE_DIR, reported as run. Proven, not read off.
-    local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1"
+    local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1" restore_result=""
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
-        restore_cmd="./pithead upgrade >/dev/null 2>&1 || { $restore_cmd; }"
+        restore_cmd="./pithead upgrade >/dev/null 2>&1 && printf 'baseline-upgrade-ok\\n' || { $restore_cmd; }"
     fi
-    if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+    if restore_result="$(on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }")"; then
+        record_baseline_upgrade_result "$restore_result"
         wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
@@ -287,7 +288,6 @@ restore_all() {
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
-
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
     sync="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"

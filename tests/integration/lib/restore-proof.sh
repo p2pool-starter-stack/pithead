@@ -17,6 +17,16 @@
 # that MOVED, so the tag cannot be the instrument. Empty means "not captured" — a skip, never a pass.
 BASELINE_IMAGES=""
 BRANCH_IMAGES=""
+BASELINE_UPGRADE_OK=0
+BASELINE_UPGRADE_IMAGES=""
+record_baseline_upgrade_result() { # the upgrade's private success marker, never the fallback's
+    BASELINE_UPGRADE_OK=0
+    BASELINE_UPGRADE_IMAGES=""
+    if [ "$1" = baseline-upgrade-ok ]; then
+        BASELINE_UPGRADE_OK=1
+        BASELINE_UPGRADE_IMAGES="$(stack_image_census)"
+    fi
+}
 # Were the host-global boot units on the bench before this run? `up`/`upgrade` install
 # pithead-egress.service (#2460) on any DIY host, and pithead-lan-guard.service plus
 # pithead-lan-hold.service (#2749) when a *_lan_access switch is on, the bench included. A run that
@@ -79,7 +89,8 @@ census_get() { # <census> <service>
 # legitimately carry an image ID that matches the baseline AND the branch.
 #   kept     the same image object it ran before the run
 #   rebuilt  different from both censuses — built from RESTORE_DIR's own tree by the restore
-#   stale    the image THIS RUN built for the branch, now running under the baseline's name
+#   reused   the branch image was rebuilt from independently equal baseline build inputs
+#   stale    the image THIS RUN built for the branch, with no proof of equal build inputs
 #   gone     ran before the run, not running now
 # `stale` is graded before `rebuilt` on purpose: an image that equals the branch's is never
 # evidence of a rebuild, however different it is from the baseline.
@@ -91,7 +102,7 @@ census_get() { # <census> <service>
 # It walks the BASELINE, so a service that only exists in the after-census is not graded: the
 # question here is whether what was running came back, not whether something new appeared. A new
 # service is a compose-file change, which the deploy phase already exercises.
-grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" lines
+grade_image_census() { # <baseline> <now> <branch> <proved-reuse services> -> verdict lines
     local svc now base branch
     while IFS= read -r svc; do
         [ -n "$svc" ] || continue
@@ -104,11 +115,31 @@ grade_image_census() { # <baseline> <now> <branch> -> "<verdict> <service>" line
         elif [ "$now" = "$base" ]; then
             printf 'kept %s\n' "$svc"
         elif [ "$now" = "$branch" ]; then
-            printf 'stale %s\n' "$svc"
+            if printf '%s\n' "${4:-}" | grep -qxF "$svc"; then
+                printf 'reused %s\n' "$svc"
+            else
+                printf 'stale %s\n' "$svc"
+            fi
         else
             printf 'rebuilt %s\n' "$svc"
         fi
     done <<<"$1"
+}
+
+# An image ID equal to the branch's can be a legitimate BuildKit cache hit. Compare the
+# baseline checkout and branch checkout independently: the helper refuses unpinned bases,
+# unmodelled Compose build fields, Docker ignore rules and non-regular context entries. Its
+# fingerprint includes the resolved base digest, effective build context and build arguments.
+# Missing evidence is never permission to accept the branch image.
+proved_image_reuse() { # <service> -> true only for independently equal build inputs
+    local svc=$1 base branch helper="$E2E_DIR/tests/integration/lib/image-build-proof.sh"
+    [ "$BASELINE_UPGRADE_OK" = 1 ] || return 1
+    case "$svc" in monerod | wallet-rpc) ;; *) return 1 ;; esac
+    [ -n "$(census_get "$BASELINE_UPGRADE_IMAGES" "$svc")" ] || return 1
+    [ "$(census_get "$BASELINE_UPGRADE_IMAGES" "$svc")" = "$(census_get "$(stack_image_census)" "$svc")" ] || return 1
+    base="$(on_bench "bash $(quote_arg "$helper") $(quote_arg "$RESTORE_DIR") $(quote_arg "$svc")" 2>/dev/null)" || return 1
+    branch="$(on_bench "bash $(quote_arg "$helper") $(quote_arg "$E2E_DIR") $(quote_arg "$svc")" 2>/dev/null)" || return 1
+    [[ "$base" =~ ^[0-9a-f]{64}$ ]] && [ "$base" = "$branch" ]
 }
 
 # Restore proof (#971): after the restore brings the baseline back up, prove the LIVE stack
@@ -251,7 +282,7 @@ PROBE
     # of passing with a warning. That is the intended reading — a service that ran before the run and
     # does not run after it is a failed restore, whatever the reason — but it is a behaviour change on
     # a slow box, and it is the first thing to look at if a restore starts failing here.
-    local now_images verdicts line stale=0 rebuilt=0 kept=0 gone=0
+    local now_images verdicts line stale=0 rebuilt=0 kept=0 gone=0 reused=0 reuse_proof="" svc
     now_images="$(stack_image_census)"
     if [ -z "$BASELINE_IMAGES" ]; then
         warn "restore proof: image identity NOT CHECKED — no baseline census was taken (nothing was running at preflight)."
@@ -259,11 +290,20 @@ PROBE
         warn "restore proof: image identity NOT CHECKED — no stack is running to census now."
         prc=1
     else
-        verdicts="$(grade_image_census "$BASELINE_IMAGES" "$now_images" "$BRANCH_IMAGES")"
+        while IFS= read -r line; do
+            case "$line" in
+            stale\ *)
+                svc=${line#stale }
+                proved_image_reuse "$svc" && reuse_proof="${reuse_proof}${svc}"$'\n'
+                ;;
+            esac
+        done < <(grade_image_census "$BASELINE_IMAGES" "$now_images" "$BRANCH_IMAGES")
+        verdicts="$(grade_image_census "$BASELINE_IMAGES" "$now_images" "$BRANCH_IMAGES" "$reuse_proof")"
         while IFS= read -r line; do
             case "$line" in
             kept\ *) kept=$((kept + 1)) ;;
             rebuilt\ *) rebuilt=$((rebuilt + 1)) ;;
+            reused\ *) reused=$((reused + 1)) ;;
             stale\ *)
                 warn "restore proof: '${line#stale }' is still on the image THIS RUN BUILT for the branch — the baseline was renamed, not restored."
                 stale=$((stale + 1))
@@ -279,8 +319,8 @@ PROBE
             warn "  $stale service(s) are running the branch under test. Rebuild the baseline by hand: cd $RESTORE_DIR && ./pithead upgrade"
         elif [ "$gone" -gt 0 ]; then
             warn "  the restore did not bring the whole baseline back — check 'pithead status' in $RESTORE_DIR."
-        elif [ "$rebuilt" -gt 0 ]; then
-            ok "restore proof: $kept service(s) back on their pre-run images, $rebuilt rebuilt from $RESTORE_DIR (not the branch's)"
+        elif [ "$rebuilt" -gt 0 ] || [ "$reused" -gt 0 ]; then
+            ok "restore proof: $kept service(s) back on their pre-run images, $rebuilt rebuilt from $RESTORE_DIR, $reused reused with equal pinned build inputs"
         else
             ok "restore proof: all $kept service(s) are back on the exact images they ran before this run"
         fi
