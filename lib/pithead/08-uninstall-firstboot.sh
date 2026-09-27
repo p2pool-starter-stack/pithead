@@ -51,7 +51,7 @@ stack_uninstall() {
     detect_os
 
     # Every path below is read from .env BEFORE uninstall deletes it.
-    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey
+    local checkout_dir="$PWD" kept_dirs=() derived_dirs=() d dkey units_left=0
     for dkey in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR TOR_DATA_DIR; do
         d=$(env_get_file .env "$dkey")
         [ -n "$d" ] && kept_dirs+=("$d")
@@ -96,7 +96,7 @@ stack_uninstall() {
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
     log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
@@ -110,12 +110,11 @@ stack_uninstall() {
     mutation_lock_acquire uninstall
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
+    remove_egress_check_units || units_left=1
     remove_lan_guard
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
-    # Compose excludes profile-only volumes from down -v when the profile is inactive.
-    # Inspect ownership before removing the one volume its active model can miss, and the Tari
-    # wallet volume before #2731 (root-owned, never written, and no longer declared).
+    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
     local volumes labels vol
     volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
     for vol in tari_wallet_db tari_wallet_data; do
@@ -157,7 +156,7 @@ stack_uninstall() {
     fi
     mutation_lock_release
 
-    log "Uninstalled."
+    [ "$units_left" -ne 0 ] || log "Uninstalled."
     log "Every data directory is still here. To delete pithead's data, run:"
     if [ "${#kept_dirs[@]}" -gt 0 ]; then
         local q quoted_kept=""
@@ -176,6 +175,7 @@ stack_uninstall() {
     log "Then, to remove the program itself:${inside}"
     printf '  rm -rf %s\n' "$(uninstall_quote "$checkout_dir")"
     # error, not a bare non-zero return: that would also print the ERR trap's "aborted unexpectedly".
+    [ "$units_left" -eq 0 ] || error "Uninstall finished, but pithead-egress.timer or its check service could not be fully removed: run the command in the egress-check warning above."
     [ "$failed" -eq 0 ] || error "Uninstall finished, but a derived directory could not be removed: run the command in the warning above."
 }
 
