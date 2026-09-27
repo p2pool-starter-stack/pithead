@@ -7,9 +7,7 @@ describe_change() {
     fi
     case "$key" in
     MONERO_PRUNE)
-        # #719: ENABLE (off → on) is confirm-gated — it reclaims disk by pruning blocks, an
-        # operator-intent op with an expensive-but-recoverable cost. DISABLE (on → off) stays a
-        # host-only DEST: pruned data can't be restored, so it needs a full re-sync from a shell.
+        # Both directions require confirmation; disabling warns that restoring full history needs a re-sync.
         case "$new" in
         true | 1)
             flag=CONFIRM
@@ -17,7 +15,7 @@ describe_change() {
             ;;
         *)
             flag=DEST
-            msg="Monero pruning DISABLED ($old → $new) — pruned data can't be restored, so the full chain must RE-SYNC from scratch. Apply this from the host."
+            msg="Monero pruning DISABLED ($old → $new) — pruned data can't be restored, so the full chain must RE-SYNC from scratch."
             ;;
         esac
         ;;
@@ -134,18 +132,18 @@ describe_change() {
         msg="xmrig-proxy dev-fee donation level: ${old:-0}% → ${new}% — the xmrig-proxy container is recreated (brief restart)."
         ;;
     DASHBOARD_DATA_DIR)
-        # #719: confirm-gated — a data-dir move is operator-intent (an expensive re-home / re-sync),
-        # not a security boundary. Only the four service data dirs below are in scope.
         flag=CONFIRM
-        msg="$key: $old → $new — data at the old DEFAULT location (./data/dashboard) is moved there automatically; any other old path is left in place."
+        if [ -z "$old" ]; then
+            msg="$key: unset → $new — the dashboard keeps its database here."
+        else
+            msg="$key: $old → $new — any dashboard database at $old (history and the payout-wallet alarm baseline) is copied there and verified, and the old copy stays in place; only the automatic join of the default under the shared data root moves it instead. A non-empty target refuses the move."
+        fi
         ;;
-    MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR)
-        # #719: confirm-gated data-dir moves — the service re-syncs from the new (empty) dir.
+    MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR | TOR_DATA_DIR)
         flag=CONFIRM
         msg="$key: $old → $new — the service will use the new (empty) directory and RE-SYNC from scratch; old data is left in place."
         ;;
     *_DATA_DIR)
-        # Every OTHER data dir (e.g. TOR_DATA_DIR) stays host-only — not in the #719 in-scope set.
         flag=DEST
         msg="$key: $old → $new — the service will use the new (empty) directory and re-sync; old data is left in place."
         ;;
@@ -156,7 +154,12 @@ describe_change() {
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
         ;;
     MONERO_NODE_USERNAME | MONERO_NODE_PASSWORD)
-        msg="Monero node RPC credential updated ($key)."
+        # #2333/#2367: confirm-gated like the endpoint fields above, never a refusal — the owner's
+        # ruling on both issues. Never echo $old/$new: this is the one warning in this function
+        # whose subject is a secret, and CONTROL_SECRET_PATHS masks it everywhere else for the
+        # same reason.
+        flag=CONFIRM
+        msg="Monero node RPC login changed ($key) — the stack authenticates to its configured node with this credential from now on. If the new value is wrong, the node connection fails closed rather than falling back to the old one; put the old value back to reverse it."
         ;;
     XVB_ENABLED | XVB_POOL_URL | XVB_DONOR_ID | XVB_DONATION_LEVEL)
         msg="XMRvsBeast setting ($key): $old → $new."
@@ -289,7 +292,7 @@ describe_change() {
             msg="Tor guard self-heal DISABLED — a stuck guard is back to WARN-only ('./pithead doctor', fix with './pithead restart tor'); the dashboard container is recreated."
         fi
         ;;
-    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE) msg="Secret configuration value updated — the dashboard container is recreated." ;;
+    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE | WORKER_API_TOKENS) msg="Secret configuration value updated — the dashboard container is recreated." ;;
     MONERO_CLEARNET_SYNC)
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.

@@ -238,9 +238,9 @@ CONTROL_RESULTS_DIR = os.environ.get("CONTROL_RESULTS_DIR", "/control/results")
 # written and rotated host-side, and every field read from them is sanitized before serving.
 CONTROL_AUDIT_LOG = os.environ.get("CONTROL_AUDIT_LOG", "/control/audit/control.log")
 ACCESS_LOG_PATH = os.environ.get("ACCESS_LOG_PATH", "/access-log/access.log")
-# The PRE-MASKED config copy, bind-mounted read-only for form prefill (#440): the host renders it
-# with every set secret leaf already replaced by the sentinel, so the container never holds a raw
-# secret. The raw config.json is not mounted into the container at all.
+# PRE-MASKED config, bind-mounted read-only for form prefill (#440): the editor/browser gets no raw
+# value here, though runtime credentials the dashboard consumes still enter its environment. The
+# raw config.json is not mounted into the container.
 HOST_CONFIG_PATH = os.environ.get("HOST_CONFIG_PATH", "/control/masked/config.json")
 # config.reference.json (every key with its default), bind-mounted read-only. read_config merges it
 # UNDER the operator's sparse config.json so the editor form covers the full schema, not just the
@@ -260,11 +260,11 @@ WORKER_READ_TOKENS_PATH, DASHBOARD_WORKERS = "/control/masked/worker-read-tokens
 
 
 def current_worker_endpoints():
-    return (
-        DASHBOARD_WORKERS
-        if DASHBOARD_WORKERS is not None
-        else load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH)
-    )
+    # WORKER_API_TOKENS (#2349): endpoint-bound read-only probe credentials, never control tokens.
+    tokens_env = os.environ.get("WORKER_API_TOKENS", "")
+    if DASHBOARD_WORKERS is not None:
+        return DASHBOARD_WORKERS
+    return load_worker_endpoints(HOST_CONFIG_PATH, WORKER_READ_TOKENS_PATH, tokens_env)
 
 
 DASHBOARD_ENERGY = load_energy_config(HOST_CONFIG_PATH)
@@ -512,11 +512,11 @@ MONERO_NODE_PASSWORD = os.environ.get("MONERO_NODE_PASSWORD", "")
 MONERO_PRUNE = os.environ.get("MONERO_PRUNE", "true").strip().lower() in ("true", "1", "yes", "on")
 
 # --- Optional clearnet initial sync auto-transition (#183/#234) ---
-# When monero.clearnet_initial_sync / tari.clearnet_initial_sync is on, the daemon does its initial
-# block download over clearnet (fast) instead of Tor. The supervisor watches the per-chain "synced"
-# signal the data loop already computes and, the first time a clearnet node reports synced, drops a
-# persistent marker in CLEARNET_STATE_DIR and restarts the container — whose entrypoint, seeing the
-# marker, comes back up Tor-only. Default off. Truthy parsing matches MONERO_PRUNE.
+# When a clearnet_initial_sync flag reaches .env (pithead renders it only with the egress firewall
+# off, #2649), the daemon does its initial block download over clearnet instead of Tor. The
+# supervisor watches the per-chain "synced" signal the data loop already computes and, the first
+# time a clearnet node reports synced, drops a persistent marker in CLEARNET_STATE_DIR and restarts
+# the container — whose entrypoint, seeing the marker, comes back up Tor-only. Default off. Truthy parsing matches MONERO_PRUNE.
 MONERO_CLEARNET_SYNC = os.environ.get("MONERO_CLEARNET_SYNC", "false").strip().lower() in (
     "true",
     "1",

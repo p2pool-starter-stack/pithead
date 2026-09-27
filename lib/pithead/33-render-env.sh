@@ -62,14 +62,14 @@ render_env() {
     local prune
     prune=$(monero_prune_flag)
 
-    # Optional clearnet initial sync (#183). DEFAULT OFF (privacy-first). When on for a daemon, its
-    # initial blockchain download runs over CLEARNET (fast) instead of Tor — briefly exposing this
-    # host's IP to that P2P network. Per-component, since Monero and Tari sync independently.
-    # config_bool honours an explicit false; normalize_bool then maps the result to true/false.
-    # Monero keeps tx-proxy=tor the whole time. Flip back to false + `apply` once synced.
-    local monero_clearnet tari_clearnet
-    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
+    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
+    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
+    local monero_clearnet=false tari_clearnet=false
+    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
+        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
+    fi
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
@@ -188,14 +188,13 @@ render_env() {
     # reading that miner's own xmrig /1/summary for uptime + per-miner hashrate — ONE configured
     # way, no auto-detection. Defaults match the stock RigForge worker: an open, read-only API
     # (xmrig http.restricted, no access-token) on port 8080, so the standard stack needs no config.
-    #   workers.api_auth: none (default) | name (Bearer = the worker's stratum name) | token
-    #                     (Bearer = workers.api_token, a single shared token for every worker).
-    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name",
-    # else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
-    local worker_api_port worker_api_auth worker_api_token
+    #   workers.api_auth: none (default) | name (Bearer=worker's stratum name) | token (Bearer=workers.api_token, one shared token for every worker).
+    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name", else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
+    local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
     worker_api_auth=$(jq -r '.workers.api_auth // "none"' "$CONFIG_FILE")
     worker_api_token=$(jq -r '.workers.api_token // ""' "$CONFIG_FILE")
+    worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
 
     # Telegram operator bot (#121 alerts, #45 commands). Disabled by default. bot_token is a
     # secret: it lives only in this owner-only .env (chmod 600 below) and the dashboard never logs
@@ -443,6 +442,7 @@ PROXY_AUTH_TOKEN=$(dotenv_render_value "$PROXY_AUTH_TOKEN")
 XMRIG_API_PORT=$(dotenv_render_value "$worker_api_port")
 XMRIG_API_AUTH=$(dotenv_render_value "$worker_api_auth")
 XMRIG_API_TOKEN=$(dotenv_render_value "$worker_api_token")
+WORKER_API_TOKENS=$(dotenv_render_value "$worker_api_tokens_json")
 PROXY_DONATE_LEVEL=$(dotenv_render_value "$DONATE_LEVEL")
 MONERO_PRUNE=$(dotenv_render_value "$prune")
 MONERO_CLEARNET_SYNC=$(dotenv_render_value "$monero_clearnet")

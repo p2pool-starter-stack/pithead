@@ -87,6 +87,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-rig-worker.sh" && domain_ran test-rig
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-status-vocabulary.sh" && domain_ran test-control-status-vocabulary.sh "$_d0" "$?" || domain_ran test-control-status-vocabulary.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-monero-tari.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-monero-tari.sh" && domain_ran test-monero-tari.sh "$_d0" "$?" || domain_ran test-monero-tari.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-monero-wallet-scan.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-monero-wallet-scan.sh" && domain_ran test-monero-wallet-scan.sh "$_d0" "$?" || domain_ran test-monero-wallet-scan.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-recovery-address-gates.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-recovery-address-gates.sh" && domain_ran test-recovery-address-gates.sh "$_d0" "$?" || domain_ran test-recovery-address-gates.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-p2pool-tari-off.sh disable=SC2015
@@ -101,6 +103,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tor-network.sh" && domain_ran test-tor-network.sh "$_d0" "$?" || domain_ran test-tor-network.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-clearnet-firewall.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-clearnet-firewall.sh" && domain_ran test-clearnet-firewall.sh "$_d0" "$?" || domain_ran test-clearnet-firewall.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-host-firewall.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-host-firewall.sh" && domain_ran test-host-firewall.sh "$_d0" "$?" || domain_ran test-host-firewall.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-egress-direction.sh disable=SC2015
@@ -127,8 +131,11 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-data-management.sh" && domain_ran tes
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-add-only-ssrf.sh" && domain_ran test-control-add-only-ssrf.sh "$_d0" "$?" || domain_ran test-control-add-only-ssrf.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-perimeter-tier3.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-perimeter-tier3.sh" && domain_ran test-control-perimeter-tier3.sh "$_d0" "$?" || domain_ran test-control-perimeter-tier3.sh "$_d0" "$?"
+# shellcheck source=tests/stack/control/test-control-secret-and-dial-guards.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/control/test-control-secret-and-dial-guards.sh" && domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?" || domain_ran test-control-secret-and-dial-guards.sh "$_d0" "$?"
 # shellcheck source=tests/stack/control/test-control-ssrf-host-local.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-ssrf-host-local.sh" && domain_ran test-control-ssrf-host-local.sh "$_d0" "$?" || domain_ran test-control-ssrf-host-local.sh "$_d0" "$?"
+
 # shellcheck source=tests/stack/control/test-control-editable-allowlist.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/control/test-control-editable-allowlist.sh" && domain_ran test-control-editable-allowlist.sh "$_d0" "$?" || domain_ran test-control-editable-allowlist.sh "$_d0" "$?"
 

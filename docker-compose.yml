@@ -646,8 +646,10 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads only masked
-      # config and the bounded non-secret/read-only surfaces documented in SECURITY.md.
+      # The raw config.json is never mounted. A compromised dashboard can still read credentials
+      # supplied to its own runtime environment, plus the bounded non-secret/read-only surfaces in
+      # SECURITY.md; this boundary protects the host config, staged intents, results and audit log
+      # from direct container writes.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the
@@ -731,11 +733,12 @@ services:
       # How the dashboard reads each worker's own xmrig /1/summary (config.json: workers.*). One
       # configured way, no auto-detection. Defaults = stock RigForge worker (open read-only API,
       # no token, port 8080). api_auth: none (default) | name (Bearer=worker name) | token.
-      # Per-worker overrides (workers.list[], #506) are NOT env — they carry per-rig tokens, so
-      # they stay in the owner-only config.json; the dashboard reads the masked copy (#440).
+      # workers.list[].token is a write-capable host-only control credential. Only explicit
+      # endpoint-bound read-only api_token values reach the dashboard through this env row.
       - XMRIG_API_PORT=${XMRIG_API_PORT:-8080}
       - XMRIG_API_AUTH=${XMRIG_API_AUTH:-none}
       - XMRIG_API_TOKEN=${XMRIG_API_TOKEN}
+      - WORKER_API_TOKENS=${WORKER_API_TOKENS}
       # The operator-facing stratum port (#172), display-only here: the "point your rigs at
       # host:PORT" hint and the egress topology label track the real published port.
       - STRATUM_PORT=${STRATUM_PORT:-3333}

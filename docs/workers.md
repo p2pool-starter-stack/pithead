@@ -244,16 +244,16 @@ carries a control token:
 
 `workers.api_auth`/`api_port`/`api_token` set the probe for the *whole* fleet. When one rig differs
 — its API is on a different port, on another interface than the address it mines from (NAT,
-multi-homed), or carries its own token — override just that rig with
+multi-homed), or carries its own read-only probe credential — override just that rig with
 [`workers.list`](configuration.md#configuration-reference), a list of
-`{name, host?, port?, token?, watts?, control_port?}` objects. Every field but `name` is optional:
+`{name, host?, port?, api_token?, token?, watts?, control_port?}` objects. Every field but `name` is optional:
 
 ```jsonc
 // config.json — the rest of the fleet keeps the workers.* defaults
 "workers": {
     "list": [
         { "name": "rig-01", "port": 18080 },
-        { "name": "rig-02", "host": "10.0.0.9", "token": "rig-02-secret" }
+        { "name": "rig-02", "host": "10.0.0.9", "api_token": "read-only-probe-secret" }
     ]
 }
 ```
@@ -271,8 +271,11 @@ the old key is dropped. Schema defaults never refuse either: an empty array carr
 `xvb.*`, so the `xvb.*` value is kept (#2690).
 
 The merge rule is: **per-worker field > fleet default > built-in default.** A rig with no entry (or
-an entry that only sets `port`) inherits everything else from `workers.*`. A per-worker `token`
-turns on token-auth for that one rig regardless of the fleet-wide `api_auth` mode.
+an entry that only sets `port`) inherits everything else from `workers.*`. A per-worker `api_token`
+turns on token-auth for that one rig regardless of the fleet-wide `api_auth` mode. It requires an
+operator-set `host`, is bound to that host and API port, and must be read-only at the miner.
+`workers.list[].token` is different: it is the write-capable RigForge control token, retained
+host-side for Worker Inspect; it is never copied into dashboard `.env` or used as a probe Bearer.
 
 `watts` is a manual power-draw estimate (in watts) for the dashboard's
 [energy & profit calculator](dashboard.md#energy--profit). Set it only for a rig whose enriched feed
@@ -297,7 +300,9 @@ stratum password): a change can alter a rig's pools or its thermal `watchdog`/`m
 who can sniff or MITM the mining LAN and capture the token can push config to your rigs. Keep the
 mining LAN isolated from untrusted devices, and treat the token as a secret. After the Adopt POST,
 it is retained only in owner-protected host config and spool state, never in dashboard responses,
-logs, feed credentials, support bundles, or other exported artifacts.
+logs, feed credentials, support bundles, or other exported artifacts. A separate `api_token`, if
+configured for a non-RigForge miner, is a read-only probe credential and reaches only the
+dashboard's owner-protected environment; do not put a write-capable token in that field.
 
 NOTE: a rig provisioned by the appliance (the setup page's RigForge choice) ships with control
 **on**, pinned to the Pithead it was pointed at. Its rendered RigForge config carries the `pools`
@@ -321,8 +326,8 @@ updating its entry** here.
 `host` exists for the case where a rig's API isn't reachable at the address it mines from. It must
 be set by you in `config.json` and is never taken from anything a miner advertises: the dashboard
 will not send a configured token to a host a miner could control (the same [SSRF guard](#authentication)
-as the worker-name rule). Pinning `host` alongside `token` is the recommended pair. The derived
-read bearer is bound to that name, host, and API port, so a stale credential map fails closed during
+as the worker-name rule). `host` is required for `api_token` and for RigForge read-bearer derivation.
+Both probe credentials are bound to the configured name, host, and API port, so a stale map fails closed during
 an endpoint change instead of forwarding the old rig's read capability to a new address or service.
 
 The standard fleet — everyone on `8080`, token = rig name or open — needs no `workers.list`

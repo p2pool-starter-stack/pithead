@@ -163,8 +163,9 @@ render_worker_read_tokens() { # <masked-dir>; dashboard-only RigForge credential
 # Render the pre-masked prefill copy (#440): the live config with every SET secret leaf replaced
 # by the {"__secret__":true} sentinel, written atomically to <control-dir>/masked/config.json.
 # The dashboard serves the Configuration form from THIS file (mounted read-only) — the raw
-# config.json is never mounted into the container, so a full container compromise reads masked
-# config, results, and the audit log, nothing more. An EMPTY secret stays empty, so the UI can
+# config.json is never mounted into the container, so this path exposes only masked config,
+# results, and the audit log. Runtime credentials the dashboard consumes are a separate process-
+# environment boundary. An EMPTY secret stays empty, so the UI can
 # tell "set — leave blank to keep" from "not set". World-readable on purpose (it holds no secret
 # values; the container reads it as $APP_UID); best-effort, so a render hiccup degrades to a
 # stale prefill, never a failed apply.
@@ -173,7 +174,7 @@ render_masked_config() { # <control-dir>
     mkdir -p "$mdir" 2>/dev/null || true
     tmp="$mdir/.config.json.tmp"
     # Per-worker tokens (#172) live in the variable-length descriptor array at workers.list[]
-    # (#506), out of reach of the fixed-path walk above — mask each SET .token entry by entry.
+    # (#506), out of reach of the fixed-path walk above — mask each SET secret entry by entry.
     # Masking an empty array is a no-op.
     #
     # dashboard.workers[] STAYS masked although 2.0.0 removed that alias (#1832), for the reason
@@ -191,11 +192,13 @@ render_masked_config() { # <control-dir>
             else setpath($p; {"__secret__": true}) end)
         | if (.workers | type) == "object" and (.workers.list | type) == "array"
           then .workers.list |= map(
-              if (.token // "") == "" then . else .token = {"__secret__": true} end)
+              if (.token // "") == "" then . else .token = {"__secret__": true} end
+              | if (.api_token // "") == "" then . else .api_token = {"__secret__": true} end)
           else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
-              if (.token // "") == "" then . else .token = {"__secret__": true} end)
+              if (.token // "") == "" then . else .token = {"__secret__": true} end
+              | if (.api_token // "") == "" then . else .api_token = {"__secret__": true} end)
           else . end
         # notifications.webhooks[] (#848): the whole URL is the bearer secret (query strings carry
         # tokens), and there is no fixed leaf path — mask each set entry, like the worker tokens.

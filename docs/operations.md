@@ -201,12 +201,12 @@ appliance whose compose was rendered ahead of its pinned images), the check repo
 dialing the API — a caveat, not a bug, since it only trades a permanent false ✗ for a rare false ✓
 on a release you're already about to update past. A service whose check hasn't passed yet shows as
 starting, which is normal for a minute after a start or upgrade. The Monero payout wallet stays
-healthy while it scans after a start (the first scan, or the catch-up of a reopened wallet) and its
-RPC is busy, but only while its scan marker, written at each start, is less than 24 hours old.
-After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400 seconds in the
-wallet-rpc environment. The Tari payout wallet remains process-liveness only because its gRPC is a
-long stream rather than a request/response readiness probe; it detects a crashed wallet, not scan
-progress.
+healthy while it scans, on its first run and while it catches up after each restart, but only
+while its scan marker is less than 24 hours old; the marker is cleared once the wallet reaches
+monerod's tip. After that, a silent wallet is unhealthy; `PAYOUT_SCAN_GRACE_SEC` defaults to 86400
+seconds in the wallet-rpc environment. The Tari payout wallet remains process-
+liveness only because its gRPC is a long stream rather than a request/response readiness probe; it
+detects a crashed wallet, not scan progress.
 It exits non-zero when something needs attention, so you can wire it into a cron/monitoring check.
 A stopped `p2pool`/`xmrig-proxy` is reported as intentional, not an error: the dashboard stops it
 either to fail workers over a node-down outage or while the miner is held until the required chains
@@ -539,7 +539,7 @@ want it gone.
 |---|---|
 | containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
 | images | every ref from `docker compose config --images` |
-| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues. Uninstall removes the Tari wallet volume even when its payout profile is disabled, after checking its Compose ownership labels. If Docker cannot list, inspect, or remove that volume, uninstall stops before deleting `.env` so the operator can retry. |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
 | firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
 | rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
