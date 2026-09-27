@@ -297,10 +297,11 @@ tests/integration/e2e.sh claude/my-feature --mode matrix   # full config sweep (
 checkout so its harness code is available, then runs those reads against the currently active install
 directory. It does not take a stack backup, borrow a miner, deploy the branch, or run a restore.
 
-Pre-flight, before anything is locked or borrowed: both chains must read `done` on the bench
-dashboard's sync panels. Otherwise it prints each chain's current/target height and aborts — a
-bench that starts hours behind tip fails the required-sync assertions as environment noise, not
-a regression, and burns the borrowed-rig hour finding out
+Pre-flight, before anything is locked or borrowed: the wrapper waits up to 120 seconds for both
+chains to read `done` on the bench dashboard's sync panels. This allows a brief `loading` state
+while the dashboard polls an already-synced node. If the wait expires, it prints each
+chain's current/target height and aborts. A bench that starts hours behind tip fails the
+required-sync assertions as environment noise and avoids spending the borrowed-rig hour finding out
 ([#914](https://github.com/p2pool-starter-stack/pithead/issues/914)). `--skip-preflight`
 overrides.
 
