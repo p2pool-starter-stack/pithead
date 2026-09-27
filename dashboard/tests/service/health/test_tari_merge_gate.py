@@ -223,12 +223,28 @@ def test_an_unreadable_container_state_changes_nothing_until_it_reads(tmp_path):
 def test_an_empty_or_invalid_marker_fails_closed(tmp_path):
     """No height stands in for an unreadable one: the node's own green, at any height, is not
     enough. Only a green measured against the public explorer resumes."""
-    for content in ("", "x", "height=\n", "height=abc\n"):
+    for content in ("", "x", "height=\n", "height=abc\n", "height=-1\n"):
         (tmp_path / mg.MARKER).write_text(content)
         gate, p2pool, clock = _gate(tmp_path, P2Pool(started_at=time.time() + 1))
         assert _run(gate, clock, _green_at(10**9), 3 * mg.RESUME_AFTER_SEC) == "suppressed"
         assert _run(gate, clock, _green_at(10**9, explorer_tip=10**9), 0) == "suppressed"
         assert _run(gate, clock, _green_at(10**9, explorer_tip=10**9), 300) == "on"
+
+
+def test_a_negative_marker_height_fails_closed_across_a_dashboard_restart(tmp_path):
+    """``height=-1`` is invalid, not a bar any node clears: five minutes of the node's own green
+    without an explorer reading, before and after a dashboard restart, keeps the marker and so keeps
+    merge-mining off. A green measured against the explorer then resumes it."""
+    (tmp_path / mg.MARKER).write_text("height=-1\n")
+    p2pool = P2Pool(started_at=time.time() + 1)  # launched after the marker: no merge-mining
+    for _ in range(2):  # this dashboard, then a restarted one
+        gate, _, clock = _gate(tmp_path, p2pool)
+        assert _run(gate, clock, _green_at(100), mg.RESUME_AFTER_SEC + 60) == "suppressed"
+        assert (tmp_path / mg.MARKER).exists()
+        p2pool.docker.stop.assert_not_awaited()
+    assert _run(gate, clock, _green_at(100, explorer_tip=100), mg.RESUME_AFTER_SEC) == "on"
+    assert not (tmp_path / mg.MARKER).exists()
+    assert p2pool.running and p2pool.started_at > time.time() - 60  # relaunched to merge-mine
 
 
 def test_an_interrupted_marker_write_leaves_no_marker_and_is_retried(tmp_path, monkeypatch):

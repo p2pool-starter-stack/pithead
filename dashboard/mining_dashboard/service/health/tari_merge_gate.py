@@ -60,9 +60,10 @@ class TariMergeMineGate:
         try:
             with open(self._path) as fh:
                 first = fh.readline().strip()
-            return int(first.split("=", 1)[1]) if first.startswith("height=") else None
+            height = int(first.split("=", 1)[1]) if first.startswith("height=") else None
         except (OSError, ValueError):
             return None
+        return height if height is not None and height >= 0 else None  # a negative one is invalid
 
     def decide(self, level, now, height=None, explorer_tip=None):
         """``"suppress"``, ``"resume"`` or None for this cycle's verdict. Pure state + clock."""

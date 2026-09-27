@@ -213,7 +213,7 @@ check_tari_chain() {
     level=${v%%$'\t'*}
     detail=${v#*$'\t'}
     case "$level" in
-    green) dr_ok "Tari node follows the chain (tip advancing, peers connected, not behind the explorer)." ;;
+    green) dr_ok "Tari node: no degraded signal confirmed (a stale tip, lost peers or explorer lag counts only once sustained; a disabled explorer is not checked)." ;;
     amber) dr_warn "Tari node may be stalling: $detail" ;;
     *) dr_fail "Tari node is NOT following the chain; merge-mined Tari work is wasted: $detail" ;;
     esac
@@ -227,7 +227,7 @@ tari_chain_status_line() {
     [ -n "$v" ] || return 0
     level=${v%%$'\t'*}
     case "$level" in
-    green) printf '  %b✓%b %-13s following the chain\n' "$C_GREEN" "$C_RESET" "tari chain" ;;
+    green) printf '  %b✓%b %-13s no degraded signal confirmed\n' "$C_GREEN" "$C_RESET" "tari chain" ;;
     amber) printf '  %b⚠%b %-13s %s\n' "$C_YELLOW" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
     *) printf '  %b✗%b %-13s NOT following the chain: %s\n' "$C_RED" "$C_RESET" "tari chain" "${v#*$'\t'}" ;;
     esac
