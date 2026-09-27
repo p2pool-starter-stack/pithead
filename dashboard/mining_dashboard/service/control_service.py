@@ -135,10 +135,9 @@ EDITABLE_ENV_KEY_PATHS = {
     "TELEGRAM_DAILY_SUMMARY_TIME": ("telegram.daily_summary_time",),
     # TELEGRAM_EVENT_<NAME> -> telegram.events.<name> is a mechanical rename (pithead's tg_event()
     # helper and render_env do the same thing per event), so it's generated below rather than
-    # hand-typed 25 times. wallet_changed / clearnet_exposed are the two events NOT in this list —
-    # deliberately excluded: they're the tamper-evidence alarms on the very channel a compromised
-    # container would use to silence them, so the dashboard must never be able to turn them off.
-    # They still render (greyed) in the Notifications > Telegram events nested subgroup (#612).
+    # hand-typed 25 times. wallet_changed / clearnet_exposed are the two events NOT in this list:
+    # they are the tamper-evidence alarms, so they are not free-commit. Since #2367 they take the
+    # unlisted route instead (typed APPLY + envelope, a DEST row when switched off).
     # NOTE (2026-08 audit): raffle_win was missing from this generated set for a while — the one
     # event toggle out of step with its siblings. Add a new event toggle here AND in pithead's
     # CONTROL_DASHBOARD_EDITABLE_KEYS: the drift guard catches a mismatch, not an omission from both.

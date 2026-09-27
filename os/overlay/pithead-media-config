@@ -1,8 +1,8 @@
 #!/bin/bash
 # Physical-presence configuration channel (issue D of the appliance parity set): a removable FAT
-# stick carrying pithead-config.json can change any supported setting, including the never-approve
-# set no remote channel may touch (the approval channel's own identity, dashboard.auth.password,
-# the tamper-evidence toggles). Release images reject retired ssh.* settings. Trust statement,
+# stick carrying pithead-config.json can change any supported setting without the dashboard's
+# typed confirmation (dashboard.auth.password and the tamper-evidence toggles included; the
+# dashboard route confirms them since #2367). Release images reject retired ssh.* settings. Trust statement,
 # stated once here and in docs/appliance.md:
 # whoever can insert media and power-cycle the machine already has full authority over it — this
 # channel makes that authority usable instead of implicit, and adds a tamper-evidence trail (the

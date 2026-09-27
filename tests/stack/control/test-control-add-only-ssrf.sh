@@ -63,7 +63,7 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
     run_pending >/dev/null
 }
 
-. "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
+. "$ROOT/tests/stack/control/control-sensitive-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
 # Replace the dashboard login and disable control in one token-less commit: #2367 took the
@@ -135,8 +135,8 @@ jq '.xvb.url="attacker.example:4247"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "xvb pool-url repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the default xvb url" "$(jq -r '.xvb.url // "unset"' "$C/config.json")" "unset"
-# The tamper-evidence alert toggles stay host-only even though sibling event toggles are
-# editable: silencing WALLET_CHANGED would blind the future #338 approval channel.
+# The tamper-evidence alert toggles are not free-commit like their siblings: silencing
+# WALLET_CHANGED without the typed APPLY and envelope is refused (#2367 made it confirm, not host-only).
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "wallet-changed alert silencing is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"

@@ -40,9 +40,9 @@
 # committable. Echoes a reason on refusal.
 
 # The direct-commit env keys: bounded operational tuning that needs neither APPLY nor the approval
-# envelope. Every other schema-backed value falls through to confirmation. WALLET_CHANGED and
-# CLEARNET_EXPOSED remain physical-presence-only because they are the detection controls for the
-# sensitive changes that #1959 now permits. Space-separated exact env-key names.
+# envelope. Every other schema-backed value falls through to confirmation, including the
+# WALLET_CHANGED and CLEARNET_EXPOSED tamper alarms (#2367), which are left off this list so that
+# silencing one always needs the typed APPLY and envelope. Space-separated exact env-key names.
 #
 # NOTE (2026-08 audit): TELEGRAM_EVENT_RAFFLE_WIN was missing from this list for a while — the one
 # event toggle out of step with its 24 siblings, all otherwise editable. If you add a new event
@@ -89,11 +89,11 @@ CONTROL_DASHBOARD_CONFIRM_KEYS='MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR TO
 # HOST_IP. The Telegram toggles switch a channel #2076 made READ-ONLY, so neither can be used to
 # commit anything, and both are instantly reversible by the same route. HOST_IP is the validated
 # dashboard.host: changing it remints the local certificate and changes the machine's mDNS
-# identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here
-# and never may be: they sit in
-# CONTROL_DASHBOARD_NEVER_PATHS below, because silencing the alarm is how a wallet swap goes
-# unnoticed. TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are not here either — repointing the alarm is
-# silencing it by another name.
+# identity, so it requires the same envelope. The two tamper alarms on that channel are NOT here:
+# silencing one is how a wallet swap goes unnoticed, so they take the stricter unlisted route
+# (typed APPLY and the envelope, with a DEST row naming what stops alerting, #2367).
+# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID take that route too — repointing the alarm is silencing
+# it by another name.
 #
 # XVB_STANDBY_SOURCE was in a draft of this list, picked off an enumeration of what the old
 # "everything else" tier had swept up. It is a URL — the primary dashboard's /api/xvb-standby
@@ -141,16 +141,12 @@ CONTROL_NODE_PREFLIGHT_KEYS='MONERO_NODE_HOST MONERO_RPC_PORT MONERO_ZMQ_PORT
     MONERO_NODE_USERNAME MONERO_NODE_PASSWORD TARI_GRPC_ADDRESS'
 
 # Physical-presence-only configuration, matching pithead-media-config's never-approve boundary:
-# SSH and the two tamper alarms. Exact dotted paths/prefixes, space separated. This is checked
-# against config paths before anything else in the commit gate.
-#
-# dashboard.auth.password left this list in #2367: the owner ruled every config field must be
-# reachable from the panel, destructive ones warn and confirm rather than refuse. It now falls
-# through to the typed-confirmation default below like any other unclassified leaf (it emits no
-# CONTROL_DASHBOARD_EDITABLE_KEYS/CONFIRM_KEYS/APPROVAL_KEYS row of its own, so `bad` in
-# 43-control-approval-and-preview.sh always catches it and sets needs_confirm).
-CONTROL_DASHBOARD_NEVER_PATHS='ssh
-    telegram.events.wallet_changed telegram.events.clearnet_exposed'
+# only the retired SSH settings. Exact dotted paths/prefixes, space separated. Checked against
+# config paths before anything else in the commit gate. #2367 moved the dashboard password and the
+# wallet_changed / clearnet_exposed tamper alarms out: the owner ruled no config field is refused
+# from the panel, so they confirm behind typed APPLY and the envelope (describe_change makes the
+# password change and an alarm switched off DEST rows that name the consequence).
+CONTROL_DASHBOARD_NEVER_PATHS='ssh'
 
 # True if $1 is EXACTLY a canonical dotted-decimal IPv4 literal — four decimal octets 0-255, none
 # with a leading zero (a bare "0" is fine; "010"/"0177" are not). curl/glibc's numeric-address

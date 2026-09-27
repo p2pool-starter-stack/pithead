@@ -205,6 +205,13 @@ test("buildSections: high-consequence fields carry their inline warning", () => 
   // #2367: the password and hostname name their consequence before the operator confirms.
   assert.match(fields["dashboard.auth.password"].warning, /logged out|locks this session/);
   assert.match(fields["dashboard.host"].warning, /approval-gated day-two rename/);
+  const alarms = Object.fromEntries(
+    buildSections({ telegram: { events: { wallet_changed: true, clearnet_exposed: true } } })
+      .flatMap((s) => s.fields)
+      .map((f) => [f.key, f]),
+  );
+  assert.match(alarms["telegram.events.wallet_changed"].warning, /wallet swap could go unnoticed/);
+  assert.match(alarms["telegram.events.clearnet_exposed"].warning, /exposing this machine's IP/);
 });
 
 test("array values are not form fields (#172)", () => {

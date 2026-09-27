@@ -58,7 +58,8 @@ def test_perimeter_fields_are_confirm_gated(config_paths):
     assert "dashboard.auth.password" not in cfg["_approval_keys"]
     assert "dashboard.auth.password" not in cfg["_editable_keys"]
     assert "dashboard.auth.password" in cfg["_confirm_keys"]
-    assert "telegram.events.wallet_changed" not in cfg["_confirm_keys"]
+    for path in ("telegram.events.wallet_changed", "telegram.events.clearnet_exposed"):  # #2367
+        assert path in cfg["_confirm_keys"] and path not in cfg["_editable_keys"], path
     assert not any(path.startswith("ssh.") for path in cfg["_confirm_keys"])
     # The node RPC login confirms (#2367/#2333, #2368): never free-commit, never the approval tier.
     for path in ("monero.node_username", "monero.node_password"):
@@ -86,6 +87,6 @@ def test_every_reference_leaf_is_intentionally_classified(config_paths):
     assert classes["p2pool.clearnet"] == "confirm"
     assert classes["dashboard.host"] == "approval"
     assert classes["dashboard.auth.password"] == "confirm"
-    assert "telegram.events.wallet_changed" not in classes
-    assert "telegram.events.clearnet_exposed" not in classes
+    assert classes["telegram.events.wallet_changed"] == "confirm"
+    assert classes["telegram.events.clearnet_exposed"] == "confirm"
     assert not any(p.startswith("ssh.") for p in classes)

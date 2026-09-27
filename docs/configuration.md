@@ -123,10 +123,10 @@ which the host re-checks against the staged file. These are typo protection and 
 friction, not a second identity — a signed-in session that can set a field can also fill the
 confirm box. The Telegram approval that once sat here was removed in #2076. The preview shows full
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
-back after commit. One class remains configuration-stick only: the
-`telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms — the detection
-controls for the sensitive changes this section otherwise permits, enforced by the same
-physical-presence boundary as the media configuration path, not a browser exception.
+back after commit. No field is refused from the dashboard (#2367). The high-consequence ones
+warn in the form and name their cost again in the host preview before you confirm: the dashboard
+password, and the `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper
+alarms, which are the detection controls for the sensitive changes this section permits.
 
 Every other field, including the dashboard password, Telegram credentials, the machine hostname,
 and the Healthchecks ping URL, is reachable from the panel behind the confirmation above (#2367):
@@ -137,7 +137,7 @@ and the Healthchecks ping URL, is reachable from the panel behind the confirmati
 | `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.chat_id` | Configuration view, Notifications | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
-| `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Not exposed | Physical presence only — see above |
+| `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Notifications › Telegram events; warns that switching one off stops the alert it carries | Confirm preview + typed `APPLY` + approval envelope (switching off is a DEST row) |
 | `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + typed approval envelope |
 | `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns a mistyped password locks this session out and, on the appliance, also changes the console `root` login | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
 | `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
@@ -213,7 +213,7 @@ the desired value is not presented as proof of what the still-running services u
 | `telegram.enabled` | `false` | Push operational alerts (node down/recovered, worker offline/back, sync finished) to Telegram. Off by default. Requires `bot_token` + `chat_id` to actually send. Full walkthrough: [Telegram Bot](telegram.md). |
 | `telegram.bot_token` | `""` | Your BotFather bot token. A secret — stored owner-only in `.env`, git-ignored, and never logged. Get one from [@BotFather](https://t.me/BotFather). |
 | `telegram.chat_id` | `""` | Where alerts are sent and the only chat the command interface answers. A Telegram group id (negative, e.g. `-1001234567890`) or a personal chat id. See [how to find it](telegram.md#3-find-your-chat-id). |
-| `telegram.events.*` | all `true` | Per-event toggles: `stack_online`, `node_down`, `node_recovered`, `worker_offline`, `worker_recovered`, `worker_joined`, `worker_left`, `sync_finished`, `disk_space`, `db_unhealthy`, `db_reset`, `xvb_no_share`, `xvb_registration`, `clearnet_exposed`, `new_release`, `daily_summary`, `hashrate_low`, `hashrate_loss`, `hugepages`, `low_ram`, `wallet_changed`, `high_reject_rate`, `block_found`, `payout_found`, `payout_confirmed`, `container_unhealthy`, `raffle_win`. Each defaults to on once Telegram is enabled; set one `false` to silence just that alert. The dashboard Configuration view can change every toggle except the `wallet_changed` and `clearnet_exposed` tamper alarms, which remain configuration-stick only. Full list: [Telegram Bot](telegram.md#choosing-which-alerts-you-get). |
+| `telegram.events.*` | all `true` | Per-event toggles: `stack_online`, `node_down`, `node_recovered`, `worker_offline`, `worker_recovered`, `worker_joined`, `worker_left`, `sync_finished`, `disk_space`, `db_unhealthy`, `db_reset`, `xvb_no_share`, `xvb_registration`, `clearnet_exposed`, `new_release`, `daily_summary`, `hashrate_low`, `hashrate_loss`, `hugepages`, `low_ram`, `wallet_changed`, `high_reject_rate`, `block_found`, `payout_found`, `payout_confirmed`, `container_unhealthy`, `raffle_win`. Each defaults to on once Telegram is enabled; set one `false` to silence just that alert. The dashboard Configuration view can change every toggle; the `wallet_changed` and `clearnet_exposed` tamper alarms need typed `APPLY` and the confirmation step, and the preview names what stops alerting. Full list: [Telegram Bot](telegram.md#choosing-which-alerts-you-get). |
 | `telegram.daily_summary_time` | `08:00` | Local time (24-hour `HH:MM`) to push the once-a-day status digest, when the `daily_summary` event is on. Uses the dashboard's timezone (`dashboard.timezone`). A malformed value disables the digest. |
 | `telegram.commands.enabled` | `false` | Turn on the interactive command interface — the bot answers read-only status queries (`/status`, `/hashrate`, `/workers`, `/luck`, `/earnings`, and more) from the configured `chat_id` (every other chat is ignored). Off by default; alerts work without it. Long-polls over Tor, so it needs no inbound port. Full command list: [Telegram › Commands](telegram.md#commands). |
 | `notifications.webhooks` | `[]` | Generic JSON webhook alert sinks (#380): every alert the stack produces is POSTed to each listed URL as `{"event", "text", "ts"}` — for Gotify, Home Assistant, or any endpoint that accepts a POST. Empty list keeps it off. The URLs are secrets (query strings often carry tokens): owner-only `.env`, never logged or printed. Sinks carry every event; `telegram.events` gates Telegram only. See [Telegram › Webhook and ntfy sinks](telegram.md#webhook-and-ntfy-sinks). |

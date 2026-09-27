@@ -307,9 +307,10 @@ Reference settings stay editable from the dashboard afterwards — see
 [configuration](configuration.md). Security-sensitive changes, including payout destinations,
 require the signed-in operator to review full non-secret values and complete the confirmation step.
 Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
-mistakes, not a compromised dashboard process. The two tamper-alarm toggles remain
-configuration-stick-only. The dashboard password is changeable there too, behind typed `APPLY`;
-because it is also the console `root` login, a new one replaces both. Rigs are narrower: the dashboard can adopt a new rig
+mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
+toggles are changeable there too, behind typed `APPLY` and the confirmation step, with a warning
+that names the cost first: the password is also the console `root` login, so a new one replaces
+both, and a silenced alarm stops reporting the change it watches. Rigs are narrower: the dashboard can adopt a new rig
 (Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
 remove a rig it already controls. See
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
@@ -317,7 +318,7 @@ remove a rig it already controls. See
 The USB-stick route stays available for everything the dashboard can set and for what it cannot:
 write the new settings to a FAT stick as `pithead-config.json`, insert it and reboot. Being able to
 insert media and power-cycle the machine is authority over it already, so that channel may set any
-supported setting, including the stick-only ones above. Release images reject retired SSH settings.
+supported setting without the dashboard's confirmation step. Release images reject retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
