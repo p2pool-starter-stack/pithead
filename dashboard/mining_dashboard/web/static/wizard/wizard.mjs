@@ -371,7 +371,7 @@ export class WizardApp extends Component {
 if (typeof document !== "undefined") {
   const sovereign = new URLSearchParams(location.search).get("ui") === "sovereign";
   const root = document.getElementById("app");
-  root.replaceChildren();
+  if (sovereign) root.replaceChildren();
   render(html`<${WizardApp} sovereign=${sovereign} />`, root);
 }
 
