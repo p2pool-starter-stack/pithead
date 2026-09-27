@@ -363,7 +363,8 @@ Turn it on by setting a password in `config.json` and running `./pithead apply`:
 How it works and what to keep in mind:
 
 - The password is bcrypt-hashed, never stored in cleartext. pithead hashes it with the same pinned
-  Caddy image the stack already runs (`caddy hash-password`) and writes only the hash to `.env`. The
+  Caddy image the stack already runs (`caddy hash-password`, with the password on stdin rather than
+  the process command line) and writes only the hash to `.env`. The
   plaintext exists only in your owner-only `config.json`; treat that file like any other secret (it's
   already git-ignored). The hash is stable across `apply` runs and only re-computed when you change
   the password, so the Caddyfile doesn't churn.
