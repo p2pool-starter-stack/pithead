@@ -2,7 +2,7 @@
 # everything pithead put on this host, and delete NO data, ever, on any flag. Three named
 # volumes (caddy_data, wallet_data, tari_wallet_data) are pithead's, not the operator's — all
 # three are derived (view-only wallets rebuild from the view keys in config.json, Caddy
-# re-issues its ACME state) — so they go with the containers via `compose down -v`. Everything
+# re-issues its ACME state). Everything
 # an operator would call "their data" (chains, Tor onion keys, dashboard history, the p2pool
 # sidechain) is a bind mount and is never touched. The appliance has no uninstall — its
 # equivalents are the reset tiers.
@@ -113,6 +113,18 @@ stack_uninstall() {
     remove_lan_guard
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
+    # Compose excludes profile-only volumes from down -v when the profile is inactive.
+    # Inspect ownership before removing the one volume its active model can miss.
+    local volumes labels
+    volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
+    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
+        labels=$(docker volume inspect pithead_tari_wallet_data --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = 'pithead/tari_wallet_data' ]; then
+            docker volume rm pithead_tari_wallet_data >/dev/null ||
+                error "Could not remove pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the volume is available."
+        fi
+    fi
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
