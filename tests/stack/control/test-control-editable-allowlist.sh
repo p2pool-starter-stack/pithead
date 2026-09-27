@@ -7,9 +7,8 @@
 # WHY THE CONTROL FAMILY, AND NOT THE CONFIG FAMILY THE CUT MAP GUESSED. The map homed this row
 # with the config family on the strength of its subject: it flips config keys and reads them back
 # out of config.json. Its FIXTURE says otherwise, and the fixture is what a domain file actually
-# has to reproduce. Every assertion here goes through gate_try() against the control channel's
-# sandbox and its request/result spool, so this section's dependencies are the control channel's,
-# and it is homed with them. The map's row left the target to be decided at cut time by fixture
+# has to reproduce. Every assertion goes through gate_try() against the control channel's sandbox
+# and request/result spool, so its dependencies are the control channel's, and it is homed with them. The map's row left the target to be decided at cut time by fixture
 # affinity; this is that decision, recorded rather than assumed.
 #
 # AMBIENT BY DESIGN — AND THE REASON IS NOT THAT ARMING WOULD BREAK IT. This file inherits $C,
