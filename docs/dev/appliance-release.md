@@ -254,11 +254,12 @@ openssl x509 -in /etc/rauc/keyring.pem -noout -fingerprint -sha256
 Check the variant first as well: an update from a debug build to a release bundle removes the SSH
 channel you are driving it over, and `--yes` skips the guard that would have asked.
 
-The rootfs Dockerfile deliberately keeps its `apt-get update` layer cached across later install
-steps (layer economy); on a warm builder cache that layer can outlive a mirror rotating a
-package, and the install then 404s on a package the stale index still thinks exists. Rerun with
-`os/build-image.sh --fresh-index` to bust only that layer — `build-image.sh` prints this same
-remedy when it recognizes the 404 signature in a failed build's output. (#929; snapshot.debian.org
+The rootfs Dockerfile installs the OS, RigForge toolchain, and selected updater in one layer,
+then removes apt lists and downloaded packages before committing it. Marker changes reuse that
+package layer. On a cold or evicted cache, the builder creates one package layer without retaining
+the apt lists. A cache hit reuses both update and install; it cannot install from an older index.
+Run `os/build-image.sh --fresh-index` to force a new package layer with a current index.
+`build-image.sh` also prints this command after an apt fetch failure. (#929; snapshot.debian.org
 pinning is a deliberate non-goal here, tracked as a follow-up for full build reproducibility.)
 
 Then the tiered battery, lowest tier first — the same rule as

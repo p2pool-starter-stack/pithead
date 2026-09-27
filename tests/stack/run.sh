@@ -237,6 +237,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-os-update-reboot.
 
 # shellcheck source=tests/stack/appliance/test-appliance-kernel-boot.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-kernel-boot.sh" && domain_ran test-appliance-kernel-boot.sh "$_d0" "$?" || domain_ran test-appliance-kernel-boot.sh "$_d0" "$?"
+# shellcheck source=tests/stack/appliance/test-appliance-rootfs-apt.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-rootfs-apt.sh" && domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?" || domain_ran test-appliance-rootfs-apt.sh "$_d0" "$?"
 
 # shellcheck source=tests/stack/appliance/test-appliance-reset.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/appliance/test-appliance-reset.sh" && domain_ran test-appliance-reset.sh "$_d0" "$?" || domain_ran test-appliance-reset.sh "$_d0" "$?"
