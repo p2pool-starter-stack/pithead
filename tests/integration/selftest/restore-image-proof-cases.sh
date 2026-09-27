@@ -16,12 +16,12 @@ cat >"$proof_tmp/bin/docker" <<'DOCKER'
 jq -n --arg c "$PWD/build/monero" --arg w "${PROOF_WALLET_CONTEXT:-$PWD/build/monero}" --arg a "${PROOF_ARG:-}" '{services:{monerod:{image:"monero:dev",build:{context:$c,args:{PIN:$a}}},"wallet-rpc":{image:"monero:dev",build:{context:$w,args:{PIN:$a}}}}}'
 DOCKER
 chmod +x "$proof_tmp/bin/docker"
-proof_cmd="$HERE/../lib/image-build-proof.sh"
+proof_cmd="$HERE/../tools/image-build-proof.sh"
 proof_base="$(PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/base" wallet-rpc)"
 proof_branch="$(PATH="$proof_tmp/bin:$PATH" bash "$proof_cmd" "$proof_tmp/branch" wallet-rpc)"
 assert_eq "identical pinned inputs prove a reused wallet image" "$proof_base" "$proof_branch"
-mkdir -p "$proof_tmp/branch/tests/integration/lib"
-cp "$proof_cmd" "$proof_tmp/branch/tests/integration/lib/image-build-proof.sh"
+mkdir -p "$proof_tmp/branch/tests/integration/tools"
+cp "$proof_cmd" "$proof_tmp/branch/tests/integration/tools/image-build-proof.sh"
 # shellcheck disable=SC2034  # read by proved_image_reuse, sourced from restore-proof.sh
 E2E_DIR="$proof_tmp/branch" RESTORE_DIR="$proof_tmp/base"
 on_bench() { PATH="$proof_tmp/bin:$PATH" bash -c "$1"; }

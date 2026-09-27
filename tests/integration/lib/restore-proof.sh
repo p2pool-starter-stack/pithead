@@ -132,7 +132,7 @@ grade_image_census() { # <baseline> <now> <branch> <proved-reuse services> -> ve
 # fingerprint includes the resolved base digest, effective build context and build arguments.
 # Missing evidence is never permission to accept the branch image.
 proved_image_reuse() { # <service> -> true only for independently equal build inputs
-    local svc=$1 base branch helper="$E2E_DIR/tests/integration/lib/image-build-proof.sh"
+    local svc=$1 base branch helper="$E2E_DIR/tests/integration/tools/image-build-proof.sh"
     [ "$BASELINE_UPGRADE_OK" = 1 ] || return 1
     case "$svc" in monerod | wallet-rpc) ;; *) return 1 ;; esac
     [ -n "$(census_get "$BASELINE_UPGRADE_IMAGES" "$svc")" ] || return 1
