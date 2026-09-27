@@ -9,9 +9,9 @@
 #                  builds omit it and stay shell-less. Sets the same PITHEAD_TEST_SSH_PUBKEY the
 #                  env path always honored — the flag exists so the bench recipe is one word,
 #                  not a rediscovered env var.
-#   --fresh-index  bust ONLY the rootfs Dockerfile's apt-update layer (#929): a warm builder
-#                  cache reuses that layer's apt index for weeks, and when the mirror rotates a
-#                  package the stale index 404s on install. Later layers still cache normally.
+#   --fresh-index  rebuild the rootfs package layer with a current apt index. The apt update
+#                  and install share one layer; a cache hit reuses both. Later layers rebuild
+#                  from the changed package layer as needed.
 #   --stage-only   stage os/build/stage/ (the compose file and its stamp, see stage_compose) and
 #                  stop before docker: the CI rootfs scan runs the Dockerfile itself and needs
 #                  exactly this step first, since the Dockerfile COPYs from that directory.
@@ -57,11 +57,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# apt_fetch_failure_hint (#929): given a build log tail, detect the stale-apt-index 404 signature
-# and print the remedy. Split out so it's testable without docker (tests/stack/run.sh covers it).
+# apt_fetch_failure_hint (#929): detect an apt fetch failure and print a rebuild command.
+# Split out so it's testable without docker (tests/stack/run.sh covers it).
 apt_fetch_failure_hint() {
     if grep -qE '404  Not Found|Unable to fetch some archives' <<<"$1"; then
-        echo "==> looks like a stale apt index (mirror rotated a package since the last build)." >&2
+        echo "==> apt could not fetch a package (the mirror may have changed during this build)." >&2
         echo "==> rerun with: os/build-image.sh --fresh-index" >&2
     fi
 }
@@ -316,8 +316,7 @@ echo "==> building from commit ${BUILD_COMMIT}${BUILD_DIRTY}"
 ROOTFS_TAG="${PITHEAD_ROOTFS_TAG:-pithead-os-rootfs}"
 
 echo "==> rootfs: container build + export"
-# --fresh-index (#929) stamps a new value into the Dockerfile's APT_INDEX_STAMP ARG, which busts
-# only the apt-update layer it precedes — every other layer still caches normally.
+# --fresh-index (#929) stamps a new value into APT_INDEX_STAMP, rebuilding the package layer.
 apt_index_stamp=0
 [ "${FRESH_INDEX:-0}" = "1" ] && apt_index_stamp="$(date +%s)"
 build_log="$(mktemp)"
