@@ -213,7 +213,7 @@ check_lan_guard_hold() { # <port>...
         seen+="$c "
         policy=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$c" 2>/dev/null) || continue
         if container_is_running "$c"; then
-            [ "$policy" = no ] || dr_fail "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'."
+            [ "$policy" = no ] || dr_fail_surface "$c publishes a LAN port with restart policy '$policy', so after a reboot Docker starts it before the LAN-only source rule is back. Run './pithead up'." "$c could start after a restart before the rule that limits its LAN port is back."
             continue
         fi
         if systemctl is-failed --quiet "$LAN_GUARD_BOOT_UNIT" 2>/dev/null; then
@@ -221,7 +221,7 @@ check_lan_guard_hold() { # <port>...
         else
             why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it"
         fi
-        dr_fail "$c is down: $why. Run './pithead up' to start it."
+        dr_fail_surface "$c is down: $why. Run './pithead up' to start it." "$c is down and nothing restarts it by itself."
     done
 }
 
