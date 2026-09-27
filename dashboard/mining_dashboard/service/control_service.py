@@ -9,8 +9,8 @@ Existing secret values never enter the editor/browser through this path: the hos
 secret to the ``{"__secret__": true}`` sentinel before the copy is mounted (the raw config.json is
 not mounted at all), a proposal carries the sentinel back for an untouched secret, and the host
 swaps it for the live value when it stages the intent. The running dashboard still receives the
-runtime credentials it consumes through its environment. ``read_config`` re-applies masking as
-defense-in-depth before serving configuration.
+runtime credentials it consumes through its environment, including read-only worker probe tokens.
+``read_config`` masks again before serving configuration.
 """
 
 import asyncio
@@ -31,7 +31,7 @@ SECRET_PATHS = [
     ("workers", "api_token"),
     ("monero", "node_username"),
     ("monero", "node_password"),
-    # The private view key (#381): reveals all incoming payout amounts/timing to anyone who reads it.
+    # Private view key (#381): reveals incoming payout amounts and timing.
     ("monero", "view_key"),
     # The Tari private view key (#462): same exposure for the Tari side (spend_public_key is public).
     ("tari", "view_key"),
@@ -48,8 +48,7 @@ SECRET_PATHS = [
     ("xvb", "standby", "source"),
 ]
 SECRET_SENTINEL = {"__secret__": True}
-# notifications.webhooks[] (#848): a list of bare URL strings, each one a bearer secret (query
-# strings carry tokens). No fixed leaf path reaches an array element, so it is masked separately.
+# Webhook URLs (#848) are bearer secrets masked separately from fixed leaves.
 WEBHOOKS_PATH = ("notifications", "webhooks")
 
 _RESULT_POLL_S = 0.5
@@ -81,9 +80,8 @@ def _set(cfg, path, value):
 
 
 def mask_secrets(cfg):
-    """Replace every set secret leaf (``SECRET_PATHS``) and each set ``notifications.webhooks[]``
-    entry with the sentinel, in place. Mirrors pithead's ``render_masked_config``; shared by
-    ``read_config`` and ``data_service`` so the fixed-path walk and the webhooks array mask (#848)
+    """Mask fixed secret leaves, webhook URLs, and per-worker tokens in place. Mirrors
+    pithead's ``render_masked_config``; shared by ``read_config`` and ``data_service`` so masks
     never drift between the two defense-in-depth passes. An empty secret stays empty."""
     for path in SECRET_PATHS:
         found, value = _get(cfg, path)
@@ -92,6 +90,13 @@ def mask_secrets(cfg):
     found, hooks = _get(cfg, WEBHOOKS_PATH)
     if found and isinstance(hooks, list):
         _set(cfg, WEBHOOKS_PATH, [dict(SECRET_SENTINEL) if h else h for h in hooks])
+    workers = cfg.get("workers")
+    if isinstance(workers, dict) and isinstance(workers.get("list"), list):
+        for worker in workers["list"]:
+            if isinstance(worker, dict):
+                for key in ("token", "api_token"):
+                    if worker.get(key):
+                        worker[key] = dict(SECRET_SENTINEL)
     return cfg
 
 
@@ -176,8 +181,8 @@ EDITABLE_ENV_KEY_PATHS = {
 
 # These paths are config.json-only, so they never appear in the env-var map above, but the host
 # classifies them as ordinary changes. Worker descriptors (workers.list[], #506) are the other
-# config.json-only case: only an adopt (append) commits, behind the typed APPLY (#2641), so they
-# never get an editable path — and buildSections never renders an array as a field (#172).
+# config.json-only case: only an adopt (append) commits behind typed APPLY (#2641), so they
+# get no editable path (#172).
 _CONFIG_ONLY_EDITABLE_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
@@ -197,9 +202,8 @@ def _editable_paths():
 
 # Env-var -> config-path map for the explicit CONFIRM-gated set (#719), mirroring pithead's
 # CONTROL_DASHBOARD_CONFIRM_KEYS. Every otherwise-unclassified reference leaf also confirms. The
-# gate remains the
-# authority: describe_change decides per-direction whether the preview is CONFIRM or DEST, and both
-# require the typed confirmation; physical-presence paths are checked separately.
+# gate remains authoritative: describe_change decides CONFIRM or DEST, both requiring typed
+# confirmation; physical-presence paths are checked separately.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),

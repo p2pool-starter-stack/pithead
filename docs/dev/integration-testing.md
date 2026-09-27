@@ -953,7 +953,8 @@ the generic redactor. Both are documents with an enumerable shape, and the stack
 its own terms rather than by a suffix or substring guess over field names.
 
 `config.json` is classified by PATH: `render_masked_config` walks `CONTROL_SECRET_PATHS` plus the
-two variable-length array cases a fixed-path walk cannot reach (`workers.list[].token` and
+two variable-length array cases a fixed-path walk cannot reach (`workers.list[].token` /
+`workers.list[].api_token` and
 `notifications.webhooks[]`, where the whole URL is the bearer secret). The capture SOURCES the
 box's own `./pithead` and calls that function rather than restating the list or the jq program
 here: sourcing is the shipped contract, since the prelude sets `_STACK_SOURCED` and skips the `cd`,
@@ -1131,7 +1132,8 @@ ids are what a bundle exists to carry. The population is measured rather than pa
 read of the `CONTROL_SECRET_PATHS` literal sees twelve fixed paths and misses all three array
 stanzas; the file runs the real masker over a populated fixture and reads back the fifteen paths
 that became `{"__secret__": true}`. A path inside an array is satisfied by its enclosing `[]`
-path being classified, which is what `workers.list[].token` needs. The arming control is the
+path being classified, which is what both `workers.list[].token` and
+`workers.list[].api_token` need. The arming control is the
 load-bearing part: `render_masked_config` warns and returns 0 when its jq fails, so a test
 reading its return code greens over a document that was never written and every containment row
 then passes over an empty population. The file asserts the artifact exists and holds exactly
