@@ -72,6 +72,10 @@ STOPPED_ADVICE = (
 RESTART_ADVICE = (
     "restart the Tari node ('./pithead restart tari'); startup clears its bad-block list"
 )
+UNRECORDED_ADVICE = (
+    "the automatic restart is held: it could not record the restart in the dashboard's state "
+    "directory, and never stops the node without that record; " + RESTART_ADVICE
+)
 ESCALATED_ADVICE = (
     f"{MAX_RESTARTS} restarts did not bring it back: likely a chain fork or an upgrade required "
     "— a restart cannot fix this. See docs/operations.md, Troubleshooting, 'Tari node stuck or forked'."
@@ -252,12 +256,21 @@ class TariChainHealth:
                 self._restarts,
                 MAX_RESTARTS,
             )
-            self._owed.owe()  # before the stop: a dashboard restart between the two still owes it
-            stopped = await self._docker.stop(self.CONTAINER, stop_timeout=60, request_timeout=90)
-            started = await self._docker.start(self.CONTAINER, request_timeout=60)
+            # The record goes to disk before the stop, so a dashboard restart between the two still
+            # owes the start. No record, no stop: the restart is not issued and the slot comes back.
+            recorded = self._owed.owe()
+            stopped = recorded and await self._docker.stop(
+                self.CONTAINER, stop_timeout=60, request_timeout=90
+            )
+            started = stopped and await self._docker.start(self.CONTAINER, request_timeout=60)
             if started or not stopped:
                 self._owed.settle()
-            if not stopped:
+            if not recorded:
+                self._restarts -= 1
+                self._last_restart = None
+                action = "restart_unrecorded"
+                verdict["advice"] = UNRECORDED_ADVICE
+            elif not stopped:
                 # Never issued: give the slot back so a flaky control proxy can't spend the budget.
                 self._restarts -= 1
                 self._last_restart = None

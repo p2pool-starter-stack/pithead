@@ -131,7 +131,8 @@ class TariMergeMineGate:
         if not running or started_at > changed:
             # Launched since the change, or stopped by someone else: its next start reads it.
             return self._confirmed()
-        self._owed.owe()
+        if not self._owed.owe():
+            return  # no durable record, no stop: still unconfirmed, tried again next cycle
         if not await self._docker.stop(P2POOL, stop_timeout=30, request_timeout=60):
             self._owed.settle()
         elif await self._docker.start(P2POOL, request_timeout=60):

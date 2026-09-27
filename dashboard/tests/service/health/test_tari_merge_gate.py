@@ -250,3 +250,35 @@ def test_an_interrupted_marker_write_leaves_no_marker_and_is_retried(tmp_path, m
     monkeypatch.undo()
     assert _run(gate, clock, _red_at(500), 0) == "suppressed"
     assert (tmp_path / mg.MARKER).read_text().startswith("height=500\n")
+
+
+# --- the owed-start record cannot be written (#2464 review round 5) -----------------------------
+
+
+def test_an_unrecordable_owed_start_stops_nothing_and_stays_unconfirmed(tmp_path, monkeypatch):
+    """A stop with no durable record could leave p2pool stopped, and a later cycle would see it
+    stopped and call the launch reconciled. So p2pool is not stopped, across a dashboard restart
+    too, until the record can be written; then the relaunch completes."""
+    p2pool = P2Pool()
+    p2pool.start_ok = False  # the worst case: a stop now would strand it
+    gate, _, clock = _gate(tmp_path, p2pool)
+    assert gate._set_marker(True, 500)
+    real, full = owed_start.write_atomic, [True]
+
+    def write(path, text):
+        if full[0]:
+            raise OSError(30, "Read-only file system")
+        real(path, text)
+
+    monkeypatch.setattr(owed_start, "write_atomic", write)
+    for fresh in (False, True):  # this dashboard, then a restarted one
+        if fresh:
+            gate, _, clock = _gate(tmp_path, p2pool)
+        _run(gate, clock, _red_at(500), 600)
+        assert p2pool.running and gate._launch_unconfirmed
+        p2pool.docker.stop.assert_not_awaited()
+    full[0] = False
+    p2pool.start_ok = True
+    _run(gate, clock, _red_at(500), 0)
+    assert p2pool.running and p2pool.started_at > os.path.getmtime(tmp_path / mg.MARKER)
+    assert not gate._launch_unconfirmed and not (tmp_path / "p2pool-start-owed").exists()

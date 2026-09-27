@@ -6,6 +6,7 @@ import asyncio
 import os
 import time
 
+from mining_dashboard.service.health import owed_start
 from mining_dashboard.service.health import tari_health as th
 from tests.service.health.test_tari_health import MIN, SYNCED, Clock, _docker, _monitor
 
@@ -149,3 +150,73 @@ def test_a_dashboard_restart_between_stop_and_start_still_owes_the_start(tmp_pat
     docker.start.side_effect, docker.start.return_value = None, True
     mon = _monitor(docker_control=docker, clock=Clock(), state_dir=str(tmp_path))
     assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
+
+
+# --- the record cannot be written (#2464 review round 5) ----------------------------------------
+
+
+class Disk:
+    """``write_atomic`` for the owed-start record, failing while ``full`` (a full or read-only
+    state directory)."""
+
+    def __init__(self, monkeypatch, full=True):
+        self.full = full
+        real = owed_start.write_atomic
+        monkeypatch.setattr(owed_start, "write_atomic", lambda p, t: self._write(real, p, t))
+
+    def _write(self, real, path, text):
+        if self.full:
+            raise OSError(28, "No space left on device")
+        real(path, text)
+
+
+def _red_cycles(mon, clock, sync=SYNCED, cycles=36):
+    actions = []
+    for _ in range(cycles):
+        actions.append(asyncio.run(mon.check(sync, 0))["action"])
+        clock.t += MIN
+    return actions
+
+
+def test_an_unrecordable_restart_never_stops_the_node_across_a_dashboard_restart(
+    tmp_path, monkeypatch
+):
+    """Without a durable record a stop could strand the node (its start failing, the retry lost
+    with the process). So no record, no stop: the slot comes back and the advice says why."""
+    disk, docker = Disk(monkeypatch), _docker()
+    docker.start.return_value = False  # the worst case: a stop now would leave it stopped
+    clock = Clock()
+    mon = _monitor(docker_control=docker, clock=clock, state_dir=str(tmp_path))
+    actions = _red_cycles(mon, clock)
+    assert "restart_unrecorded" in actions and mon.verdict["restarts"] == 0
+    assert mon.verdict["advice"] == th.UNRECORDED_ADVICE
+    docker.stop.assert_not_awaited()
+    clock = Clock()  # a new dashboard, the disk still full: still nothing stopped
+    mon = _monitor(docker_control=docker, clock=clock, state_dir=str(tmp_path))
+    _red_cycles(mon, clock)
+    docker.stop.assert_not_awaited()
+    disk.full = False  # the disk recovers: the restart goes ahead, and its failed start is owed
+    actions = _red_cycles(mon, clock, cycles=1)
+    assert actions == ["start_failed"] and os.listdir(tmp_path) == ["tari-start-owed"]
+    clock.t += th.START_RETRY_SEC
+    docker.start.return_value = True
+    assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
+
+
+def test_the_retry_limit_holds_in_process_when_a_spent_retry_cannot_be_recorded(
+    tmp_path, monkeypatch
+):
+    docker = _docker()
+    docker.start.return_value = False
+    clock = Clock()
+    mon = _monitor(docker_control=docker, clock=clock, state_dir=str(tmp_path))
+    assert _red_cycles(mon, clock)[-1] == "start_failed"
+    Disk(monkeypatch)  # every later write fails: the file keeps START_RETRIES
+    actions = []
+    for _ in range(3 * th.START_RETRIES):
+        clock.t += th.START_RETRY_SEC
+        actions.append(asyncio.run(mon.check({"reachable": False}, None))["action"])
+    assert docker.start.await_count == 1 + th.START_RETRIES and actions[-1] == "start_gave_up"
+    mon = _monitor(docker_control=docker, clock=Clock(), state_dir=str(tmp_path))
+    asyncio.run(mon.check({"reachable": False}, None))  # a new dashboard is not stranded either
+    assert docker.start.await_count == 2 + th.START_RETRIES and docker.stop.await_count == 1

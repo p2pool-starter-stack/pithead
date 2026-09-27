@@ -9,6 +9,10 @@ It holds the stop time on the host clock, the one Docker's ``State.StartedAt`` u
 running, or started by anyone since that stop, owes nothing, so a start from here never overrides
 an operator's start-then-stop, and it never stops anything. Only a container still stopped since
 this code stopped it is started, and at most ``retries`` times (None: until it runs).
+
+A record that cannot be written is reported to the caller, which must then not stop anything: a stop
+with no durable record is exactly the stranding this exists to prevent. A spent retry that cannot be
+recorded is still counted in memory, so the limit holds within the process.
 """
 
 import json
@@ -37,14 +41,17 @@ class OwedStart:
         self.container = container
         self._retries = retries
         self._inspect = inspect
+        self._left = None  # the lowest count this process has spent to, whatever the file says
+        self._failing = False  # a write failure already reported: log once per streak
 
     def pending(self) -> bool:
         return os.path.exists(self._path)
 
-    def owe(self):
-        """Record the stop about to be issued. A record that cannot be written is logged: the
-        restart still goes ahead, and the in-process retry still covers a failed start."""
-        self._write({"stopped_at": time.time(), "retries": self._retries})
+    def owe(self) -> bool:
+        """Record the stop about to be issued. False when the record did not reach the disk: the
+        caller must not stop the container."""
+        self._left = None
+        return self._write({"stopped_at": time.time(), "retries": self._retries})
 
     def settle(self):
         try:
@@ -54,11 +61,18 @@ class OwedStart:
         except OSError as exc:
             logger.warning("Could not remove %s: %s", self._path, exc)
 
-    def _write(self, record):
+    def _write(self, record) -> bool:
         try:
             write_atomic(self._path, json.dumps(record))
         except OSError as exc:
-            logger.warning("Could not record the start owed to %s: %s", self.container, exc)
+            if not self._failing:
+                logger.warning("Could not record the start owed to %s: %s", self.container, exc)
+            self._failing = True
+            return False
+        if self._failing:
+            logger.info("The start owed to %s is recorded again.", self.container)
+        self._failing = False
+        return True
 
     def _read(self):
         try:
@@ -84,10 +98,12 @@ class OwedStart:
         if running or started_at > stopped_at:
             self.settle()
             return "start_settled"
+        if left is not None and self._left is not None:
+            left = min(left, self._left)
         if left is not None and left <= 0:
             return "start_gave_up"
         if left is not None:
-            left -= 1
+            left = self._left = left - 1
             self._write({"stopped_at": stopped_at, "retries": left})
         if await docker.start(self.container, request_timeout=60):
             self.settle()

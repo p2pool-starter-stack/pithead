@@ -58,3 +58,8 @@ assert_not_contains "bundle config: explorer URL userinfo is gone" "$tari_masked
 assert_not_contains "bundle config: explorer URL path token is gone" "$tari_masked" "OLDSECRET32"
 assert_eq "bundle config: explorer URL becomes the secret sentinel" "$(printf '%s' "$tari_masked" | jq -c '.tari.explorer_url')" '{"__secret__":true}'
 assert_eq "bundle config: the rest of the config survives" "$(printf '%s' "$tari_masked" | jq -r '.tari.mode + " " + .xvb.url')" "local https://xvb.invalid"
+
+echo "== unit: the auto-restart-off preview keeps the merge-mining pause (#2464) =="
+tari_off="$(run_sourced "$SANDBOX" describe_change TARI_AUTO_RESTART true false 2>&1)"
+assert_contains "auto-restart off: the node is not restarted" "$tari_off" "but not restarted"
+assert_contains "auto-restart off: P2Pool still drops --merge-mine while red" "$tari_off" "P2Pool is still restarted without --merge-mine"
