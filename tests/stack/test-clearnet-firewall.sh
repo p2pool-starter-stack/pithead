@@ -226,6 +226,21 @@ CN_CLAIM_RACE=$(
     rm -rf "$td"
 )
 assert_contains "directory swap during claim fails closed" "$CN_CLAIM_RACE" $'rejected\nmarker=directory'
+CN_NO_RUNNER=$(
+    cd "$V" || exit
+    # shellcheck disable=SC1090
+    source "$STACK"
+    td=$(mktemp -d)
+    # shellcheck disable=SC2034  # sourced CLI reads this global
+    OS_TYPE=Linux
+    control_unit_dir() { printf '%s' "$td"; }
+    env_get() { case "$1" in DASHBOARD_CONTROL_ENABLED) echo false ;; *_CLEARNET_SYNC) echo false ;; esac; }
+    systemctl() { echo called; return 1; }
+    provision_egress_sync_runner && echo idle=ok || echo idle=failed
+    [ ! -e "$td/pithead-egress-sync.path" ] && echo unit=absent
+    rm -rf "$td"
+)
+assert_contains "no clearnet flags: no host request runner needed" "$CN_NO_RUNNER" $'idle=ok\nunit=absent'
 CN_FAILED_REFRESH=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
@@ -291,6 +306,9 @@ done
 if run_sourced "$V" clearnet_sync_active; then
     bad "verified Tor completion clears exposure warning" "still active"
 else ok "verified Tor completion clears exposure warning"; fi
+# The sandbox's sudo normally no-ops every command. Model the host-owned marker cleanup here.
+cp "$V/bin/sudo" "$V/bin/sudo.before-clearnet"
+printf '#!/usr/bin/env bash\n[ "$1" != rm ] || exec "$@"\nexit 0\n' >"$V/bin/sudo"
 cnfw_apply false true
 [ -f "$CN_SDIR/monero.synced" ] &&
     bad "monero flag off: apply re-arms by removing its marker" "marker kept" ||
@@ -300,4 +318,5 @@ cnfw_apply false true
     bad "tari flag still on: its marker stays" "marker removed"
 rm -f "$CN_SDIR/monero.synced" "$CN_SDIR/tari.synced" "$CN_SDIR/monero.synced.tor" "$CN_SDIR/tari.synced.tor"
 cnfw_apply false false
+mv "$V/bin/sudo.before-clearnet" "$V/bin/sudo"
 unset -f cnfw_apply cnfw_env

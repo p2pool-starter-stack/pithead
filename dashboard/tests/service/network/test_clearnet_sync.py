@@ -1,7 +1,12 @@
 """Clearnet sync waits for host firewall proof before the Tor restart (#2678)."""
 
 import json
+import os
+import subprocess
+import sys
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from mining_dashboard.config import config
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor, tor_attested
@@ -149,12 +154,47 @@ async def test_control_enabled_uses_existing_host_request_channel(tmp_path, monk
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
-async def test_marker_write_failure_keeps_node_clearnet_and_does_not_request(tmp_path, monkeypatch):
+async def test_malformed_marker_requests_host_closure_without_restart(tmp_path, monkeypatch):
     sup, dc = make_supervisor(tmp_path, monkeypatch)
     (tmp_path / "monero.synced").mkdir()
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
-    assert not list((tmp_path / "requests").iterdir())
+    assert len(list((tmp_path / "requests").iterdir())) == 1
     dc.stop.assert_not_called()
+    host_result(tmp_path, "monero", "failed")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    assert len(list((tmp_path / "requests").iterdir())) == 1
+    dc.stop.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["fifo", "symlink"])
+def test_nonregular_marker_cannot_block_host_request(tmp_path, kind):
+    (tmp_path / "results").mkdir()
+    (tmp_path / "requests").mkdir()
+    if kind == "fifo":
+        os.mkfifo(tmp_path / "monero.synced")
+    else:
+        (tmp_path / "monero.synced").symlink_to(tmp_path / "outside")
+    script = """
+import asyncio, sys
+from mining_dashboard.config import config
+from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
+config.CONTROL_RESULTS_DIR = sys.argv[1] + '/results'
+config.CONTROL_REQUESTS_DIR = sys.argv[1] + '/requests'
+config.DASHBOARD_CONTROL_ENABLED = False
+class Docker:
+    async def stop(self, *args, **kwargs): raise AssertionError('restarted before host proof')
+    async def start(self, *args, **kwargs): raise AssertionError('restarted before host proof')
+async def check():
+    assert await ClearnetSyncSupervisor(sys.argv[1], Docker()).maybe_transition('monero', 'monerod', True, True)
+asyncio.run(check())
+"""
+    result = subprocess.run(  # noqa: S603 -- fixed test code in a bounded child process
+        [sys.executable, "-c", script, str(tmp_path)], capture_output=True, timeout=3
+    )
+    assert result.returncode == 0, result.stderr.decode()
+    assert len(list((tmp_path / "requests").glob("*.json"))) == 1
+    assert not (tmp_path / "outside").exists()
 
 
 async def test_wrong_chain_result_cannot_authorize_restart(tmp_path, monkeypatch):

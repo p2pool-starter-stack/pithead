@@ -169,13 +169,24 @@ run_scenario() {
     fi
 
     if [ -n "$sync_dir" ]; then
-        wait_for 180 5 "clearnet node containers running (#2678)" rx \
-            'docker compose ps --services --status running | grep -Fx monerod && docker compose ps --services --status running | grep -Fx tari' || true
-        assert_egress_posture node-sync
-        if rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")"; then
-            it_pass "release clearnet marker paths for automatic Tor transition (#2678)"
+        # The staged directories hold the supervisor, but also (correctly) suppress the firewall
+        # exceptions and make the entrypoints start on Tor. Pause the supervisor, clear the staging
+        # paths, install the now-authorized exceptions, and restart the nodes before sampling peers.
+        if rx 'docker compose pause dashboard'; then
+            if rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" &&
+                rx "sudo -n bash -c 'source ./pithead; apply_tor_egress_firewall refresh'" &&
+                rx 'docker compose restart monerod tari'; then
+                wait_for 180 5 "clearnet node containers running (#2678)" rx \
+                    'docker compose ps --services --status running | grep -Fx monerod && docker compose ps --services --status running | grep -Fx tari' || true
+                assert_egress_posture node-sync
+                it_pass "release clearnet marker paths for automatic Tor transition (#2678)"
+            else
+                it_fail "stage live clearnet sync window (#2678)" "firewall refresh or node restart failed"
+            fi
+            rx 'docker compose unpause dashboard' || it_fail "resume sync supervisor (#2678)" "dashboard stayed paused"
         else
-            it_fail "release clearnet marker paths for automatic Tor transition (#2678)" "marker paths could not be released"
+            it_fail "stage live clearnet sync window (#2678)" "could not pause dashboard"
+            rx "rmdir $(quote_arg "$sync_dir/monero.synced") $(quote_arg "$sync_dir/tari.synced")" || true
         fi
     fi
 

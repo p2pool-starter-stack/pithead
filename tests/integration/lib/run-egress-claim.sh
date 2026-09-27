@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 assert_host_claims_spent_sync() { # <state-dir> <monero-on> <tari-on>
     local chain csdir="$1" monero_clearnet="$2" tari_clearnet="$3"
     for chain in monero tari; do

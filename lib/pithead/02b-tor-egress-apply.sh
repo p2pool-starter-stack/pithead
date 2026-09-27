@@ -155,7 +155,10 @@ provision_egress_sync_runner() {
             return 1
         fi
     fi
-    if [ "$enabled" = true ]; then
+    if [ "$enabled" = true ] || {
+        [ "$(env_get MONERO_CLEARNET_SYNC 2>/dev/null)" != true ] &&
+            [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" != true ]
+    }; then
         if [ -e "$service" ] || [ -e "$path" ]; then
             sudo systemctl disable --now pithead-egress-sync.path >/dev/null 2>&1 || true
             sudo rm -f "$service" "$path"

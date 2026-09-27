@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+: "${STACK_SUITE:?is unset: this file is a tests/stack/run.sh fragment, not a script — run tests/stack/run.sh}"
 # Python is required for safe host-owned clearnet marker attestation.
 # shellcheck disable=SC1090
 (

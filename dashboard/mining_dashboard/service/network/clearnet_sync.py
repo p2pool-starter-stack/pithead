@@ -19,25 +19,29 @@ _RESTART_HTTP_TIMEOUT = (
 )
 
 
-def tor_attested(state_dir, name):
+def tor_attested(state_dir, name) -> bool | None:
     """A host result must match this transition's marker; dashboard files cannot attest success."""
     try:
-        fd = os.open(os.path.join(state_dir, f"{name}.synced"), os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(
+            os.path.join(state_dir, f"{name}.synced"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+        )
         try:
             marker_stat = os.fstat(fd)
+            if not stat.S_ISREG(marker_stat.st_mode):
+                return None
             marker = os.read(fd, 38).decode().strip()
         finally:
             os.close(fd)
         with open(os.path.join(config.CONTROL_RESULTS_DIR, f"clearnet-{name}-tor.json")) as fh:
             result = json.load(fh)
-        return stat.S_ISREG(marker_stat.st_mode) and result == {
+        return result == {
             "status": "verified",
             "marker": marker,
             "inode": marker_stat.st_ino,
             "ctime_ns": marker_stat.st_ctime_ns,
         }
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return False
+        return None
 
 
 class ClearnetSyncSupervisor:
@@ -84,7 +88,8 @@ class ClearnetSyncSupervisor:
         """Persist the per-chain transition marker. Returns True on success."""
         try:
             os.makedirs(self.state_dir, exist_ok=True)
-            with open(self.marker_path(name), "w") as fh:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_NONBLOCK
+            with os.fdopen(os.open(self.marker_path(name), flags, 0o600), "w") as fh:
                 fh.write(f"{uuid.uuid4()}\n")
             return True
         except OSError as exc:
@@ -119,9 +124,12 @@ class ClearnetSyncSupervisor:
         # Synced over clearnet → commit to Tor. Persist the marker FIRST: it's what makes the
         # restarted container (and every future start, incl. after a reboot) render Tor. If we can't
         # persist it, do NOT restart — a restart without the marker would just re-render clearnet,
-        # and a reboot would re-expose the node. Stay exposed and retry next cycle instead.
-        if not self._marker_exists(name) and not self._write_marker(name):
-            return True
+        # and a reboot would re-expose the node. Ask the host to close the firewall exemption even
+        # when the marker write fails, then keep retrying without claiming completion.
+        if not self._marker_exists(name):
+            # Even a malformed dashboard-writable marker must trigger the host's forced-close
+            # path. The host removes that chain's exemption before rejecting the bad marker.
+            self._write_marker(name)
         rid = self._pending.get(name)
         if rid is None:
             try:
@@ -142,6 +150,8 @@ class ClearnetSyncSupervisor:
                     self.on_transition(name, False)
                 except Exception:
                     logger.debug("on_transition callback raised", exc_info=True)
+            return True
+        if not self._marker_exists(name):
             return True
         if tor_attested(self.state_dir, name):
             self._flipped.add(name)
