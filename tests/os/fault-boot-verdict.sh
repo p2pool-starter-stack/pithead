@@ -8,39 +8,49 @@
 # that failed to reach it late in a long run. Only a serial log showing none of GRUB, kernel or
 # login evidence is a real brick; anything else is a probe failure and never disqualifying.
 
-# fault_serial_mark <log> — call just before the power cut. Prints the log's size, the byte offset
-# the next boot starts at, and keeps a copy of what the log held at that moment in <log>.mark.
-# A log that does not exist yet prints 0: everything the next boot writes is its own. A log that
-# exists but cannot be copied prints nothing and returns 1: without the copy there is no proven
-# boundary between the old boot and the next, so the caller must not cut power (#2746).
-fault_serial_mark() {
-    rm -rf "$1.mark" 2>/dev/null
-    if [ ! -e "$1" ]; then
-        echo 0
-        return 0
+# The boot under test must be judged by its own console alone (#2746). Two ways to draw that line:
+#
+# fault_serial_cut <log> — for a power cut. Call after `virsh destroy` and before `virsh start`,
+# while no QEMU holds the file. Moves the old console to <log>.pre-cut and empties <log>, so the
+# next boot writes from byte 0 whether its file chardev appends or truncates. A file-position
+# mark cannot do this: a restarted log re-grows, and the same disk prints the same banner
+# byte for byte, so neither its size nor its prefix proves where the new boot began (job 220).
+# Prints 0, the offset to judge from. A log that does not exist yet needs no move. A log that
+# exists but cannot be moved aside and emptied prints nothing and returns 1: the leg must stop.
+fault_serial_cut() {
+    rm -f "$1.pre-cut" 2>/dev/null
+    if [ -e "$1" ]; then
+        cp "$1" "$1.pre-cut" 2>/dev/null && : 2>/dev/null >"$1" || return 1
     fi
-    cp "$1" "$1.mark" 2>/dev/null || return 1
-    wc -c <"$1.mark" | tr -d ' '
+    echo 0
 }
 
-# fault_serial_since <log> <offset> — prints only what the boot after the cut wrote. A power cycle
-# may append to <log> or, with a file chardev lacking append=on, restart it at byte 0 (#2746).
-# Size alone cannot tell them apart: a restarted log soon grows past the old offset, and reading
-# from there skips the new boot's GRUB and kernel lines. So the offset holds only while the log
-# still begins with the bytes fault_serial_mark saw; a log that no longer does was restarted and
-# is read whole. Returns 1, printing nothing, when there is no proven boundary: an offset that is
-# not a number, or a non-zero one whose <log>.mark copy is gone.
+# fault_serial_mark <log> — for a leg with no power cut (C), where the same QEMU keeps appending.
+# Prints the log's size, the offset this leg's output starts at; 0 for a log not created yet.
+# Prints nothing and returns 1 when an existing log's size cannot be read.
+fault_serial_mark() {
+    [ -e "$1" ] || {
+        echo 0
+        return 0
+    }
+    local size
+    size=$(wc -c <"$1" 2>/dev/null | tr -d ' ')
+    [[ "$size" =~ ^[0-9]+$ ]] || return 1
+    echo "$size"
+}
+
+# fault_serial_since <log> <offset> — prints what was written after <offset>. Returns 1, printing
+# nothing, when the boundary is not proven: an offset that is not a number, or one past the end
+# of a log that has shrunk since it was taken.
 fault_serial_since() {
-    local log="$1" offset="$2"
+    local log="$1" offset="$2" size
     [[ "$offset" =~ ^[0-9]+$ ]] || return 1
-    if [ "$offset" -gt 0 ]; then
-        [ -f "$log.mark" ] || return 1
-        cmp -s <(head -c "$offset" "$log" 2>/dev/null) "$log.mark" || offset=0
-    fi
+    size=$(wc -c <"$log" 2>/dev/null | tr -d ' ')
+    [ "${size:-0}" -ge "$offset" ] || return 1
     tail -c "+$((offset + 1))" "$log" 2>/dev/null
 }
 
-# fault_boot_verdict <log> <offset from fault_serial_mark>
+# fault_boot_verdict <log> <offset from fault_serial_cut or fault_serial_mark>
 # Prints the verdict on stdout; exit 0 = booted (a probe failure, not a brick), 1 = no boot
 # evidence at all (BRICKED), 2 = no proven boundary, so this boot cannot be judged either way.
 # Whatever the verdict, the console is first kept at <log>.failed: a failed leg returns, and the

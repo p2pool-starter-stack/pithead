@@ -39,12 +39,12 @@ phase_fault() {
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
         sleep 12
-        mark=$(fault_serial_mark "$SERIAL") || {
-            bad "A$i: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
-            return
-        }
         virsh destroy "$VM" >/dev/null 2>&1 || true
         sleep 3
+        mark=$(fault_serial_cut "$SERIAL") || {
+            bad "A$i: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+            return
+        }
         virsh start "$VM" >/dev/null 2>&1 || true
         # A hard power cycle can hand the guest a NEW DHCP lease; without re-reading it here,
         # _wait_ssh spends its whole budget probing the address it held before the cut (#2381:
@@ -72,7 +72,7 @@ phase_fault() {
     info "fault C — install a deliberately corrupted bundle"
     _ssh "dd if=/dev/urandom of=/data/update.bundle bs=1M seek=8 count=2 conv=notrunc" >/dev/null 2>&1 || true
     mark=$(fault_serial_mark "$SERIAL") || {
-        bad "C: could not snapshot the serial console before the corrupt install — a failed boot after it could not be judged, so the leg stops here"
+        bad "C: could not read the console size before the corrupt install — a failed boot after it could not be judged, so the leg stops here"
         return
     }
     local corrupt_rc=0
@@ -126,12 +126,12 @@ phase_fault() {
     fi
     _ssh "nohup sh -c '$(_commit_cmd)' >/tmp/commit.log 2>&1 &" || true
     sleep 1
-    mark=$(fault_serial_mark "$SERIAL") || {
-        bad "B: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
-        return
-    }
     virsh destroy "$VM" >/dev/null 2>&1 || true
     sleep 3
+    mark=$(fault_serial_cut "$SERIAL") || {
+        bad "B: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+        return
+    }
     virsh start "$VM" >/dev/null 2>&1 || true
     _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A above
     if _wait_ssh 300; then
@@ -219,16 +219,16 @@ phase_fault() {
         bad "D: the first-boot image load finished before the cut — cannot exercise the interruption"
         return
     fi
-    local serial_before
-    serial_before=$(fault_serial_mark "$SERIAL") || {
-        bad "D: could not snapshot the serial console before the cut — its boot could not be judged, so the leg stops here"
-        return
-    }
     virsh destroy "$VM" >/dev/null 2>&1 || {
         bad "D: could not cut power during the image load"
         return
     }
     sleep 3
+    local serial_before
+    serial_before=$(fault_serial_cut "$SERIAL") || {
+        bad "D: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
+        return
+    }
     virsh start "$VM" >/dev/null 2>&1 || {
         bad "D: could not restore power after the image-load cut"
         return

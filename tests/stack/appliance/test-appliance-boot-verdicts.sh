@@ -113,62 +113,60 @@ printf 'Powering up......\nqemu: no console output\n' >"$FBV/no-boot"
 verdict=$(fault_boot_verdict "$FBV/no-boot" 0)
 assert_rc "a serial log with no GRUB, kernel or login evidence IS BRICKED" "$?" "1"
 assert_contains "…and quotes the serial's last lines" "$verdict" "qemu: no console output"
-# The earlier boot's login line must not leak across the offset: when a power cycle appends to the
-# SAME $SERIAL file, only bytes written after the mark count.
+# Leg C has no power cut: the same QEMU keeps appending, so only bytes after the size mark count
+# and the earlier boot's login line must not leak across it.
 cp "$FBV/booted" "$FBV/serial"
 mark=$(fault_serial_mark "$FBV/serial")
 cat "$FBV/no-boot" >>"$FBV/serial"
 verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
-assert_rc "an earlier boot's login prompt does not mask a real brick after the offset" "$?" "1"
-# #2746: `virsh start` may restart $SERIAL at byte 0, and the new boot's console soon grows past
-# the old mark. Its GRUB and kernel lines sit before that mark, so an offset kept by size alone
-# skips them and calls a booted guest BRICKED. Mutation run: drop the cmp against <log>.mark ->
-# this row reads from the stale offset and fails.
-cat "$FBV/booted" "$FBV/no-boot" >"$FBV/serial"
-mark=$(fault_serial_mark "$FBV/serial")
-{
-    printf 'GNU GRUB  version 2.06\n'
-    printf 'systemd[1]: a unit line that pushes the log well past the old mark %s\n' 1 2 3 4
-} >"$FBV/serial"
-verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
-assert_rc "a log truncated on start and regrown past the mark is read from byte 0" "$?" "0"
-# The same restart with the log still shorter than the mark (job 1262's empty "last lines").
+assert_rc "an earlier boot's login prompt does not mask a real brick after the size mark" "$?" "1"
+# #2746: a power-cut leg sets the old console aside while no QEMU holds the file, so the next boot
+# is judged from byte 0 whatever the chardev does. Job 220: the restarted guest's console began
+# with the very bytes the old one did, so a mark by size or prefix could not find where it started.
+# Mutation run: skip the move-and-empty -> the old boot's GRUB and login count for a silent boot.
 cp "$FBV/booted" "$FBV/serial"
-mark=$(fault_serial_mark "$FBV/serial")
-printf 'GNU GRUB\n' >"$FBV/serial"
+mark=$(fault_serial_cut "$FBV/serial")
+assert_eq "the cut judges the next boot from offset 0" "$mark" "0"
+assert_eq "…and keeps the old console at <log>.pre-cut" "$(cat "$FBV/serial.pre-cut")" "$(cat "$FBV/booted")"
+cat "$FBV/no-boot" >>"$FBV/serial"
 verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
-assert_rc "a log truncated on start and still shorter than the mark is read from byte 0" "$?" "0"
-# #2746 (review): a snapshot that cannot be taken must stop the leg, never fall back to an empty
-# or zero boundary. The old boot's GRUB and login are in the log, the copy is forced to fail, and
-# the new boot writes nothing a boot would. Mutation run: fall back to offset 0 on a failed copy
-# -> the old boot's lines read as this boot's and a silent guest is called "booted".
+assert_rc "old GRUB and login before the cut do not vouch for a silent boot after it" "$?" "1"
+# The same boot printed again after the cut is this boot's own evidence (job 220's case, booted).
+cp "$FBV/booted" "$FBV/serial"
+mark=$(fault_serial_cut "$FBV/serial")
+cat "$FBV/booted" >>"$FBV/serial"
+fault_boot_verdict "$FBV/serial" "$mark" >/dev/null
+assert_rc "a new boot that prints the old banner byte for byte is judged booted" "$?" "0"
+# Operator ruling on #2748: a console that cannot be set aside must stop the leg, never fall back
+# to an unproven boundary. Old GRUB and login in the log, the move forced to fail, and nothing a
+# boot would print after it. Mutation run: ignore the failed copy -> the leg judges on.
 cp "$FBV/booted" "$FBV/serial"
 mark=$(
-    cp() { return 1; } # the copy fails, whoever runs it
-    fault_serial_mark "$FBV/serial"
+    cp() { return 1; } # the move fails, whoever runs it
+    fault_serial_cut "$FBV/serial"
 )
-assert_rc "a console that exists but cannot be snapshotted fails the mark" "$?" "1"
-assert_eq "…and prints no offset to cut against" "$mark" ""
+assert_rc "a console that cannot be set aside fails the cut" "$?" "1"
+assert_eq "…prints no offset to judge from" "$mark" ""
+assert_eq "…and leaves the old console where it was" "$(cat "$FBV/serial")" "$(cat "$FBV/booted")"
 cat "$FBV/no-boot" >>"$FBV/serial"
 verdict=$(fault_boot_verdict "$FBV/serial" "$mark")
 assert_rc "an unproven boundary is not judged, never read from byte 0 as booted" "$?" "2"
 assert_contains "…and says why" "$verdict" "this boot cannot be judged"
-# A non-zero offset whose snapshot is gone is just as unproven.
-rm -f "$FBV/serial.mark"
-fault_boot_verdict "$FBV/serial" 5 >/dev/null
-assert_rc "a non-zero offset without its snapshot is not judged" "$?" "2"
-# A console that does not exist yet is a proven boundary: everything after the cut is new.
+# An offset past the end of a log that shrank since it was taken is just as unproven.
+fault_boot_verdict "$FBV/no-boot" 999999 >/dev/null
+assert_rc "an offset past the end of a shrunk log is not judged" "$?" "2"
+# A console that does not exist yet is a proven boundary for both marks.
 rm -f "$FBV/fresh"
-mark=$(fault_serial_mark "$FBV/fresh")
-assert_eq "a log absent before the cut marks offset 0" "$mark" "0"
-cp "$FBV/booted" "$FBV/fresh"
-fault_boot_verdict "$FBV/fresh" "$mark" >/dev/null
-assert_rc "…and the new boot's console is judged from byte 0" "$?" "0"
+assert_eq "an absent log cuts at offset 0" "$(fault_serial_cut "$FBV/fresh")" "0"
+assert_eq "an absent log marks offset 0" "$(fault_serial_mark "$FBV/fresh")" "0"
 # The phase itself (tests/os/phases/fault.sh) needs a KVM guest, so its wiring is pinned here:
-# every leg (A, C, B, D) stops before its cut on a failed snapshot, and reads exit 2 as neither
-# booted nor BRICKED. Mutation run: drop any one leg's `|| {` or `elif [ $? -eq 2 ]` -> a count drops.
-assert_eq "all four legs stop on a failed snapshot" \
-    "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "4"
+# legs A, B and D set the console aside before restarting and stop when they cannot, leg C stops
+# when it cannot read its mark, and all four read exit 2 as neither booted nor BRICKED.
+# Mutation run: drop any one leg's `|| {` or `elif [ $? -eq 2 ]` -> a count drops.
+assert_eq "the three power-cut legs stop when the console cannot be set aside" \
+    "$(grep -cF 'fault_serial_cut "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "3"
+assert_eq "leg C stops when its mark cannot be read" \
+    "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "1"
 assert_eq "all four legs report an unjudgeable boot as such" \
     "$(grep -cF 'elif [ $? -eq 2 ]; then' "$ROOT/tests/os/phases/fault.sh")" "4"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
@@ -180,7 +178,7 @@ assert_eq "the judged console is kept at <log>.failed" "$(cat "$FBV/no-boot.fail
 # (A missing log fails the copy for root too, where a read-only directory would not.)
 verdict=$(fault_boot_verdict "$FBV/absent" 0)
 assert_contains "a console that cannot be kept is named in the verdict" "$verdict" "could not keep the console at $FBV/absent.failed"
-unset -f fault_serial_mark fault_serial_since
+unset -f fault_serial_cut fault_serial_mark fault_serial_since
 unset -f fault_boot_verdict
 rm -rf "$FBV"
 
