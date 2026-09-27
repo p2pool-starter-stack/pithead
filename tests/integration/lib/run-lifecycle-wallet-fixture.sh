@@ -13,9 +13,21 @@ arm_inactive_tari_wallet_volume() {
         it_fail "wallet volume precondition readable" "volume listing failed"
         return 1
     }
-    if printf '%s\n' "$volumes" | grep -Eq '^(pithead_tari_wallet_data|pithead_itest_unrelated)$'; then
-        it_fail "wallet volume fixture starts clean" "a fixture volume already exists"
-        return 1
+    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
+        labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
+        if [ "$labels" != 'pithead/tari_wallet_data' ]; then
+            it_fail "preexisting Tari wallet volume is Compose-owned" "volume labels did not match"
+            return 1
+        fi
+        if ! rx 'docker compose --profile tari_payout_confirm rm -sf tari-wallet' >/dev/null 2>&1; then
+            it_fail "preexisting Tari wallet service removed for fixture reset" "Compose service removal failed"
+            return 1
+        fi
+        if ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
+            it_fail "preexisting owned wallet volume reset for Compose creation" "volume removal failed"
+            return 1
+        fi
+        it_pass "preexisting owned wallet volume reset for Compose creation"
     fi
     if ! rx "sed -i '/^COMPOSE_PROFILES=/ s/$/,tari_payout_confirm/' .env" ||
         ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" tari_payout_confirm; then
@@ -50,7 +62,14 @@ arm_inactive_tari_wallet_volume() {
         return 1
     fi
     it_pass "Tari payout profile disabled and wallet volume absent from Compose model"
-    if ! rx 'docker volume create pithead_itest_unrelated' >/dev/null; then
+    local nonce
+    nonce="$(rx 'date +%s%N')"
+    if [[ ! "$nonce" =~ ^[0-9]{15,}$ ]]; then
+        it_fail "unrelated volume fixture has a unique name" "clock probe failed"
+        return 1
+    fi
+    IT_UNRELATED_VOLUME_NAME="pithead_itest_unrelated_$nonce"
+    if ! rx "docker volume create $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null; then
         it_fail "unrelated volume fixture created" "volume creation failed"
         return 1
     fi
@@ -73,7 +92,7 @@ cleanup_failed_tari_wallet_fixture() {
         fi
     fi
     if [ -n "$IT_UNRELATED_VOLUME_CREATED" ] &&
-        ! rx 'docker volume rm pithead_itest_unrelated' >/dev/null 2>&1; then
+        ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
         it_fail "failed fixture removes its unrelated volume" "volume cleanup failed"
     fi
 }

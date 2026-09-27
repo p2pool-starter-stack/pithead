@@ -38,19 +38,23 @@ case "$*" in
     rm -f .fake-container ;;
 "compose config --volumes")
     if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
-"volume create pithead_itest_unrelated")
+"volume create pithead_itest_unrelated_"*)
     : >.unrelated-volume
-    echo pithead_itest_unrelated ;;
-"volume rm pithead_itest_unrelated")
-    rm -f .unrelated-volume ;;
+    printf '%s\n' "$3" >.unrelated-name
+    echo "$3" ;;
+"volume rm pithead_itest_unrelated_"*)
+    rm -f .unrelated-volume .unrelated-name ;;
 "volume rm pithead_tari_wallet_data")
     rm -f .fake-volume ;;
 "volume inspect pithead_tari_wallet_data --format "*)
     [ -e .fake-volume ] || exit 1
-    [ "$FAKE_CASE" != wrong-wallet-label ] && echo pithead/tari_wallet_data || echo foreign/volume ;;
+    case "$FAKE_CASE" in
+    wrong-wallet-label | foreign-preexisting) echo foreign/volume ;;
+    *) echo pithead/tari_wallet_data ;;
+    esac ;;
 "volume ls -q")
     [ ! -e .fake-volume ] || echo pithead_tari_wallet_data
-    [ ! -e .unrelated-volume ] || echo pithead_itest_unrelated ;;
+    [ ! -e .unrelated-volume ] || cat .unrelated-name ;;
 esac
 EOF
 cat >"$T/fake-pithead" <<'EOF'
@@ -96,6 +100,9 @@ drive() { # <case> -> round-trip-rc|failures
             COMPOSE_PROFILES=local_node MONERO_ONION_ADDRESS=abc.onion PROXY_AUTH_TOKEN=tok \
             DEPLOYMENT_COMPLETED=true >"$B/.env.fixture"
         cp "$B/.env.fixture" "$B/.env"
+        case "$1" in
+        owned-preexisting | foreign-preexisting) : >"$B/.fake-volume" ;;
+        esac
         [ "$1" != active-wallet-profile ] || sed -i 's/COMPOSE_PROFILES=local_node/COMPOSE_PROFILES=local_node,tari_payout_confirm/' "$B/.env"
         # shellcheck disable=SC2034 # read by rx and the extracted functions
         IT_REMOTE_DIR="$B" IT_PITHEAD="$T/fake-pithead" IT_PASS=0 IT_FAIL=0
@@ -108,22 +115,26 @@ drive() { # <case> -> round-trip-rc|failures
         run_uninstall_round_trip >/dev/null
         result=$?
         case "$1" in
-        no-wallet-seed | partial-wallet-seed | wrong-wallet-label | active-wallet-profile)
+        no-wallet-seed | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
             [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"
             [ -e "$B/.restarted" ] || it_fail "bad fixture restarts the stack" "up did not run"
             [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed"
             ;;
         esac
         [ "$1" != wrong-wallet-label ] || [ -e "$B/.created-volume" ] || it_fail "wrong-label fixture reached Compose create" "create never ran"
+        [ "$1" != foreign-preexisting ] || [ ! -e "$B/.created-volume" ] || it_fail "foreign preexisting volume is never recreated" "create ran"
+        [ "$1" != owned-preexisting ] || [ -e "$B/.created-volume" ] || it_fail "owned preexisting volume was recreated by Compose" "create never ran"
         [ "$1" != partial-wallet-seed ] || [ ! -e "$B/.fake-volume" ] || it_fail "partial Compose create cleanup removes its owned volume" "volume remains"
         printf '%s|%s' "$result" "$IT_FAIL"
     )
 }
 
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
+assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
 assert_eq "partial Compose create failure cleans its owned volume" "$(drive partial-wallet-seed)" "1|1"
 assert_eq "a wallet volume with foreign labels fails the owned-volume precondition" "$(drive wrong-wallet-label)" "1|1"
+assert_eq "a preexisting foreign wallet volume is never removed" "$(drive foreign-preexisting)" "1|1"
 assert_eq "an active payout profile refuses the uninstall fixture" "$(drive active-wallet-profile)" "1|1"
 assert_eq "one appended byte in a small kept file fails byte identity" "$(drive writes-small)" "1|1"
 assert_eq "a same-size rewrite of a large chain file fails byte identity" "$(drive rewrites-big)" "1|1"

@@ -279,7 +279,7 @@ run_uninstall_round_trip() {
         wait_status_ok 240 || true
         return 1
     fi
-    IT_UNRELATED_VOLUME_CREATED="" IT_WALLET_CREATE_ATTEMPTED=""
+    IT_UNRELATED_VOLUME_CREATED="" IT_UNRELATED_VOLUME_NAME="" IT_WALLET_CREATE_ATTEMPTED=""
     arm_inactive_tari_wallet_volume
     if [ "$IT_FAIL" -gt "$fails_before" ]; then
         rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1 || true
@@ -307,11 +307,11 @@ run_uninstall_round_trip() {
         assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
             "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
         assert_eq "uninstall preserves an unrelated Docker volume" \
-            "$(printf '%s\n' "$vols" | grep -Fx pithead_itest_unrelated)" "pithead_itest_unrelated"
+            "$(printf '%s\n' "$vols" | grep -Fx "$IT_UNRELATED_VOLUME_NAME")" "$IT_UNRELATED_VOLUME_NAME"
     else
         it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
     fi
-    if ! rx 'docker volume rm pithead_itest_unrelated' >/dev/null 2>&1; then
+    if ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
         it_fail "uninstall fixture removes its unrelated volume" "volume cleanup failed"
     fi
     local left=""
