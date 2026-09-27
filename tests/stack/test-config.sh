@@ -5,7 +5,7 @@
 # written (wallet address forms and their checksums, the two worker shapes, energy, the /24 subnet
 # rule), the closed-schema invariant keeping config.reference.json a superset of every path pithead
 # reads plus the core-key shortlist that must stay inside it (#561/#502/#529), describe_change's
-# per-key classification of an apply into INFO / CONFIRM / host-only DEST rows and its rule that no
+# per-key classification of an apply into INFO / CONFIRM / destructive DEST rows and its rule that no
 # secret value ever reaches the preview (#719/#152/#121/#380), `pithead render` rebuilding the whole
 # derived layer in place (#790), and the subnet-collision diagnosis a failed compose network is
 # translated into (#180).
@@ -20,8 +20,8 @@
 # test-control-editable-allowlist.sh by #1105 R14); and render-quadlet parity, an appliance test.
 
 echo "== unit: describe_change =="
-# Monero prune (#719): DISABLE (on → off) forces a full re-sync, host-only DEST; ENABLE (off → on)
-# reclaims disk, an operator-intent op — now confirm-gated (CONFIRM), not a flat host-only refuse.
+# Monero prune (#719): DISABLE (on → off) forces a full re-sync (DEST); ENABLE (off → on)
+# reclaims disk (CONFIRM). Both require confirmation from the dashboard.
 assert_contains "prune disable is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 1 0)" "DEST"
 assert_contains "prune enable is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_PRUNE 0 1)" "CONFIRM"
 assert_contains "rpc lan is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_RPC_BIND 127.0.0.1 0.0.0.0)" "DEST"
@@ -109,11 +109,10 @@ assert_contains "empty to local_node is a LOCAL switch" "$(run_sourced "$SANDBOX
 assert_contains "local_node to empty is a REMOTE switch" "$(run_sourced "$SANDBOX" describe_change COMPOSE_PROFILES local_node "")" "REMOTE Monero node"
 assert_contains "wallet is DEST" "$(run_sourced "$SANDBOX" describe_change MONERO_WALLET_ADDRESS a b)" "DEST"
 assert_contains "xvb url is INFO" "$(run_sourced "$SANDBOX" describe_change XVB_POOL_URL a b)" "INFO"
-# Data-dir moves (#719): the four service dirs are confirm-gated (an expensive re-sync, not a
-# breach); every OTHER data dir (e.g. TOR_DATA_DIR) stays host-only DEST.
+# Data-dir moves (#719/#1959) are confirm-gated.
 assert_contains "monero data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "dashboard data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change DASHBOARD_DATA_DIR /a /b)" "CONFIRM"
-assert_contains "tor data_dir stays DEST" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "DEST"
+assert_contains "tor data_dir is CONFIRM" "$(run_sourced "$SANDBOX" describe_change TOR_DATA_DIR /a /b)" "CONFIRM"
 assert_contains "tari mem is INFO" "$(run_sourced "$SANDBOX" describe_change TARI_MEM_LIMIT 2048m 4g)" "INFO"
 # Healthchecks.io (#79): the ping URL is the on/off switch AND a capability secret. Setting it says
 # ENABLED, clearing it says DISABLED — and the value must NEVER be echoed into the apply preview.
@@ -172,13 +171,13 @@ assert_contains "tari clearnet enable warns exposure" "$(run_sourced "$SANDBOX" 
 # restore points and proxy.donate_level host-only — a future-dated restore point silently defeats
 # payout-confirmation tamper evidence, and donate traffic bypasses the Tor socks5.
 assert_contains "monero outbound-peer change is CONFIRM" "$(run_sourced "$SANDBOX" describe_change MONERO_OUT_PEERS 12 64)" "CONFIRM"
-# 2026-09 operator ruling (#1888): the remote node endpoints joined that tier — they move TRUST, not
-# disk — while the RPC LOGIN CREDENTIALS for the same node did NOT. That row is the control: it is what makes this set able to say NO.
+# #1888 put the remote node endpoints on this tier; #2333/#2367 moved the RPC login on too.
 node_ep="$(run_sourced "$SANDBOX" describe_change MONERO_NODE_HOST 10.0.0.9 10.0.0.11)"
 assert_contains "monero node endpoint is CONFIRM (#1888)" "$node_ep" "CONFIRM"
 assert_contains "monero node endpoint preview names old -> new" "$node_ep" "10.0.0.9 → 10.0.0.11"
 assert_contains "tari node endpoint is CONFIRM (#1888)" "$(run_sourced "$SANDBOX" describe_change TARI_GRPC_ADDRESS a.lan:18142 b.lan:18142)" "CONFIRM"
-assert_not_contains "a remote node's RPC password is NOT confirm-gated" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD old new)" "CONFIRM"
+assert_contains "RPC password is confirm-gated, not refused (#2333/#2367)" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "CONFIRM"
+assert_not_contains "RPC password warning never echoes the value" "$(run_sourced "$SANDBOX" describe_change MONERO_NODE_PASSWORD os2333-oldpw os2333-newpw)" "os2333-oldpw"
 
 echo "== unit: explain_subnet_collision (#180) =="
 ov="$(run_sourced "$SANDBOX" explain_subnet_collision "invalid pool request: Pool overlaps with other one on this address space" 2>&1)"

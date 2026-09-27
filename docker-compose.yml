@@ -59,12 +59,17 @@ services:
     # 30s interval (#595): each probe opens a control connection; at 10s that was steady
     # log spam + wasted cycles on the stack's busiest single-threaded service. Failure
     # detection worst-case moves from ~50s to ~150s — dependents only gate on STARTUP order.
+    # 10m start_period (#2648): a cold bootstrap on a fresh DataDirectory has taken 5 minutes.
+    # At 90s, Tor was marked unhealthy about 3.5 minutes after starting. `compose up` then
+    # failed provisioning with "dependency tor failed to start", and Tor was healthy 90s later.
+    # A probe that passes during the grace still marks Tor healthy at once, so a fast bootstrap
+    # is not slowed. A Tor that never bootstraps is marked unhealthy after 12.5 minutes.
     healthcheck:
       test: ["CMD", "/usr/local/bin/tor-healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 600s
 
   # --- Monero Daemon (monerod) ---
   # Only starts if "local_node" profile is active
@@ -644,8 +649,10 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads only masked
-      # config and the bounded non-secret/read-only surfaces documented in SECURITY.md.
+      # The raw config.json is never mounted. A compromised dashboard can still read credentials
+      # supplied to its own runtime environment, plus the bounded non-secret/read-only surfaces in
+      # SECURITY.md; this boundary protects the host config, staged intents, results and audit log
+      # from direct container writes.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the

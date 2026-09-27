@@ -1,17 +1,9 @@
-# The remedy half of a control-channel refusal (#1888, the #1821 class): "edit config.json and run
-# apply" is a real remedy on a DIY host and a DEAD END on a shell-less appliance (#786).
-_control_host_remedy() {
-    if is_appliance; then
-        printf 'That setting is not changeable from the dashboard on an appliance; it is fixed when the machine is set up, so use "Set up again" if you need to change it.'
-    else
-        printf 'Edit config.json on the host and run `%s apply`.' "$0"
-    fi
-}
-
 control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval-json] <control-dir>
     local staged="$1" confirm="${2:-}" id="$3" actor="$4" approval="${5:-null}" cdir="$6" porcelain
-    local approval_required=0
-    # Fail closed if the previewed staged config cannot be re-derived.
+    local approval_required=0 needs_confirm=0
+    control_policy_gate "$staged" || return 1
+    # Fail closed if we cannot re-derive the change set (the staged config was validated at
+    # preview, so a dry-run failure here means something changed — refuse).
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if ! porcelain=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>/dev/null); then
@@ -23,11 +15,10 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # dashboard.energy and local_miner.enabled are ordinary, #504/2026-09-13 perimeter audit round
     # 2, bar dashboard.energy.price_feed). A NEW one MUST add its own line.
     #
-    # The per-worker descriptors — workers.list[] (#506) — carry per-rig hosts and API tokens. The
-    # deprecated dashboard.workers[] alias (#172) was removed in 2.0.0 (#1832), so a staged config
-    # carrying it is refused by the closed-schema check below, as an unknown key like any other
-    # typo. workers.list[] goes through control_worker_append (42-): adopting a new rig is an
-    # append behind the typed APPLY and the #122 SSRF floor; a repoint or removal is refused.
+    # workers.list[] (#506) carries per-rig hosts and API tokens; the removed dashboard.workers[]
+    # alias (#1832) is refused by the closed-schema check below. control_worker_append (42-) allows
+    # only an adopt (append) behind the typed APPLY and the #122 SSRF floor; a repoint, reorder or
+    # removal is refused (#912 owns descriptor editing; #1959's confirm tier does not widen it).
     local worker_new
     if ! worker_new=$(control_worker_append "$staged"); then
         printf '%s' "$worker_new"
@@ -65,10 +56,7 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         printf 'this change adds config keys not in the schema (%s) — refusing to commit. %s' "$unknown" "$(_control_host_remedy)"
         return 1
     fi
-    # Default-deny across ALL THREE committable tiers (control_committable_re, 42-), whatever a row's
-    # flag says: a key in none of them fails closed HERE with a refusal, not a demand for an envelope
-    # the container writes itself. Keyed off a violation COUNT so a blank row still refuses; past it,
-    # a CONFIRM/APPROVAL key still clears DEST, the typed APPLY and the envelope.
+    # Every unlisted schema-backed env change joins the typed confirmation tier (#1959).
     local committable_re approval_re bad hit
     committable_re=$(control_committable_re)
     bad=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
@@ -77,11 +65,11 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
         return 1
     fi
     if [ "${bad:-0}" -gt 0 ]; then
-        hit=$(printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
-        printf 'this change alters a security-sensitive setting (%s) that is not committable from the dashboard. %s' "${hit:-unparseable change row}" "$(_control_host_remedy)"
-        return 1
+        approval_required=1
+        needs_confirm=1
     fi
-    # APPROVAL tier asks for the envelope; non-empty guard because `grep -qxE ''` matches all.
+    if control_changed_config_paths "$staged" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=1; fi
+    if control_changed_config_paths "$staged" | grep -qxF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS"; then needs_confirm=1; fi
     approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
     [ -n "$approval_re" ] && printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re" && approval_required=1
     printf '%s\n' "$porcelain" | grep -qE $'^DEST\t' && approval_required=1
@@ -91,54 +79,18 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     if control_changed_config_paths "$staged" | grep -qx 'dashboard.energy.price_feed'; then
         approval_required=1
     fi
-    # Data-dir destination allowlist (#728). #719 made the four *_DATA_DIR moves confirm-gated, so a
-    # dashboard operator who types APPLY can now RELOCATE a service's data dir. assert_safe_dir — the
-    # host-shell guard — is a BLOCKLIST: it refuses the catastrophic roots (/, $HOME, bare mounts, …)
-    # but passes any OTHER absolute path. At host-shell trust that is proportionate (a shell already
-    # has filesystem-wide reach); at dashboard trust it would let a confirmed move target another
-    # user's home or another service's data volume and have pithead mkdir/chown -R it and bind-mount
-    # it into a recreated container — a destination trust-escalation. This gate runs ONLY for
-    # dashboard commits (the host `apply` path never calls control_approval_gate), so it is exactly
-    # where the tighter, control-only rule belongs: for a control-channel move, narrow the
-    # DESTINATION from a blocklist to an ALLOWLIST — permit only a path under the stack's own data
-    # root ($PWD/data, the install dir's data/) or a parent the stack ALREADY keeps data in (each
-    # live *_DATA_DIR's parent — a root a host operator already opted into, which covers a co-located
-    # shared data root, #455). Anything else is refused EVEN with the APPLY token: that move stays
-    # host-CLI-only. Only EXPLICIT absolute paths are checked — "auto"/empty resolves to a stack
-    # default that is under a data root by construction. assert_safe_dir still runs at apply time.
-    local -a allowed_roots=("$PWD/data")
-    local dvar cur
-    for dvar in MONERO_DATA_DIR TARI_DATA_DIR P2POOL_DATA_DIR DASHBOARD_DATA_DIR; do
-        cur=$(env_get "$dvar")
-        [ -n "$cur" ] && allowed_roots+=("$(dirname "$cur")")
-    done
-    local ddpath dest root ok_root
-    for ddpath in monero.data_dir tari.data_dir p2pool.data_dir dashboard.data_dir; do
-        dest=$(jq -r --arg p "$ddpath" 'getpath($p/".") // empty' "$staged" 2>/dev/null)
-        # Skip only values resolve_default turns into an in-root stack default — its EXACT set,
-        # not a DYNAMIC_* wildcard (which would also swallow a bogus DYNAMIC_FOO that resolve_default
-        # passes through literally). A non-absolute/traversal dest never reaches here anyway:
-        # assert_safe_dir (called in the dry-run re-derivation at the top of this gate) refuses
-        # `..`/relative paths first — keep that ordering.
-        case "$dest" in "" | auto | DYNAMIC_DATA | DYNAMIC_HOST | DYNAMIC_ID) continue ;; esac
-        ok_root=0
-        # Trailing slash on both sides so a root prefix can't false-match a sibling (/data vs
-        # /database); an exact-root dest matches too (harmless — still the stack's own dir).
-        for root in "${allowed_roots[@]}"; do
-            case "$dest/" in "$root"/*) ok_root=1 && break ;; esac
-        done
-        if [ "$ok_root" -eq 0 ]; then
-            printf 'this move sends %s to %s, which is outside the stack data root(s) — a dashboard-confirmed data-dir move must stay under the stack data directory (%s) or a parent it already uses. %s' "$ddpath" "$dest" "$PWD/data" "$(_control_host_remedy)"
-            return 1
-        fi
-    done
+    # Host-shell data paths use a catastrophic-root blocklist; dashboard moves use the tighter
+    # allowlist and symlink boundary because a confirmed commit later mkdir/chown's as root.
+    control_validate_data_dir_destinations "$staged" || return 1
     # Confirm-gate (#719): an in-scope CONFIRM row PROCEEDS only with the operator's typed
     # confirmation. The token is a fixed literal ("APPLY"), orthogonal to the value being set — it
     # is friction that forces the operator to acknowledge an expensive/disruptive op, NOT a security
     # control (the perimeter above is the boundary). control_commit records a confirmed change
     # distinctly in the audit log via the marker file touched here.
     # An adopted rig (#2641) is confirmed the same way: the dashboard will send it a write token.
-    if printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' || [ -n "$worker_new" ]; then
+    printf '%s\n' "$porcelain" | grep -qE $'^(CONFIRM|DEST)\t' && needs_confirm=1
+    [ -z "$worker_new" ] || needs_confirm=1
+    if [ "$needs_confirm" -eq 1 ]; then
         if [ "$confirm" != "APPLY" ]; then
             hit=$(printf '%s\n' "$porcelain" | grep -m1 -E $'^CONFIRM\t' | cut -f3-)
             [ -n "$hit" ] || [ -z "$worker_new" ] || hit="adopting a rig: $(printf '%s' "$worker_new" | paste -sd, -)"
@@ -150,19 +102,19 @@ control_approval_gate() { # <staged-file> [confirm-token] <id> <actor> [approval
     # Reachability probe (#1888) — the compensating control the confirm tier rests on for these keys
     # (42-): the typed token is friction, but a chain cannot be parked on a node that is not there.
     # Host-side, on the STAGED config, through the same preflight the wizard uses; nothing is
-    # trusted from the container. Fires only when a node-endpoint key really changed (so an
+    # trusted from the container. Fires only when a node endpoint or login really changed (so an
     # unrelated commit is never blocked by a node that is down) and only after the typed
     # confirmation (so an unconfirmed attempt never pays the dial timeouts).
-    local probe_err endpoint_re
-    endpoint_re=$(printf '%s' "$CONTROL_NODE_ENDPOINT_KEYS" | tr -s ' \n' '|')
-    if printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$endpoint_re"; then
+    local probe_err preflight_re
+    preflight_re=$(printf '%s' "$CONTROL_NODE_PREFLIGHT_KEYS" | tr -s ' \n' '|')
+    if printf '%s' "$porcelain" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$preflight_re"; then
         if ! probe_err=$(preflight_remote_nodes "$staged" 2>/dev/null); then
             printf 'this change points the stack at a node the host cannot use: %s' "$probe_err"
             return 1
         fi
     fi
-    # Typed payout confirmation, checked only after every host-only perimeter, typed-confirmation,
-    # and endpoint-reachability check has passed.
+    # Typed payout confirmation, checked after physical-presence, typed-confirmation and endpoint
+    # reachability checks have passed.
     if [ "$approval_required" -eq 1 ]; then
         local reason
         if ! reason=$(control_validate_approval "$staged" "$actor" "$approval" "$porcelain"); then
@@ -191,10 +143,38 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
         control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
         return 0
     fi
+    # A masked worker token may survive an ordinary round-trip, but never an endpoint repoint.
+    # Restoring the old bearer by name after host/port/control_port changed would send a secret the
+    # container never knew to a destination it chose. Make the operator provide the replacement.
+    if ! jq -e --slurpfile live "$CONFIG_FILE" '
+        def endpoint($api_port): [(.host // null), (.port // $api_port), (.control_port // 8082)];
+        (reduce (($live[0].workers.list // []) | reverse | .[]) as $w ({};
+            if ($w | type) == "object" and ($w.name | type) == "string"
+            then .[$w.name] = $w else . end)) as $live_workers
+        | [(.config.workers.api_port // 8080), ($live[0].workers.api_port // 8080)] as [$candidate_api_port, $live_api_port]
+        | all(.config.workers.list[]?;
+            if (.token | type) == "object" and .token.__secret__ == true
+            then (.name | type) == "string"
+              and ($live_workers[.name] | type) == "object"
+              and endpoint($candidate_api_port) == ($live_workers[.name] | endpoint($live_api_port))
+            else true end)' "$file" >/dev/null 2>&1; then
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"a masked worker token can only stay with its own unchanged descriptor — adopt a new rig with its real token; change an existing rig address on the host (workers.list)",ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
+    local binding_error
+    if ! binding_error=$(control_masked_binding_error "$file"); then
+        binding_error="could not verify masked secrets against their destinations"
+    fi
+    if [ -n "$binding_error" ]; then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$binding_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     # The "blank secret keeps the live value" merge happens HERE, host-side (#440): the request
-    # arrives with {"__secret__":true} sentinels for untouched secrets (the container never held
-    # the real values — it prefills from the pre-masked copy), and each sentinel is swapped for
-    # the live config.json value at staging. A sentinel for a secret that is not actually set
+    # arrives with {"__secret__":true} sentinels for secrets hidden from the editor/browser, and
+    # each sentinel is swapped for the live config.json value at staging. A sentinel for a secret
+    # that is not actually set
     # collapses to "" rather than leaking a dict into config.json. The staged copy therefore
     # carries merged secrets: it lives in host-only staged/ — never mounted — and is pinned
     # owner-only so a co-tenant on the host can't read secrets from it (#33 hardening). Created
@@ -203,7 +183,13 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
     # Per-worker token sentinels (#172) get the same swap, but out of the fixed-path walk: they
     # live in the variable-length descriptor array at workers.list[] (#506) — so restore each from
     # the LIVE token matched by worker name (first-declared wins on duplicate names, matching the
-    # container's probe). A sentinel for a rig with no live token collapses to "" too.
+    # container's probe). A sentinel for a rig with no live token collapses to "" too. The endpoint
+    # guard above rejects a sentinel without a same-name live descriptor or with a changed
+    # host/port/control_port, before any bearer can be restored. Webhook sentinels are positional
+    # because their order is their only stable identity. dashboard.workers[] is restored too, and
+    # MUST be: 30's masker still masks that shape after 2.0.0 removed the alias (#1832, see the note
+    # there), and mask and restore are one mechanism. Keeping the mask without the restore would let
+    # a sentinel be committed as a literal token.
     # The LIVE lookup below therefore reads BOTH shapes, and that is the whole point: worker_list is
     # workers.list[] alone since #1832, so resolving legacy sentinels against it would find nothing
     # and blank every per-rig token to "" — a restore branch that cannot restore. workers.list[]
@@ -225,6 +211,12 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               then .token = (if (.name | type) == "string" then ($livetok[.name] // "") else "" end)
               else . end)
           else . end
+        | if (.notifications | type) == "object" and (.notifications.webhooks | type) == "array"
+          then .notifications.webhooks |= (to_entries | map(
+              if (.value | type) == "object" and .value.__secret__ == true
+              then ($live[0].notifications.webhooks[.key] // "")
+              else .value end))
+          else . end
         | if (.dashboard | type) == "object" and (.dashboard.workers | type) == "array"
           then .dashboard.workers |= map(
               if (.token | type) == "object" and .token.__secret__ == true
@@ -232,17 +224,21 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
               else . end)
           else . end' "$file" >"$staged")
     chmod 600 "$staged" 2>/dev/null || true
+    local policy_error
+    if policy_error=$(control_preview_policy_error "$staged"); then
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$policy_error" '{status:"rejected",error:$e,ts:(now|floor)}')"
+        control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
+        return 0
+    fi
     local carried_ssh=0
     control_carried_ssh "$staged" && carried_ssh=1
     if out=$(PITHEAD_CONFIG_FILE="$staged" PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply --dry-run --porcelain 2>"$errf"); then
-        # Same three-way split as the gate (control_committable_re, 42-): a row outside all three
-        # tiers REFUSES here too, instead of previewing "approval_required" for a key the gate then
-        # refuses regardless of envelope — the edit-then-reject experience #613 exists to remove.
-        local approval_required=false committable_re approval_re bad hit worker_new worker_err=""
+        # Unlisted reference values confirm (#1959). Worker descriptors use the gate's classifier: an
+        # adopt previews as a CONFIRM row below; a repoint, reorder, removal or SSRF-floor host
+        # refuses here, before the operator is asked to type anything.
+        local approval_required=false committable_re approval_re bad worker_new worker_err="" config_paths
         committable_re=$(control_committable_re)
         bad=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -cvxE "$committable_re" || true)
-        # Same classifier as the gate: a repoint/removal or an SSRF-floor host refuses HERE, before
-        # the operator is asked to type anything.
         worker_new=$(control_worker_append "$staged") || { worker_err="${worker_new:-could not classify the worker descriptors — refusing}" && worker_new=""; }
         if control_never_path_changed "$staged"; then
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(control_physical_presence_error)" '{status:"rejected",error:$e,ts:(now|floor)}')"
@@ -250,9 +246,7 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
             return 0
         fi
-        if [ "${bad:-0}" -gt 0 ] || [ -n "$worker_err" ]; then
-            hit=$(printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -m1 -vxE "$committable_re" || true)
-            [ -n "$worker_err" ] || worker_err="this change alters a security-sensitive setting (${hit:-unparseable change row}) that is not committable from the dashboard. $(_control_host_remedy)"
+        if [ -n "$worker_err" ]; then
             control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$worker_err" '{status:"rejected",error:$e,ts:(now|floor)}')"
             # The staged intent STAYS (unlike a validation failure) so a commit attempt still
             # reaches the gate, which names the boundary it hit (stick, SSRF floor, perimeter key).
@@ -260,29 +254,46 @@ control_preview() { # <request-file> <id> <actor> <control-dir>
             control_audit "$cdir/audit/control.log" "$id" "$actor" "preview" "rejected"
             return 0
         fi
+        if [ "${bad:-0}" -gt 0 ]; then
+            approval_required=true
+            out=$(printf '%s\n' "$out" | awk -F'\t' -v re="$committable_re" '
+                BEGIN {OFS=FS}
+                NF && $2 !~ ("^(" re ")$") {$1="CONFIRM"}
+                {print}')
+        fi
+        config_paths=$(control_changed_config_paths "$staged" | grep -xF -e "$CONTROL_DASHBOARD_APPROVAL_PATHS" -e "$CONTROL_DASHBOARD_CONFIRM_PATHS" || true)
+        if [ -n "$config_paths" ]; then
+            out=$(control_mark_config_confirm_rows "$config_paths" "$out")
+            if printf '%s\n' "$config_paths" | grep -qxF "$CONTROL_DASHBOARD_APPROVAL_PATHS"; then approval_required=true; fi
+        fi
         approval_re=$(printf '%s' "$CONTROL_DASHBOARD_APPROVAL_KEYS" | tr -s ' \n' '|' | sed 's/^|*//;s/|*$//')
         if { [ -n "$approval_re" ] && printf '%s' "$out" | awk -F'\t' 'NF' | cut -f2 | grep -qxE "$approval_re"; } ||
             printf '%s\n' "$out" | grep -qE $'^DEST\t'; then
             approval_required=true
         fi
         result=$(printf '%s\n' "$out" | jq -R -s --argjson approval_required "$approval_required" \
+            --argjson secret_paths "$CONTROL_SECRET_PATHS" --slurpfile ref "$REFERENCE_CONFIG" \
             --slurpfile live "$CONFIG_FILE" --slurpfile staged "$staged" '
+            def dotted($p): $p | map(tostring) | join(".");
+            def hidden($p):
+              any($secret_paths[]; . == $p)
+              or ($p[0:2] == ["workers","list"] and $p[-1] == "token")
+              or ($p[0:2] == ["dashboard","workers"] and $p[-1] == "token")
+              or $p[0:2] == ["notifications","webhooks"];
+            ($ref[0] * $live[0]) as $live_full
+            | ($ref[0] * $staged[0]) as $staged_full
+            |
             [split("\n")[] | select(length > 0) | split("\t") | {flag: .[0], key: .[1], msg: (.[2:] | join("\t"))}]
             | {status: "previewed", changes: .,
                destructive: (map(.flag == "DEST" or .flag == "CONFIRM") | any),
                approval_required: $approval_required,
-               preview_values: ([
-                 ["monero.wallet_address", "Monero payout"],
-                 ["tari.wallet_address", "Tari payout"],
-                 ["xvb.url", "XvB endpoint"],
-                 ["monero.remote.host", "Monero node host"],
-                 ["monero.remote.rpc_port", "Monero RPC port"],
-                 ["monero.remote.zmq_port", "Monero ZMQ port"],
-                 ["tari.remote.host", "Tari node host"],
-                 ["tari.remote.grpc_port", "Tari gRPC port"]
-               ] | map(.[0] as $p | ($p / ".") as $path
-                   | select(($live[0] | getpath($path)) != ($staged[0] | getpath($path)))
-                   | {key:$p, label:.[1], old:($live[0] | getpath($path)), new:($staged[0] | getpath($path))})),
+               preview_values: ((([$live_full | paths(type != "object" and type != "array")]
+                   + [$staged_full | paths(type != "object" and type != "array")]) | unique) as $paths
+                 | [$paths[] as $path
+                   | select(hidden($path) | not)
+                   | select(($live_full | getpath($path)) != ($staged_full | getpath($path)))
+                   | {key:dotted($path), label:dotted($path),
+                      old:($live_full | getpath($path)), new:($staged_full | getpath($path))}]),
                payout_confirmations: (reduce ["monero", "tari"][] as $c ({};
                  (($c + ".wallet_address") / ".") as $p
                  | if ($live[0] | getpath($p)) != ($staged[0] | getpath($p))
