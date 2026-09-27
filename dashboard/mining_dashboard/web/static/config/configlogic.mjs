@@ -53,7 +53,7 @@ const FIELD_WARNINGS = {
   "tari.wallet_address":
     "Tari payout address is changing — future merge-mining rewards go to the new address.",
   "dashboard.auth.password":
-    "Dashboard login password changing — every other signed-in session is logged out, and a mistyped password locks this session out too. Keep another way to reach this appliance handy before you confirm.",
+    "Dashboard login password changing — every other signed-in session is logged out, a mistyped password locks this session out too, and on the appliance it is also the console root login. Keep another way to reach this machine handy before you confirm.",
   "dashboard.host":
     "Machine hostname changing — this is the approval-gated day-two rename: it reissues the local certificate and changes the appliance's mDNS identity.",
 };

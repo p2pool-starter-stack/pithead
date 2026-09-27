@@ -307,8 +307,9 @@ Reference settings stay editable from the dashboard afterwards — see
 [configuration](configuration.md). Security-sensitive changes, including payout destinations,
 require the signed-in operator to review full non-secret values and complete the confirmation step.
 Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
-mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
-toggles remain configuration-stick-only. Rigs are narrower: the dashboard can adopt a new rig
+mistakes, not a compromised dashboard process. The two tamper-alarm toggles remain
+configuration-stick-only. The dashboard password is changeable there too, behind typed `APPLY`;
+because it is also the console `root` login, a new one replaces both. Rigs are narrower: the dashboard can adopt a new rig
 (Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
 remove a rig it already controls. See
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick).

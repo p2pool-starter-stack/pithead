@@ -66,14 +66,13 @@ gate_try() { # <candidate-json-file> [confirm-token] [approval-json] — preview
 . "$ROOT/tests/stack/control/control-physical-presence-preview.sh"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
-# Replace the dashboard login (rather than disabling it) and disable control: the preview flags
-# destructive:false — proof the DEST path alone would wave it through — and the commit must still
-# be refused, config untouched. Distinct from the auth-disable case above: a replaced password is a
-# working credential an attacker could log in with, not merely a locked-out dashboard.
+# Replace the dashboard login and disable control in one token-less commit: #2367 took the
+# password out of the physical-presence set, so this is no longer a configuration-stick refusal,
+# but it must still be refused for want of the typed confirmation, config untouched.
 jq '.dashboard.auth.password="a replacement control passphrase" | .dashboard.control.enabled=false' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "dashboard-login replacement commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "dashboard-login replacement refusal names the physical-presence path" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
+assert_contains "dashboard-login replacement refusal asks for the typed APPLY" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "type APPLY"
 assert_eq "config.json keeps the dashboard password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
 assert_eq "config.json keeps control enabled" "$(jq -r '.dashboard.control.enabled' "$C/config.json")" "true"
 
@@ -88,19 +87,6 @@ jq '.telegram.bot_token="654321:evil-XYZ_abc"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json"
 assert_eq "telegram bot_token repoint commit is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "config.json keeps the original bot token" "$(jq -r '.telegram.bot_token' "$C/config.json")" "123456:legit-ABC_def"
-
-# #2367: the dashboard password left the physical-presence set (see
-# control-physical-presence-preview.sh, which now proves the wallet-changed alarm stays refused
-# instead). A live password change is a DEST row (39-describe-change.sh's DASHBOARD_AUTH_HASH_B64
-# case), so it needs the same envelope a payout change does, not just typed APPLY...
-jq '.dashboard.auth.password="a replacement control passphrase"' "$C/config.json" >"$C/cand.json"
-gate_try "$C/cand.json"
-assert_eq "dashboard password repoint without APPLY is refused" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_eq "config.json keeps the original password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a control passphrase"
-# ...but, unlike the physical-presence set, DOES commit once typed and approved.
-gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
-assert_eq "dashboard password repoint with APPLY and the envelope commits" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
-assert_eq "config.json carries the new password" "$(jq -r '.dashboard.auth.password' "$C/config.json")" "a replacement control passphrase"
 
 # Downgrade the onion to password-only (client_auth:false is an INFO row in every direction).
 # Baseline first: onion on + client_auth on (the only combo valid with control on), applied.

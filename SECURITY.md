@@ -114,9 +114,11 @@ The stack's defaults:
   `APPLY` is friction, not a second identity: the dashboard container writes its own request, so a
   compromised dashboard can adopt a rig at a LAN address of its choosing and send that address a
   token it chose. It cannot take over a rig already adopted.
-  The configuration-stick-only paths remain `dashboard.auth.password` and the
+  The configuration-stick-only paths are the
   `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms; `ssh.*` is
-  absent from release images.
+  absent from release images. The dashboard password is changeable from the dashboard behind typed
+  `APPLY` and the confirmation envelope, so a signed-in session can replace the login it arrived
+  with; on the appliance that password is also the console `root` login.
 - Attack visibility (#349): Caddy writes a JSON access log for every dashboard vhost (LAN and
   onion), and the control channel's host-side audit log records who changed what (setting names
   only, never values). The dashboard surfaces both read-only — a burst of 401s is the

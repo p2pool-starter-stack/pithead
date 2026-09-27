@@ -1062,10 +1062,11 @@ signed-in operator, the typed `APPLY` for a disruptive change, and the payout su
 friction and typo protection, not a second identity. A sensitive commit no longer depends on
 Telegram being configured, so it works the same on a stack that never set the bot up.
 
-The existing physical-presence boundary is unchanged: the dashboard password and the two tamper
-alarms cannot be changed from the dashboard at all. The machine refuses them ahead of every other
-check and directs the operator to use a configuration stick. This prevents the configuration
-page from weakening the evidence its own later changes would be judged by.
+The physical-presence boundary now holds only the two tamper alarms: they cannot be changed from the
+dashboard at all. The machine refuses them ahead of every other check and directs the operator to
+use a configuration stick. This prevents the configuration page from weakening the evidence its
+own later changes would be judged by. The dashboard password left that boundary (#2367): it
+confirms like a payout change, with typed `APPLY` and the confirmation envelope.
 
 A node-endpoint or RPC-login change has a second gate behind the typed `APPLY`: before a remote-node
 commit is accepted, the host dials the endpoint with the staged login and refuses a pair it cannot
