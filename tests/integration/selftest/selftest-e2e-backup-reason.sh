@@ -31,6 +31,7 @@ printf '\033[31mTor colored line\033[0m\n'
 printf '\23331mTor C1 colored line\2330m\n'
 printf '\302\23331mTor UTF-8 C1 colored line\302\2330m\n'
 echo 'Tor café line'
+printf 'Tor \342\200\256bidi line\n'
 echo "Error: cannot reach node.remote.example: disk full writing archive" >&2
 exit 3
 FAKE
@@ -62,6 +63,7 @@ assert_contains "the failure strips terminal control bytes" "$out" "Tor colored 
 assert_contains "the failure strips C1 terminal control bytes" "$out" "Tor C1 colored line"
 assert_contains "the failure strips UTF-8 C1 controls" "$out" "Tor UTF-8 C1 colored line"
 assert_contains "the failure preserves UTF-8 diagnostics" "$out" "Tor café line"
+assert_contains "the failure strips Unicode format controls" "$out" "Tor bidi line"
 assert_contains "the failure carries the backup's stderr reason" "$out" "disk full writing archive"
 assert_contains "the remote endpoint in the output is redacted" "$out" "<redacted-endpoint>"
 case "$out" in
@@ -79,6 +81,10 @@ esac
 case "$out" in
 *$'\302\233'*) it_fail "UTF-8 C1 terminal escapes do not reach the log" "[$out]" ;;
 *) it_pass "UTF-8 C1 terminal escapes do not reach the log" ;;
+esac
+case "$out" in
+*$'\342\200\256'*) it_fail "Unicode bidi controls do not reach the log" "[$out]" ;;
+*) it_pass "Unicode bidi controls do not reach the log" ;;
 esac
 
 echo ""
