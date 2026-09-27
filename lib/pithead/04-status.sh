@@ -20,7 +20,7 @@ clearnet_tor_attested() { # <monero|tari>
     python3 - "$(clearnet_state_dir)/$1.synced" "$cdir/results/clearnet-$1-tor.json" <<'PY' >/dev/null 2>&1
 import json, os, stat, sys
 try:
-    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         st = os.fstat(fd)
         marker = os.read(fd, 38).decode().strip()

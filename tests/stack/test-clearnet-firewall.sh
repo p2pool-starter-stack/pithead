@@ -182,6 +182,24 @@ PYFIFO
     rm -rf "$td"
 )
 assert_eq "FIFO marker cannot block the root runner" "$CN_FIFO_PROBE" "rejected"
+CN_STATUS_FIFO_PROBE=$(
+    mk_tmpdir td
+    mkfifo "$td/monero.synced"
+    python3 - "$STACK" "$td" <<'PYFIFOSTATUS'
+import os, subprocess, sys
+try:
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; clearnet_state_dir() { printf "%s" "$STATE_DIR"; }; clearnet_tor_attested monero',
+         "probe", sys.argv[1]], env={**os.environ, "STATE_DIR": sys.argv[2]},
+        timeout=2, check=False)
+except subprocess.TimeoutExpired:
+    print("blocked")
+else:
+    print("rejected" if result.returncode else "accepted")
+PYFIFOSTATUS
+    rm -rf "$td"
+)
+assert_eq "FIFO marker cannot block status or doctor" "$CN_STATUS_FIFO_PROBE" "rejected"
 CN_CLAIM_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090

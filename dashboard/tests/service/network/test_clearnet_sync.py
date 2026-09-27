@@ -120,6 +120,16 @@ async def test_restart_failure_reverifies_before_retry(tmp_path, monkeypatch):
     assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
+async def test_slow_stop_does_not_skip_start(tmp_path, monkeypatch):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+    await sup.maybe_transition("tari", "tari", True, True)
+    host_result(tmp_path, "tari")
+    dc.stop.return_value = False  # a slow stop timed out, but start must still run (#234)
+    assert await sup.maybe_transition("tari", "tari", True, True) is True
+    dc.start.assert_awaited_once()
+    assert dc.start.await_args.args[0] == "tari"
+
+
 async def test_chains_independent(tmp_path, monkeypatch):
     sup, dc = make_supervisor(tmp_path, monkeypatch)
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
