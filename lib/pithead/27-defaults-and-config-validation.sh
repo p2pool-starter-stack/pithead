@@ -55,7 +55,7 @@ validate_worker_endpoints() {
     local dw_err dw_dups
     dw_err=$(jq -r "$WORKER_LIST_JQ"'
         worker_list as $w
-        | if ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?} objects."
+        | if ($w | type) != "array" then "workers.list must be an array of {name, host?, port?, token?, api_token?} objects."
           else [ $w[] |
               if type != "object" then "workers.list entries must be objects (got a \(type))."
               elif (.name | type) != "string" or (.name | test("^[!-~]{1,128}$") | not)

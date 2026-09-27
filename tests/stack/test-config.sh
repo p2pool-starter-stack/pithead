@@ -280,7 +280,7 @@ wl_case() { # <workers-json> <label> <expected-msg-fragment>
     assert_rc "$2 rejected" "$rc" "1"
     assert_contains "$2 message" "$out" "$3"
 }
-wl_case '{"name":"rig1"}' "non-array workers.list" "must be an array"
+wl_case '{"name":"rig1"}' "non-array workers.list" "{name, host?, port?, token?, api_token?}"
 wl_case '[{"host":"10.0.0.5"}]' "workers.list entry without a name" "name"
 wl_case '[{"name":"rig1","host":"10.0.0.5/path"}]' "workers.list host with URL structure" "workers.list[rig1].host"
 wl_case '[{"name":"rig1","host":"attacker:8080"}]' "workers.list host smuggling a port" "workers.list[rig1].host"
