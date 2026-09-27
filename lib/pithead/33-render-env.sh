@@ -321,28 +321,18 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462). The view key, public spend key, and wallet
-    # password must NOT ride the tari-wallet's compose `environment:` (those show in `docker
-    # inspect`). Instead render them into a dedicated owner-only file that compose mounts as a
-    # `secrets:` entry — Docker serves it on a tmpfs at /run/secrets, owner-readable only, and the
-    # wrapper entrypoint exports them into the wallet child process only. Kept under data/ (gitignored
-    # like .env). Written for the REAL .env target only, so a dry-run render never mutates it; the
-    # values are empty (harmless) when the feature is off, so the compose secret always resolves.
+    # Tari view-only wallet secret delivery (#462). The view key, public spend key and wallet password
+    # must NOT ride the tari-wallet's `environment:` (those show in `docker inspect`): they go in an
+    # owner-only file under data/ that compose and the quadlet bind-mount at /run/secrets, and the
+    # wrapper exports them to the wallet process only. The mount keeps the file's owner, so it belongs
+    # to the container's APP_UID; written by root (the appliance) the wallet could not read it (#2731).
+    # Rewritten for the REAL .env target only; empty values when the feature is off keep it resolvable.
     local tari_secret_file="$PWD/data/tari-wallet-secret.env"
     if [ "$target" != "${ENV_FILE}.dryrun" ]; then
         mkdir -p "$PWD/data"
-        # Removed first: after the chown below, a non-root operator could no longer overwrite it.
-        rm -f "$tari_secret_file"
-        (
-            umask 077
-            cat >"$tari_secret_file" <<EOF
-MINOTARI_WALLET_VIEW_PRIVATE_KEY=$TARI_VIEW_KEY
-MINOTARI_WALLET_SPEND_KEY=$TARI_SPEND_PUBLIC_KEY
-MINOTARI_WALLET_PASSWORD=$TARI_WALLET_PASSWORD
-EOF
-        )
-        # The wallet container runs as APP_UID and the bind mount keeps this owner-only file's owner:
-        # written by root (the appliance) or another uid, the wallet cannot read it (#2731).
+        rm -f "$tari_secret_file" # once chowned below, another uid could not overwrite it
+        (umask 077 && printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
+            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_file")
         [ -z "$(find "$tari_secret_file" ! -uid "$APP_UID" -print 2>/dev/null)" ] ||
             chown "$APP_UID:$APP_GID" "$tari_secret_file" 2>/dev/null ||
             sudo chown "$APP_UID:$APP_GID" "$tari_secret_file" ||

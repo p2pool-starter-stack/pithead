@@ -32,6 +32,7 @@ run_lifecycle() {
             assert_rc "up on a source checkout succeeds with a pinned image missing (#2654)" "$up_rc" "0"
             # The failing pull or up names its cause; job 1280 lost it to /dev/null (#2755).
             [ "$up_rc" -eq 0 ] || printf '%s\n' "$up_out" | tail -n 15 | redact | sed 's/^/        /'
+            [ "$up_rc" -eq 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             rx "docker image inspect $(quote_arg "$proxy_ref")" >/dev/null 2>&1
             assert_rc "up fetched the missing pinned image (#2654)" "$?" "0"
             assert_eq "docker-proxy runs from the fetched image (#2654)" "$(svc_state_of "$(service_state docker-proxy)")" "running"
@@ -39,6 +40,7 @@ run_lifecycle() {
                 it_pass "status OK after up restored a missing pinned image (#2654)"
             else
                 it_fail "status OK after up restored a missing pinned image (#2654)" "pithead status did not recover"
+                [ "$up_rc" -ne 0 ] || capture_artifacts "lifecycle-up" "$OUT_DIR"
             fi
             [ "$IT_FAIL" -le "$proxy_fails" ] || lifecycle_ok=0
         else
@@ -200,6 +202,7 @@ run_lifecycle() {
                 fi
             else
                 it_fail "dashboard.data_dir carry applied and returned healthy" "apply failed or the recreated stack did not become healthy; see $OUT_DIR/dashboard-carry.apply.log"
+                capture_artifacts "lifecycle-carry" "$OUT_DIR"
                 lifecycle_ok=0
             fi
             # The product correctly refuses to overwrite the old, still-complete directory on a
