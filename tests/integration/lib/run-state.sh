@@ -1,7 +1,5 @@
 # shellcheck shell=bash
 : "${INTEGRATION_RUN_SUITE:?source via the suite runner}"
-# shellcheck source=tests/integration/lib/run-egress-claim.sh
-source "$HERE/lib/run-egress-claim.sh" || exit $?
 assert_running_state() {
     # shellcheck disable=SC2034  # shared through the assembled runner scope
     local name="$1" config="$2"

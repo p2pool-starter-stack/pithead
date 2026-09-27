@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+echo "== node-sync egress verifier (#2678) =="
 # The node-sync arm is the tier-4 clearnet window's positive and negative control: both chosen
 # daemons must have real outbound public sockets, while p2pool remains isolated.
 # shellcheck disable=SC2016 # fixture script expands these variables when the fake docker runs

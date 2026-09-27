@@ -51,6 +51,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/release/test-release-publish.sh" && domain
 _d0=$((PASS + FAIL)) && source "$HERE/test-unit-helpers.sh" && domain_ran test-unit-helpers.sh "$_d0" "$?" || domain_ran test-unit-helpers.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-cli.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-cli.sh" && domain_ran test-cli.sh "$_d0" "$?" || domain_ran test-cli.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-deps-python.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-deps-python.sh" && domain_ran test-deps-python.sh "$_d0" "$?" || domain_ran test-deps-python.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-config.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-config.sh" && domain_ran test-config.sh "$_d0" "$?" || domain_ran test-config.sh "$_d0" "$?"
 

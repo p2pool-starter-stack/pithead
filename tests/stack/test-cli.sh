@@ -188,8 +188,6 @@ make_stubs "$DEPS/bin"
     deps_satisfied
 )
 assert_rc "deps_satisfied true with all deps" "$?" "0"
-# shellcheck source=tests/stack/test-deps-python.sh
-source "$HERE/test-deps-python.sh"
 printf '#!/usr/bin/env bash\n[ "$*" = "compose version" ] && exit 1\nexit 0\n' >"$DEPS/bin/docker"
 chmod +x "$DEPS/bin/docker"
 # shellcheck disable=SC1090  # STACK path is dynamic by design

@@ -57,9 +57,12 @@ ln -s "$CN_SDIR/missing-target" "$CN_SDIR/tari.synced"
 assert_eq "malformed marker paths never authorize node exemptions" "$(run_sourced "$V" tor_egress_sync_ips)" ""
 for entry in "$ROOT/build/monero/entrypoint.sh" "$ROOT/build/tari/entrypoint.sh"; do
     for marker in "$CN_SDIR/monero.synced" "$CN_SDIR/tari.synced"; do
-        if (export PITHEAD_TEST_SOURCE=1 MONERO_CLEARNET_SYNC=true TARI_CLEARNET_SYNC=true CLEARNET_MARKER="$marker";
+        if (
+            export PITHEAD_TEST_SOURCE=1 MONERO_CLEARNET_SYNC=true TARI_CLEARNET_SYNC=true CLEARNET_MARKER="$marker"
             # shellcheck disable=SC1090  # both entrypoints are chosen by the loop above
-            source "$entry"; clearnet_sync_active); then
+            source "$entry"
+            clearnet_sync_active
+        ); then
             bad "malformed node marker keeps Tor" "clearnet active: $entry"
         else ok "malformed node marker keeps Tor"; fi
     done
@@ -129,7 +132,7 @@ CN_RESTART_PROBE=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { case "$1" in inspect) printf '%s\n' "$STARTED" ;; exec) [ "${TOR_CONFIG:-good}" = good ] ;; esac; }
+    docker() { case "$1" in inspect) printf '%s\n' "$STARTED" ;; exec) [ "${TOR_CONFIG:-good}" = good ] ;; esac }
     STARTED=old
     egress_sync_record_tor monero
     printf 'before=%s\n' "$([ -f "$CN_CDIR/results/clearnet-monero-tor.json" ] && echo yes || echo no)"
@@ -188,7 +191,8 @@ CN_CLAIM_PROBE=$(
     sudo() { if [ "$1" = chown ]; then echo "owner=$2"; else "$@"; fi; } # simulate root
     eval "$(declare -f egress_sync_marker_result | sed '1s/egress_sync_marker_result/real_egress_sync_marker_result/')"
     egress_sync_marker_result() {
-        if [ -k "$td" ]; then real_egress_sync_marker_result "$1" | jq '.uid=0'
+        if [ -k "$td" ]; then
+            real_egress_sync_marker_result "$1" | jq '.uid=0'
         else real_egress_sync_marker_result "$1"; fi
     }
     egress_sync_claim_marker monero
@@ -231,11 +235,12 @@ CN_NO_RUNNER=$(
     # shellcheck disable=SC1090
     source "$STACK"
     td=$(mktemp -d)
-    # shellcheck disable=SC2034  # sourced CLI reads this global
-    OS_TYPE=Linux
     control_unit_dir() { printf '%s' "$td"; }
-    env_get() { case "$1" in DASHBOARD_CONTROL_ENABLED) echo false ;; *_CLEARNET_SYNC) echo false ;; esac; }
-    systemctl() { echo called; return 1; }
+    env_get() { case "$1" in DASHBOARD_CONTROL_ENABLED) echo false ;; *_CLEARNET_SYNC) echo false ;; esac }
+    systemctl() {
+        echo called
+        return 1
+    }
     provision_egress_sync_runner && echo idle=ok || echo idle=failed
     [ ! -e "$td/pithead-egress-sync.path" ] && echo unit=absent
     rm -rf "$td"
@@ -263,7 +268,7 @@ CN_ATTEST_PROBE=$(
     egress_sync_claim_marker() { return 0; }
     apply_tor_egress_firewall() { [ "$1" = refresh ]; }
     tor_egress_enforced() { return 0; }
-    docker() { case "$1" in inspect) [ "$TOR_ACTIVE" = 1 ] && echo new || echo old ;; exec) return 0 ;; esac; }
+    docker() { case "$1" in inspect) [ "$TOR_ACTIVE" = 1 ] && echo new || echo old ;; exec) return 0 ;; esac }
     egress_sync_runtime_on_tor() { [ "$TOR_ACTIVE" = 1 ]; }
     TOR_ACTIVE=0
     egress_sync_refresh monero

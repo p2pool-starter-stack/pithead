@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mining_dashboard.config import config
+from mining_dashboard.service.network import clearnet_sync
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor, tor_attested
 
 
@@ -165,6 +166,60 @@ async def test_malformed_marker_requests_host_closure_without_restart(tmp_path, 
     assert await sup.maybe_transition("monero", "monerod", True, True) is True
     assert len(list((tmp_path / "requests").iterdir())) == 1
     dc.stop.assert_not_called()
+
+
+async def test_failed_request_write_keeps_transition_pending(tmp_path, monkeypatch):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        sup, "_request_refresh", MagicMock(side_effect=OSError("spool unavailable"))
+    )
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    assert (tmp_path / "monero.synced").is_file()
+    dc.stop.assert_not_called()
+
+
+async def test_host_reply_cannot_restart_with_invalid_marker(tmp_path, monkeypatch):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+    (tmp_path / "monero.synced").mkdir()
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    host_result(tmp_path, "monero")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    dc.stop.assert_not_called()
+
+
+async def test_verified_host_result_after_supervisor_restart_needs_no_second_restart(
+    tmp_path, monkeypatch
+):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    host_attest(tmp_path, "monero")
+    host_result(tmp_path, "monero")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is False
+    dc.stop.assert_not_called()
+
+
+async def test_host_proof_arriving_during_poll_completes_without_restart(tmp_path, monkeypatch):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    host_result(tmp_path, "monero")
+    monkeypatch.setattr(clearnet_sync, "tor_attested", MagicMock(side_effect=[False, True]))
+    assert await sup.maybe_transition("monero", "monerod", True, True) is False
+    dc.stop.assert_not_called()
+
+
+async def test_transition_callback_errors_do_not_hide_host_outcomes(tmp_path, monkeypatch):
+    sup, dc = make_supervisor(tmp_path, monkeypatch)
+
+    def broken_callback(_name, _ok):
+        raise RuntimeError("UI unavailable")
+
+    sup.on_transition = broken_callback
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    host_result(tmp_path, "monero", "failed")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is True
+    dc.stop.assert_not_called()
+    host_attest(tmp_path, "monero")
+    assert await sup.maybe_transition("monero", "monerod", True, True) is False
 
 
 @pytest.mark.parametrize("kind", ["fifo", "symlink"])
