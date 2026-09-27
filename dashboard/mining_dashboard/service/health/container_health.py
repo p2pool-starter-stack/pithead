@@ -9,6 +9,15 @@ CRASH_LOOP_WINDOW_SEC = 600
 UNHEALTHY_AFTER_SEC = 120
 RECOVERY_AFTER_SEC = 120
 
+# ContainerHealthMonitor edge -> alert message template (AlertService formats and sends it).
+EDGE_MESSAGES = {
+    "crash_loop": "\U0001f534 \U0001f4e6 Container {name} is crash-looping — restarting repeatedly "
+    "(OOM or bad config?). Check: docker logs {name}",
+    "unhealthy": "\U0001f7e0 \U0001f4e6 Container {name} is running but unhealthy — its healthcheck "
+    "keeps failing.",
+    "recovered": "\U0001f7e2 \U0001f4e6 Container {name} recovered.",
+}
+
 
 class ContainerHealthMonitor:
     """
