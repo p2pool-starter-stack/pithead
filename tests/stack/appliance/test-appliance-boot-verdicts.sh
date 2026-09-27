@@ -169,6 +169,13 @@ assert_eq "leg C stops when its mark cannot be read" \
     "$(grep -cF 'fault_serial_mark "$SERIAL") || {' "$ROOT/tests/os/phases/fault.sh")" "1"
 assert_eq "all four legs report an unjudgeable boot as such" \
     "$(grep -cF 'elif [ $? -eq 2 ]; then' "$ROOT/tests/os/phases/fault.sh")" "4"
+# Jobs 220 and 129: A1's console held not one byte after the cut, and a discarded `virsh start`
+# error could not be told from a brick. Legs A and B stop on a failed start; A, B and D name the
+# domain state on a BRICKED row.
+assert_eq "legs A and B stop when virsh start fails after the cut" \
+    "$(grep -cF 'start_out=$(virsh start "$VM" 2>&1) || {' "$ROOT/tests/os/phases/fault.sh")" "2"
+assert_eq "every power-cut BRICKED row names the domain state" \
+    "$(grep -cF -- '— domain: $(virsh domstate "$VM" --reason' "$ROOT/tests/os/phases/fault.sh")" "3"
 # #2746: the failed boot's console is kept before the leg returns and the next phase clobbers it.
 # Mutation run: drop the copy -> no .failed file.
 rm -f "$FBV/no-boot.failed"

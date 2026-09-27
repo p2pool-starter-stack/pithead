@@ -34,7 +34,7 @@ phase_fault() {
 
     # Fault A: cut power WHILE the updater is writing the spare slot. The invariant is not that
     # the update survives — it is that the box still boots something.
-    local mark verdict
+    local mark verdict start_out
     for i in 1 2 3; do
         info "fault A$i — destroy mid-write"
         _ssh "nohup sh -c '$(_install_cmd /data/update.bundle)' >/tmp/inst.log 2>&1 &" || true
@@ -45,7 +45,12 @@ phase_fault() {
             bad "A$i: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
             return
         }
-        virsh start "$VM" >/dev/null 2>&1 || true
+        # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
+        # jobs 220 and 129 read an A1 console with not one byte after the cut).
+        start_out=$(virsh start "$VM" 2>&1) || {
+            bad "A$i: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+            return
+        }
         # A hard power cycle can hand the guest a NEW DHCP lease; without re-reading it here,
         # _wait_ssh spends its whole budget probing the address it held before the cut (#2381:
         # bench-ci job 101 read a booted, unreachable guest as BRICKED — an "all"-phase run had let
@@ -61,7 +66,7 @@ phase_fault() {
             bad "A$i: $verdict"
             return
         else
-            bad "A$i: BRICKED — $verdict (disqualifying)"
+            bad "A$i: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
             return
         fi
     done
@@ -132,7 +137,12 @@ phase_fault() {
         bad "B: could not set the console aside before restarting the guest — its boot could not be judged, so the leg stops here"
         return
     }
-    virsh start "$VM" >/dev/null 2>&1 || true
+    # A start that fails leaves no guest to judge: that is the harness, not a brick (#2746:
+    # jobs 220 and 129 read an A1 console with not one byte after the cut).
+    start_out=$(virsh start "$VM" 2>&1) || {
+        bad "B: virsh start failed after the cut, so no boot was judged: $(tr -s '\n' ' ' <<<"$start_out" | cut -c1-200)"
+        return
+    }
     _wait_dhcp_ip 60 || true # same stale-lease hazard as fault A above
     if _wait_ssh 300; then
         ok "B: survived a mid-commit power cut — booted slot marker '$(_marker)'"
@@ -143,7 +153,7 @@ phase_fault() {
         bad "B: $verdict"
         return
     else
-        bad "B: BRICKED — $verdict (disqualifying)"
+        bad "B: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
         return
     fi
 
@@ -261,7 +271,7 @@ phase_fault() {
             bad "D: $verdict"
         else
             # Narrowing the match makes a red actionable only if it says what the console DID say.
-            bad "D: BRICKED — $verdict (disqualifying)"
+            bad "D: BRICKED — $verdict — domain: $(virsh domstate "$VM" --reason 2>&1 | head -1) (disqualifying)"
         fi
         return
     fi
