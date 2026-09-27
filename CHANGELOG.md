@@ -178,6 +178,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
+  `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped
+  its Tor proxy while the firewall dropped every clearnet dial. The node had no peers, never
+  reported `synchronized`, and so never switched back to Tor. `apply` now passes the flag to the
+  daemons only while the firewall is off. With the firewall on, both nodes stay on Tor, and the
+  apply/doctor warning says the flag is ignored. A clearnet sync that already completed stays
+  complete when the firewall is turned back on.
+
 - **A slow first Tor bootstrap no longer fails provisioning
   ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
   for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
@@ -194,6 +203,12 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   Monero node came back from remote mode, blocked its RPC for the whole catch-up and `pithead status`
   reported it unhealthy. The wallet now marks a scan on every start, bounded by the same 24-hour
   grace.
+- **The Monero payout wallet's scan grace ends at monerod's tip, and a crash loop no longer renews
+  it ([#2720](https://github.com/p2pool-starter-stack/pithead/issues/2720)).** The RPC answers
+  between refresh passes, so the first answer no longer retires the grace mid-scan; the healthcheck
+  clears it once the wallet height reaches monerod's block count. A restart keeps an existing
+  marker's age, so a wallet that never catches up still turns unhealthy after 24 hours. Its ring
+  database moved into the wallet volume, off the read-only root filesystem.
 - **Worker Inspect can adopt a rig again
   ([#2641](https://github.com/p2pool-starter-stack/pithead/issues/2641)).** The perimeter round-2
   pass above refused every change to `workers.list[]`, including the append the **Adopt this rig**
