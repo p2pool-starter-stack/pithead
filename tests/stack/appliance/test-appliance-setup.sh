@@ -156,8 +156,30 @@ exit 0
 SUDOEOF
 chmod +x "$V/bin/systemctl" "$V/bin/sudo"
 
-# With -y: the three columns print, the named volumes go with `compose down -v`, every
-# pithead-derived path is removed, and every kept path survives byte-identical.
+# Simulate a wallet volume created with its profile active, then turn that profile off.
+# Compose down -v sees only the inactive model and leaves the volume for uninstall to remove.
+cp "$V/bin/docker" "$V/bin/docker-base"
+cat >"$V/bin/docker" <<'DOCKEREOF'
+#!/usr/bin/env bash
+case "$*" in
+"volume inspect pithead_tari_wallet_data --format "*)
+    [ -f .wallet-volume ] || exit 1
+    cat .wallet-volume ;;
+"volume rm pithead_tari_wallet_data")
+    echo "[docker] $*" >>"$DOCKER_LOG"
+    rm .wallet-volume ;;
+*) exec "$(dirname "$0")/docker-base" "$@" ;;
+esac
+DOCKEREOF
+chmod +x "$V/bin/docker"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,tari_payout_confirm/' "$V/.env"
+printf 'pithead/tari_wallet_data\n' >"$V/.wallet-volume"
+sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari/' "$V/.env"
+rm -f "$V/.env.bak"
+assert_not_contains "uninstall fixture leaves the Tari wallet profile inactive" "$(grep '^COMPOSE_PROFILES=' "$V/.env")" "tari_payout_confirm"
+
+# With -y: the three columns print, all named volumes go, every derived path is removed,
+# and every kept path survives byte-identical.
 : >"$DOCKER_LOG"
 out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_contains "uninstall states the removed column" "$out" "Removed:"
@@ -170,6 +192,10 @@ assert_contains "uninstall prints the removal command" "$out" "sudo rm -rf"
 assert_contains "uninstall's removal command quotes a path with a space" "$out" "'$kept_dir'"
 assert_eq "uninstall compose-downs with -v so the named volumes go with the containers" \
     "$(grep -Fc 'compose down --remove-orphans -v' "$DOCKER_LOG" 2>/dev/null | tr -d '[:space:]')" "1"
+assert_eq "uninstall removes the Tari wallet volume outside the inactive Compose model" \
+    "$([ -f "$V/.wallet-volume" ] && echo present || echo gone)" "gone"
+assert_eq "uninstall removes only the exact Tari wallet volume" \
+    "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead_tari_wallet_data"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
 assert_eq "uninstall removes the rendered Tari config" "$([ -f "$V/build/tari/config.toml" ] || echo gone)" "gone"
