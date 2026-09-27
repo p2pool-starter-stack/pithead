@@ -1,7 +1,7 @@
 # Split out of config.py to keep it under its file-budget ceiling (#1285). Unlike the rest of
-# config.py's flat environment settings, these two loaders parse the read-only config.json bind
-# mount itself (not an env var). config.py passes paths explicitly so this module never imports
-# config.py back (that would be circular); worker endpoints are reloaded for atomic host updates.
+# config.py's flat environment settings, these loaders parse the read-only config.json bind
+# mount; worker endpoints also join bound read-only tokens from env. config.py passes paths to
+# avoid a circular import; worker endpoints are reloaded for atomic host updates.
 
 import json
 import logging

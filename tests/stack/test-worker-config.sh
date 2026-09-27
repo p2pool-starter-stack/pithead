@@ -54,10 +54,11 @@ PATH="$C/bin:$PATH" run_sourced "$C" render_masked_config "$C/data/control" >/de
 # 1) masked prefill copy: each SET per-worker token is a sentinel, the raw token never appears,
 #    and a token-less worker stays token-less.
 assert_eq "per-worker token masked to the sentinel" "$(jq -c '.dashboard.workers[0].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
+assert_eq "legacy probe token masked to the sentinel" "$(jq -c '.dashboard.workers[0].api_token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "second per-worker token masked to the sentinel" "$(jq -c '.dashboard.workers[2].token' "$MASKED" 2>/dev/null)" '{"__secret__":true}'
 assert_eq "token-less worker stays token-less in the masked copy" "$(jq -r '.dashboard.workers[1] | has("token")' "$MASKED" 2>/dev/null)" "false"
 case "$(cat "$MASKED")" in
-*tok_rig1secret* | *tok_rig3secret*) bad "masked copy holds no per-worker token" "a per-worker token leaked into $MASKED" ;;
+*tok_rig1secret* | *tok_rig3secret* | *probe_rig1secret*) bad "masked copy holds no per-worker token" "a per-worker token leaked into $MASKED" ;;
 *) ok "masked copy holds no per-worker token" ;;
 esac
 # 2) staging swap: a proposal that prefills the workers from the masked copy (sentinel tokens) and
@@ -67,6 +68,7 @@ jq --arg id "$UUID6" '{id:$id, action:"preview", actor:"admin", config: (.p2pool
 run_pending >/dev/null
 assert_eq "worker-sentinel preview validates" "$(jq -r '.status' "$RESULTS/$UUID6.json" 2>/dev/null)" "previewed"
 assert_eq "per-worker sentinel restored to the live token by name" "$(jq -r '.dashboard.workers[0].token' "$STAGED/$UUID6.json" 2>/dev/null)" "tok_rig1secret"
+assert_eq "legacy probe token restored host-side" "$(jq -r '.dashboard.workers[0].api_token' "$STAGED/$UUID6.json" 2>/dev/null)" "probe_rig1secret"
 assert_eq "second per-worker sentinel restored by name" "$(jq -r '.dashboard.workers[2].token' "$STAGED/$UUID6.json" 2>/dev/null)" "tok_rig3secret"
 assert_eq "token-less worker stays token-less at staging" "$(jq -r '.dashboard.workers[1] | has("token")' "$STAGED/$UUID6.json" 2>/dev/null)" "false"
 case "$(cat "$RESULTS/$UUID6.json")$(cat "$AUDIT")" in
@@ -105,7 +107,7 @@ echo "== black-box: per-worker token mask + host-side restore, workers.list[] sh
 # config actually uses, not a hardcoded dashboard.workers path. Clear the legacy key first so the
 # live config carries only the new shape (both-set is refused at apply, asserted earlier).
 jq 'del(.dashboard.workers) | .workers.list=[
-    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret"},
+    {name:"rig1",host:"10.0.0.5",token:"tok_rig1secret",api_token:"probe_rig1secret"},
     {name:"rig2"},
     {name:"rig3",token:"tok_rig3secret"}]' "$C/config.json" >"$C/config.json.tmp" &&
     mv "$C/config.json.tmp" "$C/config.json"
