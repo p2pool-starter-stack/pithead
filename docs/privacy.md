@@ -431,7 +431,10 @@ single-purpose appliance. One consequence is worth recording explicitly:
   and/or require a `p2pool.stratum_password` (`pithead doctor` flags public-IP exposure).
 - [ ] Leave `p2pool.clearnet` off (the default) to keep P2Pool outbound peers on Tor (#165).
 - [ ] Set `xvb.enabled: false` if you don't want any XvB egress.
-- [ ] Leave `monero.clearnet_initial_sync` / `tari.clearnet_initial_sync` off (the default) to keep all node P2P on Tor. If you do use a clearnet sync, the dashboard switches each node back to Tor automatically once it's synced; `pithead doctor` flags it while exposed and clears when done.
+- [ ] Leave `monero.clearnet_initial_sync` / `tari.clearnet_initial_sync` off (the default) to keep
+  all node P2P on Tor. If you use clearnet sync, the host removes and verifies that chain's
+  exception before the dashboard restarts it on Tor. `pithead doctor` keeps the warning until the
+  host verifies the live Tor daemon and firewall rules.
 - [ ] Run the initial install/build behind a VPN or `torsocks`.
 - [ ] Telegram (#121) and Healthchecks (#79) both always run over Tor (Telegram sees only a Tor exit, #340), so either is safe to enable — for Healthchecks, make sure its ping URL is Tor-reachable (hosted `hc-ping.com`, or an onion/public self-hosted instance).
 - [ ] Webhook/ntfy alert sinks (#380) ride Tor by default too; leave `notifications.tor` on unless every configured endpoint is on your own network — with it off, clearnet endpoints see your host IP on every alert.
