@@ -181,8 +181,8 @@ both states.
 > against a node on another machine — see [Remote Tari node](configuration.md#remote-tari-node).
 
 > Sync crawling over Tor? The default routes the first sync over Tor for privacy, which is slow.
-> You can opt into a faster clearnet initial sync for Monero and/or Tari; each node switches back
-> to Tor automatically once it's synced. It's default-off and privacy-relevant, so read the
+> You can opt into a faster clearnet initial sync for Monero and/or Tari, with the egress firewall
+> turned off for the sync; each node switches back to Tor automatically once it's synced. It's default-off and privacy-relevant, so read the
 > trade-off first:
 > [Optional clearnet initial sync](privacy.md#optional-clearnet-initial-sync-off-by-default).
 
