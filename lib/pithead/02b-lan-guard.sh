@@ -274,7 +274,7 @@ lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; 
 # jumps come last, so a start that stops halfway drops every source on those ports instead of none.
 # The `-D` lines make a manual restart replace the jumps rather than stack them.
 render_lan_guard_boot_unit() { # <iptables> <port>...
-    local ipt="$1" p jump i
+    local ipt="$1" p lg_jump i
     shift
     local -a srcs
     read -r -a srcs <<<"$LAN_GUARD_SOURCES"
@@ -298,9 +298,9 @@ EOF
         printf 'ExecStart=%s -I %s 1 -s %s -j RETURN\n' "$ipt" "$LAN_GUARD_CHAIN" "${srcs[$i]}"
     done
     for p in "$@"; do
-        jump="-p tcp -m tcp --dport $p -m conntrack --ctstate NEW -m comment --comment $LAN_GUARD_TAG -j $LAN_GUARD_CHAIN"
-        printf 'ExecStart=-%s -D DOCKER-USER %s\n' "$ipt" "$jump"
-        printf 'ExecStart=%s -I DOCKER-USER 1 %s\n' "$ipt" "$jump"
+        lg_jump="-p tcp -m tcp --dport $p -m conntrack --ctstate NEW -m comment --comment $LAN_GUARD_TAG -j $LAN_GUARD_CHAIN"
+        printf 'ExecStart=-%s -D DOCKER-USER %s\n' "$ipt" "$lg_jump"
+        printf 'ExecStart=%s -I DOCKER-USER 1 %s\n' "$ipt" "$lg_jump"
     done
     cat <<EOF
 
