@@ -36,4 +36,18 @@ assert_eq "config.json carries the clearnet-exposure alarm off" "$(jq -r '.teleg
 jq '.telegram.events.clearnet_exposed=true' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY '{"payout_suffixes":{}}'
 assert_eq "clearnet-exposure alarm back on through the same route" "$(jq -r '.telegram.events.clearnet_exposed' "$C/config.json")" "true"
+# Notification destinations (#2367): a wrong value stops delivery or reroutes it, so the preview
+# names that cost; their commit and refusal rows live in test-control-perimeter-tier3.sh.
+jq '.telegram.bot_token="654321:other-ABC_def"' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "bot-token preview is envelope-gated and names the silenced and rerouted alerts" \
+    "$(previewed_with "a wrong token stops every Telegram alert" "another bot's token sends them")" "true"
+jq '.telegram.chat_id="2222"' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "chat-id preview is envelope-gated and names delivery to another chat" \
+    "$(previewed_with "a wrong id stops delivery" "to another chat")" "true"
+jq '.healthchecks.ping_url="https://hc.example/ping"' "$C/config.json" >"$C/cand.json"
+preview_only "$C/cand.json"
+assert_eq "ping-URL preview is envelope-gated and names the unnoticed outage" \
+    "$(previewed_with "someone else's check" "outage here goes unnoticed")" "true"
 unset -f preview_only previewed_with

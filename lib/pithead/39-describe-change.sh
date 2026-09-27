@@ -273,11 +273,11 @@ describe_change() {
         # The ping URL is both the on/off switch and a capability secret — report the change
         # (enable/disable/update) WITHOUT printing the value.
         if [ -z "$new" ]; then
-            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared; the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared, so no one is alerted if this machine goes down; the dashboard container is recreated."
         elif [ -z "$old" ]; then
-            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         else
-            msg="Healthchecks.io ping URL updated — the dashboard container is recreated."
+            msg="Healthchecks.io ping URL updated — a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         fi
         ;;
     TOR_AUTO_HEAL)

@@ -6,10 +6,12 @@ describe_notification_change() { # <key> <old> <new>; sets caller's flag/msg
         msg="Telegram operator bot → $([ "$new" == "true" ] && echo on || echo off) — the dashboard container is recreated."
         ;;
     TELEGRAM_BOT_TOKEN)
-        # Secret — never echo the token value into the change preview / logs.
-        msg="Telegram bot token updated — the dashboard container is recreated."
+        # Secret — never echo the token value into the change preview / logs. #2367: name the cost.
+        msg="Telegram bot token updated — a wrong token stops every Telegram alert, the wallet-change and clearnet-exposure alarms included, and another bot's token sends them to that bot's owner; the dashboard container is recreated."
         ;;
-    TELEGRAM_CHAT_ID) msg="Telegram chat id: $old → $new." ;;
+    TELEGRAM_CHAT_ID)
+        msg="Telegram chat id: $old → $new — a wrong id stops delivery or sends every alert, payout and wallet-change ones included, to another chat."
+        ;;
     TELEGRAM_COMMANDS_ENABLED)
         msg="Telegram command interface → $([ "$new" == "true" ] && echo on || echo off) — the bot $([ "$new" == "true" ] && echo "now answers" || echo "no longer answers") /status, /hashrate, /workers, /sync from the configured chat; the dashboard container is recreated."
         ;;

@@ -125,22 +125,25 @@ confirm box. The Telegram approval that once sat here was removed in #2076. The 
 old and new non-secret values, while credentials and capability URLs stay masked and never echo
 back after commit. No field is refused from the dashboard (#2367). The high-consequence ones
 warn in the form and name their cost again in the host preview before you confirm: the dashboard
-password, and the `telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper
-alarms, which are the detection controls for the sensitive changes this section permits.
+password; the Telegram bot token, chat id and Healthchecks ping URL, where a wrong value stops
+delivery or sends alerts and pings to an unintended destination; and the
+`telegram.events.wallet_changed` / `telegram.events.clearnet_exposed` tamper alarms, which are the
+detection controls for the sensitive changes this section permits.
 
-Every other field, including the dashboard password, Telegram credentials, the machine hostname,
-and the Healthchecks ping URL, is reachable from the panel behind the confirmation above (#2367):
+The fields #2367 names are all reachable from the panel. Each gate is in the table below: most
+sit behind the confirmation above, while the ordinary `telegram.events.*` toggles commit
+directly.
 
 | Field | Exposed how | Gate |
 |---|---|---|
 | `telegram.enabled` | Configuration view, Notifications | Confirm preview + typed approval envelope |
-| `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
-| `telegram.chat_id` | Configuration view, Notifications | Confirm preview + typed `APPLY` + approval envelope |
+| `telegram.bot_token` | Configuration view, Notifications (masked, blank keeps it); warns a wrong token silences every alert and another bot's token reroutes them | Confirm preview + typed `APPLY` + approval envelope |
+| `telegram.chat_id` | Configuration view, Notifications; warns a wrong id stops delivery or sends alerts to another chat | Confirm preview + typed `APPLY` + approval envelope |
 | `telegram.events.*` (all but the two tamper alarms) | Configuration view, Notifications › Telegram events | Direct commit |
 | `telegram.events.wallet_changed`, `telegram.events.clearnet_exposed` | Notifications › Telegram events; warns that switching one off stops the alert it carries | Confirm preview + typed `APPLY` + approval envelope (switching off is a DEST row) |
 | `dashboard.host` | Configuration view, Dashboard & access; warns this is the approval-gated day-two rename (#2236) before confirming | Confirm preview + typed approval envelope |
 | `dashboard.auth.password` | Configuration view, Dashboard & access (masked, blank keeps it); warns a mistyped password locks this session out and, on the appliance, also changes the console `root` login | Confirm preview + typed `APPLY` + approval envelope (a live login credential change) |
-| `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it) | Confirm preview + typed `APPLY` + approval envelope |
+| `healthchecks.ping_url` | Configuration view, Notifications › Healthchecks (masked, blank keeps it); warns a wrong URL stops the pings or pings someone else's check | Confirm preview + typed `APPLY` + approval envelope |
 
 `workers.list` is narrower than the rest. The dashboard can only adopt a new rig: an append with
 every existing descriptor unchanged, a name no existing rig uses, a control host that is not this
