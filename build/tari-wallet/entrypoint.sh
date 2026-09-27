@@ -7,9 +7,10 @@
 #
 # SECRET HANDLING (the deliberate deviation from #381): Tari has no JSON-import path, so the three
 # secrets can't ride a file handed to a create-from-json flag. They also must NOT sit in the
-# container's `environment:` — `docker inspect` would show them. Instead compose delivers them as a
-# `secrets:` entry, which Docker mounts on a TMPFS at $SECRET_FILE (/run/secrets/...), owner-readable
-# only. This wrapper sources that file and EXPORTS the three MINOTARI_WALLET_* vars into the wallet
+# container's `environment:` — `docker inspect` would show them. Instead pithead renders them into an
+# owner-only (0600) host file owned by the container's uid 1000, which compose (a `secrets:` entry)
+# and the quadlet bind-mount read-only at $SECRET_FILE (/run/secrets/...). This wrapper sources that
+# file and EXPORTS the three MINOTARI_WALLET_* vars into the wallet
 # child process only — they never appear in the container's declared env, so `docker inspect` never
 # sees them, and they never touch argv (where `ps` would expose them). First run creates the
 # view-only wallet from the keys; later runs reopen the existing wallet DB from the named volume.
@@ -44,7 +45,7 @@ if [ "${PITHEAD_TEST_SOURCE:-0}" = "1" ]; then
     return 0 2>/dev/null || exit 0
 fi
 
-# Pull the three secrets off the tmpfs secret file into THIS shell's env, then export so the wallet
+# Pull the three secrets off the bind-mounted secret file into THIS shell's env, then export so the wallet
 # child inherits them. Read in a subshell-free way; the file is owner-only and never echoed.
 if [ -r "$SECRET_FILE" ]; then
     set -a

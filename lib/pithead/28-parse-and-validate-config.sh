@@ -107,8 +107,8 @@ parse_and_validate_config() {
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
     # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
     # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container via a
-    # tmpfs-mounted compose secret, never the command line or `docker inspect`. Empty (the default) =
+    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
+    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
     # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
     # mirroring monero.mode — scanning through a third-party node changes the trust story.
     # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
