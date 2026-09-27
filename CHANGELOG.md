@@ -171,13 +171,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 ### Fixed
 
 - **monerod flushes every chain-database commit to disk
-  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod ran with its
-  default `fast:async` database mode, which opens LMDB with `MDB_NOSYNC`, so a commit could return
-  before it reached the disk. The bundled node now runs with `db-sync-mode=safe`, which syncs every
-  commit, so a power cut can no longer take the chain back below a height it had already committed.
-  At the chain tip in the same targeted end-to-end scenario, monerod went from started to healthy
-  in 5.5 s under `safe` and 5.5 s under the old mode. The cost over a full initial sync was not
-  measured.
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod's default
+  database mode, `fast:async`, opens LMDB with `MDB_NOSYNC` while the node is syncing and only
+  syncs its commits once it reaches the chain tip, so a power cut during the initial sync or a
+  catch-up could lose commits the node had already made. The bundled node now runs with
+  `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
+  below a height it had already committed. At the tip nothing changes. While syncing, each batch of
+  20 blocks (100 below height 1,220,516) now waits for two disk flushes, and the bytes written are
+  the same: about 280,000 flushes for a full mainnet sync to height 3.77 million, which adds at most
+  about 5 minutes at 1 ms per flush and about 47 minutes at 10 ms.
 
 - **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
