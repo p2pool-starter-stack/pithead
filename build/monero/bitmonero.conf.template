@@ -5,8 +5,9 @@ log-file=/home/ubuntu/.bitmonero/bitmonero.log
 log-level=0
 # Power-loss safety (#2471). monerod's default, fast:async, opens LMDB with MDB_NOSYNC while it is
 # syncing and syncs commits only once it reaches the chain tip. safe syncs every commit, so a power
-# cut cannot take the chain below a committed height. The cost is two disk flushes per sync batch
-# (20 blocks), about 280,000 over a full mainnet sync; at the tip nothing changes.
+# cut cannot take the chain below a committed height. The cost is paid only while syncing: two disk
+# flushes per commit, about 590,000 over a full pruned mainnet sync with full download batches and
+# at most about 15 million with one-block batches. The time per flush has not been measured.
 db-sync-mode=safe
 
 # --- Blockchain Pruning ---

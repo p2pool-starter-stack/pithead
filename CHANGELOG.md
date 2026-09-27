@@ -176,10 +176,13 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   syncs its commits once it reaches the chain tip, so a power cut during the initial sync or a
   catch-up could lose commits the node had already made. The bundled node now runs with
   `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
-  below a height it had already committed. At the tip nothing changes. While syncing, each batch of
-  20 blocks (100 below height 1,220,516) now waits for two disk flushes, and the bytes written are
-  the same: about 280,000 flushes for a full mainnet sync to height 3.77 million, which adds at most
-  about 5 minutes at 1 ms per flush and about 47 minutes at 10 ms.
+  below a height it had already committed. At the tip nothing changes. While syncing, each commit
+  now waits for two disk flushes, and the bytes written are the same. Counted from the monerod
+  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes about 295,000 commits
+  when every download batch is full, and at most about 7.56 million if every batch holds one
+  block. The added time is the number of flushes times the disk's flush time, which was not
+  measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
+  4.2 hours.
 
 - **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
