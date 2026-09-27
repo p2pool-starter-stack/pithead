@@ -16,6 +16,8 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
     (
         # shellcheck disable=SC2034 # read by the extracted lifecycle function via eval
         IT_FAIL=0 BASELINE_CONFIG='{}' RESTORE_HEALTHY="$1" RESTORE_CASE="${2:-}" PUSH_COUNT=0 RESTORED=no
+        OUT_DIR="$(mktemp -d)"
+        trap 'rm -rf "$OUT_DIR"' EXIT
         it_log() { :; }
         it_step() { :; }
         it_pass() { :; }
@@ -23,7 +25,10 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
         pithead() {
             case "$RESTORE_CASE:$1" in
-            carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || return 1 ;; # the third push is the carry
+            carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
+                echo 'carry apply failed before health wait'
+                return 1
+            } ;; # the third push is the carry
             backup-fails:backup | apply-fails:apply | down-fails:down | restore-fails:restore) return 1 ;;
             up-fails:up) echo "Error response from daemon: pull access denied" && return 1 ;;
             esac
@@ -74,6 +79,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         eval "$LIFECYCLE_SRC"
         run_lifecycle >"${LIFECYCLE_OUT:-/dev/null}"
         printf '%s|%s' "$?" "$IT_FAIL"
+        [ "$RESTORE_CASE" != carry-apply-fails ] || printf '|%s' "$(cat "$OUT_DIR/dashboard-carry.apply.log")"
     )
 }
 
@@ -92,7 +98,7 @@ assert_eq "an unreadable backup secret fingerprint fails lifecycle" "$(drive_res
 assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_restore yes secret-after-fails)" "1|1"
 assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
 assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_restore yes carry-ok)" "0|0"
-assert_eq "a failed dashboard carry apply fails lifecycle (#2360)" "$(drive_restore yes carry-apply-fails)" "1|1"
+assert_eq "a failed dashboard carry apply fails lifecycle and retains its diagnostic (#2785)" "$(drive_restore yes carry-apply-fails)" "1|1|carry apply failed before health wait"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
 assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
