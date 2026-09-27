@@ -17,7 +17,6 @@
 # Then a mutation battery puts each defect back in a COPY of the module and requires a RED.
 #
 # Standalone; run directly or via `make test-integration-selftest`. No bench, no rig, no docker.
-#
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +27,6 @@ E2E_SRC="$HERE/../e2e.sh"
 # shellcheck source=tests/integration/lib/chain-keep.sh
 source "$KEEP_SRC"
 assert_eq "chain-keep.sh defines deploy_keeping_chain" "$(type -t deploy_keeping_chain)" "function"
-
 WORK="$(mktemp -d)"
 trap 'chmod -R u+rwX "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 STUB="$WORK/bin"
@@ -394,6 +392,8 @@ assert_num_ge "M6 (the deploy holds nothing out) is killed" "$(mutate_and_count_
 assert_num_ge "M7 (the running node not checked against the baseline) is killed" "$(mutate_and_count_fails 's/\[ "\$7" = yes \] || why="baseline"/true/')" 1
 assert_num_ge "M8 (a restore restart graded as a harness restart) is killed" "$(mutate_and_count_fails 's/\[ "\$a_id \$a_st" != "\$m_id \$m_st" \]/[ "$a_id" != "$m_id" ]/')" 1
 assert_num_ge "M9 (mounted-file modes not hashed) is killed" "$(mutate_and_count_fails 's/ \&\& m=\$(stat -L -c %a "\$src")//')" 1
+assert_num_ge "M10 (chain-safe harness restart accepted) is killed" "$(mutate_and_count_fails '/^[[:space:]]*restarted/,/^[[:space:]]*;;/ s/rc=1/rc=0/')" 1
+assert_num_ge "M11 (chain-safe harness recreation accepted) is killed" "$(mutate_and_count_fails '/^[[:space:]]*recreated/,/^[[:space:]]*;;/ s/rc=1/rc=0/')" 1
 
 printf '\nchain-keep self-test: %s passed, %s failed\n' "$IT_PASS" "$IT_FAIL"
 [ "$IT_FAIL" -eq 0 ]
