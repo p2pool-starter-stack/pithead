@@ -44,23 +44,6 @@ _wait_control_status() { # <control-dir> <id> <exclude-status> <timeout>
     return 1
 }
 
-# Wait up to <timeout>s for a "commit" audit entry for <id> — used where preview and commit can
-# land on the SAME status value, so `_wait_control_status`'s exclude-by-value can't tell "still
-# the preview's result" from "the commit ran too". Echoes the settled status; 1 on timeout.
-_wait_control_commit_audited() { # <control-dir> <id> <timeout>
-    local cdir="$1" id="$2" timeout="${3:-90}" waited=0 hit
-    while [ "$waited" -lt "$timeout" ]; do
-        hit="$(rx "grep $(quote_arg "\"id\":\"$id\"") $(quote_arg "$cdir/audit/control.log") 2>/dev/null" | grep -c '"action":"commit"')"
-        if [ "${hit:-0}" -gt 0 ]; then
-            rx "jq -r '.status // empty' $(quote_arg "$cdir/results/$id.json") 2>/dev/null"
-            return 0
-        fi
-        sleep 3
-        waited=$((waited + 3))
-    done
-    return 1
-}
-
 # Reach the dashboard onion from an INDEPENDENT external Tor client — its own tor + curl, its own
 # circuits, sharing nothing with the stack (tests/integration/tor-client/). It reaches the onion
 # over the REAL Tor network exactly as a remote user would, so a pass proves the whole inbound path
@@ -255,30 +238,32 @@ run_hardening() {
         assert_contains "control mutation audited (#33)" \
             "$(rx "cat $(quote_arg "$cdir/audit/control.log") 2>/dev/null")" '"action":"commit"'
 
-        # 3b. A SENSITIVE change (wallet swap) MUST be refused host-side, .env untouched —
-        #     42-control-policy-and-host-checks.sh never lists MONERO_WALLET_ADDRESS in any of
-        #     the three committable tiers, and 43-control-approval-and-preview.sh's preview
-        #     stage refuses a row outside all three tiers immediately (the #613 fix: no
-        #     "approval_required" preview for a key the gate would refuse anyway). Both preview
-        #     AND commit refuse, so the archive-preview two-step never opens for a wallet swap.
-        #     Use a checksum-valid fixture so this reaches that refusal, not address validation.
-        local uuid_bad bad_cfg wallet_before
+        # 3b. A wallet swap previews behind typed confirmation (#2305). Give the commit a valid
+        #     payout suffix but omit APPLY: refusal must come from the host confirmation gate,
+        #     not from an incomplete approval envelope or address validation.
+        local uuid_bad bad_cfg wallet_before preview suffix
         uuid_bad="$(_uuid4)"
         wallet_before="$(env_on_box MONERO_WALLET_ADDRESS)"
         bad_cfg="$(printf '%s' "$ctrl_config" | jq -c '.monero.wallet_address="44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"')"
         _spool_write "$cdir/requests/$uuid_bad.json" \
             "$(printf '%s' "$bad_cfg" | jq -c --arg id "$uuid_bad" '{id:$id,action:"preview",actor:"itest",config:.}')"
         st="$(_wait_control_status "$cdir" "$uuid_bad" "" 60 || echo timeout)"
-        assert_eq "sensitive (wallet) spool preview refused host-side, not committable from the dashboard (#33, #613)" "$st" "rejected"
+        preview="$(rx "cat $(quote_arg "$cdir/results/$uuid_bad.json") 2>/dev/null")"
+        assert_eq "wallet spool preview needs typed confirmation (#33, #2305)" \
+            "$(printf '%s' "$preview" | jq -r '(.status == "previewed" and .destructive == true and .approval_required == true and any(.changes[]?; .key == "MONERO_WALLET_ADDRESS" and .flag == "CONFIRM") and .payout_confirmations.monero == (.preview_values[] | select(.key == "monero.wallet_address") | .new[-8:]))' 2>/dev/null)" "true"
+        suffix="$(printf '%s' "$bad_cfg" | jq -r '.monero.wallet_address[-8:]')"
         _spool_write "$cdir/requests/$uuid_bad.json" \
-            "$(jq -nc --arg id "$uuid_bad" '{id:$id,action:"commit",actor:"itest"}')"
-        # The preview and commit refusals both land on status "rejected" (#613 removed the
-        # in-between "approval_required" state for a key no tier admits), so a status-value
-        # wait can't tell "still the preview's result" from "the commit ran and was also
-        # refused" — wait for the audit log's commit entry instead, the same proof 3a uses.
-        st="$(_wait_control_commit_audited "$cdir" "$uuid_bad" 90 || echo timeout)"
-        assert_eq "sensitive (wallet) spool commit refused host-side (#33)" "$st" "rejected"
-        assert_eq "refused wallet change did NOT touch .env (#33)" "$(env_on_box MONERO_WALLET_ADDRESS)" "$wallet_before"
+            "$(jq -nc --arg id "$uuid_bad" --arg suffix "$suffix" '{id:$id,action:"commit",actor:"itest",approval:{payout_suffixes:{monero:$suffix}}}')"
+        st="$(_wait_control_status "$cdir" "$uuid_bad" "previewed" 90 || echo timeout)"
+        assert_eq "wallet spool commit without APPLY refused host-side (#33)" "$st" "rejected"
+        assert_contains "wallet spool refusal names the typed confirmation gate (#2305)" \
+            "$(rx "jq -r '.error // empty' $(quote_arg "$cdir/results/$uuid_bad.json") 2>/dev/null")" "type APPLY"
+        if [ "$(env_on_box MONERO_WALLET_ADDRESS)" = "$wallet_before" ] &&
+            [ "$(rx "jq -r '.monero.wallet_address' config.json")" = "$wallet_before" ]; then
+            it_pass "unconfirmed wallet change left config.json and .env untouched (#33)"
+        else
+            it_fail "unconfirmed wallet change left config.json and .env untouched (#33)" "wallet address changed (values withheld)"
+        fi
     fi
 
     # Restore the baseline ourselves: re-applying with control off uninstalls the path unit, so the
