@@ -233,7 +233,7 @@ the situations above; `missing` means nothing does yet, with the issue that owns
 | `factory-reset` | covered | KVM (appliance-only verb) |
 | `control-run-pending` | covered | DIY bench |
 | `onion-client-key` | covered | DIY bench (partly, via the control legs) |
-| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379); the dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
+| `uninstall` | covered | DIY bench (`--lifecycle`'s uninstall→setup round trip, #2379) verifies ownership and resets a preexisting Pithead wallet volume if present, then activates `tari_payout_confirm`, creates the Tari wallet service and its owned volume through Compose, removes the container, disables the profile, and verifies the inactive model excludes the volume. It checks uninstall removes that volume, preserves a separately named unrelated volume, and setup recovers from kept data. Tier-1 stubs prove the same profile transition, preexisting owned and foreign cases, and refusal to finish on volume inspection failure. The dedicated `--uninstall` destructive phase is #2343, blocked on bench-ci#347 |
 | `rotate-secrets` | missing | #2344, blocked on bench-ci#347 |
 | `rotate-dashboard-onion` | missing | #2345, blocked on bench-ci#352 |
 | `reset-dashboard` | missing | #2346, blocked on bench-ci#347 |
@@ -588,7 +588,9 @@ Every scenario, at every tier, holds to the same rules.
   mini-stack tears down with `down -v`.
 - Actionable failures. Per-scenario pass/fail, continue-on-error to collect the whole matrix, and
   artifact capture (redacted logs, `compose ps`, `.env`-minus-secrets, dashboard responses) on
-  failure.
+  failure. Captures retain Tor's health probe history and bounded container log. The lifecycle
+  phase captures them at a failed missing-image `up` or dashboard data-dir carry, before later
+  recovery steps can replace the failing container's state.
 - Secrets hygiene. Tokens, RPC creds, and onions are never printed; preservation is checked by
   hashing on the box; all artifacts pass a redactor.
 - Reproducible. The live run records a manifest (stack `VERSION`, git rev, image digests).

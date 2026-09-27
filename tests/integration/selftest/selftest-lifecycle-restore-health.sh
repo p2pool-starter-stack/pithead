@@ -23,7 +23,13 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
         it_pass() { :; }
         it_skip_leg() { :; }
         it_fail() { IT_FAIL=$((IT_FAIL + 1)); }
+        trace_lifecycle() { [ -z "${LIFECYCLE_TRACE_OUT:-}" ] || printf '%s\n' "$1" >>"$LIFECYCLE_TRACE_OUT"; }
+        capture_artifacts() {
+            printf 'CAPTURE:%s\n' "$1"
+            trace_lifecycle "capture:$1"
+        }
         pithead() {
+            [ "$RESTORE_CASE:$1:$PUSH_COUNT" != carry-apply-fails:down:3 ] || trace_lifecycle carry-cleanup-down
             case "$RESTORE_CASE:$1" in
             carry-apply-fails:apply) [ "$PUSH_COUNT" -ne 3 ] || {
                 echo 'carry apply failed before health wait'
@@ -34,7 +40,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             esac
             [ "$1" != restore ] || RESTORED=yes
         }
-        wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ]; }
+        wait_status_ok() { [ "$RESTORE_HEALTHY" = yes ] && [ "$RESTORE_CASE:$PUSH_COUNT" != carry-health-fails:3 ]; }
         # carry-* cases also run the local-node legs, including the #2360 dashboard carry.
         env_on_box() { case "$RESTORE_CASE" in carry-*) printf /data/dashboard ;; esac }
         has_compose_profile() { case "$RESTORE_CASE" in carry-*) return 0 ;; *) return 1 ;; esac }
@@ -72,6 +78,7 @@ drive_restore() { # <healthy: yes|no> [*-fails|archive-missing|verify-fails] -> 
             "test -f dashboard/Dockerfile") [ "${SRC_CHECKOUT:-no}" = yes ] ;;
             *"config --images") [ "$RESTORE_CASE" != no-proxy-image ] && printf 'tecnativa/docker-socket-proxy@sha256:x\n' ;;
             *"image inspect --format"*) printf 'sha256:id' ;;
+            "docker image inspect "*) [ "$RESTORE_CASE" != up-fails ] || trace_lifecycle post-up-image-inspect ;;
             ls*) [ "$RESTORE_CASE" != archive-missing ] && printf 'backups/pithead-backup-test.tar.gz' ;;
             "rm -rf -- "*) [ "$RESTORE_CASE" != carry-cleanup-fails ] ;;
             esac
@@ -99,15 +106,28 @@ assert_eq "an unreadable restored secret fingerprint fails lifecycle" "$(drive_r
 assert_eq "an unreadable backed-up pool state fails lifecycle" "$(drive_restore yes pool-state-fails)" "1|1"
 assert_eq "a healthy dashboard carry keeps lifecycle passing (#2360)" "$(drive_restore yes carry-ok)" "0|0"
 assert_eq "a failed dashboard carry apply fails lifecycle and retains its diagnostic (#2785)" "$(drive_restore yes carry-apply-fails)" "1|1|carry apply failed before health wait"
+assert_eq "a healthy apply whose carry never becomes healthy fails lifecycle (#2785)" "$(drive_restore yes carry-health-fails)" "1|1"
 assert_eq "lost durable rows across the carry fail lifecycle (#2360)" "$(drive_restore yes carry-rows-diverge)" "1|1"
 assert_eq "a failed dashboard carry cleanup fails lifecycle (#2360)" "$(drive_restore yes carry-cleanup-fails)" "1|1"
 assert_eq "a source checkout's missing-image leg keeps lifecycle passing (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes)" "0|0"
 assert_eq "an unarmed missing-image fixture fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore yes no-proxy-image)" "1|1"
 assert_eq "an unhealthy stack after the missing-image up fails lifecycle (#2654)" "$(SRC_CHECKOUT=yes drive_restore no)" "1|2"
 LIFECYCLE_OUT="$(mktemp)"
+LIFECYCLE_TRACE_OUT="$(mktemp)"
 SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes up-fails >/dev/null
 assert_contains "a failed missing-image up prints why (#2755)" "$(cat "$LIFECYCLE_OUT")" "pull access denied"
-rm -f "$LIFECYCLE_OUT"
+assert_contains "a failed missing-image up captures Tor's first unhealthy state (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
+assert_eq "missing-image up captures Tor before the next image operation (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-up\npost-up-image-inspect'
+: >"$LIFECYCLE_TRACE_OUT"
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-apply-fails >/dev/null
+assert_contains "a failed carry captures Tor before cleanup (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
+assert_eq "carry captures Tor before cleanup stops it (#2785)" "$(cat "$LIFECYCLE_TRACE_OUT")" $'capture:lifecycle-carry\ncarry-cleanup-down'
+: >"$LIFECYCLE_TRACE_OUT"
+LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore yes carry-health-fails >/dev/null
+assert_contains "a carry health timeout captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-carry"
+SRC_CHECKOUT=yes LIFECYCLE_OUT="$LIFECYCLE_OUT" drive_restore no >/dev/null
+assert_contains "a later missing-image health failure captures Tor (#2785)" "$(cat "$LIFECYCLE_OUT")" "CAPTURE:lifecycle-up"
+rm -f "$LIFECYCLE_OUT" "$LIFECYCLE_TRACE_OUT"
 
 eval "$(grep '^carried_rows()' "$HERE/../lib/live-state-support.sh")"
 eval "$(sed -n '/^telemetry_rows_diff() {/,/^}$/p' "$HERE/../lib/run-lifecycle.sh")"
