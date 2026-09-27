@@ -29,6 +29,7 @@ echo '{"Status":"unhealthy","FailingStreak":2}'
 for ((i = 0; i < 25; i++)); do echo "Tor control connection $i"; done
 printf '\033[31mTor colored line\033[0m\n'
 printf '\23331mTor C1 colored line\2330m\n'
+echo 'Tor café line'
 echo "Error: cannot reach node.remote.example: disk full writing archive" >&2
 exit 3
 FAKE
@@ -58,6 +59,7 @@ assert_contains "the failure preserves Tor's interior log lines" "$out" "Tor con
 assert_contains "the failure preserves Tor's final log lines" "$out" "Tor control connection 24"
 assert_contains "the failure strips terminal control bytes" "$out" "Tor colored line"
 assert_contains "the failure strips C1 terminal control bytes" "$out" "Tor C1 colored line"
+assert_contains "the failure preserves UTF-8 diagnostics" "$out" "Tor café line"
 assert_contains "the failure carries the backup's stderr reason" "$out" "disk full writing archive"
 assert_contains "the remote endpoint in the output is redacted" "$out" "<redacted-endpoint>"
 case "$out" in
