@@ -154,7 +154,8 @@ CN_SYMLINK_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
     source "$STACK"
-    td=$(mktemp -d)
+    td=''
+    mk_tmpdir td
     printf 'root-readable-secret\n' >"$td/secret"
     ln -s "$td/secret" "$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
@@ -165,7 +166,7 @@ CN_SYMLINK_PROBE=$(
 )
 assert_eq "root runner refuses a symlinked dashboard marker" "$CN_SYMLINK_PROBE" "rejected"
 CN_FIFO_PROBE=$(
-    td=$(mktemp -d)
+    mk_tmpdir td
     mkfifo "$td/monero.synced"
     python3 - "$STACK" "$td/monero.synced" <<'PYFIFO'
 import subprocess, sys
@@ -185,7 +186,7 @@ CN_CLAIM_PROBE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
     source "$STACK"
-    td=$(mktemp -d)
+    mk_tmpdir td
     printf '00000000-0000-4000-8000-000000000003\n' >"$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
     sudo() { if [ "$1" = chown ]; then echo "owner=$2"; else "$@"; fi; } # simulate root
@@ -215,7 +216,7 @@ CN_CLAIM_RACE=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
     source "$STACK"
-    td=$(mktemp -d)
+    mk_tmpdir td
     printf '00000000-0000-4000-8000-000000000004\n' >"$td/monero.synced"
     clearnet_state_dir() { printf '%s' "$td"; }
     sudo() {
@@ -234,7 +235,7 @@ CN_NO_RUNNER=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
     source "$STACK"
-    td=$(mktemp -d)
+    mk_tmpdir td
     control_unit_dir() { printf '%s' "$td"; }
     env_get() { case "$1" in DASHBOARD_CONTROL_ENABLED) echo false ;; *_CLEARNET_SYNC) echo false ;; esac }
     systemctl() {
@@ -250,7 +251,7 @@ CN_FAILED_REFRESH=$(
     cd "$V" || exit
     # shellcheck disable=SC1090
     source "$STACK"
-    td=$(mktemp -d)
+    mk_tmpdir td
     clearnet_state_dir() { printf '%s' "$td"; }
     egress_sync_claim_marker() { return 1; }
     apply_tor_egress_firewall() { printf 'refresh:%s\n' "$(tor_egress_sync_ips | tr '\n' ' ')"; }
