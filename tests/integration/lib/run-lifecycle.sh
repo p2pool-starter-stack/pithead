@@ -293,10 +293,10 @@ run_uninstall_round_trip() {
     fi
     local vols
     if vols="$(rx "docker volume ls -q")"; then
-        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
-            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" \
+            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_db|tari_wallet_data)$')" ""
     else
-        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" "docker volume ls failed"
     fi
     local left=""
     for p in "${derived[@]}"; do rx "test -e $(quote_arg "$p")" && left="$left $p"; done

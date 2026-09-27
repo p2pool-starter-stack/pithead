@@ -21,7 +21,7 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"
 cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
-[ "$*" != "volume ls -q" ] || { [ ! -e .fake-volume ] || echo pithead_tari_wallet_data; }
+[ "$*" != "volume ls -q" ] || { [ ! -e .fake-volume ] || echo pithead_tari_wallet_db; }
 EOF
 cat >"$T/fake-pithead" <<'EOF'
 #!/usr/bin/env bash

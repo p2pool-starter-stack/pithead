@@ -342,7 +342,7 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     volumes:
-      - tari_wallet_data:/var/tari/wallet
+      - tari_wallet_db:/var/tari/wallet
       - ./build/tari-wallet:/wallet-config:ro
     environment:
       # NON-SECRET config only — the three MINOTARI_WALLET_* secrets are delivered via `secrets:`
@@ -1020,9 +1020,10 @@ volumes:
   # ownership from the image's /home/ubuntu/wallets dir, so the non-root container can write it.
   wallet_data:
   # View-only Tari payout wallet DB (#462). Named volume, survives recreates. Mounted on the image's own
-  # uid-1000 /var/tari/wallet, so an empty volume inherits that ownership; the image has no
-  # /home/ubuntu, and a volume mounted there was root-owned and unwritable (#2731).
-  tari_wallet_data:
+  # uid-1000 /var/tari/wallet, so the engine gives the new volume that ownership when it creates it.
+  # A new name, not tari_wallet_data: that volume was created root-owned at /home/ubuntu/wallet,
+  # which the image lacks, keeps that owner on any later mount, and never held a wallet (#2731).
+  tari_wallet_db:
 
 # --- Secrets ---
 # View-only Tari wallet material (#462). pithead renders these three values into an owner-only file

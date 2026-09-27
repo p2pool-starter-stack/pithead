@@ -22,11 +22,14 @@ _pred_tari_payouts_found() {
 }
 
 assert_tari_payout_scan() { # <config-json> <state-json>
-    local config="$1" st="$2" birthday argv
+    local config="$1" st="$2" birthday argv node tcp
     assert_eq "TARI_PAYOUT_CONFIRM_ENABLED matches config (#462/#942)" "$(env_on_box TARI_PAYOUT_CONFIRM_ENABLED)" "true"
     assert_eq "dashboard confirms Tari payout tracking is live (#462/#942)" "$(jq_get "$st" '.earnings.tari_confirmed.enabled')" "true"
     argv="$(rx "docker exec tari-wallet cat /proc/1/cmdline" 2>/dev/null | tr '\0' ' ')"
-    assert_contains "tari-wallet fallback node is the local node's :9000 (#2731)" "$argv" "wallet.fallback_http_server_url=http://"
+    # The local node is the host of the rendered Tari gRPC address; both scan URLs must name it.
+    node="http://$(env_on_box TARI_GRPC_ADDRESS | cut -d: -f1):9000"
+    assert_contains "tari-wallet scans through the local node's :9000 (#2731)" "$argv" "-p wallet.http_server_url=$node "
+    assert_contains "tari-wallet falls back only to the local node's :9000 (#2731)" "$argv" "-p wallet.fallback_http_server_url=$node "
     case "$argv" in
     *rpc.tari.com*) it_fail "tari-wallet never falls back to the public node (#2731)" "argv names rpc.tari.com" ;;
     *) it_pass "tari-wallet never falls back to the public node (#2731)" ;;
@@ -41,6 +44,10 @@ assert_tari_payout_scan() { # <config-json> <state-json>
         else it_fail "Tari wallet found the known past payouts (#2731)" "tari_confirmed.count still 0 after 3600s"; fi
         ;;
     esac
-    assert_eq "tari-wallet holds no connection to a non-local node (#2731)" \
-        "$(public_remotes_in_proc_tcp "$(rx "docker exec tari-wallet cat /proc/net/tcp" 2>/dev/null)")" ""
+    # An unreadable socket table must fail the row, never read as "no public peer".
+    if ! tcp="$(rx "docker exec tari-wallet cat /proc/net/tcp" 2>/dev/null)" || [[ "$tcp" != *rem_address* ]]; then
+        it_fail "tari-wallet holds no connection to a non-local node (#2731)" "could not read the wallet's /proc/net/tcp"
+    else
+        assert_eq "tari-wallet holds no connection to a non-local node (#2731)" "$(public_remotes_in_proc_tcp "$tcp")" ""
+    fi
 }

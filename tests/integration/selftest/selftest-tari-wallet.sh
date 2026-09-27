@@ -39,15 +39,18 @@ PT='  sl  local_address rem_address   st
 assert_eq "public_remotes_in_proc_tcp flags only the public peer" "$(public_remotes_in_proc_tcp "$PT")" "8.8.8.8"
 assert_eq "public_remotes_in_proc_tcp: all-local is empty" "$(public_remotes_in_proc_tcp "$(printf '%s\n' "$PT" | head -4)")" ""
 
-# The leg: a wallet whose argv names the public fallback, or a birthday other than the configured
-# one, fails; the local argv with payouts found passes.
-env_on_box() { echo true; }
+# The leg: a wallet whose argv names the public fallback or another host, a birthday other than the
+# configured one, or an unreadable socket table fails; the local argv with payouts found passes.
+env_on_box() { case "$1" in TARI_GRPC_ADDRESS) echo 172.28.0.27:18142 ;; *) echo true ;; esac }
 wait_for() { return 0; }
-STUB_ARGV=""
+STUB_ARGV="" STUB_TCP_RC=0
 rx() {
     case "$1" in
-    *cmdline*) printf '%s' "$STUB_ARGV" | tr ' ' '\0' ;;
-    *net/tcp*) printf '%s\n' "$PT" | head -3 ;;
+    *cmdline*) printf '%s ' "$STUB_ARGV" | tr ' ' '\0' ;;
+    *net/tcp*)
+        [ "$STUB_TCP_RC" -eq 0 ] || return "$STUB_TCP_RC"
+        printf '%s\n' "$PT" | head -3
+        ;;
     *api/state*) echo '{"earnings":{"tari_confirmed":{"enabled":true,"count":39}}}' ;;
     esac
 }
@@ -69,6 +72,12 @@ got="$(run_leg "${LOCAL_ARGV%%-p *}-p wallet.fallback_http_server_url=https://rp
 assert_ne "public fallback fails the leg" "${got#* }" "0"
 got="$(run_leg "${LOCAL_ARGV/1425/20000}")"
 assert_ne "a birthday other than the configured one fails the leg" "${got#* }" "0"
+got="$(run_leg "${LOCAL_ARGV//172.28.0.27/172.28.0.99}")"
+assert_ne "a scan URL on another host fails the leg" "${got#* }" "0"
+STUB_TCP_RC=1
+got="$(run_leg "$LOCAL_ARGV")"
+assert_eq "an unreadable socket table fails the no-public-peer row" "${got#* }" "1"
+STUB_TCP_RC=0
 
 echo "selftest-tari-wallet: $IT_PASS passed, $IT_FAIL failed"
 [ "$IT_FAIL" -eq 0 ]

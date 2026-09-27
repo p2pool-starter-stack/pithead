@@ -536,7 +536,7 @@ want it gone.
 |---|---|
 | containers + networks | the `pithead` compose project, `mining_net`, `proxy_net` |
 | images | every ref from `docker compose config --images` |
-| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_data` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
+| named volumes | `caddy_data`, `wallet_data`, `tari_wallet_db` — pithead's, not yours: the wallet volumes are view-only wallets that rebuild from the view keys in the kept `config.json`, and `caddy_data` is ACME state Caddy re-issues |
 | systemd units | `pithead-control.path` / `.service`, this checkout's only |
 | firewall | the Tor-egress rules this checkout installed, and their `pithead-egress.service` boot unit |
 | rendered files | `.env`, `Caddyfile`, `build/tari/config.toml`, `.pithead-first-run-done` |
