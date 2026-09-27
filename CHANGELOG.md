@@ -170,6 +170,15 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
+  `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped
+  its Tor proxy while the firewall dropped every clearnet dial. The node had no peers, never
+  reported `synchronized`, and so never switched back to Tor. `apply` now passes the flag to the
+  daemons only while the firewall is off. With the firewall on, both nodes stay on Tor, and the
+  apply/doctor warning says the flag is ignored. A clearnet sync that already completed stays
+  complete when the firewall is turned back on.
+
 - **A slow first Tor bootstrap no longer fails provisioning
   ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
   for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it

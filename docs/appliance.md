@@ -243,7 +243,7 @@ Then a handful of choices, all with sensible defaults:
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. |
+| First sync | private over Tor | Faster over the open internet if days of syncing is too slow; it uses Tor afterwards either way. The faster sync needs the egress firewall off, which the appliance cannot change, so for now it syncs over Tor either way. |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
@@ -275,11 +275,11 @@ Only when everything passes does the page show the things you must save:
 - the **dashboard address** (`https://pithead.local`)
 - where to **point your miners** (`stratum+tcp://pithead.local:3333`)
 
-A remote node's address is not a one-time answer. If the node you point at goes away, moves, or
-you want to try another one, the dashboard's Configuration view changes it on a running machine:
-type `APPLY` to confirm, and the machine dials the new endpoint and refuses it if nothing answers
-there ([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). The node's RPC
-username and password are the exception and stay fixed at setup.
+A remote node's address and RPC login are not one-time answers. The dashboard's Configuration view
+changes either on a running machine: type `APPLY` to confirm, and the host checks the staged
+endpoint with the staged login before it commits the pair
+([#1888](https://github.com/p2pool-starter-stack/pithead/issues/1888)). Changing one login field in
+local-node mode preserves its masked partner and applies the pair to the local services together.
 
 **Copy the login somewhere safe, then press "I saved these — erase the disk and install."**
 Nothing touches the disk until that press. The install takes a few minutes, and when it

@@ -57,7 +57,20 @@ sed -E 's/^MONERO_NODE_PASSWORD=.*/MONERO_NODE_PASSWORD=/' "$ROOT/os/quadlet/fix
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/empty-password.env" "$QEMPTY_PASSWORD" >/dev/null
 assert_eq "remote node with an empty password keeps --rpc-login (#2278)" \
     "$(sed -n '/^Exec=/p' "$QEMPTY_PASSWORD/p2pool.container")" \
-    "Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login rendered-node-user: --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats"
+    'Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login "rendered-node-user:" --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats'
+# Exec= is parsed by systemd, not a shell. Keep the whole login in one quoted argument and escape
+# systemd's own $ variable and % specifier syntax; otherwise a credential containing spaces can
+# append flags to P2Pool's command line.
+QLOGIN="$SANDBOX/quadlet-login-out"
+awk '
+    /^MONERO_NODE_USERNAME=/ { print "MONERO_NODE_USERNAME=rendered node \"user\\name"; next }
+    /^MONERO_NODE_PASSWORD=/ { print "MONERO_NODE_PASSWORD=pass $HOME --wallet INJECTED %H"; next }
+    { print }
+' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/login.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/login.env" "$QLOGIN" >/dev/null
+assert_eq "node RPC login stays one systemd argument (#2333)" \
+    "$(sed -n '/^Exec=/p' "$QLOGIN/p2pool.container")" \
+    'Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login "rendered node \"user\\name:pass $$HOME --wallet INJECTED %%H" --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats'
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
 assert_contains "remote render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"TARI_MODE=remote"'

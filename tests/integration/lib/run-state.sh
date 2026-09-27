@@ -14,11 +14,9 @@ assert_running_state() {
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"
     rpc_lan="$(jq_get "$config" '.monero.rpc_lan_access')"
-    # Clearnet initial sync (#183): absent => default false.
-    monero_clearnet="$(jq_get "$config" '.monero.clearnet_initial_sync')"
-    [ "$monero_clearnet" = "true" ] || monero_clearnet="false"
-    tari_clearnet="$(jq_get "$config" '.tari.clearnet_initial_sync')"
-    [ "$tari_clearnet" = "true" ] || tari_clearnet="false"
+    # Clearnet initial sync (#183): absent => default false; ignored while the firewall is on (#2649).
+    monero_clearnet="$(clearnet_flag_effective "$config" monero)"
+    tari_clearnet="$(clearnet_flag_effective "$config" tari)"
 
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
     # dashboard supervisor flip it back to Tor, which RESTARTS the daemon(s). Wait for that to fully
