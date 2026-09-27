@@ -134,8 +134,8 @@ xmrig-proxy=sha256:xxx'
 }
 run_census_assertions
 
-# shellcheck source=tests/integration/selftest/restore-image-proof-cases.sh
-source "$HERE/restore-image-proof-cases.sh"
+# shellcheck source=tests/integration/tools/restore-image-proof-cases.sh
+source "$HERE/../tools/restore-image-proof-cases.sh"
 
 # --- 2. Which restore command e2e.sh runs -----------------------------------------------------
 # The REAL restore_all out of the shipped e2e.sh, evaluated against stubs, so this reads the
