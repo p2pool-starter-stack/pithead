@@ -12,38 +12,48 @@ coming back) proceeds. Merge-mining resumes once the verdict has been green for
 :data:`RESUME_AFTER_SEC` *and* the tip has risen past its height when suppression began. That
 height is written into the marker, so a dashboard restart keeps it: a fresh verdict starts green
 only because it has no history yet, and a node that recovers below the stale tip (a rewind, a reset)
-has not caught up.
+has not caught up. A marker whose height cannot be read fails closed: no height stands in for it,
+and only a green verdict measured against the public explorer resumes.
 
-p2pool is restarted only while it is meant to be running. While the sync gate or fail-closed holds
-it, only the marker changes, and the next start picks it up. A restart that could not be issued is
-retried on the next cycle.
+The marker proves only what the *next* launch will do. After every change, and after a dashboard
+restart, the gate compares p2pool's ``StartedAt`` with the change: a p2pool running since before it
+is still on the old flags and is restarted. A restart that could not be issued is retried the same
+way, and a p2pool this gate stopped but could not start is owed a start on disk (``owed_start``).
+p2pool is touched only while it is meant to be running: while the sync gate or fail-closed holds it,
+only the marker changes, and the next start picks it up.
 """
 
 import logging
 import os
 import time
 
+from mining_dashboard.collector.containers import container_started
+from mining_dashboard.service.health.owed_start import OwedStart, write_atomic
 from mining_dashboard.service.health.tari_health import RED_SUSTAIN_SEC
 
 logger = logging.getLogger("TariMergeGate")
 
 MARKER = "tari-merge-mine-suppressed"  # read by build/p2pool/entrypoint.sh
+RESUMED = "tari-merge-mine-resumed"  # when the marker went: a launch older than it still suppresses
 SUPPRESS_AFTER_SEC = RED_SUSTAIN_SEC
 RESUME_AFTER_SEC = 5 * 60
 P2POOL = "p2pool"
 
 
 class TariMergeMineGate:
-    def __init__(self, state_dir, docker_control, clock=time.monotonic):
+    def __init__(self, state_dir, docker_control, clock=time.monotonic, inspect=container_started):
         self._path = os.path.join(state_dir, MARKER)
+        self._resumed = os.path.join(state_dir, RESUMED)
         self._docker = docker_control
         self._clock = clock
+        self._inspect = inspect
+        self._owed = OwedStart(state_dir, P2POOL, inspect=inspect)
         self.suppressed = os.path.exists(self._path)
-        self._since = self._clock() if self.suppressed else None  # suppression start
         self._at_height = self._read_height() if self.suppressed else None
         self._red_since = None
         self._green_since = None
-        self._restart_owed = False  # p2pool must restart to read the marker's current state
+        # Until p2pool is seen launched after the marker's last change. A restart starts unsure.
+        self._launch_unconfirmed = self.suppressed or os.path.exists(self._resumed)
 
     def _read_height(self) -> int | None:
         try:
@@ -53,7 +63,7 @@ class TariMergeMineGate:
         except (OSError, ValueError):
             return None
 
-    def decide(self, level, advanced_at, now, height=None):
+    def decide(self, level, now, height=None, explorer_tip=None):
         """``"suppress"``, ``"resume"`` or None for this cycle's verdict. Pure state + clock."""
         if level == "red":
             self._green_since = None
@@ -63,54 +73,94 @@ class TariMergeMineGate:
                 return "suppress"
             return None
         self._red_since = None
-        if level != "green":
+        if self._at_height is not None:
+            advanced = height is not None and height > self._at_height
+        else:  # no readable height: only the explorer, not the node's own view, says it caught up
+            advanced = explorer_tip is not None
+        # The resume window counts green only while it is evidence of catching up.
+        if level != "green" or not (self.suppressed and advanced):
             self._green_since = None
             return None
         if self._green_since is None:
             self._green_since = now
-        if self._at_height is not None:
-            advanced = height is not None and height > self._at_height
-        else:  # a marker without a height: fall back to any forward progress since suppression
-            advanced = (
-                advanced_at is not None and self._since is not None and advanced_at >= self._since
-            )
-        if self.suppressed and advanced and now - self._green_since >= RESUME_AFTER_SEC:
-            return "resume"
-        return None
+        return "resume" if now - self._green_since >= RESUME_AFTER_SEC else None
 
     def _set_marker(self, on: bool, height=None) -> bool:
         try:
             if on:
-                with open(self._path, "w") as fh:
-                    fh.write(f"height={'' if height is None else height}\n")
-                    fh.write("Tari verdict red: p2pool launches without --merge-mine (#2464)\n")
-            elif os.path.exists(self._path):
+                write_atomic(
+                    self._path,
+                    f"height={'' if height is None else height}\n"
+                    "Tari verdict red: p2pool launches without --merge-mine (#2464)\n",
+                )
+                if os.path.exists(self._resumed):
+                    os.remove(self._resumed)
+            else:
+                write_atomic(self._resumed, "merge-mining resumed (#2464)\n")
                 os.remove(self._path)
             return True
         except OSError as exc:
             logger.warning("Could not %s %s: %s", "write" if on else "remove", self._path, exc)
             return False
 
-    async def apply(self, verdict, advanced_at, p2pool_running):
-        """Fold this cycle's verdict in, move the marker, and restart p2pool when it is running.
-        Returns ``"suppressed"`` or ``"on"`` for the panel and the stranded leg."""
+    def _changed_at(self) -> float | None:
+        try:
+            return os.path.getmtime(self._path if self.suppressed else self._resumed)
+        except OSError:
+            return None
+
+    async def _reconcile(self):
+        """Bring p2pool's actual launch in line with the marker: start it if this gate stopped it,
+        restart it if it has run since before the marker's last change. A start this gate issued
+        after the change is proof enough; ``StartedAt`` is consulted only when nothing in this
+        process launched it, so a host clock stepped back past the marker costs one restart."""
+        if self._owed.pending():
+            started = await self._owed.retry(self._docker)
+            if started == "start_pending":
+                return
+            if started == "started":
+                return self._confirmed()
+        if not self._launch_unconfirmed:
+            return
+        changed, state = self._changed_at(), await self._inspect(P2POOL)
+        if changed is None:
+            return self._confirmed()
+        if state is None:
+            return  # unreadable: next cycle
+        running, started_at = state
+        if not running or started_at > changed:
+            # Launched since the change, or stopped by someone else: its next start reads it.
+            return self._confirmed()
+        self._owed.owe()
+        if not await self._docker.stop(P2POOL, stop_timeout=30, request_timeout=60):
+            self._owed.settle()
+        elif await self._docker.start(P2POOL, request_timeout=60):
+            self._owed.settle()
+            self._confirmed()
+
+    def _confirmed(self):
+        self._launch_unconfirmed = False
+        if not self.suppressed and os.path.exists(self._resumed):
+            try:
+                os.remove(self._resumed)
+            except OSError as exc:
+                logger.warning("Could not remove %s: %s", self._resumed, exc)
+
+    async def apply(self, verdict, p2pool_running):
+        """Fold this cycle's verdict in, move the marker, and reconcile p2pool when it is meant to
+        run. Returns ``"suppressed"`` or ``"on"`` for the panel and the stranded leg."""
         now = self._clock()
         height = verdict.get("height")
-        action = self.decide(verdict.get("level"), advanced_at, now, height)
+        action = self.decide(verdict.get("level"), now, height, verdict.get("explorer_tip"))
         if action and self._set_marker(action == "suppress", height):
             self.suppressed = action == "suppress"
-            self._since = now if self.suppressed else None
             self._at_height = height if self.suppressed else None
-            self._restart_owed = True
+            self._launch_unconfirmed = True
             logger.warning(
                 "Tari merge-mining %s: %s.",
                 "SUSPENDED" if self.suppressed else "resumed",
                 "; ".join(verdict.get("reasons") or []) or "the node follows the chain again",
             )
-        if self._restart_owed and p2pool_running:
-            stopped = await self._docker.stop(P2POOL, stop_timeout=30, request_timeout=60)
-            started = await self._docker.start(P2POOL, request_timeout=60)
-            self._restart_owed = not (stopped and started)
-        elif self._restart_owed:
-            self._restart_owed = False  # held: the gate's own next start reads the marker
+        if p2pool_running:
+            await self._reconcile()
         return "suppressed" if self.suppressed else "on"

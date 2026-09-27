@@ -32,8 +32,10 @@ import logging
 import os
 import time
 
-from mining_dashboard.config.config import TARI_MODE, TOR_SOCKS_PROXY
+from mining_dashboard.collector.containers import container_started
+from mining_dashboard.config.config import CLEARNET_STATE_DIR, TARI_MODE, TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import bounded_get
+from mining_dashboard.service.health.owed_start import OwedStart
 
 logger = logging.getLogger("TariHealth")
 
@@ -58,6 +60,8 @@ MAX_RESTARTS = 3
 GREEN_CONFIRM_SEC = 15 * 60
 # A restart whose stop landed but whose start failed left the node stopped by this code; its gRPC is
 # then silent for that reason, not a migration, so start alone is retried, a bounded number of times.
+# The owed start is kept on disk (owed_start), so a dashboard restart resumes it rather than leaving
+# a node it stopped to the withheld guard; a start never interrupts a migration.
 START_RETRY_SEC = 60
 START_RETRIES = 5
 STOPPED_ADVICE = (
@@ -110,6 +114,8 @@ class TariChainHealth:
         explorer=_explorer_tip,
         notify=None,
         clock=time.monotonic,
+        state_dir=CLEARNET_STATE_DIR,
+        inspect=container_started,
     ):
         if auto_restart is None:
             auto_restart = TARI_AUTO_RESTART and TARI_MODE == "local"
@@ -129,10 +135,9 @@ class TariChainHealth:
         self._green_since = None
         self._restarts = 0
         self._last_restart = None
-        self._start_owed = 0  # start-only retries left for a node this code stopped (0 = none owed)
+        # Stopped by a restart and not started since: the start-only retry, across dashboard restarts.
+        self._owed = OwedStart(state_dir, self.CONTAINER, START_RETRIES, inspect)
         self._start_tried = None
-        self._stopped_by_us = False  # stopped by a restart and not started since
-        self.advanced_at = None  # when the tip last rose above the highest height already seen
         self._best = None  # highest height seen: only a rise past it is progress
         self._was_red = False  # the last alert-relevant level, so each entry into red alerts
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
@@ -146,8 +151,6 @@ class TariChainHealth:
             # Forward progress only: a height that falls (a reorg, a rewound or reset node) or
             # returns below the best one seen must not reset the stall clock or count as recovery.
             if self._best is None or height > self._best:
-                if self._best is not None:
-                    self.advanced_at = now
                 self._best, self._height_since = height, now
             self._height = height
         if sync.get("reachable") and connections is not None:
@@ -236,9 +239,9 @@ class TariChainHealth:
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
         reachable = bool(sync.get("reachable"))
-        if self._stopped_by_us and reachable:
-            self._start_owed, self._stopped_by_us = 0, False  # running again, whoever started it
-        if self._start_owed:
+        if reachable and self._owed.pending():
+            self._owed.settle()  # running again, whoever started it
+        if self._owed.pending():
             action = await self._retry_start(now)
         else:
             action = self.decide(reachable, now)
@@ -249,8 +252,11 @@ class TariChainHealth:
                 self._restarts,
                 MAX_RESTARTS,
             )
+            self._owed.owe()  # before the stop: a dashboard restart between the two still owes it
             stopped = await self._docker.stop(self.CONTAINER, stop_timeout=60, request_timeout=90)
             started = await self._docker.start(self.CONTAINER, request_timeout=60)
+            if started or not stopped:
+                self._owed.settle()
             if not stopped:
                 # Never issued: give the slot back so a flaky control proxy can't spend the budget.
                 self._restarts -= 1
@@ -258,9 +264,8 @@ class TariChainHealth:
                 action = "restart_failed"
             elif not started:
                 # Stopped by us and not running: the silent gRPC that follows is ours, not a
-                # migration, so the withheld guard must not strand it. Owe a bounded start.
-                self._start_owed, self._start_tried = START_RETRIES, now
-                self._stopped_by_us = True
+                # migration, so the withheld guard must not strand it. The record owes a start.
+                self._start_tried = now
                 action = "start_failed"
         elif action == "withheld":
             verdict["advice"] = (
@@ -269,7 +274,7 @@ class TariChainHealth:
             )
         if self._restarts >= MAX_RESTARTS and verdict["level"] != "green":
             verdict["advice"] = ESCALATED_ADVICE
-        if self._stopped_by_us:
+        if self._owed.pending():
             verdict["advice"] = STOPPED_ADVICE
         verdict["restarts"] = self._restarts
         verdict["action"] = action
@@ -277,15 +282,12 @@ class TariChainHealth:
         return verdict
 
     async def _retry_start(self, now: float) -> str:
-        """Start-only retry for a node whose restart stopped it and failed to start it."""
-        if now - self._start_tried < START_RETRY_SEC:
+        """Start-only retry for a node whose restart stopped it and failed to start it. The first
+        one after a dashboard restart is due at once."""
+        if self._start_tried is not None and now - self._start_tried < START_RETRY_SEC:
             return "start_pending"
         self._start_tried = now
-        self._start_owed -= 1
-        if await self._docker.start(self.CONTAINER, request_timeout=60):
-            self._start_owed, self._stopped_by_us = 0, False
-            return "started"
-        return "start_pending" if self._start_owed else "start_gave_up"
+        return await self._owed.retry(self._docker)
 
     async def _alert(self, verdict):
         """Red on the verdict, not the restart: one alert on entering red and one each time the

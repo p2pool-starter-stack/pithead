@@ -131,3 +131,22 @@ class TestGetContainerHealth:
         ):
             out = await containers.get_container_health()
         assert out == {}
+
+
+class TestContainerStarted:
+    """#2464 reconciles its own stops and marker changes against ``State.StartedAt``."""
+
+    async def _started(self, *responses):
+        with patch.object(
+            containers.aiohttp, "ClientSession", return_value=_AsyncCM(_session(list(responses)))
+        ):
+            return await containers.container_started("p2pool")
+
+    async def test_reads_running_and_the_nanosecond_start_time(self):
+        payload = {"State": {"Running": True, "StartedAt": "2026-09-27T10:00:00.123456789Z"}}
+        running, started_at = await self._started(_FakeResp(200, payload))
+        assert running is True and started_at == 1790503200.123456
+
+    async def test_missing_or_unparseable_state_is_none(self):
+        assert await self._started(_FakeResp(404)) is None
+        assert await self._started(_FakeResp(200, {"State": {"StartedAt": "never"}})) is None

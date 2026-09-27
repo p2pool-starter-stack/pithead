@@ -198,7 +198,9 @@ class DataSetupMixin:
         # tip, no peers, behind the explorer). Restarts it under the same docker-control proxy; the
         # alert rides the same always-on sender as the tor-heal note.
         self.tari_chain = TariChainHealth(
-            self.docker_control, notify=self.alert_service.tor_heal_alert
+            self.docker_control,
+            notify=self.alert_service.tor_heal_alert,
+            state_dir=CLEARNET_STATE_DIR,
         )
         # Merge-mining gate (#2464): a red verdict relaunches p2pool without --merge-mine, through
         # a marker in the dashboard's marker dir, until the node follows the chain again.
@@ -266,9 +268,7 @@ class DataSetupMixin:
                 p2pool_running = self.miner_released and not (
                     self.miner_held or self.fail_closed_held
                 )
-                health["merge_mining"] = await self.tari_merge_gate.apply(
-                    health, self.tari_chain.advanced_at, p2pool_running
-                )
+                health["merge_mining"] = await self.tari_merge_gate.apply(health, p2pool_running)
                 tari_sync["health"] = health
             except Exception as exc:  # the verdict must never break the data loop
                 logger.warning("Tari chain health check failed (%s)", type(exc).__name__)

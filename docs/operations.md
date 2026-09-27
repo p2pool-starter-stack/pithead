@@ -857,8 +857,11 @@ block is built on a stale tip (#2464). The dashboard judges the node on three si
 unchanged for 30 minutes, 0 peer connections for 10 minutes, and its height more than 50 blocks
 behind a public explorer fetched through Tor once an hour (`tari.explorer_url`). One signal turns
 the Tari status amber with the reason; two, or explorer lag on its own, turn it red, fail
-`./pithead doctor`, add a line to `./pithead status` and send an alert. Monero mining is not
-affected either way. Recover in this order:
+`./pithead doctor`, add a line to `./pithead status` and send an alert. After 5 minutes of red the
+dashboard relaunches P2Pool without `--merge-mine`, so no Tari work is built on the stale tip, and
+Monero mining carries on. Merge-mining resumes after 5 minutes of green with the tip past its height
+when it was paused. A dashboard restart keeps that state: it compares P2Pool's start time with the
+last change and relaunches P2Pool if it is still on the old flags. Recover in this order:
 
 1. **Restart the node.** With `tari.auto_restart` on (the default, local node only) the dashboard
    does this itself after 5 minutes of red, at most 3 times per outage and an hour apart, and never

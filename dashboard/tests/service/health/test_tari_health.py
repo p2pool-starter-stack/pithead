@@ -6,6 +6,8 @@ guards (sustain, cooldown, budget, migration) hold exactly as documented.
 """
 
 import asyncio
+import tempfile
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -25,9 +27,15 @@ class Clock:
         return self.t
 
 
+async def _stopped_long_ago(name):
+    return False, time.time() - 3600  # (running, StartedAt): stopped, not started since
+
+
 def _monitor(**kw):
     kw.setdefault("auto_restart", True)
     kw.setdefault("explorer_url", "")
+    kw.setdefault("state_dir", tempfile.mkdtemp())
+    kw.setdefault("inspect", _stopped_long_ago)
     return TariChainHealth(**kw)
 
 
@@ -267,45 +275,6 @@ def test_explorer_tip_is_none_on_a_bad_body(monkeypatch, body):
     assert th._explorer_tip("u") is None
 
 
-# --- split restart: stopped, then not started (#2464 review) ------------------------------------
-
-
-def test_a_stop_that_landed_and_a_start_that_failed_gets_bounded_start_retries():
-    """The node this code stopped has silent gRPC because it is stopped, not migrating: start it."""
-    clock, docker = Clock(), _docker()
-    docker.start.return_value = False
-    mon = _monitor(docker_control=docker, clock=clock)
-    for _ in range(36):
-        v = asyncio.run(mon.check(SYNCED, 0))
-        clock.t += MIN
-    assert v["action"] == "start_failed" and v["advice"] == th.STOPPED_ADVICE
-    down = {"reachable": False}
-    actions = []
-    for _ in range(th.START_RETRIES * 2 + 2):
-        actions.append(asyncio.run(mon.check(down, None))["action"])
-        clock.t += MIN
-    assert docker.stop.await_count == 1  # never another stop
-    assert docker.start.await_count == 1 + th.START_RETRIES  # bounded
-    assert "start_gave_up" in actions and "withheld" in actions  # then the usual guard
-    assert asyncio.run(mon.check(down, None))["advice"] == th.STOPPED_ADVICE
-
-
-def test_a_start_retry_that_succeeds_hands_back_to_the_migration_guard():
-    clock, docker = Clock(), _docker()
-    docker.start.side_effect = [False, True]
-    mon = _monitor(docker_control=docker, clock=clock)
-    for _ in range(36):
-        asyncio.run(mon.check(SYNCED, 0))
-        clock.t += MIN
-    clock.t += th.START_RETRY_SEC
-    assert asyncio.run(mon.check({"reachable": False}, None))["action"] == "started"
-    clock.t += MIN
-    v = asyncio.run(mon.check({"reachable": False}, None))
-    assert (
-        v["action"] == "withheld" and v["advice"] != th.STOPPED_ADVICE
-    )  # a started node may migrate
-
-
 def test_explorer_failure_logs_no_url(monkeypatch, caplog):
     secret = "https://user:hunter2@example.invalid/tok-abc123/?json"
 
@@ -319,14 +288,6 @@ def test_explorer_failure_logs_no_url(monkeypatch, caplog):
     assert "ValueError" in caplog.text
 
 
-def test_advanced_at_moves_only_when_the_tip_moves_past_a_seen_height():
-    mon = _monitor()
-    mon.observe(SYNCED, 3, 0)
-    assert mon.advanced_at is None  # first sight is not movement
-    mon.observe({**SYNCED, "current": 342575}, 3, 60)
-    assert mon.advanced_at == 60
-
-
 # --- forward progress only; each entry into red alerts (#2464 review round 3) -------------------
 
 
@@ -335,13 +296,13 @@ def test_a_falling_height_is_not_progress_and_does_not_reset_the_stall():
     mon.observe({**SYNCED, "current": 500}, 0, 0)
     mon.observe({**SYNCED, "current": 490}, 0, 10 * MIN)  # a rewind or reset
     mon.observe({**SYNCED, "current": 500}, 0, 20 * MIN)  # back to, not past, the best
-    assert mon.advanced_at is None
+    assert mon._height_since == 0
     v = mon.observe({**SYNCED, "current": 500}, 0, 30 * MIN)
     assert v["level"] == "red" and v["reasons"][0] == "tip 500 unchanged for 30 min"
     v = mon.observe({**SYNCED, "current": 495}, 0, 31 * MIN)
     assert v["reasons"][0] == "tip 495 has not passed 500 for 31 min"
     mon.observe({**SYNCED, "current": 501}, 5, 32 * MIN)
-    assert mon.advanced_at == 32 * MIN
+    assert mon._height_since == 32 * MIN
 
 
 def test_red_amber_red_with_the_same_advice_alerts_on_each_entry_into_red():

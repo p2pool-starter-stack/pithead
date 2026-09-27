@@ -10,9 +10,7 @@ from mining_dashboard.service.data_setup import DataSetupMixin
 
 def _host(check):
     return SimpleNamespace(
-        tari_chain=SimpleNamespace(
-            check=check, verdict={"level": "red", "reasons": ["x"]}, advanced_at=None
-        ),
+        tari_chain=SimpleNamespace(check=check, verdict={"level": "red", "reasons": ["x"]}),
         tari_merge_gate=SimpleNamespace(
             suppressed=True, apply=AsyncMock(return_value="suppressed")
         ),
@@ -54,4 +52,4 @@ def test_the_gate_runs_on_the_verdict_and_knows_whether_p2pool_is_held(monkeypat
         )
     )
     assert sync["health"]["merge_mining"] == "suppressed"
-    assert host.tari_merge_gate.apply.await_args.args[2] is False  # held: no p2pool restart
+    assert host.tari_merge_gate.apply.await_args.args[1] is False  # held: no p2pool restart

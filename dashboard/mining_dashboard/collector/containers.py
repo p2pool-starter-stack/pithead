@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 import aiohttp
 
@@ -24,6 +25,44 @@ MONITORED_CONTAINERS = (
 )
 
 
+def _base_url():
+    # Ensure URL scheme is http for aiohttp, even if env var is tcp://
+    base_url = DOCKER_PROXY_URL
+    if base_url.startswith("tcp://"):
+        base_url = base_url.replace("tcp://", "http://")
+    return base_url
+
+
+async def _inspect(session, base_url, name) -> dict | None:
+    """``GET /containers/<name>/json``; None on a non-200 or any failure."""
+    try:
+        async with session.get(
+            f"{base_url}/containers/{name}/json", timeout=DOCKER_TIMEOUT
+        ) as response:
+            if response.status != 200:
+                return None
+            # Bounded (#1360). Lowest trust class of that set — the payload shape is dictated by
+            # our own compose file — but a proxy that misbehaves should skip one container, not
+            # buffer an unbounded body into the data loop.
+            return json.loads(await bounded_read(response.content, what=f"{name} inspect"))
+    except Exception as e:
+        logger.debug("Container inspect failed for %s: %s", name, e)
+        return None
+
+
+async def container_started(name) -> tuple[bool, float] | None:
+    """``(running, started_at)`` for one container, ``started_at`` in epoch seconds on the host
+    clock (``State.StartedAt``); None when it cannot be read. #2464 reconciles its own stops and
+    marker changes against it."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            state = (await _inspect(session, _base_url(), name) or {})["State"]
+        return bool(state.get("Running")), datetime.fromisoformat(state["StartedAt"]).timestamp()
+    except Exception as e:
+        logger.debug("Container start time unreadable for %s: %s", name, e)
+        return None
+
+
 async def get_container_health():
     """
     Per-container restart/health snapshot via the READ-ONLY Docker socket proxy (#337).
@@ -36,29 +75,13 @@ async def get_container_health():
     container (404) or an unreachable proxy skips that name rather than raising, so remote
     mode and a proxy blip never break the data loop.
     """
-    # Ensure URL scheme is http for aiohttp, even if env var is tcp://
-    base_url = DOCKER_PROXY_URL
-    if base_url.startswith("tcp://"):
-        base_url = base_url.replace("tcp://", "http://")
-
+    base_url = _base_url()
     states = {}
     try:
         async with aiohttp.ClientSession() as session:
             for name in MONITORED_CONTAINERS:
-                try:
-                    async with session.get(
-                        f"{base_url}/containers/{name}/json", timeout=DOCKER_TIMEOUT
-                    ) as response:
-                        if response.status != 200:
-                            continue
-                        # Bounded (#1360). Lowest trust class of that set — the payload shape is
-                        # dictated by our own compose file — but a proxy that misbehaves should
-                        # skip one container, not buffer an unbounded body into the data loop.
-                        payload = json.loads(
-                            await bounded_read(response.content, what=f"{name} inspect")
-                        )
-                except Exception as e:
-                    logger.debug("Container inspect failed for %s: %s", name, e)
+                payload = await _inspect(session, base_url, name)
+                if payload is None:
                     continue
                 state = payload.get("State") or {}
                 health = (state.get("Health") or {}).get("Status")
