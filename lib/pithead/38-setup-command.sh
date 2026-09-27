@@ -46,9 +46,10 @@ setup() {
     inject_service_configs
     optimize_kernel
     generate_caddyfile
-    provision_control_runner  # #33: install/remove the dashboard-control systemd trigger
-    render_local_miner_config # #796: the appliance's built-in RigForge worker reads a derived config
-    update_current_symlink    # #455: versioned deploy dir -> maintain the `current ->` pointer
+    provision_control_runner     # #33: install/remove the dashboard-control systemd trigger
+    provision_egress_check_units # #2599: the dashboard's egress firewall status
+    render_local_miner_config    # #796: the appliance's built-in RigForge worker reads a derived config
+    update_current_symlink       # #455: versioned deploy dir -> maintain the `current ->` pointer
 
     log "Deployment preparation complete!"
     # Provisioning is done. Everything below is either a message or an interactive "start now?",
