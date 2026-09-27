@@ -31,25 +31,49 @@ assert_contains "overflowing birthday message names the unit" "$out" "days since
 # (3) A valid past birthday applies and reflects verbatim into .env.
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-tw_sudo_log="$V/tw-sudo.log"
-: >"$tw_sudo_log"
-cp "$V/bin/sudo" "$V/bin/sudo.tw-orig"
-printf '#!/usr/bin/env bash\necho "$*" >>"%s"\n' "$tw_sudo_log" >"$V/bin/sudo"
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "valid birthday accepted" "$?" "0"
-mv "$V/bin/sudo.tw-orig" "$V/bin/sudo"
 assert_eq "valid birthday reflected into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_BIRTHDAY)" "1000"
-# The wallet runs as uid 1000 and the bind mount keeps the owner-only secret file's owner, so apply
-# hands the file to 1000 whenever another uid (root, on the appliance) wrote it (#2731).
-tw_secret="$V/data/tari-wallet-secret.env"
-if [ -z "$(find "$tw_secret" ! -uid 1000 -print 2>/dev/null)" ] && [ -f "$tw_secret" ]; then
-    tw_owned=yes
-else
-    # Chowned as the temp file that is then renamed over the target (no symlink is followed).
-    grep -qF "chown 1000:1000 $V/data/.tari-wallet-secret." "$tw_sudo_log" && [ -f "$tw_secret" ] && [ ! -L "$tw_secret" ] &&
-        tw_owned=yes || tw_owned="no ($(cat "$tw_sudo_log"))"
-fi
-assert_eq "the Tari wallet secret file is handed to the container uid" "$tw_owned" "yes"
+
+echo "== black-box: the Tari wallet secret file belongs to the container uid, or apply fails (#2731) =="
+# The bind mount keeps the owner-only file's owner, and the wallet runs as uid 1000. Stubs force the
+# owner mismatch whatever uid runs this suite, and act only on the secret's temp file.
+tw_secret="$V/data/tari-wallet-secret.env" tw_log="$V/tw-secret.log" tw_real_find="$(command -v find)" tw_real_chown="$(command -v chown)"
+printf '#!/usr/bin/env bash\ncase "$*" in *.tari-wallet-secret.*) [ "$(cat %s/tw-mode)" != inspect-fail ] || exit 1; echo "$1" ;; *) exec %s "$@" ;; esac\n' "$V" "$tw_real_find" >"$V/bin/find"
+printf '#!/usr/bin/env bash\ncase "$*" in *.tari-wallet-secret.*) echo "plain $*" >>%s; exit 1 ;; *) exec %s "$@" ;; esac\n' "$tw_log" "$tw_real_chown" >"$V/bin/chown"
+cp "$V/bin/sudo" "$V/bin/sudo.tw-orig"
+printf '#!/usr/bin/env bash\ncase "$*" in chown\\ *.tari-wallet-secret.*) echo "$*" >>%s; [ "$(cat %s/tw-mode)" = ok ] ;; esac\n' "$tw_log" "$V" >"$V/bin/sudo"
+chmod +x "$V/bin/find" "$V/bin/chown" "$V/bin/sudo"
+tw_temps() { # count the temp secrets left in data/
+    set -- "$V"/data/.tari-wallet-secret.*
+    if [ -e "$1" ]; then echo "$#"; else echo 0; fi
+}
+tw_apply() { # <mode>: seed an old secret, then apply
+    echo "$1" >"$V/tw-mode"
+    : >"$tw_log"
+    printf 'OLD\n' >"$tw_secret"
+    out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
+}
+tw_apply inspect-fail
+assert_rc "an owner that cannot be inspected fails the enabled wallet's apply" "$?" "1"
+assert_contains "the failure names the secret file" "$out" "tari-wallet-secret.env owned by uid 1000"
+assert_eq "a failed inspection keeps the previous secret" "$(cat "$tw_secret")" "OLD"
+assert_eq "a failed inspection leaves no temp secret" "$(tw_temps)" "0"
+tw_apply chown-fail
+assert_rc "an owner that cannot be corrected fails the enabled wallet's apply" "$?" "1"
+assert_contains "the plain chown was tried" "$(cat "$tw_log")" "plain 1000:1000 $V/data/.tari-wallet-secret."
+assert_contains "then the sudo chown" "$(cat "$tw_log")" "
+chown 1000:1000 $V/data/.tari-wallet-secret."
+assert_eq "a failed correction keeps the previous secret" "$(cat "$tw_secret")" "OLD"
+assert_eq "a failed correction leaves no temp secret" "$(tw_temps)" "0"
+tw_apply ok
+assert_rc "a corrected owner applies" "$?" "0"
+assert_contains "the temp secret is chowned to the container uid before the rename" "$(cat "$tw_log")" "chown 1000:1000 $V/data/.tari-wallet-secret."
+assert_contains "the secret is replaced" "$(cat "$tw_secret")" "MINOTARI_WALLET_VIEW_PRIVATE_KEY=$TVIEW"
+assert_eq "the secret stays owner-only" "$(stat -c %a "$tw_secret")" "600"
+assert_eq "the secret is a regular file, not a symlink" "$([ -f "$tw_secret" ] && [ ! -L "$tw_secret" ] && echo yes)" "yes"
+rm -f "$V/bin/find" "$V/bin/chown" "$V/tw-mode"
+mv "$V/bin/sudo.tw-orig" "$V/bin/sudo"
 
 echo "== unit: tari-wallet entrypoint — Tari-epoch birthday, local-node scan URL (#2731) =="
 # Tari's --birthday counts days since 2022-01-01 (1640995200); "auto" must be today in that unit.
