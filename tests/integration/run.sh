@@ -98,6 +98,8 @@ source "$HERE/lib/run-matrix.sh" || exit $?
 source "$HERE/lib/run-egress-claim.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-wallet.sh
+source "$HERE/lib/run-tari-wallet.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lan-guard.sh
 source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh

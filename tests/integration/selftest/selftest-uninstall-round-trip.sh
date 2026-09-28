@@ -41,24 +41,24 @@ case "$*" in
     [ "$FAKE_CASE" != cleanup-list-error ] || exit 1
     [ ! -e .fake-container ] || echo tari-wallet ;;
 "compose config --volumes")
-    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
+    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_db; fi ;;
 "volume create pithead_itest_unrelated_"*)
     : >.unrelated-volume
     printf '%s\n' "$3" >.unrelated-name
     echo "$3" ;;
 "volume rm pithead_itest_unrelated_"*)
     rm -f .unrelated-volume .unrelated-name ;;
-"volume rm pithead_tari_wallet_data")
+"volume rm pithead_tari_wallet_db")
     rm -f .fake-volume ;;
-"volume inspect pithead_tari_wallet_data --format "*)
+"volume inspect pithead_tari_wallet_db --format "*)
     if [ "$FAKE_CASE" = cleanup-inspect-error ] && [ -e .created-volume ]; then exit 1; fi
     [ -e .fake-volume ] || exit 1
     case "$FAKE_CASE" in
     wrong-wallet-label | foreign-preexisting) echo foreign/volume ;;
-    *) echo pithead/tari_wallet_data ;;
+    *) echo pithead/tari_wallet_db ;;
     esac ;;
 "volume ls -q")
-    [ ! -e .fake-volume ] || echo pithead_tari_wallet_data
+    [ ! -e .fake-volume ] || echo pithead_tari_wallet_db
     [ ! -e .unrelated-volume ] || cat .unrelated-name ;;
 esac
 EOF
