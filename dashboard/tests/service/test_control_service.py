@@ -76,8 +76,9 @@ class TestSecretMasking:
         cfg = control_service.read_config()
         assert cfg["notifications"]["ntfy"]["url"] == {"__secret__": True}
         assert cfg["notifications"]["ntfy"]["token"] == {"__secret__": True}
-        assert cfg["notifications"]["webhooks"][0] == {"__secret__": True}
-        assert cfg["notifications"]["webhooks"][2] == {"__secret__": True}
+        # Each webhook sentinel carries its live slot, so the host can refuse a moved one (#2373).
+        assert cfg["notifications"]["webhooks"][0] == {"__secret__": True, "slot": 0}
+        assert cfg["notifications"]["webhooks"][2] == {"__secret__": True, "slot": 2}
         # A blank webhook entry stays blank; the non-secret tor flag survives.
         assert cfg["notifications"]["webhooks"][1] == ""
         assert cfg["notifications"]["tor"] is True
