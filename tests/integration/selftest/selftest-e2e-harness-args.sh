@@ -18,14 +18,14 @@ assert_eq "the extraction is the whole function (opens and closes)" \
 # Drives run_harness with HARNESS_PHASE_ARGS set directly, the way validate_harness_args
 # (lib/harness-args.sh) would leave it — that function's OWN allowlist/quoting is covered by
 # selftest-e2e-boundary.sh; this file proves what run_harness launches with what it is handed.
-launch_of() { # <harness-phase-args> [borrow-miner] -> the raw launch command string
+launch_of() { # <harness-phase-args> [borrow-miner] [mode] [scenario] -> the raw launch command string
     local lf sf
     lf="$(mktemp)" sf="$(mktemp)"
     # shellcheck disable=SC2034,SC2329
     (
         exec </dev/null
-        MODE=targeted BORROW_MINER="${2:-0}" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
-        SCENARIO="" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1"
+        MODE="${3:-targeted}" BORROW_MINER="${2:-0}" WORKERS=1 BENCH_HOST=bench E2E_DIR=/srv/code/pithead-e2e RESTORE_DIR=/srv/code/pithead-live
+        SCENARIO="${4:-}" RIGFORGE_BOOTSTRAP_VERSION="" HARNESS_PHASE_ARGS="$1"
         REMOTE_NODE_ARGS=() REMOTE_NODE_HOSTS=()
         LAUNCH_FILE="$lf" STDIN_FILE="$sf"
         log() { :; }
@@ -88,6 +88,13 @@ assert_eq "a hand-picked rig phase runs, once" \
     "$(printf '%s\n' "$RIG_PICK" | grep -o -- '--rigforge-control' | wc -l | tr -d ' ')" "1"
 assert_eq "a --scenario NAME pair supplied by validate_harness_args reaches run.sh verbatim" \
     "$(has_phase "$(phase_list_of "$(launch_of " --scenario custom-name")")" custom-name)" "yes"
+MATRIX_BASE="$(phase_list_of "$(launch_of "" 0 matrix local-pruned-main-secure-tari)")"
+MATRIX_ARG="$(phase_list_of "$(launch_of " --hardening" 0 matrix local-pruned-main-secure-tari)")"
+assert_eq "matrix keeps its preset without a hand-picked phase" \
+    "$(has_phase "$MATRIX_BASE" --safety-backup)|$(has_phase "$MATRIX_BASE" --lifecycle)|$(has_phase "$MATRIX_BASE" --auth-fail-closed)" "yes|yes|yes"
+assert_eq "a hand-picked matrix phase replaces its preset but keeps the scenario" \
+    "$(has_phase "$MATRIX_ARG" --hardening)|$(has_phase "$MATRIX_ARG" --lifecycle)|$(has_phase "$MATRIX_ARG" --fault-injection)|$(has_phase "$MATRIX_ARG" --auth-fail-closed)|$(has_phase "$MATRIX_ARG" --subnet)|$(has_phase "$MATRIX_ARG" --safety-backup)|$(has_phase "$MATRIX_ARG" local-pruned-main-secure-tari)" \
+    "yes|no|no|no|no|no|yes"
 
 echo ""
 echo "selftest-e2e-harness-args: $IT_PASS passed, $IT_FAIL failed"
