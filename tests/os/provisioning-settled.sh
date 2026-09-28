@@ -102,7 +102,7 @@ unit_ran_this_boot() {
 wait_unit_condition_evaluated() { # $1 = unit name; return 1 at the bounded deadline
     local n stamp
     for ((n = 0; n < ${UNIT_CONDITION_ATTEMPTS:-30}; n++)); do
-        stamp=$(_ssh "systemctl show -p ConditionTimestampMonotonic --value $1" 2>/dev/null | tr -d '\r\n')
+        stamp=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-3}" _ssh "systemctl show -p ConditionTimestampMonotonic --value $1" 2>/dev/null | tr -d '\r\n')
         [[ "$stamp" =~ ^[1-9][0-9]*$ ]] && return 0
         sleep "${UNIT_CONDITION_POLL_S:-1}"
     done

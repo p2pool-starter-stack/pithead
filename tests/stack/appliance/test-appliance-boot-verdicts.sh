@@ -68,6 +68,26 @@ condition_wait_case() (
 )
 wait_result=$(condition_wait_case)
 assert_eq "delayed condition evaluation permits the result probe; an unevaluated unit times out" "$wait_result" "0 3 1"
+stalled_condition_case() (
+    # shellcheck disable=SC1091
+    source "$ROOT/tests/os/provisioning-settled.sh"
+    UNIT_CONDITION_ATTEMPTS=2 UNIT_CONDITION_POLL_S=0 SSH_PROBE_TIMEOUT=0.1
+    calls="$SANDBOX/stalled-condition-calls"
+    printf '0\n' >"$calls"
+    _ssh() {
+        read -r n <"$calls"
+        printf '%s\n' "$((n + 1))" >"$calls"
+        printf '%s\n' "${SSH_TIMEOUT:-5400}" >"$calls.limit"
+        timeout "${SSH_TIMEOUT:-5400}" sleep 1
+    }
+    rc=0
+    wait_unit_condition_evaluated pithead-boot || rc=$?
+    read -r n <"$calls"
+    read -r limit <"$calls.limit"
+    printf '%s %s %s\n' "$rc" "$n" "$limit"
+)
+assert_eq "a stalled systemctl reply is bounded on every poll" "$(stalled_condition_case)" "1 2 0.1"
+unset -f stalled_condition_case
 # Drive the reset row's actual probe block: each result read must follow both evaluations.
 reset_probe=$(sed -n '/^    # Two systemd conditions in opposition/,/^    unit_ran_this_boot pithead-boot && boot_ran=yes/p' "$ROOT/tests/os/phases/reset-config.sh")
 reset_probe_case() (
