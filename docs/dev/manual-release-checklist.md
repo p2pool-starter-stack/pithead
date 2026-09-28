@@ -175,6 +175,13 @@ what it still leaves out.
 
 ## Cutting
 
+Before publication, the owner confirms that the release root certificate and signing leaf
+exist, and that the root private key has an offline backup. Run the baked-keyring fingerprint
+comparison and both `rauc info --keyring` bundle checks in
+[appliance-release.md](appliance-release.md#cutting-a-release), step 3. Record the fingerprint,
+bundle verification results and image and bundle checksums in the release issue. Stop the cut if
+any check fails: the first published image establishes the trust anchor on every fielded box.
+
 1. **Signing must be ON.** Confirm the preflight says so *before* answering the confirmation
    prompt. A release once shipped unsigned because the environment was absent and the script
    only warned; the fix made it refuse, and the check still belongs on this list.
