@@ -114,6 +114,18 @@ assert_lan_guard_boot_failure() { # <port>...
     done
     assert_contains "doctor names the held node and the recovery (#2749)" \
         "$(rx "bash -c 'source ./pithead && check_lan_guard_hold $*'" 2>&1)" "held since boot"
+    # Starts from outside pithead while the guard is failed, the installed LAN binds still in .env:
+    # restart policy "no" does not stop these, the entrypoint's gate does.
+    # shellcheck disable=SC2086 # one argument per container
+    rx "docker compose start $containers; docker compose up -d --no-deps $containers; docker start $containers; sleep 5" >/dev/null 2>&1 || true
+    for p in "$@"; do
+        assert_eq "compose start/up and docker start with the guard failed, port $p: a non-private source cannot connect (#2749)" \
+            "$(_lan_probe 198.51.100 "$p")" closed
+    done
+    for c in $containers; do
+        assert_eq "$c refused those starts, exit 78, before its daemon listened (#2749)" \
+            "$(rx "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' $c")" "false 78"
+    done
     rx 'sudo rm -rf /run/systemd/system/pithead-lan-guard.service.d && sudo systemctl daemon-reload && sudo systemctl reset-failed pithead-lan-guard.service pithead-lan-hold.service' >/dev/null 2>&1 || true
     rc=0
     pithead up >/dev/null 2>&1 || rc=$?

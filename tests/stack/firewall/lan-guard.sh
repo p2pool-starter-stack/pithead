@@ -87,7 +87,8 @@ chmod +x "$LGD/bin/"*
 mkdir -p "$LGD/units"
 export LG_RESTORE="$LGD/restore.in" LG_COMPOSE="$LGD/compose.log" LG_SYSTEMCTL="$LGD/systemctl.log"
 printf 'TARI_GRPC_BIND=0.0.0.0\nMONERO_RPC_BIND=127.0.0.1\nMONERO_ZMQ_BIND=127.0.0.1\n' >"$LGD/.env"
-lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
+printf 'boot-1\n' >"$LGD/boot_id"
+lg() { (cd "$LGD" && PITHEAD_APPLIANCE="${LG_APPLIANCE:-0}" PITHEAD_UNIT_DIR="$LGD/units" PITHEAD_BOOT_ID_FILE="$LGD/boot_id" PATH="$LGD/bin:$PATH" bash -c "source '$STACK'; $1" 2>&1); }
 LG_UNIT="$LGD/units/pithead-lan-guard.service"
 LG_HOLD="$LGD/units/pithead-lan-hold.service"
 
@@ -140,7 +141,10 @@ assert_eq "every switch off: nothing is installed and nothing is said" "$lg_out"
 assert_eq "...and no firewall command runs" "$(test -e "$LG_RESTORE" && echo ran || echo none)" "none"
 
 echo "== the rule survives a DIY host reboot: pithead-lan-guard.service, ahead of docker (#2749) =="
-lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables 18081 18142)"
+lg_bu="$(run_sourced "$LGD" render_lan_guard_boot_unit /usr/sbin/iptables /srv/pithead/data/lan-guard/enforced 18081 18142)"
+assert_eq "last, once every rule is in, it records the current boot id as the nodes' marker (#2749)" \
+    "$(tail -n 5 <<<"$lg_bu" | grep '^ExecStartPost=')" \
+    'ExecStartPost=/bin/sh -c "rm -f /srv/pithead/data/lan-guard/enforced && cat /proc/sys/kernel/random/boot_id > /srv/pithead/data/lan-guard/enforced"'
 assert_contains "runs before docker.service restarts the containers" "$lg_bu" "Before=docker.service"
 assert_contains "every docker start pulls it in (boot and socket activation)" "$lg_bu" "WantedBy=docker.service"
 assert_contains "a oneshot that stays active" "$lg_bu" "RemainAfterExit=yes"
@@ -204,7 +208,7 @@ done
 rm -f "$LG_UNIT" "$LG_SYSTEMCTL"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 assert_eq "a live apply writes the unit for the published ports" "$(cat "$LG_UNIT" 2>/dev/null)" \
-    "$(run_sourced "$LGD" render_lan_guard_boot_unit "$LGD/bin/iptables" 18142)"
+    "$(lg 'render_lan_guard_boot_unit "$(command -v iptables)" "$PWD/data/lan-guard/enforced" 18142')"
 assert_contains "...and enables it for the next boot" "$(cat "$LG_SYSTEMCTL")" "enable pithead-lan-guard.service"
 assert_not_contains "...without starting it (apply's rule is already live)" "$(cat "$LG_SYSTEMCTL")" "start pithead-lan-guard"
 rm -f "$LG_SYSTEMCTL"
@@ -277,6 +281,40 @@ assert_eq "monerod and tari take MONERO_RESTART/TARI_RESTART, and a compose run 
 assert_eq "...in that order: monerod's first, tari's second" \
     "$(awk '/^  [a-z-]+:$/{svc=$1} /^    restart: \$\{/{print svc}' "$ROOT/docker-compose.yml" | tr '\n' ' ')" "monerod: tari: "
 
+echo "== the marker the node entrypoints check follows the live rule (#2749) =="
+rm -f "$LGD/data/lan-guard/enforced"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+assert_eq "a live apply records this boot's id" "$(cat "$LGD/data/lan-guard/enforced" 2>/dev/null)" "boot-1"
+LG_LIVE=0 lg apply_lan_guard >/dev/null
+assert_eq "an apply that holds the port on loopback clears it" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg remove_lan_guard >/dev/null
+assert_eq "removing the rule (down, the backup window) clears it" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+
+echo "== the node entrypoints refuse a LAN bind without a current marker, however started (#2749) =="
+printf 'boot-1\n' >"$LGD/marker"
+lg_gate() { # <marker content or -> <bind>...  (entrypoint in $lg_ep)
+    local m="$1"
+    shift
+    [ "$m" = - ] && rm -f "$LGD/marker" || printf '%s\n' "$m" >"$LGD/marker"
+    (
+        PITHEAD_TEST_SOURCE=1 LAN_GUARD_MARKER="$LGD/marker" BOOT_ID_FILE="$LGD/boot_id" bash -c \
+            'source "$1"; shift; lan_guard_gate "$@"; echo started' _ "$ROOT/$lg_ep" "$@" 2>&1
+        echo "rc=$?"
+    )
+}
+for lg_ep in build/monero/entrypoint.sh build/tari/entrypoint.sh; do
+    assert_contains "$lg_ep: a loopback bind starts without a marker" "$(lg_gate - 127.0.0.1)" "started"
+    assert_contains "$lg_ep: a LAN bind with no marker exits 78 before the daemon" "$(lg_gate - 0.0.0.0)" "rc=78"
+    assert_not_contains "...and never reaches it" "$(lg_gate - 0.0.0.0)" "started"
+    assert_contains "$lg_ep: a marker from an earlier boot is refused too" "$(lg_gate boot-0 127.0.0.1 0.0.0.0)" "rc=78"
+    assert_contains "$lg_ep: this boot's marker lets a LAN bind start" "$(lg_gate boot-1 0.0.0.0)" "started"
+    assert_eq "$lg_ep: the gate runs before the daemon starts" \
+        "$(grep -nE '^lan_guard_gate |^exec monerod|^run_node ' "$ROOT/$lg_ep" | head -n 1 | cut -d: -f2 | cut -c1-14)" "lan_guard_gate"
+done
+assert_eq "compose hands each node its binds and the marker dir, read-only" \
+    "$(grep -cE '^      - (MONERO_RPC_BIND=\$\{MONERO_RPC_BIND:-127\.0\.0\.1\}|MONERO_ZMQ_BIND=\$\{MONERO_ZMQ_BIND:-127\.0\.0\.1\}|TARI_GRPC_BIND=\$\{TARI_GRPC_BIND:-127\.0\.0\.1\}|\./data/lan-guard:/lan-guard:ro)$' "$ROOT/docker-compose.yml")" "5"
+
 echo "== a restart, which bypasses compose_up, needs the live rule first (#2749) =="
 lg_rc=0
 LG_LIVE=0 lg lan_guard_ready >/dev/null || lg_rc=$?
@@ -284,9 +322,13 @@ assert_eq "a published port without its live rule is not ready" "$([ "$lg_rc" !=
 lg_rc=0
 LG_LIVE=1 lg lan_guard_ready >/dev/null || lg_rc=$?
 assert_eq "...with it, ready" "$lg_rc" "0"
-lg_sr="$(run_sourced "$LGD" declare -f stack_restart)"
-assert_contains "stack_restart refuses without it, before it restarts anything" \
-    "$(sed -n '1,/docker compose restart/p' <<<"$lg_sr")" "lan_guard_ready ||"
+# The reported interleaving: a `down` or backup holds the lock and removes the rule while restart
+# waits for it. The check has to see the state after the lock, not before.
+lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { export LG_LIVE=0; }; docker() { echo "ran: docker $*"; }; stack_restart monerod')"
+assert_contains "restart refuses when the rule went away while it waited for the lock" "$lg_out" "not in place"
+assert_not_contains "...and restarts nothing" "$lg_out" "ran: docker compose restart"
+lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { echo "ran: docker $*"; }; stack_restart monerod')"
+assert_contains "with the rule still live after the lock, it restarts" "$lg_out" "ran: docker compose restart monerod"
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
 # The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits

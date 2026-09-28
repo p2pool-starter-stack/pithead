@@ -25,6 +25,13 @@ LAN_GUARD_NFT_TABLE="pithead_lan"
 LAN_GUARD_SOURCES="127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10"
 # <.env bind key>:<port>. The ports are fixed on both sides in docker-compose.yml and the quadlet units.
 LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:18142"
+# The host's boot id, kept only while the rule is live (#2749). The node entrypoints (./data/lan-guard,
+# read-only) refuse a LAN bind unless it matches the running boot, so a reboot invalidates it. The
+# boot unit's copy is root's, hence rm before the write.
+LAN_GUARD_MARKER="data/lan-guard/enforced"
+BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
+lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
+lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null || true; }
 
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
@@ -121,6 +128,7 @@ lan_guard_reason() { # <rc>
     4) printf 'nothing jumps from FORWARD to DOCKER-USER' ;;
     5) printf 'a firewall rule that is not ours accepts traffic above it in DOCKER-USER' ;;
     6) printf 'the boot unit that restores it after a reboot could not be installed' ;;
+    7) printf 'the marker the node containers check could not be written' ;;
     *) printf 'the readback failed (rc %s)' "$1" ;;
     esac
 }
@@ -131,6 +139,8 @@ apply_lan_guard() {
     local published kp ports=() old rc=0
     # The compose default is "no" (fail closed); provision_lan_guard_boot_unit sets it where it counts.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
+    # The nodes bind-mount the marker dir, and podman does not create a missing bind source.
+    mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
     published=$(lan_guard_published)
     if [ -z "$published" ]; then
         remove_lan_guard_boot_unit
@@ -156,10 +166,12 @@ apply_lan_guard() {
     # #2749: without the boot unit a reboot drops the rule while dockerd restarts the containers on
     # 0.0.0.0, so a rule that cannot outlive a reboot counts as not installed.
     [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
+    [ "$rc" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
+    lan_guard_unmark
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }
@@ -218,6 +230,8 @@ check_lan_guard_hold() { # <port>...
         fi
         if systemctl is-failed --quiet "$LAN_GUARD_BOOT_UNIT" 2>/dev/null; then
             why="held since boot, because $LAN_GUARD_BOOT_UNIT failed and the LAN-only source rule is not in place (see 'journalctl -u $LAN_GUARD_BOOT_UNIT')"
+        elif [ "$(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)" = 78 ]; then
+            why="it refused to start because the LAN-only source rule was not in place"
         else
             why="it exited (code $(docker inspect -f '{{.State.ExitCode}}' "$c" 2>/dev/null)), and with LAN access on Docker does not restart it"
         fi
@@ -237,6 +251,7 @@ lan_guard_ready() {
 # port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
 remove_lan_guard() {
     local line
+    lan_guard_unmark
     if command -v nft >/dev/null 2>&1; then
         sudo -n nft delete table inet "$LAN_GUARD_NFT_TABLE" 2>/dev/null || true
     fi
@@ -252,17 +267,12 @@ remove_lan_guard() {
     return 0
 }
 # --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
-# A reboot empties PITHEAD-LAN and the DOCKER-USER jumps, while dockerd restarts monerod and tari
-# still published on 0.0.0.0, so the ports were open to every source until `./pithead up`. Same fix
-# and same reasons as pithead-egress.service (02a-tor-egress-boot.sh): a oneshot ordered
-# Before=docker.service and pulled in by it, the rules inline, no checkout path and no docker call.
-# The appliance needs none: pithead-boot runs `up`, and compose_up installs the rule first.
-#
-# The unit alone fails open: if its firewall step fails, dockerd still restarts the containers on
-# 0.0.0.0. So on these hosts the containers that publish a LAN port run with restart "no", and
-# pithead-lan-hold.service starts them after docker only once the guard has succeeded (Requires=).
-# docker.service never depends on either unit, so a host's other containers start regardless. The
-# cost: dockerd no longer restarts a crashed monerod/tari there; doctor and the dashboard say so.
+# A reboot empties PITHEAD-LAN and its jumps. pithead-lan-guard.service restores them inline before
+# docker.service, as pithead-egress.service does (02a), then writes the nodes' marker. Its failure
+# must not open the ports, so the LAN-publishing nodes run with restart "no" and
+# pithead-lan-hold.service starts them only after the guard (Requires=); docker.service depends on
+# neither. Cost: nothing restarts a crashed node there; doctor and the dashboard say so. The
+# appliance needs neither unit: pithead-boot runs `up`, and compose_up installs the rule first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
 
@@ -273,9 +283,9 @@ lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; 
 # chain's DROP goes in before anything jumps to it, the RETURNs are inserted above the DROP, and the
 # jumps come last, so a start that stops halfway drops every source on those ports instead of none.
 # The `-D` lines make a manual restart replace the jumps rather than stack them.
-render_lan_guard_boot_unit() { # <iptables> <port>...
-    local ipt="$1" p lg_jump i
-    shift
+render_lan_guard_boot_unit() { # <iptables> <marker path> <port>...
+    local ipt="$1" marker="$2" p lg_jump i
+    shift 2
     local -a srcs
     read -r -a srcs <<<"$LAN_GUARD_SOURCES"
     cat <<EOF
@@ -302,6 +312,8 @@ EOF
         printf 'ExecStart=-%s -D DOCKER-USER %s\n' "$ipt" "$lg_jump"
         printf 'ExecStart=%s -I DOCKER-USER 1 %s\n' "$ipt" "$lg_jump"
     done
+    # Last, so the nodes' marker is written only once every rule above is in: the current boot id.
+    printf 'ExecStartPost=/bin/sh -c "rm -f %s && cat %s > %s"\n' "$marker" "$BOOT_ID_FILE" "$marker"
     cat <<EOF
 
 [Install]
@@ -309,11 +321,9 @@ WantedBy=docker.service
 EOF
 }
 
-# The hold unit for <docker> <iptables> <port>.... Pure (args only) so it unit-tests. Requires= the
-# guard: when the guard fails, systemd never starts this unit and the containers stay stopped. The
-# guard is a oneshot that stays "active" after the rule is gone (down, the backup window), and a
-# docker restart re-runs this unit, so each port's jump is checked live first (-C, no `-`). `-` on
-# the start: a container `down` removed is not a failure; one that will not start is doctor's FAIL.
+# The hold unit for <docker> <iptables> <port>.... Pure, so it unit-tests. A failed guard never
+# starts it (Requires=); a guard still "active" after the rule went (down, backup) fails the live
+# jump check (-C). `-` on the start: a container `down` removed is not a failure.
 render_lan_guard_hold_unit() { # <docker> <iptables> <port>...
     local docker="$1" ipt="$2" p c containers=()
     shift 2
@@ -352,10 +362,8 @@ install_lan_guard_unit() { # <unit dir> <unit> <text>
         sudo systemctl daemon-reload && sudo systemctl enable "$2" >/dev/null 2>&1
 }
 
-# Install both units for <port>..., then hand compose restart "no" for the containers publishing
-# them. Returns 1 when either unit could not be installed, and apply_lan_guard holds the ports on
-# loopback. Enable, not --now: apply_lan_guard has just installed the live rule, and compose starts
-# the containers. Same hosts as the egress unit.
+# Install both units for <port>... and hand compose restart "no" for their containers; 1 when either
+# unit could not be installed. Enable, not --now: the rule is live, compose starts the containers.
 provision_lan_guard_boot_unit() { # <port>...
     tor_egress_boot_unit_applies || return 0
     local ipt docker unit_dir p c containers=()
@@ -366,7 +374,9 @@ provision_lan_guard_boot_unit() { # <port>...
         c=$(lan_guard_container "$p")
         [[ " ${containers[*]} " == *" $c "* ]] || containers+=("$c")
     done
-    install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$@")" &&
+    # The marker path goes into a unit command line: only a plain path, or no unit (loopback).
+    [[ "$PWD" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+    install_lan_guard_unit "$unit_dir" "$LAN_GUARD_BOOT_UNIT" "$(render_lan_guard_boot_unit "$ipt" "$PWD/$LAN_GUARD_MARKER" "$@")" &&
         install_lan_guard_unit "$unit_dir" "$LAN_GUARD_HOLD_UNIT" "$(render_lan_guard_hold_unit "$docker" "$ipt" "$@")" ||
         return 1
     for c in "${containers[@]}"; do

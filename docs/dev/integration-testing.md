@@ -636,8 +636,9 @@ and `--list` prints it).
   ([#2749](https://github.com/p2pool-starter-stack/pithead/issues/2749)). Then it stops the nodes,
   strips the rule, makes the guard's iptables step fail with a runtime drop-in, and applies
   dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
-  dial is refused, and doctor names the hold. `./pithead up` recovers, and the dials are checked
-  again. The restore proof records and restores `pithead-lan-guard.service`,
+  dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
+  --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
+  is still refused. `./pithead up` recovers, and the dials are checked again. The restore proof records and restores `pithead-lan-guard.service`,
   `pithead-lan-hold.service`, `pithead-egress.service`, `pithead-egress.timer` and
   `pithead-egress-check.service` independently, including when only one egress check unit existed
   before the run. A newly added unit is removed and checked absent, including from the wants of

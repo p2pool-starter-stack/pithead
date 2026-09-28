@@ -274,7 +274,11 @@ A reboot clears the rule. On the Docker install, `pithead` therefore installs tw
 does not start those containers: they run with restart policy `no`. If the guard fails at boot,
 they stay stopped rather than listen with no rule, and the hold also checks that the rule is live
 before it starts anything. `docker.service` depends on neither unit, so other containers on the
-host start as usual. `./pithead restart` refuses while a published port has no live rule, and the
+host start as usual. A restart policy does not stop a start by hand, so the node containers check
+for themselves: while the rule is live, `pithead` records the host's boot id in `data/lan-guard/`,
+and a node with a LAN bind exits (code 78) before it listens unless that record matches the
+running boot. That covers `docker start`, `docker compose up` or `start` outside `pithead`, and a
+reboot. `./pithead restart` also refuses while a published port has no live rule, and the
 dashboard's Tor auto-heal never starts a stopped `monerod`. When either unit cannot be installed, `pithead` keeps
 the ports on `127.0.0.1`, as it does when the rule itself fails, and `./pithead doctor` warns while
 the rule is live but the guard is not enabled. `pithead` removes both units when every
