@@ -78,8 +78,8 @@ roundtrip_key "TELEGRAM_DAILY_SUMMARY_TIME" '.telegram.daily_summary_time="09:30
 roundtrip_key "P2POOL_FLAGS/P2POOL_PORT" '.p2pool.pool="mini"' '.p2pool.pool' "mini"
 # The 25 allowlisted TELEGRAM_EVENT_* toggles (raffle_win added 2026-08: audit found it was the one
 # event toggle missing from its siblings, all otherwise editable). wallet_changed + clearnet_exposed
-# are deliberately NOT on the allowlist (tamper-evidence alarms; their refusal is asserted above),
-# so they are excluded here. Each flips true->false as a single-key diff.
+# are deliberately NOT on the allowlist (tamper-evidence alarms confirm behind APPLY + envelope,
+# #2367, asserted in control-sensitive-preview.sh), so they are excluded here. Each flips true->false as a single-key diff.
 for ev in node_down node_recovered worker_offline worker_recovered worker_joined worker_left \
     sync_finished disk_space db_unhealthy db_reset xvb_no_share xvb_registration new_release \
     stack_online daily_summary hashrate_low hashrate_loss hugepages low_ram high_reject_rate \

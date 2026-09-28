@@ -15,6 +15,7 @@
 // its sentinel — the server swaps it for the live value ("unchanged").
 
 import { pathGet } from "./configsync.mjs";
+import { FIELD_WARNINGS } from "./configwarnings.mjs";
 
 export const SECRET_HINT = "set — leave blank to keep";
 
@@ -41,17 +42,6 @@ const FIELD_OPTIONS = {
   "p2pool.pool": ["main", "mini", "nano"],
   "workers.api_auth": ["none", "name", "token"],
   "xvb.donation_level": ["auto", "donor", "vip", "whale", "mega"],
-};
-
-// Inline warnings for high-consequence fields, shown before any preview round-trip. The pool
-// text carries describe_change's P2POOL_FLAGS warning; the wallet texts its DEST messages.
-const FIELD_WARNINGS = {
-  "p2pool.pool":
-    "P2Pool sidechain changing — p2pool re-syncs the new sidechain and your PPLNS window resets (XvB shares reset too).",
-  "monero.wallet_address":
-    "Monero payout address is changing — future mining rewards go to the new address.",
-  "tari.wallet_address":
-    "Tari payout address is changing — future merge-mining rewards go to the new address.",
 };
 
 function isPlainObject(v) {

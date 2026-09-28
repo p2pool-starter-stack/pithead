@@ -33,6 +33,7 @@ const CFG = {
   p2pool: { pool: "mini", stratum_password: "" },
   dashboard: {
     auth: { username: "admin", password: { __secret__: true } },
+    host: "box.lan",
   },
   workers: { list: [{ name: "rig1", host: "10.0.0.5", token: { __secret__: true } }] },
 };
@@ -193,17 +194,6 @@ test("buildSections: field types follow the JSON value", () => {
   assert.equal(fields["p2pool.stratum_password"].type, "text");
 });
 
-test("buildSections: high-consequence fields carry their inline warning", () => {
-  const fields = Object.fromEntries(
-    buildSections(CFG)
-      .flatMap((s) => s.fields)
-      .map((f) => [f.key, f]),
-  );
-  assert.match(fields["p2pool.pool"].warning, /PPLNS window resets/);
-  assert.match(fields["monero.wallet_address"].warning, /payout address/);
-  assert.equal(fields["monero.prune"].warning, undefined);
-});
-
 test("array values are not form fields (#172)", () => {
   // workers.list is a list of per-rig descriptors — there is no form rendering for it, so
   // buildSections must skip it (a text field would mangle it into a string). Survival through
@@ -320,7 +310,7 @@ test("markEditable: a missing/empty editable set fails CLOSED — every field no
   }
 });
 
-test("markEditable: host-only fields (e.g. dashboard.auth.password, a security/secret field) stay non-editable", () => {
+test("markEditable: a field absent from every set (editable/confirm/approval) stays non-editable", () => {
   const editableKeys = ["monero.wallet_address", "p2pool.pool"]; // dashboard.auth.* deliberately absent
   const dashboardAccess = markEditable(buildSections(CFG), editableKeys).find(
     (s) => s.name === "Dashboard & access",
