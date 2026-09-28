@@ -271,5 +271,11 @@ restore_commit_stage() {
             error "Restore failed while committing $path; inspect the destination before retrying."
         }
     done
+    # The archive wins ordinary collisions, but Tor's circuit history must never survive a
+    # restore. Its onion keys are separate files and remain untouched.
+    sudo rm -f -- "${RESTORE_ALLOWED_DIRS[3]}/state" || {
+        restore_discard_stage
+        error "Restore committed data but could not discard Tor circuit state; keep the stack stopped and remove the state before starting Tor."
+    }
     restore_discard_stage
 }
