@@ -7,7 +7,7 @@
 validate_harness_args() { # reads HARNESS_ARGS[]; sets HARNESS_PHASE_ARGS
     HARNESS_PHASE_ARGS=""
     [ "${#HARNESS_ARGS[@]}" -eq 0 ] && return 0
-    [ "$MODE" != "check" ] || die "--harness-arg is not supported with --mode check."
+    [ "$MODE" != "check" ] && [ "$MODE" != "chain-safe" ] || die "--harness-arg is not supported with --mode $MODE."
     local i=0 arg next
     while [ "$i" -lt "${#HARNESS_ARGS[@]}" ]; do
         arg="${HARNESS_ARGS[$i]}"

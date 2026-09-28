@@ -2,7 +2,6 @@
 # shellcheck disable=SC2034 # output globals are consumed by sourced helpers
 #
 # e2e.sh — one-command Tier-4 end-to-end run of a branch against a live test bench.
-#
 #   tests/integration/e2e.sh <branch> [options]
 #   tests/integration/e2e.sh claude/my-feature --mode matrix
 #
@@ -16,10 +15,8 @@
 #      and the synced chains are never touched. The restore then PROVES the live stack matches the on-disk
 #      config (#971): a credential marker baked into a running container must equal the on-disk .env's line, and
 #      monerod must answer a host-side authed get_info with the on-disk creds. A failed proof exits non-zero, loudly.
-#
 # The Compose project name is pinned to "pithead", so the e2e and canonical checkouts drive the SAME containers and shared chains — two
 # code copies of one stack, run one at a time. That's why borrow→test→restore is a code/image swap, not a re-sync.
-#
 # Requires: SSH access to the test bench and the miner (keys, LAN reachable), and `jq` on both.
 # See tests/integration/tools/testbench-README.md and docs/dev/integration-testing.md.
 set -uo pipefail
@@ -42,7 +39,7 @@ CANONICAL_DIR="${CANONICAL_DIR:-/srv/code/pithead}"
 E2E_DIR="${E2E_DIR:-/srv/code/pithead-e2e}"
 MINER_XMRIG_CONFIG="${MINER_XMRIG_CONFIG:-/opt/rigforge/data/worker/xmrig/build/config.json}"
 GIT_REMOTE_URL="${GIT_REMOTE_URL:-https://github.com/p2pool-starter-stack/pithead.git}"
-MODE="targeted" # targeted (default, lean) | check | matrix (full sweep, opt-in)
+MODE="targeted" # targeted (default, lean) | chain-safe | check | matrix (full sweep, opt-in)
 WORKERS=1
 BORROW_MINER=1
 SKIP_PREFLIGHT=0
@@ -83,8 +80,9 @@ USAGE:
   tests/integration/e2e.sh <branch> [options]
 
 OPTIONS:
-  --mode <m>        targeted | check | matrix   (default: targeted)
+  --mode <m>        targeted | chain-safe | check | matrix   (default: targeted)
                       targeted — one canonical scenario, lifecycle, auth and RigForge.
+                      chain-safe — deploy, check live state, restore; no node-touching phases.
                       check — readiness/current-state reads. matrix — all destructive phases.
   --scenario <name> with --mode matrix, run only this existing scenario plus the matrix-only phases
   --harness-arg <f> append one more run.sh phase flag (repeatable, allowlisted; see lib/harness-args.sh)
@@ -163,8 +161,10 @@ done
     usage
     die "A <branch> is required."
 }
-case "$MODE" in check | targeted | matrix) ;; *) die "--mode must be check|targeted|matrix (got '$MODE')." ;; esac
+case "$MODE" in check | targeted | chain-safe | matrix) ;; *) die "--mode must be check|targeted|chain-safe|matrix (got '$MODE')." ;; esac
 [ -z "$SCENARIO" ] || [ "$MODE" = matrix ] || die "--scenario is only supported with --mode matrix."
+[ "$MODE" != chain-safe ] || [ "$KEEP" != 1 ] || die "--keep is not supported with --mode chain-safe."
+[ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || [ "$MODE" = chain-safe ] || die "A chain-safe read lease requires --mode chain-safe."
 [[ -z "$SCENARIO" || "$SCENARIO" =~ ^[a-z0-9-]+$ ]] || die "--scenario contains unsupported characters: $SCENARIO" && validate_harness_args
 [[ -z "$RIGFORGE_BOOTSTRAP_VERSION" || "$RIGFORGE_BOOTSTRAP_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "RIGFORGE_BOOTSTRAP_VERSION must be a vX.Y.Z tag."
 [[ -z "$RIG_NAME" || "$RIG_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "RIG_NAME contains unsupported characters."
@@ -248,7 +248,11 @@ restore_all() {
     #    recreates only what differs. Restore from RESTORE_DIR — the dir the live stack ran from (#454),
     #    on a release box a per-version bundle dir, not CANONICAL_DIR. Restoring from the wrong dir
     #    hands the "pithead" project locally-built :dev images.
-    step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
+    if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
+        chain_read_restore_prepare || exit 1
+    else
+        step "bringing the baseline stack ($RESTORE_DIR) back up" && chain_restore_prepare
+    fi
     # Look at the control units BEFORE the apply below converges them. Without this the run can
     # never report that it stranded the box — the post-restore proof runs downstream of its own
     # repair, so on the ordinary #1085 path it is green either way. Observation only: the strand is
@@ -259,25 +263,18 @@ restore_all() {
     stranded) step "control units before restore: STRANDED (expected — the branch deploy repoints them); the apply below must converge them" ;;
     *) step "control units before restore: $CONTROL_VERDICT_BEFORE" ;;
     esac
-    # #272, on the other end of the run. deploy_branch deliberately avoids a restore-shaped `apply`,
-    # because "apply runs `compose up --pull` (never --build), so it would test whatever images were last
-    # built on the box, not this branch" — and this restore used exactly that pairing. On a RELEASE-BUNDLE
-    # baseline that is right: STACK_VERSION is v<VERSION>, so the baseline's images are versioned tags the
-    # branch never touched. On a SOURCE-CHECKOUT baseline it is wrong, and silently: `pithead` exports
-    # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
-    # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
-    # back up under the baseline's name; the pull policy is `never` here, so nothing corrects it, and checks
-    # 1-3 below are all green on it. Rebuild from the baseline's own tree instead, falling back to the old
-    # pairing if that fails; check 4 grades either outcome honestly. `is_source_checkout` is
-    # `[ -f dashboard/Dockerfile ]` (pithead:180) — mirrored, not reinvented. The `{ }` below is
-    # load-bearing: unbraced, a failed `cd` runs the FALLBACK in the ssh session's default directory and
-    # STILL returns 0 — a restore that never entered RESTORE_DIR, reported as run. Proven, not read off.
+    # Source checkouts share :dev tags, so rebuild from the baseline tree (#272).
+    # Braces keep a failed cd from running fallback in the SSH session's default directory.
     local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1"
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
         restore_cmd="./pithead upgrade >/dev/null 2>&1 || { $restore_cmd; }"
     fi
+    if [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ]; then
+        restore_cmd="CI_CHAIN_SAFE_READ=1 PITHEAD_KEEP_RUNNING='monerod tari tor' ./pithead upgrade >/dev/null 2>&1"
+    fi
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+        [ "${CI_CHAIN_SAFE_READ:-0}" != 1 ] || chain_read_restore_proof
         wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
@@ -605,6 +602,7 @@ run_harness() {
     [ "$MODE" = "check" ] && target_dir="$RESTORE_DIR"
     case "$MODE" in
     check) phases="--check" ;;
+    chain-safe) phases="--check" ;;
     targeted) phases="--scenario local-pruned-main-secure-tari --auth-fail-closed --lifecycle" ;; # readiness/check run inline first (below); NOT here — run.sh returns after --readiness
     matrix) phases="${SCENARIO:+--scenario $(quote_arg "$SCENARIO") }--safety-backup --lifecycle --fault-injection --auth-fail-closed --hardening --subnet" ;;
     esac
@@ -612,7 +610,7 @@ run_harness() {
     # RigForge read (#185/#235/#260) + the WRITE paths (#513/#514/#516/#517/#1002b/#1236): both need a
     # REAL rig, both self-skip loudly without one. The write half was matrix-only until #1364. rig_supply
     # supplies its host + token (#1378) and ALWAYS returns rc 0, so this && cannot drop the flags.
-    if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ]; then
+    if [ "$BORROW_MINER" = "1" ] && [ "$MODE" != "check" ] && [ "$MODE" != "chain-safe" ]; then
         rig_supply
         [ -n "$RIG_NAME" ] || die "Borrowed rig NAME unavailable from $RIGFORGE_CONFIG."
         phases="$phases --rigforge --rigforge-control --rig-name $(quote_arg "$RIG_NAME")${RIG_HOST:+ --rig-host $(quote_arg "$RIG_HOST") --rig-control-port $(quote_arg "$RIG_CONTROL_PORT")}${RIGFORGE_BOOTSTRAP_VERSION:+ --rigforge-bootstrap-version $(quote_arg "$RIGFORGE_BOOTSTRAP_VERSION")}"
@@ -668,7 +666,8 @@ main() {
     provision
     # --check is a read-only assessment of the LIVE stack: no backup, no borrowed miner, no deploy.
     if [ "$MODE" != "check" ]; then
-        backup_stack
+        # The ordinary safety backup stops the stack; a read-guarded run must leave nodes up.
+        [ "${CI_CHAIN_SAFE_READ:-0}" = 1 ] || backup_stack
         borrow_miner
         deploy_branch
     fi

@@ -19,7 +19,6 @@ RUN_SRC="$HERE/../lib/run-cli.sh"
 assert_eq "rig-supply.sh actually defines rig_supply (#1378)" \
     "$(type -t rig_supply)" "function"
 
-# --- Extract run_harness from the shipped e2e.sh --------------------------------------------
 # Fail CLOSED: if a refactor moves or renames the function this must go red, never silently stop
 # testing. A self-test whose subject quietly evaporates is the exact shape of gate this file exists
 # to catch, so the extraction is asserted before anything is evaluated.
@@ -30,8 +29,6 @@ assert_eq "the extraction is the whole function (opens and closes)" \
 assert_contains "the extracted function still composes the rigforge phases" \
     "$HARNESS_SRC" '--rigforge-control'
 
-# --- Drive the real function with ssh stubbed out ------------------------------------------
-# Files outlive the pipeline subshell and /dev/null keeps an unpiped stub from hanging.
 drive_harness() { # <mode> <borrow_miner> [rig-token] -> launch, stdin and pregate records
     local launch lf sf pf
     lf="$(mktemp)" sf="$(mktemp)" pf="$(mktemp)"
@@ -116,9 +113,7 @@ has_phase() { # <phase-list> <flag> -> "yes" | "no"
     case " $1 " in *" $2 "*) echo yes ;; *) echo no ;; esac
 }
 
-# The EXACT set a mode launches, order- and whitespace-independent. This is the fail-closed half:
-# per-flag has_phase checks are a denylist — they can only catch the absences someone thought of,
-# and a mutation that ADDS a destructive phase to --mode check walked straight through them.
+# Exact mode phase set, so adding an unsafe phase fails the assertion.
 phase_set() { # <phase-list> -> the flags, sorted, space-joined
     # shellcheck disable=SC2086  # deliberate word-splitting: the phase list is a flag string
     printf '%s\n' $1 | LC_ALL=C sort | tr '\n' ' '
@@ -151,6 +146,11 @@ assert_eq "check does NOT request the write phase" \
 assert_eq "check launches EXACTLY --check — no destructive phase may ever join it" \
     "$(phase_set "$CHECK")" "--check "
 assert_contains "check drives the LIVE checkout, not the undeployed e2e one" "$(launch_of check 0)" "/srv/code/pithead-live"
+CHAIN_SAFE="$(compose_phases chain-safe 1)"
+assert_eq "chain-safe launches exactly the read-only phase, even with a borrowed miner" \
+    "$(phase_set "$CHAIN_SAFE")" "--check "
+assert_contains "chain-safe checks the deployed branch" "$(launch_of chain-safe 1)" "/srv/code/pithead-e2e"
+assert_contains "chain-safe still gates deployment on live readiness" "$(pregate_of chain-safe 1)" "--readiness"
 assert_eq "a failed readiness read refuses the destructive launch" "$(launch_of targeted 1 '' '' '' readiness)" ""
 assert_eq "a failed live check refuses the destructive launch" "$(launch_of targeted 1 '' '' '' check)" ""
 

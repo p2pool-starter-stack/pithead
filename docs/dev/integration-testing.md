@@ -395,8 +395,7 @@ via an `EXIT` trap):
    - Harness phases that run `pithead` from the e2e checkout recreate or restart the nodes on
      purpose. That covers `--lifecycle`'s restart, pool-flip `apply` and backup round trip,
      `--subnet`, and a scenario's `apply`. Both deploying modes, `targeted` and `matrix`, run
-     `--lifecycle`. So until that phase leaves unchanged nodes alone, every deploying job still
-     needs bench-ci's node guard
+     `--lifecycle`, so both presets need bench-ci's node guard
      ([#2676](https://github.com/p2pool-starter-stack/pithead/issues/2676)).
 6. Restores the miner's original pool config and the baseline stack. Restore targets the directory
    the live stack actually ran from — read at preflight off the running container's
@@ -457,6 +456,22 @@ via an `EXIT` trap):
    run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
    kept and the harness left as the baseline's container.
 
+`--mode chain-safe` deploys the branch, runs the live read-only `--check` assertions against that
+checkout, then restores the baseline. It does not run a scenario, lifecycle, auth, or RigForge
+control phase. It refuses `--scenario`, `--harness-arg`, and `--keep`. When the chain-keep comparison
+finds both nodes unchanged, restore proof requires their original container IDs and start times;
+the mode fails if a kept node restarts during the run. A branch that changes a node definition,
+mounted file, or image still recreates that node and requires bench-ci's node guard.
+On a node-serving bench, bench-ci first takes a provisional read lease and compares the exact
+commit's runtime files with a source-checkout baseline, allowing only the two reviewed CLI guards.
+It also proves that monerod, Tari and Tor still run from that baseline's rendered definitions
+and image IDs. An approved chain-safe harness
+then keeps all three containers out of both deploy and restore convergence, and rechecks their
+definitions, IDs and start times before either operation can recreate them. A changed, unsupported
+or uncertain comparison releases the read and takes the normal write path on a later scheduler
+pass. A late difference under the read fails without a destructive fallback.
+The read-guarded path skips the ordinary safety backup because that command stops the stack.
+
 `--mode`: `targeted` (default, lean) validates the dashboard and the sync logic against the
 already-synced node: `check` + `--lifecycle` (one controlled restart exercises the sync gate /
 node-down failover) + `--auth-fail-closed`, plus `--rigforge` and `--rigforge-control` when a rig is
@@ -480,7 +495,7 @@ runs exactly one named phase against a commit without a dedicated `--mode`. Only
 `--hardening`, `--subnet`, `--safety-backup`, `--rigforge`, `--rigforge-control`,
 `--xvb-routing-smoke`, or `--scenario <name>` as two `--harness-arg` (the flag, then the name) —
 and anything else is refused before any bench work, never built into a shell string from the raw
-value. Not supported with `--mode check`, which runs nothing but `--check` by design.
+value. Not supported with `--mode check` or `--mode chain-safe`, which run nothing but `--check`.
 
 ---
 
