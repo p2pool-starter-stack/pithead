@@ -307,12 +307,12 @@ run_uninstall_round_trip() {
     fi
     local vols
     if vols="$(rx "docker volume ls -q")"; then
-        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" \
-            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_data)$')" ""
+        assert_eq "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" \
+            "$(printf '%s\n' "$vols" | grep -E '^pithead_(caddy_data|wallet_data|tari_wallet_db|tari_wallet_data)$')" ""
         assert_eq "uninstall preserves an unrelated Docker volume" \
             "$(printf '%s\n' "$vols" | grep -Fx "$IT_UNRELATED_VOLUME_NAME")" "$IT_UNRELATED_VOLUME_NAME"
     else
-        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_data volumes" "docker volume ls failed"
+        it_fail "uninstall removes the caddy_data, wallet_data and tari_wallet_db volumes" "docker volume ls failed"
     fi
     if ! rx "docker volume rm $(quote_arg "$IT_UNRELATED_VOLUME_NAME")" >/dev/null 2>&1; then
         it_fail "uninstall fixture removes its unrelated volume" "volume cleanup failed"

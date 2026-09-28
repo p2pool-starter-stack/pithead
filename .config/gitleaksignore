@@ -18,3 +18,6 @@ ec572a4034faa029839a6a29d616718d1513cef8:tests/stack/test-cli-restore-hardening.
 # Base64 of the literal "stale-fixture": non-credential dashboard-hash fixtures in this branch's superseded restore tests (#2362).
 89b87e79daad712f15ecd9084aa7c9b8b31748b1:tests/stack/test-cli-restore-hardening.sh:generic-api-key:161
 05401bd873289a5de5da68c69ecef47483505a24:tests/stack/test-cli-restore-hardening.sh:generic-api-key:184
+# The Ristretto255 basepoint, a public curve constant used as a spend key that belongs to no wallet
+# in the KVM Tari payout-wallet leg (#2731). Not a credential.
+270c4d4ffd6fb73feecc5d459e38d0c6afa94166:tests/os/appliance-tari-wallet-leg.sh:generic-api-key:13
