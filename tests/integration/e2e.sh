@@ -390,8 +390,7 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # The baseline's images and #2460/#2599/#2749 units, read before deploy_branch rebuilds the images
-    # (on a source checkout, under the baseline's own tag) and installs the units. For verify_restore_proof.
+    # Baseline images and #2460/#2599/#2749 units, read before deploy_branch changes them (verify_restore_proof).
     EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
     EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)" EGRESS_CHECK_SERVICE_BEFORE="$(egress_boot_unit_state pithead-egress-check.service)"
     LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
