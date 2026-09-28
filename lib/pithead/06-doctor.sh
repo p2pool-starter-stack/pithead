@@ -328,6 +328,7 @@ doctor() {
         check_dashboard_answers
         check_dashboard_public_listener
         check_monerod_synchronized
+        check_tari_chain
     fi
 
     check_data_wipe_note
