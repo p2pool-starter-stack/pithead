@@ -7,6 +7,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
+bash "$HERE/test_control_audit_order.sh"
+assert_rc "control audit precedes result" "$?" "0"
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
