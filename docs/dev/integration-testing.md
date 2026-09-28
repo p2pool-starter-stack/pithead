@@ -629,8 +629,8 @@ and `--list` prints it).
   dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
-  is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the marker
-  made undeletable, `remove_lan_guard` fails and the rule stays live. The restore proof records
+  is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the nodes
+  running, `remove_lan_guard` refuses and the rule stays live. The restore proof records
   `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
   as it does the egress units: a unit the run added is removed and checked absent, including from
   the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.

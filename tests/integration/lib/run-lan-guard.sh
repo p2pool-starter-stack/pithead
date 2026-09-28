@@ -20,6 +20,14 @@ _lan_probe() { # <a.b.c> <port>
         sudo ip netns del pht-lanprobe 2>/dev/null; true"
 }
 
+# Empty the rule the way a reboot does: our jumps, the chain, and the nodes' marker (a new boot id
+# invalidates it). Raw iptables, not remove_lan_guard, which refuses while the nodes run (#2749).
+_lan_strip() {
+    rx 'sudo iptables -S DOCKER-USER 2>/dev/null | grep -F pithead-lan-guard | tr -d "\"" | sed "s/^-A /-D /" |
+            while read -r r; do sudo iptables $r; done
+        sudo iptables -F PITHEAD-LAN 2>/dev/null; sudo iptables -X PITHEAD-LAN 2>/dev/null; rm -f data/lan-guard/enforced' >/dev/null 2>&1 || true
+}
+
 assert_lan_guard_live() { # <config>
     local config="$1" ports="" p mode tmode
     mode="$(jq_get "$config" '.monero.mode')"
@@ -53,7 +61,7 @@ assert_lan_guard_boot_restore() { # <port>...
         "$(rx 'systemctl is-enabled pithead-lan-guard.service 2>/dev/null')" "enabled"
     assert_contains "docker.service pulls it in (#2749)" "$(rx 'systemctl show -p Wants --value docker.service')" "pithead-lan-guard.service"
     assert_contains "docker.service starts only after it (#2749)" "$(rx 'systemctl show -p After --value docker.service')" "pithead-lan-guard.service"
-    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || true
+    _lan_strip
     assert_eq "the rule is gone, as after a reboot" "$(rx 'sudo iptables-save 2>/dev/null | grep -c pithead-lan-guard')" "0"
     assert_eq "control: with the rule gone, a non-private source reaches port $1" "$(_lan_probe 198.51.100 "$1")" open
     rx 'sudo systemctl restart pithead-lan-guard.service' >/dev/null 2>&1 || rc=$?
@@ -92,7 +100,7 @@ assert_lan_guard_boot_failure() { # <port>...
     done
     # shellcheck disable=SC2086 # one argument per container
     rx "docker stop -t 30 $containers" >/dev/null 2>&1 || true
-    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || true
+    _lan_strip
     rx 'sudo mkdir -p /run/systemd/system/pithead-lan-guard.service.d &&
         printf "[Service]\nExecStart=\nExecStart=/usr/sbin/iptables -A PITHEAD-LAN-FAULT-2749 -j DROP\n" |
             sudo tee /run/systemd/system/pithead-lan-guard.service.d/fault-2749.conf >/dev/null &&
@@ -137,13 +145,11 @@ assert_lan_guard_boot_failure() { # <port>...
         assert_eq "recovery, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "recovery, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
     done
-    # Teardown keeps the rule when the nodes' marker cannot be deleted (#2749): a directory where the
-    # marker file goes fails `rm -f`, even as root. Nothing is stopped; the marker is put back after.
+    # Teardown asks the live engine, not the stop or the .env (#2749): with the nodes running,
+    # remove_lan_guard refuses and leaves the rule. (A marker it cannot delete: tier 1.)
     rc=0
-    rx 'mv data/lan-guard/enforced data/lan-guard/enforced.keep-2749 && mkdir -p data/lan-guard/enforced/x' >/dev/null 2>&1 || true
     rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || rc=$?
-    rx 'rm -rf data/lan-guard/enforced && mv data/lan-guard/enforced.keep-2749 data/lan-guard/enforced' >/dev/null 2>&1 || true
-    assert_ne "remove_lan_guard fails when the marker cannot be deleted (#2749)" "$rc" "0"
+    assert_eq "remove_lan_guard refuses while the engine shows a node running (#2749)" "$rc" "2"
     rc=0
     rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
     assert_rc "...and the rule stays live (#2749)" "$rc" "0"
