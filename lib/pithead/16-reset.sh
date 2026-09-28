@@ -124,10 +124,11 @@ config_reset() {
     mutation_lock_acquire config-reset
 
     detect_os 2>/dev/null || true
-    docker compose down --remove-orphans 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with the config wipe."
+    # A failed stop goes on only when no LAN-publishing node can still run (#2749).
+    docker compose down --remove-orphans 2>/dev/null || { lan_guard_require_stopped config-reset &&
+        warn "compose down failed (engine not running?) — continuing with the config wipe."; }
     remove_tor_egress_firewall 2>/dev/null || true
-    remove_lan_guard
+    lan_guard_teardown config-reset
     # machine-role rides along with config.json: pithead-boot's condition is the two paths OR'd,
     # so leaving the role marker behind would keep it armed and the wizard would never re-open.
     rm -f "$CONFIG_FILE" "$ENV_FILE" Caddyfile machine-role

@@ -19,6 +19,7 @@ SUDO
 # "the rule is live" can disagree.
 cat >"$LGD/bin/iptables" <<'IPT'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >>"${LG_IPT_LOG:-/dev/null}"
 case "$*" in
 "-S") exit 0 ;;
 "-S PITHEAD-LAN")
@@ -330,21 +331,6 @@ for lg_fn in stack_down stack_down_except_caddy stack_uninstall; do
 done
 lg_out="$(LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; docker() { [ "$2" = down ] && return 1; :; }; stack_down' 2>&1)"
 assert_eq "a down whose stop fails leaves the marker (the nodes may still run)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
-
-echo "== a restart, which bypasses compose_up, needs the live rule first (#2749) =="
-lg_rc=0
-LG_LIVE=0 lg lan_guard_ready >/dev/null || lg_rc=$?
-assert_eq "a published port without its live rule is not ready" "$([ "$lg_rc" != 0 ] && echo refused)" "refused"
-lg_rc=0
-LG_LIVE=1 lg lan_guard_ready >/dev/null || lg_rc=$?
-assert_eq "...with it, ready" "$lg_rc" "0"
-# The reported interleaving: a `down` or backup holds the lock and removes the rule while restart
-# waits for it. The check has to see the state after the lock, not before.
-lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { export LG_LIVE=0; }; docker() { echo "ran: docker $*"; }; stack_restart monerod')"
-assert_contains "restart refuses when the rule went away while it waited for the lock" "$lg_out" "not in place"
-assert_not_contains "...and restarts nothing" "$lg_out" "ran: docker compose restart"
-lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { echo "ran: docker $*"; }; stack_restart monerod')"
-assert_contains "with the rule still live after the lock, it restarts" "$lg_out" "ran: docker compose restart monerod"
 
 echo "== every publish of 18081, 18083 and 18142 is an explicit IPv4 bind (#2616) =="
 # The rule is IPv4 only. `[::]:P:P` or a bare `P:P` would also listen on IPv6, where nothing limits

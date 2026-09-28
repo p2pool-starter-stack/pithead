@@ -137,4 +137,15 @@ assert_lan_guard_boot_failure() { # <port>...
         assert_eq "recovery, port $p: a non-private source cannot connect (#2749)" "$(_lan_probe 198.51.100 "$p")" closed
         assert_eq "recovery, port $p: a private source can (#2749)" "$(_lan_probe 10.254.254 "$p")" open
     done
+    # Teardown keeps the rule when the nodes' marker cannot be deleted (#2749): a directory where the
+    # marker file goes fails `rm -f`, even as root. Nothing is stopped; the marker is put back after.
+    rc=0
+    rx 'mv data/lan-guard/enforced data/lan-guard/enforced.keep-2749 && mkdir -p data/lan-guard/enforced/x' >/dev/null 2>&1 || true
+    rx 'bash -c "source ./pithead && remove_lan_guard"' >/dev/null 2>&1 || rc=$?
+    rx 'rm -rf data/lan-guard/enforced && mv data/lan-guard/enforced.keep-2749 data/lan-guard/enforced' >/dev/null 2>&1 || true
+    assert_ne "remove_lan_guard fails when the marker cannot be deleted (#2749)" "$rc" "0"
+    rc=0
+    rx "bash -c 'source ./pithead && lan_guard_enforced $*'" >/dev/null 2>&1 || rc=$?
+    assert_rc "...and the rule stays live (#2749)" "$rc" "0"
+    assert_eq "...port $1: a non-private source still cannot connect (#2749)" "$(_lan_probe 198.51.100 "$1")" closed
 }

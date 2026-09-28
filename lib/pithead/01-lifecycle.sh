@@ -286,7 +286,7 @@ stack_down() {
     fi
     # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
     # stop leaves it in place.
-    remove_lan_guard
+    lan_guard_teardown down
     log "Stack stopped."
     mutation_lock_release
 }
@@ -317,7 +317,9 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
-    remove_lan_guard # after the stop, as in stack_down (#2749)
+    # After the stop, as in stack_down (#2749). A marker it cannot delete keeps the rule with it:
+    # the nodes are stopped, so the backup goes on.
+    remove_lan_guard || warn "lan-guard:marker-kept — the LAN-only source rule stays until $LAN_GUARD_MARKER can be deleted."
     log "Stack stopped (caddy left running)."
     mutation_lock_release
 }

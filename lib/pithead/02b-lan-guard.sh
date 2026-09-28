@@ -31,7 +31,16 @@ LAN_GUARD_BINDS="MONERO_RPC_BIND:18081 MONERO_ZMQ_BIND:18083 TARI_GRPC_BIND:1814
 LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
-lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null || true; }
+lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
+# Teardown that removes the rule (#2749). After a failed stop it goes on only when no LAN-publishing
+# node can still run; a marker it cannot delete keeps the rule. Either stops the verb.
+lan_guard_require_stopped() { # <verb>
+    local names
+    [ -n "$(lan_guard_published)" ] || return 0
+    names=$(docker ps --format '{{.Names}}' 2>/dev/null) && ! grep -qxE 'monerod|tari' <<<"$names" && return 0
+    error "$1 stopped: the node stop failed and a node publishing a LAN port may still run, so its LAN-only source rule stays. Retry once the engine answers."
+}
+lan_guard_teardown() { remove_lan_guard || error "$1 stopped: $LAN_GUARD_MARKER could not be deleted, and it would let a node start without the LAN-only source rule, so the rule stays."; }
 
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
@@ -171,7 +180,7 @@ apply_lan_guard() {
         log "LAN-only sources enforced on port(s) ${ports[*]}: loopback, private and CGNAT addresses only."
         return 0
     fi
-    lan_guard_unmark
+    lan_guard_unmark || warn "lan-guard:marker-kept — could not delete $LAN_GUARD_MARKER."
     for kp in $published; do export "${kp%%:*}=127.0.0.1"; done
     warn "lan-guard:not-installed — could not enforce LAN-only sources on port(s) ${ports[*]} ($(lan_guard_reason "$rc")). Holding them on 127.0.0.1 until it can; see './pithead doctor'."
 }
@@ -212,10 +221,8 @@ check_lan_guard() {
     return 0
 }
 
-# doctor (#2749): on a DIY Docker host with a LAN port published, only pithead starts monerod/tari.
-# One that exists but is not running is a FAIL naming why (held at boot by a failed guard, or exited)
-# and the recovery. One running with a restart policy Docker would act on at boot, before the rule is
-# back, is a FAIL too. A container `down` removed is no verdict.
+# doctor (#2749), DIY Docker with a LAN port published: a stopped node FAILs with why (held at boot,
+# refused, exited) and the recovery; so does a running one Docker would restart at boot. Removed: none.
 check_lan_guard_hold() { # <port>...
     tor_egress_boot_unit_applies || return 0
     local p c seen=" " policy why
@@ -239,8 +246,7 @@ check_lan_guard_hold() { # <port>...
     done
 }
 
-# True when no LAN port is published or every published one's rule is live (#2749): what a start
-# that bypasses compose_up, such as `pithead restart`, checks first.
+# Nothing published, or every published port's rule live (#2749): `pithead restart` checks it.
 lan_guard_ready() {
     local kp ports=()
     for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
@@ -249,9 +255,9 @@ lan_guard_ready() {
 
 # Remove the rule from both backends. `sudo -n`: a leftover rule only drops outside traffic to a
 # port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
-remove_lan_guard() {
+remove_lan_guard() { # 1, with the rule kept, when the marker cannot be deleted
     local line
-    lan_guard_unmark
+    lan_guard_unmark || return 1
     if command -v nft >/dev/null 2>&1; then
         sudo -n nft delete table inet "$LAN_GUARD_NFT_TABLE" 2>/dev/null || true
     fi
@@ -267,22 +273,18 @@ remove_lan_guard() {
     return 0
 }
 # --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
-# A reboot empties PITHEAD-LAN and its jumps. pithead-lan-guard.service restores them inline before
-# docker.service, as pithead-egress.service does (02a), then writes the nodes' marker. Its failure
-# must not open the ports, so the LAN-publishing nodes run with restart "no" and
-# pithead-lan-hold.service starts them only after the guard (Requires=); docker.service depends on
-# neither. Cost: nothing restarts a crashed node there; doctor and the dashboard say so. The
-# appliance needs neither unit: pithead-boot runs `up`, and compose_up installs the rule first.
+# pithead-lan-guard.service restores the rule before docker.service (as 02a's egress unit), then the
+# marker. The LAN-publishing nodes run restart "no"; pithead-lan-hold.service starts them after the
+# guard (Requires=). Cost: nothing restarts a crashed node (doctor, dashboard say so). The appliance
+# needs neither unit: pithead-boot runs `up`, and compose_up installs the rule first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
 
 # The container publishing <port>: monerod for 18081/18083, tari for 18142.
 lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; fi; }
 
-# The unit text for <iptables path> <port>.... Pure (args only) so it unit-tests. Fails closed: the
-# chain's DROP goes in before anything jumps to it, the RETURNs are inserted above the DROP, and the
-# jumps come last, so a start that stops halfway drops every source on those ports instead of none.
-# The `-D` lines make a manual restart replace the jumps rather than stack them.
+# The unit text for <iptables> <marker> <port>.... Fails closed: DROP first, RETURNs above it, jumps
+# last, so a start that stops halfway drops every source. `-D` first: a restart does not stack jumps.
 render_lan_guard_boot_unit() { # <iptables> <marker path> <port>...
     local ipt="$1" marker="$2" p lg_jump i
     shift 2
@@ -292,8 +294,7 @@ render_lan_guard_boot_unit() { # <iptables> <marker path> <port>...
 [Unit]
 Description=pithead LAN-only sources on the *_lan_access node ports, restored before containers start
 Before=docker.service
-# A firewall manager that loads after us could flush what we insert.
-# After the egress unit too, so our jumps land above its rules, as they do after pithead up.
+# After firewall loaders (they could flush our rules) and the egress unit (our jumps land above it).
 After=ufw.service firewalld.service netfilter-persistent.service nftables.service pithead-egress.service
 
 [Service]
@@ -321,9 +322,8 @@ WantedBy=docker.service
 EOF
 }
 
-# The hold unit for <docker> <iptables> <port>.... Pure, so it unit-tests. A failed guard never
-# starts it (Requires=); a guard still "active" after the rule went (down, backup) fails the live
-# check (-C) of the chain's DROP and of each jump. `-` on the start: a container `down` removed is not a failure.
+# The hold unit for <docker> <iptables> <port>.... A failed guard never starts it (Requires=); a guard
+# still "active" after the rule went fails the live -C checks. `-`: a removed container is no failure.
 render_lan_guard_hold_unit() { # <docker> <iptables> <port>...
     local docker="$1" ipt="$2" p c containers=()
     shift 2
