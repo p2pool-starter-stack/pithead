@@ -280,15 +280,15 @@ the SOCKS flags, so a clearnet node still bootstraps from the DNS seeds.
 
 Opt out for maximum yield (lower stale/uncle rate plus a larger peer set, at the cost of exposing
 your IP, worse on `--mini`/`--nano`): set `p2pool.clearnet: true` in `config.json` and re-run
-`./pithead apply`. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
+`./pithead apply`. The default-on egress firewall then exempts only P2Pool's container from its
+IPv4 public-dial block; turning the flag off and applying removes that exemption. P2Pool peers see
+your home IP. For the strictest posture, refuse clearnet peers entirely (onion-only): P2Pool also
 has a `--no-clearnet-p2p` flag, not yet wired to its own config knob.
 
 Trade-off (measured): Tor adds latency to share propagation, costing ~10 % of yield on `mini` (#256,
 the loss is uncles/late shares, not rejects; see the box above), and `--no-clearnet-p2p` shrinks your
 peer set to onion-only. The Tor-by-default flip was gated on that benchmark, which is why it's a v1.1
-change (#165), not a v1.0 default. NOTE: the `p2pool.clearnet: true` opt-out only began working once #294
-fixed a config bug that had silently pinned the egress firewall on; on a current build it takes
-effect after `pithead apply`.
+change (#165), not a v1.0 default. The opt-out works with the default egress firewall on (#2790).
 
 ### XvB donation mining (#166) — ✅ Tor by default
 
@@ -299,7 +299,9 @@ in #163), so donation mining no longer exposes your home IP. No action needed.
 
 Opt out for maximum yield (stratum-over-Tor adds latency that can raise rejected shares, scaling with
 hashrate): set `xvb.tor: false` and re-run `./pithead apply`; the donation connection then dials
-direct. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
+direct. The firewall exempts only xmrig-proxy while XvB is enabled and this choice is active;
+switching Tor back on or disabling XvB removes the exemption at apply. The XvB pool sees your
+home IP while donating. To stop the egress entirely instead, disable XvB (`"xvb": { "enabled": false }`), which also
 stops the (already Tor-routed, #163) stats fetch.
 
 > NOTE: the xmrig-proxy dev-fee `--donate-level` is pinned to `0` by default (`proxy.donate_level`,

@@ -55,7 +55,15 @@ EOF
     # The boot unit is installed while the sync is active, but the marker may appear before
     # reboot. Check it at boot too: an old unit must never reopen a completed sync.
     for ip in "$@"; do
-        case "$ip" in *.26) chain=monero ;; *.27) chain=tari ;; *) return 1 ;; esac
+        case "$ip" in
+        *.26) chain=monero ;;
+        *.27) chain=tari ;;
+        *.28 | *.29)
+            printf 'ExecStart=%s -I DOCKER-USER 1 -m comment --comment %s -s %s -j ACCEPT\n' "$ipt" "$TOR_EGRESS_TAG" "$ip"
+            continue
+            ;;
+        *) return 1 ;;
+        esac
         marker="$(clearnet_state_dir)/$chain.synced"
         printf -v qmarker '%q' "$marker"
         printf -v qipt '%q' "$ipt"

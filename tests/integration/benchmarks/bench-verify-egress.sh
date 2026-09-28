@@ -32,7 +32,7 @@
 set -uo pipefail
 
 ARM="${1:-}"
-case "$ARM" in tor | clearnet | node-sync) shift ;; *)
+case "$ARM" in tor | clearnet | node-sync | p2pool-choice) shift ;; *)
     echo "usage: bench-verify-egress.sh <tor|clearnet|node-sync> [--dir DIR] [--prefix P] [--polls N] [--interval S] [--min-hits K]" >&2
     exit 2
     ;;
@@ -184,12 +184,13 @@ for c in $APPS; do
             printf '%s\n' "$rows" | sed 's/^/        /'
             fail=1
         fi
-    elif [ "$ARM" = node-sync ]; then
-        if [ "$c" = monerod ] || [ "$c" = tari ]; then
+    elif [ "$ARM" = node-sync ] || [ "$ARM" = p2pool-choice ]; then
+        if { [ "$ARM" = node-sync ] && { [ "$c" = monerod ] || [ "$c" = tari ]; }; } ||
+            { [ "$ARM" = p2pool-choice ] && [ "$c" = p2pool ]; }; then
             if [ "$n" -gt 0 ] && [[ "$rows" == *outbound* ]]; then
-                echo "  ✓ $c: $n persistent outbound public peer(s) during initial sync"
+                echo "  ✓ $c: $n persistent outbound public peer(s) by operator choice"
             else
-                echo "  ✗ $c: no persistent outbound public peer during initial sync"
+                echo "  ✗ $c: no persistent outbound public peer for selected clearnet route"
                 fail=1
             fi
         elif [ "$n" -eq 0 ]; then

@@ -26,14 +26,8 @@ from mining_dashboard.service.network.topology_graph import (  # noqa: F401  (re
 
 
 def _xvb_standby_route(source):
-    """Route of the #249 backup→primary standby pull, derived from ``xvb.standby.source`` alone.
-
-    Same #160 reasoning as ``_sinks_all_private``: only an IP literal can be *proven* to stay on your
-    network without a DNS lookup. So an ``.onion`` or any public/non-private source rides Tor (the
-    puller's ``_proxies`` sends it socks5h, like every other dashboard read); a private/loopback IP
-    literal is a LAN hop (``local``); an unset source is ``inactive``. A hostname can't be proven
-    private, so it routes over Tor — never a silent clearnet beacon. The puller reads this exact
-    route (``XvbStandbyPuller._proxies``), so the panel can't disagree with where the pull goes."""
+    """Route #249 pulls: private IP literals stay local; other hosts use Tor.
+    Hostnames cannot be proven private without DNS. The puller's proxy uses this route too."""
     source = (source or "").strip()
     if not source:
         return INACTIVE
@@ -167,9 +161,9 @@ def compute_egress_posture(
     ]
 
     leaks = 0  # clearnet egress that actually exposes the host IP without this sync choice
-    chosen = 0  # clearnet first sync deliberately selected by the operator
-    blocked = 0  # clearnet route a container is configured for, but the firewall DROPs it
-    unverified = 0  # direct hostname route whose exposure cannot be classified without DNS
+    chosen = 0
+    blocked = 0
+    unverified = 0
     for comp in components:
         for conn in comp["conns"]:
             if conn["route"] == UNKNOWN:
@@ -177,7 +171,11 @@ def compute_egress_posture(
                 continue
             if conn["route"] != CLEARNET:
                 continue
-            if comp["name"] in ("monerod", "tari") and "initial" in conn["to"]:
+            if (
+                (comp["name"] in ("monerod", "tari") and "initial" in conn["to"])
+                or (comp["name"] == "p2pool" and conn["to"] == "sidechain P2P peers")
+                or (comp["name"] == "xmrig-proxy" and conn["to"] == "XvB donation pool")
+            ):
                 conn["chosen_clearnet"] = True
                 chosen += 1
             elif comp.get("firewalled", False) and firewall:
@@ -191,12 +189,22 @@ def compute_egress_posture(
         if unverified:
             label += f"; {unverified} path(s) unverified"
     elif chosen:
-        chains = " + ".join(
-            name
-            for name, active in (("Monero", monero_clearnet_sync), ("Tari", tari_clearnet_sync))
-            if active
+        chains = "Monero" if monero_clearnet_sync else ""
+        if tari_clearnet_sync:
+            chains += " + Tari" if chains else "Tari"
+        label = (
+            f"{chains} clearnet first sync or Tor transition pending by your choice — your IP may be visible to peers until host verification"
+            if chains
+            else ""
         )
-        label = f"{chains} clearnet first sync or Tor transition pending by your choice — your IP may be visible to peers until host verification"
+        if p2pool_clearnet:
+            label += (
+                "; " if label else ""
+            ) + "P2Pool clearnet by your choice: your IP is visible to peers"
+        if xvb_enabled and not xvb_tor:
+            label += (
+                "; " if label else ""
+            ) + "XvB clearnet by your choice: your IP is visible to the pool"
     elif unverified:
         label = f"{unverified} egress path(s) unverified; Tor-only status cannot be confirmed"
     elif blocked:
@@ -374,7 +382,11 @@ def compute_topology(
     for link in edges:
         if link["route"] != CLEARNET:
             continue
-        if link["from"] in ("monerod", "tari") and link.get("label") == "clearnet IBD":
+        if (
+            (link["from"] in ("monerod", "tari") and link.get("label") == "clearnet IBD")
+            or (link["from"] == "p2pool" and link.get("label") == "sidechain P2P")
+            or (link["from"] == "xmrig-proxy" and link.get("label") == "XvB donation")
+        ):
             link["chosen_clearnet"] = True
         elif link["from"] != "dashboard" and firewall:
             link["blocked_by_firewall"] = True

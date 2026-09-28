@@ -2,7 +2,7 @@
 # The apply and remove halves of the firewall in 02-tor-egress.sh, which owns the rule renderers and
 # the live enforcement readback these call.
 # The entrypoint/status predicate is shared with firewall install and verification. Only the
-# fixed node addresses may bypass the IPv4 DROP, and a marker spends that exemption for good.
+# fixed addresses selected by config may bypass the IPv4 DROP. Sync markers spend node exemptions.
 tor_egress_sync_ips() {
     local prefix
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null)
@@ -14,6 +14,9 @@ tor_egress_sync_ips() {
     marker="$(clearnet_state_dir)/tari.synced"
     [ "${EGRESS_SYNC_CLOSE_CHAIN:-}" != tari ] && [ "$(env_get TARI_CLEARNET_SYNC 2>/dev/null)" = true ] &&
         [ ! -e "$marker" ] && [ ! -L "$marker" ] && printf '%s\n' "$prefix.27"
+    [ "$(env_get P2POOL_CLEARNET 2>/dev/null)" = true ] && printf '%s\n' "$prefix.28"
+    [ "$(env_get XVB_ENABLED 2>/dev/null)" = true ] &&
+        [ "$(env_get XVB_TOR_ENABLED 2>/dev/null)" = false ] && printf '%s\n' "$prefix.29"
     return 0
 }
 

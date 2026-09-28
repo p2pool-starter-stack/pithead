@@ -220,8 +220,9 @@ the raw per-arm JSONL plus `events.log` are committed there (originals on the te
 this is the "materially below clearnet" case, so the trade-off is documented rather than hidden. Not
 exposing the operator's home IP to the P2Pool network is the project's core value, and **~10 % is a
 modest, opt-out-able price** for it. Operators who prioritise yield over IP privacy can set
-`p2pool.clearnet: true` (now functional; it was a no-op until the #294 firewall-toggle fix
-found during this benchmark) and accept the exposure. No per-sidechain split is warranted: the
+`p2pool.clearnet: true` and apply it with the default egress firewall still on: the host exempts
+only P2Pool's IPv4 address while the flag is set (#2790). Peers then see the operator's home IP.
+No per-sidechain split is warranted: the
 mechanism is the ~10 s share interval, common to every sidechain, so `mini` is representative. The
 absolute cost is largest on the smaller, faster chains where our share, and thus uncle sensitivity,
 is highest. This conclusion is mirrored operator-facing in [`../privacy.md`](../privacy.md).
