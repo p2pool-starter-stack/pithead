@@ -151,4 +151,6 @@ done)
 assert_eq "compose parse finds both Tari images (control)" "$(grep -c '^ghcr.io/tari-project/minotari_' <<<"$compose_tari")" "2"
 assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
     "$(sed -n 's/^Image=//p' "$QPAY/tari.container" "$QPAY/tari-wallet.container")" "$compose_tari"
+assert_eq "tari-wallet quadlet can repair and drop uid (#2454)" "$(grep -Ec '^(User=0:0|AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID)$' "$QPAY/tari-wallet.container")" "2"
+assert_contains "tari-wallet healthcheck sees uid 1000 from root (#2454)" "$(cat "$QPAY/tari-wallet.container")" "HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"

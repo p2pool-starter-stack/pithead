@@ -13,6 +13,7 @@ from mining_dashboard.config.config import (
     HASHRATE_DROP_MINUTES,
     HASHRATE_DROP_THRESHOLD_PCT,
     NODE_STALE_AFTER_SEC,
+    TARI_MODE,
     TOR_SOCKS_PROXY,
     UPDATE_CHECK_INTERVAL,
     WORKER_FALLOFF_SEC,
@@ -22,6 +23,7 @@ from mining_dashboard.service.data_helpers import (
 )
 from mining_dashboard.service.health.degradation import DegradationMonitor
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
+from mining_dashboard.service.health.tari_health import TariChainHealth
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient, UpdateChecker
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
@@ -191,6 +193,10 @@ class DataSetupMixin:
         self.tor_healer = TorEgressHealer(
             self.docker_control, notify=self.alert_service.tor_heal_alert
         )
+        # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
+        # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
+        # always-on sender as the tor-heal note.
+        self.tari_chain = TariChainHealth(notify=self.alert_service.tor_heal_alert)
         # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
         # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
         # even with Telegram off; a loss also drives a hashrate_loss alert.
@@ -236,8 +242,25 @@ class DataSetupMixin:
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
         # A cross-hardware restore (restore_apply(), never `./pithead restore`) carries the source
-        # machine's release (#2626). Until the gate releases on this machine's own chains, the
-        # restore marker overrides it, across restarts too.
+        # machine's release (#2626), and `apply` re-points a required chain at another node (#2763):
+        # either way the release was earned on other chains. Until the gate releases on the chains
+        # this machine now dials, the marker overrides it, across restarts too.
         if os.path.exists(_runtime().SYNC_GATE_RESET_PATH):
             self.miner_released = False
             self.latest_data["miner_released"] = False
+
+    async def _observe_tari(self, tari_client, tari_sync):
+        """One cycle of Tari health: the debounced node-down flag (#31), returned, and the chain
+        verdict (#2464) attached as ``tari_sync["health"]`` for the panel, /api/state and doctor.
+        Off mode has no node to judge; the peer count is asked only of a node that answered."""
+        if TARI_MODE != "off":
+            try:
+                reachable = tari_sync.get("reachable", False)
+                connections = await tari_client.get_connections() if reachable else None
+                tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
+            except Exception as exc:  # the verdict must never break the data loop
+                logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
+                # Serve the last verdict: a failed cycle must not make a red node vanish from
+                # the panel, doctor and status.
+                tari_sync["health"] = dict(self.tari_chain.verdict)
+        return self.tari_health.update(tari_sync.get("reachable", True))

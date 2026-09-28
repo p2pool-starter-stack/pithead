@@ -71,7 +71,6 @@ _phase_install_commit() {
     # the same choice provision-reboot.sh makes on its own reboot leg.
     _reboot_wait reboot 300 || {
         bad "installed system never returned from the unaided reboot"
-        unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
         return 1
     }
     local rootdev
@@ -97,5 +96,4 @@ _phase_install_commit() {
     done
     _assert_rauc_committed "after boot 2 (the unaided reboot)"
     info "grubenv after boot 2: $(_read_genv)"
-    unset -f _read_genv _genv_field _rauc_status _assert_rauc_committed
 }

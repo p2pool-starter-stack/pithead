@@ -107,13 +107,12 @@ parse_and_validate_config() {
     # operator supplies the PRIVATE VIEW KEY plus the PUBLIC SPEND KEY for the Tari payout address;
     # the stack runs a view-only minotari_console_wallet against the LOCAL Tari node to confirm a
     # merge-mine coinbase actually landed. The view key is a SECRET (reveals all incoming amounts and
-    # timing) — handled like node_password: never logged or echoed, delivered to the container via a
-    # tmpfs-mounted compose secret, never the command line or `docker inspect`. Empty (the default) =
+    # timing) — handled like node_password: never logged or echoed, delivered to the container in a
+    # read-only bind-mounted owner-only file, never the command line or `docker inspect`. Empty =
     # feature off. Phase 1 is LOCAL NODE ONLY: a view key with a remote Tari node (#103) is refused,
     # mirroring monero.mode — scanning through a third-party node changes the trust story.
-    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE THE UNIX EPOCH (a u16, not a
-    # block height), so a fresh wallet doesn't rescan from genesis. TARI_MODE was already parsed and
-    # validated above.
+    # tari.payout_scan_birthday is Tari's restore point: DAYS SINCE 2022-01-01 (#2731), so a fresh
+    # wallet doesn't rescan from genesis. TARI_MODE was already parsed and validated above.
     TARI_VIEW_KEY=$(jq -r '.tari.view_key // empty' "$CONFIG_FILE")
     TARI_SPEND_PUBLIC_KEY=$(jq -r '.tari.spend_public_key // empty' "$CONFIG_FILE")
     TARI_WALLET_BIRTHDAY=$(jq -r '.tari.payout_scan_birthday // "auto"' "$CONFIG_FILE")
@@ -130,12 +129,12 @@ parse_and_validate_config() {
         if ! printf '%s' "$TARI_SPEND_PUBLIC_KEY" | grep -qE '^[0-9a-f]{64}$'; then
             error "tari.spend_public_key must be the 64-character hex PUBLIC SPEND KEY for the Tari payout address (exported alongside the view key). Set it whenever tari.view_key is set."
         fi
-        # Birthday is "auto" (resolved to today's days-since-epoch at wallet creation) or an explicit
-        # u16 days-since-epoch (0–65535). Reject anything else before it reaches the wallet.
+        # "auto" or a day no later than today: a future day scans from the tip, missing past payouts.
+        local tari_today=$((($(date +%s) - 1640995200) / 86400))
         case "$TARI_WALLET_BIRTHDAY" in
         '' | auto) ;;
-        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE THE UNIX EPOCH (an integer 0–65535, NOT a block height). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
-        *) [ "$TARI_WALLET_BIRTHDAY" -le 65535 ] || error "tari.payout_scan_birthday must be ≤ 65535 (days since the Unix epoch, a u16). Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *[!0-9]*) error "tari.payout_scan_birthday must be \"auto\" or DAYS SINCE 2022-01-01 (Tari's wallet birthday; Tari Universe's wallet_birthday works as-is), NOT a block height. Got \"$TARI_WALLET_BIRTHDAY\"." ;;
+        *) { [ "${#TARI_WALLET_BIRTHDAY}" -le 5 ] && [ "$((10#$TARI_WALLET_BIRTHDAY))" -le "$tari_today" ]; } || error "tari.payout_scan_birthday must be days since 2022-01-01 (Tari's wallet birthday), no later than today ($tari_today). Got \"$TARI_WALLET_BIRTHDAY\"; a days-since-1970 value is too large." ;;
         esac
         TARI_PAYOUT_CONFIRM_ENABLED=true
     fi
@@ -171,10 +170,10 @@ parse_and_validate_config() {
             warn "$_cn_sync clearnet_initial_sync is ignored while network.tor_egress_firewall is on — the firewall would drop the clearnet dials, so the node syncs over Tor at normal speed. Turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync to silence this warning."
         fi
     fi
-    # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
-    # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
-    # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
+    # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits. Renders to
+    # .env for the dashboard, which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
     # Remote-node host/port validation (#103). The central control-char guard above already stops a

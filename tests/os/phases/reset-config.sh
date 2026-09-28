@@ -44,6 +44,12 @@ _phase_reset_config() {
     # `!`, so exactly one may have run this boot. `is-active` alone cannot tell a correctly-skipped
     # unit from one that already finished (RemainAfterExit=no) — provisioning-settled.sh's
     # ConditionResult probe can (#2055 G3).
+    for cr_what in pithead-firstboot pithead-boot; do
+        if ! wait_unit_condition_evaluated "$cr_what"; then
+            bad "config-reset timed out waiting for $cr_what conditions to be evaluated"
+            return 1
+        fi
+    done
     fb_ran=no boot_ran=no
     unit_ran_this_boot pithead-firstboot && fb_ran=yes
     unit_ran_this_boot pithead-boot && boot_ran=yes

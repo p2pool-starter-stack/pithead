@@ -192,8 +192,8 @@ assert_running_state() {
     #     Assert the data contract survives the trip (the on-the-wire privacy posture is verified
     #     separately by assert_egress_posture via /proc/net/tcp): both sections present, the badge
     #     summary shared verbatim with the map so they can never disagree, and the canonical node
-    #     set exposed. NOT config-independent (#2303): local_miner.enabled gates a "local-miner"
-    #     node, same as topology_graph.py; expected_topology_nodes (lib.sh) mirrors + selftests it.
+    #     set exposed. Config gates "local-miner" on local_miner.enabled and omits "tari" only
+    #     when tari.mode=off, same as topology_graph.py; expected_topology_nodes mirrors both.
     assert_eq "egress posture section present" "$(jq_get "$st" '.egress.summary | type')" "object"
     assert_eq "topology section present" "$(jq_get "$st" '.topology.summary | type')" "object"
     assert_eq "topology + egress share one summary" \
@@ -348,8 +348,7 @@ assert_running_state() {
         assert_eq "dashboard confirms Monero payout tracking is live (#381/#942)" "$(jq_get "$st" '.earnings.confirmed.enabled')" "true"
     fi
     if [ "$mode" = "local" ] && [ -n "$(jq_get "$config" '.tari.view_key')" ]; then
-        assert_eq "TARI_PAYOUT_CONFIRM_ENABLED matches config (#462/#942)" "$(env_on_box TARI_PAYOUT_CONFIRM_ENABLED)" "true"
-        assert_eq "dashboard confirms Tari payout tracking is live (#462/#942)" "$(jq_get "$st" '.earnings.tari_confirmed.enabled')" "true"
+        assert_tari_payout_scan "$config" "$st"
     fi
 
     # 9. Caddy scheme matches dashboard.secure — read from the DASHBOARD's site block, which is

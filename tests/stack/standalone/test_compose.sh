@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Lightweight integration check: validate that docker-compose.yml parses and all
-# ${VAR} interpolations resolve against a representative .env. This is client-side
-# (`docker compose config` does not need the daemon), so it runs anywhere docker is installed.
-#
+# Validate Compose parsing and ${VAR} interpolation against a representative .env.
+# This is client-side (`docker compose config` needs no daemon), so it runs anywhere with docker.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -152,7 +150,7 @@ expect_min "log rotation on every service" "max-size:" 9
 # leaving the other was green. The two would then run different socket-proxy builds, which is exactly
 # the split the separate-proxy design exists to prevent.
 expect_min "tecnativa socket-proxy pinned by digest (both proxies)" "tecnativa/docker-socket-proxy:v0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459" 2
-expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017"
+expect_present "caddy pinned by digest" "caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52"
 expect_present "tari node pinned by digest" "minotari_node:v6.0.1-pre.0-mainnet@sha256:23ce381b74e48cf67677dfe85c800daf54a155a610c595c94b16db6b186950ec"
 
 # Per-service precision checks via the JSON render.
@@ -319,7 +317,9 @@ jq_assert "exactly 5 depends_on edges total (#565)" \
 # The wallet probe must fit ps's 15-char CMD column — procps truncates CMD there, so the full
 # binary name never matches and the container would report unhealthy forever while the wallet
 # runs fine (#777). Asserted here because tari-wallet only renders under tari_payout_confirm.
-jq_assert "tari-wallet healthcheck pattern survives ps CMD truncation (#777)" '(.services["tari-wallet"].healthcheck.test | tostring) | contains("[m]inotari_consol") and (contains("[m]inotari_console_wallet") | not)'
+jq_assert "tari-wallet probe sees process after UID drop (#2454/#777)" '.services["tari-wallet"].healthcheck.test == ["CMD-SHELL", "ps -e | grep '\''[m]inotari_consol'\'' || exit 1"]'
+jq_assert "tari-wallet wrapper may repair its volume before dropping uid (#2454)" \
+    '.services["tari-wallet"] | .user == "0:0" and .cap_drop == ["ALL"] and ((.cap_add | sort) == (["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"] | sort)) and .read_only == true'
 jq_assert "tari-wallet runs under an init that reaps and forwards signals (#2657)" '.services["tari-wallet"].init == true'
 # The console wallet's digest pin had NO assertion anywhere (#1137). It cannot have one where the
 # other three live: $RENDERED is built with COMPOSE_PROFILES=local_node,local_tari and tari-wallet

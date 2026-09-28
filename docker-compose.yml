@@ -313,15 +313,14 @@ services:
   # Only starts if the "tari_payout_confirm" profile is active — pithead adds it to COMPOSE_PROFILES
   # only when tari.view_key is set AND the Tari node is local (#462). A view-only Tari wallet (private
   # view key + public spend key) can SCAN but never spend; it reveals all incoming amounts/timing, so
-  # its secrets are handled like passwords: delivered via a tmpfs `secrets:` mount, never `environment:`.
+  # its secrets are handled like passwords: an owner-only file bind-mounted as a `secrets:` entry, never `environment:`.
   tari-wallet:
     profiles: ["tari_payout_confirm"]
     # Pinned by digest (#135), same registry/tag as the Tari node so the version-match holds.
     image: ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
     container_name: tari-wallet
-    # Run non-root (#255). Pulled image, so set uid via compose to match the uid the wallet named
-    # volume is created under; the wrapper only writes the base-path (the volume) and /tmp.
-    user: "1000:1000"
+    # The wrapper repairs a root-owned volume if needed, then drops to uid 1000 before wallet startup.
+    user: "0:0"
     # A view-only scanner is light; a tight cap OOM-restarts it on a regression without touching the
     # revenue services (#132, see the Tari node / wallet-rpc).
     mem_limit: 512m
@@ -333,20 +332,25 @@ services:
     init: true
     logging: *default-logging
     # Wrapper entrypoint (mounted from the build dir, since this is a pulled image — same pattern as
-    # the Tari node): reads the three secrets from the tmpfs `secrets:` mount and exports them into
+    # the Tari node): reads the three secrets from the bind-mounted `secrets:` file and exports them into
     # the wallet child only, NEVER the command line or the container's declared env (#462).
     entrypoint: ["/wallet-config/entrypoint.sh"]
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
     # Immutable root filesystem (#377). The wallet DB lives in the named volume; the wrapper writes
     # only /tmp (tmpfs). Nothing else is written.
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777
     volumes:
-      - tari_wallet_data:/home/ubuntu/wallet
+      - tari_wallet_db:/var/tari/wallet
       - ./build/tari-wallet:/wallet-config:ro
     environment:
       # NON-SECRET config only — the three MINOTARI_WALLET_* secrets are delivered via `secrets:`
@@ -358,10 +362,10 @@ services:
       - TARI_BASE_NODE_GRPC_ADDRESS=${TARI_GRPC_ADDRESS:-172.28.0.27:18142}
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143
-      - WALLET_DIR=/home/ubuntu/wallet
+      - WALLET_DIR=/var/tari/wallet
     secrets:
-      # Docker mounts this on a tmpfs at /run/secrets/tari_wallet_secret, owner-readable only; the
-      # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount name).
+      # Docker bind-mounts the owner-only host file read-only at /run/secrets/tari_wallet_secret; the
+      # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount path).
       - tari_wallet_secret
     ports:
       # Loopback-only host publish (mirror wallet-rpc): the host-networked dashboard reaches the
@@ -378,11 +382,11 @@ services:
         condition: service_healthy
     healthcheck:
       # Process-liveness (like the Tari node) rather than a gRPC probe: the wallet's own gRPC is a
-      # long stream, and a liveness ps is enough to catch a crashed daemon. '[m]' stops grep matching
-      # its own argv. The long start_period tolerates the first-run blockchain scan. The pattern is
-      # capped at 15 chars — procps' ps truncates the CMD column there, so the full binary name
+      # long stream, and a liveness ps is enough to catch a crashed daemon. `ps -e` sees the wallet
+      # after the wrapper drops to uid 1000 (#2454). The long start_period tolerates the first
+      # scan. The pattern is capped at 15 chars — procps' ps truncates the CMD column, so the full
       # 'minotari_console_wallet' can never match (#777).
-      test: ["CMD-SHELL", "ps | grep '[m]inotari_consol' || exit 1"]
+      test: ["CMD-SHELL", "ps -e | grep '[m]inotari_consol' || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -650,8 +654,10 @@ services:
       - ${CONTROL_DIR:-./data/control}/audit:/control/audit:ro
       # Pre-masked config copy (#440), read-only: the host renders config.json with every set
       # secret leaf replaced by a sentinel, and the Configuration view prefills from THIS file.
-      # The raw config.json is never mounted — a fully compromised container reads only masked
-      # config and the bounded non-secret/read-only surfaces documented in SECURITY.md.
+      # The raw config.json is never mounted. A compromised dashboard can still read credentials
+      # supplied to its own runtime environment, plus the bounded non-secret/read-only surfaces in
+      # SECURITY.md; this boundary protects the host config, staged intents, results and audit log
+      # from direct container writes.
       - ${CONTROL_DIR:-./data/control}/masked:/control/masked:ro
       # Caddy's JSON access log (#349), read-only: the dashboard tails it to show recent accesses
       # and a failed-login count (a burst of 401s = rotate the password / onion). Caddy owns the
@@ -698,6 +704,9 @@ services:
       # Tor guard self-heal (#424): opt-in; when true the dashboard probes Tor clearnet egress
       # and restarts tor (via docker-control) if it's stuck on a failing guard. Default off.
       - TOR_AUTO_HEAL=${TOR_AUTO_HEAL:-false}
+      # Tari chain health (#2464): the public explorer, fetched hourly through Tor, is the verdict's
+      # independent reference.
+      - TARI_EXPLORER_URL=${TARI_EXPLORER_URL:-https://textexplore.tari.com/?json}
       - P2POOL_CLEARNET=${P2POOL_CLEARNET:-false}
       - P2POOL_URL=${P2POOL_URL}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS}
@@ -735,11 +744,12 @@ services:
       # How the dashboard reads each worker's own xmrig /1/summary (config.json: workers.*). One
       # configured way, no auto-detection. Defaults = stock RigForge worker (open read-only API,
       # no token, port 8080). api_auth: none (default) | name (Bearer=worker name) | token.
-      # Per-worker overrides (workers.list[], #506) are NOT env — they carry per-rig tokens, so
-      # they stay in the owner-only config.json; the dashboard reads the masked copy (#440).
+      # workers.list[].token is a write-capable host-only control credential. Only explicit
+      # endpoint-bound read-only api_token values reach the dashboard through this env row.
       - XMRIG_API_PORT=${XMRIG_API_PORT:-8080}
       - XMRIG_API_AUTH=${XMRIG_API_AUTH:-none}
       - XMRIG_API_TOKEN=${XMRIG_API_TOKEN}
+      - WORKER_API_TOKENS=${WORKER_API_TOKENS}
       # The operator-facing stratum port (#172), display-only here: the "point your rigs at
       # host:PORT" hint and the egress topology label track the real published port.
       - STRATUM_PORT=${STRATUM_PORT:-3333}
@@ -968,7 +978,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
+    image: caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m
@@ -1020,15 +1030,17 @@ volumes:
   # View-only payout wallet DB (#381). A named volume so it survives recreates; it inherits uid-1000
   # ownership from the image's /home/ubuntu/wallets dir, so the non-root container can write it.
   wallet_data:
-  # View-only Tari payout wallet DB (#462). Named volume, survives recreates; the wrapper mkdir's the
-  # base-path under uid 1000 (the container user) on first run.
-  tari_wallet_data:
+  # View-only Tari payout wallet DB (#462). Named volume, survives recreates. Mounted on the image's own
+  # uid-1000 /var/tari/wallet, so the engine gives the new volume that ownership when it creates it.
+  # A new name, not tari_wallet_data: that volume was created root-owned at /home/ubuntu/wallet,
+  # which the image lacks, keeps that owner on any later mount, and never held a wallet (#2731).
+  tari_wallet_db:
 
 # --- Secrets ---
 # View-only Tari wallet material (#462). pithead renders these three values into an owner-only file
-# (data/tari-wallet-secret.env, gitignored like .env); Docker mounts it on a TMPFS at
-# /run/secrets/tari_wallet_secret, owner-readable only, for the tari-wallet service. Delivering the
-# view key this way (not via `environment:`) keeps it out of `docker inspect` — the acceptance
+# (data/tari-wallet-secret.env, gitignored like .env, mode 0600, owned by the container's uid 1000);
+# Docker bind-mounts it read-only at /run/secrets/tari_wallet_secret for the tari-wallet service.
+# Delivering the view key this way (not via `environment:`) keeps it out of `docker inspect` — the acceptance
 # criterion that separates #462 from #381 (Tari has no JSON-import path to hide the key behind).
 secrets:
   tari_wallet_secret:

@@ -33,27 +33,6 @@ backup_diagnose_items() { # <tar -C dir> <item>...
     done
 }
 
-# Isolate stack_up's exit-based failures so backup can retry and report both outcomes.
-backup_stack_up() (
-    trap - ERR
-    stack_up
-)
-backup_restart_stack() {
-    backup_stack_up && return 0
-    if is_appliance; then
-        warn "The stack did not restart after the backup — retrying through the appliance boot path."
-        # The boot unit owns its own mutation window and carries the appliance image registry.
-        mutation_lock_release
-        sudo systemctl restart pithead-boot.service && return 0
-        warn "The appliance boot path also failed to restart the stack."
-        return 1
-    fi
-    warn "The stack did not restart after the backup — retrying the normal startup path once."
-    backup_stack_up && return 0
-    warn "The stack failed to restart after two attempts."
-    return 1
-}
-
 stack_backup() {
     local with_chains=0 assume_yes=0 was_running=0 no_encrypt=0
     for arg in "$@"; do
