@@ -266,28 +266,28 @@ restore_all() {
     # branch never touched. On a SOURCE-CHECKOUT baseline it is wrong, and silently: `pithead` exports
     # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
     # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
-    # back up under the baseline's name; the pull policy is `never` here, so nothing corrects it, and checks
-    # 1-3 below are all green on it. Rebuild from the baseline's own tree instead, falling back to the old
-    # pairing if that fails; check 4 grades either outcome honestly. `is_source_checkout` is
-    # `[ -f dashboard/Dockerfile ]` (pithead:180) — mirrored, not reinvented. The `{ }` below is
-    # load-bearing: unbraced, a failed `cd` runs the FALLBACK in the ssh session's default directory and
-    # STILL returns 0 — a restore that never entered RESTORE_DIR, reported as run. Proven, not read off.
-    local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1" restore_result=""
+    # back up under the baseline's name; a failed upgrade must not fall back to apply/up.
+    local restore_cmd="./pithead apply -y && ./pithead up"
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
-        restore_cmd="./pithead upgrade >/dev/null 2>&1 && printf 'baseline-upgrade-ok\\n' || { $restore_cmd; }"
+        restore_cmd="./pithead upgrade"
     fi
-    if restore_result="$(on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }")"; then
-        record_baseline_upgrade_result "$restore_result"
+    if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+        # A scenario can recreate a test-checkout container after the branch deploy.
+        if ! recreate_test_checkout_containers; then
+            warn "baseline recreation of test-checkout containers failed in $RESTORE_DIR"
+            RESTORE_PROOF_FAILED=1
+        fi
         wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof || RESTORE_PROOF_FAILED=1
     else
-        warn "baseline 'pithead apply/up' returned non-zero in $RESTORE_DIR — check $BENCH_HOST by hand."
+        warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
+
     # 3. Chains sanity: they must be untouched (the whole point).
     local sync
     sync="$(on_bench "curl -fsS --max-time 8 http://127.0.0.1:8000/api/state 2>/dev/null | jq -r '\"\(.sync.monero.state)/\(.sync.tari.state)\"' 2>/dev/null" || true)"
@@ -390,16 +390,17 @@ preflight() {
     else
         warn "couldn't resolve the live stack's working dir — restore will use CANONICAL_DIR=$CANONICAL_DIR."
     fi
-    # Baseline images and #2460/#2599/#2749 units, read before deploy_branch changes them (verify_restore_proof).
-    EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
-    EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)" EGRESS_CHECK_SERVICE_BEFORE="$(egress_boot_unit_state pithead-egress-check.service)"
-    LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
-    HOLD_UNIT_BEFORE="$(boot_unit_state pithead-lan-hold.service)"
+    # The images the baseline is on (and whether it has the #2460/#2599 egress units), captured before
+    # deploy_branch rebuilds the first-party images — on a source-checkout box under the very tag the
+    # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
+    # record is taken here or not at all. Read by verify_restore_proof.
+    EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
+    LAN_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-guard.service)" HOLD_UNIT_BEFORE="$(egress_boot_unit_state pithead-lan-hold.service)"
     BASELINE_IMAGES="$(stack_image_census)"
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
-        warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
+        warn "nothing running to census — the restore's image check will fail closed."
     fi
     # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
     # report loading on an otherwise synced bench, so wait for its sync panels to settle.
@@ -582,13 +583,6 @@ deploy_branch() {
     # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
-    # What the branch's build produced, by service — read by verify_restore_proof's check 4, so that
-    # "the branch's image came back up as the baseline" is a distinguishable outcome and not an
-    # invisible one. Taken AFTER the health wait rather than straight after the upgrade: the census
-    # reads running containers, and one still being recreated would simply be absent. That direction
-    # only ever weakens the check (a service missing here can never be accused of being the branch's,
-    # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
-    BRANCH_IMAGES="$(stack_image_census)"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }

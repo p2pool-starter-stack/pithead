@@ -418,8 +418,10 @@ via an `EXIT` trap):
    optimisation. `pithead` exports `STACK_VERSION=dev` for any source checkout, so a source-checkout
    baseline and the branch under test resolve to the same `:dev` tag — which deploying the branch has
    already overwritten, with a pull policy of `never` to correct it. `apply` + `up` would bring the
-   branch back up under the baseline's name. The rebuild falls back to `apply` + `up` if it fails, so
-   a baseline that cannot rebuild is no worse off than before.
+   branch back up under the baseline's name. A failed upgrade fails the restore and leaves its command
+   output in the job log. After the baseline command, the restore recreates any container still
+   labelled with the test checkout as its Compose working directory, leaving baseline-owned chain
+   nodes running. It removes test-checkout containers for services absent from the baseline.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
@@ -443,23 +445,12 @@ via an `EXIT` trap):
    stack running the branch's images under the baseline's name: the credentials are read from the
    on-disk `.env` at runtime, monerod answers with them, and the control units name the install
    either way. So the run records each service's image **ID** before it touches anything and again
-   after the restore, and grades them per service — kept, rebuilt, proved cache reuse, still-the-branch's, or gone. Image
-   IDs, not tags: a tag that moved is the defect, so the tag cannot be the instrument. Per service,
-   not as one list: a branch that changes two Dockerfiles rebuilds two images, and the rest carry an
-   ID that legitimately matches both sides. An image matching the branch but differing from the
-   pre-run baseline is accepted only when both checkouts independently yield the same pinned base
-   digest, resolved Compose build arguments and complete effective build context. The current
-   proof supports the shared Monero image used by `monerod` and `wallet-rpc`; an unmodelled build
-   field, ignore rule, Dockerfile parser directive, missing input or unequal fingerprint leaves the
-   image classified as stale.
-   Acceptance also requires the baseline's `pithead upgrade` to have succeeded and the restored
-   service to retain the image ID captured immediately after that build; the `apply && up`
-   fallback cannot certify reuse.
-   A rebuilt image is reported as "not the branch's" and no more:
-   settling "built from the install directory" would need the image's own build provenance, and the
-   dashboard's `org.opencontainers.image.revision` ships empty
-   ([#1449](https://github.com/p2pool-starter-stack/pithead/issues/1449)) while the other four
-   images carry it.
+   after the restore. Image IDs, not tags: a tag that moved is the defect, so the tag cannot be the
+   instrument. Per service, the proof compares the running image ID with the image resolved from
+   the baseline checkout's Compose declaration and rejects a live Compose working-directory label
+   naming the test checkout. A changed image ID by itself proves no origin: a scenario may recreate
+   a branch container after the deploy. Duplicate containers and test-only services are
+   checked too. A missing preflight census, unreadable declaration or owner fails the proof.
    Finally the proof records each chain node against the container that ran before the deploy:
    untouched, restarted during the run (`--lifecycle` restarts the stack), recreated during the
    run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
@@ -638,11 +629,11 @@ and `--list` prints it).
   dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
   dial is refused, and doctor names the hold. Then `docker compose start`, `docker compose up
   --no-deps` and `docker start` are run on the nodes: each node exits 78 and every non-private dial
-  is still refused. `./pithead up` recovers, and the dials are checked again. The restore proof records and restores `pithead-lan-guard.service`,
-  `pithead-lan-hold.service`, `pithead-egress.service`, `pithead-egress.timer` and
-  `pithead-egress-check.service` independently, including when only one egress check unit existed
-  before the run. A newly added unit is removed and checked absent, including from the wants of
-  `docker.service`, `multi-user.target` and `timers.target`; a pre-existing unit is kept.
+  is still refused. `./pithead up` recovers, and the dials are checked again. Last, with the marker
+  made undeletable, `remove_lan_guard` fails and the rule stays live. The restore proof records
+  `pithead-lan-guard.service` and `pithead-lan-hold.service` before the run and restores each one
+  as it does the egress units: a unit the run added is removed and checked absent, including from
+  the wants of `docker.service` and `multi-user.target`; a pre-existing one is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
