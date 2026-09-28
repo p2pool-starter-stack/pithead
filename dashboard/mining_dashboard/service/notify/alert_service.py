@@ -452,14 +452,18 @@ class AlertService(AlertEdgesMixin, EgressFirewallEdgesMixin):
         """Push the Tor guard self-heal note (#424). Deliberately not behind a per-event toggle:
         it fires at most once per outage, only after a heal restored the very path the alert
         sinks ride (so a broken egress can never even attempt it), and an operator who opted
-        into the heal wants to know it acted. No-op when every sink is off."""
+        into the heal wants to know it acted. No-op when every sink is off.
+
+        Returns the text when at least one sink reported delivery, else None: every sink's
+        ``send`` returns True only on success, so a caller can retry an undelivered alert (#2464)."""
         if not self.enabled:
             return None
         text = self._fmt(text)
+        delivered = False
         for sink in self.sinks:
             if sink.enabled:
-                await asyncio.to_thread(sink.send, text)
-        return text
+                delivered = bool(await asyncio.to_thread(sink.send, text)) or delivered
+        return text if delivered else None
 
     async def maybe_daily_summary(self, now, summary_provider) -> str | None:
         """Push a once-daily status digest at the configured local time.
