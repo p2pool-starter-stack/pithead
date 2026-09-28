@@ -43,7 +43,7 @@ apply_clearnet_initial_sync() {
 
 # True when Tari should sync over clearnet NOW: flag on AND the auto-transition marker absent (#234).
 clearnet_sync_active() {
-    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && [ ! -f "$CLEARNET_MARKER" ]
+    [ "${TARI_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
 }
 
 # Render the runtime config from the canonical Tor config, applying clearnet only while active.

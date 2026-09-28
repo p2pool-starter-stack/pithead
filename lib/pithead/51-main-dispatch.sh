@@ -147,6 +147,11 @@ main() {
         require_deployed
         control_run_pending
         ;;
+    egress-run-pending)
+        _reject_options egress-run-pending "$@"
+        require_env
+        egress_sync_run_pending
+        ;;
     egress-status)
         _reject_options egress-status "$@"
         require_env

@@ -63,13 +63,11 @@ render_env() {
     prune=$(monero_prune_flag)
 
     # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
-    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
-    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
-    local monero_clearnet=false tari_clearnet=false
-    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
-        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
-    fi
+    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
+    # chain's container until its sync marker appears (#2678).
+    local monero_clearnet tari_clearnet
+    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
