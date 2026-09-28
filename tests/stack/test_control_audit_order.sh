@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-test_dir="$(mktemp -d "${TMPDIR:?}/pithead-audit-order.XXXXXX")"
+test_dir="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/pithead-audit-order.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir"/{staged,results,audit}
 CONFIG_FILE="$test_dir/config.json"
