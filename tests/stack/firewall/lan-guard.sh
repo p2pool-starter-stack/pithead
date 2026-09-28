@@ -92,11 +92,12 @@ lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() {
 assert_eq "compose restores egress precedence after LAN jumps, before containers start" \
     "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
 : >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 0; }; compose_up -d' >/dev/null
+lg_out="$(lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; compose_up -d; echo "rc=$?"')"
 assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
+assert_contains "failed refresh returns failure" "$lg_out" "rc=1"
 : >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 1; }; compose_up -d' >/dev/null
-assert_eq "ordinary startup keeps its warning-only firewall failure behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; P2POOL_CLEARNET=false; XVB_TOR_ENABLED=true; compose_up -d' >/dev/null
+assert_eq "failed refresh also stops startup after clearnet choices are disabled" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
 lg_out="$(lg 'tor_egress_enforced() { return 5; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
 assert_eq "shadowed egress readback refuses compose startup" "$lg_out" "refused"
 lg_out="$(lg 'tor_egress_enforced() { return 4; }; mining_stack_running() { return 1; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"

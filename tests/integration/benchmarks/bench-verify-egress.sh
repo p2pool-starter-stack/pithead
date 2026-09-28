@@ -5,7 +5,7 @@
 # (root there, so no host sudo) and reports every ESTABLISHED connection to a **public** IP — i.e. one
 # that bypasses the Tor SOCKS at <bridge>.25:9050 (a private 172.x address). Run ON the mining host.
 #
-#   tests/integration/benchmarks/bench-verify-egress.sh <tor|clearnet|node-sync> \
+#   tests/integration/benchmarks/bench-verify-egress.sh <tor|clearnet|node-sync|p2pool-choice> \
 #       [--dir STACK_DIR] [--prefix 172.28.0] [--polls N] [--interval S] [--min-hits K]
 #
 # It POLLS `--polls` times (default 4) `--interval` seconds apart (default 10) and only flags a
@@ -24,6 +24,7 @@
 #                  public connections; monerod/tari staying at 0 confirms node-sync is still Tor
 #                  (the benchmark holds those constant — see docs/benchmarks/tor-vs-clearnet.md).
 #   - `node-sync` → monerod and Tari MUST hold outbound public peers while every other app has none.
+#   - `p2pool-choice` → p2pool MUST hold outbound public peers while every other app has none.
 #
 # Ground-truth backstop (needs root, so run by hand): a WAN-interface capture should show NO mining
 # traffic to non-Tor IPs in the tor arm —
@@ -33,7 +34,7 @@ set -uo pipefail
 
 ARM="${1:-}"
 case "$ARM" in tor | clearnet | node-sync | p2pool-choice) shift ;; *)
-    echo "usage: bench-verify-egress.sh <tor|clearnet|node-sync> [--dir DIR] [--prefix P] [--polls N] [--interval S] [--min-hits K]" >&2
+    echo "usage: bench-verify-egress.sh <tor|clearnet|node-sync|p2pool-choice> [--dir DIR] [--prefix P] [--polls N] [--interval S] [--min-hits K]" >&2
     exit 2
     ;;
 esac

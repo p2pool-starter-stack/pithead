@@ -239,7 +239,7 @@ control_egress_sync() { # <id> <chain> <control-dir>
 apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" br rc=0
     if ! command -v nft >/dev/null 2>&1; then
-        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:nft-missing — nftables not found, cannot enforce Tor-only egress. Container startup is refused until the firewall is restored."
         return 1
     fi
     # mining_net is IPv4-only by design, so br is empty and the ruleset stays v4-only. If it ever
@@ -271,7 +271,7 @@ apply_tor_egress_nft() { # <subnet> <tor_ip> [sync-ip ...]
 apply_tor_egress_iptables() { # <subnet> <tor_ip> [sync-ip ...]
     local subnet="$1" tor_ip="$2" saved
     if ! command -v iptables >/dev/null 2>&1 || ! command -v iptables-restore >/dev/null 2>&1; then
-        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. The stack runs, but clearnet egress is NOT fail-closed."
+        warn "egress-apply:iptables-missing — iptables/iptables-restore not found, cannot enforce Tor-only egress. Container startup is refused until the firewall is restored."
         return 1
     fi
     # DOCKER-USER may not exist yet on a first-ever `up` (Docker creates it with its first network).

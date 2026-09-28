@@ -1,5 +1,5 @@
-"""Derive outbound routes and privacy state (#170). A chosen node sync may bypass the host
-firewall; other container clearnet paths remain blocked. Host traffic is outside that firewall.
+"""Derive outbound routes and privacy state (#170). Selected node sync, P2Pool, and XvB routes
+may bypass the host firewall; other container clearnet paths remain blocked. Host traffic is outside it.
 """
 
 import ipaddress
