@@ -127,8 +127,10 @@ assert_contains "back on restores the local_tari profile" "$(env_now COMPOSE_PRO
 
 # The remaining confirm keys that need no live endpoint. TARI_CLEARNET_SYNC is asserted here as a
 # ROUND TRIP; test-confirm-approval.sh asserts its refusal semantics on the Monero twin.
-# The flags now reach the daemons with the default-on firewall (#2678), each through its own
-# temporary node exception. The approval gate must still confirm the change.
+# This fake host keeps the installed firewall transaction for the live readback required when a
+# confirmed clearnet choice activates its exception.
+# shellcheck source=tests/stack/fixtures/tor-egress/validation-sandbox.sh
+source "$ROOT/tests/stack/fixtures/tor-egress/validation-sandbox.sh" "$C"
 roundtrip_confirm "TARI_CLEARNET_SYNC" '.tari.clearnet_initial_sync=true' '.tari.clearnet_initial_sync' "true"
 roundtrip_confirm "MONERO_CLEARNET_SYNC" '.monero.clearnet_initial_sync=true' '.monero.clearnet_initial_sync' "true"
 assert_eq "firewall on: MONERO_CLEARNET_SYNC remains selected" "$(env_now MONERO_CLEARNET_SYNC)" "true"

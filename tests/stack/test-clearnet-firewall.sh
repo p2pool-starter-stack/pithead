@@ -108,6 +108,11 @@ cnfw_apply true true
     ok "firewall back on with the flags set: apply keeps both completed syncs' markers" ||
     bad "firewall back on with the flags set: apply keeps both completed syncs' markers" "a marker was removed"
 assert_eq "spent markers close both public-dial exemptions" "$(run_sourced "$V" tor_egress_sync_ips)" ""
+cp "$V/bin/iptables-restore" "$V/bin/iptables-restore.before-failure"
+printf '#!/usr/bin/env bash\ncat >/dev/null; exit 1\n' >"$V/bin/iptables-restore"
+cnfw_apply true true
+assert_rc "pending markers cannot waive failed firewall verification before host attestation" "$?" "1"
+mv "$V/bin/iptables-restore.before-failure" "$V/bin/iptables-restore"
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_RULES"; then
     bad "readback refuses stale exceptions after sync" "accepted stale public-dial rule"
 else ok "readback refuses stale exceptions after sync"; fi

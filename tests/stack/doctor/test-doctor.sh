@@ -68,7 +68,7 @@ echo "== unit: doctor runtime checks — egress firewall / stratum listening / d
 # sudo denies via SUDO_DENY or execs through to the iptables stub (tag presence via IPT_TAGGED),
 # ss prints SS_OUT, curl exits CURL_RC.
 DRBIN="$SANDBOX/drbin"
-mkdir -p "$DRBIN"
+mkdir -p "$DRBIN" && cp "$ROOT/tests/stack/fixtures/tor-egress/nft-list-table-2672.json" "$DRBIN/nft-readback.json"
 cat >"$DRBIN/docker" <<'EOF'
 #!/usr/bin/env bash
 name=$(printf '%s' "$*" | sed -n 's/.*name=\^\([a-z0-9-]*\)\$.*/\1/p')
@@ -109,7 +109,7 @@ case "$*" in
 *"list tables") echo "table inet netavark" ;;
 *"list table inet pithead_egress")
     [ "${NFT_HOOK:-0}" = "1" ] || exit 1
-    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
+    cat "${0%/*}/nft-readback.json" ;;
 esac
 exit 0
 EOF

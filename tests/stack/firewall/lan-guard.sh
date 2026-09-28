@@ -92,10 +92,10 @@ lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() {
 assert_eq "compose restores egress precedence after LAN jumps, before containers start" \
     "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
 : >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; tor_egress_sync_ips() { echo 172.28.0.26; }; compose_up -d' >/dev/null
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 0; }; compose_up -d' >/dev/null
 assert_eq "failed egress refresh prevents container startup" "$(cat "$LG_ORDER")" $'lan\negress:refresh'
 : >"$LG_ORDER"
-lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; tor_egress_sync_ips() { :; }; compose_up -d' >/dev/null
+lg 'apply_lan_guard() { echo lan >>"$LG_ORDER"; }; apply_tor_egress_firewall() { echo "egress:$1" >>"$LG_ORDER"; return 1; }; clearnet_sync_active() { return 1; }; compose_up -d' >/dev/null
 assert_eq "ordinary startup keeps its warning-only firewall failure behavior" "$(cat "$LG_ORDER")" $'lan\negress:refresh\ncompose'
 lg_out="$(lg 'tor_egress_enforced() { return 5; }; tor_egress_verify_or_warn ok >/dev/null 2>&1 && echo allowed || echo refused')"
 assert_eq "shadowed egress readback refuses compose startup" "$lg_out" "refused"
