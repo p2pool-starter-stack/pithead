@@ -43,7 +43,7 @@ PRIONODES
 # comes back up Tor-only — and stays there across restarts/`apply`, so a node is never silently
 # re-exposed. Kept as a function for direct unit testing.
 clearnet_sync_active() {
-    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -f "$CLEARNET_MARKER" ]
+    [ "${MONERO_CLEARNET_SYNC:-false}" = "true" ] && [ ! -e "$CLEARNET_MARKER" ] && [ ! -L "$CLEARNET_MARKER" ]
 }
 
 # LAN-only sources (#2749). A bind other than 127.0.0.1 publishes this port on every host interface,

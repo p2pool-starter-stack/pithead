@@ -80,6 +80,12 @@ compose_up() {
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
     apply_lan_guard
+    # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
+    # above it before containers start. A selected clearnet first sync needs a verified firewall;
+    # without an active exception, retain the established warning-only failure behavior.
+    local egress_rc=0
+    apply_tor_egress_firewall refresh >/dev/null || egress_rc=$?
+    [ "$egress_rc" = 0 ] || ! clearnet_sync_active || return 1
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0

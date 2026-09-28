@@ -218,7 +218,11 @@ export function renderSetup(app) {
             <${RadioField} label="Downloading the chain the first time" name="clearnet-sync"
                   value=${String(v("clearnetSync") ?? false)} onChange=${on("clearnetSync")} options=${[
                     ["false", "Private, over Tor", "Takes days."],
-                    ["true", "Faster, over the open internet", "Takes hours; use Tor afterwards."],
+                    [
+                      "true",
+                      "Faster, over clearnet",
+                      "Takes hours instead of days. Your IP is visible to peers during sync; this node switches to Tor automatically afterwards.",
+                    ],
                   ]} />
 
 
