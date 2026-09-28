@@ -4,7 +4,11 @@ set -euo pipefail
 echo "== control audit precedes result =="
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-test_dir="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/pithead-audit-order.XXXXXX")"
+if [[ -n ${TMPDIR:-${RUNNER_TEMP:-}} ]]; then
+    test_dir="$(mktemp -d "${TMPDIR:-$RUNNER_TEMP}/pithead-audit-order.XXXXXX")"
+else
+    test_dir="$(mktemp -d)"
+fi
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir"/{staged,results,audit}
 CONFIG_FILE="$test_dir/config.json"
