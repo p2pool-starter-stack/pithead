@@ -25,7 +25,14 @@ cat >"$T/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
 "compose up --no-deps --no-start tari-wallet")
-    case "$FAKE_CASE" in no-wallet-seed | cleanup-list-error) exit 1 ;; esac
+    case "$FAKE_CASE" in
+    no-wallet-seed)
+        printf 'early detail\n'
+        printf 'diagnostic %s\n' {1..20}
+        printf 'PROXY_AUTH_TOKEN=leak\nimage unavailable\n' >&2
+        exit 1 ;;
+    cleanup-list-error) exit 1 ;;
+    esac
     grep -q 'tari_payout_confirm' .env || exit 1
     : >.created-volume
     : >.fake-volume
@@ -117,8 +124,14 @@ drive() { # <case> -> round-trip-rc|failures
         wait_status_ok() { :; }
         env_on_box() { rx "grep -E '^$1=' .env 2>/dev/null | head -n1 | cut -d= -f2-"; }
         has_compose_profile() { case ",$1," in *",$2,"*) return 0 ;; *) return 1 ;; esac }
-        run_uninstall_round_trip >/dev/null
+        run_uninstall_round_trip >"$B/run.log"
         result=$?
+        if [ "$1" = no-wallet-seed ]; then
+            grep -q 'image unavailable' "$B/run.log" &&
+                ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak' "$B/run.log" &&
+                grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" ||
+                it_fail "Compose failure detail survives in the bounded row" "missing error"
+        fi
         case "$1" in
         no-wallet-seed | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
             [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"

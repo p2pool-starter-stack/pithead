@@ -669,7 +669,8 @@ For one representative config:
   snapshotted, and `uninstall -y` must leave that snapshot identical, with no allowed writes. Files
   up to 64 MiB are compared by sha256. Larger files (the chains' LMDB) are compared by inode, size,
   mtime and ctime, because any write moves the last two. Uninstall must also remove the three
-  named volumes, the derived state dirs and `.env`. A `setup` with the `missing` pull policy must
+  named volumes, the derived state dirs and `.env`. The wallet-volume fixture reports the last 15
+  redacted lines of a failed Compose create in its failure row. A `setup` with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
 > NOTE: `upgrade` (which rebuilds/pulls images) is intentionally not run unattended. It's slow
