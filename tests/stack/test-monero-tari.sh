@@ -5,7 +5,8 @@
 # flags + the p2pool entrypoint's word-splitting and Tor-loopback bridge for the Tari gRPC (#165/
 # #278), monero/tari address-type validation including the #829 checksum-vs-shape split (#250/
 # #845), the wallet-entrypoint view-only gen.json + healthcheck (#381/#714/#718), the payout view
-# key on both chains including the Tari birthday/spend-key gating (#381/#462/#523), tari.mode
+# key on both chains including the Tari spend-key gating (#381/#462/#523; the birthday is in
+# test-tari-wallet.sh), tari.mode
 # remote (#103), the profile-deactivation reconcile a monero/tari local<->remote switch drives
 # (#795 — kept here rather than split out: it is the direct consequence of the mode-switch
 # sections right above it, not a separate feature), monero.rpc_lan_access/prep_blocks_threads/
@@ -331,30 +332,6 @@ printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","n
 out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
 assert_rc "malformed tari spend key rejected" "$?" "1"
 assert_contains "malformed spend-key message names spend_public_key" "$out" "tari.spend_public_key"
-
-echo "== black-box: tari.payout_scan_birthday validation (#523) =="
-# The restore-point birthday is validated only on the view-key path (it feeds the tari-wallet). It
-# is "auto" or a u16 days-since-epoch (0–65535) — a block height or an out-of-range value is a
-# common mistake that must fail at apply, not silently mis-restore the wallet. Keys are valid so
-# only the birthday is under test.
-# (1) A non-integer birthday (a block height, say) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"height-3200000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "non-integer birthday rejected" "$?" "1"
-assert_contains "non-integer birthday message names the field" "$out" "tari.payout_scan_birthday"
-# (2) An in-range-looking but too-large birthday (> 65535, e.g. a block height) is refused.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"99999"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "out-of-range birthday rejected" "$?" "1"
-assert_contains "out-of-range birthday message names the u16 ceiling" "$out" "65535"
-# (3) A valid u16 birthday applies and reflects verbatim into .env.
-seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","view_key":"%s","spend_public_key":"%s","payout_scan_birthday":"1000"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" "$TVIEW" "$TSPEND" >"$V/config.json"
-out="$(cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y 2>&1)"
-assert_rc "valid birthday accepted" "$?" "0"
-assert_eq "valid birthday reflected into .env" "$(run_sourced "$V" env_get_file "$V/.env" TARI_WALLET_BIRTHDAY)" "1000"
 
 echo "== black-box: tari.mode remote (#103) =="
 # The Tari sibling of monero.mode remote: mirrors the Monero pattern above (host:port render,

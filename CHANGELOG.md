@@ -178,6 +178,18 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **Tari payout confirmation now finds payouts
+  ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
+  `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's
+  `wallet_birthday` works as-is). `auto` was computed from 1970, a day in 2078, so the wallet started
+  at the chain tip and missed every earlier payout; a birthday later than today is now refused. The
+  wallet also scans through the local Tari node's wallet HTTP service on the internal network only;
+  it had no working base-node setting and fell back to Tari's public node over clearnet. The wallet
+  also never started. Its volume was mounted where the image's uid-1000 user could not write, so it
+  crash-looped creating its config directory. It now uses a new volume, `tari_wallet_db`, on the
+  image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
+  birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
+
 - **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
   ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
   `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped

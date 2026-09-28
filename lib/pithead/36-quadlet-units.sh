@@ -207,8 +207,8 @@ Network=mining.network
 IP=$prefix.31
 User=1000:1000
 Entrypoint=/wallet-config/entrypoint.sh
-Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/home/ubuntu/wallet
-Volume=pithead-tari-wallet-data:/home/ubuntu/wallet
+Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
+Volume=pithead-tari-wallet-db:/var/tari/wallet
 Volume=$(_qenv QUADLET_HOST_CONFIG_DIR)/build/tari-wallet:/wallet-config:ro
 Volume=$(_qenv TARI_WALLET_SECRET_FILE):/run/secrets/tari_wallet_secret:ro
 Tmpfs=/tmp:size=32m,mode=1777
@@ -297,7 +297,7 @@ EOF
 Description=pithead caddy
 [Container]
 ContainerName=caddy
-Image=docker.io/library/caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
+Image=docker.io/library/caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
 Network=host
 Volume=$(_qenv QUADLET_CADDYFILE):/etc/caddy/Caddyfile:ro
 Volume=pithead-caddy-data:/data

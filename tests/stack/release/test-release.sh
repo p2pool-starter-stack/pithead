@@ -120,6 +120,21 @@ assert_contains "canonical release pipeline uses the final cut commit (#1828)" "
     "Run the pipeline with the final cut commit checked out"
 assert_not_contains "release docs reject the obsolete prep-commit cut (#1828)" "$CUT_DOC$BRANCH_DOC" \
     "prep commit checked out"
+assert_contains "appliance cut exports the release root as the baked keyring (#2825)" "$CUT_DOC" \
+    'export PITHEAD_RAUC_KEYRING=~/.config/pithead-release/rauc-root.pem'
+assert_contains "appliance cut compares the baked keyring to the release root (#2825)" "$CUT_DOC" \
+    'test "$baked" = "$root"'
+assert_contains "appliance cut checks that only the release root is baked (#2825)" "$CUT_DOC" \
+    'cmp -s "$PITHEAD_RAUC_KEYRING" "$work_dir/mnt/etc/rauc/keyring.pem"'
+assert_contains "appliance cut verifies its bundle against the baked keyring (#2825)" "$CUT_DOC" \
+    'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" os/rauc/build/update.raucb'
+assert_contains "appliance cut signs its disposable probe with the release leaf (#2825)" "$CUT_DOC" \
+    'rauc --cert "$PITHEAD_RAUC_CERT" --key "$PITHEAD_RAUC_KEY" bundle "$work_dir/probe" "$work_dir/probe.raucb"'
+assert_contains "appliance cut verifies a leaf-signed probe against the baked keyring (#2825)" "$CUT_DOC" \
+    'rauc info --keyring "$work_dir/mnt/etc/rauc/keyring.pem" "$work_dir/probe.raucb"'
+CHECKLIST_DOC="$(cat "$ROOT/docs/dev/manual-release-checklist.md")"
+assert_contains "cut checklist requires the root's offline backup (#2825)" "$CHECKLIST_DOC" \
+    'root private key has an offline backup'
 # Bundle completeness: the pull-based bundle must ship every ./build/* path the compose MOUNTS at
 # runtime. A pull install builds nothing and the images don't bake these in, so a missing one mounts an
 # empty dir and breaks the container — the v1.0.0 bundle shipped without monerod's bitmonero.conf.template

@@ -111,11 +111,12 @@ M8 and M9 bundles were dev bundles built on the bench from that head with a rais
 
 Hardware-only observation: a freshly booted slot reads `bad` in `rauc status` until its gate
 commits it, about two and a half minutes into the boot; rebooting inside that window leaves both
-slots reading `bad` until the gate runs again. The Fresh Start reinstall sequence behind #2352 is
-not in the KVM install phase yet (#2447).
+slots reading `bad` until the gate runs again. The KVM install phase checks the Fresh Start
+reinstall sequence behind #2352; the physical result above remains the September 2026 observation.
 
-Still open from these runs: #2351, #2367, #2436 and #2447. Fixed on `develop` since, and not
-re-run on hardware: #2350, #2352, #2364, #2365, #2366, #2382 and #2383.
+Still open from these runs: #2351, #2367 and #2436. The Fresh Start KVM gap is covered by #2447.
+Fixed on `develop` since, and not re-run on hardware: #2350, #2352, #2364, #2365, #2366, #2382
+and #2383.
 
 ### Install-path cases worth walking deliberately
 
@@ -174,6 +175,13 @@ what it still leaves out.
 ---
 
 ## Cutting
+
+Before publication, the owner confirms that the release root certificate and signing leaf
+exist, and that the root private key has an offline backup. Run the baked-keyring fingerprint
+comparison and both `rauc info --keyring` bundle checks in
+[appliance-release.md](appliance-release.md#cutting-a-release), step 3. Record the fingerprint,
+bundle verification results and image and bundle checksums in the release issue. Stop the cut if
+any check fails: the first published image establishes the trust anchor on every fielded box.
 
 1. **Signing must be ON.** Confirm the preflight says so *before* answering the confirmation
    prompt. A release once shipped unsigned because the environment was absent and the script
