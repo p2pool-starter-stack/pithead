@@ -324,7 +324,9 @@ case "$*" in
 "-S DOCKER-USER")
     echo '-N DOCKER-USER'
     [ -n "${FOREIGN:-}" ] && echo "$FOREIGN"
+    [ "${SYNC_ORDER:-}" = before ] && echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.26 -j ACCEPT'
     echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
+    [ "${SYNC_ORDER:-}" = after ] && echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.26 -j ACCEPT'
     ;;
 "-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
 "-S") echo '-P FORWARD ACCEPT' ;;
@@ -389,6 +391,16 @@ assert_eq "iptables: a -s value that is not a CIDR -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -s 999.1.2.3/24 -j ACCEPT')" "5"
 assert_eq "iptables: TWO -s on one rule (we cannot say which decides) -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -s 10.0.0.0/8 -s 172.28.0.0/24 -j ACCEPT')" "5"
+cp "$EGV/.env" "$EGV/.env.before-sync"
+printf 'MONERO_CLEARNET_SYNC=true\n' >>"$EGV/.env"
+sync_order_rc() {
+    local rc=0
+    SYNC_ORDER="$1" PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_enforced >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+assert_eq "iptables: authorized first-sync ACCEPT before DROP is enforced" "$(sync_order_rc before)" "0"
+assert_eq "iptables: authorized first-sync ACCEPT after DROP is ineffective" "$(sync_order_rc after)" "1"
+mv "$EGV/.env.before-sync" "$EGV/.env"
 
 # (c) Tor can be DOWN while the mining containers keep running — a live, clearnet-capable stack.
 # Keying the "is this benign?" question on tor alone reported that as the first-boot case.
@@ -396,5 +408,5 @@ cp "$DEC/iptables-nojump" "$DEC/iptables"
 dec_out="$(RUNNING_CONTAINERS=p2pool PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
 assert_contains "apply: tor down but MINING up, jump missing -> a live fail-open, warned" "$dec_out" "egress-apply:jump-missing"
 assert_not_contains "apply: ...not excused as first-boot staging" "$dec_out" "staged in DOCKER-USER"
-unset -f prec_rc fgn_rc
+unset -f prec_rc fgn_rc sync_order_rc
 unset DEC dec_out

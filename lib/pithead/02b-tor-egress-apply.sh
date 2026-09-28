@@ -17,19 +17,75 @@ tor_egress_sync_ips() {
     return 0
 }
 
+tor_egress_sync_iptables_accept() { # <live -S line> <ip>; only our exact exception
+    local line="$1" ip="$2" tokens i source="" chain="" module="" comment="" target=""
+    local -a fields=()
+    tokens=$(tor_egress_tokenise "$line") || return 1
+    mapfile -t fields <<<"$tokens"
+    [ "$((${#fields[@]} % 2))" = 0 ] || return 1
+    for ((i = 0; i < ${#fields[@]}; i += 2)); do
+        case "${fields[i]}" in
+        b:-A)
+            [ -z "$chain" ] && [ "${fields[i + 1]}" = b:DOCKER-USER ] || return 1
+            chain=1
+            ;;
+        b:-s)
+            [ -z "$source" ] || return 1
+            source=${fields[i + 1]}
+            ;;
+        b:-m)
+            [ -z "$module" ] && [ "${fields[i + 1]}" = b:comment ] || return 1
+            module=1
+            ;;
+        b:--comment)
+            [ -z "$comment" ] || return 1
+            comment=${fields[i + 1]#?:}
+            ;;
+        b:-j)
+            [ -z "$target" ] && [ "${fields[i + 1]}" = b:ACCEPT ] || return 1
+            target=1
+            ;;
+        *) return 1 ;;
+        esac
+    done
+    [ "$chain" = 1 ] && [ "$module" = 1 ] && [ "$comment" = "$TOR_EGRESS_TAG" ] &&
+        [ "$target" = 1 ] && { [ "$source" = "b:$ip" ] || [ "$source" = "b:$ip/32" ]; }
+}
+
 tor_egress_sync_rules_match() { # <nft|iptables> <live rules>
-    local backend="$1" out="$2" prefix ip actual expected active
+    local backend="$1" out="$2" prefix subnet ip actual expected active line drop_seen
     prefix=$(env_get NETWORK_PREFIX 2>/dev/null)
     [ -n "$prefix" ] || prefix=172.28.0
+    subnet=$(env_get NETWORK_SUBNET 2>/dev/null)
+    [ -n "$subnet" ] || subnet=172.28.0.0/24
+    # A counted ACCEPT is ineffective after the subnet DROP: both backends decide in rule order.
+    # The caller also checks that the DROP exists and is reached by forwarded traffic.
     active=$(tor_egress_sync_ips)
     for ip in "$prefix.26" "$prefix.27"; do
         if [ "$backend" = nft ]; then
-            actual=$(jq --arg ip "$ip" '[.nftables[] | select(.rule?.chain == "forward")
-                | .rule.expr | select(any(has("accept")))
-                | .[] | select(.match?.left?.payload? == {"protocol":"ip","field":"saddr"})
-                | select(.match.right == $ip)] | length' <<<"$out") || return 1
+            actual=$(jq --arg ip "$ip" '
+                [.nftables[] | select(.rule?.chain == "forward") | .rule.expr] as $rules
+                | ($rules | map(any(has("drop"))) | index(true)) as $drop
+                | [range(0; $rules | length) as $n | $rules[$n]
+                    | select(any(has("accept")) and any(.match?.left?.payload? == {"protocol":"ip","field":"saddr"}
+                        and .match.right == $ip)) | $n] as $accepts
+                | [{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},
+                    "op":"==","right":$ip}},{"accept":null}] as $exact
+                | if any($accepts[]; $rules[.] != $exact) then "invalid"
+                  elif $drop != null and any($accepts[]; . >= $drop) then "late"
+                  else ($accepts | length) end
+            ' <<<"$out") || return 1
         else
-            actual=$(grep -E -- "-s $ip(/32)?( |$)" <<<"$out" | grep -Ec -- ' -j ACCEPT($| )') || true
+            actual=0
+            drop_seen=0
+            while IFS= read -r line; do
+                [[ "$line" == *" -s $subnet "* && "$line" == *" -j DROP"* ]] && drop_seen=1
+                if [[ "$line" == *"$ip"* && "$line" == *" -j ACCEPT"* ]]; then
+                    tor_egress_sync_iptables_accept "$line" "$ip" || return 1
+                    [ "$drop_seen" = 0 ] || return 1
+                    actual=$((actual + 1))
+                fi
+            done <<<"$out"
         fi
         expected=0
         grep -Fxq -- "$ip" <<<"$active" && expected=1

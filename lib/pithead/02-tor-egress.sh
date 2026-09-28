@@ -358,6 +358,8 @@ tor_egress_enforced() {
     sudo -n iptables -S >/dev/null 2>&1 || return 3
     out=$(sudo -n iptables -S DOCKER-USER 2>/dev/null) || return 1
     grep -qE -- "$TOR_EGRESS_TAG.* -j DROP" <<<"$out" || return 1
+    # Include selected first-sync ACCEPTs in the live precedence check; presence alone would call
+    # an ACCEPT below this chain's terminal DROP an active exception.
     tor_egress_sync_rules_match iptables "$out" || return 1
     # iptables is FIRST MATCH WINS, so a rule ABOVE our DROP makes it dead while it is still
     # "present". Inserting an ACCEPT at DOCKER-USER position 1 is a documented ufw/firewalld

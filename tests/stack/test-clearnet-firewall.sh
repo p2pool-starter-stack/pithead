@@ -36,10 +36,37 @@ assert_eq "firewall off: the tari flag reaches tari" "$(cnfw_env TARI_CLEARNET_S
 
 echo "== live-rule readback: each chain's exception is independently accounted for =="
 cnfw_apply true true
+CN_DROP='-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.0/24 -j DROP'
 CN_RULES=$'-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.26 -j ACCEPT\n-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.27 -j ACCEPT'
+CN_RULES+=$'\n'"$CN_DROP"
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_RULES"; then
     ok "readback accepts both authorized sync exceptions"
 else bad "readback accepts both authorized sync exceptions" "live rule mismatch"; fi
+CN_LATE=$'-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.26 -j ACCEPT\n'"$CN_DROP"$'\n-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.27 -j ACCEPT'
+if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_LATE"; then
+    bad "readback refuses a Tari exception after the blocking DROP" "accepted ineffective exception"
+else ok "readback refuses a Tari exception after the blocking DROP"; fi
+CN_NEGATED=$'-A DOCKER-USER -m comment --comment pithead-tor-egress ! -s 172.28.0.26 -j ACCEPT\n-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.27 -j ACCEPT\n'"$CN_DROP"
+if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_NEGATED"; then
+    bad "readback refuses a negated authorized source" "accepted a broad exception"
+else ok "readback refuses a negated authorized source"; fi
+CN_COMMENT=$'-A DOCKER-USER -m comment --comment "audit -s 172.28.0.26 -j ACCEPT" -j LOG\n-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.27 -j ACCEPT\n'"$CN_DROP"
+if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_COMMENT"; then
+    bad "readback refuses rule text forged inside a comment" "accepted a missing exception"
+else ok "readback refuses rule text forged inside a comment"; fi
+CN_NFT_MONERO='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.26"}},{"accept":null}]}}'
+CN_NFT_TARI='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.27"}},{"accept":null}]}}'
+CN_NFT_DROP='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.0/24"}},{"drop":null}]}}'
+if run_sourced "$V" tor_egress_sync_rules_match nft "{\"nftables\":[$CN_NFT_MONERO,$CN_NFT_TARI,$CN_NFT_DROP]}"; then
+    ok "nft readback accepts authorized exceptions before DROP"
+else bad "nft readback accepts authorized exceptions before DROP" "live rule mismatch"; fi
+if run_sourced "$V" tor_egress_sync_rules_match nft "{\"nftables\":[$CN_NFT_MONERO,$CN_NFT_DROP,$CN_NFT_TARI]}"; then
+    bad "nft readback refuses a Tari exception after DROP" "accepted ineffective exception"
+else ok "nft readback refuses a Tari exception after DROP"; fi
+CN_NFT_NEGATED="${CN_NFT_MONERO/\"op\":\"==\"/\"op\":\"!=\"}"
+if run_sourced "$V" tor_egress_sync_rules_match nft "{\"nftables\":[$CN_NFT_NEGATED,$CN_NFT_TARI,$CN_NFT_DROP]}"; then
+    bad "nft readback refuses a negated authorized source" "accepted a broad exception"
+else ok "nft readback refuses a negated authorized source"; fi
 if run_sourced "$V" tor_egress_sync_rules_match iptables "${CN_RULES%%$'\n'*}"; then
     bad "readback refuses a missing Tari exception" "accepted incomplete rule set"
 else ok "readback refuses a missing Tari exception"; fi
