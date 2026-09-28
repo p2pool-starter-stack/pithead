@@ -296,6 +296,38 @@ recorded a *skipped* run — and a skipped job is green, which made `main` displ
 live-node gate that had never once executed
 ([#1048](https://github.com/p2pool-starter-stack/pithead/issues/1048)).
 
+Before freezing the cut, rehearse the status gate on the current `develop` SHA. The bench-ci
+publisher accepts `main`, `release/*`, or a tag as the job ref, not `develop`. Push a temporary
+`release/*` branch at that **same commit**; do not tag or publish it. Submit `tier4-e2e` with
+`mode=matrix`, then `tier4-kvm` with `phases=["all"]`, the e2e job in `after`, and
+`status_gate=true`. Both jobs must carry the same SHA and ref and run on one bench. Tiers 1–3
+remain GitHub checks. Load the bench-ci environment on the release box first. The final KVM job
+is the only one that requests the aggregate status:
+
+```bash
+set -euo pipefail
+SHA=$(git rev-parse HEAD) # run from the final develop commit
+REF=release/preflight-${SHA:0:12}
+git push origin "$SHA:refs/heads/$REF"
+E2E_KEY=$(uuidgen)
+printf 'e2e idempotency key: %s\n' "$E2E_KEY"
+E2E_ID=$(jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$E2E_KEY" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-e2e",options:{mode:"matrix"},submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id')
+KVM_KEY=$(uuidgen)
+printf 'kvm idempotency key: %s\n' "$KVM_KEY"
+jq -n --arg sha "$SHA" --arg ref "$REF" --arg key "$KVM_KEY" --argjson e2e "$E2E_ID" \
+  '{repo:"pithead",commit:$sha,ref:$ref,tier:"tier4-kvm",options:{phases:["all"]},after:[$e2e],status_gate:true,submitted_by:"release/devops",note:"release status gate",idempotency_key:$key}' \
+  | curl -fsS -X POST "$BENCH_CI_URL/jobs" -H 'Content-Type: application/json' --data-binary @- | jq -er '.job.id'
+```
+
+Read both completed jobs' logs, artifacts and evidence. A failed or cancelled leg cannot yield a
+successful aggregate status. Confirm the exact commit's newest `bench-ci/tier4` status is
+`success` and its creator is the configured bench-ci App before running `release.sh`; record both
+job IDs and the SHA in the release issue. Remove the temporary branch after the status is
+confirmed with `git push origin --delete "$REF"`. If the dependent KVM submission is refused,
+stop and report it to bench-ci; a stand-alone KVM job cannot publish the required status.
+
 | Gate | When | Run by | Blocking |
 | --- | --- | --- | --- |
 | `make test` (tiers 1–3) + `make lint` | every PR | CI | yes |
