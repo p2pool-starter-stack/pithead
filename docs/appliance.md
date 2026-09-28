@@ -243,7 +243,7 @@ Then a handful of choices, all with sensible defaults:
 | Where the Tari node runs | run it here | Only asked once you say yes above. Same private-address requirement as the Monero node, over a network you trust. Pointing Tari elsewhere is the single biggest saving on a small disk: it takes 200 GiB out of the budget. |
 | Join the XMRvsBeast raffle? | on | Off if you would rather send every hash to your own P2Pool payouts. On, the switching engine donates only enough hashrate to hold your tier and routes the rest to P2Pool; donating past a tier's threshold earns nothing extra, because the raffle picks its winners at random. Changeable later. |
 | Mine on this machine too? | on | Off if this box should only coordinate — it is the same answer as the **Pithead** role above. Nothing to install: the image carries its own [RigForge](https://github.com/p2pool-starter-stack/rigforge) miner, pointed at this machine's own pool. It starts by itself once the stack is up, comes back on every boot, and appears in the dashboard's Workers view. The box is tuned for hashrate either way — the CPU governor and the HugePages reservation are set on every boot whether or not this switch is on. |
-| First sync | private over Tor | Faster over clearnet: hours instead of days. Your IP is visible to that chain's peers during sync. The firewall exempts only the chosen node; the host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. |
+| First sync | private over Tor | Faster over clearnet: hours instead of days. Your IP is visible to that chain's peers during sync. With the firewall on, only the chosen node is exempted. The host closes and verifies its exception before the Tor restart, then verifies the live daemon and rules before clearing the warning. The firewall and each clearnet option are confirmed settings in the Configuration view. |
 | Dashboard login | generate one for me | Or choose your own password. "No login" is offered but leaves the dashboard — payout addresses, hashrate — open to anyone on your network; never combine it with the Tor onion. It also leaves the machine **unconfigurable from the dashboard** — editing settings can change the payout address, so that stays behind a login — and on a machine with no shell that is permanent: changing it means a factory reset and setting up again. |
 
 That is the whole first-run form — fewer questions than the DIY install, on purpose: anything
@@ -308,7 +308,9 @@ Reference settings stay editable from the dashboard afterwards — see
 require the signed-in operator to review full non-secret values and complete the confirmation step.
 Dashboard authentication is the access-control perimeter; the typed confirmation prevents paste
 mistakes, not a compromised dashboard process. The dashboard password and the two tamper-alarm
-toggles remain configuration-stick-only. Rigs are narrower: the dashboard can adopt a new rig
+toggles are changeable there too, behind typed `APPLY` and the confirmation step, with a warning
+that names the cost first: the password is also the console `root` login, so a new one replaces
+both, and a silenced alarm stops reporting the change it watches. Rigs are narrower: the dashboard can adopt a new rig
 (Worker Inspect's adopt form, confirmed by typing `APPLY`), but it cannot repoint, reorder or
 remove a rig it already controls. See
 [Changing settings with a USB stick](#changing-settings-with-a-usb-stick).
@@ -316,7 +318,7 @@ remove a rig it already controls. See
 The USB-stick route stays available for everything the dashboard can set and for what it cannot:
 write the new settings to a FAT stick as `pithead-config.json`, insert it and reboot. Being able to
 insert media and power-cycle the machine is authority over it already, so that channel may set any
-supported setting, including the stick-only ones above. Release images reject retired SSH settings.
+supported setting without the dashboard's confirmation step. Release images reject retired SSH settings.
 
 Keys still at their default are not written to disk, so this machine keeps picking up improved
 defaults from future updates. The configuration it runs is identical either way.
@@ -330,12 +332,10 @@ without it. The machine publishes the dashboard as a Tor hidden service — no p
 VPN, no public IP — and its `.onion` address appears under the machine name at the top of the
 dashboard, with a **Copy** button.
 
-After setup, the Configuration view cannot change this switch. The dashboard refuses to commit
-onion settings until
-[#1959](https://github.com/p2pool-starter-stack/pithead/issues/1959) and
-[#2367](https://github.com/p2pool-starter-stack/pithead/issues/2367) let it. To turn the onion on
-or off on a running machine, use
-[a USB stick](#changing-settings-with-a-usb-stick) or **Set up again**.
+After setup, the Configuration view can change this switch too. Turning the onion on or off is a
+confirmed change: review the preview, type `APPLY`, and complete the confirmation step. Keep
+`dashboard.onion.client_auth` at `true` while the config editor is on, or the change is refused.
+[A USB stick](#changing-settings-with-a-usb-stick) and **Set up again** remain available.
 
 The address alone will not open it. An appliance keeps its config editor on, and pithead refuses
 to publish a config editor behind nothing but a password on an anonymously-reachable address, so
