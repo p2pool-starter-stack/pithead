@@ -1027,7 +1027,9 @@ The flow mirrors the CLI's `apply`:
 2. **Save & preview changes** stages the edited config on the host, which dry-runs it and returns
    the same change preview `./pithead apply` prints — one row per changed setting, disruptive rows
    (⚠) styled as warnings. A config that fails validation is rejected here with pithead's own
-   error message; nothing is applied. Sensitive changes also show complete old and new non-secret
+   error message; nothing is applied. The host validates and stages from one private copy of the
+   claimed request, so a writer holding the original spool file open cannot change it mid-preview.
+   Sensitive changes also show complete old and new non-secret
    values; secret values remain masked.
 3. Confirm. If the preview flags any change disruptive (⚠), you must type `APPLY` first. A payout
    change also requires the final eight characters of the new address. The
