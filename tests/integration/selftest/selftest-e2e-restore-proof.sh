@@ -162,7 +162,7 @@ assert_eq "an option-shaped extra label cannot bypass the proof" \
 
 census_probe() { # <service-label> -> remote census exit status
     local dir rc
-    dir="$(mktemp -d "$TMPDIR/pithead-census.XXXXXX")"
+    dir="$(mktemp -d)"
     cat >"$dir/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1" in
@@ -192,7 +192,7 @@ assert_eq "a trailing newline in a service label cannot be stripped into a valid
 echo "== recreate only late test-checkout containers =="
 recreate_probe() { # [fail] [branch-service] -> command and return code
     local dir rc
-    dir="$(mktemp -d "$TMPDIR/pithead-restore.XXXXXX")"
+    dir="$(mktemp -d)"
     mkdir "$dir/baseline" "$dir/bin"
     cat >"$dir/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
