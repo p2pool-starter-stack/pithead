@@ -58,13 +58,17 @@ else
 fi
 
 mkdir -p "$WALLET_DIR"
+# Repair a root-owned volume if needed, then run the wallet as the image's non-root uid (#2454).
+if [ "$(stat -c %u "$WALLET_DIR")" != 1000 ]; then
+    chown -R 1000:1000 "$WALLET_DIR"
+fi
 birthday="$(resolve_birthday)"
 echo "Starting view-only Tari payout wallet (birthday $birthday, base node $NODE_URL) (#462)..."
 
 # The three MINOTARI_WALLET_VIEW_PRIVATE_KEY / SPEND_KEY / PASSWORD env vars (sourced above, now
 # exported) supply the view-only wallet material WITHOUT ever landing on the command line. Supplying
 # all three creates the read-only wallet non-interactively on first run and reopens it after.
-exec minotari_console_wallet \
+exec setpriv --reuid=1000 --regid=1000 --clear-groups minotari_console_wallet \
     --base-path "$WALLET_DIR" \
     --non-interactive-mode \
     --enable-grpc \
