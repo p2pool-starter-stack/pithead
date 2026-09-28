@@ -7,6 +7,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=tests/stack/lib.sh
 source "$HERE/lib.sh"
+bash "$HERE/test_control_audit_order.sh"
+assert_rc "control audit precedes result" "$?" "0"
 # shellcheck source=tests/stack/test-harness-tooling.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-harness-tooling.sh" && domain_ran test-harness-tooling.sh "$_d0" "$?" || domain_ran test-harness-tooling.sh "$_d0" "$?"
 # shellcheck source=tests/stack/doctor/test-doctor.sh disable=SC2015
@@ -103,6 +105,8 @@ _d0=$((PASS + FAIL)) && source "$HERE/test-tari-lmdb.sh" && domain_ran test-tari
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-wallet.sh" && domain_ran test-tari-wallet.sh "$_d0" "$?" || domain_ran test-tari-wallet.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-xmrig-proxy-entrypoint.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-xmrig-proxy-entrypoint.sh" && domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?" || domain_ran test-xmrig-proxy-entrypoint.sh "$_d0" "$?"
+# shellcheck source=tests/stack/test-monero-entrypoint.sh disable=SC2015
+_d0=$((PASS + FAIL)) && source "$HERE/test-monero-entrypoint.sh" && domain_ran test-monero-entrypoint.sh "$_d0" "$?" || domain_ran test-monero-entrypoint.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tari-fork-rewind.sh disable=SC2015
 _d0=$((PASS + FAIL)) && source "$HERE/test-tari-fork-rewind.sh" && domain_ran test-tari-fork-rewind.sh "$_d0" "$?" || domain_ran test-tari-fork-rewind.sh "$_d0" "$?"
 # shellcheck source=tests/stack/test-tor-network.sh disable=SC2015

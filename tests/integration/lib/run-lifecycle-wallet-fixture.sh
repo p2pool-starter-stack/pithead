@@ -4,10 +4,15 @@
 # Create the wallet volume through the profile that owns it, then leave the
 # inactive Compose model for uninstall. The unrelated volume pins its scope.
 arm_inactive_tari_wallet_volume() {
-    local volumes labels model
+    local volumes labels model compose_out
     if has_compose_profile "$(env_on_box COMPOSE_PROFILES)" tari_payout_confirm; then
         it_fail "Tari payout profile starts inactive" "tari_payout_confirm is active"
         return 1
+    fi
+    if ! has_compose_profile "$(env_on_box COMPOSE_PROFILES)" local_tari; then
+        it_skip_leg "Tari wallet volume created through Compose" \
+            "remote Tari mode: tari-wallet depends on the absent local tari service" "by-design"
+        return 0
     fi
     volumes="$(rx 'docker volume ls -q')" || {
         it_fail "wallet volume precondition readable" "volume listing failed"
@@ -32,9 +37,19 @@ arm_inactive_tari_wallet_volume() {
         return 1
     fi
     IT_WALLET_CREATE_ATTEMPTED=1
-    if ! rx 'docker compose up --no-deps --no-start tari-wallet' >/dev/null 2>&1; then
+    if ! compose_out="$(rx 'docker compose up --no-deps --no-start tari-wallet' 2>&1)"; then
+        local detail
+        detail="$(printf '%s\n' "$compose_out" | tail -n 15 | LC_ALL=C awk -v esc=$'\033' '
+            {   # Remove complete terminal sequences; discard lines with other non-printable bytes.
+                gsub(esc "\\[[0-?]*[ -/]*[@-~]", "")
+                gsub(esc "\\][^\007]*\007", "")
+                gsub(esc "[][PX^_][^" esc "]*" esc "\\\\", "")
+                if ($0 ~ /[^ -~]/) next
+                print
+            }' | redact | tr '\n' ' ' | tail -c 2000)"
         rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1
-        it_fail "active Compose profile creates the wallet volume" "compose up --no-start failed"
+        it_fail "active Compose profile creates the wallet volume" \
+            "compose up --no-start failed: $detail"
         return 1
     fi
     labels="$(rx "docker volume inspect pithead_tari_wallet_db --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
@@ -58,6 +73,9 @@ arm_inactive_tari_wallet_volume() {
         return 1
     fi
     it_pass "Tari payout profile disabled and wallet volume absent from Compose model"
+}
+
+arm_unrelated_volume() {
     local nonce
     nonce="$(rx 'date +%s%N')"
     if [[ ! "$nonce" =~ ^[0-9]{15,}$ ]]; then

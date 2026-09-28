@@ -395,11 +395,10 @@ preflight() {
     # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
     # record is taken here or not at all. Read by verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
-    BASELINE_IMAGES="$(stack_image_census)"
-    if [ -n "$BASELINE_IMAGES" ]; then
+    if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
-        warn "nothing running to census — the restore's image check will fail closed."
+        warn "baseline image census failed or no services are running — the restore's image check will fail closed."
     fi
     # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
     # report loading on an otherwise synced bench, so wait for its sync panels to settle.
