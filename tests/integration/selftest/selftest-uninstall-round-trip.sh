@@ -31,6 +31,9 @@ case "$*" in
         printf 'diagnostic %s\n' {1..20}
         printf 'PROXY_AUTH_TOKEN=leak\n\033[2J\rforged row\nimage unavailable\n' >&2
         exit 1 ;;
+    no-wallet-seed-long)
+        printf '%02500d\nfinal diagnostic\n' 0 >&2
+        exit 1 ;;
     cleanup-list-error) exit 1 ;;
     esac
     grep -q 'tari_payout_confirm' .env || exit 1
@@ -129,13 +132,20 @@ drive() { # <case> -> round-trip-rc|failures
         if [ "$1" = no-wallet-seed ]; then
             grep -q 'image unavailable' "$B/run.log" &&
                 ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak' "$B/run.log" &&
+                ! grep -q 'diagnostic 8 ' "$B/run.log" &&
+                grep -q 'diagnostic 9 ' "$B/run.log" &&
                 grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" &&
                 ! LC_ALL=C grep -q '[[:cntrl:]]' "$B/run.log" &&
                 ! grep -q '^forged row' "$B/run.log" ||
                 it_fail "Compose failure detail survives in the bounded row" "missing error"
         fi
+        if [ "$1" = no-wallet-seed-long ]; then
+            detail="$(grep 'compose up --no-start failed:' "$B/run.log")"
+            [ "${#detail}" -le 2050 ] && [[ "$detail" = *'final diagnostic'* ]] ||
+                it_fail "Compose failure detail is capped at 2000 characters" "detail too long or clipped at the wrong end"
+        fi
         case "$1" in
-        no-wallet-seed | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
+        no-wallet-seed | no-wallet-seed-long | partial-wallet-seed | wrong-wallet-label | foreign-preexisting | active-wallet-profile)
             [ ! -e "$B/.uninstalled" ] || it_fail "bad fixture never reaches uninstall" "uninstall ran"
             [ -e "$B/.restarted" ] || it_fail "bad fixture restarts the stack" "up did not run"
             [ -e "$B/.env" ] || it_fail "bad fixture keeps .env" ".env was removed"
@@ -152,6 +162,7 @@ drive() { # <case> -> round-trip-rc|failures
 assert_eq "a clean uninstall and setup pass every row" "$(drive clean)" "0|0"
 assert_eq "a preexisting owned wallet volume is reset, then Compose creates it" "$(drive owned-preexisting)" "0|0"
 assert_eq "failure to seed a wallet volume fails the pre-uninstall row" "$(drive no-wallet-seed)" "1|1"
+assert_eq "long Compose errors are clipped at the end" "$(drive no-wallet-seed-long)" "1|1"
 assert_eq "partial Compose create failure cleans its owned volume" "$(drive partial-wallet-seed)" "1|1"
 assert_eq "cleanup reports a failed container listing" "$(drive cleanup-list-error)" "1|2"
 assert_eq "cleanup reports a failed volume inspection" "$(drive cleanup-inspect-error)" "1|2"
