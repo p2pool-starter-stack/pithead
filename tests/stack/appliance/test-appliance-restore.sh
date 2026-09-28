@@ -37,10 +37,10 @@ cat >"$RS/bin/docker" <<'EOF'
 case "$*" in
   "compose ps --status running -q") exit 0 ;; # empty output -> stack treated as not running
   *hash-password*)
-    # Fake `caddy hash-password` (matches lib.sh's make_stubs): the restore fixtures below carry a
-    # real dashboard.auth.password, and a restore whose live .env lost its matching fingerprint
-    # (an earlier case in this file re-derived it without one) falls through to actually hashing.
-    _pw="${*##*--plaintext }"
+    # Fake `caddy hash-password`: restore fixtures carry a password; a missing matching fingerprint
+    # (re-derived earlier in this file) falls through to hashing.
+    [[ "$*" == *"run --rm -i "* && "$*" != *"--plaintext"* ]] || exit 1
+    IFS= read -r _pw || exit 1
     _d="$(printf '%s' "$_pw" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-22)"
     printf '$2y$14$%s\n' "$_d"
     ;;

@@ -165,22 +165,22 @@ case "$*" in
 "compose up --no-deps --no-start tari-wallet")
     grep -Eq '^COMPOSE_PROFILES=.*(^|,)tari_payout_confirm(,|$)' .env || exit 1
     [ ! -f .wallet-volume ] || exit 1
-    printf 'pithead/tari_wallet_data\n' >.wallet-volume
+    printf 'pithead/tari_wallet_db\n' >.wallet-volume
     : >.wallet-container
     echo "[docker] $*" >>"$DOCKER_LOG" ;;
 "compose rm -sf tari-wallet")
     [ -f .wallet-container ] || exit 1
     rm .wallet-container ;;
 "compose config --volumes")
-    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_data; fi ;;
+    if grep -q 'tari_payout_confirm' .env; then echo tari_wallet_db; fi ;;
 "volume ls -q")
     [ "${FAIL_WALLET_LIST:-0}" != 1 ] || exit 1
-    [ ! -f .wallet-volume ] || echo pithead_tari_wallet_data
+    [ ! -f .wallet-volume ] || echo pithead_tari_wallet_db
     [ ! -f .unrelated-volume ] || echo pithead_itest_unrelated ;;
-'volume inspect pithead_tari_wallet_data --format {{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}')
+'volume inspect pithead_tari_wallet_db --format {{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}')
     [ "${FAIL_WALLET_INSPECT:-0}" != 1 ] || exit 1
     cat .wallet-volume ;;
-"volume rm pithead_tari_wallet_data")
+"volume rm pithead_tari_wallet_db")
     [ "${FAIL_WALLET_RM:-0}" != 1 ] || exit 1
     echo "[docker] $*" >>"$DOCKER_LOG"
     rm .wallet-volume ;;
@@ -197,7 +197,7 @@ sed -i.bak 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=local_node,local_tari,tari_p
 out=$(cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose up --no-deps --no-start tari-wallet 2>&1)
 assert_rc "active Compose profile creates the wallet service" "$?" "0"
 assert_eq "Compose creation leaves the wallet volume with project and volume ownership" \
-    "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead/tari_wallet_data"
+    "$(cat "$V/.wallet-volume" 2>/dev/null)" "pithead/tari_wallet_db"
 assert_eq "Compose created the wallet container before profile disable" \
     "$([ -f "$V/.wallet-container" ] && echo yes)" "yes"
 (cd "$V" && DOCKER_LOG="$DOCKER_LOG" PATH="$V/bin:$PATH" docker compose rm -sf tari-wallet)
@@ -217,7 +217,7 @@ assert_contains "uninstall states the kept column" "$out" "Kept (yours):"
 assert_contains "uninstall states the left-behind column" "$out" "Left behind"
 assert_contains "uninstall names the kept files" "$out" "config.json"
 assert_contains "uninstall displays the decoded data path" "$out" "$kept_dir"
-assert_contains "uninstall names the three volumes it removes with the containers" "$out" "caddy_data/wallet_data/tari_wallet_data"
+assert_contains "uninstall names the three volumes it removes with the containers" "$out" "caddy_data/wallet_data/tari_wallet_db"
 assert_contains "uninstall prints the removal command" "$out" "sudo rm -rf"
 assert_contains "uninstall's removal command quotes a path with a space" "$out" "'$kept_dir'"
 assert_eq "uninstall compose-downs with -v so the named volumes go with the containers" \
@@ -227,7 +227,7 @@ assert_eq "uninstall removes the Tari wallet volume outside the inactive Compose
 assert_eq "uninstall preserves the unrelated volume" \
     "$([ -f "$V/.unrelated-volume" ] && echo present)" "present"
 assert_eq "uninstall removes only the exact Tari wallet volume" \
-    "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead_tari_wallet_data"
+    "$(grep -F '[docker] volume rm ' "$DOCKER_LOG")" "[docker] volume rm pithead_tari_wallet_db"
 assert_eq "uninstall removes .env" "$([ -f "$V/.env" ] || echo gone)" "gone"
 assert_eq "uninstall removes Caddyfile" "$([ -f "$V/Caddyfile" ] || echo gone)" "gone"
 assert_eq "uninstall removes the rendered Tari config" "$([ -f "$V/build/tari/config.toml" ] || echo gone)" "gone"
@@ -295,32 +295,32 @@ chmod +x "$V/bin/systemctl"
 : >"$V/data/control/.claim.1"
 SECONDS=0
 cp "$V/bin/docker-wallet" "$V/bin/docker"
-printf 'pithead/tari_wallet_data\n' >"$V/.wallet-volume"
+printf 'pithead/tari_wallet_db\n' >"$V/.wallet-volume"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_LIST=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume list" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
 assert_contains "uninstall reports the wallet listing failure" "$out" "Could not list Docker volumes"
 assert_eq "failed wallet listing keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet listing keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_data"
+assert_eq "failed wallet listing keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_INSPECT=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume inspection" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
-assert_contains "uninstall reports the wallet inspection failure" "$out" "Could not inspect pithead_tari_wallet_data"
+assert_contains "uninstall reports the wallet inspection failure" "$out" "Could not inspect pithead_tari_wallet_db"
 assert_eq "failed wallet inspection keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet inspection keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_data"
+assert_eq "failed wallet inspection keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 rc=0
 out=$(cd "$V" && FAIL_WALLET_RM=1 PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1) || rc=$?
 assert_eq "uninstall refuses a failed wallet volume removal" "$([ "$rc" -ne 0 ] && echo refused)" "refused"
-assert_contains "uninstall reports the wallet removal failure" "$out" "Could not remove pithead_tari_wallet_data"
+assert_contains "uninstall reports the wallet removal failure" "$out" "Could not remove pithead_tari_wallet_db"
 assert_eq "failed wallet removal keeps .env for retry" "$([ -f "$V/.env" ] && echo yes)" "yes"
-assert_eq "failed wallet removal keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_data"
+assert_eq "failed wallet removal keeps the volume" "$(cat "$V/.wallet-volume")" "pithead/tari_wallet_db"
 printf 'other/volume\n' >"$V/.wallet-volume"
 FOREIGN_VOLUME_LOG="$V/docker-foreign.log"
 : >"$FOREIGN_VOLUME_LOG"
 out=$(cd "$V" && DOCKER_LOG="$FOREIGN_VOLUME_LOG" PITHEAD_UNIT_DIR="$UNINSTALL_UNITS" PATH="$V/bin:$PATH" ./pithead uninstall -y 2>&1)
 assert_eq "uninstall keeps a same-named volume without Pithead's Compose labels" \
     "$(cat "$V/.wallet-volume")" "other/volume"
-assert_not_contains "uninstall does not remove a foreign volume" "$(cat "$FOREIGN_VOLUME_LOG")" "volume rm pithead_tari_wallet_data"
+assert_not_contains "uninstall does not remove a foreign volume" "$(cat "$FOREIGN_VOLUME_LOG")" "volume rm pithead_tari_wallet_db"
 cp "$V/bin/docker-base" "$V/bin/docker"
 rm -f "$V/.wallet-volume" "$V/bin/docker-wallet" "$V/bin/docker-base"
 assert_eq "uninstall drains the runner in the CONTROL_DIR restored from .env" "$([ "$SECONDS" -lt 20 ] && echo prompt || echo "waited ${SECONDS}s")" "prompt"
