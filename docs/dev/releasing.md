@@ -300,8 +300,9 @@ Before freezing the cut, rehearse the status gate on the current `develop` SHA. 
 publisher accepts `main`, `release/*`, or a tag as the job ref, not `develop`. Push a temporary
 `release/*` branch at that **same commit**; do not tag or publish it. Submit `tier4-e2e` with
 `mode=matrix`, then `tier4-kvm` with `phases=["all"]`, the e2e job in `after`, and
-`status_gate=true`. Both jobs must carry the same SHA and ref and run on one bench. Tiers 1–3
-remain GitHub checks. Load the bench-ci environment on the release box first. The final KVM job
+`status_gate=true`. Both jobs must carry the same SHA and ref; bench-ci keeps the dependency even
+when it routes the KVM job to another bench. Tiers 1–3 remain GitHub checks. Load the bench-ci
+environment on the release box first. The final KVM job
 is the only one that requests the aggregate status:
 
 ```bash
