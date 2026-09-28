@@ -1,7 +1,7 @@
 # Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
-    if describe_notification_change "$key" "$old" "$new"; then
+    if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
@@ -200,10 +200,10 @@ describe_change() {
             msg="Dashboard login DISABLED — the dashboard is reachable without a password again."
         elif [ -z "$old" ]; then
             flag=DEST
-            msg="Dashboard login ENABLED — Caddy now requires the configured username/password; the caddy container is recreated."
+            msg="Dashboard login ENABLED — Caddy now requires the configured username/password: a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         else
             flag=DEST
-            msg="Dashboard login password CHANGED — use the new credentials; the caddy container is recreated."
+            msg="Dashboard login password CHANGED — other signed-in sessions are logged out, a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         fi
         ;;
     DASHBOARD_AUTH_USER)
@@ -273,11 +273,11 @@ describe_change() {
         # The ping URL is both the on/off switch and a capability secret — report the change
         # (enable/disable/update) WITHOUT printing the value.
         if [ -z "$new" ]; then
-            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared; the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared, so no one is alerted if this machine goes down; the dashboard container is recreated."
         elif [ -z "$old" ]; then
-            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         else
-            msg="Healthchecks.io ping URL updated — the dashboard container is recreated."
+            msg="Healthchecks.io ping URL updated — a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         fi
         ;;
     TOR_AUTO_HEAL)
@@ -298,7 +298,7 @@ describe_change() {
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. The dashboard switches monerod back to Tor automatically once the chain is synced. monerod is recreated."
+            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. After sync, the host closes the exception, monerod restarts on Tor, and the warning clears only after host verification. monerod is recreated."
         else
             msg="Monero clearnet sync DISABLED — monerod P2P returns to Tor-only. monerod is recreated."
         fi
@@ -307,7 +307,7 @@ describe_change() {
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. The dashboard switches Tari back to Tor automatically once the chain is synced. tari is recreated."
+            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. After sync, the host closes the exception, Tari restarts on Tor, and the warning clears only after host verification. tari is recreated."
         else
             msg="Tari clearnet sync DISABLED — the Tari base node returns to Tor-only transport. tari is recreated."
         fi

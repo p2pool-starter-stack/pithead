@@ -14,33 +14,33 @@ assert_running_state() {
     tari_req="$(jq_get "$config" '.dashboard.tari_required')"
     xvb="$(jq_get "$config" '.xvb.enabled')"
     rpc_lan="$(jq_get "$config" '.monero.rpc_lan_access')"
-    # Clearnet initial sync (#183): absent => default false; ignored while the firewall is on (#2649).
+    # Clearnet initial sync (#183): absent => default false; a chosen sync keeps the firewall on.
     monero_clearnet="$(clearnet_flag_effective "$config" monero)"
     tari_clearnet="$(clearnet_flag_effective "$config" tari)"
 
     # 0. Clearnet auto-transition settle (#234). Enabling clearnet on an already-synced node makes the
-    # dashboard supervisor flip it back to Tor, which RESTARTS the daemon(s). Wait for that to fully
-    # COMPLETE before the steady-state battery below — otherwise we catch a daemon mid-restart and the
-    # health/sync/proxy assertions fail spuriously. The marker is written BEFORE the restart, so the
-    # marker alone isn't "settled": for Monero we also wait for the Tor `proxy=` to reappear in the
-    # running config (only true once the flip-back re-render + restart finished), then for the whole
-    # stack to report healthy. This block also IS the end-to-end proof the transition fired.
     if [ "$monero_clearnet" = "true" ] || [ "$tari_clearnet" = "true" ]; then
-        local csdir
+        local csdir cdir
         csdir="$(env_on_box CLEARNET_STATE_DIR)"
+        cdir="$(env_on_box CONTROL_DIR)"
         if [ "$monero_clearnet" = "true" ]; then
-            if wait_for 180 10 "monero clearnet→Tor transition marker (#234)" rx "test -f '$csdir/monero.synced'"; then
+            if wait_for 240 10 "host-attested Monero clearnet→Tor transition (#234)" rx \
+                "jq -e --rawfile marker $(quote_arg "$csdir/monero.synced") '.status == \"verified\" and .marker == (\$marker | rtrimstr(\"\\n\")) and (.inode | type == \"number\") and (.ctime_ns | type == \"number\")' $(quote_arg "$cdir/results/clearnet-monero-tor.json") >/dev/null 2>&1"; then
                 it_pass "monero auto-transitioned clearnet→Tor (#234)"
-            else it_fail "monero auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
+            else it_fail "monero auto-transitioned clearnet→Tor (#234)" "host attestation not written within 240s"; fi
             wait_for 240 10 "monerod restarted back on Tor — proxy restored (#234)" \
                 rx "docker exec monerod grep -qE '^proxy=' /home/ubuntu/.bitmonero/bitmonero.conf 2>/dev/null" || true
         fi
         if [ "$tari_clearnet" = "true" ]; then
-            if wait_for 180 10 "tari clearnet→Tor transition marker (#234)" rx "test -f '$csdir/tari.synced'"; then
+            if wait_for 240 10 "host-attested Tari clearnet→Tor transition (#234)" rx \
+                "jq -e --rawfile marker $(quote_arg "$csdir/tari.synced") '.status == \"verified\" and .marker == (\$marker | rtrimstr(\"\\n\")) and (.inode | type == \"number\") and (.ctime_ns | type == \"number\")' $(quote_arg "$cdir/results/clearnet-tari-tor.json") >/dev/null 2>&1"; then
                 it_pass "tari auto-transitioned clearnet→Tor (#234)"
-            else it_fail "tari auto-transitioned clearnet→Tor (#234)" "marker not written within 180s"; fi
+            else it_fail "tari auto-transitioned clearnet→Tor (#234)" "host attestation not written within 240s"; fi
         fi
+        assert_host_claims_spent_sync "$csdir" "$monero_clearnet" "$tari_clearnet"
         wait_for 240 5 "stack healthy after clearnet→Tor transition (#234)" _pred_status_ok || true
+        assert_contains "firewall on: completed sync exceptions absent from live rules (#2678)" \
+            "$(pithead doctor 2>&1)" "Tor-only egress firewall is installed"
     fi
 
     # 1. Expected containers up; unexpected ones absent.
@@ -192,8 +192,8 @@ assert_running_state() {
     #     Assert the data contract survives the trip (the on-the-wire privacy posture is verified
     #     separately by assert_egress_posture via /proc/net/tcp): both sections present, the badge
     #     summary shared verbatim with the map so they can never disagree, and the canonical node
-    #     set exposed. NOT config-independent (#2303): local_miner.enabled gates a "local-miner"
-    #     node, same as topology_graph.py; expected_topology_nodes (lib.sh) mirrors + selftests it.
+    #     set exposed. Config gates "local-miner" on local_miner.enabled and omits "tari" only
+    #     when tari.mode=off, same as topology_graph.py; expected_topology_nodes mirrors both.
     assert_eq "egress posture section present" "$(jq_get "$st" '.egress.summary | type')" "object"
     assert_eq "topology section present" "$(jq_get "$st" '.topology.summary | type')" "object"
     assert_eq "topology + egress share one summary" \

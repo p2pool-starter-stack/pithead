@@ -154,26 +154,11 @@ parse_and_validate_config() {
     # Fail-closed Tor-only egress firewall (#270); default on. Renders to .env so `up` can read it.
     # config_bool (not a plain `// true`) so an explicit false actually disables it — see #294.
     TOR_EGRESS_FIREWALL=$(normalize_bool "$(config_bool '.network.tor_egress_firewall' true)")
-    # Clearnet initial sync vs. the egress firewall (#941): a clearnet_initial_sync flag asks a
-    # daemon's first sync to dial out over clearnet (fast); the egress firewall (default on) DROPs
-    # every non-Tor dial. render_env therefore ignores the flag while the firewall is on and keeps
-    # both daemons on Tor (#2649), so the sync runs at ordinary Tor speed. Nothing leaks, so this
-    # is WARN not FAIL — refusing would block a config that is merely slower than the operator
-    # intended, not one that's unsafe. Checked here (not just in render_env, which only runs for
-    # `up`/`apply`) so the contradiction surfaces on every command that validates config,
-    # including `doctor` and `edit`.
-    if [ "$TOR_EGRESS_FIREWALL" = "true" ]; then
-        local _cn_sync=""
-        [ "$(config_bool '.monero.clearnet_initial_sync' false)" = "true" ] && _cn_sync="Monero"
-        [ "$(config_bool '.tari.clearnet_initial_sync' false)" = "true" ] && _cn_sync="${_cn_sync:+$_cn_sync + }Tari"
-        if [ -n "$_cn_sync" ]; then
-            warn "$_cn_sync clearnet_initial_sync is ignored while network.tor_egress_firewall is on — the firewall would drop the clearnet dials, so the node syncs over Tor at normal speed. Turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync to silence this warning."
-        fi
-    fi
     # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits, so the
     # stack never restarts its privacy boundary unbidden. Renders to .env for the dashboard,
     # which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
+    TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")
     # Remote-node host/port validation (#103). The central control-char guard above already stops a

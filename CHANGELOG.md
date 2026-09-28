@@ -178,6 +178,27 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
 
 ### Fixed
 
+- **Clearnet initial sync works behind the default egress firewall
+  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649),
+  [#2678](https://github.com/p2pool-starter-stack/pithead/issues/2678)).** An opted-in Monero or
+  Tari node gets its own temporary direct-dial exception while other containers stay restricted.
+  On sync, the host closes and verifies that exception before the node restarts on Tor; the
+  dashboard keeps the transition warning until the host verifies the live Tor daemon and rules.
+  A completed sync stays on Tor across apply and reboot.
+- **monerod flushes every chain-database commit to disk
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod's default
+  database mode, `fast:async`, opens LMDB with `MDB_NOSYNC` while the node is syncing and only
+  syncs its commits once it reaches the chain tip, so a power cut during the initial sync or a
+  catch-up could lose commits the node had already made. The bundled node now runs with
+  `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
+  below a height it had already committed. At the tip nothing changes. While syncing, each commit
+  now waits for two disk flushes, and the bytes written are the same. Counted from the monerod
+  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes at most about 295,000
+  commits when every download batch is full, and at most about 7.56 million if every batch holds
+  one block. The added time is the number of flushes times the disk's flush time, which was not
+  measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
+  4.2 hours.
+
 - **Tari payout confirmation now finds payouts
   ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
   `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's
@@ -189,15 +210,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   crash-looped creating its config directory. It now uses a new volume, `tari_wallet_db`, on the
   image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
   birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
-
-- **A clearnet initial sync no longer leaves monerod stranded behind the egress firewall
-  ([#2649](https://github.com/p2pool-starter-stack/pithead/issues/2649)).** With
-  `clearnet_initial_sync` on and `network.tor_egress_firewall` at its default (on), monerod dropped
-  its Tor proxy while the firewall dropped every clearnet dial. The node had no peers, never
-  reported `synchronized`, and so never switched back to Tor. `apply` now passes the flag to the
-  daemons only while the firewall is off. With the firewall on, both nodes stay on Tor, and the
-  apply/doctor warning says the flag is ignored. A clearnet sync that already completed stays
-  complete when the firewall is turned back on.
 
 - **A slow first Tor bootstrap no longer fails provisioning
   ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
@@ -324,8 +336,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Added
 
-- **Pithead OS, the appliance.** Write `pithead-os-v2.0.0.img` to a USB stick and boot the machine
-  from it: it installs itself and serves a one-page setup wizard to your browser. The page asks
+- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
+  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
+  wizard to your browser. The page asks
   what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
   mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
   to use, and the same questions the DIY installer asks. A machine without a monitor can be set up

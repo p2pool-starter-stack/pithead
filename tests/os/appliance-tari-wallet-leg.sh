@@ -5,8 +5,8 @@
 # The e2e channel proves the wallet on Docker; this is its only Podman coverage. The wallet volume
 # must be writable by the image's uid-1000 user or the wallet crash-loops creating its config dir,
 # which is how #462 shipped. The leg sets a view key and spend key with a host-side apply (the
-# dashboard refuses those keys by design) and checks that the wallet stays up, owns its volume,
-# wrote its own config into it and names only the local node. A scratch guest has no synced Tari
+# dashboard refuses those keys by design) and checks that the wallet stays up, reports healthy,
+# owns its volume, wrote its own config into it and names only the local node. A scratch guest has no synced Tari
 # chain, so finding payouts is the e2e row's job, not this one. The keys are a valid scalar and the
 # Ristretto basepoint: they parse, and they belong to no real wallet. The config is restored after.
 TARI_WALLET_TEST_VIEW_KEY=0100000000000000000000000000000000000000000000000000000000000000
@@ -18,7 +18,7 @@ _tari_wallet_state() {
 }
 
 phase_provision_tari_wallet() { # <phase-rc>
-    local unexercised=bad deadline state restarts owner argv node
+    local unexercised=bad deadline state restarts health owner argv node
     [ "${1:-0}" -eq 0 ] || unexercised=info
     info "phase: the view-only Tari payout wallet under podman quadlets (#462/#2731)"
     if ! SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-20}" _ssh true 2>/dev/null; then
@@ -63,6 +63,18 @@ mv config.json.tari-wallet-test config.json
         else
             bad "Tari wallet: tari-wallet did not stay up (was 'true $restarts', now '${state:-absent}')"
         fi
+    fi
+    deadline=$(($(date +%s) + 120))
+    health=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        health=$(_ssh "podman inspect tari-wallet --format '{{.State.Health.Status}}'" 2>/dev/null | tr -d '\r\n')
+        [ "$health" = healthy ] && break
+        sleep 10
+    done
+    if [ "$health" = healthy ]; then
+        ok "Tari wallet: the wallet reports healthy under its Quadlet health command"
+    else
+        bad "Tari wallet: the wallet health status is '${health:-unavailable}', not healthy"
     fi
     # Read from inside the container: the mount root it sees is the volume root, whatever the engine
     # named the volume (job 1512's by-name lookup found none on this channel).

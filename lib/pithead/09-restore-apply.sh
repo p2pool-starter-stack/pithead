@@ -253,6 +253,12 @@ restore_apply() ( # <archive> <passphrase> <errfile> [<config-only-dest>] [<dest
         printf 'could not apply the backup files' >"$errf"
         return 1
     fi
+    # Tor rebuilds circuit history on startup. A restored state can contain only abandoned
+    # circuits and strand this box at 95%; the onion identity lives in separate key files.
+    rm -f -- "$tree/${root}data/tor/state" || {
+        printf 'could not discard restored Tor circuit state' >"$errf"
+        return 1
+    }
     # The dashboard database carries the source machine's #35 sync-gate release (#2626); this
     # machine's chains may not be synced. Planting the marker in the STAGED tree, beside the
     # DEPLOYMENT_COMPLETED clear above, makes it land atomically with the rest of the commit — it

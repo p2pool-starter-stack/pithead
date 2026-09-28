@@ -44,6 +44,10 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
 against the component's latest upstream release, checks whether each exact Go module raise still
@@ -200,7 +204,7 @@ verdict is printed as a warning and the rehearsal continues, so a preview still 
 
    **When the version ships the appliance channel too, pass `--draft`.** Published release
    assets are immutable — v1.18.0 shipped an asset that could not be amended and the whole
-   version had to be withdrawn — and the appliance's `.img`/`.raucb` are built,
+   version had to be withdrawn — and the appliance's `.img.xz`, `.raucb`, and checksum files are built,
    battery-tested and attached by hand *after* this stage (see
    [appliance-release.md](appliance-release.md#cutting-a-release)). Publishing before they
    are attached burns the tag. Draft first, attach both channels' artifacts, publish once.

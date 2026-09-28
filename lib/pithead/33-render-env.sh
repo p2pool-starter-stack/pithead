@@ -63,13 +63,11 @@ render_env() {
     prune=$(monero_prune_flag)
 
     # Optional clearnet initial sync (#183), default off: a daemon's IBD runs over clearnet, exposing
-    # this host's IP (Monero keeps tx-proxy=tor). Only while the egress firewall is off: it drops every
-    # clearnet dial, so a clearnet monerod behind it had no peers and never returned to Tor (#2649).
-    local monero_clearnet=false tari_clearnet=false
-    if [ "${TOR_EGRESS_FIREWALL:-true}" = "false" ]; then
-        monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
-        tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
-    fi
+    # this host's IP (Monero keeps tx-proxy=tor). The host firewall admits only the chosen
+    # chain's container until its sync marker appears (#2678).
+    local monero_clearnet tari_clearnet
+    monero_clearnet=$(normalize_bool "$(config_bool '.monero.clearnet_initial_sync' false)")
+    tari_clearnet=$(normalize_bool "$(config_bool '.tari.clearnet_initial_sync' false)")
 
     # Block-verification threads — hardware-dependent, so derive from THIS host's core count
     # rather than hardcoding (more cores = faster initial-sync verification). Reserve 2 cores
@@ -145,12 +143,10 @@ render_env() {
     xvb_donation_level=$(jq -r '.xvb.donation_level // empty' "$CONFIG_FILE")
     [ -z "$xvb_donation_level" ] && xvb_donation_level="auto"
 
-    # How much Tari blocks the stack (#31/#35/#51/#897). monerod is required and not
-    # configurable. A Tari outage never rejects workers regardless of this flag — p2pool keeps
-    # mining Monero through it — but tari_required (default true) makes the miner wait for Tari's
-    # sync, and the dashboard's sync gate STOPS p2pool and xmrig-proxy while it waits. TARI_MODE
-    # off therefore decides this outright (#1855): there is no Tari node to wait for, and a
-    # machine that declined merge-mining must still mine Monero. local/remote keep the override.
+    # How much Tari blocks the stack (#31/#35/#51/#897); monerod is required, not configurable. A Tari
+    # outage never rejects workers (p2pool mines Monero through it), but tari_required (default true)
+    # makes the miner wait for Tari's sync while the sync gate STOPS p2pool and xmrig-proxy. TARI_MODE
+    # off decides it outright (#1855): no node to wait for, Monero must still mine; local/remote keep it.
     local tari_required
     tari_required=$(jq -r --arg m "$TARI_MODE" 'if $m == "off" then "false" elif .dashboard.tari_required != null then .dashboard.tari_required | tostring else "true" end' "$CONFIG_FILE")
 
@@ -434,6 +430,7 @@ NETWORK_SUBNET=$(dotenv_render_value "$NETWORK_SUBNET")
 NETWORK_PREFIX=$(dotenv_render_value "$NETWORK_PREFIX")
 TOR_EGRESS_FIREWALL=$(dotenv_render_value "$TOR_EGRESS_FIREWALL")
 TOR_AUTO_HEAL=$(dotenv_render_value "$TOR_AUTO_HEAL")
+TARI_EXPLORER_URL=$(dotenv_render_value "$TARI_EXPLORER_URL")
 P2POOL_CLEARNET=$(dotenv_render_value "$P2POOL_CLEARNET")
 PROXY_API_PORT=3344
 PROXY_AUTH_TOKEN=$(dotenv_render_value "$PROXY_AUTH_TOKEN")

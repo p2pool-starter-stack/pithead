@@ -150,13 +150,13 @@ doctor() {
     check_egress_firewall_installed
     check_lan_guard
     check_tor_clearnet_egress
-    # Clearnet initial sync (#183): a deliberate, privacy-relevant opt-in. Warn whenever it's on so
-    # an operator who forgot to switch back after syncing is reminded their node IP is exposed.
+    # Clearnet initial sync (#183): warn until the host attests both live Tor and the closed
+    # exception; a dashboard-written marker alone does not clear the warning.
     if [ -f "$ENV_FILE" ] && clearnet_sync_active; then
         local _cn=""
         monero_clearnet_exposed && _cn="Monero"
         tari_clearnet_exposed && _cn="${_cn:+$_cn + }Tari"
-        dr_warn "CLEARNET initial sync is ON for $_cn — P2P runs over clearnet and this host's IP is exposed to that network (Monero tx-broadcast still on Tor). See $DOCS_URL/docs/privacy.md#optional-clearnet-initial-sync-off-by-default. The dashboard switches each node back to Tor automatically once it's synced; this WARN clears when the transition completes."
+        dr_warn "CLEARNET initial sync or Tor transition is pending for $_cn — this host's IP may be exposed until the host verifies Tor and the closed firewall exception (Monero tx-broadcast stays on Tor). See $DOCS_URL/docs/privacy.md#optional-clearnet-initial-sync-off-by-default. The dashboard retries automatically; this WARN clears after host verification."
     else
         dr_ok "No clearnet initial sync active — all node P2P is Tor-only."
     fi
@@ -328,6 +328,7 @@ doctor() {
         check_dashboard_answers
         check_dashboard_public_listener
         check_monerod_synchronized
+        check_tari_chain
     fi
 
     check_data_wipe_note

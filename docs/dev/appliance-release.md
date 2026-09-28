@@ -16,8 +16,8 @@ Rugix candidate is preserved on the `reference/rugix-candidate` branch.
 | Artifact | Built by | Contents |
 |---|---|---|
 | `os/build/pithead-root.tar` | `os/build-image.sh` | the OS as a container build, exported |
-| `pithead-os-vX.Y.Z.img` | `os/rauc/mkimage.sh` | bootable image: ESP + slot A only |
-| `pithead-os-vX.Y.Z.raucb` | `os/rauc/mkbundle.sh` | signed A/B update bundle |
+| `pithead-os-vX.Y.Z.img.xz` | `scripts/release/package-appliance.sh` after `os/rauc/mkimage.sh` | compressed bootable image: ESP + slot A only |
+| `pithead-os-vX.Y.Z.raucb` | `os/rauc/mkbundle.sh`, then `scripts/release/package-appliance.sh` | signed A/B update bundle |
 
 The image carries **only the ESP and slot A**. Slot B and `/data` are created by
 `systemd-repart` on first boot, sized to the machine's real disk — so a 5 GB image (636 MB of it
@@ -434,7 +434,8 @@ to self-approve disruptive changes.
 The automated battery first keeps the stable `monero.out_peers` `CONFIRM` round trip, then drives
 the sensitive path through the ordinary authenticated control route. It proves a commit without
 the typed confirmation is refused, a confirmed commit applies and audits against the signed-in
-actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
+actor without an `approver` field, and a dashboard-password repoint commits behind typed `APPLY`
+and the envelope, proves the new login, and restores the fixture password (#2367). Before
 each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
 waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
 never drains. That keeps the battery's phase boundary explicit; re-provisioning in `apply` does
@@ -556,8 +557,8 @@ channels share the final cut commit, one version and one GitHub Release.
    )
    ```
 
-   Record the fingerprint and both bundle verification results with the image and release bundle
-   checksums in the release issue. A keyring mismatch or a rejected bundle stops publication.
+   Record the fingerprint and both bundle verification results in the release issue. A keyring
+   mismatch or a rejected bundle stops publication.
 
    All of that exists because a release build once shipped a dashboard two commits stale — the
    release clone was pulling from an intermediate clone rather than origin, so `git pull`
@@ -571,13 +572,28 @@ channels share the final cut commit, one version and one GitHub Release.
    pithead-boot is enabled (and podman-restart is NOT — it started the stack into its own
    oneshot cgroup and systemd SIGKILLed the containers it had just spawned). Every check exists because its absence shipped, or nearly
    shipped, once.
-4. Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
-   real hardware. Record results. The human half of a
+4. Package the verified image and bundle. The command refuses an asset at or above GitHub's
+   2 GiB limit, prints both published sizes in bytes, and writes a checksum for each published
+   file. Check the compressed image round trip against the raw image before flashing:
+
+   ```bash
+   scripts/release/package-appliance.sh os/rauc/build/system.img os/rauc/build/update.raucb os/rauc/build/release
+   tag=v$(tr -d '[:space:]' <VERSION)
+   cmp os/rauc/build/system.img <(xz -dc "os/rauc/build/release/pithead-os-${tag}.img.xz")
+   (cd os/rauc/build/release && sha256sum -c "pithead-os-${tag}.img.xz.sha256" "pithead-os-${tag}.raucb.sha256")
+   ```
+
+   Record both sizes and checksums in the release issue. Stop if either asset reaches 2 GiB.
+   Run the manual battery (M1–M10, M11–M13 for any release touching the rig role, M15 and M16) on
+   real hardware by flashing `pithead-os-${tag}.img.xz` with the command in
+   [the appliance guide](../appliance.md#1-write-the-image-to-a-usb-stick). The soak starts from
+   that same compressed artifact. Record results. The human half of a
    release — every check no harness can make, and the traps that have actually bitten — is
    collected in [the manual release checklist](manual-release-checklist.md); walk it alongside
    this list.
-5. Attach image + bundle + checksums to the version's GitHub Release **while it is still a
-   draft** (the DIY cut opens it with `release.sh --draft`), then publish once everything is
+5. Attach the `.img.xz`, `.raucb`, and their two `.sha256` files from `os/rauc/build/release/`
+   to the version's GitHub Release **while it is still a draft** (the DIY cut opens it with
+   `release.sh --draft`), then publish once everything is
    attached. Published release assets are immutable — v1.18.0 burned its tag this way — so
    the release publishes exactly once, with both channels' artifacts aboard. The bundle's
    signature is what devices verify.

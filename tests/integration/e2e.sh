@@ -266,24 +266,24 @@ restore_all() {
     # branch never touched. On a SOURCE-CHECKOUT baseline it is wrong, and silently: `pithead` exports
     # STACK_VERSION=dev for any source checkout (export_build_provenance), so baseline and branch SHARE the
     # `:dev` tag, which deploy_branch's build has already overwritten. `apply && up` then brings the BRANCH
-    # back up under the baseline's name; the pull policy is `never` here, so nothing corrects it, and checks
-    # 1-3 below are all green on it. Rebuild from the baseline's own tree instead, falling back to the old
-    # pairing if that fails; check 4 grades either outcome honestly. `is_source_checkout` is
-    # `[ -f dashboard/Dockerfile ]` (pithead:180) — mirrored, not reinvented. The `{ }` below is
-    # load-bearing: unbraced, a failed `cd` runs the FALLBACK in the ssh session's default directory and
-    # STILL returns 0 — a restore that never entered RESTORE_DIR, reported as run. Proven, not read off.
-    local restore_cmd="./pithead apply -y >/dev/null 2>&1 && ./pithead up >/dev/null 2>&1"
+    # back up under the baseline's name; a failed upgrade must not fall back to apply/up.
+    local restore_cmd="./pithead apply -y && ./pithead up"
     if on_bench "test -f '$RESTORE_DIR/dashboard/Dockerfile'"; then
         step "$RESTORE_DIR is a source checkout — restoring with 'pithead upgrade' so ITS images are rebuilt, not the branch's reused (#272)"
-        restore_cmd="./pithead upgrade >/dev/null 2>&1 || { $restore_cmd; }"
+        restore_cmd="./pithead upgrade"
     fi
     if on_bench "cd '$RESTORE_DIR' && { $restore_cmd; }"; then
+        # A scenario can recreate a test-checkout container after the branch deploy.
+        if ! recreate_test_checkout_containers; then
+            warn "baseline recreation of test-checkout containers failed in $RESTORE_DIR"
+            RESTORE_PROOF_FAILED=1
+        fi
         wait_bench_healthy 300 && ok "baseline stack healthy again" || warn "baseline stack came up but isn't reporting healthy yet — check 'pithead status' on $BENCH_HOST"
         # Proof, even when the health wait timed out: a stack running the WRONG creds looks
         # exactly this healthy — that's the incident (#971). Never trust "up" alone.
         verify_restore_proof || RESTORE_PROOF_FAILED=1
     else
-        warn "baseline 'pithead apply/up' returned non-zero in $RESTORE_DIR — check $BENCH_HOST by hand."
+        warn "baseline restore command failed in $RESTORE_DIR — check the command output above."
         warn "  Safety backup to roll back to: $SAFETY_ARCHIVE"
         RESTORE_PROOF_FAILED=1
     fi
@@ -395,11 +395,10 @@ preflight() {
     # baseline resolves to — and installs that unit. Neither can be told apart afterwards, so the
     # record is taken here or not at all. Read by verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(egress_boot_unit_state)" EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
-    BASELINE_IMAGES="$(stack_image_census)"
-    if [ -n "$BASELINE_IMAGES" ]; then
+    if BASELINE_IMAGES="$(stack_image_census)" && [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
-        warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
+        warn "baseline image census failed or no services are running — the restore's image check will fail closed."
     fi
     # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
     # report loading on an otherwise synced bench, so wait for its sync panels to settle.
@@ -458,11 +457,8 @@ provision() {
     head="$(on_bench "git -C '$E2E_DIR' rev-parse --short HEAD")"
     ok "e2e checkout on $BRANCH @ $head"
 
-    # Seed from the LIVE release bundle when one exists (#880): the canonical checkout's config can
-    # drift far behind what's actually deployed (a release bumps config.json/.env in the bundle dir,
-    # not in CANONICAL_DIR), so seeding from canonical silently exercises + deploys a stale config.
-    # The bundle lives at the "current" symlink sibling of CANONICAL_DIR (e.g. /srv/code/current) —
-    # readlink -f so the log names the real per-version bundle dir this run seeded from.
+    # Seed from the live bundle (#880), since canonical config can lag deployed config.
+    # Resolve its symlink so the log identifies which bundle supplied config.json/.env.
     local live_link live_cfg=""
     live_link="$(dirname "$CANONICAL_DIR")/current"
     live_cfg="$(on_bench "readlink -f '$live_link' 2>/dev/null" || true)"
@@ -492,13 +488,17 @@ provision() {
         ok "config seeded from the canonical checkout (data dirs point at the shared chains)"
     fi
 }
-
 # --- Phase 2: safety backup of the live stack -------------------------------
 backup_stack() {
+    command -v python3 >/dev/null || die "python3 is required before the safety backup can run."
     log "Taking a safety backup of the live stack (the rollback anchor)"
     # ponytail: --no-encrypt, as v1.4 refuses plaintext unattended without PITHEAD_BACKUP_PASSPHRASE; the anchor stays on the bench. Output kept for the die reason (#2757).
     local out rc=0 && out="$(on_bench "cd '$CANONICAL_DIR' && ./pithead backup -y --no-encrypt 2>&1")" || rc=$?
-    [ "$rc" -eq 0 ] || die "pithead backup failed (exit $rc): $(printf '%s\n' "$out" | tail -n 20 | redact_remote_output | paste -sd'|' -)"
+    [ "$rc" -eq 0 ] || {
+        out="$(printf '%s\n' "$out" | python3 -c 'import sys; s = sys.stdin.buffer.read().decode("utf-8", "ignore"); sys.stdout.write("".join(c for c in s if c in "\n\t" or c.isprintable()))' | redact_remote_output)"
+        printf '%s\n' "$out" >&2
+        die "pithead backup failed (exit $rc): $(printf '%s\n' "$out" | tail -n 20 | paste -sd'|' -)"
+    }
     SAFETY_ARCHIVE="$(on_bench "ls -t '$CANONICAL_DIR'/backups/pithead-backup-*.tar.gz 2>/dev/null | head -n1")"
     [ -n "$SAFETY_ARCHIVE" ] || die "Backup ran but produced no archive."
     ok "safety backup: $SAFETY_ARCHIVE"
@@ -581,13 +581,6 @@ deploy_branch() {
     # Record what was actually built, so "what did we test" is unambiguous in the run log (#272).
     on_bench "cd '$E2E_DIR' && docker compose images --format '{{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | grep -E 'p2pool|dashboard|monero|tor|xmrig' || true" | while IFS= read -r l; do step "image: $l"; done
     wait_bench_healthy 300 || warn "stack applied but not yet healthy; the harness will wait on real readiness signals"
-    # What the branch's build produced, by service — read by verify_restore_proof's check 4, so that
-    # "the branch's image came back up as the baseline" is a distinguishable outcome and not an
-    # invisible one. Taken AFTER the health wait rather than straight after the upgrade: the census
-    # reads running containers, and one still being recreated would simply be absent. That direction
-    # only ever weakens the check (a service missing here can never be accused of being the branch's,
-    # so the failure mode is a missed catch, never a false accusation) — but a settled stack is free.
-    BRANCH_IMAGES="$(stack_image_census)"
     wait_synced 1500 || die "post-deploy chain readiness did not recover within 1500s; destructive phases refused."
     ok "branch deployed; stack reconciled"
 }

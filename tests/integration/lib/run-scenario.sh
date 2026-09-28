@@ -16,9 +16,15 @@ assert_scenario() {
 # direct-dial. Reuses bench-verify-egress.sh (the #256 verifier) in its persistent-only mode so
 # post-restart startup transients don't false-positive. Skipped only while a clearnet initial sync
 # is genuinely UNFINISHED (#183): a node is then intentionally on clearnet.
-assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness control (#563)
-    local mc tc sdir prefix out waive=""
+assert_egress_posture() { # [tor-down|node-sync]
+    local mc tc sdir prefix out waive="" arm=tor polls=3 interval=8 row="no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)"
     [ "${1:-}" != "tor-down" ] || waive=" --allow-tor-down"
+    if [ "${1:-}" = node-sync ]; then
+        arm=node-sync
+        polls=6
+        interval=10
+        row="firewall-on clearnet peers and other app isolation (#2678)"
+    fi
     mc="$(env_on_box MONERO_CLEARNET_SYNC)"
     tc="$(env_on_box TARI_CLEARNET_SYNC)"
     # The flag alone is not the exemption — it stays `true` in .env long after the sync finished,
@@ -26,8 +32,10 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
     # marker in CLEARNET_STATE_DIR when they are done, so skip only while the marker is ABSENT.
     sdir="$(env_on_box CLEARNET_STATE_DIR)"
     [ -n "$sdir" ] || sdir="$IT_REMOTE_DIR/data/clearnet-state"
-    if { [ "$mc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/monero.synced")"; } ||
-        { [ "$tc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/tari.synced")"; }; then
+    if [ "$arm" = tor ] && {
+        { [ "$mc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/monero.synced")"; } ||
+            { [ "$tc" = "true" ] && ! rx "test -f $(quote_arg "$sdir/tari.synced")"; }
+    }; then
         it_skip_leg "all-Tor live egress (#274/#270)" "clearnet initial sync is explicitly active" "by-design"
         return 0
     fi
@@ -48,11 +56,11 @@ assert_egress_posture() { # [tor-down]  — "tor-down" waives Tor's own liveness
             return 0
         fi
     fi
-    out="$(rx "bash $(quote_arg "$bench") tor --dir . --prefix '$prefix' --polls 3 --interval 8$waive 2>&1")"
+    out="$(rx "bash $(quote_arg "$bench") $arm --dir . --prefix '$prefix' --polls $polls --interval $interval$waive 2>&1")"
     [ "$IT_MODE" = "local" ] || rx "rm -f $(quote_arg "$bench")" >/dev/null 2>&1
     case "$(egress_verdict "$out")" in
-    ok) it_pass "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" ;;
-    leak) it_fail "no persistent direct IPv4 TCP egress observed from bridge apps (#274/#270)" "$out" ;;
+    ok) it_pass "$row" ;;
+    leak) it_fail "$row" "$out" ;;
     *) it_fail "egress verifier INCONCLUSIVE — could not run, not a detected leak (#274/#270)" "$(printf '%s' "$out" | tail -4)" ;;
     esac
 }

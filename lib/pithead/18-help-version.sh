@@ -164,6 +164,8 @@ Maintenance:
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
 
+  egress-run-pending        Close completed clearnet-sync firewall exemptions when dashboard
+                            control is off. Normally fired by pithead-egress-sync.path.
   egress-status             Check the Tor-only egress firewall and write the verdict to
                             the dashboard (control results dir). Read-only. Normally
                             fired every 2 minutes by the pithead-egress timer.

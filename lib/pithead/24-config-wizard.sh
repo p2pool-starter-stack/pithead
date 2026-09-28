@@ -250,7 +250,7 @@ wizard_ask_shape() {
     echo ""
     echo "--- A Few More (Enter for the default) ---"
 
-    read -r -p "First sync: fully private over Tor (days), or faster over clearnet (hours)? (y/N = private): " IN_CLEARNET || true
+    read -r -p "First sync: private over Tor (days), or clearnet (hours; your IP visible to peers, then auto-switches to Tor)? (y/N = private): " IN_CLEARNET || true
     CLEARNET_SYNC=false
     [[ "$IN_CLEARNET" =~ ^[Yy] ]] && CLEARNET_SYNC=true
 
