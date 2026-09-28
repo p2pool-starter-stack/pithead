@@ -239,7 +239,13 @@ control_run_pending() {
         # The dashboard cannot reach the owner-only control parent after this atomic claim. Narrow
         # hand-written/legacy regular files there; never follow a link. An already-open descriptor
         # can still write the claimed inode, so validate and handle a fresh private copy instead.
-        if [ -L "$claim" ] || [ ! -f "$claim" ] || ! chmod 600 "$claim" 2>/dev/null; then
+        if [ -L "$claim" ] || [ ! -f "$claim" ]; then
+            warn "Control request is a symlink or not a regular file — refused."
+            control_audit "$cdir/audit/control.log" "" "" "invalid" "refused-nonregular"
+            rm -f "$claim"
+            continue
+        fi
+        if ! chmod 600 "$claim" 2>/dev/null; then
             warn "Could not protect claimed control request $name — refusing it."
             rm -f "$claim"
             continue
