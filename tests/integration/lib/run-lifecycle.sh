@@ -284,6 +284,7 @@ run_uninstall_round_trip() {
     fi
     IT_UNRELATED_VOLUME_CREATED="" IT_UNRELATED_VOLUME_NAME="" IT_WALLET_CREATE_ATTEMPTED=""
     arm_inactive_tari_wallet_volume
+    [ "$IT_FAIL" -gt "$fails_before" ] || arm_unrelated_volume
     if [ "$IT_FAIL" -gt "$fails_before" ]; then
         rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1 || true
         cleanup_failed_tari_wallet_fixture
