@@ -16,11 +16,40 @@ backup_stack_up() (
 # The state file is disposable; onion keys live in separate files. Only discard it when the
 # failed restart left Tor unhealthy and its recorded history has the observed signature.
 backup_recover_tor_state() {
-    local state="$TOR_DATA_DIR/state"
+    local result
     [ "$(docker inspect --format '{{.State.Health.Status}}' tor 2>/dev/null)" = unhealthy ] || return 0
-    sudo test -f "$state" && sudo test ! -L "$state" || return 0
-    sudo grep -Eq '^CircuitBuildAbandonedCount[[:space:]]+1000$' "$state" || return 0
-    if docker compose stop tor && sudo rm -f -- "$state"; then
+    if ! docker compose stop tor; then
+        warn "Could not stop unhealthy Tor before inspecting its circuit state; retrying startup without changing it."
+        return 0
+    fi
+    # Hold the directory open and refuse a symlink or non-regular state file. Tor is stopped,
+    # so it cannot replace the state between inspection and unlink.
+    if result=$(
+        sudo python3 - "$TOR_DATA_DIR" 2>/dev/null <<'PY'
+import os
+import re
+import stat
+import sys
+
+directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    try:
+        state = os.open("state", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    except FileNotFoundError:
+        sys.exit(0)
+    try:
+        if not stat.S_ISREG(os.fstat(state).st_mode):
+            sys.exit(0)
+        if re.search(rb"(?m)^CircuitBuildAbandonedCount[ \t]+1000$", os.read(state, 1048576)):
+            os.unlink("state", dir_fd=directory)
+            print("discarded")
+    finally:
+        os.close(state)
+finally:
+    os.close(directory)
+PY
+    ); then
+        [ "$result" = discarded ] || return 0
         warn "Tor circuit history was saturated; discarded its state before the backup restart retry (onion keys preserved)."
     else
         warn "Could not discard saturated Tor circuit state; retrying startup without changing it."

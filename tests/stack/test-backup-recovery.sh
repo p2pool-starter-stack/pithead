@@ -103,7 +103,15 @@ printf 'CircuitBuildAbandonedCount 999\n' >"$FB/data/tor/state"
 out="$(backup_case env UP_FAILS=1 TAR_FAIL=0)"
 assert_rc "unrelated first startup failure still retries" "$?" 0
 assert_eq "unsaturated Tor state is preserved" "$(cat "$FB/data/tor/state")" 'CircuitBuildAbandonedCount 999'
-rm -f "$FB/data/tor/state" "$FB/data/tor/hs_ed25519_secret_key"
+
+printf 'CircuitBuildAbandonedCount 1000\n' >"$FB/data/tor/state-target"
+rm -f "$FB/data/tor/state"
+ln -s state-target "$FB/data/tor/state"
+out="$(backup_case env SATURATED_STATE_FAIL=1 TAR_FAIL=0)"
+assert_rc "symlinked Tor state does not get discarded" "$?" 1
+assert_eq "symlink target survives failed recovery" "$(cat "$FB/data/tor/state-target")" 'CircuitBuildAbandonedCount 1000'
+assert_contains "failed recovery keeps original Compose error" "$out" "dependency failed to start: container tor is unhealthy"
+rm -f "$FB/data/tor/state" "$FB/data/tor/state-target" "$FB/data/tor/hs_ed25519_secret_key"
 
 out="$(backup_case env UP_FAILS=99 TAR_FAIL=0)"
 rc=$?
