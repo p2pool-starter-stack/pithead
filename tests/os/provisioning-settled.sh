@@ -59,6 +59,15 @@ provisioning_settled() { # $1 seconds -> 0 once no provisioning unit is activati
     done
     return 1
 }
+# Settled is not succeeded (#2725). A wizard whose `(setup)` died on an unhealthy tor ends with
+# pithead-firstboot `failed`, which provisioning_settled accepts as terminal; job 1194's restore
+# leg then took its backup anyway. That backup restarts the stack through pithead-boot, which
+# reboots the guest on the same unhealthy tor, so the failure dump that followed read nothing.
+# The caller reds the row here instead, while the failed stack is still there to read.
+provisioning_setup_failed() { # 0 when either provisioning unit ended `failed` this boot
+    case " $(provisioning_units) " in *" failed "*) return 0 ;; esac
+    return 1
+}
 
 provisioning_state() { # one line for a verdict: unit states + whether one ran, plus the wizard's error if it failed
     local r st
@@ -86,4 +95,16 @@ provisioning_state() { # one line for a verdict: unit states + whether one ran, 
 # prove the unit stayed closed (#2055 G3).
 unit_ran_this_boot() {
     [ "$(_ssh "systemctl show -p ConditionResult --value $1" 2>/dev/null | tr -d '\r\n')" = yes ]
+}
+
+# SSH returning after a reboot does not mean systemd has evaluated this unit's conditions yet.
+# ConditionResult=no before evaluation looks exactly like a skipped unit (#2836).
+wait_unit_condition_evaluated() { # $1 = unit name; return 1 at the bounded deadline
+    local n stamp
+    for ((n = 0; n < ${UNIT_CONDITION_ATTEMPTS:-30}; n++)); do
+        stamp=$(SSH_TIMEOUT="${SSH_PROBE_TIMEOUT:-3}" _ssh "systemctl show -p ConditionTimestampMonotonic --value $1" 2>/dev/null | tr -d '\r\n')
+        [[ "$stamp" =~ ^[1-9][0-9]*$ ]] && return 0
+        sleep "${UNIT_CONDITION_POLL_S:-1}"
+    done
+    return 1
 }

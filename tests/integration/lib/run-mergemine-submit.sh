@@ -27,17 +27,18 @@ MM_CAPTURE_TIMEOUT=1200
 MM_WANT_SUBMISSIONS=6 # two full cycles of the three templates
 MM_TARI_PORT=48142
 
-# Turn the fixture's `ROW PASS|FAIL <text>` / `INFO <text>` lines into verdicts. Pure, for the selftest.
-_mm_rows() { # <fixture output>
+# Turn `ROW PASS|FAIL <text>` / `INFO <text>` lines (the fixture's here, the LocalNet probe's in
+# run-mergemine-localnet.sh) into verdicts. Pure, for the selftests.
+_mm_rows() { # <phase> <output>
     local line rows=0
     while IFS= read -r line; do
         case "$line" in
-        "ROW PASS "*) it_pass "mergemine-submit: ${line#ROW PASS }" && rows=$((rows + 1)) ;;
-        "ROW FAIL "*) it_fail "mergemine-submit: ${line#ROW FAIL }" && rows=$((rows + 1)) ;;
-        "INFO "*) it_log "mergemine-submit ${line#INFO }" ;;
+        "ROW PASS "*) it_pass "$1: ${line#ROW PASS }" && rows=$((rows + 1)) ;;
+        "ROW FAIL "*) it_fail "$1: ${line#ROW FAIL }" && rows=$((rows + 1)) ;;
+        "INFO "*) it_log "$1 ${line#INFO }" ;;
         esac
-    done <<<"$1"
-    [ "$rows" -gt 0 ] || it_fail "mergemine-submit: the validator printed its rows" "no ROW lines in the fixture output"
+    done <<<"$2"
+    [ "$rows" -gt 0 ] || it_fail "$1: the checker printed its rows" "no ROW lines in its output"
 }
 
 _mm_cleanup() { # <work dir>
@@ -101,7 +102,7 @@ run_mergemine_submit() {
     rc=0
     out="$(rx "docker run --rm -v $(quote_arg "$work"):/work itest-mm-fixture p2pool_mm_fixture validate /work $MM_DIFFICULTY" 2>&1)" || rc=$?
     printf '%s\n' "$out" | redact >"$OUT_DIR/mergemine-validate.log"
-    _mm_rows "$out"
+    _mm_rows mergemine-submit "$out"
     [ "$rc" -eq 0 ] || it_log "mergemine-submit validator exit $rc (see $OUT_DIR/mergemine-validate.log)"
     _mm_cleanup "$work"
 }

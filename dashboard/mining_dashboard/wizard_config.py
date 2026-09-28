@@ -4,6 +4,9 @@ import re
 from copy import deepcopy
 
 _XVB_ALIASES = ("enabled", "url", "donor_id")
+# Every 1.x reference default for the alias block. A v1.x editor save carries the whole block at
+# these values beside the operator's xvb.*, so they are schema defaults, never a conflict (#2690).
+_XVB_ALIAS_V1_DEFAULTS = {"enabled": True, "url": "na.xmrvsbeast.com:4247", "donor_id": "auto"}
 _WORKER_FIELDS = {"name", "host", "port", "control_port", "token", "watts"}
 # A missing config means a genuinely new machine. Tari is opt-in there, while the reference
 # remains ``local`` so an older config that never carried the switch keeps merge-mining.
@@ -68,7 +71,16 @@ def _legacy_conflicts(cfg: dict) -> list[str]:
         if "xvb" in cfg and cfg["xmrig_proxy"] != cfg["xvb"]:
             conflicts.append("xvb and xmrig_proxy")
     for key in _XVB_ALIASES:
-        if key in old_xvb and key in new_xvb and old_xvb[key] != new_xvb[key]:
+        if (
+            key in old_xvb
+            and key in new_xvb
+            and old_xvb[key] != new_xvb[key]
+            # type() too: jq's equality is strict, so ``1`` is no v1 ``true`` default on the host.
+            and not (
+                old_xvb[key] == _XVB_ALIAS_V1_DEFAULTS[key]
+                and type(old_xvb[key]) is type(_XVB_ALIAS_V1_DEFAULTS[key])
+            )
+        ):
             conflicts.append(f"xvb.{key} and xmrig_proxy.{key}")
     return conflicts
 
@@ -154,3 +166,33 @@ def prepare_config(
     if reference:
         prepared = _known_only(prepared, reference, changes)
     return prepared, list(dict.fromkeys(changes))
+
+
+def deep_merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for k, v in (over or {}).items():
+        out[k] = (
+            deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+        )
+    return out
+
+
+def strip_defaults(cfg: dict, ref: dict) -> dict:
+    """Drop every key whose value already equals the documented default.
+
+    The page shows the FULL effective config, because hiding what a machine will run is how
+    people get surprised. What gets written is only what actually differs — a config that
+    pins all several hundred defaults at install time would freeze them forever, and an
+    appliance receives improved defaults through OS updates. Same effective configuration,
+    minus the freeze."""
+    out: dict = {}
+    for k, v in (cfg or {}).items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict) and isinstance(ref.get(k), dict):
+            sub = strip_defaults(v, ref[k])
+            if sub:
+                out[k] = sub
+        elif k not in ref or v != ref[k]:
+            out[k] = v
+    return out

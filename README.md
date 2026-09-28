@@ -90,7 +90,7 @@ DIY is for a box that already does other things.
 
 ## 🚀 Quick Start
 
-This is the DIY path. For the appliance, download `pithead-os-vX.Y.Z.img` from
+This is the DIY path. For the appliance, download `pithead-os-vX.Y.Z.img.xz` from
 [Releases](https://github.com/p2pool-starter-stack/pithead/releases) and follow
 [the appliance guide](docs/appliance.md) instead — no Linux to set up, no command line to learn.
 

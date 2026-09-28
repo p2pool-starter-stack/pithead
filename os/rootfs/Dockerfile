@@ -33,7 +33,7 @@
 # `+dirty` suffix, because raising a module edits go.mod and Go stamps that truthfully. It is also
 # why the tree state below says dirty: this binary IS built from a modified tree, and a build that
 # claimed otherwise would be lying about the provenance this paragraph exists to describe.
-FROM golang:1.26.8-trixie@sha256:771f3162219f7a66bb6be3fea1ba31f418932946a99ad9eac26ffd555dfcf393 AS gobuild
+FROM golang:1.26.8-trixie@sha256:bdca99a00bc16590cb1a0bb4e698f5fc5d6a64e4d5eef13d9f18a0ee08e5fa65 AS gobuild
 
 ARG COMPOSE_VERSION=v5.5.0
 ARG COMPOSE_COMMIT=870908cc8f07f5e90acdf5d34dd1b96a4fe51d16
@@ -115,7 +115,7 @@ RUN /out/docker-compose version && /out/cosign version \
 # Pinned by digest (#135) so the debian:trixie-slim tag can't be silently re-pointed. The digest
 # bump is how base-distro CVE fixes reach the appliance (#833): there is no apt on the running
 # box — every Debian package here is frozen until the next bake.
-FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -130,27 +130,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 # `rauc info` extracts a bundle's manifest with unsquashfs, and without it `pithead os-update`
 # cannot read any bundle's compatibility metadata — every guard it carries was dead on the
 # appliance (found live on the bench, not by CI, whose stack tests stub rauc).
-# Cache-busts ONLY this layer (#929): a warm builder cache reuses the apt index for weeks, and
-# when the mirror rotates a package between builds the stale index 404s. build-image.sh's
-# --fresh-index flag passes a fresh value here; any other build-arg on a later layer would still
-# hit cache as normal — an ARG only invalidates the RUN steps from its declaration onward.
+# --fresh-index changes this ARG to rebuild the package layer with a current apt index. A cache
+# hit now reuses both update and install together; it cannot run install against an older index.
 ARG APT_INDEX_STAMP=0
+ARG PITHEAD_UPDATER=""
 # gzip/libpcre2-8-0/libsqlite3-0/perl-base are CVE pins, not deps (#1438, #2104); xxd stays out because the rootfs has no consumer (#1380).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -e; \
+    updater_packages=""; \
+    if [ "$PITHEAD_UPDATER" = "rauc" ]; then updater_packages="rauc rauc-service"; fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         systemd systemd-sysv systemd-timesyncd systemd-resolved dbus udev \
         linux-image-amd64 initramfs-tools zstd \
         grub-efi-amd64 shim-signed \
         podman podman-docker netavark aardvark-dns catatonit uidmap \
         jq openssl curl ca-certificates iproute2 gzip libpcre2-8-0 libsqlite3-0 perl-base \
-        fdisk gdisk parted e2fsprogs dosfstools \
+        fdisk gdisk parted e2fsprogs xfsprogs dosfstools \
         nftables iptables systemd-repart \
         avahi-daemon libnss-mdns \
         squashfs-tools \
-        openssh-server sudo less nano htpdate
-# NB: the apt lists survive THIS layer on purpose — the later `apt-get install` steps below (the RigForge toolchain, the
-# updater) run without their own `apt-get update` and resolve against these lists. They are deleted after the LAST apt
-# step: nothing at runtime uses apt (no apt on the running box), and the rootfs ships as a flat tarball, so a late
-# deletion genuinely leaves every slot and update bundle smaller.
+        openssh-server sudo less nano htpdate \
+        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
+        linux-cpupower msr-tools $updater_packages; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+# All appliance packages are installed and apt's temporary files removed in one layer. Marker
+# changes reuse this layer; a cold or evicted cache does not retain the apt lists in its snapshot.
 
 # The stack, at the image's exact release state: pithead + schemas + the build/ mount sources
 # services bind-mount. Context = repo root. BUILD_COMMIT: the commit built from — the artifact's own
@@ -200,9 +204,6 @@ RUN chmod +x /usr/local/bin/docker-compose /usr/local/bin/cosign \
 # cpupower CLI as linux-cpupower (linux-tools-common is Ubuntu's name and does not exist here).
 # msr-tools gives doctor its rdmsr probe; gettext-base is envsubst, which renders the unit on
 # every boot and is the ONLY tool a prebuilt tree strictly needs. Unsupported RigForge tests and their extra tool dependencies are not baked.
-RUN apt-get install -y --no-install-recommends \
-        git build-essential cmake libuv1-dev libssl-dev libhwloc-dev gettext-base python3 \
-        linux-cpupower msr-tools
 ARG RIGFORGE_REF=dcdbc7e47c16779c58163d7b9d8650a1b5ff6854
 RUN curl -fsSL -o /tmp/rigforge.tar.gz \
         "https://github.com/p2pool-starter-stack/rigforge/archive/${RIGFORGE_REF}.tar.gz" \
@@ -339,19 +340,13 @@ RUN mkdir -p /etc/systemd/system-preset \
     && printf 'disable *\n' > /etc/systemd/system-preset/00-pithead.preset \
     && systemctl mask systemd-firstboot.service
 RUN chmod +x /usr/local/sbin/pithead-sync /usr/local/sbin/pithead-boot /usr/local/sbin/pithead-boot-version /usr/local/sbin/pithead-media-config /usr/local/sbin/pithead-hugepages /usr/local/sbin/pithead-data-reset /usr/local/sbin/pithead-ssh-host-keys /usr/local/sbin/pithead-machine-id /usr/local/sbin/pithead-journal-persist /usr/lib/systemd/system-generators/pithead-mount-generator
-# The updater is chosen per image. RAUC is a Debian package, so it is installed here when
-# selected; leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
-ARG PITHEAD_UPDATER=""
+# The updater is chosen per image. The package install above includes RAUC only when selected;
+# leaving PITHEAD_UPDATER empty builds the same rootfs with no updater at all.
 # NB: `rauc` is the CLI ONLY. Debian splits the D-Bus daemon into `rauc-service`, which is not even
 # a Recommends of `rauc` — so --no-install-recommends is not what drops it, the package simply has
 # to be named. Install just `rauc` and you get a binary that cannot install anything, failing with
 # "de.pengutronix.rauc was not provided by any .service files" rather than anything that names a
 # missing daemon. Both packages are required.
-RUN if [ "$PITHEAD_UPDATER" = "rauc" ]; then \
-        apt-get install -y --no-install-recommends rauc rauc-service; \
-    fi
-# The last apt step is above — from here the lists are dead weight in every slot and bundle.
-RUN rm -rf /var/lib/apt/lists/*
 # The disk installer and the boot config it writes to a target. No image payload ships with it —
 # it copies the running slot, so the artifact does not carry a compressed copy of itself.
 COPY os/installer/pithead-install /usr/local/sbin/pithead-install

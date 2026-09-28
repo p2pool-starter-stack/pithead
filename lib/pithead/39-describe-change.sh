@@ -1,15 +1,13 @@
 # Describe a changed env key for the apply preview. Prints "FLAG\tmessage"; always returns 0.
 describe_change() {
     local key="$1" old="$2" new="$3" flag="INFO" msg
-    if describe_notification_change "$key" "$old" "$new"; then
+    if describe_notification_change "$key" "$old" "$new" || describe_exposure_change "$key" "$old" "$new"; then
         printf '%s\t%s' "$flag" "$msg"
         return
     fi
     case "$key" in
     MONERO_PRUNE)
-        # #719: ENABLE (off → on) is confirm-gated — it reclaims disk by pruning blocks, an
-        # operator-intent op with an expensive-but-recoverable cost. DISABLE (on → off) stays a
-        # host-only DEST: pruned data can't be restored, so it needs a full re-sync from a shell.
+        # Both directions require confirmation; disabling warns that restoring full history needs a re-sync.
         case "$new" in
         true | 1)
             flag=CONFIRM
@@ -17,7 +15,7 @@ describe_change() {
             ;;
         *)
             flag=DEST
-            msg="Monero pruning DISABLED ($old → $new) — pruned data can't be restored, so the full chain must RE-SYNC from scratch. Apply this from the host."
+            msg="Monero pruning DISABLED ($old → $new) — pruned data can't be restored, so the full chain must RE-SYNC from scratch."
             ;;
         esac
         ;;
@@ -134,18 +132,18 @@ describe_change() {
         msg="xmrig-proxy dev-fee donation level: ${old:-0}% → ${new}% — the xmrig-proxy container is recreated (brief restart)."
         ;;
     DASHBOARD_DATA_DIR)
-        # #719: confirm-gated — a data-dir move is operator-intent (an expensive re-home / re-sync),
-        # not a security boundary. Only the four service data dirs below are in scope.
         flag=CONFIRM
-        msg="$key: $old → $new — data at the old DEFAULT location (./data/dashboard) is moved there automatically; any other old path is left in place."
+        if [ -z "$old" ]; then
+            msg="$key: unset → $new — the dashboard keeps its database here."
+        else
+            msg="$key: $old → $new — any dashboard database at $old (history and the payout-wallet alarm baseline) is copied there and verified, and the old copy stays in place; only the automatic join of the default under the shared data root moves it instead. A non-empty target refuses the move."
+        fi
         ;;
-    MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR)
-        # #719: confirm-gated data-dir moves — the service re-syncs from the new (empty) dir.
+    MONERO_DATA_DIR | TARI_DATA_DIR | P2POOL_DATA_DIR | TOR_DATA_DIR)
         flag=CONFIRM
         msg="$key: $old → $new — the service will use the new (empty) directory and RE-SYNC from scratch; old data is left in place."
         ;;
     *_DATA_DIR)
-        # Every OTHER data dir (e.g. TOR_DATA_DIR) stays host-only — not in the #719 in-scope set.
         flag=DEST
         msg="$key: $old → $new — the service will use the new (empty) directory and re-sync; old data is left in place."
         ;;
@@ -156,7 +154,12 @@ describe_change() {
         flag=CONFIRM msg="${key%%_*} node endpoint ($key): ${old:-unset} → $new — the stack points its RPC client THERE and trusts the chain data, block templates and share heights that address returns. Confirm-gated, not free-commit, because it moves TRUST rather than disk; the host probes the new endpoint before accepting it, and putting the old address back reverses it."
         ;;
     MONERO_NODE_USERNAME | MONERO_NODE_PASSWORD)
-        msg="Monero node RPC credential updated ($key)."
+        # #2333/#2367: confirm-gated like the endpoint fields above, never a refusal — the owner's
+        # ruling on both issues. Never echo $old/$new: this is the one warning in this function
+        # whose subject is a secret, and CONTROL_SECRET_PATHS masks it everywhere else for the
+        # same reason.
+        flag=CONFIRM
+        msg="Monero node RPC login changed ($key) — the stack authenticates to its configured node with this credential from now on. If the new value is wrong, the node connection fails closed rather than falling back to the old one; put the old value back to reverse it."
         ;;
     XVB_ENABLED | XVB_POOL_URL | XVB_DONOR_ID | XVB_DONATION_LEVEL)
         msg="XMRvsBeast setting ($key): $old → $new."
@@ -197,10 +200,10 @@ describe_change() {
             msg="Dashboard login DISABLED — the dashboard is reachable without a password again."
         elif [ -z "$old" ]; then
             flag=DEST
-            msg="Dashboard login ENABLED — Caddy now requires the configured username/password; the caddy container is recreated."
+            msg="Dashboard login ENABLED — Caddy now requires the configured username/password: a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         else
             flag=DEST
-            msg="Dashboard login password CHANGED — use the new credentials; the caddy container is recreated."
+            msg="Dashboard login password CHANGED — other signed-in sessions are logged out, a mistyped password locks this session out, and on the appliance it is also the console root login; the caddy container is recreated."
         fi
         ;;
     DASHBOARD_AUTH_USER)
@@ -270,11 +273,11 @@ describe_change() {
         # The ping URL is both the on/off switch and a capability secret — report the change
         # (enable/disable/update) WITHOUT printing the value.
         if [ -z "$new" ]; then
-            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared; the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch DISABLED — ping URL cleared, so no one is alerted if this machine goes down; the dashboard container is recreated."
         elif [ -z "$old" ]; then
-            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); the dashboard container is recreated."
+            msg="Healthchecks.io dead-man's switch ENABLED — ping URL set (pings over Tor); a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         else
-            msg="Healthchecks.io ping URL updated — the dashboard container is recreated."
+            msg="Healthchecks.io ping URL updated — a wrong URL stops the pings or sends them to someone else's check, so an outage here goes unnoticed; the dashboard container is recreated."
         fi
         ;;
     TOR_AUTO_HEAL)
@@ -289,13 +292,13 @@ describe_change() {
             msg="Tor guard self-heal DISABLED — a stuck guard is back to WARN-only ('./pithead doctor', fix with './pithead restart tor'); the dashboard container is recreated."
         fi
         ;;
-    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE) msg="Secret configuration value updated — the dashboard container is recreated." ;;
+    XMRIG_API_TOKEN | XVB_STANDBY_SOURCE | WORKER_API_TOKENS) msg="Secret configuration value updated — the dashboard container is recreated." ;;
     MONERO_CLEARNET_SYNC)
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated
         # (CONFIRM), not host-only. DISABLING returns to Tor, a plain INFO change.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. The dashboard switches monerod back to Tor automatically once the chain is synced. monerod is recreated."
+            msg="⚠ Monero CLEARNET initial sync ENABLED — monerod P2P will run over CLEARNET (this host's IP becomes visible to the Monero P2P network) so the chain syncs fast. Transaction broadcast STAYS on Tor; wallets are never exposed. After sync, the host closes the exception, monerod restarts on Tor, and the warning clears only after host verification. monerod is recreated."
         else
             msg="Monero clearnet sync DISABLED — monerod P2P returns to Tor-only. monerod is recreated."
         fi
@@ -304,7 +307,7 @@ describe_change() {
         # #183/#719: ENABLING exposes the host IP during IBD (auto-reverts to Tor) — confirm-gated.
         if [ "$new" == "true" ]; then
             flag=CONFIRM
-            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. The dashboard switches Tari back to Tor automatically once the chain is synced. tari is recreated."
+            msg="⚠ Tari CLEARNET initial sync ENABLED — the Tari base node will sync over CLEARNET (TCP transport + seeds.tari.com DNS seed; this host's IP becomes visible to the Tari P2P network) so its large chain syncs fast. After sync, the host closes the exception, Tari restarts on Tor, and the warning clears only after host verification. tari is recreated."
         else
             msg="Tari clearnet sync DISABLED — the Tari base node returns to Tor-only transport. tari is recreated."
         fi
@@ -332,8 +335,8 @@ describe_change() {
     PAYOUT_SCAN_HEIGHT)
         msg="Payout wallet restore height: $old → $new — only affects a first-time wallet creation."
         ;;
-    WALLET_RPC_USERNAME | MONERO_WALLET_RPC_URL)
-        # Fixed internal values that co-change with the view key toggle; keep the preview to one line.
+    MONERO_RPC_URL | WALLET_RPC_USERNAME | MONERO_WALLET_RPC_URL)
+        # Derived/fixed values whose source keys already carry the preview; keep it to one line.
         msg=""
         ;;
     TARI_VIEW_KEY)
@@ -357,7 +360,7 @@ describe_change() {
         msg="Tari on-chain payout confirmation → $([ "$new" == "true" ] && echo on || echo off)."
         ;;
     TARI_WALLET_BIRTHDAY)
-        msg="Tari payout wallet birthday: $old → $new (days since the Unix epoch) — only affects a first-time wallet creation."
+        msg="Tari payout wallet birthday: $old → $new (days since 2022-01-01) — only affects a first-time wallet creation."
         ;;
     TARI_SPEND_PUBLIC_KEY | TARI_WALLET_GRPC_ADDRESS | TARI_WALLET_SECRET_FILE)
         # The last two are fixed internals that co-change with the view-key toggle and stay silent. The FIRST is OPERATOR-SETTABLE (tari.spend_public_key) and must never be: an empty message never reaches the porcelain (40-apply-and-render.sh drops the row), which is all control_approval_gate reads — so a silent settable key commits with no typed token and no approval. It is a PUBLIC key, safe to echo.

@@ -5,7 +5,8 @@
 # each of its three modes off that mode's fixture env file — the default remote-node set, the
 # local-node set, and the payout-confirm set — and diffs every emitted unit against the
 # checked-in file byte-for-byte. Two negative assertions pin what each mode must NOT emit: the
-# remote render carries no node units, and the local render carries no wallet units. The fixtures ran live on the bench, so a
+# remote render carries no node units, and the local render carries no wallet units. The rendered
+# Tari node and wallet images must equal the compose stack's pins (#2624). The fixtures ran live on the bench, so a
 # diff here means the renderer drifted from something proven, not that a fixture went stale
 # (#77 phase 1).
 # Sourced by tests/stack/run.sh.
@@ -16,8 +17,9 @@
 # Re-derivations. $ROOT and $SANDBOX come from lib.sh, where both are assigned at COLUMN 1 at top
 # level, outside every function body — so neither is the ordering dependency the $WALLET case
 # turned out to be. (Re-derive by grepping lib.sh for the assignment and reading the indent, not
-# by line number: a citation into another file is the perishable part of any claim here.) Every other name is assigned here: $QOUT, $QLOCAL, $QPAY and the loop's
-# own $f. The only provider functions called are run_sourced and assert_eq. Every write lands in
+# by line number: a citation into another file is the perishable part of any claim here.) Every other name is assigned here: $QOUT, $QLOCAL, $QPAY, the loops'
+# own $f and $svc, and $compose_tari. The only provider functions called are run_sourced, assert_eq
+# and assert_contains. Every write lands in
 # the three $SANDBOX/quadlet-*-out trees, and a sweep of all of tests/stack/ finds those three
 # paths named ONLY in this block — nothing else in the suite reads what this file creates, so it
 # carries no ambient-fixture coupling in either direction.
@@ -55,7 +57,20 @@ sed -E 's/^MONERO_NODE_PASSWORD=.*/MONERO_NODE_PASSWORD=/' "$ROOT/os/quadlet/fix
 run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/empty-password.env" "$QEMPTY_PASSWORD" >/dev/null
 assert_eq "remote node with an empty password keeps --rpc-login (#2278)" \
     "$(sed -n '/^Exec=/p' "$QEMPTY_PASSWORD/p2pool.container")" \
-    "Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login rendered-node-user: --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats"
+    'Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login "rendered-node-user:" --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats'
+# Exec= is parsed by systemd, not a shell. Keep the whole login in one quoted argument and escape
+# systemd's own $ variable and % specifier syntax; otherwise a credential containing spaces can
+# append flags to P2Pool's command line.
+QLOGIN="$SANDBOX/quadlet-login-out"
+awk '
+    /^MONERO_NODE_USERNAME=/ { print "MONERO_NODE_USERNAME=rendered node \"user\\name"; next }
+    /^MONERO_NODE_PASSWORD=/ { print "MONERO_NODE_PASSWORD=pass $HOME --wallet INJECTED %H"; next }
+    { print }
+' "$ROOT/os/quadlet/fixture.env" >"$SANDBOX/login.env"
+run_sourced "$SANDBOX" render_quadlet_units "$SANDBOX/login.env" "$QLOGIN" >/dev/null
+assert_eq "node RPC login stays one systemd argument (#2333)" \
+    "$(sed -n '/^Exec=/p' "$QLOGIN/p2pool.container")" \
+    'Exec=--no-log-file --host 192.168.1.243 --rpc-port 18081 --rpc-login "rendered node \"user\\name:pass $$HOME --wallet INJECTED %%H" --zmq-port 18083 --wallet your_monero_wallet_address --merge-mine tari://192.168.1.243:18142 your_tari_wallet_address --onion-address rendered-p2pool-onion.onion --local-api --stratum 0.0.0.0:3333 --p2p 0.0.0.0:37888 --data-api /stats'
 assert_eq "remote render emits no node units" "$(find "$QOUT" -name 'monerod.container' -o -name 'tari.container' | wc -l | tr -d ' ')" "0"
 assert_contains "remote render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QOUT/dashboard.container")" '"TARI_MODE=remote"'
@@ -112,6 +127,8 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     docker-control.container dashboard.container; do
     assert_eq "quadlet local parity: $f" "$(diff -u "$ROOT/os/quadlet/local/$f" "$QLOCAL/$f" 2>&1 | head -c 300)" ""
 done
+# #2627: the node must not be PID 1 — a zombie PID 1 cannot be signalled, so a stop fails.
+assert_eq "#2627: tari runs under podman's init (RunInit)" "$(grep -c '^RunInit=true$' "$QLOCAL/tari.container")" "1"
 assert_contains "local render passes TARI_MODE to the dashboard" \
     "$(sed -n 's/^Environment=//p' "$QLOCAL/dashboard.container")" '"TARI_MODE=local"'
 # The payout-confirm variant (bench-proven 2026-07-24): both wallet profiles, 13 files, the
@@ -123,4 +140,15 @@ for f in mining.network proxy.network tor.container monerod.container tari.conta
     caddy.container docker-proxy.container docker-control.container dashboard.container; do
     assert_eq "quadlet payout parity: $f" "$(diff -u "$ROOT/os/quadlet/payout/$f" "$QPAY/$f" 2>&1 | head -c 300)" ""
 done
+# The appliance must run the Tari the compose stack runs: #2604 moved compose to v6.0.1-pre.0 and
+# the quadlet pins stayed on 6.0.0 with an amd64-only wallet digest (#2624). Read each compose
+# service's image off the file itself and compare it with the rendered unit's Image=.
+compose_tari=$(for svc in tari tari-wallet; do
+    awk -v s="  $svc:" '$0==s{f=1;next} f&&/^  [a-z]/{f=0} f&&/^    image:/{print $2;exit}' "$ROOT/docker-compose.yml"
+done)
+assert_eq "compose parse finds both Tari images (control)" "$(grep -c '^ghcr.io/tari-project/minotari_' <<<"$compose_tari")" "2"
+assert_eq "quadlet Tari node and wallet images match compose (#2624)" \
+    "$(sed -n 's/^Image=//p' "$QPAY/tari.container" "$QPAY/tari-wallet.container")" "$compose_tari"
+assert_eq "tari-wallet quadlet can repair and drop uid (#2454)" "$(grep -Ec '^(User=0:0|AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID)$' "$QPAY/tari-wallet.container")" "2"
+assert_contains "tari-wallet healthcheck sees uid 1000 from root (#2454)" "$(cat "$QPAY/tari-wallet.container")" "HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1"
 assert_eq "local render emits no wallet units" "$(find "$QLOCAL" -name 'wallet-rpc.container' -o -name 'tari-wallet.container' | wc -l | tr -d ' ')" "0"

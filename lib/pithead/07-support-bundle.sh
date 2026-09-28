@@ -40,7 +40,7 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 
 # Everything not in PITHEAD_ENV_SURVIVOR_KEYS is redacted — credentials, wallet and view keys,
 # onion identity, capability URLs and the handful of addressing fields the ruling classified as
-# topology rather than structure (MONERO_NODE_HOST, TARI_GRPC_ADDRESS, HOST_IP).
+# topology rather than structure (MONERO_NODE_HOST, MONERO_RPC_URL, TARI_GRPC_ADDRESS, HOST_IP).
 #
 # The allowlist also governs which LINES are read (#2414), and every ambiguity fails closed. A
 # hand-edited .env keeps the previous value commented out above the live one, so an assignment
@@ -51,6 +51,11 @@ XVB_ENABLED XVB_POOL_URL XVB_TOR_ENABLED"
 # assignment keeps its prose, but every `KEY=` inside it that is not a survivor with an `=`-free
 # value loses the rest of the line. Any other line is redacted whole, since it cannot
 # be classified. Plain `[ \t]` rather than `[[:space:]]`: older mawk has no POSIX classes.
+# The Tari explorer URL (#2464) may carry a token, so the bundle's config masks it on top of the
+# control channel's masked copy. Only here: in CONTROL_SECRET_PATHS the commit gate would read the
+# mask as an edit to TARI_EXPLORER_URL and refuse unrelated dashboard changes (KVM job 1397).
+bundle_mask_config() { jq 'if (.tari.explorer_url // "") != "" then .tari.explorer_url = {"__secret__": true} else . end'; }
+
 bundle_redact_env() {
     awk -v survivors="${PITHEAD_ENV_SURVIVOR_KEYS//$'\n'/ }" '
         # The value up to its first unquoted `#`, honouring dotenv_render_value backslash escapes
@@ -168,7 +173,7 @@ stack_support_bundle() {
     if [ -f "$CONFIG_FILE" ]; then
         render_masked_config "$tmp/scratch" 2>/dev/null || true
         [ -f "$tmp/scratch/masked/config.json" ] &&
-            cp "$tmp/scratch/masked/config.json" "$tmp/bundle/config.masked.json"
+            bundle_mask_config <"$tmp/scratch/masked/config.json" >"$tmp/bundle/config.masked.json"
     fi
     # .env with secret-bearing values stripped by the survivor allowlist above; structure (ports,
     # dirs, modes) stays — that is what support actually needs.
