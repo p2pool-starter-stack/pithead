@@ -12,9 +12,8 @@
 # that worked — that is the #971 incident, and the image check below is the same shape one layer
 # further in.
 
-# What the live stack was RUNNING, by service, before this run touched anything, and what
-# deploy_branch then built. Both are image IDs, not tags: the defect they exist to catch is a tag
-# that MOVED, so the tag cannot be the instrument. Empty means "not captured" — a skip, never a pass.
+# What the live stack was RUNNING, by service, before this run touched anything. Image IDs, not
+# tags: the defect this catches is a tag that MOVED. Empty is never a restore pass.
 BASELINE_IMAGES=""
 # Was pithead-egress.service (#2460) on the bench before this run? `up`/`upgrade` install it on any
 # DIY host, the bench included, so a run that found none must leave none: the bench is shared, and
@@ -78,25 +77,28 @@ restore_egress_boot_unit() {
 # project, so this reads the live stack whichever checkout last drove it. A re-tag does not move an
 # image ID; only a rebuild or a different image does.
 stack_image_census() { # -> sorted "<service>=<image-id>" lines; empty when no stack is running
-    on_bench "docker ps -q --filter label=com.docker.compose.project=pithead 2>/dev/null |
-        xargs -r docker inspect --format '{{index .Config.Labels \"com.docker.compose.service\"}}={{.Image}}' 2>/dev/null |
-        sort" 2>/dev/null || true
+    local live line
+    live="$(stack_restore_census)" || return 1
+    while IFS= read -r line; do
+        case "$line" in *'|running') printf '%s\n' "${line%%|*}" ;; esac
+    done <<<"$live" | sort
 }
 
-# Read every live container, including duplicates and late scenario recreations.
+# Read every container, including stopped services, duplicates and late scenario recreations.
 stack_restore_census() {
     on_bench "bash -s" <<'PROBE'
-ids=$(docker ps -q --filter label=com.docker.compose.project=pithead) || exit 1
+ids=$(docker ps -aq --filter label=com.docker.compose.project=pithead) || { echo 'docker ps failed during census' >&2; exit 1; }
 while IFS= read -r id; do
     [ -n "$id" ] || continue
-    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id" && printf '.') || exit 1
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id" && printf '.') || { echo "docker inspect service failed for $id" >&2; exit 1; }
     service=${service%$'\n'.}
-    image=$(docker inspect --format '{{.Image}}' "$id") || exit 1
-    owner=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id" && printf '.') || exit 1
+    image=$(docker inspect --format '{{.Image}}' "$id") || { echo "docker inspect image failed for $id" >&2; exit 1; }
+    owner=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id" && printf '.') || { echo "docker inspect owner failed for $id" >&2; exit 1; }
     owner=${owner%$'\n'.}
-    [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ && "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "invalid Compose identity on $id" >&2; exit 1; }
+    state=$(docker inspect --format '{{.State.Status}}' "$id") || { echo "docker inspect state failed for $id" >&2; exit 1; }
+    [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ && "$image" =~ ^sha256:[a-f0-9]{64}$ && "$state" =~ ^[a-z]+$ ]] || { echo "invalid Compose identity on $id" >&2; exit 1; }
     case "$owner" in *'|'*|*$'\n'*) echo "invalid Compose owner on $id" >&2; exit 1 ;; esac
-    printf '%s=%s|%s\n' "$service" "$image" "$owner"
+    printf '%s=%s|%s|%s\n' "$service" "$image" "$owner" "$state"
 done <<<"$ids"
 PROBE
 }
@@ -116,7 +118,7 @@ PROBE
 # A different image ID is not evidence of a baseline rebuild: the branch can recreate a
 # container after its first census. Check the actual baseline declaration and Compose owner.
 grade_restore_identity() { # <baseline> <live-container-census> <declared> <test-dir>
-    local svc image expected owner entry seen
+    local svc image expected owner state entry seen
     while IFS= read -r svc; do
         [ -n "$svc" ] || continue
         svc="${svc%%=*}"
@@ -126,9 +128,13 @@ grade_restore_identity() { # <baseline> <live-container-census> <declared> <test
             case "$entry" in "$svc="*) ;; *) continue ;; esac
             seen=$((seen + 1))
             image="${entry#*=}"
+            state="${image##*|}"
             owner="${image#*|}"
+            owner="${owner%|*}"
             image="${image%%|*}"
-            if [ -z "$image" ] || [ -z "$expected" ] || [ -z "$owner" ] || [ "$owner" = '<no value>' ]; then
+            if [ "$state" != running ]; then
+                printf 'not-running %s (%s)\n' "$svc" "$state"
+            elif [ -z "$image" ] || [ -z "$expected" ] || [ -z "$owner" ] || [ "$owner" = '<no value>' ]; then
                 printf 'unproved %s\n' "$svc"
             elif [ "$owner" = "$4" ]; then
                 printf 'test-checkout %s\n' "$svc"
@@ -300,17 +306,17 @@ PROBE
     esac
 
     # Compare every live container with the baseline declaration and reject checkout residue.
-    local now_images line identity declared live residue
-    now_images="$(stack_image_census)"
+    local line identity declared live residue
+    live="$(stack_restore_census)" || {
+        warn "restore proof: docker ps/inspect failed during final container census"
+        prc=1
+        live=""
+    }
     if [ -z "$BASELINE_IMAGES" ]; then
         warn "restore proof: image identity NOT CHECKED — no baseline census was taken (nothing was running at preflight)."
         prc=1
-    elif [ -z "$now_images" ]; then
-        warn "restore proof: image identity NOT CHECKED — no stack is running to census now."
-        prc=1
     else
         declared="$(declared_image_census)" || declared=""
-        live="$(stack_restore_census)" || live=""
         identity="$(grade_restore_identity "$BASELINE_IMAGES" "$live" "$declared" "$E2E_DIR")"
         while IFS= read -r line; do
             case "$line" in
