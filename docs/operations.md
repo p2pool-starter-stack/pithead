@@ -320,9 +320,10 @@ can write), `staged/` (host-only), and `results/` + `audit/` + `masked/` (contai
 sentinel ([#440](https://github.com/p2pool-starter-stack/pithead/issues/440)); the Configuration
 form prefills from it, and the raw `config.json` is never mounted into the container. It is
 re-rendered on every `setup`/`apply`/`upgrade` and on every runner pass.
-`audit/control.log` records one JSON line per handled request — timestamp, the logged-in dashboard
-user, action, outcome, and the names of the changed settings (never their values) — and the
-container cannot rewrite it. The writer trims the log to its newest 2000 entries once it passes
+`audit/control.log` records one JSON line per handled request: timestamp, logged-in dashboard
+user, action, outcome, and the names of the changed settings (never their values). A commit's
+audit line is written before its result is published. The container cannot rewrite the log. The
+writer trims it to its newest 2000 entries once it passes
 512 KiB, so it never grows unbounded.
 
 To disable the channel, set `dashboard.control.enabled: false` and run `./pithead apply`: the

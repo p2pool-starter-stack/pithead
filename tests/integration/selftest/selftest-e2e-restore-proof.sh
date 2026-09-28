@@ -136,12 +136,12 @@ assert_contains "restore calls recreation after upgrade" "$RESTORE_SRC" "recreat
 
 echo "== a post-census branch recreation must not pass restoration =="
 DECLARED="$BASE"
-LIVE='dashboard=sha256:aaa|/baseline
-monerod=sha256:mmm|/baseline
-p2pool=sha256:ppp|/baseline
-tor=sha256:ttt|/baseline
-xmrig-proxy=sha256:xxx|/baseline'
-LATE_OWNER="${LIVE/p2pool=sha256:ppp|\/baseline/p2pool=sha256:ppp|\/test}"
+LIVE='dashboard=sha256:aaa|/baseline|running
+monerod=sha256:mmm|/baseline|running
+p2pool=sha256:ppp|/baseline|running
+tor=sha256:ttt|/baseline|running
+xmrig-proxy=sha256:xxx|/baseline|running'
+LATE_OWNER="${LIVE/p2pool=sha256:ppp|\/baseline|running/p2pool=sha256:ppp|\/test|running}"
 assert_eq "the baseline declaration and owner both match" \
     "$(grade_restore_identity "$BASE" "$LIVE" "$DECLARED" /test | grep -cv '^verified ')" "0"
 assert_eq "a branch container recreated after the branch census is rejected by its owner" \
@@ -150,24 +150,30 @@ LATE_IMAGES="${LIVE/p2pool=sha256:ppp/p2pool=sha256:late}"
 assert_eq "a post-census branch image is rejected against the baseline declaration" \
     "$(grade_restore_identity "$BASE" "$LATE_IMAGES" "$DECLARED" /test | grep '^wrong-image ')" "wrong-image p2pool"
 assert_eq "a duplicate branch container cannot hide behind a matching baseline container" \
-    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:late|/test" "$DECLARED" /test | grep '^test-checkout ')" "test-checkout p2pool"
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:late|/test|running" "$DECLARED" /test | grep '^test-checkout ')" "test-checkout p2pool"
 assert_eq "a duplicate service fails even when its labels look valid" \
-    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:ppp|/baseline" "$DECLARED" /test | grep '^duplicate ')" "duplicate p2pool"
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"p2pool=sha256:ppp|/baseline|running" "$DECLARED" /test | grep '^duplicate ')" "duplicate p2pool"
 assert_eq "a test-only service cannot escape the proof" \
-    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"extra=sha256:late|/other" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service extra"
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"extra=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service extra"
 assert_eq "an extra service label is matched literally" \
-    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'".*=sha256:late|/other" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service .*"
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'".*=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service .*"
 assert_eq "an option-shaped extra label cannot bypass the proof" \
-    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"--help=sha256:late|/other" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service --help"
+    "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"--help=sha256:late|/other|running" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service --help"
+STOPPED="${LIVE/p2pool=sha256:ppp|\/baseline|running/p2pool=sha256:ppp|\/baseline|exited}"
+assert_eq "a stopped baseline service names its state" \
+    "$(grade_restore_identity "$BASE" "$STOPPED" "$DECLARED" /test | grep '^not-running ')" "not-running p2pool (exited)"
 
 # Drive the full proof with the other, independent restore checks satisfied. A mutation that
 # replaces verify_restore_proof's identity grader with a hardcoded pass must fail these checks.
-proof_probe() { # <baseline-census> <live-census> -> verify_restore_proof exit status
+proof_probe() { # <baseline-census> <live-census> [fail-census] -> verify_restore_proof exit status
     (
         BASELINE_IMAGES="$1" E2E_DIR=/test RESTORE_DIR=/baseline RESTORE_PROOF_VAR=MONERO_NODE_PASSWORD
         stack_image_census() { printf '%s\n' "$BASE"; }
         declared_image_census() { printf '%s\n' "$DECLARED"; }
-        stack_restore_census() { printf '%s\n' "$PROBE_LIVE"; }
+        stack_restore_census() {
+            [ "${PROBE_FAIL:-}" != yes ] || return 7
+            printf '%s\n' "$PROBE_LIVE"
+        }
         env_bake_verdict() { echo match; }
         control_units_verdict() { echo on-target; }
         chain_restore_proof() { return 0; }
@@ -182,7 +188,7 @@ proof_probe() { # <baseline-census> <live-census> -> verify_restore_proof exit s
             *"is-enabled pithead-control.path"*) return 0 ;;
             esac
         }
-        PROBE_LIVE="$2"
+        PROBE_LIVE="$2" PROBE_FAIL="${3:-}"
         verify_restore_proof >/dev/null 2>&1
         printf '%s' "$?"
     )
@@ -191,35 +197,48 @@ assert_eq "the full proof accepts baseline images and owners" "$(proof_probe "$B
 assert_eq "the full proof rejects a missing preflight image census" "$(proof_probe '' "$LIVE")" "1"
 assert_eq "the full proof rejects a late test-checkout owner" "$(proof_probe "$BASE" "$LATE_OWNER")" "1"
 assert_eq "the full proof rejects a late branch image" "$(proof_probe "$BASE" "$LATE_IMAGES")" "1"
+assert_eq "the full proof rejects a stopped baseline service" "$(proof_probe "$BASE" "$STOPPED")" "1"
+assert_eq "the full proof rejects a failed final census" "$(proof_probe "$BASE" "$LIVE" yes)" "1"
 
 census_probe() { # <service-label> -> remote census exit status
-    local dir rc
+    local dir rc output
     dir="$(mktemp -d)"
     cat >"$dir/docker" <<'DOCKER'
 #!/usr/bin/env bash
 case "$1" in
-ps) printf 'container\n' ;;
+ps) [ "${CENSUS_FAIL:-}" = ps ] && { echo 'docker ps unavailable' >&2; exit 7; }; printf 'container\n' ;;
 inspect) case "$3" in
     *service*) printf '%s\n' "$SERVICE_LABEL" ;;
     *working_dir*) printf '/other\n' ;;
+    *State.Status*) printf '%s\n' "${SERVICE_STATE:-running}" ;;
     *) printf 'sha256:%064d\n' 0 ;;
-    esac ;;
+    esac; [ "${CENSUS_FAIL:-}" != inspect ] || { echo 'docker inspect unavailable' >&2; exit 7; } ;;
 esac
 DOCKER
     chmod +x "$dir/docker"
-    (
-        export PATH="$dir:$PATH" SERVICE_LABEL="$1"
+    output="$({
+        export PATH="$dir:$PATH" SERVICE_LABEL="$1" CENSUS_FAIL="${2:-}"
         on_bench() { bash -c "$1"; }
-        stack_restore_census >/dev/null 2>&1
-    )
+        if [ "${3:-}" = baseline ]; then
+            stack_image_census
+        else
+            stack_restore_census
+        fi
+    } 2>&1)"
     rc=$?
     rm -rf "$dir"
-    printf '%s' "$rc"
+    if [ "${4:-}" = detail ]; then printf '%s' "$output"; else printf '%s' "$rc"; fi
 }
 assert_eq "a normal service label is accepted by the live census" "$(census_probe p2pool)" "0"
 assert_eq "a newline label cannot forge a second service row" "$(census_probe $'extra\np2pool')" "1"
 assert_eq "a trailing newline in a service label cannot be stripped into a valid row" \
     "$(census_probe $'p2pool\n')" "1"
+assert_eq "a failed docker ps fails the baseline census" "$(census_probe p2pool ps baseline)" "1"
+assert_eq "a failed docker inspect fails the baseline census" "$(census_probe p2pool inspect baseline)" "1"
+assert_eq "a failed docker ps fails the final census" "$(census_probe p2pool ps)" "1"
+assert_eq "a failed docker inspect fails the final census" "$(census_probe p2pool inspect)" "1"
+assert_contains "the failed listing command is named" "$(census_probe p2pool ps final detail)" "docker ps failed during census"
+assert_contains "the failed inspection command is named" "$(census_probe p2pool inspect final detail)" "docker inspect service failed for container"
 
 echo "== recreate only late test-checkout containers =="
 recreate_probe() { # [fail] [branch-service] -> command and return code
