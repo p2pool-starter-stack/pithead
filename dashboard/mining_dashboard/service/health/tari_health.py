@@ -85,7 +85,7 @@ class TariChainHealth:
     ):
         self.explorer_url = TARI_EXPLORER_URL if explorer_url is None else explorer_url
         self._explorer = explorer
-        self._notify = notify  # optional async callable(text): the operator alert sink
+        self._notify = notify  # optional async callable(text) -> text, or None when undelivered
         self._alerted = None  # set once a red alert went out, so recovery is noted once
         self._clock = clock
         self._height = None
@@ -188,8 +188,10 @@ class TariChainHealth:
 
     async def _send(self, text) -> bool:
         try:
-            await self._notify(text)
-            return True
+            if await self._notify(text) is not None:  # the sender returns None when undelivered
+                return True
+            logger.warning("Tari health alert not delivered by any sink; retrying next cycle")
+            return False
         except Exception as exc:  # an alert sink must never break the data loop
             logger.warning(
                 "Tari health alert not sent (%s); retrying next cycle", type(exc).__name__

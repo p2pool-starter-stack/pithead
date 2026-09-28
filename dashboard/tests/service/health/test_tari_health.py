@@ -266,7 +266,7 @@ def test_an_unreachable_cycle_restarts_the_zero_peer_clock():
 def test_a_failed_red_alert_is_retried_while_red_and_counts_once_delivered():
     clock, notify = (
         Clock(),
-        AsyncMock(side_effect=[OSError("sink down"), OSError("sink down"), None]),
+        AsyncMock(side_effect=[OSError("sink down"), OSError("sink down"), "sent"]),
     )
     mon = _monitor(notify=notify, clock=clock)
     for _ in range(40):
