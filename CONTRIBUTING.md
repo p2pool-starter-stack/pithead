@@ -117,7 +117,7 @@ verdict that means something. The dashboard and frontend unit suites still run f
    - **test-compose** — `docker-compose.yml` interpolation validation.
    - **test-integration-selftest** — the integration harness's own pure logic.
    - **test-tools** — bounded build-log sanitization, the shell suite's 30-minute CI timeout guard,
-     and a check that all four CI uv installs use the same full-SHA-pinned action and uv version,
+     and a check that all four CI uv installs pin the same action, uv version, and archive checksum,
      without running a build.
    - **test-fakes** — the tier-2 contract test (real dashboard clients vs controllable fakes).
 

@@ -46,6 +46,7 @@ jobs:
       - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
         with:
           version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
           enable-cache: false
       - name: Dashboard tests + coverage gate (emits coverage.xml)
         run: make test-dashboard
@@ -361,6 +362,7 @@ jobs:
       - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
         with:
           version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
           enable-cache: false
       - name: ruff check + format --check (config in dashboard/pyproject.toml + root ruff.toml)
         # Single source of truth: the Makefile `lint-py` target, which runs ruff via uv from the
@@ -402,6 +404,7 @@ jobs:
       - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
         with:
           version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
           enable-cache: false
       - name: Audit workflows (injection, token scope, self-hosted-runner risks)
         run: uvx zizmor@1.25.2 --offline .github/workflows/
@@ -439,6 +442,7 @@ jobs:
       - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
         with:
           version: "0.12.13"
+          checksum: 745765a3b6e360ad76743599ae5c42e9278c7edf8bbff9fc76d05bf2623a04dd # Linux x86_64 release archive
           enable-cache: false
       - name: Lint docs voice, operator strings, topology classes, file budget, pithead build/trivy parity, then JS/CSS (Biome), YAML, Markdown, proto (buf), TOML (taplo)
         # Single source of truth: the Makefile targets. REPO-LOCAL GATES FIRST (#1746): local checks run before network-backed surface linters.
