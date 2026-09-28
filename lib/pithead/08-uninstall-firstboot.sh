@@ -1,6 +1,6 @@
 # `uninstall` (#77 phase 1, #2379): the clean exit for the DIY channel — stop and remove
 # everything pithead put on this host, and delete NO data, ever, on any flag. Three named
-# volumes (caddy_data, wallet_data, tari_wallet_data) are pithead's, not the operator's — all
+# volumes (caddy_data, wallet_data, tari_wallet_db) are pithead's, not the operator's — all
 # three are derived (view-only wallets rebuild from the view keys in config.json, Caddy
 # re-issues its ACME state). Everything
 # an operator would call "their data" (chains, Tor onion keys, dashboard history, the p2pool
@@ -96,7 +96,7 @@ stack_uninstall() {
     derived_list=$(printf '%s\n' "${derived_dirs[@]}" "$secret_file" | sort -u | tr '\n' ' ')
 
     warn "DESTRUCTIVE: stops the stack and removes everything pithead put on this host. Deletes no data."
-    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_data volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit and pithead-lan-hold.service; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
+    log "Removed: containers, networks and images; the caddy_data/wallet_data/tari_wallet_db volumes; this checkout's control-runner units; the egress firewall rules and their pithead-egress.service boot unit and pithead-egress.timer check; the LAN-only source rule, its pithead-lan-guard.service boot unit and pithead-lan-hold.service; .env, Caddyfile, build/tari/config.toml and .pithead-first-run-done in $checkout_dir, and: ${derived_list}"
     log "Kept (yours): $checkout_dir/config.json, $checkout_dir/backups/, and the data dirs: ${kept_list:-none recorded}"
     log "Left behind (shared with the machine, not pithead's alone to remove): the apt packages setup installed (jq, openssl, docker.io, docker-compose-v2); the GRUB HugePages cmdline; the runtime HugePages pool."
     if [ "$yes" -ne 1 ]; then
@@ -113,19 +113,19 @@ stack_uninstall() {
     remove_egress_check_units || units_left=1
     remove_lan_guard && remove_lan_guard_boot_unit
     docker compose down --remove-orphans -v 2>/dev/null ||
-        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_data"
-    # Compose excludes profile-only volumes from down -v when the profile is inactive.
-    # Inspect ownership before removing the one volume its active model can miss.
-    local volumes labels
+        warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
+    local volumes labels vol
     volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."
-    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
-        labels=$(docker volume inspect pithead_tari_wallet_data --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
-            error "Could not inspect pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the engine is available."
-        if [ "$labels" = 'pithead/tari_wallet_data' ]; then
-            docker volume rm pithead_tari_wallet_data >/dev/null ||
-                error "Could not remove pithead_tari_wallet_data; uninstall stopped before removing .env. Retry when the volume is available."
+    for vol in tari_wallet_db tari_wallet_data; do
+        printf '%s\n' "$volumes" | grep -Fx "pithead_$vol" >/dev/null || continue
+        labels=$(docker volume inspect "pithead_$vol" --format '{{index .Labels "com.docker.compose.project"}}/{{index .Labels "com.docker.compose.volume"}}') ||
+            error "Could not inspect pithead_$vol; uninstall stopped before removing .env. Retry when the engine is available."
+        if [ "$labels" = "pithead/$vol" ]; then
+            docker volume rm "pithead_$vol" >/dev/null ||
+                error "Could not remove pithead_$vol; uninstall stopped before removing .env. Retry when the volume is available."
         fi
-    fi
+    done
     # Exact image refs from the compose config; failures (image shared/in use) are non-fatal.
     docker compose config --images 2>/dev/null | sort -u | while read -r img; do
         [ -n "$img" ] && docker rmi "$img" >/dev/null 2>&1 || true
