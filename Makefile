@@ -35,6 +35,7 @@ test-netwatch: ## netwatch passive flow-audit: classifier verdicts + the test-to
 
 test-compose: pithead ## Validate Compose hardening and generated Caddyfiles
 	bash tests/stack/standalone/test_compose.sh
+	bash tests/stack/standalone/test_tari_wallet_permissions.sh
 	bash tests/stack/standalone/test_caddyfile.sh
 
 test-integration-selftest: pithead ## Integration harness pure-logic self-test (no server needed)

@@ -205,7 +205,7 @@ ContainerName=tari-wallet
 Image=ghcr.io/tari-project/minotari_console_wallet:v6.0.1-pre.0-mainnet@sha256:6f1f7d8990d304466f70a0379dcef4825c29b785c10d7fc7dff4d89163ed1b9d
 Network=mining.network
 IP=$prefix.31
-User=1000:1000
+User=0:0
 Entrypoint=/wallet-config/entrypoint.sh
 Environment=$(_qenvq TARI_BASE_NODE_GRPC_ADDRESS TARI_GRPC_ADDRESS) $(_qenvq TARI_WALLET_BIRTHDAY) TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143 WALLET_DIR=/var/tari/wallet
 Volume=pithead-tari-wallet-db:/var/tari/wallet
@@ -215,9 +215,10 @@ Tmpfs=/tmp:size=32m,mode=1777
 PublishPort=127.0.0.1:18143:18143
 ReadOnly=true
 DropCapability=all
+AddCapability=CHOWN DAC_OVERRIDE SETUID SETGID
 NoNewPrivileges=true
 PodmanArgs=--memory 512m --memory-swap 512m
-HealthCmd=ps | grep '[m]inotari_consol' || exit 1
+HealthCmd=ps -e | grep '[m]inotari_consol' || exit 1
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3
