@@ -40,29 +40,18 @@ boot_unit_state() { # <unit> -> present | absent | "" (the bench could not be as
     on_bench "if systemctl cat $1 >/dev/null 2>&1; then echo present; else echo absent; fi" 2>/dev/null || true
 }
 
-# The same record for pithead-egress.timer and its pithead-egress-check.service (#2599).
+# Record both check units independently: a pre-existing timer does not prove its service existed.
 EGRESS_CHECK_BEFORE=""
+EGRESS_CHECK_SERVICE_BEFORE=""
 
 egress_boot_unit_state() { boot_unit_state "${1:-pithead-egress.service}"; } # [unit]
 
-# The egress check pair (#2599), restored on the same rule as the boot unit below.
+# The egress check pair (#2599) can have mixed pre-run states; restore each member independently.
 restore_egress_check_units() {
-    case "$EGRESS_CHECK_BEFORE" in
-    present) return 0 ;;
-    absent) ;;
-    *)
-        warn "restore proof: whether pithead-egress.timer predates this run was never recorded, so the restore cannot say it left the bench as found (#2599)."
-        return 1
-        ;;
-    esac
-    on_bench "sudo systemctl disable --now pithead-egress.timer >/dev/null 2>&1; sudo rm -f /etc/systemd/system/pithead-egress.timer /etc/systemd/system/pithead-egress-check.service; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
-    if [ "$(egress_boot_unit_state pithead-egress.timer)" = absent ] &&
-        [ "$(egress_boot_unit_state pithead-egress-check.service)" = absent ]; then
-        ok "restore proof: pithead-egress.timer and its check removed — no trace of this run's egress check on the bench (#2599)"
-        return 0
-    fi
-    warn "restore proof: pithead-egress.timer or pithead-egress-check.service is still on the bench after the restore, and neither was there before this run (#2599)."
-    return 1
+    local prc=0
+    restore_boot_unit pithead-egress.timer "$EGRESS_CHECK_BEFORE" "#2599" || prc=1
+    restore_boot_unit pithead-egress-check.service "$EGRESS_CHECK_SERVICE_BEFORE" "#2599" || prc=1
+    return "$prc"
 }
 
 # Put a boot unit back the way the run found it and prove it. A unit that predates the run is the
@@ -85,7 +74,7 @@ restore_boot_unit() { # <unit> <state before the run> <issue>
     esac
     on_bench "sudo systemctl disable --now $unit >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$unit; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
     if [ "$(boot_unit_state "$unit")" = absent ] &&
-        on_bench "! systemctl show -p Wants --value docker.service multi-user.target | grep -qw $unit" >/dev/null 2>&1; then
+        on_bench "! systemctl show -p Wants --value docker.service multi-user.target timers.target | grep -qw $unit" >/dev/null 2>&1; then
         ok "restore proof: $unit removed — no trace of this run's boot unit on the bench ($ref)"
         return 0
     fi

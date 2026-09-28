@@ -393,7 +393,7 @@ preflight() {
     # The baseline's images and #2460/#2599/#2749 units, read before deploy_branch rebuilds the images
     # (on a source checkout, under the baseline's own tag) and installs the units. For verify_restore_proof.
     EGRESS_UNIT_BEFORE="$(boot_unit_state pithead-egress.service)"
-    EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)"
+    EGRESS_CHECK_BEFORE="$(egress_boot_unit_state pithead-egress.timer)" EGRESS_CHECK_SERVICE_BEFORE="$(egress_boot_unit_state pithead-egress-check.service)"
     LAN_UNIT_BEFORE="$(boot_unit_state pithead-lan-guard.service)"
     HOLD_UNIT_BEFORE="$(boot_unit_state pithead-lan-hold.service)"
     BASELINE_IMAGES="$(stack_image_census)"

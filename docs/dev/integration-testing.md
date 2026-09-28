@@ -634,9 +634,11 @@ and `--list` prints it).
   strips the rule, makes the guard's iptables step fail with a runtime drop-in, and applies
   dockerd's boot restore by each node's restart policy: the nodes stay stopped, every non-private
   dial is refused, and doctor names the hold. `./pithead up` recovers, and the dials are checked
-  again. The restore proof removes `pithead-lan-guard.service` and `pithead-lan-hold.service`, as
-  it does `pithead-egress.service`, unless the bench had them before the run, and checks that
-  neither `docker.service` nor `multi-user.target` still wants them.
+  again. The restore proof records and restores `pithead-lan-guard.service`,
+  `pithead-lan-hold.service`, `pithead-egress.service`, `pithead-egress.timer` and
+  `pithead-egress-check.service` independently, including when only one egress check unit existed
+  before the run. A newly added unit is removed and checked absent, including from the wants of
+  `docker.service`, `multi-user.target` and `timers.target`; a pre-existing unit is kept.
 - Node onions follow the node. The Monero and Tari hidden services are each published only when
   their own mode is `local` ([#103](https://github.com/p2pool-starter-stack/pithead/issues/103)).
 - Stratum TLS is live (`p2pool.stratum_tls=true` row only). A TLS handshake against the published
