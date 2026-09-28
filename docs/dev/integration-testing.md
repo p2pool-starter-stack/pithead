@@ -120,7 +120,9 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
   the value's trailing delimiter along with the value, so it corrupts the JSON it is meant to
   protect. The self-test pins both at today's behaviour, so a row fails if either shape arrives.
 - Continue-on-error. A failing assertion doesn't abort the run. The whole matrix is collected
-  and summarized, with per-scenario artifacts for the failures.
+  and summarized, with per-scenario artifacts for the failures. A failed pre-run safety backup
+  stops before candidate deployment and leaves its complete redacted, control-free output in the harness log;
+  the failure row also names the exit status and its last 20 lines.
 
 ---
 
@@ -135,7 +137,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    every scenario. The same synced full monerod is also what the `remote` scenario points at as
    an external node (see `--remote-monero-host`).
 3. Tools on the box: `jq`, `curl`, `docker` (with compose v2), and `sha256sum`. The first three
-   are already Pithead prerequisites; `sha256sum` ships with coreutils.
+   are already Pithead prerequisites; `sha256sum` ships with coreutils. The machine running
+   `tests/integration/e2e.sh` also needs `python3` to sanitize failed safety-backup output.
 4. Access. Key-based SSH from wherever you run the suite, or run it on the box with `--local`.
    If Docker needs root there, use `--pithead "sudo ./pithead"`.
 5. Optional: a second synced data dir for the opposite prune mode if you want to cover both
