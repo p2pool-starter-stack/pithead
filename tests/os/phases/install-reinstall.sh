@@ -108,6 +108,7 @@ _phase_install_reinstall() {
         bad "wipe=data got the split wrong: $(printf '%s' "$wout" | tr '\n' ' ' | cut -c1-300)"
         return 1
     fi
+    _phase_install_fresh_start || return
     info "wipe=all — the data partition is reformatted"
     _ssh "umount -A /dev/vda4 2>/dev/null || true"
     out=$(_ssh "pithead-install --target /dev/vda --wipe all --yes 2>&1")

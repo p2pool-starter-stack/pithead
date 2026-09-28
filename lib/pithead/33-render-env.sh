@@ -188,14 +188,13 @@ render_env() {
     # reading that miner's own xmrig /1/summary for uptime + per-miner hashrate — ONE configured
     # way, no auto-detection. Defaults match the stock RigForge worker: an open, read-only API
     # (xmrig http.restricted, no access-token) on port 8080, so the standard stack needs no config.
-    #   workers.api_auth: none (default) | name (Bearer = the worker's stratum name) | token
-    #                     (Bearer = workers.api_token, a single shared token for every worker).
-    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name",
-    # else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
-    local worker_api_port worker_api_auth worker_api_token
+    #   workers.api_auth: none (default) | name (Bearer=worker's stratum name) | token (Bearer=workers.api_token, one shared token for every worker).
+    # Upgrade note: a stack whose miners still set an xmrig access-token should set api_auth "name", else the no-auth probe 401s and those workers read api_ok=false (see docs/configuration.md).
+    local worker_api_port worker_api_auth worker_api_token worker_api_tokens_json
     worker_api_port=$(jq -r '.workers.api_port // 8080' "$CONFIG_FILE")
     worker_api_auth=$(jq -r '.workers.api_auth // "none"' "$CONFIG_FILE")
     worker_api_token=$(jq -r '.workers.api_token // ""' "$CONFIG_FILE")
+    worker_api_tokens_json=$(jq -c '(.workers.api_port // 8080) as $port | reduce ((.workers.list // [])[] | select((.name // "") != "" and (.host // "") != "" and (.api_token // "") != "")) as $worker ({}; .[$worker.name] //= {host: $worker.host, port: ($worker.port // $port), token: $worker.api_token})' "$CONFIG_FILE") # read-only probe tokens only; control tokens stay host-only
 
     # Telegram operator bot (#121 alerts, #45 commands). Disabled by default. bot_token is a
     # secret: it lives only in this owner-only .env (chmod 600 below) and the dashboard never logs
@@ -322,24 +321,22 @@ render_env() {
 
     log "Monero block-prep threads: $prep_threads | pool: $pool_type | mode: $MONERO_MODE"
 
-    # Tari view-only wallet secret delivery (#462). The view key, public spend key, and wallet
-    # password must NOT ride the tari-wallet's compose `environment:` (those show in `docker
-    # inspect`). Instead render them into a dedicated owner-only file that compose mounts as a
-    # `secrets:` entry — Docker serves it on a tmpfs at /run/secrets, owner-readable only, and the
-    # wrapper entrypoint exports them into the wallet child process only. Kept under data/ (gitignored
-    # like .env). Written for the REAL .env target only, so a dry-run render never mutates it; the
-    # values are empty (harmless) when the feature is off, so the compose secret always resolves.
-    local tari_secret_file="$PWD/data/tari-wallet-secret.env"
+    # Tari view-only wallet secret delivery (#462): the view key, spend key and wallet password ride an
+    # owner-only data/ file bind-mounted at /run/secrets (never `environment:`, which `docker inspect`
+    # shows). The mount keeps its owner, so it must be the container's APP_UID (#2731). Built as a temp
+    # file then renamed, so a planted symlink is replaced, not followed. REAL .env target only.
+    local tari_secret_file="$PWD/data/tari-wallet-secret.env" tari_secret_tmp tari_foreign tari_secret_ok=false
     if [ "$target" != "${ENV_FILE}.dryrun" ]; then
         mkdir -p "$PWD/data"
-        (
-            umask 077
-            cat >"$tari_secret_file" <<EOF
-MINOTARI_WALLET_VIEW_PRIVATE_KEY=$TARI_VIEW_KEY
-MINOTARI_WALLET_SPEND_KEY=$TARI_SPEND_PUBLIC_KEY
-MINOTARI_WALLET_PASSWORD=$TARI_WALLET_PASSWORD
-EOF
-        )
+        tari_secret_tmp=$(umask 077 && mktemp "$PWD/data/.tari-wallet-secret.XXXXXX") || error "Could not create a temp file in $PWD/data."
+        printf 'MINOTARI_WALLET_VIEW_PRIVATE_KEY=%s\nMINOTARI_WALLET_SPEND_KEY=%s\nMINOTARI_WALLET_PASSWORD=%s\n' \
+            "$TARI_VIEW_KEY" "$TARI_SPEND_PUBLIC_KEY" "$TARI_WALLET_PASSWORD" >"$tari_secret_tmp" &&
+            tari_foreign=$(find "$tari_secret_tmp" -maxdepth 0 ! -uid "$APP_UID" -print) &&
+            { [ -z "$tari_foreign" ] || chown "$APP_UID:$APP_GID" "$tari_secret_tmp" 2>/dev/null || sudo chown "$APP_UID:$APP_GID" "$tari_secret_tmp"; } &&
+            mv -f "$tari_secret_tmp" "$tari_secret_file" && tari_secret_ok=true
+        # An owner that cannot be checked or corrected keeps the previous file, and fails an enabled wallet.
+        [ "$tari_secret_ok" = true ] || { rm -f "$tari_secret_tmp" && [ "${TARI_PAYOUT_CONFIRM_ENABLED:-false}" != true ]; } ||
+            error "Could not write $tari_secret_file owned by uid $APP_UID for the Tari payout wallet; the previous file is kept."
     fi
 
     # Subshell umask (#368): secrets are owner-only from the first byte. Serialize each expansion
@@ -443,6 +440,7 @@ PROXY_AUTH_TOKEN=$(dotenv_render_value "$PROXY_AUTH_TOKEN")
 XMRIG_API_PORT=$(dotenv_render_value "$worker_api_port")
 XMRIG_API_AUTH=$(dotenv_render_value "$worker_api_auth")
 XMRIG_API_TOKEN=$(dotenv_render_value "$worker_api_token")
+WORKER_API_TOKENS=$(dotenv_render_value "$worker_api_tokens_json")
 PROXY_DONATE_LEVEL=$(dotenv_render_value "$DONATE_LEVEL")
 MONERO_PRUNE=$(dotenv_render_value "$prune")
 MONERO_CLEARNET_SYNC=$(dotenv_render_value "$monero_clearnet")

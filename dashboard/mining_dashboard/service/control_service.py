@@ -5,10 +5,12 @@ prefill the editor form, writes typed JSON intents into the requests/ spool — 
 single writable leg — and reads results back from the read-only results/ mount. The host-side
 runner (``pithead control-run-pending``) re-validates and executes; nothing here runs a command.
 
-Secrets never enter the container: the host masks every set secret to the ``{"__secret__": true}``
-sentinel before the copy is mounted (the raw config.json is not mounted at all), a proposal
-carries the sentinel back for an untouched secret, and the host swaps it for the live value when
-it stages the intent. ``read_config`` re-applies the same masking as defense-in-depth.
+Existing secret values never enter the editor/browser through this path: the host masks every set
+secret to the ``{"__secret__": true}`` sentinel before the copy is mounted (the raw config.json is
+not mounted at all), a proposal carries the sentinel back for an untouched secret, and the host
+swaps it for the live value when it stages the intent. The running dashboard still receives the
+runtime credentials it consumes through its environment, including read-only worker probe tokens.
+``read_config`` masks again before serving configuration.
 """
 
 import asyncio
@@ -29,7 +31,7 @@ SECRET_PATHS = [
     ("workers", "api_token"),
     ("monero", "node_username"),
     ("monero", "node_password"),
-    # The private view key (#381): reveals all incoming payout amounts/timing to anyone who reads it.
+    # Private view key (#381): reveals incoming payout amounts and timing.
     ("monero", "view_key"),
     # The Tari private view key (#462): same exposure for the Tari side (spend_public_key is public).
     ("tari", "view_key"),
@@ -46,8 +48,7 @@ SECRET_PATHS = [
     ("xvb", "standby", "source"),
 ]
 SECRET_SENTINEL = {"__secret__": True}
-# notifications.webhooks[] (#848): a list of bare URL strings, each one a bearer secret (query
-# strings carry tokens). No fixed leaf path reaches an array element, so it is masked separately.
+# Webhook URLs (#848) are bearer secrets masked separately from fixed leaves.
 WEBHOOKS_PATH = ("notifications", "webhooks")
 
 _RESULT_POLL_S = 0.5
@@ -79,9 +80,8 @@ def _set(cfg, path, value):
 
 
 def mask_secrets(cfg):
-    """Replace every set secret leaf (``SECRET_PATHS``) and each set ``notifications.webhooks[]``
-    entry with the sentinel, in place. Mirrors pithead's ``render_masked_config``; shared by
-    ``read_config`` and ``data_service`` so the fixed-path walk and the webhooks array mask (#848)
+    """Mask fixed secret leaves, webhook URLs, and per-worker tokens in place. Mirrors
+    pithead's ``render_masked_config``; shared by ``read_config`` and ``data_service`` so masks
     never drift between the two defense-in-depth passes. An empty secret stays empty."""
     for path in SECRET_PATHS:
         found, value = _get(cfg, path)
@@ -90,6 +90,13 @@ def mask_secrets(cfg):
     found, hooks = _get(cfg, WEBHOOKS_PATH)
     if found and isinstance(hooks, list):
         _set(cfg, WEBHOOKS_PATH, [dict(SECRET_SENTINEL) if h else h for h in hooks])
+    workers = cfg.get("workers")
+    if isinstance(workers, dict) and isinstance(workers.get("list"), list):
+        for worker in workers["list"]:
+            if isinstance(worker, dict):
+                for key in ("token", "api_token"):
+                    if worker.get(key):
+                        worker[key] = dict(SECRET_SENTINEL)
     return cfg
 
 
@@ -105,22 +112,19 @@ def _deep_merge(base, override):
 
 
 # Env-var -> config-path(s) map (#613), mirroring pithead's CONTROL_DASHBOARD_EDITABLE_KEYS — the
-# commit gate's ACTUAL allowlist and the single source of truth for what the control channel will
-# commit. Surfaced to the browser as ``_editable_keys`` below so the Configuration view greys out
-# everything else up front rather than letting an operator edit a host-only field and learn at Save.
+# commit gate's direct-commit allowlist. Surfaced as ``_editable_keys``; every remaining reference
+# leaf is classified into confirmation unless it is physical-presence-only.
 #
-# An env var may derive from MORE than one config path (P2POOL_FLAGS folds in ``p2pool.pool`` and
-# ``p2pool.clearnet``), so this mirrors render_env's real derivation, not the prose in pithead's own
-# allowlist comment. The gate works on RENDERED ENV VARS, not config paths: a path feeding an
-# allowlisted var IS committable however host-only it sounds. (CONFIRM_ENV_KEY_PATHS documents the
-# one deliberate exception, where a NARROWER map is the safe direction.)
+# An env var may derive from more than one config path. P2POOL_FLAGS carries both the ordinary pool
+# choice and sensitive p2pool.clearnet; only the pool path belongs here, while the host gate names
+# p2pool.clearnet as a source-path confirmation exception.
 #
 # Drift-guarded (mirrors #515's WORKER_WRITABLE_KEYS check, see
 # test_editable_keys_have_no_intra_repo_drift below): a test regexes CONTROL_DASHBOARD_EDITABLE_KEYS
 # out of the pithead script and asserts its env-var names equal this map's keys, so an allowlist edit
 # without a matching map edit fails CI loudly instead of silently drifting the greyed set.
 EDITABLE_ENV_KEY_PATHS = {
-    "P2POOL_FLAGS": ("p2pool.pool", "p2pool.clearnet"),
+    "P2POOL_FLAGS": ("p2pool.pool",),
     "P2POOL_PORT": ("p2pool.pool",),
     "XVB_ENABLED": ("xvb.enabled",),
     "XVB_DONATION_LEVEL": ("xvb.donation_level",),
@@ -175,58 +179,51 @@ EDITABLE_ENV_KEY_PATHS = {
     },
 }
 
-# dashboard.energy.* is config.json-only — it never renders to .env (control_approval_gate reads it
-# straight off config.json), so it can never appear in the map above, but the gate explicitly ALLOWS
-# it (#504). Fold it in as the map's one special-case addition. Worker descriptors (workers.list[],
-# #506) are the OTHER config.json-only case: only Worker Inspect's adopt form appends one (#2641),
-# so they never get an editable path — and buildSections never renders an array as a field (#172).
-_ENERGY_PATHS = (
+# These paths are config.json-only, so they never appear in the env-var map above, but the host
+# classifies them as ordinary changes. Worker descriptors (workers.list[], #506) are the other
+# config.json-only case: only an adopt (append) commits behind typed APPLY (#2641), so they
+# get no editable path (#172).
+_CONFIG_ONLY_EDITABLE_PATHS = (
     "dashboard.energy.cost_per_kwh",
     "dashboard.energy.currency",
+    "dashboard.energy.tari_price",
     "dashboard.energy.xmr_price",
+    "local_miner.enabled",
 )
 
 
 def _editable_paths():
     """Every config path the control gate will actually commit (#613): the env-var allowlist's
-    paths, union the dashboard.energy special-case (#504)."""
+    paths, union ordinary config.json-only paths."""
     paths = {p for target in EDITABLE_ENV_KEY_PATHS.values() for p in target}
-    paths.update(_ENERGY_PATHS)
+    paths.update(_CONFIG_ONLY_EDITABLE_PATHS)
     return sorted(paths)
 
 
-# Env-var -> config-path map for the CONFIRM-gated set (#719), mirroring pithead's
-# CONTROL_DASHBOARD_CONFIRM_KEYS the same way EDITABLE_ENV_KEY_PATHS mirrors the editable allowlist
-# (drift-guarded by test_confirm_keys_have_no_intra_repo_drift). Operationally-disruptive but NOT
-# the security perimeter: commit behind a type-to-confirm, surfaced as ``_confirm_keys`` so the
-# Configuration view renders a "confirm to proceed" affordance rather than greying the field out.
-# describe_change still decides per-DIRECTION (an ENABLE/repoint/move is CONFIRM; some DISABLE
-# directions stay host-only DEST) — MONERO_PRUNE's edit-then-maybe-refuse.
+# Env-var -> config-path map for the explicit CONFIRM-gated set (#719), mirroring pithead's
+# CONTROL_DASHBOARD_CONFIRM_KEYS. Every otherwise-unclassified reference leaf also confirms. The
+# gate remains authoritative: describe_change decides CONFIRM or DEST, both requiring typed
+# confirmation; physical-presence paths are checked separately.
 CONFIRM_ENV_KEY_PATHS = {
     "MONERO_DATA_DIR": ("monero.data_dir",),
     "TARI_DATA_DIR": ("tari.data_dir",),
     "P2POOL_DATA_DIR": ("p2pool.data_dir",),
+    "TOR_DATA_DIR": ("tor.data_dir",),
     "DASHBOARD_DATA_DIR": ("dashboard.data_dir",),
     "STRATUM_PORT": ("p2pool.stratum_port",),
     "MONERO_CLEARNET_SYNC": ("monero.clearnet_initial_sync",),
     "TARI_CLEARNET_SYNC": ("tari.clearnet_initial_sync",),
     "MONERO_PRUNE": ("monero.prune",),
-    # 2026-08 security review: bounded (8-1024) and instantly reversible, but the biggest
-    # steady-state knob on the shared Tor daemon's CPU — confirm-gated, not free-commit. That review
-    # kept proxy.donate_level and the two payout restore points host-only (donate traffic bypasses
-    # the Tor socks5; a future-dated restore point defeats payout-confirmation tamper evidence).
+    # Bounded (8-1024) and reversible, but the biggest steady-state knob on the shared Tor daemon.
     "MONERO_OUT_PEERS": ("monero.out_peers",),
-    # Node endpoints (#1888): confirm-gated, not free-commit, and paired with the approval gate's
-    # host-side reachability probe. 42-control-policy-and-host-checks.sh carries the reasoning.
+    # Node endpoints (#1888) are confirm-gated and host-probed.
     "MONERO_NODE_HOST": ("monero.remote.host",),
     "MONERO_RPC_PORT": ("monero.remote.rpc_port",),
     "MONERO_ZMQ_PORT": ("monero.remote.zmq_port",),
     "TARI_GRPC_ADDRESS": ("tari.remote.host", "tari.remote.grpc_port"),
     # Whether this host merge-mines at all (#1929), and COMPOSE_PROFILES the PROFILE HALF of the
-    # same switch — without it, default-deny counts an unlisted key and drags every mode switch
-    # back to the Telegram tier. Mapped to tari.mode ALONE, narrower than its real derivation on
-    # purpose: monero.mode and the view keys also move it and must NOT read as confirm-tier; their
-    # own rows hold them at approval. 42-control-policy-and-host-checks.sh carries the argument.
+    # same switch. Mapped to tari.mode ALONE, narrower than its real derivation on
+    # purpose: monero.mode and the view keys also move it and keep their own classification.
     "TARI_MODE": ("tari.mode",),
     "COMPOSE_PROFILES": ("tari.mode",),
     # Reserved-node RPC login (#2333/#2367 ruling): confirm-gated like the endpoints above, never refused.
@@ -298,10 +295,13 @@ def read_config():
     mask_secrets(cfg)
     cfg["_core_keys"] = _load_core_keys()
     cfg["_editable_keys"] = _editable_paths()
-    cfg["_confirm_keys"] = _confirm_paths(cfg)
-    cfg["_approval_keys"] = config_operations.approval_paths(
-        reference, cfg, _editable_paths(), _confirm_paths(cfg)
+    explicit_confirm = _confirm_paths(cfg)
+    approval = config_operations.approval_paths(reference, cfg, _editable_paths(), explicit_confirm)
+    cfg["_confirm_keys"] = config_operations.confirmed_paths(
+        reference, _editable_paths(), explicit_confirm, approval
     )
+    cfg["_confirm_keys"] = sorted(set(explicit_confirm + cfg["_confirm_keys"]))
+    cfg["_approval_keys"] = approval
     cfg["_default_keys"] = config_operations.missing_default_paths(reference, host, _get)
     cfg["_last_apply"] = config_operations.last_apply_state(audit_service.recent_changes())
     return cfg

@@ -100,7 +100,7 @@ Maintenance:
 
   uninstall [-y|--yes]      DESTRUCTIVE: the clean exit. Removes everything pithead put on
                             this host — containers, images, the caddy_data/wallet_data/
-                            tari_wallet_data volumes, this checkout's control-runner units, the
+                            tari_wallet_db volumes, this checkout's control-runner units, the
                             egress firewall rules, .env, Caddyfile, and every other pithead-
                             derived file and directory — and deletes NO data, on any flag.
                             Keeps what is yours: config.json, backups/, and the data dirs
@@ -163,6 +163,10 @@ Maintenance:
                             or a release upgrade (target verified against the GitHub
                             release API host-side). Normally fired by the pithead-control
                             systemd path unit when dashboard.control.enabled is true.
+
+  egress-status             Check the Tor-only egress firewall and write the verdict to
+                            the dashboard (control results dir). Read-only. Normally
+                            fired every 2 minutes by the pithead-egress timer.
 
   render-quadlet [--env FILE] [--out DIR]
                             Render Podman Quadlet units (the appliance runtime) from a

@@ -96,6 +96,8 @@ source "$HERE/lib/run-cli.sh" || exit $?
 source "$HERE/lib/run-matrix.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-state.sh
 source "$HERE/lib/run-state.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-tari-wallet.sh
+source "$HERE/lib/run-tari-wallet.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-lan-guard.sh
 source "$HERE/lib/run-lan-guard.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-scenario.sh
@@ -104,6 +106,8 @@ source "$HERE/lib/run-scenario.sh" || exit $?
 source "$HERE/lib/run-lifecycle.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-faults.sh
 source "$HERE/lib/run-faults.sh" || exit $?
+# shellcheck source=tests/integration/lib/run-egress-status.sh
+source "$HERE/lib/run-egress-status.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-hardening.sh
 source "$HERE/lib/run-hardening.sh" || exit $?
 # shellcheck source=tests/integration/lib/run-safety.sh
