@@ -108,7 +108,7 @@ scan_image() {
     printf '%s' "$json" | jq -sr '
         if length != 1 or (.[0] | type) != "object" or (.[0].Results | type) != "array" then error("invalid report")
         else .[0].Results[] | (.Vulnerabilities // [])[] | .VulnerabilityID |
-            if type == "string" then . else error("invalid finding ID") end end
+            if type == "string" and test("^[^[:space:]]+$") then . else error("invalid finding ID") end end
     ' 2>/dev/null
 }
 
@@ -320,7 +320,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "rootfs tag is fetched and inputs staged before docker build" \
         "$(awk '/^[[:space:]]*git -C "\$ROOT" fetch -q --depth=1 origin/{fetch=NR} /^[[:space:]]*bash "\$ROOT\/os\/build-image.sh" --stage-only/{stage=NR} /^[[:space:]]*docker build -f "\$ROOT\/os\/rootfs\/Dockerfile"/{build=NR} END {print (fetch > 0 && stage > fetch && build > stage)}' "$ROOT/scripts/watch/trivyignore-watch.sh")" "1"
 
-    for payload in '{invalid json' ''; do
+    for payload in '{invalid json' '' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
         docker() { printf '%s' "$payload"; }
         scan_rc=0
         scan_image fixture >/dev/null || scan_rc=1
