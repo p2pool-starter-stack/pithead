@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # A control result is visible to readers only after its matching audit line.
 set -euo pipefail
+echo "== control audit precedes result =="
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 test_dir="$(mktemp -d "${TMPDIR:-${RUNNER_TEMP:?}}/pithead-audit-order.XXXXXX")"
