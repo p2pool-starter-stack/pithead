@@ -254,12 +254,14 @@ lan_guard_ready() {
 # port, so no prompt). Kept, and 2, unless the engine answers and neither node runs, whatever the
 # profiles or binds say now; kept, and 1, if the marker stays (#2749).
 remove_lan_guard() {
-    local line names
+    local line names kp ports=()
     # Marker first: from here the gate refuses any start, so a start that raced this teardown is
-    # already running when the engine is asked. Put back, with the rule, if a node runs.
+    # already running when the engine is asked. If a node runs or the engine cannot say, the rule
+    # stays, and the marker comes back only when the rule reads back live on every published port.
     lan_guard_unmark || return 1
     if ! names=$(docker ps --format '{{.Names}}' 2>/dev/null) || grep -qxE 'monerod|tari' <<<"$names"; then
-        lan_guard_mark 2>/dev/null || true
+        for kp in $(lan_guard_published); do ports+=("${kp#*:}"); done
+        if [ "${#ports[@]}" -gt 0 ] && lan_guard_enforced "${ports[@]}"; then lan_guard_mark 2>/dev/null || true; fi
         return 2
     fi
     if command -v nft >/dev/null 2>&1; then

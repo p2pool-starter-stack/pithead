@@ -35,20 +35,20 @@ LG_LIVE=1 lg apply_lan_guard >/dev/null
 : >"$LG_IPT_LOG"
 # The backup stops the services its profiles list now; a tari started under an older profile set is
 # not among them and still runs. The engine's own list decides, not the stop's success.
-lg_out="$(lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1 $2" in "compose config") echo monerod ;; "ps --format") echo tari ;; esac; }; stack_down_except_caddy' 2>&1)"
+lg_out="$(LG_LIVE=1 lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1 $2" in "compose config") echo monerod ;; "ps --format") echo tari ;; esac; }; stack_down_except_caddy' 2>&1)"
 assert_contains "a backup stop that left tari running keeps the rule" "$lg_out" "lan-guard:rule-kept"
 assert_eq "...not flushed" "$(lg_rule_removed)" "0"
-assert_eq "...and keeps the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
+assert_eq "...and, over the live rule, keeps the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
 lg_out="$(lg 'mutation_lock_acquire() { :; }; docker() { case "$1 $2" in "ps --format") echo tari ;; esac; }; stack_down' 2>&1)"
 assert_contains "a down that left tari running stops, rule kept" "$lg_out" "down stopped: monerod or tari may still be running"
 assert_eq "...not flushed" "$(lg_rule_removed)" "0"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 cp "$LGD/.env" "$LGD/.env.keep"
 : >"$LG_IPT_LOG"
-lg_out="$(lg 'detect_os() { :; }; provision_control_runner() { :; }; docker() { case "$1 $2" in "compose down") return 1 ;; "ps --format") echo monerod ;; esac; }; stack_uninstall -y' 2>&1)"
+lg_out="$(LG_LIVE=1 lg 'detect_os() { :; }; provision_control_runner() { :; }; docker() { case "$1 $2" in "compose down") return 1 ;; "ps --format") echo monerod ;; esac; }; stack_uninstall -y' 2>&1)"
 assert_contains "uninstall stops when compose down fails and a LAN node may still run" "$lg_out" "uninstall stopped:"
 assert_eq "...before removing the rule" "$(lg_rule_removed)" "0"
-assert_eq "...the marker" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
+assert_eq "...the marker (over the live rule)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
 assert_eq "...or the boot units" "$(test -e "$LG_UNIT" && test -e "$LG_HOLD" && echo present)" "present"
 lg_out="$(lg 'detect_os() { :; }; provision_control_runner() { :; }; docker() { case "$1 $2" in "compose down") return 1 ;; "ps --format") return 1 ;; esac; }; stack_uninstall -y' 2>&1)"
 assert_contains "an engine that cannot say what runs is not a confirmed stop" "$lg_out" "uninstall stopped:"
@@ -91,6 +91,27 @@ lg_out="$(lg 'touch config.json; mutation_lock_acquire() { :; }; docker() { case
 assert_contains "config-reset stops the same way" "$lg_out" "config-reset stopped:"
 assert_eq "...before removing the rule or the config" "$(lg_rule_removed) $(test -e "$LGD/.env" && echo env-kept)" "0 env-kept"
 unset LG_IPT_LOG
+
+echo "== a teardown that cannot finish puts the marker back only over a live rule (#2749) =="
+# The boot guard failed (no live rule), a marker from earlier in this boot is still there, and the
+# engine cannot be read: the teardown keeps what rule there is, and a direct start stays refused.
+lg_gate_now() { # -> started | rc=78: a monerod start with a LAN bind, against the sandbox marker
+    (PITHEAD_TEST_SOURCE=1 LAN_GUARD_MARKER="$LGD/data/lan-guard/enforced" BOOT_ID_FILE="$LGD/boot_id" bash -c \
+        'source "$1"; lan_guard_gate 0.0.0.0; echo started' _ "$ROOT/build/monero/entrypoint.sh" 2>&1 || echo "rc=$?") | tail -n 1
+}
+lg lan_guard_mark >/dev/null
+lg_rc=0
+LG_LIVE=0 lg 'docker() { return 1; }; remove_lan_guard' >/dev/null || lg_rc=$?
+assert_eq "failed guard, stale marker, unreadable engine: teardown refuses" "$lg_rc" "2"
+assert_eq "...and leaves no marker behind" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" ""
+assert_eq "...so a direct node start is refused" "$(lg_gate_now)" "rc=78"
+lg lan_guard_mark >/dev/null
+LG_LIVE=0 lg 'docker() { case "$1 $2" in "ps --format") echo monerod ;; esac; }; remove_lan_guard' >/dev/null || true
+assert_eq "failed guard and a node running: no marker either" "$(lg_gate_now)" "rc=78"
+lg lan_guard_mark >/dev/null
+LG_LIVE=1 lg 'docker() { case "$1 $2" in "ps --format") echo monerod ;; esac; }; remove_lan_guard' >/dev/null || true
+assert_eq "live rule and a node running: the marker comes back, the node may restart" "$(lg_gate_now)" "started"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
 
 echo "== a restart, which bypasses compose_up, needs the live rule first (#2749) =="
 lg_rc=0
