@@ -6,10 +6,13 @@ work_dir=$(mktemp -d "${TMPDIR:?}/pithead-package-test.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT
 printf 'bootable image bytes\n' >"$work_dir/system.img"
 printf 'signed bundle bytes\n' >"$work_dir/update.raucb"
-scripts/release/package-appliance.sh "$work_dir/system.img" "$work_dir/update.raucb" "$work_dir/assets"
+scripts/release/package-appliance.sh "$work_dir/system.img" "$work_dir/update.raucb" "$work_dir/assets" >"$work_dir/sizes.log"
 version=$(tr -d '[:space:]' <VERSION)
 image="pithead-os-v${version}.img.xz"
 bundle="pithead-os-v${version}.raucb"
+[ "$(wc -l <"$work_dir/sizes.log")" -eq 2 ]
+grep -Eq "^$image: +[0-9]+ bytes$" "$work_dir/sizes.log"
+grep -Eq "^$bundle: +[0-9]+ bytes$" "$work_dir/sizes.log"
 cmp "$work_dir/system.img" <(xz -dc "$work_dir/assets/$image")
 cmp "$work_dir/update.raucb" "$work_dir/assets/$bundle"
 (cd "$work_dir/assets" && sha256sum -c "$image.sha256" "$bundle.sha256")
