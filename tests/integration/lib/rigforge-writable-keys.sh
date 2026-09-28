@@ -74,7 +74,11 @@ _writable_key_round_trip() { # <rig> <key> <orig-json> <probe-json>
     local rig="$1" key="$2" orig="$3" probe="$4" res status ckeys change_id
     it_step "Worker Inspect edit: $key $orig -> $probe via /api/control/worker-apply…"
     # On the books BEFORE the write goes out — the window #1379 covers includes the apply itself.
-    rig_key_mark dash "$rig" "$key" "$orig"
+    # A refused mark means an abort could not restore this key, so the write is not sent (#2668).
+    rig_key_mark dash "$rig" "$key" "$orig" || {
+        it_skip_leg "$key write (#1236)" "the original $key on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
+        return 0
+    }
     res="$(_worker_apply "$rig" "$(jq -nc --arg k "$key" --argjson v "$probe" '{($k): $v}')")"
     IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_key "$rig" "$key" "$probe" "$res")"
     assert_eq "$key edit applied on the rig (#1236)" "$status" "applied"
@@ -208,7 +212,10 @@ run_rigforge_pools() { # <rig>
     # The restore target is last_applied, and the guard above has PROVEN this value carries `pass`
     # rather than assuming it — the same un-stripped value the revert below uses, and the only one
     # safe to write back (#113). (#1379, #1546)
-    rig_key_mark dash "$rig" pools "$orig_pools"
+    rig_key_mark dash "$rig" pools "$orig_pools" || {
+        it_skip_leg "pools write (#1002b)" "the original pools on rig '$rig' cannot be recorded for the abort-safe unwind (not one JSON value), so no write is sent (#2668)"
+        return 0
+    }
     res="$(_worker_apply "$rig" "{\"pools\":$IT_RIG_POOLS_PROBE}")"
     status="$(printf '%s' "$res" | jq -r '.status // empty' 2>/dev/null)"
     ckeys="$(printf '%s' "$res" | jq -r '(.changed_keys // []) | join(",")' 2>/dev/null)"

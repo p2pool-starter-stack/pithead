@@ -699,7 +699,7 @@ cancelled CI job used to leave a borrowed production miner on a probe value, whi
 after, so the apply itself is covered — and comes off only when its revert is **confirmed applied**.
 An `EXIT` trap restores whatever is still on the ledger, by the same route that changed it: the
 dashboard's `/api/control/worker-apply` for the #513, #1236 and #1002b legs, a direct dial at the
-rig's control API for #516's rig-side edit. Each restore names its key, value and rig on stderr.
+rig's control API for #516's rig-side edit. Each restore names its key and rig on stderr, never the value: a pools original carries the stratum `pass`.
 
 Four properties are worth knowing rather than rediscovering:
 
@@ -717,7 +717,7 @@ Four properties are worth knowing rather than rediscovering:
   is still one entry and is restored intact
   ([#2668](https://github.com/p2pool-starter-stack/pithead/issues/2668)). A value that is not exactly
   one JSON value is not recorded: the harness warns, by key and without the value, that an abort will
-  not restore it.
+  not restore it, and the caller skips that leg rather than send a write it cannot undo.
 
 What it cannot do: the restore dials the dashboard or the rig while the run is already dying, so it
 is best-effort, and it cannot run at all if the shell never exits — `kill -9`, an OOM kill, or the

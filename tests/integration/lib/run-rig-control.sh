@@ -141,10 +141,12 @@ run_rigforge_control() {
     orig_maxt="$(printf '%s' "$st" | jq -r --arg n "$rig" 'first(.workers[]? | select(.name==$n) | .rigforge.stats[]? | select(.label=="Temp / max") | .value) // empty' 2>/dev/null | sed -n 's#.*/ *\([0-9][0-9]*\).*#\1#p')"
     if [ -z "$orig_maxt" ]; then
         it_skip_leg "reversible write, max_temp_c (#513)" "rig '$rig' watchdog isn't reporting a max_temp_c in the feed — can't read the original to restore it"
+    # On the books before the write; a refused mark means an abort could not restore it, so no write (#1379, #2668).
+    elif ! rig_key_mark dash "$rig" max_temp_c "$orig_maxt"; then
+        it_skip_leg "reversible write, max_temp_c (#513)" "the original max_temp_c on rig '$rig' cannot be recorded for the abort-safe unwind, so no write is sent"
     else
         new_maxt=$((orig_maxt + 1))
         it_step "Worker Inspect edit: max_temp_c $orig_maxt -> $new_maxt via /api/control/worker-apply…"
-        rig_key_mark dash "$rig" max_temp_c "$orig_maxt" # abort-safe unwind (#1379)
         res="$(_worker_apply "$rig" "{\"max_temp_c\":$new_maxt}")"
         IFS='|' read -r status ckeys change_id <<<"$(_settle_worker_apply_maxt "$rig" "$new_maxt" "$res")"
         assert_eq "Worker Inspect edit applied on the rig (#513)" "$status" "applied"
