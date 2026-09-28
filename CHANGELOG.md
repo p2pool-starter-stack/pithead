@@ -185,6 +185,20 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   On sync, the host closes and verifies that exception before the node restarts on Tor; the
   dashboard keeps the transition warning until the host verifies the live Tor daemon and rules.
   A completed sync stays on Tor across apply and reboot.
+- **monerod flushes every chain-database commit to disk
+  ([#2471](https://github.com/p2pool-starter-stack/pithead/issues/2471)).** monerod's default
+  database mode, `fast:async`, opens LMDB with `MDB_NOSYNC` while the node is syncing and only
+  syncs its commits once it reaches the chain tip, so a power cut during the initial sync or a
+  catch-up could lose commits the node had already made. The bundled node now runs with
+  `db-sync-mode=safe`, which syncs every commit, so a power cut can no longer take the chain back
+  below a height it had already committed. At the tip nothing changes. While syncing, each commit
+  now waits for two disk flushes, and the bytes written are the same. Counted from the monerod
+  0.18.5.1 source, a full pruned mainnet sync to height 3.77 million makes at most about 295,000
+  commits when every download batch is full, and at most about 7.56 million if every batch holds
+  one block. The added time is the number of flushes times the disk's flush time, which was not
+  measured: for each millisecond a flush takes, about 10 minutes with full batches and at most
+  4.2 hours.
+
 - **Tari payout confirmation now finds payouts
   ([#2731](https://github.com/p2pool-starter-stack/pithead/issues/2731)).** The view-only wallet's
   `tari.payout_scan_birthday` counts days since 2022-01-01, Tari's unit (Tari Universe's

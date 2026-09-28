@@ -346,14 +346,14 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local id="$1" actor="$2" cdir="$3" confirm="${4:-}" approval="${5:-null}"
     local staged="$cdir/staged/$id.json" logf="$cdir/staged/.$id.log" rc=0 carried_ssh=0
     if [ ! -f "$staged" ]; then
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"no staged intent for this id — preview first",ts:(now|floor)}')"
         return 0
     fi
     if [ -z "$(find "$staged" -mmin -10 2>/dev/null)" ]; then
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"staged intent expired (older than 10 minutes) — preview again",ts:(now|floor)}')"
         rm -f "$staged"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"rejected",error:"staged intent expired (older than 10 minutes) — preview again",ts:(now|floor)}')"
         return 0
     fi
     # On refusal the gate's stdout is the reason; on approval it is the changed key names, which
@@ -361,9 +361,9 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     local gate_out audit_keys=""
     if ! gate_out=$(control_approval_gate "$staged" "$confirm" "$id" "$actor" "$approval" "$cdir"); then
         [ -n "$gate_out" ] || gate_out="approval denied"
-        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
         rm -f "$staged" "${staged}.confirmed"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "commit" "rejected"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$gate_out" '{status:"rejected",error:$e,ts:(now|floor)}')"
         return 0
     fi
     audit_keys="$gate_out"
@@ -388,13 +388,13 @@ control_commit() { # <id> <actor> <control-dir> [confirm-token] [approval-json]
     PITHEAD_CONFIG_CARRIED_SSH="$carried_ssh" "$0" apply -y >"$logf" 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then
         control_reown_operator_files # the root apply wrote .env/Caddyfile as root — give them back (#33)
-        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$audit_action" "applied" "$audit_keys" "$approver"
+        control_write_result "$cdir/results" "$id" "$(jq -n '{status:"applied",ts:(now|floor)}')"
     else
         # apply's own .apply-incomplete marker handles the container-recreate retry; the config
         # backup lets the operator revert by hand if the new config itself is the problem.
-        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
         control_audit "$cdir/audit/control.log" "$id" "$actor" "$audit_action" "failed" "$audit_keys" "$approver"
+        control_write_result "$cdir/results" "$id" "$(jq -n --arg e "$(tail -c 2000 "$logf")" --arg b "${CONFIG_FILE}.bak-control" '{status:"failed",error:$e,backup:$b,ts:(now|floor)}')"
     fi
     rm -f "$staged" "$logf" "${staged}.confirmed"
 }

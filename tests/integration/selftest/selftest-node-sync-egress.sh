@@ -25,3 +25,40 @@ else
     echo "node-sync verifier proves selected public peers and rejects another app's leak: FAIL" >&2
     exit 1
 fi
+
+# Host completion must inspect the active daemon's Tor endpoint, not a stray SOCKS setting.
+if (
+    td="$(mktemp -d)" && trap 'rm -rf "$td"' EXIT
+    scripts/build-pithead.sh >/dev/null
+    # shellcheck disable=SC1091
+    source ./pithead
+    env_get() { [ "$1" = NETWORK_PREFIX ] && echo 172.28.0; }
+    docker() { cat "$td/$2"; }
+    printf 'proxy=172.28.0.24:9050\n' >"$td/monerod"
+    ! egress_sync_runtime_on_tor monero || exit 1
+    printf 'proxy=172.28.0.25:9050\n' >"$td/monerod"
+    egress_sync_runtime_on_tor monero || exit 1
+    cat >"$td/tari" <<'TARI_BAD'
+[base_node.p2p.transport]
+type = "tcp"
+[unrelated]
+type = "socks5"
+proxy_address = "/ip4/172.28.0.25/tcp/9050"
+TARI_BAD
+    ! egress_sync_runtime_on_tor tari || exit 1
+    cat >"$td/tari" <<'TARI_GOOD'
+[base_node.p2p.transport]
+type = "socks5"
+[base_node.p2p.transport.socks]
+proxy_address = "/ip4/172.28.0.25/tcp/9050"
+TARI_GOOD
+    egress_sync_runtime_on_tor tari || exit 1
+    sed 's/172\.28\.0\.25\/tcp/172.28.0.24\/tcp/' "$td/tari" >"$td/tari.wrong"
+    mv "$td/tari.wrong" "$td/tari"
+    ! egress_sync_runtime_on_tor tari
+); then
+    echo "runtime Tor endpoint attestation: PASS"
+else
+    echo "runtime Tor endpoint attestation: FAIL" >&2
+    exit 1
+fi

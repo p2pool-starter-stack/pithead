@@ -61,9 +61,33 @@ egress_sync_container() { # <monero|tari>
 }
 
 egress_sync_runtime_on_tor() { # <monero|tari>; docker exec succeeds only for a running daemon
+    local prefix runtime tor
+    prefix=$(env_get NETWORK_PREFIX 2>/dev/null) || return 1
+    [ -n "$prefix" ] || return 1
+    tor="$prefix.25:9050"
     case "$1" in
-    monero) docker exec monerod grep -qE '^proxy=[^[:space:]]+' /home/ubuntu/.bitmonero/bitmonero.conf ;;
-    tari) docker exec tari grep -qF 'type = "socks5"' /tmp/tari-runtime-config.toml ;;
+    monero)
+        runtime=$(docker exec monerod cat /home/ubuntu/.bitmonero/bitmonero.conf) || return 1
+        awk -v expected="proxy=$tor" '/^proxy=/ { found++; if ($0 != expected) bad=1 }
+            END { exit !(found == 1 && !bad) }' <<<"$runtime"
+        ;;
+    tari)
+        runtime=$(docker exec tari cat /tmp/tari-runtime-config.toml) || return 1
+        awk -v expected="\"/ip4/$prefix.25/tcp/9050\"" '
+            /^\[[^]]+\][[:space:]]*$/ { section=$0; next }
+            section == "[base_node.p2p.transport]" && /^[[:space:]]*type[[:space:]]*=/ {
+                types++; value=$0; sub(/^[^=]*=[[:space:]]*/, "", value)
+                sub(/[[:space:]]*(#.*)?$/, "", value)
+                if (value != "\"socks5\"") bad=1
+            }
+            section == "[base_node.p2p.transport.socks]" && /^[[:space:]]*proxy_address[[:space:]]*=/ {
+                proxies++; value=$0; sub(/^[^=]*=[[:space:]]*/, "", value)
+                sub(/[[:space:]]*(#.*)?$/, "", value)
+                if (value != expected) bad=1
+            }
+            END { exit !(types == 1 && proxies == 1 && !bad) }' <<<"$runtime"
+        ;;
+    *) return 1 ;;
     esac
 }
 
