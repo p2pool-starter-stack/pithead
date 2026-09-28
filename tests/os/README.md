@@ -135,7 +135,9 @@ runbook in [`docs/dev/release-server.md`](../../docs/dev/release-server.md).
   leave the kernel name, mDNS activation, certificate and live config byte-for-byte unchanged
   when it is omitted. A confirmed change must apply and audit without a second approver; the
   changed kernel, dashboard, certificate and mDNS identity must survive both the unaided reboot
-  and closing A/B migration update. A dashboard-password edit remains physical-presence-only.
+  and closing A/B migration update. A dashboard-password edit commits through the panel behind
+  typed `APPLY` and the approval envelope, after its preview names the lockout and console-login
+  costs; the new login must read the dashboard, and the fixture password is restored the same way.
   Before each host-side `pithead apply` the battery drives, it waits for the control spool to hold
   no queued or claimed request and reds the row if it never drains, keeping the harness's phase
   boundary deterministic. Apply does not stop an in-flight runner (#2363). Then the

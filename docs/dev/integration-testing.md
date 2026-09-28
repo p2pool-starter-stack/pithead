@@ -120,7 +120,9 @@ The test box holds real synced nodes and real keys. Treat it as production-sensi
   the value's trailing delimiter along with the value, so it corrupts the JSON it is meant to
   protect. The self-test pins both at today's behaviour, so a row fails if either shape arrives.
 - Continue-on-error. A failing assertion doesn't abort the run. The whole matrix is collected
-  and summarized, with per-scenario artifacts for the failures.
+  and summarized, with per-scenario artifacts for the failures. A failed pre-run safety backup
+  stops before candidate deployment and leaves its complete redacted, control-free output in the harness log;
+  the failure row also names the exit status and its last 20 lines.
 
 ---
 
@@ -135,7 +137,8 @@ A one-time setup. Target the Ubuntu LTS releases the stack supports (22.04 / 24.
    every scenario. The same synced full monerod is also what the `remote` scenario points at as
    an external node (see `--remote-monero-host`).
 3. Tools on the box: `jq`, `curl`, `docker` (with compose v2), and `sha256sum`. The first three
-   are already Pithead prerequisites; `sha256sum` ships with coreutils.
+   are already Pithead prerequisites; `sha256sum` ships with coreutils. The machine running
+   `tests/integration/e2e.sh` also needs `python3` to sanitize failed safety-backup output.
 4. Access. Key-based SSH from wherever you run the suite, or run it on the box with `--local`.
    If Docker needs root there, use `--pithead "sudo ./pithead"`.
 5. Optional: a second synced data dir for the opposite prune mode if you want to cover both
@@ -415,8 +418,10 @@ via an `EXIT` trap):
    optimisation. `pithead` exports `STACK_VERSION=dev` for any source checkout, so a source-checkout
    baseline and the branch under test resolve to the same `:dev` tag — which deploying the branch has
    already overwritten, with a pull policy of `never` to correct it. `apply` + `up` would bring the
-   branch back up under the baseline's name. The rebuild falls back to `apply` + `up` if it fails, so
-   a baseline that cannot rebuild is no worse off than before.
+   branch back up under the baseline's name. A failed upgrade fails the restore and leaves its command
+   output in the job log. After the baseline command, the restore recreates any container still
+   labelled with the test checkout as its Compose working directory, leaving baseline-owned chain
+   nodes running. It removes test-checkout containers for services absent from the baseline.
 7. Proves the restored stack matches the on-disk config
    ([#971](https://github.com/p2pool-starter-stack/pithead/issues/971)): the credential marker
    baked into the running dashboard container (`docker inspect`) must equal the on-disk `.env`
@@ -440,15 +445,14 @@ via an `EXIT` trap):
    stack running the branch's images under the baseline's name: the credentials are read from the
    on-disk `.env` at runtime, monerod answers with them, and the control units name the install
    either way. So the run records each service's image **ID** before it touches anything and again
-   after the restore, and grades them per service — kept, rebuilt, still-the-branch's, or gone. Image
-   IDs, not tags: a tag that moved is the defect, so the tag cannot be the instrument. Per service,
-   not as one list: a branch that changes two Dockerfiles rebuilds two images, and the rest carry an
-   ID that legitimately matches both sides. A service still on the image the run built for the branch
-   fails the proof and names itself. A rebuilt image is reported as "not the branch's" and no more:
-   settling "built from the install directory" would need the image's own build provenance, and the
-   dashboard's `org.opencontainers.image.revision` ships empty
-   ([#1449](https://github.com/p2pool-starter-stack/pithead/issues/1449)) while the other four
-   images carry it.
+   after the restore. Image IDs, not tags: a tag that moved is the defect, so the tag cannot be the
+   instrument. Per service, the proof compares the running image ID with the image resolved from
+   the baseline checkout's Compose declaration and rejects a live Compose working-directory label
+   naming the test checkout. A changed image ID by itself proves no origin: a scenario may recreate
+   a branch container after the deploy. Duplicate containers and test-only services are
+   checked too. The census includes stopped containers, so a stopped baseline service is named with
+   its state. A failed `docker ps` or `docker inspect` is reported as a command failure, not as an
+   absent service. A missing preflight census, unreadable declaration or owner fails the proof.
    Finally the proof records each chain node against the container that ran before the deploy:
    untouched, restarted during the run (`--lifecycle` restarts the stack), recreated during the
    run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
@@ -667,7 +671,12 @@ For one representative config:
   snapshotted, and `uninstall -y` must leave that snapshot identical, with no allowed writes. Files
   up to 64 MiB are compared by sha256. Larger files (the chains' LMDB) are compared by inode, size,
   mtime and ctime, because any write moves the last two. Uninstall must also remove the three
-  named volumes, the derived state dirs and `.env`. A `setup` with the `missing` pull policy must
+  named volumes, the derived state dirs and `.env`. The wallet-volume fixture reports the last 15
+  redacted Compose lines as at most 2000 printable characters in one failure-detail line. Terminal
+  sequences are removed before redaction; lines with other non-printable bytes are dropped. It creates
+  that volume only with a local Tari node; remote Tari mode records a `by-design` skip because
+  `tari-wallet` depends on the absent local `tari` service. A `setup`
+  with the `missing` pull policy must
   then return healthy on the same chain files and the same Monero onion address.
 
 > NOTE: `upgrade` (which rebuilds/pulls images) is intentionally not run unattended. It's slow
