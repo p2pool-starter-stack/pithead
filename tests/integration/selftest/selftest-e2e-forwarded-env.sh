@@ -120,7 +120,7 @@ KEYS="$(cat "$WORK/keys")"
 assert_contains "the wrapper's view keys reach the runner environment" "$KEYS" \
     "$(printf 'MONERO_VIEW_KEY=%s\nTARI_VIEW_KEY=%s\nTARI_SPEND_PUBLIC_KEY=%s' "$MVK" "$TVK" "$TSPK")"
 assert_contains "the harness runs the payout-confirm row with all three keys" "$KEYS" \
-    "PAYOUT_CONFIRM=run [monero.view_key=$MVK tari.view_key=$TVK tari.spend_public_key=$TSPK]"
+    "PAYOUT_CONFIRM=run [monero.view_key=$MVK tari.view_key=$TVK tari.spend_public_key=$TSPK tari.payout_scan_birthday=1425]"
 assert_contains "the log names supplied view keys" "$(cat "$STEP_FILE")" \
     "payout-confirm keys forwarded to the harness: IT_MONERO_VIEW_KEY=set IT_TARI_VIEW_KEY=set IT_TARI_SPEND_PUBLIC_KEY=set"
 for k in "$MVK" "$TVK" "$TSPK"; do

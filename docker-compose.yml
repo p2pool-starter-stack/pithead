@@ -313,7 +313,7 @@ services:
   # Only starts if the "tari_payout_confirm" profile is active — pithead adds it to COMPOSE_PROFILES
   # only when tari.view_key is set AND the Tari node is local (#462). A view-only Tari wallet (private
   # view key + public spend key) can SCAN but never spend; it reveals all incoming amounts/timing, so
-  # its secrets are handled like passwords: delivered via a tmpfs `secrets:` mount, never `environment:`.
+  # its secrets are handled like passwords: an owner-only file bind-mounted as a `secrets:` entry, never `environment:`.
   tari-wallet:
     profiles: ["tari_payout_confirm"]
     # Pinned by digest (#135), same registry/tag as the Tari node so the version-match holds.
@@ -329,7 +329,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     # Wrapper entrypoint (mounted from the build dir, since this is a pulled image — same pattern as
-    # the Tari node): reads the three secrets from the tmpfs `secrets:` mount and exports them into
+    # the Tari node): reads the three secrets from the bind-mounted `secrets:` file and exports them into
     # the wallet child only, NEVER the command line or the container's declared env (#462).
     entrypoint: ["/wallet-config/entrypoint.sh"]
     security_opt:
@@ -342,7 +342,7 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     volumes:
-      - tari_wallet_data:/home/ubuntu/wallet
+      - tari_wallet_db:/var/tari/wallet
       - ./build/tari-wallet:/wallet-config:ro
     environment:
       # NON-SECRET config only — the three MINOTARI_WALLET_* secrets are delivered via `secrets:`
@@ -354,10 +354,10 @@ services:
       - TARI_BASE_NODE_GRPC_ADDRESS=${TARI_GRPC_ADDRESS:-172.28.0.27:18142}
       - TARI_WALLET_BIRTHDAY=${TARI_WALLET_BIRTHDAY:-auto}
       - TARI_WALLET_GRPC_BIND=/ip4/0.0.0.0/tcp/18143
-      - WALLET_DIR=/home/ubuntu/wallet
+      - WALLET_DIR=/var/tari/wallet
     secrets:
-      # Docker mounts this on a tmpfs at /run/secrets/tari_wallet_secret, owner-readable only; the
-      # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount name).
+      # Docker bind-mounts the owner-only host file read-only at /run/secrets/tari_wallet_secret; the
+      # wrapper sources it. The secret VALUES never appear in `docker inspect` (only the mount path).
       - tari_wallet_secret
     ports:
       # Loopback-only host publish (mirror wallet-rpc): the host-networked dashboard reaches the
@@ -967,7 +967,7 @@ services:
   # Bridges the local 127.0.0.1 application binding to the LAN
   # Serves HTTPS or HTTP depending on configuration
   caddy:
-    image: caddy:2.11.4@sha256:13ba145cba2f3e28fa801994876e4c086d1b95d5aa2a520a734765ffb6b12017
+    image: caddy:2.11.4@sha256:0c994536bddb66445885237f1a5dcc1916bccea922661c76b4e9fc24061f9b52
     container_name: caddy
     # Memory ceiling (#132 — see monerod). Reverse proxy + local TLS only (~13 MiB observed).
     mem_limit: 128m
@@ -1019,15 +1019,17 @@ volumes:
   # View-only payout wallet DB (#381). A named volume so it survives recreates; it inherits uid-1000
   # ownership from the image's /home/ubuntu/wallets dir, so the non-root container can write it.
   wallet_data:
-  # View-only Tari payout wallet DB (#462). Named volume, survives recreates; the wrapper mkdir's the
-  # base-path under uid 1000 (the container user) on first run.
-  tari_wallet_data:
+  # View-only Tari payout wallet DB (#462). Named volume, survives recreates. Mounted on the image's own
+  # uid-1000 /var/tari/wallet, so the engine gives the new volume that ownership when it creates it.
+  # A new name, not tari_wallet_data: that volume was created root-owned at /home/ubuntu/wallet,
+  # which the image lacks, keeps that owner on any later mount, and never held a wallet (#2731).
+  tari_wallet_db:
 
 # --- Secrets ---
 # View-only Tari wallet material (#462). pithead renders these three values into an owner-only file
-# (data/tari-wallet-secret.env, gitignored like .env); Docker mounts it on a TMPFS at
-# /run/secrets/tari_wallet_secret, owner-readable only, for the tari-wallet service. Delivering the
-# view key this way (not via `environment:`) keeps it out of `docker inspect` — the acceptance
+# (data/tari-wallet-secret.env, gitignored like .env, mode 0600, owned by the container's uid 1000);
+# Docker bind-mounts it read-only at /run/secrets/tari_wallet_secret for the tari-wallet service.
+# Delivering the view key this way (not via `environment:`) keeps it out of `docker inspect` — the acceptance
 # criterion that separates #462 from #381 (Tari has no JSON-import path to hide the key behind).
 secrets:
   tari_wallet_secret:
