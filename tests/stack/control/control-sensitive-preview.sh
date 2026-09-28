@@ -69,10 +69,25 @@ exposure_previews() { # <label> <jq-edit> <needle...>
 }
 exposure_previews "egress-firewall-off preview names the direct dials it stops blocking" '.network.tor_egress_firewall=false' \
     "Tor-only egress firewall DISABLED" "show this host's IP to whatever it dials"
-exposure_previews "XvB-off-Tor preview names XvB seeing this host's IP" '.xvb.tor=false' \
+# XvB and P2Pool clearnet are the operator's choice; the preview says what the ACTIVE route exposes.
+# Firewall on (this fixture's default) and no exemption: the direct dial is blocked, nothing exposed.
+exposure_previews "XvB-off-Tor preview under the default firewall says the dial is blocked, IP not exposed" '.xvb.tor=false' \
+    "the Tor-only egress firewall blocks its direct dial" "this host's IP is not exposed"
+exposure_previews "P2Pool-clearnet preview under the default firewall says the dials are blocked, IP not exposed" '.p2pool.clearnet=true' \
+    "the Tor-only egress firewall blocks its direct dials" "this host's IP is not exposed"
+# Firewall off in the same candidate: the route is open and the preview names the exposure.
+exposure_previews "XvB-off-Tor preview with the firewall off names XvB seeing this host's IP" '.xvb.tor=false | .network.tor_egress_firewall=false' \
     "XvB donation mining OFF Tor" "XvB sees this host's IP"
+exposure_previews "P2Pool-clearnet preview with the firewall off names this host's IP visible to the P2Pool network" '.p2pool.clearnet=true | .network.tor_egress_firewall=false' \
+    "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
+# Firewall on with that component's scoped exemption (the seam #2790 fills): the route is open too.
+exempt_preview() { # <component> <key> <old> <new>
+    run_sourced "$C" eval "egress_firewall_exempts() { [ \"\$1\" = $1 ]; }; TOR_EGRESS_FIREWALL=true; describe_change $2 $3 $4"
+}
+assert_contains "P2Pool-clearnet preview with the firewall on and p2pool exempt names the exposure" \
+    "$(exempt_preview p2pool P2POOL_CLEARNET false true)" "visible to the P2Pool network"
+assert_contains "XvB-off-Tor preview with the firewall on and xmrig-proxy exempt names the exposure" \
+    "$(exempt_preview xmrig-proxy XVB_TOR_ENABLED true false)" "XvB sees this host's IP"
 exposure_previews "public-IP preview names the dashboard login reachable from the internet" '.dashboard.expose_public_ip=true' \
     "Dashboard PUBLISHED" "anyone on the internet can reach the dashboard login"
-exposure_previews "P2Pool-clearnet preview names this host's IP visible to the P2Pool network" '.p2pool.clearnet=true' \
-    "P2Pool sidechain peers over CLEARNET" "visible to the P2Pool network"
-unset -f preview_only previewed_with exposure_previews
+unset -f preview_only previewed_with exposure_previews exempt_preview
