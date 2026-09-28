@@ -57,4 +57,6 @@ condition = "AND"
 regexTarget = "line"
 targetRules = ["generic-api-key"]
 paths = ['''^tests/os/appliance-tari-wallet-leg\.sh$''']
-regexes = ['''(?m)^TARI_WALLET_TEST_SPEND_KEY=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76[ \t\r]*$''']
+regexes = [
+  '''(?m)^TARI_WALLET_TEST_SPEND_KEY=e2f2ae0a6abc4e71a884a961c500515f58e30b6aa582dd8db6a65945e08d2d76[ \t\r]*$''',
+]
