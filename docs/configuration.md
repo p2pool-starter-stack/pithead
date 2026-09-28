@@ -577,7 +577,8 @@ To connect to an external Monero node instead of running one locally, set `moner
   (`network.tor_egress_firewall`, on by default) drops anything the bridged containers send outside
   `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `100.64.0.0/10` — so a LAN address works, a
   WireGuard or Tailscale address works, and a node at a public IP is dropped. That is the point: the
-  only clearnet path off this box is Tor.
+  remote-node RPC stays on the private network. Explicit P2Pool, XvB, and initial-sync clearnet
+  choices have separate scoped firewall exceptions (see [Privacy](privacy.md)).
 - If the remote node requires RPC authentication, set `monero.node_username` / `node_password`
   to match it; otherwise leave them out.
 - `apply` writes the selected local or remote endpoint to `.env` as `MONERO_RPC_URL`; scripts that
