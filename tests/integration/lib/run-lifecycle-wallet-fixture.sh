@@ -35,7 +35,7 @@ arm_inactive_tari_wallet_volume() {
     if ! compose_out="$(rx 'docker compose up --no-deps --no-start tari-wallet' 2>&1)"; then
         rx 'cp -p .env.itest-round-trip .env' >/dev/null 2>&1
         it_fail "active Compose profile creates the wallet volume" \
-            "compose up --no-start failed: $(printf '%s\n' "$compose_out" | tail -n 15 | redact)"
+            "compose up --no-start failed: $(printf '%s\n' "$compose_out" | tail -n 15 | redact | LC_ALL=C tr -c '[:print:]' ' ' | tail -c 2000)"
         return 1
     fi
     labels="$(rx "docker volume inspect pithead_tari_wallet_db --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""

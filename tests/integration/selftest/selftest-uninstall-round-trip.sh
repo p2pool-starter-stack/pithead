@@ -29,7 +29,7 @@ case "$*" in
     no-wallet-seed)
         printf 'early detail\n'
         printf 'diagnostic %s\n' {1..20}
-        printf 'PROXY_AUTH_TOKEN=leak\nimage unavailable\n' >&2
+        printf 'PROXY_AUTH_TOKEN=leak\n\033[2J\rforged row\nimage unavailable\n' >&2
         exit 1 ;;
     cleanup-list-error) exit 1 ;;
     esac
@@ -129,7 +129,9 @@ drive() { # <case> -> round-trip-rc|failures
         if [ "$1" = no-wallet-seed ]; then
             grep -q 'image unavailable' "$B/run.log" &&
                 ! grep -q 'early detail\|PROXY_AUTH_TOKEN=leak' "$B/run.log" &&
-                grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" ||
+                grep -q 'PROXY_AUTH_TOKEN=<redacted>' "$B/run.log" &&
+                ! LC_ALL=C grep -q '[[:cntrl:]]' "$B/run.log" &&
+                ! grep -q '^forged row' "$B/run.log" ||
                 it_fail "Compose failure detail survives in the bounded row" "missing error"
         fi
         case "$1" in
