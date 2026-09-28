@@ -323,7 +323,7 @@ EOF
 
 # The hold unit for <docker> <iptables> <port>.... Pure, so it unit-tests. A failed guard never
 # starts it (Requires=); a guard still "active" after the rule went (down, backup) fails the live
-# jump check (-C). `-` on the start: a container `down` removed is not a failure.
+# check (-C) of the chain's DROP and of each jump. `-` on the start: a container `down` removed is not a failure.
 render_lan_guard_hold_unit() { # <docker> <iptables> <port>...
     local docker="$1" ipt="$2" p c containers=()
     shift 2
@@ -341,6 +341,7 @@ After=$LAN_GUARD_BOOT_UNIT docker.service
 Type=oneshot
 RemainAfterExit=yes
 EOF
+    printf 'ExecStartPre=%s -C %s -j DROP\n' "$ipt" "$LAN_GUARD_CHAIN"
     for p in "$@"; do
         printf 'ExecStartPre=%s -C DOCKER-USER -p tcp -m tcp --dport %s -m conntrack --ctstate NEW -m comment --comment %s -j %s\n' \
             "$ipt" "$p" "$LAN_GUARD_TAG" "$LAN_GUARD_CHAIN"

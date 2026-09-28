@@ -281,10 +281,12 @@ stack_down() {
     mutation_lock_acquire down
     log "Stopping stack..."
     remove_tor_egress_firewall
-    remove_lan_guard
     if ! docker compose down; then
         error "Stack failed to stop — see the error above."
     fi
+    # After the stop (#2749): the nodes never listen on a LAN port without the rule, and a failed
+    # stop leaves it in place.
+    remove_lan_guard
     log "Stack stopped."
     mutation_lock_release
 }
@@ -302,7 +304,6 @@ stack_down_except_caddy() {
     mutation_lock_acquire down
     log "Stopping the stack for the backup (caddy — the reverse proxy — stays up; nothing of its own is in the archive)..."
     remove_tor_egress_firewall
-    remove_lan_guard
     local services
     # Split the listing from the filter (the #2059 trap, documented in 02-tor-egress.sh): under
     # `set -Eeuo pipefail` a grep that matches nothing fails the whole assignment and errexit
@@ -316,6 +317,7 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
+    remove_lan_guard # after the stop, as in stack_down (#2749)
     log "Stack stopped (caddy left running)."
     mutation_lock_release
 }

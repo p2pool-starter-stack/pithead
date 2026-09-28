@@ -53,12 +53,14 @@ clearnet_sync_active() {
 # however the container was started: `docker start`, `docker compose up` or `start` outside pithead,
 # a restart policy.
 lan_guard_gate() { # <bind>...
-    local bind
+    local bind boot
     for bind in "$@"; do
         case "$bind" in
         "" | 127.0.0.1) ;;
         *)
-            [ "$(cat "${LAN_GUARD_MARKER:-/lan-guard/enforced}" 2>/dev/null)" = "$(cat "${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}")" ] && continue
+            # An unreadable boot id must not match a missing marker.
+            boot=$(cat "${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null) || boot=""
+            [ -n "$boot" ] && [ "$(cat "${LAN_GUARD_MARKER:-/lan-guard/enforced}" 2>/dev/null)" = "$boot" ] && continue
             echo "Refusing to start: a port is published on $bind, but the host's LAN-only source rule is not in place (#2749). Run ./pithead up." >&2
             exit 78
             ;;

@@ -111,9 +111,9 @@ stack_uninstall() {
     remove_tor_egress_firewall 2>/dev/null || true
     remove_tor_egress_boot_unit
     remove_egress_check_units || units_left=1
-    remove_lan_guard && remove_lan_guard_boot_unit
     docker compose down --remove-orphans -v 2>/dev/null ||
         warn "compose down failed (engine not running?) — continuing with cleanup. Once the engine runs, remove the volumes with: docker volume rm pithead_caddy_data pithead_wallet_data pithead_tari_wallet_db"
+    remove_lan_guard && remove_lan_guard_boot_unit # after the nodes stopped (#2749)
     # down -v skips an inactive profile's volume, and no longer declares tari_wallet_data (#2731).
     local volumes labels vol
     volumes=$(docker volume ls -q) || error "Could not list Docker volumes; uninstall stopped before removing .env. Retry when the engine is available."

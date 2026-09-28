@@ -180,6 +180,8 @@ assert_contains "the hold is pulled in by the boot, not by docker.service" "$lg_
 assert_not_contains "docker.service never depends on the hold" "$lg_hu" "WantedBy=docker.service"
 assert_eq "it starts each publishing container once, a removed one no failure" \
     "$(grep '^ExecStart=' <<<"$lg_hu" | tr '\n' '|')" "ExecStart=-/usr/bin/docker start monerod|ExecStart=-/usr/bin/docker start tari|"
+assert_contains "...and the chain's live DROP, so a flushed chain behind a live jump fails it too" "$lg_hu" \
+    "ExecStartPre=/usr/sbin/iptables -C PITHEAD-LAN -j DROP"
 assert_eq "...only after checking each port's live jump, which fails the start when it is gone" \
     "$(grep -c '^ExecStartPre=/usr/sbin/iptables -C DOCKER-USER -p tcp -m tcp --dport 18[01][0-9]* -m conntrack --ctstate NEW -m comment --comment pithead-lan-guard -j PITHEAD-LAN$' <<<"$lg_hu")" "3"
 
@@ -309,11 +311,25 @@ for lg_ep in build/monero/entrypoint.sh build/tari/entrypoint.sh; do
     assert_not_contains "...and never reaches it" "$(lg_gate - 0.0.0.0)" "started"
     assert_contains "$lg_ep: a marker from an earlier boot is refused too" "$(lg_gate boot-0 127.0.0.1 0.0.0.0)" "rc=78"
     assert_contains "$lg_ep: this boot's marker lets a LAN bind start" "$(lg_gate boot-1 0.0.0.0)" "started"
+    assert_contains "$lg_ep: an unreadable boot id never matches a missing marker" \
+        "$(
+            mv "$LGD/boot_id" "$LGD/boot_id.off" && lg_gate - 0.0.0.0
+            mv "$LGD/boot_id.off" "$LGD/boot_id"
+        )" "rc=78"
     assert_eq "$lg_ep: the gate runs before the daemon starts" \
         "$(grep -nE '^lan_guard_gate |^exec monerod|^run_node ' "$ROOT/$lg_ep" | head -n 1 | cut -d: -f2 | cut -c1-14)" "lan_guard_gate"
 done
 assert_eq "compose hands each node its binds and the marker dir, read-only" \
     "$(grep -cE '^      - (MONERO_RPC_BIND=\$\{MONERO_RPC_BIND:-127\.0\.0\.1\}|MONERO_ZMQ_BIND=\$\{MONERO_ZMQ_BIND:-127\.0\.0\.1\}|TARI_GRPC_BIND=\$\{TARI_GRPC_BIND:-127\.0\.0\.1\}|\./data/lan-guard:/lan-guard:ro)$' "$ROOT/docker-compose.yml")" "5"
+
+echo "== down and the backup window remove the rule only after the nodes stopped (#2749) =="
+for lg_fn in stack_down stack_down_except_caddy stack_uninstall; do
+    lg_body="$(run_sourced "$LGD" declare -f "$lg_fn")"
+    assert_eq "$lg_fn: the node stop comes before remove_lan_guard" \
+        "$(grep -nE 'docker compose (down|stop)|remove_lan_guard' <<<"$lg_body" | head -n 2 | grep -c 'docker compose')" "1"
+done
+lg_out="$(LG_LIVE=1 lg 'lan_guard_mark; mutation_lock_acquire() { :; }; docker() { [ "$2" = down ] && return 1; :; }; stack_down' 2>&1)"
+assert_eq "a down whose stop fails leaves the marker (the nodes may still run)" "$(test -e "$LGD/data/lan-guard/enforced" && echo present)" "present"
 
 echo "== a restart, which bypasses compose_up, needs the live rule first (#2749) =="
 lg_rc=0
