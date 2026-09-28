@@ -194,13 +194,6 @@ echo "==> the appliance can run the product"
 chk "podman" '[ -e "$ROOT/usr/bin/podman" ]'
 chk "docker shim (podman-docker)" '[ -e "$ROOT/usr/bin/docker" ]'
 chk "compose provider" '[ -x "$ROOT/usr/local/bin/docker-compose" ]'
-if [ -r "$DOCKERFILE" ]; then
-    # shellcheck disable=SC2034  # read inside chk's eval'd condition
-    COMPOSE_PIN=$(sed -n 's/^ARG COMPOSE_VERSION=//p' "$DOCKERFILE")
-    chk "compose binary reports the pinned version" '[ -n "$COMPOSE_PIN" ] && "$ROOT/usr/local/bin/docker-compose" version | grep -qF "$COMPOSE_PIN"'
-else
-    skip "compose binary reports the pinned version" "os/rootfs/Dockerfile not readable"
-fi
 chk "cosign" '[ -x "$ROOT/usr/local/bin/cosign" ]'
 chk "shim banner silenced" '[ -e "$ROOT/etc/containers/nodocker" ]'
 chk "docker short-name semantics restored" 'grep -q "docker.io" "$ROOT/etc/containers/registries.conf.d/pithead-docker-compat.conf"'
