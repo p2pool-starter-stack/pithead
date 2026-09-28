@@ -263,8 +263,9 @@ export PITHEAD_RAUC_CERT=~/.config/pithead-release/rauc-signer.pem      # leaf t
 export PITHEAD_RAUC_KEY=~/.config/pithead-release/rauc-signer.key
 ```
 
-`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. Both
-refuse to run for a release with these unset — there is no silent fallback to a dev cert.
+`mkimage.sh` bakes the keyring cert into slot A; `mkbundle.sh` signs the bundle with the leaf. A
+release build refuses an unset leaf cert or key, but an unset `PITHEAD_RAUC_KEYRING` defaults to
+the leaf cert. Export the root keyring explicitly for every release cut.
 
 **Rotation.** The constraint that shapes the whole runbook: **RAUC trusts the keyring baked at
 image build time, so a device only ever trusts what shipped in its running slot.** A new trust
