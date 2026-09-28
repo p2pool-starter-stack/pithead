@@ -28,8 +28,7 @@
 # class the sweep itself has. A broken or partial scan means "unknown", never "clean", so this
 # refuses to name ANY mute obsolete off an incomplete run and exits 1 instead.
 #
-# THE PARITY CONTRACT (#1290). `--check-parity` compares TRIVY_VERSION with the gate's
-# `install-trivy` pins and image version; `skip-setup-trivy` makes those pins decisive (#2214).
+# `--check-parity` compares TRIVY_VERSION with gate installer pins and image version (#1290, #2214).
 #
 # Usage:
 #   scripts/watch/trivyignore-watch.sh              Build + scan every covered image with NO ignore file
@@ -56,9 +55,7 @@ GATE_WORKFLOWS="$ROOT/.github/workflows/ci.yml $ROOT/.github/workflows/os-rootfs
 TRIVY_VERSION="0.73.0"
 TRIVY_IMAGE="aquasec/trivy@sha256:7cced7cae583819fc7806d4cbc0dbbc7cad18b99f7d3e235192e6da8c091045c" # TRIVY_VERSION above
 
-# Same severity/fixability scope as the gate (ci.yml, os-rootfs.yml): .config/trivyignore only ever holds
-# entries that would otherwise block on THAT scope, so scanning any wider scope here would report
-# an ID as "still live" off a finding the gate itself would never have seen in the first place.
+# Match the gate's severity/fixability scope so unrelated findings do not keep mutes live.
 SEVERITY="HIGH,CRITICAL"
 
 IMAGES="pithead-os-rootfs pithead-dashboard pithead-monero pithead-p2pool pithead-xmrig-proxy pithead-tor"
@@ -109,9 +106,7 @@ scan_image() {
     ' 2>/dev/null
 }
 
-# <ignorefile> -> one finding ID per line, comments and blank lines stripped. `.config/trivyignore`'s
-# entries are bare IDs (CVE-.../GHSA-...) one per line; an inline note, if one is ever added, would
-# be a second whitespace-separated field, so only the first field is taken.
+# <ignorefile> -> one ID per line; ignore comments and any future inline notes.
 ignored_ids() {
     grep -vE '^[[:space:]]*(#|$)' "$1" | awk '{print $1}'
 }
@@ -322,6 +317,11 @@ if [ "${1:-}" = "--self-test" ]; then
         scan_rc=0
         scan_image fixture >/dev/null || scan_rc=1
         st "invalid or empty scan data fails closed" "$scan_rc" "1"
+    done
+    for payload in '{"Results":[{"Target":"t"}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":"CVE-1"}]}]}'; do
+        scan_rc=0
+        scan_image fixture >/dev/null || scan_rc=1
+        st "valid clean or populated target is accepted" "$scan_rc" "0"
     done
     unset -f docker
 
