@@ -255,9 +255,13 @@ lan_guard_ready() {
 # profiles or binds say now; kept, and 1, if the marker stays (#2749).
 remove_lan_guard() {
     local line names
-    names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 2
-    ! grep -qxE 'monerod|tari' <<<"$names" || return 2
+    # Marker first: from here the gate refuses any start, so a start that raced this teardown is
+    # already running when the engine is asked. Put back, with the rule, if a node runs.
     lan_guard_unmark || return 1
+    if ! names=$(docker ps --format '{{.Names}}' 2>/dev/null) || grep -qxE 'monerod|tari' <<<"$names"; then
+        lan_guard_mark 2>/dev/null || true
+        return 2
+    fi
     if command -v nft >/dev/null 2>&1; then
         sudo -n nft delete table inet "$LAN_GUARD_NFT_TABLE" 2>/dev/null || true
     fi
@@ -395,6 +399,10 @@ remove_lan_guard_boot_unit() {
     done
     [ "$lg_removed" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
     [ ! -e "$unit_dir/$LAN_GUARD_HOLD_UNIT" ] && [ ! -e "$unit_dir/$LAN_GUARD_BOOT_UNIT" ] || rc=1
-    ! systemctl show -p Wants --value docker.service multi-user.target 2>/dev/null | grep -qE 'pithead-lan-(guard|hold)\.service' || rc=1
+    # An unreadable want list is not an empty one.
+    if command -v systemctl >/dev/null 2>&1; then
+        lg_unit=$(systemctl show -p Wants --value docker.service multi-user.target 2>/dev/null) || rc=1
+        ! grep -qE 'pithead-lan-(guard|hold)\.service' <<<"$lg_unit" || rc=1
+    fi
     return "$rc"
 }

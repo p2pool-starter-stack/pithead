@@ -24,6 +24,15 @@ assert_eq "...rule in place" "$(lg_rule_removed)" "0"
 rm -rf "$LGD/data/lan-guard/enforced"
 LG_LIVE=1 lg apply_lan_guard >/dev/null
 : >"$LG_IPT_LOG"
+# The reported interleaving: backup stopped the nodes (stopped, not removed) and the engine's list
+# shows none running, then a direct `docker start` runs at once. It gets through the entrypoint gate
+# only if the marker still matches at that moment; one it gets through must keep the rule.
+rm -f "$LGD/race"
+lg_out="$(lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1 $2" in "compose config") echo monerod; echo tari ;; "ps --format") [ -e data/lan-guard/enforced ] && echo admitted >"'"$LGD"'/race"; : ;; esac; }; stack_down_except_caddy' 2>&1)"
+assert_eq "a direct start racing the backup's teardown is refused by the gate (marker gone first)" "$(test -e "$LGD/race" && echo admitted)" ""
+assert_eq "...so the teardown may drop the rule" "$(lg_rule_removed)" "1"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+: >"$LG_IPT_LOG"
 # The backup stops the services its profiles list now; a tari started under an older profile set is
 # not among them and still runs. The engine's own list decides, not the stop's success.
 lg_out="$(lg 'mutation_lock_acquire() { :; }; mutation_lock_release() { :; }; docker() { case "$1 $2" in "compose config") echo monerod ;; "ps --format") echo tari ;; esac; }; stack_down_except_caddy' 2>&1)"
@@ -63,6 +72,10 @@ cp "$LGD/.env.keep" "$LGD/.env"
 lg_rc=0
 LG_WANTS="pithead-lan-guard.service containerd.service" lg remove_lan_guard_boot_unit >/dev/null || lg_rc=$?
 assert_eq "unit cleanup that leaves a want on the guard reports it" "$([ "$lg_rc" != 0 ] && echo failed)" "failed"
+LG_LIVE=1 lg apply_lan_guard >/dev/null
+lg_rc=0
+LG_SHOW_RC=1 lg remove_lan_guard_boot_unit >/dev/null || lg_rc=$?
+assert_eq "unit cleanup that cannot read the wants reports it, not absence" "$([ "$lg_rc" != 0 ] && echo failed)" "failed"
 lg_rc=0
 lg remove_lan_guard_boot_unit >/dev/null || lg_rc=$?
 assert_eq "clean cleanup: both units and their wants gone" "$lg_rc $(test -e "$LG_UNIT" || test -e "$LG_HOLD" || echo absent)" "0 absent"

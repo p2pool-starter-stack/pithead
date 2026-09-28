@@ -125,7 +125,7 @@ class TestGetContainerHealth:
         assert out["held_since_boot"] is False
 
     def test_boot_and_timestamp_parsing(self, tmp_path):
-        assert containers._epoch("1970-01-01T00:01:40.5Z") == 100
+        assert containers._epoch("1970-01-01T00:01:40.5Z") == 100.5
         assert containers._epoch(None) is None
         assert containers._epoch("garbage") is None
         stat = tmp_path / "stat"

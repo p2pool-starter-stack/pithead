@@ -66,7 +66,7 @@ restore_lan_unit() { # <unit> <state before the run>
     esac
     on_bench "sudo systemctl disable --now $1 >/dev/null 2>&1; sudo rm -f /etc/systemd/system/$1; sudo systemctl daemon-reload" >/dev/null 2>&1 || true
     if [ "$(egress_boot_unit_state "$1")" = absent ] &&
-        on_bench "! systemctl show -p Wants --value docker.service multi-user.target | grep -qw $1" >/dev/null 2>&1; then
+        on_bench "w=\$(systemctl show -p Wants --value docker.service multi-user.target) && ! grep -qw $1 <<<\"\$w\"" >/dev/null 2>&1; then
         ok "restore proof: $1 removed — no trace of this run's boot unit on the bench (#2749)"
         return 0
     fi

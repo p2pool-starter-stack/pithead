@@ -317,7 +317,11 @@ lan_restore() { # <unit> <before> <unit now> [sticky]
                 [ "$STICKY" = 1 ] || UNIT=absent
                 ;;
             *"systemctl cat $NAME "*) echo "$UNIT" ;;
-            *"show -p Wants"*"multi-user.target"*"grep -qw $NAME") [ "$UNIT" = absent ] ;;
+            *"show -p Wants"*"multi-user.target"*"grep -qw $NAME"*)
+                # A failed lookup, as the shell sees it: a captured `w=$(...) &&` fails; a bare
+                # `! systemctl ... | grep` pipeline greps nothing and succeeds.
+                if [ "${SHOW_FAILS:-0}" = 1 ]; then [[ "$1" != *'w=$(systemctl show'* ]]; else [ "$UNIT" = absent ]; fi
+                ;;
             esac
         }
         restore_lan_unit "$NAME" "$2"
@@ -329,6 +333,7 @@ for u in pithead-lan-guard.service pithead-lan-hold.service; do
     assert_eq "$u: a unit the baseline already had is left alone" "$(lan_restore "$u" present present)" "0 present 0"
     assert_eq "$u: a unit that survives the removal fails the restore proof" "$(lan_restore "$u" absent present 1)" "1 present 1"
     assert_eq "$u: an unrecorded baseline fails closed and removes nothing" "$(lan_restore "$u" "" present)" "1 present 0"
+    assert_eq "$u: a wants lookup that fails is not proof of absence" "$(SHOW_FAILS=1 lan_restore "$u" absent present)" "1 absent 1"
 done
 assert_contains "verify_restore_proof restores both LAN units" "$(declare -f verify_restore_proof)" \
     'restore_lan_unit pithead-lan-hold.service "$HOLD_UNIT_BEFORE"'

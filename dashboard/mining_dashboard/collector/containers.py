@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 
 import aiohttp
 
@@ -41,7 +41,7 @@ def _host_boot_epoch() -> int | None:
 def _epoch(ts: str | None) -> float | None:
     """Docker's RFC 3339 UTC timestamp (nanoseconds, ``Z``) as epoch seconds, or ``None``."""
     try:
-        return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).timestamp()
+        return datetime.fromisoformat(ts).timestamp()
     except (TypeError, ValueError):
         return None
 

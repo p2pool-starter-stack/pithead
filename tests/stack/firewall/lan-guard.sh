@@ -83,7 +83,7 @@ printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
 [ "$1" = is-failed ] && exit "${LG_GUARD_FAILED:-1}"
 [ "$1 ${2:-}" = "enable pithead-lan-hold.service" ] && exit "${LG_HOLD_ENABLE_RC:-0}"
 [ "$1" = enable ] && exit "${LG_ENABLE_RC:-0}"
-[ "$1" = show ] && printf '%s\n' "${LG_WANTS:-}"
+[ "$1" = show ] && printf '%s\n' "${LG_WANTS:-}" && exit "${LG_SHOW_RC:-0}"
 exit 0
 SYSTEMCTL
 chmod +x "$LGD/bin/"*
