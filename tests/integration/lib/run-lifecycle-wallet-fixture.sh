@@ -13,13 +13,13 @@ arm_inactive_tari_wallet_volume() {
         it_fail "wallet volume precondition readable" "volume listing failed"
         return 1
     }
-    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
-        labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
-        if [ "$labels" != 'pithead/tari_wallet_data' ]; then
+    if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_db >/dev/null; then
+        labels="$(rx "docker volume inspect pithead_tari_wallet_db --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
+        if [ "$labels" != 'pithead/tari_wallet_db' ]; then
             it_fail "preexisting Tari wallet volume is Compose-owned" "volume labels did not match"
             return 1
         fi
-        if ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
+        if ! rx 'docker volume rm pithead_tari_wallet_db' >/dev/null 2>&1; then
             it_fail "preexisting owned wallet volume reset for Compose creation" "volume removal failed"
             return 1
         fi
@@ -37,8 +37,8 @@ arm_inactive_tari_wallet_volume() {
         it_fail "active Compose profile creates the wallet volume" "compose up --no-start failed"
         return 1
     fi
-    labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
-    if [ "$labels" != 'pithead/tari_wallet_data' ]; then
+    labels="$(rx "docker volume inspect pithead_tari_wallet_db --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" || labels=""
+    if [ "$labels" != 'pithead/tari_wallet_db' ]; then
         it_fail "active Compose creates an owned Tari wallet volume" "Compose volume labels did not match"
         return 1
     fi
@@ -53,7 +53,7 @@ arm_inactive_tari_wallet_volume() {
         it_fail "inactive Compose model readable" "compose config failed"
         return 1
     }
-    if printf '%s\n' "$model" | grep -Fx tari_wallet_data >/dev/null; then
+    if printf '%s\n' "$model" | grep -Fx tari_wallet_db >/dev/null; then
         it_fail "inactive Compose model omits Tari wallet volume" "volume remains in the model"
         return 1
     fi
@@ -84,11 +84,11 @@ cleanup_failed_tari_wallet_fixture() {
         fi
         volumes="$(rx 'docker volume ls -q')" ||
             it_fail "failed fixture lists volumes for cleanup" "Docker volume listing failed"
-        if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_data >/dev/null; then
-            labels="$(rx "docker volume inspect pithead_tari_wallet_data --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" ||
+        if printf '%s\n' "$volumes" | grep -Fx pithead_tari_wallet_db >/dev/null; then
+            labels="$(rx "docker volume inspect pithead_tari_wallet_db --format '{{index .Labels \"com.docker.compose.project\"}}/{{index .Labels \"com.docker.compose.volume\"}}'")" ||
                 it_fail "failed fixture inspects wallet volume for cleanup" "Docker volume inspection failed"
-            if [ "$labels" = 'pithead/tari_wallet_data' ] &&
-                ! rx 'docker volume rm pithead_tari_wallet_data' >/dev/null 2>&1; then
+            if [ "$labels" = 'pithead/tari_wallet_db' ] &&
+                ! rx 'docker volume rm pithead_tari_wallet_db' >/dev/null 2>&1; then
                 it_fail "failed fixture removes its owned wallet volume" "volume cleanup failed"
             fi
         fi
