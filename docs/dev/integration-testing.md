@@ -450,7 +450,9 @@ via an `EXIT` trap):
    the baseline checkout's Compose declaration and rejects a live Compose working-directory label
    naming the test checkout. A changed image ID by itself proves no origin: a scenario may recreate
    a branch container after the deploy. Duplicate containers and test-only services are
-   checked too. A missing preflight census, unreadable declaration or owner fails the proof.
+   checked too. The census includes stopped containers, so a stopped baseline service is named with
+   its state. A failed `docker ps` or `docker inspect` is reported as a command failure, not as an
+   absent service. A missing preflight census, unreadable declaration or owner fails the proof.
    Finally the proof records each chain node against the container that ran before the deploy:
    untouched, restarted during the run (`--lifecycle` restarts the stack), recreated during the
    run, or gone. It fails when the restore itself recreated or restarted a node that the deploy
