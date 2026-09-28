@@ -186,6 +186,8 @@ DOCKER
 }
 assert_eq "a normal service label is accepted by the live census" "$(census_probe p2pool)" "0"
 assert_eq "a newline label cannot forge a second service row" "$(census_probe $'extra\np2pool')" "1"
+assert_eq "a trailing newline in a service label cannot be stripped into a valid row" \
+    "$(census_probe $'p2pool\n')" "1"
 
 echo "== recreate only late test-checkout containers =="
 recreate_probe() { # [fail] [branch-service] -> command and return code

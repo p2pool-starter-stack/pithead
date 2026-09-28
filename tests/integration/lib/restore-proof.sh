@@ -89,9 +89,11 @@ stack_restore_census() {
 ids=$(docker ps -q --filter label=com.docker.compose.project=pithead) || exit 1
 while IFS= read -r id; do
     [ -n "$id" ] || continue
-    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id") || exit 1
+    service=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$id" && printf '.') || exit 1
+    service=${service%$'\n'.}
     image=$(docker inspect --format '{{.Image}}' "$id") || exit 1
-    owner=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id") || exit 1
+    owner=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$id" && printf '.') || exit 1
+    owner=${owner%$'\n'.}
     [[ "$service" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ && "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "invalid Compose identity on $id" >&2; exit 1; }
     case "$owner" in *'|'*|*$'\n'*) echo "invalid Compose owner on $id" >&2; exit 1 ;; esac
     printf '%s=%s|%s\n' "$service" "$image" "$owner"
