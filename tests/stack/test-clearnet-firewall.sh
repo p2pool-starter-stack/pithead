@@ -171,7 +171,18 @@ CN_RESTART_PROBE=$(
     # shellcheck disable=SC1090
     source "$STACK"
     set +e
-    docker() { case "$1" in inspect) printf '%s\n' "$STARTED" ;; exec) [ "${TOR_CONFIG:-good}" = good ] ;; esac }
+    docker() {
+        case "$1" in
+        inspect) printf '%s\n' "$STARTED" ;;
+        exec)
+            if [ "${TOR_CONFIG:-good}" = good ]; then
+                echo 'proxy=172.28.0.25:9050'
+            else
+                echo 'proxy=172.28.0.24:9050'
+            fi
+            ;;
+        esac
+    }
     STARTED=old
     egress_sync_record_tor monero
     printf 'before=%s\n' "$([ -f "$CN_CDIR/results/clearnet-monero-tor.json" ] && echo yes || echo no)"
