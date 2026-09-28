@@ -115,13 +115,16 @@ class DataGateMixin:
         if gate_satisfied:
             if await self._start_gate_containers():
                 self.miner_released = True
-                # The release is now this machine's own; a restore's marker has done its job.
+                # The release is now earned on the chains this machine dials; the marker (a restore's
+                # or an apply's node change) has done its job.
                 try:
                     os.remove(_runtime().SYNC_GATE_RESET_PATH)
                 except FileNotFoundError:
                     pass
                 except OSError as e:
-                    logger.warning(f"Could not remove the restore's sync-gate marker: {e}")
+                    logger.warning(
+                        f"Could not remove the sync-gate marker (restore or node change): {e}"
+                    )
                 self.miner_held = False
                 logger.info(
                     f"Required chain(s) synced — starting {', '.join(_runtime().SYNC_GATE_CONTAINERS)}; mining can begin."
