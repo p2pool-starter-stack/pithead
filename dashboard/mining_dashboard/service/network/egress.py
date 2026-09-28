@@ -160,7 +160,7 @@ def compute_egress_posture(
         },
     ]
 
-    leaks = 0  # clearnet egress that actually exposes the host IP without this sync choice
+    leaks = 0  # clearnet egress that exposes the host IP without an explicit choice
     chosen = 0
     blocked = 0
     unverified = 0

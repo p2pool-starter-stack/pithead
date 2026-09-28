@@ -17,6 +17,10 @@ control_roundtrip_setup() {
     build_control_sandbox
     seed_control_env
     control_config mini
+    # This host sandbox stubs firewall commands and cannot attest live rules. The mini-stack
+    # exercises dashboard control; the firewall's live readback has its own integration row.
+    jq '.network.tor_egress_firewall=false' "$C/config.json" >"$C/config.tmp" &&
+        mv "$C/config.tmp" "$C/config.json"
     (
         cd "$C" || exit
         DOCKER_LOG="$CTRL_LOG" PATH="$C/bin:$PATH" ./pithead apply -y >/dev/null
