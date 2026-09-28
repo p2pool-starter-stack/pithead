@@ -18,7 +18,10 @@ chmod +x "$test_dir/apply"
 ROOT="$ROOT" TEST_DIR="$test_dir" CONFIG_FILE="$CONFIG_FILE" bash -c '
     set -euo pipefail
     source "$ROOT/lib/pithead/43-control-approval-and-preview.sh"
-    control_approval_gate() { printf P2POOL_FLAGS; }
+    control_approval_gate() {
+        [[ ${GATE_RC:-0} == 0 ]] || return 1
+        printf P2POOL_FLAGS
+    }
     control_carried_ssh() { return 1; }
     control_reown_operator_files() { :; }
     control_audit() { printf "%s:%s\n" "$4" "$5" >>"$1"; }
@@ -30,6 +33,15 @@ ROOT="$ROOT" TEST_DIR="$test_dir" CONFIG_FILE="$CONFIG_FILE" bash -c '
     }
     id=11111111-1111-4111-8111-111111111111
     control_commit "$id" admin "$TEST_DIR"
+    [[ $(jq -r .status "$TEST_DIR/results/$id.json") == rejected ]]
+    printf "{}\n" >"$TEST_DIR/staged/$id.json"
+    touch -t 202001010000 "$TEST_DIR/staged/$id.json"
+    : >"$TEST_DIR/audit/control.log"
+    control_commit "$id" admin "$TEST_DIR"
+    [[ $(jq -r .status "$TEST_DIR/results/$id.json") == rejected ]]
+    printf "{}\n" >"$TEST_DIR/staged/$id.json"
+    : >"$TEST_DIR/audit/control.log"
+    GATE_RC=1 control_commit "$id" admin "$TEST_DIR"
     [[ $(jq -r .status "$TEST_DIR/results/$id.json") == rejected ]]
     for rc in 0 1; do
         printf "{}\n" >"$TEST_DIR/staged/$id.json"
