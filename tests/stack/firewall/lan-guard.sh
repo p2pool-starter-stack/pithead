@@ -13,6 +13,7 @@ mkdir -p "$LGD/bin"
 cat >"$LGD/bin/sudo" <<'SUDO'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do case "$1" in -n | -H | -E) shift ;; *) break ;; esac; done
+[ -n "${LG_SUDO_FAIL:-}" ] && exit 1
 exec "$@"
 SUDO
 # iptables: the chain and our jumps read back only when LG_LIVE=1, so "restore exited zero" and
@@ -82,6 +83,7 @@ printf '%s\n' "$*" >>"$LG_SYSTEMCTL"
 [ "$1" = is-failed ] && exit "${LG_GUARD_FAILED:-1}"
 [ "$1 ${2:-}" = "enable pithead-lan-hold.service" ] && exit "${LG_HOLD_ENABLE_RC:-0}"
 [ "$1" = enable ] && exit "${LG_ENABLE_RC:-0}"
+[ "$1" = show ] && printf '%s\n' "${LG_WANTS:-}"
 exit 0
 SYSTEMCTL
 chmod +x "$LGD/bin/"*

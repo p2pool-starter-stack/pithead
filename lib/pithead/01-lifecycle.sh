@@ -317,9 +317,9 @@ stack_down_except_caddy() {
     if ! docker compose stop $services; then
         error "Stack failed to stop — see the error above."
     fi
-    # After the stop, as in stack_down (#2749). A marker it cannot delete keeps the rule with it:
-    # the nodes are stopped, so the backup goes on.
-    remove_lan_guard || warn "lan-guard:marker-kept — the LAN-only source rule stays until $LAN_GUARD_MARKER can be deleted."
+    # After the stop, as in stack_down (#2749). If a node still runs or the marker stays, the rule
+    # stays too, and the backup goes on: the archive does not depend on it.
+    remove_lan_guard || warn "lan-guard:rule-kept — monerod or tari may still run, or $LAN_GUARD_MARKER could not be deleted; the LAN-only source rule stays."
     log "Stack stopped (caddy left running)."
     mutation_lock_release
 }

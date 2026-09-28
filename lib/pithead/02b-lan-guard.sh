@@ -32,15 +32,13 @@ LAN_GUARD_MARKER="data/lan-guard/enforced"
 BOOT_ID_FILE="${PITHEAD_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}"
 lan_guard_mark() { mkdir -p "${LAN_GUARD_MARKER%/*}" && rm -f "$LAN_GUARD_MARKER" && cat "$BOOT_ID_FILE" >"$LAN_GUARD_MARKER"; }
 lan_guard_unmark() { rm -f "$LAN_GUARD_MARKER" 2>/dev/null || sudo -n rm -f "$LAN_GUARD_MARKER" 2>/dev/null; } # 1: still there
-# Teardown that removes the rule (#2749). After a failed stop it goes on only when no LAN-publishing
-# node can still run; a marker it cannot delete keeps the rule. Either stops the verb.
-lan_guard_require_stopped() { # <verb>
-    local names
-    [ -n "$(lan_guard_published)" ] || return 0
-    names=$(docker ps --format '{{.Names}}' 2>/dev/null) && ! grep -qxE 'monerod|tari' <<<"$names" && return 0
-    error "$1 stopped: the node stop failed and a node publishing a LAN port may still run, so its LAN-only source rule stays. Retry once the engine answers."
+# A verb's teardown of the rule (#2749): remove_lan_guard, or stop the verb with the rule kept.
+lan_guard_teardown() { # <verb>
+    local rc=0 why="$LAN_GUARD_MARKER could not be deleted"
+    remove_lan_guard || rc=$?
+    [ "$rc" = 2 ] && why="monerod or tari may still be running (or the engine cannot say)"
+    [ "$rc" = 0 ] || error "$1 stopped: $why, so the LAN-only source rule stays."
 }
-lan_guard_teardown() { remove_lan_guard || error "$1 stopped: $LAN_GUARD_MARKER could not be deleted, and it would let a node start without the LAN-only source rule, so the rule stays."; }
 
 # The key:port pairs whose .env bind is anything but loopback, one per line.
 lan_guard_published() {
@@ -146,13 +144,13 @@ lan_guard_reason() { # <rc>
 # process. Called by compose_up, so it runs before every container (re)start.
 apply_lan_guard() {
     local published kp ports=() old rc=0
-    # The compose default is "no" (fail closed); provision_lan_guard_boot_unit sets it where it counts.
+    # Compose defaults to "no"; provision_lan_guard_boot_unit sets it where it counts. The nodes
+    # bind-mount the marker dir, and podman does not create a missing bind source.
     export MONERO_RESTART=unless-stopped TARI_RESTART=unless-stopped
-    # The nodes bind-mount the marker dir, and podman does not create a missing bind source.
     mkdir -p "${LAN_GUARD_MARKER%/*}" 2>/dev/null || true
     published=$(lan_guard_published)
     if [ -z "$published" ]; then
-        remove_lan_guard_boot_unit
+        remove_lan_guard_boot_unit || warn "lan-guard:boot-unit-left — could not remove $LAN_GUARD_BOOT_UNIT/$LAN_GUARD_HOLD_UNIT; they keep the nodes held at boot until they are."
         return 0
     fi
     for kp in $published; do ports+=("${kp#*:}"); done
@@ -172,8 +170,7 @@ apply_lan_guard() {
         # 4 before the first network exists: Docker adds the FORWARD jump when compose creates it.
         [ "$rc" = 4 ] && rc=0
     fi
-    # #2749: without the boot unit a reboot drops the rule while dockerd restarts the containers on
-    # 0.0.0.0, so a rule that cannot outlive a reboot counts as not installed.
+    # A rule that cannot outlive a reboot (no boot unit), or that the nodes cannot see, is not installed.
     [ "$rc" = 0 ] && ! provision_lan_guard_boot_unit "${ports[@]}" && rc=6
     [ "$rc" = 0 ] && ! lan_guard_mark 2>/dev/null && rc=7
     if [ "$rc" = 0 ]; then
@@ -253,10 +250,13 @@ lan_guard_ready() {
     [ "${#ports[@]}" = 0 ] || lan_guard_enforced "${ports[@]}"
 }
 
-# Remove the rule from both backends. `sudo -n`: a leftover rule only drops outside traffic to a
-# port nothing publishes any more, so a host without passwordless sudo is not prompted for it.
-remove_lan_guard() { # 1, with the rule kept, when the marker cannot be deleted
-    local line
+# Remove the rule from both backends (`sudo -n`: a leftover only drops traffic to an unpublished
+# port, so no prompt). Kept, and 2, unless the engine answers and neither node runs, whatever the
+# profiles or binds say now; kept, and 1, if the marker stays (#2749).
+remove_lan_guard() {
+    local line names
+    names=$(docker ps --format '{{.Names}}' 2>/dev/null) || return 2
+    ! grep -qxE 'monerod|tari' <<<"$names" || return 2
     lan_guard_unmark || return 1
     if command -v nft >/dev/null 2>&1; then
         sudo -n nft delete table inet "$LAN_GUARD_NFT_TABLE" 2>/dev/null || true
@@ -273,15 +273,13 @@ remove_lan_guard() { # 1, with the rule kept, when the marker cannot be deleted
     return 0
 }
 # --- The same rule across a DIY host reboot (#2749) ----------------------------------------------
-# pithead-lan-guard.service restores the rule before docker.service (as 02a's egress unit), then the
-# marker. The LAN-publishing nodes run restart "no"; pithead-lan-hold.service starts them after the
-# guard (Requires=). Cost: nothing restarts a crashed node (doctor, dashboard say so). The appliance
-# needs neither unit: pithead-boot runs `up`, and compose_up installs the rule first.
+# pithead-lan-guard.service restores rule then marker before docker.service (as 02a). The nodes run
+# restart "no"; pithead-lan-hold.service starts them after the guard (Requires=), so nothing restarts
+# a crash (doctor, dashboard say so). The appliance needs neither: pithead-boot runs `up` first.
 LAN_GUARD_BOOT_UNIT="pithead-lan-guard.service"
 LAN_GUARD_HOLD_UNIT="pithead-lan-hold.service"
 
-# The container publishing <port>: monerod for 18081/18083, tari for 18142.
-lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; fi; }
+lan_guard_container() { if [ "$1" = 18142 ]; then echo tari; else echo monerod; fi; } # <port> -> its node
 
 # The unit text for <iptables> <marker> <port>.... Fails closed: DROP first, RETURNs above it, jumps
 # last, so a start that stops halfway drops every source. `-D` first: a restart does not stack jumps.
@@ -363,8 +361,7 @@ install_lan_guard_unit() { # <unit dir> <unit> <text>
         sudo systemctl daemon-reload && sudo systemctl enable "$2" >/dev/null 2>&1
 }
 
-# Install both units for <port>... and hand compose restart "no" for their containers; 1 when either
-# unit could not be installed. Enable, not --now: the rule is live, compose starts the containers.
+# Install both units for <port>... and hand compose restart "no"; 1 when either fails. Not --now.
 provision_lan_guard_boot_unit() { # <port>...
     tor_egress_boot_unit_applies || return 0
     local ipt docker unit_dir p c containers=()
@@ -386,15 +383,18 @@ provision_lan_guard_boot_unit() { # <port>...
     log "At boot, ${containers[*]} start only once the LAN-only source rule is back ($LAN_GUARD_HOLD_UNIT); Docker does not restart them by itself."
 }
 
-# Disable and delete both units (every *_lan_access switch off, uninstall). Only our unit names.
+# Disable and delete both units (switches off, uninstall); 1 if a step fails or a unit or want stays.
 remove_lan_guard_boot_unit() {
-    local unit_dir lg_unit lg_removed=0
+    local unit_dir lg_unit lg_removed=0 rc=0
     unit_dir=$(control_unit_dir)
     for lg_unit in "$LAN_GUARD_HOLD_UNIT" "$LAN_GUARD_BOOT_UNIT"; do
         [ -e "$unit_dir/$lg_unit" ] || continue
-        sudo systemctl disable "$lg_unit" >/dev/null 2>&1 || true
-        sudo rm -f "$unit_dir/$lg_unit" || true
+        sudo systemctl disable "$lg_unit" >/dev/null 2>&1 || rc=1
+        sudo rm -f "$unit_dir/$lg_unit" || rc=1
         lg_removed=1
     done
-    [ "$lg_removed" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || true
+    [ "$lg_removed" = 0 ] || sudo systemctl daemon-reload >/dev/null 2>&1 || rc=1
+    [ ! -e "$unit_dir/$LAN_GUARD_HOLD_UNIT" ] && [ ! -e "$unit_dir/$LAN_GUARD_BOOT_UNIT" ] || rc=1
+    ! systemctl show -p Wants --value docker.service multi-user.target 2>/dev/null | grep -qE 'pithead-lan-(guard|hold)\.service' || rc=1
+    return "$rc"
 }
