@@ -399,7 +399,7 @@ preflight() {
     if [ -n "$BASELINE_IMAGES" ]; then
         ok "baseline image census: $(printf '%s\n' "$BASELINE_IMAGES" | grep -c .) service(s) recorded"
     else
-        warn "nothing running to census — the restore's image check will report NOT CHECKED rather than pass."
+        warn "nothing running to census — the restore's image check will fail closed."
     fi
     # Chains at tip BEFORE anything is locked or borrowed (#914): the dashboard can briefly
     # report loading on an otherwise synced bench, so wait for its sync panels to settle.

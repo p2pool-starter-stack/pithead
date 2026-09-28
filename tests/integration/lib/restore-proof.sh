@@ -304,6 +304,7 @@ PROBE
     now_images="$(stack_image_census)"
     if [ -z "$BASELINE_IMAGES" ]; then
         warn "restore proof: image identity NOT CHECKED — no baseline census was taken (nothing was running at preflight)."
+        prc=1
     elif [ -z "$now_images" ]; then
         warn "restore proof: image identity NOT CHECKED — no stack is running to census now."
         prc=1

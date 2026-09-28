@@ -160,6 +160,37 @@ assert_eq "an extra service label is matched literally" \
 assert_eq "an option-shaped extra label cannot bypass the proof" \
     "$(grade_restore_identity "$BASE" "$LIVE"$'\n'"--help=sha256:late|/other" "$DECLARED" /test | grep '^unexpected-service ')" "unexpected-service --help"
 
+# Drive the full proof with the other, independent restore checks satisfied. A mutation that
+# replaces verify_restore_proof's identity grader with a hardcoded pass must fail these checks.
+proof_probe() { # <baseline-census> <live-census> -> verify_restore_proof exit status
+    (
+        BASELINE_IMAGES="$1" E2E_DIR=/test RESTORE_DIR=/baseline RESTORE_PROOF_VAR=MONERO_NODE_PASSWORD
+        stack_image_census() { printf '%s\n' "$BASE"; }
+        declared_image_census() { printf '%s\n' "$DECLARED"; }
+        stack_restore_census() { printf '%s\n' "$PROBE_LIVE"; }
+        env_bake_verdict() { echo match; }
+        control_units_verdict() { echo on-target; }
+        chain_restore_proof() { return 0; }
+        restore_egress_boot_unit() { return 0; }
+        restore_egress_check_units() { return 0; }
+        ok() { :; }
+        warn() { :; }
+        on_bench() {
+            case "$1" in
+            *"cd '/baseline' && bash -s"*) echo rpc-ok ;;
+            *"is-enabled pithead-control.path"*) return 0 ;;
+            esac
+        }
+        PROBE_LIVE="$2"
+        verify_restore_proof >/dev/null 2>&1
+        printf '%s' "$?"
+    )
+}
+assert_eq "the full proof accepts baseline images and owners" "$(proof_probe "$BASE" "$LIVE")" "0"
+assert_eq "the full proof rejects a missing preflight image census" "$(proof_probe '' "$LIVE")" "1"
+assert_eq "the full proof rejects a late test-checkout owner" "$(proof_probe "$BASE" "$LATE_OWNER")" "1"
+assert_eq "the full proof rejects a late branch image" "$(proof_probe "$BASE" "$LATE_IMAGES")" "1"
+
 census_probe() { # <service-label> -> remote census exit status
     local dir rc
     dir="$(mktemp -d)"
