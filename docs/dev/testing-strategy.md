@@ -603,12 +603,14 @@ Every scenario, at every tier, holds to the same rules.
 - Test code is real code. The same lint (shellcheck) and coverage gate apply to the tests
   themselves, and the inventory generator fails CI if a suite stops enumerating or shrinks past
   its floor.
-- An assertion reads its haystack directly, never through a pipe. `grep -q` exits at its first
-  match, so under `pipefail` the writer's broken pipe becomes the pipeline's exit status and the
-  match is thrown away: a directive that was present read as missing, and — in the direction
+- An assertion reads its haystack directly, never through a pipe. The KVM serial checks read the
+  serial file with `serial_has`; its tier-1 self-test puts a match before a megabyte of later
+  output, and the rig and media phases prove their respective console rows on a guest. `grep -q`
+  exits at its first match, so under `pipefail` the writer's broken pipe becomes the pipeline's
+  exit status and the match is thrown away: a directive that was present read as missing, and — in the direction
   nobody watches — a forbidden pattern that was present read as absent, which is a hardening
-  regression wearing a green tick. Use a here-string. And a reader that could not run at all is a
-  failure in its own right, never folded into either verdict.
+  regression wearing a green tick. Use a file argument or a here-string. A reader that could not
+  run at all is a failure in its own right, never folded into either verdict.
 
 ### Flake policy
 
