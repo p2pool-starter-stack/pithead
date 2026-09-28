@@ -44,14 +44,16 @@ outage happened while the machine was already down.
 
 ## 1. Write the image to a USB stick
 
-Download `pithead-os-vX.Y.Z.img` and verify the checksum. Then write it with
-[balenaEtcher](https://etcher.balena.io/), or from a terminal:
+Download `pithead-os-vX.Y.Z.img.xz` and its `.sha256` file from the same release.
+Verify the download, then write the decompressed image to the stick:
 
 ```bash
-sudo dd if=pithead-os-vX.Y.Z.img of=/dev/sdX bs=4M status=progress conv=fsync
+sha256sum -c pithead-os-vX.Y.Z.img.xz.sha256
+xz -dc pithead-os-vX.Y.Z.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 `/dev/sdX` is the USB stick. Check it twice — `dd` will erase whatever you name.
+Keep the `.xz` file intact for checksum verification; the write produces the full 5 GiB image.
 
 ## 2. Boot the machine from the stick
 
