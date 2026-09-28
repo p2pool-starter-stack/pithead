@@ -44,6 +44,10 @@ of each product release, not independent releases:
   release: bump the pin → cut a stack patch → re-run the integration gate → ship. The bundle
   ships re-tested.
 
+For Caddy, update the digest in Compose, the Quadlet renderer, and its three fixtures together;
+the render parity test checks that they agree. Release preflight checks the Compose tag against
+the registry index, including on a dry run.
+
 Noticing that a bump is available is a separate job from making one, and nothing did it until
 `scripts/watch/pin-watch.sh`. It runs weekly from `.github/workflows/pin-watch.yml`, compares each pin
 against the component's latest upstream release, checks whether each exact Go module raise still
