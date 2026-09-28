@@ -338,8 +338,9 @@ otherwise. The appliance guide is [`docs/appliance.md`](docs/appliance.md).
 
 ### Added
 
-- **Pithead OS, the appliance.** Write `pithead-os-v2.0.0.img` to a USB stick and boot the machine
-  from it: it installs itself and serves a one-page setup wizard to your browser. The page asks
+- **Pithead OS, the appliance.** Verify `pithead-os-v2.0.0.img.xz`, write its decompressed image
+  to a USB stick, and boot the machine from it: it installs itself and serves a one-page setup
+  wizard to your browser. The page asks
   what the machine is — a full coordinator, a coordinator that also mines with its own CPU, or a
   mining rig ([#797](https://github.com/p2pool-starter-stack/pithead/issues/797)) — which disk
   to use, and the same questions the DIY installer asks. A machine without a monitor can be set up
