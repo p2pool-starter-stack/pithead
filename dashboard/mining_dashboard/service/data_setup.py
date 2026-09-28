@@ -242,8 +242,9 @@ class DataSetupMixin:
             self.workers_rejected = bool(self.latest_data.get("workers_rejected", False))
             self.miner_released = bool(self.latest_data.get("miner_released", False))
         # A cross-hardware restore (restore_apply(), never `./pithead restore`) carries the source
-        # machine's release (#2626). Until the gate releases on this machine's own chains, the
-        # restore marker overrides it, across restarts too.
+        # machine's release (#2626), and `apply` re-points a required chain at another node (#2763):
+        # either way the release was earned on other chains. Until the gate releases on the chains
+        # this machine now dials, the marker overrides it, across restarts too.
         if os.path.exists(_runtime().SYNC_GATE_RESET_PATH):
             self.miner_released = False
             self.latest_data["miner_released"] = False
