@@ -228,9 +228,9 @@ expected_services() {
     [ -n "$(printf '%s' "$config_json" | jq -r '.tari.view_key // empty')" ] && out="tari-wallet $out"
     printf '%s\n' "$out" | tr ' ' '\n' | sort
 }
-
-expected_topology_nodes() { # topology panel's node set (#2303): local-miner only when local_miner.enabled=true
+expected_topology_nodes() { # topology nodes: local-miner when enabled; Tari unless mode=off
     local out="browser,caddy,dashboard,docker,internet,monerod,p2pool,rigs,tari,tor,xmrig-proxy"
+    [ "$(printf '%s' "$1" | jq -r '.tari.mode // "local"')" = "off" ] && out="${out/tari,/}"
     [ "$(printf '%s' "$1" | jq -r '.local_miner.enabled // false')" = "true" ] && printf '%s' "${out/internet,/internet,local-miner,}" || printf '%s' "$out"
 }
 # Services that must NOT exist here: no bundled node for a chain that is NOT LOCAL (tari.mode has a third value, #1855 — see selftest-tari-mode-off.sh).
