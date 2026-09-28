@@ -162,7 +162,7 @@ MUST_REDACT="monero.wallet_address monero.node_username monero.node_password mon
 tari.wallet_address tari.view_key tari.spend_public_key p2pool.stratum_password xvb.donor_id
 dashboard.auth.username dashboard.auth.password workers.api_token
 ssh.authorized_key healthchecks.ping_url telegram.bot_token notifications.ntfy.token
-xvb.standby.source"
+xvb.standby.source tari.explorer_url"
 # Survivors, each for a stated reason — over-redaction is safe for secrets and not for anything
 # else: a bundle with its endpoints stripped is useless for the debugging it exists for.
 #   xvb.url                    a public service endpoint

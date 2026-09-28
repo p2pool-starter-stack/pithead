@@ -304,7 +304,7 @@ class DataService(DataSetupMixin, DataGateMixin, DataXvbSyncMixin, DataAuditMixi
                     # node's live reachability into a stable DOWN flag; monerod-down always
                     # rejects, Tari-down never does — Tari stays visible in its own panel/alerts.
                     monero_down = self.monero_health.update(monero_sync.get("reachable", True))
-                    tari_down = self.tari_health.update(tari_sync.get("reachable", True))
+                    tari_down = await self._observe_tari(tari_client, tari_sync)
                     monero_sync["down"] = monero_down
                     tari_sync["down"] = tari_down
 
