@@ -90,7 +90,8 @@ mv config.json.tari-wallet-test config.json
         bad "Tari wallet: no wallet config under /var/tari/wallet — the volume is not writable"
     fi
     node="http://$(_ssh "sed -n 's/^TARI_GRPC_ADDRESS=//p' /data/pithead/.env" 2>/dev/null | tr -d '\r\n' | cut -d: -f1):9000"
-    argv=$(_ssh "podman exec tari-wallet cat /proc/1/cmdline" 2>/dev/null | tr '\0' ' ')
+    # Every process's argv, not PID 1's: the container runs under an init (#2657), so PID 1 is the init.
+    argv=$(_ssh "podman exec tari-wallet sh -c 'cat /proc/[0-9]*/cmdline'" 2>/dev/null | tr '\0' ' ')
     case "$argv" in
     *"wallet.http_server_url=$node "*"wallet.fallback_http_server_url=$node "*) ok "Tari wallet: both scan URLs name the local node ($node)" ;;
     *) bad "Tari wallet: the scan URLs do not both name the local node $node" ;;
