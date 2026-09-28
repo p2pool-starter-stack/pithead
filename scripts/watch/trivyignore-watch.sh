@@ -14,8 +14,7 @@
 # The covered images, enumerated from the real build/scan setup rather than guessed (ci.yml's
 # build-images matrix + os-rootfs.yml, both cited below):
 #   pithead-os-rootfs    os/rootfs/Dockerfile   (debian:trixie-slim + the golang builder stage)
-#   pithead-dashboard    dashboard              (python:3.11-slim, the `production` stage — the
-#                                                 same default target ci.yml's untargeted build uses)
+#   pithead-dashboard    dashboard              (python:3.11-slim, default production stage)
 #   pithead-monero       build/monero           (ubuntu:24.04)
 #   pithead-p2pool       build/p2pool           (ubuntu:24.04)
 #   pithead-xmrig-proxy  build/xmrig-proxy      (ubuntu:24.04)
@@ -93,7 +92,7 @@ build_image() {
     printf '%s' "$tag"
 }
 
-# <tag> -> one finding ID per line; no trivyignores flag, and reject incomplete scan data.
+# <tag> -> finding IDs; a clean Trivy target can omit Vulnerabilities (shipped-image-sweep-report.sh).
 scan_image() {
     local tag="$1" json
     json=$(docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" \
@@ -102,7 +101,8 @@ scan_image() {
     printf '%s' "$json" | jq -sr '
         if length != 1 or (.[0] | type) != "object" or (.[0].Results | type) != "array"
             or (.[0].Results | length) == 0
-            or any(.[0].Results[]; type != "object" or (.Vulnerabilities | type) != "array")
+            or any(.[0].Results[]; (.Target | type) != "string" or (.Target | length) == 0
+                or (has("Vulnerabilities") and (.Vulnerabilities | type) != "array"))
         then error("invalid report")
         else .[0].Results[] | (.Vulnerabilities // [])[] | .VulnerabilityID |
             if type == "string" and test("^[^[:space:]]+$") then . else error("invalid finding ID") end end
@@ -317,7 +317,7 @@ if [ "${1:-}" = "--self-test" ]; then
     st "rootfs tag is fetched and inputs staged before docker build" \
         "$(awk '/^[[:space:]]*git -C "\$ROOT" fetch -q --depth=1 origin/{fetch=NR} /^[[:space:]]*bash "\$ROOT\/os\/build-image.sh" --stage-only/{stage=NR} /^[[:space:]]*docker build -f "\$ROOT\/os\/rootfs\/Dockerfile"/{build=NR} END {print (fetch > 0 && stage > fetch && build > stage)}' "$ROOT/scripts/watch/trivyignore-watch.sh")" "1"
 
-    for payload in '{invalid json' '' '{"Results":[]}' '{"Results":[{}]}' '{"Results":[{"Vulnerabilities":null}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
+    for payload in '{invalid json' '' '{"Results":[]}' '{"Results":[{}]}' '{"Results":[{"Target":"t","Vulnerabilities":null}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":""}]}]}' '{"Results":[{"Target":"t","Vulnerabilities":[{"VulnerabilityID":" "}]}]}'; do
         docker() { printf '%s' "$payload"; }
         scan_rc=0
         scan_image fixture >/dev/null || scan_rc=1
