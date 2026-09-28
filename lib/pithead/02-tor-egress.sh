@@ -288,13 +288,16 @@ tor_egress_verify_or_warn() { # <success message>
     # itself is what separates the two; a silent `log` in the second case is an apply that should
     # have alarmed and did not.
     4)
-        # mining_stack_running, NOT container_is_running tor. Tor can be down while p2pool/monerod/
-        # xmrig-proxy keep running — a live, clearnet-capable stack — and keying on tor reported
-        # that as the benign first-boot case. Measured on exactly that state before this change.
-        if mining_stack_running; then
-            warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER while the stack is running. Clearnet egress is NOT fail-closed."
+        # A stopped existing network may not cause Docker to recreate the missing jump on the next
+        # `up`, so only an absent network is first-boot staging. A failed network listing is unknown,
+        # not proof of absence. Running mining containers also make the gap a live failure.
+        local networks
+        networks=$(docker network ls --format '{{.Name}}' 2>/dev/null) || networks=unreadable
+        if mining_stack_running || grep -qxF mining_net <<<"$networks" || [ "$networks" = unreadable ]; then
+            warn "egress-apply:jump-missing — the Tor-egress rules are installed but NOTHING JUMPS TO DOCKER-USER on an existing or unverified mining network. Clearnet egress is NOT fail-closed."
         else
             log "Tor-egress rules staged in DOCKER-USER; they take effect once the container engine adds its FORWARD jump. 'pithead doctor' verifies it against the running stack."
+            rc=0
         fi
         ;;
     # Reachable and present, but something foreign sits above our DROP. We cannot say the drop is
@@ -302,4 +305,5 @@ tor_egress_verify_or_warn() { # <success message>
     5) warn "egress-apply:shadowed — a rule that is not ours sits ABOVE the Tor-egress DROP in DOCKER-USER, so the DROP may never be reached. Clearnet egress is NOT provably fail-closed. Inspect with 'sudo iptables -S DOCKER-USER'." ;;
     *) warn "egress-apply:verify-unreadable — the Tor-egress rules installed, but reading them back needs passwordless sudo, so enforcement is UNPROVEN." ;;
     esac
+    [ "$rc" = 0 ]
 }

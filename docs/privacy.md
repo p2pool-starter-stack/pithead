@@ -108,7 +108,12 @@ other interface untouched. If a v6 subnet is present but the bridge interface ca
 
 On the Docker (DIY) channel, the enforcement check above walks `DOCKER-USER` looking for a rule
 that would shadow our DROP, written by something else that shares the chain — ufw-docker, a second
-Compose project. It does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
+Compose project. Pithead reinstalls the egress rules above its LAN-port guard jumps before starting
+containers, so the guard's return path still reaches the DROP. If the live readback cannot prove
+the firewall after that refresh, Compose does not start. Before Docker creates its first network,
+the absent `FORWARD` jump is allowed only when Docker confirms the mining network is absent and no
+mining container runs; Docker then adds the jump.
+The check does CIDR-containment math, not a literal string match: a foreign `ACCEPT` or
 `RETURN` rule scoped with `-s` to any network that overlaps the mining subnet — a wider supernet
 containing it, or a narrower range inside it, negated (`! -s`) or not — is recognized as shadowing,
 in addition to an unscoped rule or one scoped to exactly the mining subnet

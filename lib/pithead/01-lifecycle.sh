@@ -80,6 +80,9 @@ compose_up() {
     # Every container (re)start passes here, so the LAN-published node ports get their source rule
     # (or are held on loopback) before anything listens on them (#2616).
     apply_lan_guard
+    # LAN guard inserts its RETURN-only jump at the top of DOCKER-USER. Put the Tor DROP back
+    # above it so the live egress check can prove precedence before containers start.
+    apply_tor_egress_firewall refresh || return 1
     # Compose bind-mounts this exact inode read-only into the dashboard. Passing the resolved path
     # here keeps versioned installs and PITHEAD_LOCK_FILE overrides on the CLI's lock.
     local rc=0
