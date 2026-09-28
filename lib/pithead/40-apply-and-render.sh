@@ -127,6 +127,15 @@ recover_dashboard_data_carry() { # <old-dir> <configured-new-dir> <resolved-new-
         warn "The dashboard could not restart after the interrupted data carry. Fix the error above, then re-run '$0 apply' (the recovery marker will retry it)."
 }
 
+rearm_sync_gate_marker() { # <dashboard-dir>: plant sync-gate-reset without following what is there
+    local t
+    t=$(mktemp "$1/.sync-gate-reset.XXXXXX") || return 1
+    mv -f -T "$t" "$1/sync-gate-reset" || {
+        rm -f "$t"
+        return 1
+    }
+}
+
 apply() {
     # apply reaches its mutating window down two different paths (a normal change, and the retry
     # after a previous apply committed the config but did not finish recreating containers), so it
@@ -340,10 +349,15 @@ apply() {
     # port via MONERO_RPC_URL), so the up below recreates it and it reads the marker at start. It
     # holds the miner until the new node syncs (or releases on the first cycle if it already has).
     # The directory belongs to the dashboard's uid (ensure_directories), hence sudo when the
-    # operator's is another; the dashboard removes the file through its directory either way.
-    if [ "$rearm_sync_gate" -eq 1 ] && ! { : >"$DASHBOARD_DIR/sync-gate-reset" 2>/dev/null ||
-        sudo touch "$DASHBOARD_DIR/sync-gate-reset"; }; then
-        error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
+    # operator's is another. Whatever that uid left at the path is never opened: mktemp creates a
+    # fresh file (O_EXCL) and `mv -T` renames it over the entry, replacing a planted symlink
+    # instead of following it, and refusing a directory.
+    if [ "$rearm_sync_gate" -eq 1 ]; then
+        rearm_sync_gate_marker "$DASHBOARD_DIR" 2>/dev/null ||
+            sudo bash -c "$(declare -f rearm_sync_gate_marker); rearm_sync_gate_marker \"\$1\"" _ "$DASHBOARD_DIR" || true
+        # Judge the result, not the exit status: only a regular file at the path re-arms the gate.
+        [ -f "$DASHBOARD_DIR/sync-gate-reset" ] && [ ! -L "$DASHBOARD_DIR/sync-gate-reset" ] ||
+            error "Could not re-arm the sync gate ($DASHBOARD_DIR/sync-gate-reset); re-run '$0 apply' to retry."
     fi
     # Compose recreates only the services whose resolved config changed. --remove-orphans covers
     # services that left the compose file entirely; a profile-deactivated service is NOT an orphan

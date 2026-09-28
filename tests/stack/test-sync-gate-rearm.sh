@@ -39,3 +39,17 @@ assert_eq "the successful retry clears its retry marker" "$([ -e "$V/.env.apply-
 rm -f "$RG_MARK"
 : >"$V/.env.apply-incomplete"
 assert_eq "a retry with no node change leaves the gate alone" "$(rg_apply '"mode":"local"' '' mini)" "rc=0 none"
+# A symlink planted at the marker path (the dashboard's uid owns the directory) is replaced, never
+# followed: its target keeps its content, and the gate is still re-armed by a regular file.
+printf 'keep\n' >"$V/rg-target"
+ln -s "$V/rg-target" "$RG_MARK"
+assert_eq "a planted marker symlink is replaced on re-arm" "$(rg_apply '"mode":"remote","remote":{"host":"node.example"}' '' mini)" "rc=0 marked"
+assert_eq "the planted symlink's target is unchanged" "$(cat "$V/rg-target")" keep
+assert_eq "the re-armed marker is a regular file" "$([ -f "$RG_MARK" ] && [ ! -L "$RG_MARK" ] && echo regular || echo other)" regular
+rm -f "$RG_MARK"
+# A directory at the marker path cannot be replaced: apply fails closed and keeps the re-arm for its retry.
+mkdir -p "$RG_MARK/keep"
+assert_eq "a directory at the marker path fails the apply" "$(rg_apply '"mode":"local"' '' mini | cut -d" " -f1)" "rc=1"
+assert_eq "the failed re-arm is kept for the retry" "$(cat "$V/.env.apply-incomplete" 2>/dev/null)" rearm-sync-gate
+assert_eq "the planted directory is untouched" "$(ls "$RG_MARK")" keep
+rm -rf "$RG_MARK" "$V/.env.apply-incomplete"
