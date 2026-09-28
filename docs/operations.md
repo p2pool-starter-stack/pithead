@@ -623,7 +623,8 @@ points; see [Configuration › Data directories](configuration.md#data-directori
   ([#637](https://github.com/p2pool-starter-stack/pithead/issues/637)). The newest three pairs
   are kept; older ones are pruned automatically. The `.env` copies carry secrets — handle them
   like `.env` itself.
-- **`data/tor/`**: onion service keys. Back up to keep the same onion addresses across a rebuild.
+- **`data/tor/`**: onion service keys retain the same addresses across a rebuild. Restore discards
+  Tor's disposable circuit `state`, so it builds fresh circuits on the next start.
 - **`data/monero/`**, **`data/tari/`**: the blockchains. Large; backing them up saves a re-sync,
   but they re-download from the network if lost.
 - **`data/dashboard/`**: the dashboard database (hashrate history and settings). Small and
@@ -701,7 +702,8 @@ otherwise restore hashes the configured password again. An archive is trusted as
 `--yes` skips the overwrite prompt, not these checks. Restore fixes Tor key ownership so the
 onion address returns unchanged, and restores hashrate history and dashboard settings — including
 the sync gate's own released/held state, since this is the same-box recovery door: the machine's
-chains have not gone anywhere.
+chains have not gone anywhere. Restore discards Tor's circuit `state`, including from older archives;
+Tor rebuilds that history on startup without changing the onion keys.
 
 #### Restore collision rules
 
