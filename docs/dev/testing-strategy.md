@@ -38,8 +38,9 @@ CI, with no chain and no test box.
 ## What a PR must prove
 
 The tier a change needs follows from the paths its diff touches, never from the size of the diff or
-from a claim that the change is static, config-only, render-only or one line. Tiers 1 to 3 run on
-every PR on GitHub; tier 4 is the release gate and, narrowed to what the change touches, the per-PR
+from a claim that the change is static, config-only, render-only or one line. Tiers 1 and 2 run on
+every PR on GitHub. Tier 3 runs when a PR touches the integration harness, dashboard, CLI source,
+or its workflow; tier 4 is the release gate and, narrowed to what the change touches, the per-PR
 gate for anything that changes what runs on a box. The rows mirror bench-ci's "Which tier" table.
 
 | The diff touches | Proof on the PR's head before merge |
@@ -567,12 +568,12 @@ handful of suites are invoked as their own CI step instead and are listed as exe
 | Fake-daemon **contract test** | 2 | every PR | ✅ required |
 | Integration harness **self-test** | 4 | every PR | ✅ required |
 | **Test-inventory drift** check (every suite still enumerates; every domain file is sourced) | — | every PR | ✅ required |
-| Fake-daemon **docker mini-stack** | 3 | PRs touching the harness/dashboard | ✅ (own workflow) |
+| Fake-daemon **docker mini-stack** | 3 | PRs touching the harness, dashboard, CLI source, or workflow | ✅ (own workflow) |
 | **Live config matrix** on real nodes | 4 | manual / pre-release | ✅ **release gate** ([#44](https://github.com/p2pool-starter-stack/pithead/issues/44)) |
 | **Targeted live run** for a change to what runs on a box (`build/`, compose, config rendering, the control plane, deploy, upgrade, restore, merge-mining, Tor, miners) | 4 | every such PR, on its head (bench-ci `tier4-e2e`, `targeted` or `matrix`) | ✅ required: the adversarial review returns a PR without it |
 | **KVM appliance battery** (`tests/os/run.sh`) | 4 | every PR touching `os/`, RAUC, the wizard, first boot, the installer or updates, on its head (bench-ci `tier4-kvm`, one phase at a time); `all` phases against the exact commit, pre-cut | ✅ **release gate for the image**, enforced by `release.sh`'s `bench-ci/tier4` preflight ([appliance-release.md](appliance-release.md)) |
 
-The first three tiers run on every PR with no special infrastructure. Tier 4 is the blocking
+Tiers 1 and 2 run on every PR; tier 3 runs for the paths named above. Tier 4 is the blocking
 pre-release gate (see [Releasing](releasing.md)) because it needs the real synced nodes, and,
 narrowed to what the diff touches, the per-PR gate for any change to what runs on a box (see
 [What a PR must prove](#what-a-pr-must-prove)).
