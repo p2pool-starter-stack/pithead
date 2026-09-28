@@ -41,6 +41,98 @@ assert_eq "unreadable ConditionResult: fails, names it unreadable" \
     "1 neither provisioning unit ran this boot (firstboot ConditionResult: unreadable, boot: unreadable) — is-active alone cannot tell a correctly-skipped unit from one that never got the chance"
 unset -f prv
 
+echo "== unit: config-reset waits for systemd condition evaluation before reading the result (#2836) =="
+condition_wait_case() (
+    # shellcheck disable=SC1091
+    source "$ROOT/tests/os/provisioning-settled.sh"
+    UNIT_CONDITION_ATTEMPTS=3 UNIT_CONDITION_POLL_S=0
+    calls="$SANDBOX/condition-calls"
+    printf '0\n' >"$calls"
+    _ssh() {
+        case "$*" in
+        *ConditionTimestampMonotonic*)
+            read -r count <"$calls"
+            printf '%s\n' "$((count + 1))" >"$calls"
+            if [ "$count" -lt 2 ]; then printf '0\n'; else printf '42\n'; fi
+            ;;
+        *ConditionResult*) printf 'yes\n' ;;
+        esac
+    }
+    rc=0
+    wait_unit_condition_evaluated pithead-firstboot && unit_ran_this_boot pithead-firstboot || rc=$?
+    read -r count <"$calls"
+    printf '%s %s ' "$rc" "$count"
+    _ssh() { printf '0\n'; }
+    wait_unit_condition_evaluated pithead-boot
+    printf '%s\n' "$?"
+)
+wait_result=$(condition_wait_case)
+assert_eq "delayed condition evaluation permits the result probe; an unevaluated unit times out" "$wait_result" "0 3 1"
+stalled_condition_case() (
+    # shellcheck disable=SC1091
+    source "$ROOT/tests/os/provisioning-settled.sh"
+    UNIT_CONDITION_ATTEMPTS=2 UNIT_CONDITION_POLL_S=0 SSH_PROBE_TIMEOUT=0.1
+    calls="$SANDBOX/stalled-condition-calls"
+    printf '0\n' >"$calls"
+    _ssh() {
+        read -r n <"$calls"
+        printf '%s\n' "$((n + 1))" >"$calls"
+        printf '%s\n' "${SSH_TIMEOUT:-5400}" >"$calls.limit"
+        timeout "${SSH_TIMEOUT:-5400}" sleep 1
+    }
+    rc=0
+    wait_unit_condition_evaluated pithead-boot || rc=$?
+    read -r n <"$calls"
+    read -r limit <"$calls.limit"
+    printf '%s %s %s\n' "$rc" "$n" "$limit"
+)
+assert_eq "a stalled systemctl reply is bounded on every poll" "$(stalled_condition_case)" "1 2 0.1"
+unset -f stalled_condition_case
+# Drive the reset row's actual probe block: each result read must follow both evaluations.
+reset_probe=$(sed -n '/^    # Two systemd conditions in opposition/,/^    unit_ran_this_boot pithead-boot && boot_ran=yes/p' "$ROOT/tests/os/phases/reset-config.sh")
+reset_probe_case() (
+    # shellcheck disable=SC1091
+    source "$ROOT/tests/os/provisioning-settled.sh"
+    UNIT_CONDITION_ATTEMPTS=3 UNIT_CONDITION_POLL_S=0
+    timeout_boot="${1:-0}"
+    trace="$SANDBOX/reset-condition-trace"
+    printf '' >"$trace"
+    printf '0\n' >"$trace.f"
+    printf '0\n' >"$trace.b"
+    _ssh() {
+        case "$*" in
+        *ConditionTimestampMonotonic*pithead-firstboot*)
+            read -r n <"$trace.f"
+            printf '%s\n' "$((n + 1))" >"$trace.f"
+            printf ' F%s' "$n" >>"$trace"
+            if [ "$n" -eq 0 ]; then printf '0\n'; else printf '42\n'; fi
+            ;;
+        *ConditionTimestampMonotonic*pithead-boot*)
+            read -r n <"$trace.b"
+            printf '%s\n' "$((n + 1))" >"$trace.b"
+            printf ' B%s' "$n" >>"$trace"
+            if [ "$n" -eq 0 ] || [ "$timeout_boot" = 1 ]; then printf '0\n'; else printf '42\n'; fi
+            ;;
+        *ConditionResult*pithead-firstboot*)
+            printf ' RF' >>"$trace"
+            printf 'yes\n'
+            ;;
+        *ConditionResult*pithead-boot*)
+            printf ' RB' >>"$trace"
+            printf 'no\n'
+            ;;
+        esac
+    }
+    bad() { printf 'BAD %s\n' "$1"; }
+    eval "$reset_probe"
+    printf '%s %s%s\n' "$fb_ran" "$boot_ran" "$(cat "$trace")"
+)
+assert_eq "reset waits for both units before either result probe" "$(reset_probe_case)" "yes no F0 F1 B0 B1 RF RB"
+assert_eq "reset names the unit whose condition never evaluated" "$(reset_probe_case 1)" \
+    "BAD config-reset timed out waiting for pithead-boot conditions to be evaluated"
+unset -f reset_probe_case
+unset -f condition_wait_case
+
 echo "== unit: provisioning_setup_failed — a settled provisioning is not a succeeded one (#2725) =="
 # Job 1194: firstboot ended `failed` (tor unhealthy), provisioning_settled accepted that as
 # terminal, and the restore leg backed up a failed stack. Mutation run: return 1 unconditionally
