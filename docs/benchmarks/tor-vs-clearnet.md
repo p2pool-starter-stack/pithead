@@ -91,9 +91,10 @@ These explain why the yield moved, or confirm it didn't. All are available today
   - **Arm T (Tor):** `p2pool.clearnet=false` (`--socks5`), `tor_egress_firewall=true`, `xvb.tor=true` —
     the `develop` defaults (fail-closed, egress-gated).
   - **Arm C (clearnet):** `p2pool.clearnet=true`, `tor_egress_firewall=false`, `xvb.tor=false`. The
-    **firewall must be off in this arm.** The #270 Tor-egress firewall DROPs direct clearnet dials, so
-    leaving it on would give p2pool 0 sidechain peers and the arm would silently collect garbage. The
-    arm switch toggles the two together. monerod + Tari keep their Tor app-config in both arms, so only
+    **firewall was off in this recorded arm** (before #2790). The old #270 Tor-egress firewall
+    dropped P2Pool's direct dials, so leaving it on then would have given P2Pool zero sidechain
+    peers. The historical arm switch toggles the two together; current deployments can keep the
+    firewall on with P2Pool's scoped exception. monerod + Tari keep their Tor app-config in both arms, so only
     p2pool's transport differs; clearnet exposure here is the intended baseline on the test bench.
   - Only the **mining-path transport** flips. Held constant in both arms: monerod + Tari on Tor,
     **XvB disabled** (`xvb.enabled=false`, see below), the rig, hashrate, sidechain, and monerod tip.

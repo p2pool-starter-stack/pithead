@@ -441,7 +441,7 @@ def _set_egress_config(monkeypatch, **over):
     """Pin the live egress knobs so the #170 panel is deterministic regardless of the test env.
 
     Defaults are the privacy-safe resting config (firewall on, everything over Tor, local node);
-    pass overrides to model a leak. ``egress_posture_from_config`` / ``topology_from_config`` read
+    pass overrides to model a selected route or leak. The egress and topology builders read
     these off the config module at call time, so patching them steers ``build_state``'s payload.
     """
     safe = {
