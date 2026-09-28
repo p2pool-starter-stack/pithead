@@ -80,6 +80,38 @@ sensitive_live_config() { # prints the live config, or nothing
     return 1
 }
 
+# Commit a dashboard-password change and read its verdict from the host's result spool: the
+# dashboard's own result poll authenticates with the login this very commit replaces (#2367).
+password_commit_via_host() { # <new-password>; uses DASH_USER/DASH_PASS (current login) by dynamic scope
+    local live proposed rid result tries=0
+    live=$(sensitive_live_config) || {
+        bad "dashboard-password repoint NOT exercised: /api/config unreadable before the commit"
+        return 1
+    }
+    proposed=$(printf '%s' "$live" | jq -c --arg p "$1" '.dashboard.auth.password = $p')
+    sensitive_preview "$(dashboard_config_body "$proposed")" || {
+        bad "dashboard-password repoint NOT exercised: the preview never returned"
+        return 1
+    }
+    # The owner's #2367 ruling: the operator sees the cost before confirming. Refuse to commit
+    # unless the host preview is envelope-gated and names the lockout and console-login costs.
+    if ! dashboard_password_preview_warns_verdict "$APPROVAL_PREVIEW"; then
+        bad "dashboard-password preview did not warn before the commit (want previewed, approval_required, lockout + console-login text; got $(printf '%s' "$APPROVAL_PREVIEW" | jq -c '{status, approval_required, warns: ([.changes[]?.msg] | any(contains("locks this session out") and contains("console root login")))}' 2>/dev/null || printf 'unparseable preview'))"
+        return 1
+    fi
+    rid=$APPROVAL_REQUEST_ID
+    dashboard_control_request commit "$(jq -nc --arg id "$rid" '{id:$id,confirm:"APPLY",approve:true,payout_suffixes:{}}')" 20 >/dev/null || true
+    while [ "$tries" -lt 140 ]; do
+        result=$(_ssh "cat /data/pithead/data/control/results/$rid.json" 2>/dev/null) &&
+            ! printf '%s' "$result" | jq -e '.status | IN("pending","accepted","running")' >/dev/null 2>&1 && break
+        result="" tries=$((tries + 1))
+        sleep 3
+    done
+    dashboard_password_repoint_applied_verdict "$result" && return 0
+    bad "dashboard-password repoint did not commit behind typed APPLY ($(control_result_payload "$result"))"
+    return 1
+}
+
 phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password>
     local DASH_USER="$1" DASH_PASS="$2" live proposed preview result rid before after audit
 
@@ -126,21 +158,51 @@ phase_provision_sensitive_regressions() { # <dashboard-user> <dashboard-password
         return
     fi
 
-    live=$(sensitive_live_config) || return
-    proposed=$(printf '%s' "$live" | jq -c '.dashboard.auth.password = "os1966-physical-only"')
-    sensitive_preview "$(dashboard_config_body "$proposed")" || return
-    preview=$APPROVAL_PREVIEW rid=$APPROVAL_REQUEST_ID
-    result=$(approval_commit "$rid")
-    if ! physical_presence_password_refusal_verdict "$result"; then
-        bad "host approval did not refuse the physical-presence-only dashboard-password edit ($(printf '%s' "$result" | jq -c '{status,error}' 2>/dev/null || printf 'unreadable result'))"
-        return
-    fi
+    # #2367: the password left the physical-presence set and commits behind APPLY + the envelope.
+    # Once it applies, Caddy wants the NEW login, so the dashboard's result poll (old login) only
+    # sees 401s: read the verdict from the host spool, then restore the fixture password the same
+    # way so every later leg still signs in with the credentials it was handed.
+    local old_pass="$DASH_PASS"
+    password_commit_via_host "os1966-repointed" || return
+    DASH_PASS="os1966-repointed" # dashboard_curl reads DASH_USER/DASH_PASS from this frame by dynamic scope
     if ! sensitive_live_config >/dev/null; then
-        bad "physical-presence refusal left the authenticated dashboard login unreadable after 20 retries"
+        bad "dashboard did not accept the new password after the commit"
         return
     fi
-    ok "host approval cannot cross the physical-presence-only dashboard-password boundary"
+    password_commit_via_host "$old_pass" || return
+    DASH_PASS="$old_pass"
+    if ! sensitive_live_config >/dev/null; then
+        bad "dashboard did not accept the restored fixture password"
+        return
+    fi
+    ok "dashboard-password repoint commits behind typed APPLY and the new login works"
 }
+
+_password_commit_via_host_self_test() (
+    local msg="Dashboard login password CHANGED — a mistyped password locks this session out, and on the appliance it is also the console root login."
+    local good preview committed
+    good=$(jq -nc --arg m "$msg" '{id:"r1",status:"previewed",approval_required:true,changes:[{msg:$m}]}')
+    sensitive_live_config() { printf '{"dashboard":{"auth":{"password":"old"}}}'; }
+    sensitive_preview() { APPROVAL_PREVIEW=$preview APPROVAL_REQUEST_ID=r1; }
+    dashboard_control_request() {
+        committed=1
+        return 1
+    }
+    bad() { :; }
+    _ssh() { printf '{"status":"applied"}'; }
+    preview=$good committed=0
+    password_commit_via_host new && [ "$committed" = 1 ] || exit 1
+    # A preview missing the status, the approval flag or either warning is refused BEFORE commit.
+    for bad_preview in "$(jq -c 'del(.status)' <<<"$good")" "$(jq -c '.approval_required=false' <<<"$good")" \
+        "$(jq -c '.changes[0].msg|=sub("locks this session out";"")' <<<"$good")" \
+        "$(jq -c '.changes[0].msg|=sub("console root login";"")' <<<"$good")"; do
+        preview=$bad_preview committed=0
+        ! password_commit_via_host new && [ "$committed" = 0 ] || exit 1
+    done
+    preview=$good committed=0
+    _ssh() { printf '{"status":"rejected","error":"type APPLY"}'; }
+    ! password_commit_via_host new || exit 1
+)
 
 _hostname_landed_fallback_self_test() (
     local output
@@ -207,7 +269,8 @@ _approval_self_test() {
     _hostname_landed_fallback_self_test || f=$((f + 1))
     _restore_waits_for_control_drain_self_test || f=$((f + 1))
     grep -Fq '_control_requests_drained || {' "$here/appliance-dashboard-exposure-leg.sh" || f=$((f + 1))
-    _physical_presence_password_refusal_self_test || f=$((f + 1))
+    _dashboard_password_repoint_applied_self_test || f=$((f + 1))
+    _password_commit_via_host_self_test || f=$((f + 1))
     _reserved_node_preview_payload_self_test >/dev/null || f=$((f + 1))
     grep -Fq 'phase_provision_sensitive_regressions "$pv_user" "$pv_pass" || bad' "$here/phases/provision-initial.sh" || f=$((f + 1))
     # #2333: the reserved-node round trip must stay AFTER the sync-gate-hold checks, not folded

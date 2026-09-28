@@ -140,11 +140,12 @@ jq '.dashboard.host="bare-box"' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY ""
 assert_eq "an approval-gated dashboard hostname is refused without the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
 assert_eq "the refused bare hostname did not land" "$(jq -r '.dashboard.host' "$C/config.json")" "next-box"
-# ...and the alarm toggles on that same channel stay physical-presence-only, envelope or not.
+# ...and since #2367 the alarm toggles on that same channel confirm rather than refuse: with typed
+# APPLY and the envelope the operator can switch one off (the preview names the cost first).
 jq '.telegram.events={wallet_changed:false}' "$C/config.json" >"$C/cand.json"
 gate_try "$C/cand.json" APPLY "$SELF_ENVELOPE"
-assert_eq "the wallet-changed alarm cannot be silenced with an envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "rejected"
-assert_contains "the alarm refusal names the physical-presence route" "$(jq -r '.error' "$RESULTS/$UUID5.json" 2>/dev/null)" "configuration stick"
+assert_eq "the wallet-changed alarm switches off with typed APPLY and the envelope" "$(jq -r '.status' "$RESULTS/$UUID5.json" 2>/dev/null)" "applied"
+assert_eq "the alarm-off landed in config.json" "$(jq -r '.telegram.events.wallet_changed' "$C/config.json")" "false"
 
 # Switching the control channel off is how an attacker locks the operator out of the remedy. It
 # runs last because an applied disable correctly stops this test's own remaining spool requests.
