@@ -434,7 +434,8 @@ to self-approve disruptive changes.
 The automated battery first keeps the stable `monero.out_peers` `CONFIRM` round trip, then drives
 the sensitive path through the ordinary authenticated control route. It proves a commit without
 the typed confirmation is refused, a confirmed commit applies and audits against the signed-in
-actor without an `approver` field, and a dashboard password remains physical-presence-only. Before
+actor without an `approver` field, and a dashboard-password repoint commits behind typed `APPLY`
+and the envelope, proves the new login, and restores the fixture password (#2367). Before
 each host-side `pithead apply` it drives — the node-config restore and the onion-exposure leg — it
 waits, bounded, for the control spool to hold no queued or claimed request, and reds the row if it
 never drains. That keeps the battery's phase boundary explicit; re-provisioning in `apply` does
