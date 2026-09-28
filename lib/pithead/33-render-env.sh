@@ -434,7 +434,6 @@ NETWORK_SUBNET=$(dotenv_render_value "$NETWORK_SUBNET")
 NETWORK_PREFIX=$(dotenv_render_value "$NETWORK_PREFIX")
 TOR_EGRESS_FIREWALL=$(dotenv_render_value "$TOR_EGRESS_FIREWALL")
 TOR_AUTO_HEAL=$(dotenv_render_value "$TOR_AUTO_HEAL")
-TARI_AUTO_RESTART=$(dotenv_render_value "$TARI_AUTO_RESTART")
 TARI_EXPLORER_URL=$(dotenv_render_value "$TARI_EXPLORER_URL")
 P2POOL_CLEARNET=$(dotenv_render_value "$P2POOL_CLEARNET")
 PROXY_API_PORT=3344

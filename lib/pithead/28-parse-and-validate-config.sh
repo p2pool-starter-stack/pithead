@@ -171,9 +171,9 @@ parse_and_validate_config() {
             warn "$_cn_sync clearnet_initial_sync is ignored while network.tor_egress_firewall is on — the firewall would drop the clearnet dials, so the node syncs over Tor at normal speed. Turn off tor_egress_firewall for a real clearnet sync, or turn off clearnet_initial_sync to silence this warning."
         fi
     fi
-    # Dashboard-owned self-heals: tor.auto_heal opt-in (#424, drops every circuit); tari.auto_restart on (#2464).
+    # Tor guard self-heal (#424); OPT-IN, default off — a tor restart drops all circuits. Renders to
+    # .env for the dashboard, which owns the probe/restart loop (dashboard .../service/tor_heal.py).
     TOR_AUTO_HEAL=$(normalize_bool "$(config_bool '.tor.auto_heal' false)")
-    TARI_AUTO_RESTART=$(normalize_bool "$(config_bool '.tari.auto_restart' true)")
     TARI_EXPLORER_URL=$(jq -r '.tari.explorer_url // "https://textexplore.tari.com/?json"' "$CONFIG_FILE")
     # Surfaced for the dashboard's egress-posture panel (#170); mirrors what p2pool_outbound_flags reads.
     P2POOL_CLEARNET=$(normalize_bool "$(config_bool '.p2pool.clearnet' false)")

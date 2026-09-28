@@ -158,7 +158,6 @@ export const LOGICAL_GROUPS = [
       "tari.remote",
       "tari.grpc_lan_access",
       "tari.clearnet_initial_sync",
-      "tari.auto_restart",
       "tari.explorer_url",
     ],
   },

@@ -185,13 +185,6 @@ describe_change() {
             msg="Dashboard update check DISABLED — the dashboard no longer contacts GitHub; the dashboard container is recreated."
         fi
         ;;
-    TARI_AUTO_RESTART)
-        if [ "$new" == "true" ]; then
-            msg="Tari auto-restart ENABLED — the dashboard restarts a local Tari node that stops following the chain (at most 3 times an hour apart, never while its gRPC is down or migrating)."
-        else
-            msg="Tari auto-restart DISABLED — a Tari node that stops following the chain is reported (panel, doctor, alert) but not restarted; restart it yourself with './pithead restart tari'. P2Pool is still restarted without --merge-mine while the node is red, so no Tari work is built on the stale tip, and again once it recovers."
-        fi
-        ;;
     TARI_MEM_LIMIT)
         msg="Tari memory cap: $old → $new — the tari container is recreated (brief restart; on-disk chain data is preserved)."
         ;;

@@ -35,16 +35,15 @@ assert_contains "tari chain: status prints the red line" "$out" "tari chain    N
 out="$(CURL_BODY="$AMBER" PATH="$DRBIN:$PATH" run_sourced "$SANDBOX" tari_chain_status_line 2>&1)"
 assert_contains "tari chain: status prints the amber line" "$out" "0 peer connections for 12 min"
 
-echo "== black-box: tari.auto_restart / tari.explorer_url render to .env (#2464) =="
+echo "== black-box: tari.explorer_url renders to .env (#2464) =="
 seed_env
 printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'"}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-assert_eq "tari.auto_restart defaults to on" "$(run_sourced "$V" env_get_file "$V/.env" TARI_AUTO_RESTART)" "true"
 assert_eq "tari.explorer_url defaults to the text explorer" "$(run_sourced "$V" env_get_file "$V/.env" TARI_EXPLORER_URL)" "https://textexplore.tari.com/?json"
 seed_env
-printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","auto_restart":false,"explorer_url":""}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
+printf '{ "monero": {"mode":"local","wallet_address":"%s","node_username":"u","node_password":"p"}, "tari":{"wallet_address":"'"$VALID_TARI"'","explorer_url":""}, "p2pool":{"pool":"main"}, "dashboard":{"secure":true,"host":"box.lan"} }\n' "$WALLET" >"$V/config.json"
 (cd "$V" && PATH="$V/bin:$PATH" ./pithead apply -y >/dev/null 2>&1)
-assert_eq "tari.auto_restart:false renders false" "$(run_sourced "$V" env_get_file "$V/.env" TARI_AUTO_RESTART)" "false"
+assert_eq "no automatic-restart setting renders: detection only (#2827 has remediation)" "$(grep -c '^TARI_AUTO_RESTART=' "$V/.env")" "0"
 assert_eq "a blank tari.explorer_url renders blank (reference off)" "$(run_sourced "$V" env_get_file "$V/.env" TARI_EXPLORER_URL)" ""
 
 # Under pithead's own `set -eo pipefail` a dashboard that does not answer must not abort status: the
@@ -61,8 +60,3 @@ assert_not_contains "bundle config: explorer URL userinfo is gone" "$tari_masked
 assert_not_contains "bundle config: explorer URL path token is gone" "$tari_masked" "OLDSECRET32"
 assert_eq "bundle config: explorer URL becomes the secret sentinel" "$(printf '%s' "$tari_masked" | jq -c '.tari.explorer_url')" '{"__secret__":true}'
 assert_eq "bundle config: the rest of the config survives" "$(printf '%s' "$tari_masked" | jq -r '.tari.mode + " " + .xvb.url')" "local https://xvb.invalid"
-
-echo "== unit: the auto-restart-off preview keeps the merge-mining pause (#2464) =="
-tari_off="$(run_sourced "$SANDBOX" describe_change TARI_AUTO_RESTART true false 2>&1)"
-assert_contains "auto-restart off: the node is not restarted" "$tari_off" "but not restarted"
-assert_contains "auto-restart off: P2Pool still drops --merge-mine while red" "$tari_off" "P2Pool is still restarted without --merge-mine"

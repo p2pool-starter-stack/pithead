@@ -358,8 +358,6 @@ def build_tari(data):
         # A READY channel is not a node on the chain (#2464): the verdict's reasons and next step
         # replace the channel state, and the client prints this text as it stands.
         status = f"Not following the chain: {'; '.join(health.get('reasons') or [])}. {health.get('advice', '')}"
-        if health.get("merge_mining") == "suppressed":
-            status += " Tari merge-mining is paused until it recovers; Monero mining continues."
 
     return {
         "active": tari_active,
@@ -370,7 +368,7 @@ def build_tari(data):
         "diff": f"{int(tari_stats.get('difficulty', 0)):,}",
         "wallet": t_addr,
         "wallet_short": _shorten(t_addr),
-        # The node's chain verdict (#2464) — {level, reasons, advice, merge_mining, ...} | None.
+        # The node's chain verdict (#2464) — {level, reasons, advice, height, explorer_tip} | None.
         # `connected` only says P2Pool's gRPC channel answers; this says whether the node follows it.
         "health": health,
     }

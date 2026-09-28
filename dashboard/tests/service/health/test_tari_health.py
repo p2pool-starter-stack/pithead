@@ -6,8 +6,6 @@ guards (sustain, cooldown, budget, migration) hold exactly as documented.
 """
 
 import asyncio
-import tempfile
-import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -27,15 +25,8 @@ class Clock:
         return self.t
 
 
-async def _stopped_long_ago(name):
-    return False, time.time() - 3600  # (running, StartedAt): stopped, not started since
-
-
 def _monitor(**kw):
-    kw.setdefault("auto_restart", True)
     kw.setdefault("explorer_url", "")
-    kw.setdefault("state_dir", tempfile.mkdtemp())
-    kw.setdefault("inspect", _stopped_long_ago)
     return TariChainHealth(**kw)
 
 
@@ -121,110 +112,30 @@ def test_recovery_to_green_after_catch_up():
     assert v["level"] == "green"
 
 
-# --- restart decision --------------------------------------------------------------------------
+# --- check(): I/O and alerts ----------------------------------------------------------
 
 
-def _red(mon, now):
-    mon.verdict = {"level": "red", "reasons": ["x", "y"], "advice": th.RESTART_ADVICE}
-    return mon.decide(True, now)
-
-
-def test_restart_waits_for_sustained_red_then_honours_cooldown_and_budget():
-    mon = _monitor()
-    assert _red(mon, 0) is None
-    assert _red(mon, th.RED_SUSTAIN_SEC - 1) is None
-    assert _red(mon, th.RED_SUSTAIN_SEC) == "restart"
-    t = th.RED_SUSTAIN_SEC
-    assert _red(mon, t + th.COOLDOWN_SEC - 1) is None
-    assert _red(mon, t + th.COOLDOWN_SEC) == "restart"
-    assert _red(mon, t + 2 * th.COOLDOWN_SEC) == "restart"
-    assert _red(mon, t + 3 * th.COOLDOWN_SEC) == "exhausted"
-    assert mon._restarts == th.MAX_RESTARTS
-
-
-def test_amber_never_restarts():
-    mon = _monitor()
-    mon.verdict = {"level": "amber", "reasons": ["x"], "advice": th.RESTART_ADVICE}
-    assert mon.decide(True, 0) is None and mon.decide(True, 10 * th.COOLDOWN_SEC) is None
-
-
-def test_restart_is_withheld_while_grpc_is_not_answering():
-    """minotari_node opens gRPC only after its migrations; a restart mid-migration is unsafe (#2593)."""
-    mon = _monitor()
-    _red(mon, 0)
-    mon.verdict = {"level": "red", "reasons": ["x"], "advice": ""}
-    assert mon.decide(False, th.RED_SUSTAIN_SEC) == "withheld"
-    assert mon._restarts == 0
-
-
-def test_disabled_or_remote_never_restarts():
-    mon = _monitor(auto_restart=False)
-    _red(mon, 0)
-    assert _red(mon, 10 * th.COOLDOWN_SEC) is None
-
-
-def test_budget_refills_only_after_sustained_green():
-    mon = _monitor()
-    _red(mon, 0)
-    assert _red(mon, th.RED_SUSTAIN_SEC) == "restart"
-    mon.verdict = {"level": "green", "reasons": [], "advice": ""}
-    assert mon.decide(True, 1000) is None
-    assert mon.decide(True, 1000 + th.GREEN_CONFIRM_SEC - 1) is None
-    assert mon._restarts == 1  # a brief green does not refill
-    assert mon.decide(True, 1000 + th.GREEN_CONFIRM_SEC) == "recovered"
-    assert mon._restarts == 0
-
-
-# --- check(): I/O, alerts, escalation ----------------------------------------------------------
-
-
-def _docker(ok=True):
-    d = AsyncMock()
-    d.stop.return_value = ok
-    d.start.return_value = ok
-    return d
-
-
-def test_check_restarts_the_tari_container_and_alerts_on_red():
-    clock, docker, notify = Clock(), _docker(), AsyncMock()
-    mon = _monitor(docker_control=docker, notify=notify, clock=clock)
+def test_check_alerts_once_on_red_and_names_the_operator_restart():
+    clock, notify = Clock(), AsyncMock()
+    mon = _monitor(notify=notify, clock=clock)
     for _ in range(36):
         v = asyncio.run(mon.check(SYNCED, 0))
         clock.t += MIN
-    assert v["level"] == "red"
-    docker.stop.assert_awaited_once()
-    assert docker.stop.await_args.args[0] == "tari"
-    docker.start.assert_awaited_once_with("tari", request_timeout=60)
+    assert v["level"] == "red" and v["advice"] == th.RESTART_ADVICE
     text = notify.await_args_list[0].args[0]
-    assert "Tari node is not following the chain" in text and "restart the Tari node" in text
+    assert "Tari node is not following the chain" in text and "./pithead restart tari" in text
     assert notify.await_count == 1  # red is alerted once, not every cycle
 
 
-def test_a_failed_stop_acknowledgement_keeps_the_slot_spent():
-    """The stop may have landed (here it did: the node reads stopped since), so no refund; only a
-    container proven running throughout gives the slot back (test_tari_start_owed)."""
-    clock = Clock()
-    mon = _monitor(docker_control=_docker(ok=False), clock=clock)
-    for _ in range(36):
-        v = asyncio.run(mon.check(SYNCED, 0))
-        clock.t += MIN
-    assert v["action"] == "restart_failed" and v["restarts"] == 1
-
-
-def test_escalates_after_the_third_restart_without_green():
-    clock, notify = Clock(), AsyncMock()
-    mon = _monitor(docker_control=_docker(), notify=notify, clock=clock)
-    for _ in range(36 + 3 * 60):
-        v = asyncio.run(mon.check(SYNCED, 0))
-        clock.t += MIN
-    assert v["restarts"] == th.MAX_RESTARTS
-    assert "a restart cannot fix this" in v["advice"]
-    assert "a restart cannot fix this" in notify.await_args_list[-1].args[0]
+def test_the_monitor_detects_only_it_holds_no_container_control():
+    """Remediation (restart, merge-mining pause) is #2827's: nothing here can stop a container."""
+    mon = _monitor()
+    assert not any("docker" in name or "restart" in name for name in vars(mon))
 
 
 def test_recovery_note_after_a_red_alert():
     clock, notify = Clock(), AsyncMock()
-    mon = _monitor(docker_control=_docker(), notify=notify, clock=clock)
+    mon = _monitor(notify=notify, clock=clock)
     for _ in range(31):
         asyncio.run(mon.check(SYNCED, 0))
         clock.t += MIN

@@ -43,7 +43,8 @@ SECRET_PATHS = [
     # the token is a Bearer credential — both masked like the ping URL above.
     ("notifications", "ntfy", "url"),
     ("notifications", "ntfy", "token"),
-    # The backup's primary-dashboard URL (#249) can carry the primary's basic-auth as userinfo.
+    # The backup's primary-dashboard URL (#249) can carry the primary's dashboard basic-auth as
+    # userinfo — a capability secret, masked like the ping URL above.
     ("xvb", "standby", "source"),
 ]
 SECRET_SENTINEL = {"__secret__": True}
@@ -133,7 +134,6 @@ EDITABLE_ENV_KEY_PATHS = {
     "DASHBOARD_TZ": ("dashboard.timezone",),
     "MONERO_MEM_LIMIT": ("monero.mem_limit",),
     "TARI_MEM_LIMIT": ("tari.mem_limit",),
-    "TARI_AUTO_RESTART": ("tari.auto_restart",),
     "MONERO_PREP_THREADS": ("monero.prep_blocks_threads",),
     "HASHRATE_DROP_THRESHOLD_PCT": ("dashboard.hashrate_drop_threshold",),
     "HASHRATE_DROP_MINUTES": ("dashboard.hashrate_drop_minutes",),

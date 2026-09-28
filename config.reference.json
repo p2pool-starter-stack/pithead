@@ -51,7 +51,6 @@
     "remote": { "host": "tari-node.lan", "grpc_port": 18142 },
     "data_dir": "auto",
     "mem_limit": "auto",
-    "auto_restart": true,
     "explorer_url": "https://textexplore.tari.com/?json"
   },
   "workers": {

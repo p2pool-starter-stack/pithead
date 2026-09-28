@@ -24,7 +24,6 @@ from mining_dashboard.service.data_helpers import (
 from mining_dashboard.service.health.degradation import DegradationMonitor
 from mining_dashboard.service.health.node_health import NodeHealthMonitor
 from mining_dashboard.service.health.tari_health import TariChainHealth
-from mining_dashboard.service.health.tari_merge_gate import TariMergeMineGate
 from mining_dashboard.service.health.tor_heal import TorEgressHealer
 from mining_dashboard.service.health.update_checker import GitHubReleaseClient, UpdateChecker
 from mining_dashboard.service.network.clearnet_sync import ClearnetSyncSupervisor
@@ -195,16 +194,9 @@ class DataSetupMixin:
             self.docker_control, notify=self.alert_service.tor_heal_alert
         )
         # Tari chain health (#2464): a live, reachable node that stopped following the chain (stale
-        # tip, no peers, behind the explorer). Restarts it under the same docker-control proxy; the
-        # alert rides the same always-on sender as the tor-heal note.
-        self.tari_chain = TariChainHealth(
-            self.docker_control,
-            notify=self.alert_service.tor_heal_alert,
-            state_dir=CLEARNET_STATE_DIR,
-        )
-        # Merge-mining gate (#2464): a red verdict relaunches p2pool without --merge-mine, through
-        # a marker in the dashboard's marker dir, until the node follows the chain again.
-        self.tari_merge_gate = TariMergeMineGate(CLEARNET_STATE_DIR, self.docker_control)
+        # tip, no peers, behind the explorer). Detection and alert only; the alert rides the same
+        # always-on sender as the tor-heal note.
+        self.tari_chain = TariChainHealth(notify=self.alert_service.tor_heal_alert)
         # Hashrate-degradation detector (Issue #99): flags a sustained total-hashrate drop and its
         # recovery. Runs every cycle (cheap, self-contained EMA baseline) so it can mark the chart
         # even with Telegram off; a loss also drives a hashrate_loss alert.
@@ -264,18 +256,10 @@ class DataSetupMixin:
             try:
                 reachable = tari_sync.get("reachable", False)
                 connections = await tari_client.get_connections() if reachable else None
-                health = await self.tari_chain.check(tari_sync, connections)
-                p2pool_running = self.miner_released and not (
-                    self.miner_held or self.fail_closed_held
-                )
-                health["merge_mining"] = await self.tari_merge_gate.apply(health, p2pool_running)
-                tari_sync["health"] = health
+                tari_sync["health"] = await self.tari_chain.check(tari_sync, connections)
             except Exception as exc:  # the verdict must never break the data loop
                 logger.warning("Tari chain health check failed (%s)", type(exc).__name__)
                 # Serve the last verdict: a failed cycle must not make a red node vanish from
                 # the panel, doctor and status.
-                tari_sync["health"] = {
-                    **self.tari_chain.verdict,
-                    "merge_mining": "suppressed" if self.tari_merge_gate.suppressed else "on",
-                }
+                tari_sync["health"] = dict(self.tari_chain.verdict)
         return self.tari_health.update(tari_sync.get("reachable", True))

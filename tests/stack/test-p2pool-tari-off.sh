@@ -47,17 +47,3 @@ unset_out=$(PATH="$TO_PE:$PATH" env -u TARI_MODE bash "$ROOT/build/p2pool/entryp
 assert_contains "unset (a 1.x .env): argv untouched" "$unset_out" "ARG=[12TariPayout]"
 assert_contains "unset: all three tokens survive (ARGC=3)" "$unset_out" "ARGC=3"
 assert_not_contains "off with no triple in argv: no drop is claimed" "$(PATH="$TO_PE:$PATH" TARI_MODE=off bash "$ROOT/build/p2pool/entrypoint.sh" --stratum 0.0.0.0:3333 2>&1)" "dropped from the launch"
-
-echo "== p2pool entrypoint drops --merge-mine while the dashboard's Tari verdict is red (#2464) =="
-# The dashboard writes the marker and restarts p2pool when the Tari node stops following the chain;
-# the launch then carries no Tari work while the Monero half of argv is untouched, and the marker's
-# removal restores the triple on the next start.
-MM_MARK="$SANDBOX/tari-merge-mine-suppressed"
-: >"$MM_MARK"
-red_out=$(PATH="$TO_PE:$PATH" TARI_MODE=local TARI_MM_SUPPRESSED="$MM_MARK" bash "$ROOT/build/p2pool/entrypoint.sh" --wallet 4MoneroPayout --merge-mine tari://172.28.0.27:18142 12TariPayout --stratum 0.0.0.0:3333 2>&1)
-assert_not_contains "red: no --merge-mine reaches p2pool" "$red_out" "ARG=[--merge-mine]"
-assert_contains "red: Monero mining keeps its wallet and stratum (ARGC=4)" "$red_out" "ARGC=4"
-assert_contains "red: the launch names why merge-mining is off" "$red_out" "Tari node not following the chain (#2464)"
-rm -f "$MM_MARK"
-green_out=$(PATH="$TO_PE:$PATH" TARI_MODE=local TARI_MM_SUPPRESSED="$MM_MARK" bash "$ROOT/build/p2pool/entrypoint.sh" --wallet 4MoneroPayout --merge-mine tari://172.28.0.27:18142 12TariPayout --stratum 0.0.0.0:3333 2>&1)
-assert_contains "marker removed: merge-mining resumes (ARGC=7)" "$green_out" "ARGC=7"

@@ -861,15 +861,12 @@ block is built on a stale tip (#2464). The dashboard judges the node on three si
 unchanged for 30 minutes, 0 peer connections for 10 minutes, and its height more than 50 blocks
 behind a public explorer fetched through Tor once an hour (`tari.explorer_url`). One signal turns
 the Tari status amber with the reason; two, or explorer lag on its own, turn it red, fail
-`./pithead doctor`, add a line to `./pithead status` and send an alert. After 5 minutes of red the
-dashboard relaunches P2Pool without `--merge-mine`, so no Tari work is built on the stale tip, and
-Monero mining carries on. Merge-mining resumes after 5 minutes of green with the tip past its height
-when it was paused. A dashboard restart keeps that state: it compares P2Pool's start time with the
-last change and relaunches P2Pool if it is still on the old flags. Recover in this order:
+`./pithead doctor`, add a line to `./pithead status` and send an alert. The dashboard only reports:
+it restarts nothing and P2Pool keeps merge-mining against the node, so Tari work stays wasted until
+you recover the node. Monero mining is not affected. Recover in this order:
 
-1. **Restart the node.** With `tari.auto_restart` on (the default, local node only) the dashboard
-   does this itself after 5 minutes of red, at most 3 times per outage and an hour apart, and never
-   while the node's gRPC is not answering (a database migration may be running). By hand:
+1. **Restart the node.** Do not restart it while it is migrating its database after an upgrade
+   (its gRPC answers only once the migration finishes, #2593):
 
    ```bash
    ./pithead restart tari
@@ -878,8 +875,8 @@ last change and relaunches P2Pool if it is still on the old flags. Recover in th
    A restart clears the node's list of rejected blocks. That list is what locked out the canonical
    chain in #2465: the node banned every peer that served it. Catch-up then takes minutes, and the
    status returns to green once the tip moves again with peers connected and the explorer lag is gone.
-2. **Three restarts without green** switch the advice to "likely a chain fork or an upgrade
-   required". A node on the wrong side of a hard fork rejoins the same dead branch after every
+2. **Still red after a restart or two**: likely a chain fork or an upgrade required. A node on the
+   wrong side of a hard fork rejoins the same dead branch after every
    restart. Check the Tari release notes for a required upgrade first. A node that followed a dead
    branch past a fork height has to be rewound below it before it can sync; #2618 covers that
    rewind for the 350,000 fork.

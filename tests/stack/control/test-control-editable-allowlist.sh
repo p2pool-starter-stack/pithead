@@ -7,8 +7,9 @@
 # WHY THE CONTROL FAMILY, AND NOT THE CONFIG FAMILY THE CUT MAP GUESSED. The map homed this row
 # with the config family on the strength of its subject: it flips config keys and reads them back
 # out of config.json. Its FIXTURE says otherwise, and the fixture is what a domain file actually
-# has to reproduce. Every assertion goes through gate_try() against the control channel's sandbox
-# and request/result spool, so its dependencies are the control channel's, and it is homed with them. The map's row left the target to be decided at cut time by fixture
+# has to reproduce. Every assertion here goes through gate_try() against the control channel's
+# sandbox and its request/result spool, so this section's dependencies are the control channel's,
+# and it is homed with them. The map's row left the target to be decided at cut time by fixture
 # affinity; this is that decision, recorded rather than assumed.
 #
 # AMBIENT BY DESIGN — AND THE REASON IS NOT THAT ARMING WOULD BREAK IT. This file inherits $C,
@@ -70,7 +71,6 @@ roundtrip_key "DASHBOARD_CHECK_UPDATES" '.dashboard.check_for_updates=false' '.d
 roundtrip_key "DASHBOARD_TZ" '.dashboard.timezone="Europe/Paris"' '.dashboard.timezone' "Europe/Paris"
 roundtrip_key "MONERO_MEM_LIMIT" '.monero.mem_limit="5g"' '.monero.mem_limit' "5g"
 roundtrip_key "TARI_MEM_LIMIT" '.tari.mem_limit="2g"' '.tari.mem_limit' "2g"
-roundtrip_key "TARI_AUTO_RESTART" '.tari.auto_restart=false' '.tari.auto_restart' "false"
 roundtrip_key "MONERO_PREP_THREADS" '.monero.prep_blocks_threads=8' '.monero.prep_blocks_threads' "8"
 roundtrip_key "HASHRATE_DROP_THRESHOLD_PCT" '.dashboard.hashrate_drop_threshold=40' '.dashboard.hashrate_drop_threshold' "40"
 roundtrip_key "HASHRATE_DROP_MINUTES" '.dashboard.hashrate_drop_minutes=15' '.dashboard.hashrate_drop_minutes' "15"

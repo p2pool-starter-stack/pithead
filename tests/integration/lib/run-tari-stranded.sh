@@ -4,11 +4,11 @@
 # A live Tari node that cannot reach a peer must stop reading healthy. An iptables rule in the tari
 # container's own network namespace drops its traffic to the tor container, so the process, its gRPC
 # and P2Pool's merge-mine channel all stay up while its peers vanish and its tip freezes: the #2465
-# shape. Asserts, on the real clocks (tari_health.py): amber within OFFLINE (10 min) + one poll; red
-# and doctor non-zero within TIP_STALE (30 min) + one poll; the automatic restart withheld while the
-# node's gRPC does not answer (a paused container stands in for a migration, #2593); then, unpaused
-# and still stranded, the restart fires, takes the rule with the old namespace, and the verdict returns
-# to green after catch-up. Opt-in, about an hour: never part of a preset.
+# shape. Asserts, on the real clocks (tari_health.py): amber within OFFLINE (10 min) + one poll; red,
+# doctor non-zero, the panel, status and the alert within TIP_STALE (30 min) + one poll; no automatic
+# remediation (neither tari nor p2pool restarts while red: detection only, #2827 has remediation);
+# then, the rule removed, the node rejoins on its own, the verdict returns to green without a
+# restart, and the recovery note is sent. Opt-in, about an hour: never part of a preset.
 #
 # Why tari's namespace and not the host's DOCKER-USER chain: tari and tor share one Docker bridge, and
 # same-bridge traffic only traverses the host's FORWARD/DOCKER-USER when br_netfilter is on. Job 1315
@@ -40,7 +40,6 @@ tari_strand_remove_all() {
         [ -n "$r" ] || break
         tari_ns_ipt "-D $r" >/dev/null
     done
-    rx "docker compose unpause tari" >/dev/null 2>&1 || true # a no-op error when not paused
 }
 
 # A loopback webhook sink (#2464): the dashboard is host-networked, so the one-off alert sender that
@@ -73,10 +72,10 @@ tari_strand_abort() {
 
 tari_health_field() { jq_get "$(api_state)" ".tari.health.$1"; }
 _pred_tari_level() { [ "$(tari_health_field level)" = "$1" ]; }
-_pred_tari_restarted() { [ "$(tari_health_field restarts)" -ge 1 ] 2>/dev/null; }
-_pred_tari_withheld() { [ "$(tari_health_field action)" = withheld ]; }
-_pred_tari_merge() { [ "$(tari_health_field merge_mining)" = "$1" ]; }
 _pred_tari_alerted() { rx "grep -q 'Tari node is not following the chain' $TARI_HOOK_LOG" >/dev/null 2>&1; }
+_pred_tari_recovery_alerted() { rx "grep -q 'Tari node is following the chain again' $TARI_HOOK_LOG" >/dev/null 2>&1; }
+# A container's last start: unchanged across the leg means nothing restarted it.
+tari_started_at() { rx "docker inspect -f '{{.State.StartedAt}}' $1" 2>/dev/null; }
 tari_strand_state() { echo "verdict '$(tari_health_field level)', height $(tari_health_field height), $(tari_strand_drops) packets dropped by the fault"; }
 
 run_tari_stranded() {
@@ -88,7 +87,7 @@ run_tari_stranded() {
         it_skip_phase "tari-stranded" "no local Tari node to strand" "by-design"
         return 0
     fi
-    local tor t0 fails_before="$IT_FAIL"
+    local tor t0 tari_start p2pool_start fails_before="$IT_FAIL"
     tor="$(rx "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' tor" 2>/dev/null | head -n1)"
     if [ -z "$tor" ]; then
         it_fail "tari-stranded: tor address" "empty — fault not injected"
@@ -119,6 +118,8 @@ run_tari_stranded() {
         _TARI_STRAND_FOREIGN_TRAP="${parsed[2]}"
     fi
     trap tari_strand_abort EXIT
+    tari_start="$(tari_started_at tari)"
+    p2pool_start="$(tari_started_at p2pool)"
 
     it_step "fault: drop tari -> tor inside tari's network namespace ($TARI_STRAND_TAG)…"
     tari_ns_ipt "-I OUTPUT -d $tor -m comment --comment $TARI_STRAND_TAG -j DROP" >/dev/null
@@ -154,53 +155,31 @@ run_tari_stranded() {
     fi
     assert_contains "tari-stranded: status prints the red verdict" "$(pithead status 2>&1)" "NOT following the chain"
 
-    # Pause, not SIGSTOP: tari runs under an init (#2627), and SIGSTOP stops only PID 1 while the node
-    # keeps answering gRPC (job 1324 restarted it). A pause freezes every process in the container.
-    # restarts == 0 alone would not prove the guard, because a restart attempt on a paused container
-    # fails and refunds its slot, so the verdict must also show the attempt was withheld.
-    it_step "sub-case: pause tari (gRPC silent, as during a migration) — the restart must be withheld…"
-    rx "docker compose pause tari" >/dev/null 2>&1
-    if wait_for 480 10 "restart withheld while tari's gRPC is silent" _pred_tari_withheld; then
-        it_pass "tari-stranded: restart withheld while the node's gRPC is silent"
-    else
-        it_fail "tari-stranded: restart withheld while the node's gRPC is silent" "action '$(tari_health_field action)', restarts $(tari_health_field restarts)"
-    fi
-    assert_eq "tari-stranded: no restart while the node's gRPC is silent" "$(tari_health_field restarts)" "0"
-    # Merge-mining stops on the verdict whatever the restart does (withheld here): p2pool is
-    # relaunched without --merge-mine and keeps mining Monero.
-    if wait_for 420 10 "Tari merge-mining suspended" _pred_tari_merge suppressed; then
-        it_pass "tari-stranded: Tari merge-mining suspended while red, restart withheld"
-    else
-        it_fail "tari-stranded: Tari merge-mining suspended while red, restart withheld" "merge_mining '$(tari_health_field merge_mining)'"
-    fi
-    assert_contains "tari-stranded: p2pool relaunched without --merge-mine" "$(rx "docker logs --tail 200 p2pool 2>&1" 2>/dev/null)" "Tari node not following the chain (#2464): not merge-mining"
-    assert_eq "tari-stranded: p2pool keeps running for Monero" "$(svc_state_of "$(service_state p2pool)")" "running"
+    # Detection only (#2827 has remediation): a red verdict held past the old 5-minute restart
+    # trigger must leave both containers alone. Their StartedAt is the proof.
+    it_step "hold red for 6 min: no automatic restart of tari or p2pool…"
+    sleep 360
+    assert_eq "tari-stranded: red for 6+ min, tari not restarted" "$(tari_started_at tari)" "$tari_start"
+    assert_eq "tari-stranded: red for 6+ min, p2pool not relaunched" "$(tari_started_at p2pool)" "$p2pool_start"
+    assert_eq "tari-stranded: the fault is still in place (nothing cleared it)" "$(tari_strand_count)" "1"
 
-    # Unpause with the rule still in place: the node is reachable again but still stranded and red, so
-    # the restart must fire now. The restart is also the recovery: a new container gets a new network
-    # namespace, without the rule. Removing the rule first would let the node heal itself and go green
-    # with no restart at all (job 1348), which is right for the product but proves nothing here.
-    it_step "recover: unpause tari still stranded; the automatic restart and catch-up must bring green…"
-    rx "docker compose unpause tari" >/dev/null 2>&1
+    # Recovery is the operator's; here, the fault going away. The node rejoins its peers on its own
+    # (job 1348 measured it), and the verdict must follow it back to green without a restart.
+    it_step "recover: remove the rule; the node must rejoin and the verdict return to green…"
+    tari_strand_remove_all
     t0=$(now_s)
-    if wait_for $((600 + TARI_POLL_SLACK)) 10 "automatic Tari restart" _pred_tari_restarted; then
-        it_pass "tari-stranded: automatic restart fired after $(($(now_s) - t0)) s"
+    if wait_for 2400 15 "Tari verdict green after the fault is removed" _pred_tari_level green; then
+        it_pass "tari-stranded: green $(($(now_s) - t0)) s after the fault was removed"
     else
-        it_fail "tari-stranded: automatic restart" "restarts=$(tari_health_field restarts)"
+        it_fail "tari-stranded: green after the fault was removed" "verdict '$(tari_health_field level)': $(tari_health_field reasons)"
     fi
-    if wait_for 2400 15 "Tari verdict green after catch-up" _pred_tari_level green; then
-        it_pass "tari-stranded: green $(($(now_s) - t0)) s after the unpause"
+    if wait_for 120 10 "recovery note at the sink" _pred_tari_recovery_alerted; then
+        it_pass "tari-stranded: the recovery note left the dashboard"
     else
-        it_fail "tari-stranded: green after restart and catch-up" "verdict '$(tari_health_field level)': $(tari_health_field reasons)"
+        it_fail "tari-stranded: the recovery note left the dashboard" "nothing at the loopback sink"
     fi
-
-    assert_eq "tari-stranded: the restart took the fault with it (fresh namespace, no rule)" "$(tari_strand_count)" "0"
-    tari_strand_remove_all # a no-op after a restart; the safety net when it never came
-    if wait_for 900 15 "Tari merge-mining resumed" _pred_tari_merge on; then
-        it_pass "tari-stranded: Tari merge-mining resumed after recovery"
-    else
-        it_fail "tari-stranded: Tari merge-mining resumed after recovery" "merge_mining '$(tari_health_field merge_mining)'"
-    fi
+    assert_eq "tari-stranded: recovered without a restart (tari)" "$(tari_started_at tari)" "$tari_start"
+    assert_eq "tari-stranded: p2pool never relaunched" "$(tari_started_at p2pool)" "$p2pool_start"
     tari_restore_config
     trap - EXIT
     # shellcheck disable=SC2064  # restore the saved trap text as it was, expanded now on purpose

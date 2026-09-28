@@ -17,33 +17,24 @@ explorer lag alone, is ``red``. Explorer lag is not counted while the node is on
 (the sync view shows that progress; the node's own sync target exists only then, so it is no signal
 for a synced node). A missing or failed explorer fetch contributes nothing — never a false red.
 
-Red, sustained, restarts the local node (``tari.auto_restart``, on by default): startup clears
-``bad_blocks``, which is what recovered production, and a restart is the only lever that stops P2Pool
-building Tari blocks on a stale tip without restarting P2Pool (and so its Monero mining). Guards, as
-tor_heal's (#424): :data:`RED_SUSTAIN_SEC` of red first, :data:`COOLDOWN_SEC` between restarts,
-:data:`MAX_RESTARTS` per outage, the budget refilled only by :data:`GREEN_CONFIRM_SEC` of green. A
-restart is refused while the node's gRPC is not answering: minotari_node opens gRPC only once its
-database migrations finish, and interrupting the 6.0.0 migration is unsafe (#2593). The verdict,
-and every alert and doctor row built on it, follows the signals, never the restart's outcome.
+This monitor detects and alerts; it changes nothing. The verdict feeds the Tari panel, /api/state,
+``pithead doctor`` and ``status``, and an alert on each entry into red whose next step is the
+operator's restart. Automatic remediation (restarting the node, pausing P2Pool's merge-mining) is
+#2827's, after 2.0.0.
 """
 
 import asyncio
-import json
 import logging
 import os
 import time
 
-from mining_dashboard.collector.containers import container_started
-from mining_dashboard.config.config import CLEARNET_STATE_DIR, TARI_MODE, TOR_SOCKS_PROXY
+from mining_dashboard.config.config import TOR_SOCKS_PROXY
 from mining_dashboard.helper.http import bounded_get
-from mining_dashboard.service.health import owed_start
-from mining_dashboard.service.health.owed_start import OwedStart
 
 logger = logging.getLogger("TariHealth")
 
-# Read here, not in config.py, which sits at its file budget. tari.auto_restart (default on) and
-# tari.explorer_url (blank disables the reference) render to these via pithead's .env.
-TARI_AUTO_RESTART = os.environ.get("TARI_AUTO_RESTART", "true").strip().lower() == "true"
+# Read here, not in config.py, which sits at its file budget. tari.explorer_url (blank disables the
+# reference) renders to this via pithead's .env.
 TARI_EXPLORER_URL = os.environ.get(
     "TARI_EXPLORER_URL", "https://textexplore.tari.com/?json"
 ).strip()
@@ -56,33 +47,10 @@ LAG_BLOCKS = 50  # ~100 minutes of 2-minute blocks
 EXPLORER_INTERVAL_SEC = 60 * 60
 EXPLORER_TIMEOUT_SEC = 60
 EXPLORER_MAX_BYTES = 4 * 1024 * 1024  # the JSON page carries recent blocks (~0.5 MB measured)
-RED_SUSTAIN_SEC = 5 * 60
-COOLDOWN_SEC = 60 * 60
-MAX_RESTARTS = 3
-GREEN_CONFIRM_SEC = 15 * 60
-# A restart whose stop landed but whose start failed left the node stopped by this code; its gRPC is
-# then silent for that reason, not a migration, so start alone is retried, a bounded number of times.
-# The owed start is kept on disk (owed_start), so a dashboard restart resumes it rather than leaving
-# a node it stopped to the withheld guard; a start never interrupts a migration.
-BUDGET = "tari-restart-budget"  # restarts this outage and the last one's wall time, across restarts
-START_RETRY_SEC = 60
-STOP_REQUEST_SEC = 90  # the stop's HTTP timeout: past it, a stop that landed has finished
-START_RETRIES = 5
-STOPPED_ADVICE = (
-    "the automatic restart stopped the Tari node but could not start it again; "
-    "start it with './pithead up'"
-)
 
 RESTART_ADVICE = (
-    "restart the Tari node ('./pithead restart tari'); startup clears its bad-block list"
-)
-UNRECORDED_ADVICE = (
-    "the automatic restart is held: it could not record the restart in the dashboard's state "
-    "directory, and never stops the node without that record; " + RESTART_ADVICE
-)
-ESCALATED_ADVICE = (
-    f"{MAX_RESTARTS} restarts did not bring it back: likely a chain fork or an upgrade required "
-    "— a restart cannot fix this. See docs/operations.md, Troubleshooting, 'Tari node stuck or forked'."
+    "restart the Tari node ('./pithead restart tari'); startup clears its bad-block list. If it "
+    "stays red, see docs/operations.md, Troubleshooting, 'Tari node stuck or forked'"
 )
 
 
@@ -106,48 +74,25 @@ def _explorer_tip(url: str) -> int | None:
 
 
 class TariChainHealth:
-    """Folds each poll's Tari readings into a verdict and, when red, a guarded restart.
+    """Folds each poll's Tari readings into a verdict and alerts on it.
 
-    :meth:`observe` and :meth:`decide` are pure state + clock, so every threshold and guard is
-    unit-testable; :meth:`check` is the per-cycle entry point that does the I/O.
+    :meth:`observe` is pure state + clock, so every threshold is unit-testable; :meth:`check` is
+    the per-cycle entry point that does the I/O (the hourly explorer fetch and the alert).
     """
 
-    CONTAINER = "tari"
-
     def __init__(
-        self,
-        docker_control=None,
-        auto_restart=None,
-        explorer_url=None,
-        explorer=_explorer_tip,
-        notify=None,
-        clock=time.monotonic,
-        state_dir=CLEARNET_STATE_DIR,
-        inspect=container_started,
+        self, explorer_url=None, explorer=_explorer_tip, notify=None, clock=time.monotonic
     ):
-        if auto_restart is None:
-            auto_restart = TARI_AUTO_RESTART and TARI_MODE == "local"
-        self.auto_restart = auto_restart
         self.explorer_url = TARI_EXPLORER_URL if explorer_url is None else explorer_url
         self._explorer = explorer
-        self._docker = docker_control
         self._notify = notify  # optional async callable(text): the operator alert sink
-        self._alerted = None  # the red advice last alerted, so each change is sent exactly once
+        self._alerted = None  # set once a red alert went out, so recovery is noted once
         self._clock = clock
         self._height = None
         self._height_since = None
         self._zero_since = None
         self._explorer_tip = None
         self._explorer_at = None
-        self._red_since = None
-        self._green_since = None
-        self._restarts = 0
-        self._last_restart = None
-        self._budget = os.path.join(state_dir, BUDGET)
-        self._load_budget()
-        # Stopped by a restart and not started since: the start-only retry, across dashboard restarts.
-        self._owed = OwedStart(state_dir, self.CONTAINER, START_RETRIES, inspect, STOP_REQUEST_SEC)
-        self._start_tried = None
         self._best = None  # highest height seen: only a rise past it is progress
         self._was_red = False  # the last alert-relevant level, so each entry into red alerts
         self.verdict = {"level": "green", "reasons": [], "advice": ""}
@@ -201,45 +146,12 @@ class TariChainHealth:
             "advice": "" if level == "green" else RESTART_ADVICE,
             "height": self._height,
             "explorer_tip": self._explorer_tip,
-            "restarts": self._restarts,
         }
         return self.verdict
 
-    def decide(self, reachable, now):
-        """The restart decision for the current verdict: ``None``, ``"restart"`` (a budget slot is
-        spent — the caller must restart), ``"withheld"`` (red, but the node's gRPC is not answering:
-        possibly migrating), ``"exhausted"`` or ``"recovered"`` (sustained green after a restart)."""
-        level = self.verdict["level"]
-        if level == "green":
-            self._red_since = None
-            if self._green_since is None:
-                self._green_since = now
-            if self._restarts and now - self._green_since >= GREEN_CONFIRM_SEC:
-                self._restarts, self._last_restart = 0, None
-                self._save_budget(now)  # sustained green is the only thing that refills it
-                return "recovered"
-            return None
-        self._green_since = None
-        if level != "red":
-            self._red_since = None
-            return None
-        if self._red_since is None:
-            self._red_since = now
-        if not self.auto_restart or now - self._red_since < RED_SUSTAIN_SEC:
-            return None
-        if self._restarts >= MAX_RESTARTS:
-            return "exhausted"
-        if not reachable:
-            return "withheld"
-        if self._last_restart is not None and now - self._last_restart < COOLDOWN_SEC:
-            return None
-        self._restarts += 1
-        self._last_restart = now
-        return "restart"
-
     async def check(self, sync, connections):
-        """Per-cycle entry point: refresh the explorer reference (hourly), observe, act. Returns
-        the verdict with the action taken this cycle, for the panel, the alerts and doctor."""
+        """Per-cycle entry point: refresh the explorer reference (hourly), observe, alert. Returns
+        the verdict for the panel, the alerts and doctor."""
         now = self._clock()
         if self.explorer_url and (
             self._explorer_at is None or now - self._explorer_at >= EXPLORER_INTERVAL_SEC
@@ -249,113 +161,17 @@ class TariChainHealth:
             # A failed fetch drops the reference rather than keeping an old one alive past its hour.
             self._explorer_tip = tip
         verdict = self.observe(sync, connections, now)
-        reachable = bool(sync.get("reachable"))
-        if self._owed.pending():
-            if reachable and not self._owed.stopping():
-                self._start_tried = None  # it answers past the stop's grace: read the container now
-            action = await self._retry_start(now)
-            if action == "stop_missed":
-                self._refund(now)  # running throughout: the stop never landed, the slot comes back
-        else:
-            action = self.decide(reachable, now)
-        if action == "restart":
-            logger.warning(
-                "Tari node red for %d min — restarting it (attempt %d/%d).",
-                (now - self._red_since) // 60,
-                self._restarts,
-                MAX_RESTARTS,
-            )
-            # Both records reach the disk before the stop: the spent slot, so neither a lost
-            # acknowledgement nor a new dashboard can grant another, and the owed start, so a
-            # dashboard restart between stop and start still owes it. No records, no stop.
-            recorded = self._save_budget(now) and self._owed.owe()
-            stopped = recorded and await self._docker.stop(
-                self.CONTAINER, stop_timeout=60, request_timeout=STOP_REQUEST_SEC
-            )
-            started = stopped and await self._docker.start(self.CONTAINER, request_timeout=60)
-            if started:
-                self._owed.settle()
-            if not recorded:
-                self._refund(now)
-                action = "restart_unrecorded"
-                verdict["advice"] = UNRECORDED_ADVICE
-            elif not stopped:
-                # Reported failed, but the acknowledgement may be what was lost: the slot stays
-                # spent and the record stays, and the start retry reads the container. Stopped:
-                # it is started, no further stop. Running throughout: the slot comes back.
-                self._start_tried = now
-                action = "restart_failed"
-            elif not started:
-                # Stopped by us and not running: the silent gRPC that follows is ours, not a
-                # migration, so the withheld guard must not strand it. The record owes a start.
-                self._start_tried = now
-                action = "start_failed"
-        elif action == "withheld":
-            verdict["advice"] = (
-                "the node's gRPC is not answering (a database migration may be running); "
-                "the automatic restart is withheld until it answers"
-            )
-        if self._restarts >= MAX_RESTARTS and verdict["level"] != "green":
-            verdict["advice"] = ESCALATED_ADVICE
-        if self._owed.pending():
-            verdict["advice"] = STOPPED_ADVICE
-        verdict["restarts"] = self._restarts
-        verdict["action"] = action
         await self._alert(verdict)
         return verdict
 
-    def _refund(self, now):
-        self._restarts -= 1
-        self._last_restart = None
-        self._save_budget(now)
-
-    def _save_budget(self, now) -> bool:
-        """The outage's restart count and the last restart's wall time, atomically."""
-        last = None if self._last_restart is None else time.time() - (now - self._last_restart)
-        try:
-            owed_start.write_atomic(
-                self._budget, json.dumps({"restarts": self._restarts, "last_restart": last})
-            )
-            return True
-        except OSError as exc:
-            logger.warning("Could not record the Tari restart budget: %s", exc)
-            return False
-
-    def _load_budget(self) -> None:
-        """A new dashboard inherits the outage: its count, and the cooldown from the last restart.
-        An unreadable record reads as spent; only sustained green refills it."""
-        try:
-            with open(self._budget) as fh:
-                record = json.load(fh)
-            restarts, last = int(record["restarts"]), record["last_restart"]
-            last = None if last is None else float(last)
-        except FileNotFoundError:
-            return
-        except (OSError, ValueError, TypeError, KeyError):
-            logger.warning("Tari restart budget unreadable; treating it as spent until green.")
-            self._restarts = MAX_RESTARTS
-            return
-        self._restarts = min(max(restarts, 0), MAX_RESTARTS)
-        if last is not None:
-            self._last_restart = self._clock() - max(0.0, time.time() - last)
-
-    async def _retry_start(self, now: float) -> str:
-        """Start-only retry for a node whose restart stopped it and failed to start it. The first
-        one after a dashboard restart is due at once."""
-        if self._start_tried is not None and now - self._start_tried < START_RETRY_SEC:
-            return "start_pending"
-        self._start_tried = now
-        return await self._owed.retry(self._docker)
-
     async def _alert(self, verdict):
-        """Red on the verdict, not the restart: one alert on entering red and one each time the
-        advice changes (withheld, escalated); one recovery note on green after a red alert."""
+        """One alert on each entry into red, and one recovery note on green after a red alert."""
         if self._notify is None:
             return
         level = verdict["level"]
         entered = level == "red" and not self._was_red
         self._was_red = level == "red"
-        if level == "red" and (entered or verdict["advice"] != self._alerted):
+        if entered:
             self._alerted = verdict["advice"]
             text = (
                 "\U0001f534 ⛓️ Tari node is not following the chain — "
