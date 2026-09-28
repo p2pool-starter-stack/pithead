@@ -42,6 +42,13 @@ CN_RULES+=$'\n'"$CN_DROP"
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_RULES"; then
     ok "readback accepts both authorized sync exceptions"
 else bad "readback accepts both authorized sync exceptions" "live rule mismatch"; fi
+CN_BASELINE='-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.25/32 -j ACCEPT'
+if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_BASELINE"$'\n'"$CN_RULES"; then
+    ok "readback accepts the normalized Tor baseline rule"
+else bad "readback accepts the normalized Tor baseline rule" "live rule mismatch"; fi
+if run_sourced "$V" tor_egress_sync_rules_match iptables "-A DOCKER-USER -m comment --comment pithead-tor-egress -j ACCEPT"$'\n'"$CN_RULES"; then
+    bad "readback refuses a broad tagged ACCEPT" "accepted an unscoped exception"
+else ok "readback refuses a broad tagged ACCEPT"; fi
 CN_LATE=$'-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.26 -j ACCEPT\n'"$CN_DROP"$'\n-A DOCKER-USER -m comment --comment pithead-tor-egress -s 172.28.0.27 -j ACCEPT'
 if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_LATE"; then
     bad "readback refuses a Tari exception after the blocking DROP" "accepted ineffective exception"
@@ -56,7 +63,7 @@ if run_sourced "$V" tor_egress_sync_rules_match iptables "$CN_COMMENT"; then
 else ok "readback refuses rule text forged inside a comment"; fi
 CN_NFT_MONERO='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.26"}},{"accept":null}]}}'
 CN_NFT_TARI='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.27"}},{"accept":null}]}}'
-CN_NFT_DROP='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.0/24"}},{"drop":null}]}}'
+CN_NFT_DROP='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":{"prefix":{"addr":"172.28.0.0","len":24}}}},{"drop":null}]}}'
 if run_sourced "$V" tor_egress_sync_rules_match nft "{\"nftables\":[$CN_NFT_MONERO,$CN_NFT_TARI,$CN_NFT_DROP]}"; then
     ok "nft readback accepts authorized exceptions before DROP"
 else bad "nft readback accepts authorized exceptions before DROP" "live rule mismatch"; fi

@@ -163,141 +163,6 @@ tor_egress_cidr_contains() { # <container> <member>
     [ "$(($(tor_egress_ip_to_int "$cip") & mask))" = "$(($(tor_egress_ip_to_int "$mip") & mask))" ]
 }
 
-# Tokenise one `iptables -S` rule line the way libxtables writes it: whitespace-separated tokens,
-# where a value that needs it is written as a double-quoted run with `\"` and `\\` escapes. Prints
-# one token per line, prefixed `b:` when it was written bare and `q:` when any of it came out of a
-# quoted run. The caller needs that distinction: a quoted value is a value however much it spells
-# a flag, which is the whole reason `-m string --string "! -s 0.0.0.0/0 x"` could not be read by
-# any amount of substring scanning.
-#
-# rc 1 = the line cannot be read unambiguously (an unterminated quote, a trailing backslash). The
-# caller reads that as shadowing: a rule we cannot parse is a rule we cannot clear.
-tor_egress_tokenise() { # <rule line>
-    local line="$1" n i=0 c tok="" have=0 quoted=0 closed
-    n=${#line}
-    while [ "$i" -lt "$n" ]; do
-        c="${line:$i:1}"
-        case "$c" in
-        [[:space:]])
-            if [ "$have" = 1 ]; then
-                if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
-                tok=""
-                have=0
-                quoted=0
-            fi
-            i=$((i + 1))
-            ;;
-        '"')
-            i=$((i + 1))
-            have=1
-            quoted=1
-            closed=0
-            while [ "$i" -lt "$n" ]; do
-                c="${line:$i:1}"
-                if [ "$c" = '\' ]; then
-                    i=$((i + 1))
-                    [ "$i" -lt "$n" ] || return 1
-                    tok="$tok${line:$i:1}"
-                    i=$((i + 1))
-                    continue
-                fi
-                if [ "$c" = '"' ]; then
-                    closed=1
-                    i=$((i + 1))
-                    break
-                fi
-                tok="$tok$c"
-                i=$((i + 1))
-            done
-            [ "$closed" = 1 ] || return 1
-            ;;
-        *)
-            tok="$tok$c"
-            have=1
-            i=$((i + 1))
-            ;;
-        esac
-    done
-    if [ "$have" = 1 ]; then
-        if [ "$quoted" = 1 ]; then printf 'q:%s\n' "$tok"; else printf 'b:%s\n' "$tok"; fi
-    fi
-    return 0
-}
-
-# Can this foreign DOCKER-USER rule decide a packet our DROP is meant to decide? rc 0 = yes, or we
-# cannot prove otherwise; rc 1 = no, it cannot match the mining subnet. EVERY uncertain answer is
-# rc 0: a line the tokeniser refuses, a `-s` value that is not a CIDR, a second `-s`, a flag whose
-# value never arrived, or no `-s` at all (an unscoped ACCEPT matches everything, us included).
-#
-# TOKENS, not a substring scan — and not a scan with the quoted values stripped out first either.
-# Three cuts of this check searched the raw line for `" -s "`, and each lost to a free-text match
-# value containing it: `--comment` first, then `--comment` again past a strip that removed only
-# the first clause (and only `--comment`), then `-m string --string`, which no amount of
-# comment-stripping ever covered. There is no scan-shaped fix: ANY quoted value ahead of `-s`
-# hijacks a positional search. Read left to right instead, where `-s` counts only as a bare token
-# of its own, negation is a bare `!` immediately before it, and a quoted value is exactly one
-# token that is never mistaken for the flag it spells.
-tor_egress_rule_shadows() { # <rule line> <subnet>
-    local line="$1" subnet="$2" tokens tok kind want="" seen=0 negated=0 prev="" foreign_net="" target=""
-    tokens=$(tor_egress_tokenise "$line") || return 0
-    while IFS= read -r tok; do
-        kind="${tok%%:*}"
-        tok="${tok#*:}"
-        if [ -n "$want" ]; then
-            case "$want" in
-            s) foreign_net="$tok" ;;
-            j) target="$tok" ;;
-            esac
-            want=""
-            prev=""
-            continue
-        fi
-        # A quoted token is a value. It can open nothing, negate nothing, and target nothing.
-        if [ "$kind" = q ]; then
-            prev=""
-            continue
-        fi
-        case "$tok" in
-        '!') prev='!' ;;
-        -s | --source | --src)
-            [ "$seen" = 0 ] || return 0 # two sources on one rule: we cannot say which one decides
-            seen=1
-            negated=0
-            [ "$prev" != '!' ] || negated=1
-            want=s
-            prev=""
-            ;;
-        -j | --jump | -g | --goto)
-            want=j
-            prev=""
-            ;;
-        *) prev="" ;;
-        esac
-    done <<<"$tokens"
-    [ -z "$want" ] || return 0 # a flag whose value never arrived
-    # Only a rule that TERMINATES the chain can take the verdict away from our DROP. A foreign
-    # LOG (or a foreign DROP) leaves the packet to the rules below it, ours included.
-    case "$target" in
-    ACCEPT | RETURN) ;;
-    *) return 1 ;;
-    esac
-    # DOCKER-USER is host-wide and shared with every other compose project (ufw-docker writes
-    # there), so a rule that cannot match us must NOT be called shadowing, or the verdict fires
-    # permanently on healthy hosts and stops meaning anything the one time it matters.
-    [ "$seen" = 1 ] || return 0
-    tor_egress_valid_cidr "$foreign_net" || return 0
-    tor_egress_valid_cidr "$subnet" || return 0
-    if [ "$negated" = 1 ]; then
-        # A NEGATED accept matches every packet whose source is OUTSIDE <cidr> — the opposite test
-        # from a plain match. It shadows unless the mining subnet sits ENTIRELY inside <cidr>:
-        # a disjoint `! -s <unrelated>` matches OUR subnet precisely because it is disjoint.
-        tor_egress_cidr_contains "$foreign_net" "$subnet" && return 1
-        return 0
-    fi
-    tor_egress_cidr_overlaps "$foreign_net" "$subnet" && return 0
-    return 1
-}
-
 # rc 0 = enforced. 1 = definitively NOT enforced (we read the ruleset; the rules are not in it).
 # 2 = CANNOT be enforced at all (the backend's tool is absent — not an unknown, a certainty that
 # nothing is dropping). 3 = genuinely unreadable (no passwordless sudo), the only verdict that is
@@ -388,9 +253,18 @@ tor_egress_enforced() {
     # firewall BEFORE compose, so on a first-ever `up` the jump legitimately does not exist yet (see
     # apply_tor_egress_iptables' own note) — alarming there would cry wolf on every fresh install.
     # doctor only runs this with the stack already up, where a missing jump IS the orphaned chain.
-    local fwd
+    local fwd fwd_line jump_seen=0 canonical_jump
     fwd=$(sudo -n iptables -S FORWARD 2>/dev/null) || return 4
-    grep -qF -- '-j DOCKER-USER' <<<"$fwd" || return 4
+    canonical_jump=$(tor_egress_iptables_canonical '-A FORWARD -j DOCKER-USER')
+    while IFS= read -r fwd_line; do
+        [[ "$fwd_line" == -A\ FORWARD\ * ]] || continue
+        if [ "$(tor_egress_iptables_canonical "$fwd_line" 2>/dev/null)" = "$canonical_jump" ]; then
+            jump_seen=1
+            break
+        fi
+        tor_egress_rule_shadows "$fwd_line" "$subnet" && return 4
+    done <<<"$fwd"
+    [ "$jump_seen" = 1 ] || return 4
     return 0
 }
 

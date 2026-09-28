@@ -357,9 +357,9 @@ be explicitly opted into.
 The [fail-closed egress firewall](#enforced-fail-closed-not-just-configured-270) admits direct IPv4
 egress only from the selected node's own container during its first sync. Monero and Tari have
 separate exceptions; every other container stays restricted, and the IPv6 backstop remains in place.
-The host checks that the node's live `ACCEPT` precedes the subnet's blocking `DROP`; an exception
-listed after that `DROP` does not count as active. The chosen node gets clearnet peers without
-opening the entire stack's egress.
+The host checks that the node's live `ACCEPT` is scoped to its address and precedes the subnet's
+blocking `DROP`; a broad or later exception does not count as active. The chosen node gets
+clearnet peers without opening the entire stack's egress.
 
 ### It switches back to Tor automatically (#234)
 

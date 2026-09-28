@@ -56,7 +56,7 @@ case "$*" in
     # JSON: the check reads `nft -j` and asks whether the drop is a rule IN the forward-hooked
     # chain. A text ruleset is no longer what the code consumes, so a text stub tests nothing.
     [ "${NFT_LIVE:-0}" = 1 ] || exit 1
-    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}'
+    printf '%s\n' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":{"prefix":{"addr":"172.28.0.0","len":24}}}},{"drop":null}]}}]}'
     exit 0
     ;;
 esac
@@ -209,7 +209,7 @@ J
     else
         cat <<'J'
 {"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},
-{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}
+{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":{"prefix":{"addr":"172.28.0.0","len":24}}}},{"drop":null}]}}]}
 J
     fi
     ;;
@@ -238,10 +238,14 @@ case "$*" in
 "-S DOCKER-USER")
     echo '-N DOCKER-USER'
     [ "${IPT_SHADOW:-0}" = 1 ] && echo '-A DOCKER-USER -s 172.28.0.0/24 -j ACCEPT'
+    [ "${IPT_SHADOW:-0}" = 2 ] && echo '-A DOCKER-USER -j BYPASS'
     echo '-A DOCKER-USER -m comment --comment "pithead-tor-egress" -s 172.28.0.0/24 -j DROP'
     echo '-A DOCKER-USER -j RETURN'
     ;;
-"-S FORWARD") echo '-A FORWARD -j DOCKER-USER' ;;
+"-S FORWARD")
+    [ "${IPT_FORWARD_SHADOW:-0}" = 1 ] && echo '-A FORWARD -s 172.28.0.0/24 -j ACCEPT'
+    [ "${IPT_FORWARD_SHADOW:-0}" = 2 ] && echo '-A FORWARD ! -s 172.28.0.0/24 -j DOCKER-USER' || echo '-A FORWARD -j DOCKER-USER'
+    ;;
 "-S") echo '-P FORWARD ACCEPT' ;;
 esac
 exit 0
@@ -249,6 +253,9 @@ IPT
 chmod +x "$DEC/iptables"
 assert_eq "iptables: our DROP first, Docker's RETURN below it -> enforced" "$(dec_rc docker 0 0)" "0"
 assert_eq "iptables: a foreign ACCEPT above our DROP -> NOT provably enforced" "$(dec_rc docker 0 1)" "5"
+assert_eq "iptables: a user-chain jump above our DROP may accept -> NOT enforced" "$(dec_rc docker 0 2)" "5"
+assert_eq "iptables: an ACCEPT before the FORWARD jump bypasses the DROP" "$(IPT_FORWARD_SHADOW=1 dec_rc docker 0 0)" "4"
+assert_eq "iptables: a negated FORWARD jump excludes the mining subnet" "$(IPT_FORWARD_SHADOW=2 dec_rc docker 0 0)" "4"
 # ...and neither apply nor doctor may call that "enforced".
 dec_out="$(IPT_SHADOW=1 PITHEAD_ENGINE=docker PATH="$DEC:$PATH" run_sourced "$EGV" tor_egress_verify_or_warn "SHOULD-NOT-CLAIM" 2>&1)"
 assert_not_contains "apply: a shadowed DROP is never claimed as enforced" "$dec_out" "SHOULD-NOT-CLAIM"
@@ -295,8 +302,20 @@ case "$*" in
     printf '%s' '{"nftables":[{"chain":{"name":"forward","hook":"forward","type":"filter"}},'
     [ "${NFT_PRE_ACCEPT:-0}" = 1 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"accept":null}]}},'
     [ "${NFT_PRE_ACCEPT:-0}" = 2 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"counter":{"packets":0,"bytes":0}},{"accept":null}]}},'
-    [ "${NFT_PRE_ACCEPT:-0}" = 3 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"daddr"}},"right":"192.0.2.1","op":"=="}},{"accept":null}]}},'
-    printf '%s\n' '{"rule":{"chain":"forward","expr":[{"drop":null}]}}]}' ;;
+    [ "${NFT_PRE_ACCEPT:-0}" = 3 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"right":"172.28.0.25","op":"=="}},{"accept":null}]}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 6 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"right":{"prefix":{"addr":"172.28.0.0","len":24}},"op":"=="}},{"accept":null}]}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 7 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"jump":{"target":"bypass"}}]}},'
+    [ "${NFT_PRE_ACCEPT:-0}" = 8 ] && printf '%s' '{"rule":{"chain":"forward","expr":[{"return":null}]}},'
+    sync_rule='{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":"172.28.0.26"}},{"accept":null}]}}'
+    [ "${NFT_PRE_ACCEPT:-0}" = 4 ] && printf '%s,' "$sync_rule"
+    if [ "${NFT_PRE_ACCEPT:-0}" = 9 ]; then
+        printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":{"prefix":{"addr":"192.0.2.0","len":24}}}},{"drop":null}]}}'
+    else
+        printf '%s' '{"rule":{"chain":"forward","expr":[{"match":{"left":{"payload":{"protocol":"ip","field":"saddr"}},"op":"==","right":{"prefix":{"addr":"172.28.0.0","len":24}}}},{"drop":null}]}}'
+    fi
+    [ "${NFT_PRE_ACCEPT:-0}" = 5 ] && printf ',%s' "$sync_rule"
+    [ "${NFT_PRE_ACCEPT:-0}" = 7 ] && printf '%s' ',{"chain":{"name":"bypass"}},{"rule":{"chain":"bypass","expr":[{"accept":null}]}}'
+    printf '%s\n' ']}' ;;
 esac
 exit 0
 NFT
@@ -313,7 +332,16 @@ assert_eq "nft: an UNCONDITIONAL accept above the drop -> NOT enforced" "$(prec_
 # byte-for-byte, so `counter accept` and `log accept` — the standard idioms for a visible/audited
 # allow-all — read as "conditional" and the shadowing drop below them was called "enforced".
 assert_eq "nft: counter+accept above the drop still shadows it -> NOT enforced" "$(prec_rc 2)" "1"
-assert_eq "nft: a genuinely scoped match+accept does not shadow -> enforced" "$(prec_rc 3)" "0"
+assert_eq "nft: the generated Tor-only accept is enforced" "$(prec_rc 3)" "0"
+assert_eq "nft: a broad conditional subnet accept still leaks -> NOT enforced" "$(prec_rc 6)" "1"
+assert_eq "nft: a jump to an accepting chain bypasses the DROP" "$(prec_rc 7)" "1"
+assert_eq "nft: a base-chain RETURN bypasses the DROP" "$(prec_rc 8)" "1"
+assert_eq "nft: a DROP for another subnet does not protect ours" "$(prec_rc 9)" "1"
+cp "$EGV/.env" "$EGV/.env.before-nft-sync"
+printf 'MONERO_CLEARNET_SYNC=true\n' >>"$EGV/.env"
+assert_eq "nft: selected sync ACCEPT before DROP is enforced" "$(prec_rc 4)" "0"
+assert_eq "nft: selected sync ACCEPT after DROP is ineffective" "$(prec_rc 5)" "1"
+mv "$EGV/.env.before-nft-sync" "$EGV/.env"
 
 # (b) DOCKER-USER is host-wide and shared with every other compose project. A neighbour's rule that
 # cannot match the mining subnet must NOT be called shadowing, or the verdict fires forever on
@@ -343,6 +371,10 @@ assert_eq "iptables: a neighbour project's rule on another subnet -> still enfor
     "$(fgn_rc '-A DOCKER-USER -s 10.99.99.0/24 -d 10.99.99.1/32 -j ACCEPT')" "0"
 assert_eq "iptables: an UNSCOPED accept above our DROP -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -j ACCEPT')" "5"
+assert_eq "iptables: a broad ACCEPT with our tag is still unsafe" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment pithead-tor-egress -j ACCEPT')" "1"
+assert_eq "iptables: a tagged RETURN cannot bypass our DROP" \
+    "$(fgn_rc '-A DOCKER-USER -m comment --comment pithead-tor-egress -j RETURN')" "1"
 assert_eq "iptables: an accept scoped to OUR subnet -> not provably enforced" \
     "$(fgn_rc '-A DOCKER-USER -s 172.28.0.0/24 -j ACCEPT')" "5"
 assert_eq "iptables: a neighbour's non-terminating rule (LOG) -> still enforced" \

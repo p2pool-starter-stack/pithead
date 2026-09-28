@@ -197,7 +197,6 @@ per the process in [`docs/dev/releasing.md`](docs/dev/releasing.md).
   image's own `/var/tari/wallet`, so every install creates the wallet fresh and scans from the
   birthday. The old `tari_wallet_data` volume never held a wallet; `uninstall` removes it.
 
-
 - **A slow first Tor bootstrap no longer fails provisioning
   ([#2648](https://github.com/p2pool-starter-stack/pithead/issues/2648)).** monerod and tari wait
   for Tor's healthcheck, and the healthcheck marked Tor unhealthy about 3.5 minutes after it
